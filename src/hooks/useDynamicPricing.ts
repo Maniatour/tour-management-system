@@ -350,14 +350,50 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
                 price_adjustment_infant: ruleData.price_adjustment_infant !== undefined ? ruleData.price_adjustment_infant : (fullExistingData.price_adjustment_infant ?? 0),
               };
               
-              // choices_pricing이 있으면 기존 데이터와 병합
+              // choices_pricing이 있으면 기존 데이터와 병합 (깊은 병합)
               if (ruleData.choices_pricing && Object.keys(ruleData.choices_pricing).length > 0) {
                 const existingChoicesPricing = fullExistingData.choices_pricing || {};
-                // 기존 choices_pricing과 새로운 choices_pricing 병합
-                updateData.choices_pricing = {
-                  ...existingChoicesPricing,
-                  ...ruleData.choices_pricing
-                };
+                let existingParsed: Record<string, any> = {};
+                
+                // 기존 choices_pricing 파싱
+                if (existingChoicesPricing) {
+                  try {
+                    existingParsed = typeof existingChoicesPricing === 'string'
+                      ? JSON.parse(existingChoicesPricing)
+                      : existingChoicesPricing;
+                  } catch (e) {
+                    console.warn('기존 choices_pricing 파싱 오류:', e);
+                    existingParsed = {};
+                  }
+                }
+                
+                // 새로운 choices_pricing 파싱
+                let newParsed: Record<string, any> = {};
+                try {
+                  newParsed = typeof ruleData.choices_pricing === 'string'
+                    ? JSON.parse(ruleData.choices_pricing)
+                    : ruleData.choices_pricing;
+                } catch (e) {
+                  console.warn('새로운 choices_pricing 파싱 오류:', e);
+                  newParsed = ruleData.choices_pricing as Record<string, any>;
+                }
+                
+                // 각 초이스별로 깊은 병합 (not_included_price, ota_sale_price 등 보존)
+                const mergedChoicesPricing: Record<string, any> = { ...existingParsed };
+                Object.entries(newParsed).forEach(([choiceId, newChoiceData]) => {
+                  if (existingParsed[choiceId]) {
+                    // 기존 초이스가 있으면 깊은 병합
+                    mergedChoicesPricing[choiceId] = {
+                      ...existingParsed[choiceId],
+                      ...newChoiceData
+                    };
+                  } else {
+                    // 새로운 초이스는 그대로 추가
+                    mergedChoicesPricing[choiceId] = newChoiceData;
+                  }
+                });
+                
+                updateData.choices_pricing = mergedChoicesPricing;
               } else if (fullExistingData.choices_pricing) {
                 // choices_pricing이 전달되지 않았으면 기존 값 유지
                 updateData.choices_pricing = fullExistingData.choices_pricing;

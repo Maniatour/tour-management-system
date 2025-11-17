@@ -87,6 +87,9 @@ export default function DynamicPricingManager({
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [dateRangeSelection, setDateRangeSelection] = useState<DateRangeSelection | null>(null);
   
+  // 불포함 사항 필터 상태
+  const [notIncludedFilter, setNotIncludedFilter] = useState<'all' | 'with' | 'without'>('all');
+  
   // 판매 상태 모달 상태
   const [isSaleStatusModalOpen, setIsSaleStatusModalOpen] = useState(false);
   
@@ -1016,49 +1019,63 @@ export default function DynamicPricingManager({
           choices_pricing: Object.keys(calculationConfig.choicePricing).length > 0 || (pricingConfig.choices_pricing && Object.keys(pricingConfig.choices_pricing).length > 0)
             ? (() => {
                 // 조합별 가격 저장 구조
-                const choicesPricing: Record<string, { adult_price: number; child_price: number; infant_price: number; ota_sale_price?: number; }> = {};
+                const choicesPricing: Record<string, { adult_price: number; child_price: number; infant_price: number; ota_sale_price?: number; not_included_price?: number; }> = {};
                 
                 // calculationConfig.choicePricing 우선 사용
                 Object.entries(calculationConfig.choicePricing).forEach(([choiceId, choice]) => {
                   // choiceId는 조합 ID (예: "combination_0", "combination_1")
-                  const otaSalePrice = (pricingConfig.choices_pricing as any)?.[choiceId]?.ota_sale_price;
+                  const currentChoiceData = (pricingConfig.choices_pricing as any)?.[choiceId] || {};
+                  const otaSalePrice = currentChoiceData.ota_sale_price;
+                  const notIncludedPrice = currentChoiceData.not_included_price;
+                  
                   choicesPricing[choiceId] = {
                     adult_price: choice.adult_price,
                     child_price: choice.child_price,
                     infant_price: choice.infant_price,
-                    ...(otaSalePrice !== undefined && otaSalePrice > 0 ? { ota_sale_price: otaSalePrice } : {})
+                    ...(otaSalePrice !== undefined && otaSalePrice > 0 ? { ota_sale_price: otaSalePrice } : {}),
+                    ...(notIncludedPrice !== undefined && notIncludedPrice !== null ? { not_included_price: notIncludedPrice } : {})
                   };
                 });
                 
-                // pricingConfig.choices_pricing에서 ota_sale_price가 있지만 calculationConfig에 없는 경우 추가
+                // pricingConfig.choices_pricing에서 ota_sale_price나 not_included_price가 있지만 calculationConfig에 없는 경우 추가
                 if (pricingConfig.choices_pricing) {
                   Object.entries(pricingConfig.choices_pricing as Record<string, any>).forEach(([choiceId, choiceData]) => {
-                    if (!choicesPricing[choiceId] && choiceData.ota_sale_price !== undefined && choiceData.ota_sale_price > 0) {
+                    const hasOtaSalePrice = choiceData.ota_sale_price !== undefined && choiceData.ota_sale_price > 0;
+                    const hasNotIncludedPrice = choiceData.not_included_price !== undefined && choiceData.not_included_price !== null;
+                    
+                    if (!choicesPricing[choiceId] && (hasOtaSalePrice || hasNotIncludedPrice)) {
                       choicesPricing[choiceId] = {
                         adult_price: choiceData.adult_price || choiceData.adult || 0,
                         child_price: choiceData.child_price || choiceData.child || 0,
                         infant_price: choiceData.infant_price || choiceData.infant || 0,
-                        ota_sale_price: choiceData.ota_sale_price
+                        ...(hasOtaSalePrice ? { ota_sale_price: choiceData.ota_sale_price } : {}),
+                        ...(hasNotIncludedPrice ? { not_included_price: choiceData.not_included_price } : {})
                       };
-                    } else if (choicesPricing[choiceId] && choiceData.ota_sale_price !== undefined && choiceData.ota_sale_price > 0) {
-                      // 이미 있는 경우 ota_sale_price만 업데이트
-                      choicesPricing[choiceId].ota_sale_price = choiceData.ota_sale_price;
+                    } else if (choicesPricing[choiceId]) {
+                      // 이미 있는 경우 ota_sale_price와 not_included_price 업데이트
+                      if (hasOtaSalePrice) {
+                        choicesPricing[choiceId].ota_sale_price = choiceData.ota_sale_price;
+                      }
+                      if (hasNotIncludedPrice) {
+                        choicesPricing[choiceId].not_included_price = choiceData.not_included_price;
+                      }
                     }
                   });
                 }
                 
                 return choicesPricing;
               })()
-            : {} as Record<string, { adult_price: number; child_price: number; infant_price: number; ota_sale_price?: number; }>
+            : {} as Record<string, { adult_price: number; child_price: number; infant_price: number; ota_sale_price?: number; not_included_price?: number; }>
         };
         
         rulesData.push(ruleData);
       }
     }
 
-    // 자체 채널인 경우 배치 저장 사용, 그 외에는 개별 저장
-    if (selectedChannelType === 'SELF' && rulesData.length > 10) {
-      console.log(`자체 채널 배치 저장 시작: ${rulesData.length}개 규칙`);
+    // 규칙이 5개 이상이면 배치 저장 사용 (자체 채널이든 OTA 채널이든 상관없이)
+    // 불포함 금액이나 choices_pricing이 있어도 배치 저장 사용
+    if (rulesData.length >= 5) {
+      console.log(`배치 저장 시작: ${rulesData.length}개 규칙`);
       
       try {
         await savePricingRulesBatch(rulesData, (completed, total) => {
@@ -1066,15 +1083,34 @@ export default function DynamicPricingManager({
         });
         
         setBatchProgress(null); // 진행률 초기화
+        setMessage(`전체 ${rulesData.length}개 가격 규칙이 성공적으로 저장되었습니다.`);
         // 저장 완료 후 통계 다시 로드
         await loadChannelPricingStats();
       } catch (error) {
         console.error('배치 저장 실패:', error);
         setBatchProgress(null);
-        throw error;
+        setMessage('배치 저장에 실패했습니다. 개별 저장을 시도합니다.');
+        
+        // 배치 저장 실패 시 개별 저장으로 폴백
+        let savedCount = 0;
+        for (const ruleData of rulesData) {
+          try {
+            await savePricingRule(ruleData, false);
+            savedCount++;
+          } catch (err) {
+            console.error('가격 규칙 저장 실패:', err);
+          }
+        }
+        
+        if (savedCount === rulesData.length) {
+          setMessage(`전체 ${rulesData.length}개 가격 규칙이 성공적으로 저장되었습니다.`);
+        } else {
+          setMessage(`${savedCount}/${rulesData.length}개 가격 규칙이 저장되었습니다.`);
+        }
+        await loadChannelPricingStats();
       }
     } else {
-      // 개별 저장 (OTA 채널이거나 규칙이 적은 경우)
+      // 규칙이 적은 경우 개별 저장
       console.log(`개별 저장 시작: ${rulesData.length}개 규칙`);
       
       let savedCount = 0;
@@ -1101,6 +1137,21 @@ export default function DynamicPricingManager({
 
   // 규칙 편집 핸들러
   const handleEditRule = useCallback((rule: SimplePricingRule) => {
+    console.log('편집 버튼 클릭:', rule);
+    
+    // choices_pricing 파싱
+    let choicesPricing: Record<string, any> = {};
+    if (rule.choices_pricing) {
+      try {
+        choicesPricing = typeof rule.choices_pricing === 'string'
+          ? JSON.parse(rule.choices_pricing)
+          : rule.choices_pricing;
+      } catch (e) {
+        console.warn('choices_pricing 파싱 오류:', e);
+        choicesPricing = {};
+      }
+    }
+    
     updatePricingConfig({
       adult_price: rule.adult_price,
       child_price: rule.child_price,
@@ -1108,11 +1159,20 @@ export default function DynamicPricingManager({
       commission_percent: rule.commission_percent,
       markup_amount: rule.markup_amount,
       coupon_percent: rule.coupon_percent,
-      is_sale_available: rule.is_sale_available
+      is_sale_available: rule.is_sale_available,
+      not_included_price: rule.not_included_price || 0,
+      choices_pricing: choicesPricing
     });
     
     setSelectedDates([rule.date]);
     handleChannelSelect(rule.channel_id);
+    
+    // 캘린더 뷰로 전환하여 편집 가능하도록 함
+    setViewMode('calendar');
+    
+    // 해당 날짜가 보이도록 월 변경
+    const ruleDate = new Date(rule.date);
+    setCurrentMonth(new Date(ruleDate.getFullYear(), ruleDate.getMonth(), 1));
   }, [updatePricingConfig, handleChannelSelect]);
 
   // 규칙 삭제 핸들러
@@ -1236,17 +1296,59 @@ export default function DynamicPricingManager({
     }
   }, [editingChannel, loadChannels]);
 
+  // 불포함 금액이 있는지 확인하는 함수
+  const hasNotIncludedPrice = (rule: SimplePricingRule): boolean => {
+    // 기본 not_included_price 확인
+    if (rule.not_included_price && rule.not_included_price > 0) {
+      return true;
+    }
+    
+    // choices_pricing에서 not_included_price 확인
+    if (rule.choices_pricing) {
+      try {
+        const choicesPricing = typeof rule.choices_pricing === 'string'
+          ? JSON.parse(rule.choices_pricing)
+          : rule.choices_pricing;
+        
+        for (const choiceData of Object.values(choicesPricing as Record<string, any>)) {
+          if (choiceData.not_included_price && choiceData.not_included_price > 0) {
+            return true;
+          }
+        }
+      } catch (e) {
+        console.warn('choices_pricing 파싱 오류:', e);
+      }
+    }
+    
+    return false;
+  };
+
   // 현재 월의 데이터 필터링
   const currentMonthData = useMemo(() => {
     const year = currentMonth.getUTCFullYear();
     const month = currentMonth.getUTCMonth() + 1;
     
-    return dynamicPricingData.filter(({ date }) => {
+    // 먼저 현재 월의 데이터 필터링
+    let filtered = dynamicPricingData.filter(({ date }) => {
       const parts = extractYearMonth(date);
       if (!parts) return false;
       return parts.year === year && parts.month === month;
     });
-  }, [dynamicPricingData, currentMonth]);
+    
+    // 불포함 사항 필터 적용
+    if (notIncludedFilter !== 'all') {
+      filtered = filtered.map(({ date, rules }) => {
+        const filteredRules = rules.filter(rule => {
+          const hasNotIncluded = hasNotIncludedPrice(rule);
+          return notIncludedFilter === 'with' ? hasNotIncluded : !hasNotIncluded;
+        });
+        
+        return { date, rules: filteredRules };
+      }).filter(({ rules }) => rules.length > 0); // 규칙이 있는 날짜만 유지
+    }
+    
+    return filtered;
+  }, [dynamicPricingData, currentMonth, notIncludedFilter]);
 
   return (
     <div className="space-y-6">
@@ -1332,12 +1434,17 @@ export default function DynamicPricingManager({
               channelInfo={selectedChannel ? channelGroups
                 .flatMap(group => group.channels)
                 .find(ch => ch.id === selectedChannel) || null : null}
+              notIncludedFilter={notIncludedFilter}
+              onNotIncludedFilterChange={setNotIncludedFilter}
             />
           ) : (
             <PricingListView
               dynamicPricingData={dynamicPricingData}
               onEditRule={handleEditRule}
               onDeleteRule={handleDeleteRule}
+              onRefresh={loadDynamicPricingData}
+              choiceCombinations={choiceCombinations}
+              channels={channelGroups.flatMap(group => group.channels)}
             />
                )}
 

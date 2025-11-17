@@ -165,6 +165,13 @@ export interface SimplePricingRule {
     child_price: number;
     infant_price: number;
   }>;
+  choices_pricing?: Record<string, {
+    adult_price?: number;
+    child_price?: number;
+    infant_price?: number;
+    ota_sale_price?: number;
+    not_included_price?: number;
+  }> | string; // JSON 문자열 또는 객체
   created_at: string;
   updated_at: string;
 }

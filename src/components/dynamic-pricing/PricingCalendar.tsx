@@ -95,6 +95,8 @@ interface PricingCalendarProps {
     commission_base_price_only?: boolean;
     [key: string]: unknown;
   } | null;
+  notIncludedFilter?: 'all' | 'with' | 'without';
+  onNotIncludedFilterChange?: (filter: 'all' | 'with' | 'without') => void;
 }
 
 export const PricingCalendar = memo(function PricingCalendar({
@@ -107,7 +109,9 @@ export const PricingCalendar = memo(function PricingCalendar({
   choiceCombinations = [],
   selectedChannelId,
   selectedChannelType,
-  channelInfo
+  channelInfo,
+  notIncludedFilter = 'all',
+  onNotIncludedFilterChange
 }: PricingCalendarProps) {
   const [selectedChoice, setSelectedChoice] = useState<string>('');
   const [selectedPriceTypes, setSelectedPriceTypes] = useState<Set<string>>(
@@ -448,7 +452,7 @@ export const PricingCalendar = memo(function PricingCalendar({
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-      {/* 초이스 선택 드롭다운 */}
+      {/* 초이스 선택 드롭다운 및 불포함 사항 필터 */}
       {choiceCombinations.length > 0 && (selectedChannelId || selectedChannelType) && (
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center space-x-2">
@@ -456,7 +460,7 @@ export const PricingCalendar = memo(function PricingCalendar({
               <select
                 value={selectedChoice}
                 onChange={(e) => setSelectedChoice(e.target.value)}
-                className="appearance-none bg-white border border-gray-300 rounded-md px-3 py-2 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="appearance-none bg-white border border-gray-300 rounded-md px-2 py-1 pr-6 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">초이스를 선택하세요</option>
                 {choiceCombinations.map((choice) => (
@@ -465,8 +469,20 @@ export const PricingCalendar = memo(function PricingCalendar({
                   </option>
                 ))}
               </select>
-              <ChevronDown className="absolute right-2 top-2.5 h-4 w-4 text-gray-400 pointer-events-none" />
+              <ChevronDown className="absolute right-1.5 top-1.5 h-3 w-3 text-gray-400 pointer-events-none" />
             </div>
+            {/* 불포함 사항 필터 드롭다운 */}
+            {onNotIncludedFilterChange && (
+              <select
+                value={notIncludedFilter}
+                onChange={(e) => onNotIncludedFilterChange(e.target.value as 'all' | 'with' | 'without')}
+                className="px-2 py-1 text-xs border border-gray-300 rounded bg-white text-gray-700 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="all">전체</option>
+                <option value="with">불포함 사항 있음</option>
+                <option value="without">불포함 사항 없음</option>
+              </select>
+            )}
           </div>
           
           {/* 가격 범례 (다중 선택 가능) */}

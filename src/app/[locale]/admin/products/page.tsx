@@ -1108,11 +1108,11 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     카테고리
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    기본 가격
-                  </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '250px', width: '250px' }}>
                     초이스
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    기본 가격
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '120px', width: '120px' }}>
                     초이스 가격
@@ -1144,10 +1144,32 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                   const combinations = choiceCombinations[product.id]
                   const hasChoices = combinations && combinations.length > 0
                   
+                  // Net Price가 있는지 확인
+                  const hasNetPrice = (() => {
+                    if (!homepageChannel) return false
+                    const basePrice = product.base_price || 0
+                    const commissionRate = (homepageChannel.commission_percent || 0) / 100
+                    
+                    if (!combinations || combinations.length === 0) {
+                      const homepagePrice = (basePrice * 0.8) * (1 - commissionRate)
+                      return homepagePrice > 0
+                    }
+                    
+                    // 기본 조합으로 확인
+                    const defaultCombo = combinations.find(c => c.isDefault) || combinations[0]
+                    if (defaultCombo) {
+                      const totalChoicePrice = defaultCombo.totalPrice || 0
+                      const homepagePrice = (basePrice * 0.8 + totalChoicePrice) * (1 - commissionRate)
+                      return homepagePrice > 0
+                    }
+                    
+                    return false
+                  })()
+                  
                   return (
                     <tr 
                       key={product.id} 
-                      className={`hover:bg-gray-50 ${hasChoices ? 'cursor-pointer' : ''}`}
+                      className={`${hasNetPrice ? 'hover:bg-gray-50' : 'bg-yellow-50 hover:bg-yellow-100'} ${hasChoices ? 'cursor-pointer' : ''}`}
                       onClick={() => {
                         if (hasChoices) {
                           setExpandedProducts(prev => {
@@ -1320,6 +1342,53 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                           </div>
                         )}
                       </td>
+                      {/* 초이스 컬럼 */}
+                      <td 
+                        className="px-4 py-2" 
+                        style={{ minWidth: '250px', width: '250px' }}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (hasChoices) {
+                            setExpandedProducts(prev => {
+                              const next = new Set(prev)
+                              if (next.has(product.id)) {
+                                next.delete(product.id)
+                              } else {
+                                next.add(product.id)
+                              }
+                              return next
+                            })
+                          }
+                        }}
+                      >
+                        {(() => {
+                          if (!combinations || combinations.length === 0) {
+                            return <span className="text-sm text-gray-400">-</span>
+                          }
+                          
+                          // 기본 조합 찾기
+                          const defaultCombo = combinations.find(c => c.isDefault)
+                          const displayCombinations = isExpanded ? combinations : (defaultCombo ? [defaultCombo] : [combinations[0]])
+                          
+                          return (
+                            <div className={`space-y-1 ${hasChoices ? 'cursor-pointer' : ''}`}>
+                              {displayCombinations.map((combo) => (
+                                <div key={combo.id} className="text-xs flex items-center gap-1">
+                                  {!isExpanded && displayCombinations.length === 1 && (
+                                    <ChevronRight size={12} className="text-gray-400 flex-shrink-0" />
+                                  )}
+                                  {isExpanded && (
+                                    <ChevronDown size={12} className="text-gray-400 flex-shrink-0" />
+                                  )}
+                                  <span className="text-gray-600 font-medium">
+                                    {combo.combinationNameKo}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )
+                        })()}
+                      </td>
                       {/* 기본 가격 컬럼 */}
                       <td 
                         className="px-4 py-4 whitespace-nowrap"
@@ -1377,40 +1446,6 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                             </button>
                           </div>
                         )}
-                      </td>
-                      {/* 초이스 컬럼 */}
-                      <td 
-                        className="px-4 py-2" 
-                        style={{ minWidth: '250px', width: '250px' }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {(() => {
-                          if (!combinations || combinations.length === 0) {
-                            return <span className="text-sm text-gray-400">-</span>
-                          }
-                          
-                          // 기본 조합 찾기
-                          const defaultCombo = combinations.find(c => c.isDefault)
-                          const displayCombinations = isExpanded ? combinations : (defaultCombo ? [defaultCombo] : [combinations[0]])
-                          
-                          return (
-                            <div className="space-y-1">
-                              {displayCombinations.map((combo) => (
-                                <div key={combo.id} className="text-xs flex items-center gap-1">
-                                  {!isExpanded && displayCombinations.length === 1 && (
-                                    <ChevronRight size={12} className="text-gray-400 flex-shrink-0" />
-                                  )}
-                                  {isExpanded && (
-                                    <ChevronDown size={12} className="text-gray-400 flex-shrink-0" />
-                                  )}
-                                  <span className="text-gray-600 font-medium">
-                                    {combo.combinationNameKo}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          )
-                        })()}
                       </td>
                       {/* 초이스 가격 컬럼 */}
                       <td 

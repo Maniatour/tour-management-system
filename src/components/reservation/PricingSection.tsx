@@ -74,6 +74,7 @@ interface PricingSectionProps {
     onlinePaymentAmount?: number
     onSiteBalanceAmount?: number
     not_included_price?: number
+    priceType?: 'base' | 'dynamic'
   }
   channels?: Array<{
     id: string
@@ -189,8 +190,13 @@ export default function PricingSection({
   const pricingType = (selectedChannel as any)?.pricing_type || 'separate'
   const isSinglePrice = pricingType === 'single'
 
-  // 초이스별 불포함 금액 계산
+  // 초이스별 불포함 금액 계산 (Dynamic Price 타입일 때만)
   const calculateChoiceNotIncludedTotal = useCallback(async () => {
+    // Base price 타입일 때는 불포함 금액이 없음
+    if (formData.priceType === 'base') {
+      return 0
+    }
+    
     if (!formData.productId || !formData.tourDate || !formData.channelId) {
       return 0
     }
@@ -247,7 +253,8 @@ export default function PricingSection({
             const choiceNotIncludedPrice = choiceData.not_included_price !== undefined && choiceData.not_included_price !== null
               ? choiceData.not_included_price
               : defaultNotIncludedPrice
-            totalNotIncluded += choiceNotIncludedPrice * (choice.quantity || 1) * (formData.adults + formData.child + formData.infant)
+            // 불포함 금액은 인원당 금액이므로 인원수만 곱함 (quantity는 초이스 옵션 수량이므로 불포함 금액 계산에는 사용하지 않음)
+            totalNotIncluded += choiceNotIncludedPrice * (formData.adults + formData.child + formData.infant)
           }
         })
       } else if (formData.selectedChoices && typeof formData.selectedChoices === 'object') {
@@ -273,16 +280,24 @@ export default function PricingSection({
       console.error('초이스별 불포함 금액 계산 오류:', error)
       return (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
     }
-  }, [formData.productId, formData.tourDate, formData.channelId, formData.selectedChoices, formData.adults, formData.child, formData.infant, formData.not_included_price])
+  }, [formData.productId, formData.tourDate, formData.channelId, formData.selectedChoices, formData.adults, formData.child, formData.infant, formData.not_included_price, formData.priceType])
 
   const [choiceNotIncludedTotal, setChoiceNotIncludedTotal] = useState(0)
 
-  // 초이스별 불포함 금액 업데이트
+  // 초이스별 불포함 금액 업데이트 (Dynamic Price 타입일 때만)
   useEffect(() => {
-    calculateChoiceNotIncludedTotal().then(total => {
-      setChoiceNotIncludedTotal(total)
-    })
-  }, [calculateChoiceNotIncludedTotal])
+    if (formData.priceType === 'dynamic') {
+      calculateChoiceNotIncludedTotal().then(total => {
+        setChoiceNotIncludedTotal(total)
+        // formData에도 업데이트
+        setFormData(prev => ({ ...prev, choiceNotIncludedTotal: total }))
+      })
+    } else {
+      // Base price 타입일 때는 불포함 금액을 0으로 설정
+      setChoiceNotIncludedTotal(0)
+      setFormData(prev => ({ ...prev, choiceNotIncludedTotal: 0 }))
+    }
+  }, [calculateChoiceNotIncludedTotal, formData.priceType, setFormData])
 
   // Net 가격 계산
   const calculateNetPrice = () => {
@@ -378,6 +393,26 @@ export default function PricingSection({
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center space-x-3">
           <h3 className="text-base font-semibold text-gray-900">가격 정보</h3>
+          {/* 가격 타입 선택 */}
+          <div className="flex items-center space-x-2">
+            <label className="text-xs text-gray-600">가격 타입:</label>
+            <select
+              value={formData.priceType || 'dynamic'}
+              onChange={async (e) => {
+                const newPriceType = e.target.value as 'base' | 'dynamic'
+                setFormData({ ...formData, priceType: newPriceType })
+                // 가격 타입이 변경되면 가격을 다시 로드
+                if (formData.productId && formData.tourDate && formData.channelId) {
+                  // 부모 컴포넌트에 가격 타입 변경 알림 (ReservationForm에서 처리)
+                  // 실제 가격 로드는 ReservationForm의 useEffect에서 처리됨
+                }
+              }}
+              className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="dynamic">불포함 있음</option>
+              <option value="base">불포함 없음</option>
+            </select>
+          </div>
           {/* 기존 가격 정보 표시 */}
           {isExistingPricingLoaded && (
             <span className="px-2 py-1 bg-green-100 border border-green-300 rounded text-xs text-green-700">
@@ -482,8 +517,8 @@ export default function PricingSection({
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
-        {/* 1열: 상품 가격 + 초이스 */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* 왼쪽 열: 상품 가격 + 초이스 (위) + 할인/추가 비용 (아래) */}
         <div className="space-y-3">
           {/* 상품 가격 */}
           <div className="bg-white p-3 rounded border border-gray-200">
@@ -583,7 +618,7 @@ export default function PricingSection({
                     </div>
                     
                     {/* 가격 표시 */}
-                    <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className={isSinglePrice ? "grid grid-cols-1 gap-2 text-xs" : "grid grid-cols-3 gap-2 text-xs"}>
                       <div>
                         <label className="block text-gray-600 mb-1">성인</label>
                         <input
@@ -597,32 +632,36 @@ export default function PricingSection({
                           총: ${((selectedOption.adult_price || 0) * formData.adults).toFixed(2)}
                         </div>
                       </div>
-                      <div>
-                        <label className="block text-gray-600 mb-1">아동</label>
-                        <input
-                          type="number"
-                          value={selectedOption.child_price || 0}
-                          readOnly
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-gray-50"
-                          step="0.01"
-                        />
-                        <div className="text-xs text-gray-500 mt-1">
-                          총: ${((selectedOption.child_price || 0) * formData.child).toFixed(2)}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-gray-600 mb-1">유아</label>
-                        <input
-                          type="number"
-                          value={selectedOption.infant_price || 0}
-                          readOnly
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-gray-50"
-                          step="0.01"
-                        />
-                        <div className="text-xs text-gray-500 mt-1">
-                          총: ${((selectedOption.infant_price || 0) * formData.infant).toFixed(2)}
-                        </div>
-                      </div>
+                      {!isSinglePrice && (
+                        <>
+                          <div>
+                            <label className="block text-gray-600 mb-1">아동</label>
+                            <input
+                              type="number"
+                              value={selectedOption.child_price || 0}
+                              readOnly
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-gray-50"
+                              step="0.01"
+                            />
+                            <div className="text-xs text-gray-500 mt-1">
+                              총: ${((selectedOption.child_price || 0) * formData.child).toFixed(2)}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-gray-600 mb-1">유아</label>
+                            <input
+                              type="number"
+                              value={selectedOption.infant_price || 0}
+                              readOnly
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-gray-50"
+                              step="0.01"
+                            />
+                            <div className="text-xs text-gray-500 mt-1">
+                              총: ${((selectedOption.infant_price || 0) * formData.infant).toFixed(2)}
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 )
@@ -641,10 +680,7 @@ export default function PricingSection({
             </div>
           </div>
           )}
-        </div>
 
-        {/* 2열: 할인/추가 비용 + 옵션 */}
-        <div className="space-y-3">
           {/* 할인 및 추가 비용 입력 */}
           <div className="bg-white p-3 rounded border border-gray-200">
             <h4 className="text-sm font-medium text-gray-900 mb-2">할인/추가비용</h4>
@@ -807,11 +843,10 @@ export default function PricingSection({
               </div>
             </div>
           </div>
-
         </div>
 
-        {/* 3열: 가격 계산 (2줄 높이) */}
-        <div className="row-span-2">
+        {/* 오른쪽 열: 가격 계산 */}
+        <div>
           <div className="bg-white p-4 rounded border border-gray-200 h-full">
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-sm font-semibold text-gray-900">가격 계산</h4>

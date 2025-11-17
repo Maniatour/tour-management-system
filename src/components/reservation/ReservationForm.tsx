@@ -208,6 +208,10 @@ export default function ReservationForm({
     onlinePaymentAmount: number
     onSiteBalanceAmount: number
     productRequiredOptions: ProductOption[]
+    // 가격 타입 선택
+    priceType: 'base' | 'dynamic'
+    // 초이스별 불포함 금액 총합
+    choiceNotIncludedTotal?: number
   }>({
     customerId: reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id || '',
     customerSearch: (() => {
@@ -367,7 +371,9 @@ export default function ReservationForm({
     not_included_price: 0,
     onlinePaymentAmount: 0,
     onSiteBalanceAmount: 0,
-    productRequiredOptions: []
+    productRequiredOptions: [],
+    priceType: 'dynamic', // 기본값은 dynamic pricing
+    choiceNotIncludedTotal: 0
   })
 
   type OptionsPricingArray = Array<{ option_id: string; adult_price?: number | null; child_price?: number | null; infant_price?: number | null }>
@@ -1358,15 +1364,15 @@ export default function ReservationForm({
     }
   }, [reservation?.id]);
 
-  // 가격 정보 조회 함수 (reservation_pricing 우선, 없으면 dynamic_pricing)
-  const loadPricingInfo = useCallback(async (productId: string, tourDate: string, channelId: string, reservationId?: string) => {
+  // 가격 정보 조회 함수 (reservation_pricing 우선, 없으면 priceType에 따라 base_price 또는 dynamic_pricing)
+  const loadPricingInfo = useCallback(async (productId: string, tourDate: string, channelId: string, reservationId?: string, priceType: 'base' | 'dynamic' = 'dynamic') => {
     if (!productId || !tourDate || !channelId) {
       console.log('필수 정보가 부족합니다:', { productId, tourDate, channelId })
       return
     }
 
     try {
-      console.log('가격 정보 조회 시작:', { productId, tourDate, channelId, reservationId })
+      console.log('가격 정보 조회 시작:', { productId, tourDate, channelId, reservationId, priceType })
       
       // 1. 먼저 reservation_pricing에서 기존 가격 정보 확인 (편집 모드인 경우)
       if (reservationId) {
@@ -1448,7 +1454,12 @@ export default function ReservationForm({
               optionalOptionTotal += option.price * option.quantity
             })
             
-            const newSubtotal = newProductPriceTotal + optionTotal + optionalOptionTotal
+            // Dynamic Price 타입일 때만 초이스별 불포함 금액 포함
+            const notIncludedTotal = updated.priceType === 'dynamic' 
+              ? (updated.choiceNotIncludedTotal || 0)
+              : 0
+            
+            const newSubtotal = newProductPriceTotal + optionTotal + optionalOptionTotal + notIncludedTotal
             const totalDiscount = updated.couponDiscount + updated.additionalDiscount
             const totalAdditional = updated.additionalCost + updated.cardFee + updated.tax +
               updated.prepaymentCost + updated.prepaymentTip +
@@ -1473,114 +1484,177 @@ export default function ReservationForm({
         }
       }
 
-      // 2. reservation_pricing에 가격 정보가 없으면 dynamic_pricing에서 조회
-      console.log('Dynamic pricing 조회 시작:', { productId, tourDate, channelId })
-      
-      const { data: pricingData, error } = await (supabase as any)
-        .from('dynamic_pricing')
-        .select('adult_price, child_price, infant_price, commission_percent, options_pricing, not_included_price, choices_pricing')
-        .eq('product_id', productId)
-        .eq('date', tourDate)
-        .eq('channel_id', channelId)
-        .limit(1)
+      // 2. reservation_pricing에 가격 정보가 없으면 priceType에 따라 base_price 또는 dynamic_pricing에서 조회
+      let adultPrice = 0
+      let childPrice = 0
+      let infantPrice = 0
+      let commissionPercent = 0
+      let notIncludedPrice = 0
 
-      if (error) {
-        console.log('Dynamic pricing 조회 오류:', error.message)
-        // 오류가 발생해도 가격을 0으로 설정하고 계속 진행
-        setFormData(prev => ({
-          ...prev,
-          adultProductPrice: 0,
-          childProductPrice: 0,
-          infantProductPrice: 0
-        }))
-        setPriceAutoFillMessage('가격 조회 중 오류가 발생했습니다. 수동으로 입력해주세요.')
-        return
-      }
-
-      if (!pricingData || pricingData.length === 0) {
-        console.log('Dynamic pricing 데이터가 없습니다. 가격을 0으로 설정합니다.')
+      if (priceType === 'base') {
+        // Base Price 타입: products 테이블에서 base_price 조회
+        console.log('Base price 조회 시작:', { productId })
         
-        // 가격 정보가 없으면 0으로 설정
-        setFormData(prev => ({
-          ...prev,
-          adultProductPrice: 0,
-          childProductPrice: 0,
-          infantProductPrice: 0
-        }))
-        
-        setPriceAutoFillMessage('가격 정보가 없어 0으로 설정되었습니다. 수동으로 입력해주세요.')
-        return
-      }
+        const { data: productData, error: productError } = await supabase
+          .from('products')
+          .select('adult_base_price, child_base_price, infant_base_price, base_price')
+          .eq('id', productId)
+          .single()
 
-      const pricing = pricingData[0] as any
-      console.log('Dynamic pricing 데이터 조회 성공:', pricing)
-
-      // 채널 정보 확인
-      const selectedChannel = channels.find(c => c.id === channelId)
-      const isOTAChannel = selectedChannel && (
-        (selectedChannel as any)?.type?.toLowerCase() === 'ota' || 
-        (selectedChannel as any)?.category === 'OTA'
-      )
-      const pricingType = (selectedChannel as any)?.pricing_type || 'separate'
-      const isSinglePrice = pricingType === 'single'
-      
-      console.log('채널 정보:', { channelId, isOTAChannel, pricingType, isSinglePrice })
-
-      // OTA 채널이고 choices_pricing에 ota_sale_price가 있는 경우 사용
-      let adultPrice = (pricing?.adult_price as number) || 0
-      let childPrice = isSinglePrice ? adultPrice : ((pricing?.child_price as number) || 0)
-      let infantPrice = isSinglePrice ? adultPrice : ((pricing?.infant_price as number) || 0)
-
-      if (isOTAChannel && pricing?.choices_pricing) {
-        try {
-          const choicesPricing = typeof pricing.choices_pricing === 'string' 
-            ? JSON.parse(pricing.choices_pricing) 
-            : pricing.choices_pricing
-          
-          console.log('choices_pricing 데이터:', choicesPricing)
-          
-          // choices_pricing에서 ota_sale_price가 있는 첫 번째 초이스 찾기
-          let foundOtaSalePrice = false
-          for (const [choiceId, choiceData] of Object.entries(choicesPricing)) {
-            const data = choiceData as any
-            if (data.ota_sale_price && data.ota_sale_price > 0) {
-              const otaSalePrice = data.ota_sale_price
-              adultPrice = otaSalePrice
-              childPrice = isSinglePrice ? otaSalePrice : (data.child_price || data.child || otaSalePrice)
-              infantPrice = isSinglePrice ? otaSalePrice : (data.infant_price || data.infant || otaSalePrice)
-              foundOtaSalePrice = true
-              console.log('OTA 판매가 사용:', { choiceId, otaSalePrice, adultPrice, childPrice, infantPrice })
-              break
-            }
-          }
-          
-          // ota_sale_price가 없으면 첫 번째 초이스의 일반 가격 사용
-          if (!foundOtaSalePrice) {
-            const firstChoiceId = Object.keys(choicesPricing)[0]
-            if (firstChoiceId && choicesPricing[firstChoiceId]) {
-              const choiceData = choicesPricing[firstChoiceId] as any
-              adultPrice = choiceData.adult_price || choiceData.adult || adultPrice
-              childPrice = isSinglePrice ? adultPrice : (choiceData.child_price || choiceData.child || childPrice)
-              infantPrice = isSinglePrice ? adultPrice : (choiceData.infant_price || choiceData.infant || infantPrice)
-              console.log('초이스 가격 사용 (OTA 판매가 없음):', { firstChoiceId, adultPrice, childPrice, infantPrice })
-            }
-          }
-        } catch (e) {
-          console.warn('choices_pricing 파싱 오류:', e)
+        if (productError) {
+          console.log('Base price 조회 오류:', productError.message)
+          setFormData(prev => ({
+            ...prev,
+            adultProductPrice: 0,
+            childProductPrice: 0,
+            infantProductPrice: 0
+          }))
+          setPriceAutoFillMessage('기본 가격 조회 중 오류가 발생했습니다. 수동으로 입력해주세요.')
+          return
         }
+
+        // base_price가 JSON 형태인 경우 파싱
+        if (productData?.base_price) {
+          try {
+            const basePrice = typeof productData.base_price === 'string' 
+              ? JSON.parse(productData.base_price) 
+              : productData.base_price
+            
+            adultPrice = basePrice.adult || basePrice.adult_price || 0
+            childPrice = basePrice.child || basePrice.child_price || 0
+            infantPrice = basePrice.infant || basePrice.infant_price || 0
+          } catch (e) {
+            console.warn('base_price 파싱 오류:', e)
+          }
+        }
+
+        // adult_base_price, child_base_price, infant_base_price 컬럼이 있는 경우 사용
+        if (productData?.adult_base_price !== undefined && productData?.adult_base_price !== null) {
+          adultPrice = productData.adult_base_price
+        }
+        if (productData?.child_base_price !== undefined && productData?.child_base_price !== null) {
+          childPrice = productData.child_base_price
+        }
+        if (productData?.infant_base_price !== undefined && productData?.infant_base_price !== null) {
+          infantPrice = productData.infant_base_price
+        }
+
+        console.log('Base price 데이터 조회 성공:', { adultPrice, childPrice, infantPrice })
+        // Base price 타입일 때는 불포함 금액을 0으로 설정
+        notIncludedPrice = 0
+        setPriceAutoFillMessage('기본 가격이 자동으로 입력되었습니다!')
+      } else {
+        // Dynamic Price 타입: dynamic_pricing 테이블에서 조회
+        console.log('Dynamic pricing 조회 시작:', { productId, tourDate, channelId })
+        
+        const { data: pricingData, error } = await (supabase as any)
+          .from('dynamic_pricing')
+          .select('adult_price, child_price, infant_price, commission_percent, options_pricing, not_included_price, choices_pricing')
+          .eq('product_id', productId)
+          .eq('date', tourDate)
+          .eq('channel_id', channelId)
+          .limit(1)
+
+        if (error) {
+          console.log('Dynamic pricing 조회 오류:', error.message)
+          setFormData(prev => ({
+            ...prev,
+            adultProductPrice: 0,
+            childProductPrice: 0,
+            infantProductPrice: 0
+          }))
+          setPriceAutoFillMessage('가격 조회 중 오류가 발생했습니다. 수동으로 입력해주세요.')
+          return
+        }
+
+        if (!pricingData || pricingData.length === 0) {
+          console.log('Dynamic pricing 데이터가 없습니다. 가격을 0으로 설정합니다.')
+          setFormData(prev => ({
+            ...prev,
+            adultProductPrice: 0,
+            childProductPrice: 0,
+            infantProductPrice: 0
+          }))
+          setPriceAutoFillMessage('가격 정보가 없어 0으로 설정되었습니다. 수동으로 입력해주세요.')
+          return
+        }
+
+        const pricing = pricingData[0] as any
+        console.log('Dynamic pricing 데이터 조회 성공:', pricing)
+        
+        adultPrice = (pricing?.adult_price as number) || 0
+        commissionPercent = (pricing?.commission_percent as number) || 0
+        notIncludedPrice = (pricing?.not_included_price as number) || 0
+
+        // 채널 정보 확인
+        const selectedChannel = channels.find(c => c.id === channelId)
+        const isOTAChannel = selectedChannel && (
+          (selectedChannel as any)?.type?.toLowerCase() === 'ota' || 
+          (selectedChannel as any)?.category === 'OTA'
+        )
+        const pricingType = (selectedChannel as any)?.pricing_type || 'separate'
+        const isSinglePrice = pricingType === 'single'
+        
+        console.log('채널 정보:', { channelId, isOTAChannel, pricingType, isSinglePrice })
+
+        // OTA 채널이고 choices_pricing에 ota_sale_price가 있는 경우 사용
+        childPrice = isSinglePrice ? adultPrice : ((pricing?.child_price as number) || 0)
+        infantPrice = isSinglePrice ? adultPrice : ((pricing?.infant_price as number) || 0)
+
+        if (isOTAChannel && pricing?.choices_pricing) {
+          try {
+            const choicesPricing = typeof pricing.choices_pricing === 'string' 
+              ? JSON.parse(pricing.choices_pricing) 
+              : pricing.choices_pricing
+            
+            console.log('choices_pricing 데이터:', choicesPricing)
+            
+            // choices_pricing에서 ota_sale_price가 있는 첫 번째 초이스 찾기
+            let foundOtaSalePrice = false
+            for (const [choiceId, choiceData] of Object.entries(choicesPricing)) {
+              const data = choiceData as any
+              if (data.ota_sale_price && data.ota_sale_price > 0) {
+                const otaSalePrice = data.ota_sale_price
+                adultPrice = otaSalePrice
+                childPrice = isSinglePrice ? otaSalePrice : (data.child_price || data.child || otaSalePrice)
+                infantPrice = isSinglePrice ? otaSalePrice : (data.infant_price || data.infant || otaSalePrice)
+                foundOtaSalePrice = true
+                console.log('OTA 판매가 사용:', { choiceId, otaSalePrice, adultPrice, childPrice, infantPrice })
+                break
+              }
+            }
+            
+            // ota_sale_price가 없으면 첫 번째 초이스의 일반 가격 사용
+            if (!foundOtaSalePrice) {
+              const firstChoiceId = Object.keys(choicesPricing)[0]
+              if (firstChoiceId && choicesPricing[firstChoiceId]) {
+                const choiceData = choicesPricing[firstChoiceId] as any
+                adultPrice = choiceData.adult_price || choiceData.adult || adultPrice
+                childPrice = isSinglePrice ? adultPrice : (choiceData.child_price || choiceData.child || childPrice)
+                infantPrice = isSinglePrice ? adultPrice : (choiceData.infant_price || choiceData.infant || infantPrice)
+                console.log('초이스 가격 사용 (OTA 판매가 없음):', { firstChoiceId, adultPrice, childPrice, infantPrice })
+              }
+            }
+          } catch (e) {
+            console.warn('choices_pricing 파싱 오류:', e)
+          }
+        }
+        
+        setPriceAutoFillMessage('Dynamic pricing에서 가격 정보가 자동으로 입력되었습니다!')
       }
-      
+
+
       setFormData(prev => {
         const updated = {
           ...prev,
           adultProductPrice: adultPrice,
           childProductPrice: childPrice,
           infantProductPrice: infantPrice,
-          commission_percent: (pricing?.commission_percent as number) || 0,
-          not_included_price: (pricing?.not_included_price as number) || 0,
+          commission_percent: commissionPercent,
+          not_included_price: notIncludedPrice,
           // Derive OTA per-adult amount when not_included_price is provided
-          onlinePaymentAmount: pricing?.not_included_price != null
-            ? Math.max(0, (adultPrice - (pricing?.not_included_price || 0)) * (prev.adults || 0))
+          onlinePaymentAmount: notIncludedPrice != null && priceType === 'dynamic'
+            ? Math.max(0, (adultPrice - (notIncludedPrice || 0)) * (prev.adults || 0))
             : prev.onlinePaymentAmount || 0
         }
         
@@ -1603,9 +1677,10 @@ export default function ReservationForm({
         })
         
         // OTA 채널인 경우 초이스 가격을 포함하지 않음 (OTA 판매가에 이미 포함됨)
-        const isOTAChannel = selectedChannel && (
-          (selectedChannel as any)?.type?.toLowerCase() === 'ota' || 
-          (selectedChannel as any)?.category === 'OTA'
+        const selectedChannelForCheck = channels.find(c => c.id === channelId)
+        const isOTAChannel = selectedChannelForCheck && (
+          (selectedChannelForCheck as any)?.type?.toLowerCase() === 'ota' || 
+          (selectedChannelForCheck as any)?.category === 'OTA'
         )
         
         // choicesTotal 또는 requiredOptionTotal 사용
@@ -1618,10 +1693,15 @@ export default function ReservationForm({
           optionalOptionTotal += option.price * option.quantity
         })
         
+        // Dynamic Price 타입일 때만 초이스별 불포함 금액 포함
+        const notIncludedTotal = priceType === 'dynamic' 
+          ? (updated.choiceNotIncludedTotal || 0)
+          : 0
+        
         // OTA 채널일 때는 초이스 가격을 포함하지 않음
         const newSubtotal = isOTAChannel 
-          ? newProductPriceTotal + optionalOptionTotal
-          : newProductPriceTotal + optionTotal + optionalOptionTotal
+          ? newProductPriceTotal + optionalOptionTotal + notIncludedTotal
+          : newProductPriceTotal + optionTotal + optionalOptionTotal + notIncludedTotal
         const totalDiscount = updated.couponDiscount + updated.additionalDiscount
         const totalAdditional = updated.additionalCost + updated.cardFee + updated.tax +
           updated.prepaymentCost + updated.prepaymentTip +
@@ -1646,15 +1726,14 @@ export default function ReservationForm({
       console.log('가격 정보가 자동으로 입력되었습니다')
       
       // 사용자에게 알림 표시
-      setPriceAutoFillMessage('Dynamic pricing에서 가격 정보가 자동으로 입력되었습니다!')
       setTimeout(() => setPriceAutoFillMessage(''), 3000)
       
-      // dynamic pricing에서 로드된 경우에도 상태 설정 (쿠폰 자동 선택 방지)
+      // 가격 정보가 로드된 경우 상태 설정 (쿠폰 자동 선택 방지)
       setIsExistingPricingLoaded(true)
     } catch (error) {
       console.error('Dynamic pricing 조회 중 오류:', error)
     }
-  }, [channels, reservationOptionsTotalPrice])
+  }, [channels, reservationOptionsTotalPrice, loadProductChoices])
 
   // 가격 계산 함수들
   const calculateProductPriceTotal = useCallback(() => {
@@ -1722,8 +1801,13 @@ export default function ReservationForm({
     // 선택 옵션(optional options)도 포함
     const optionalOptionTotal = calculateOptionTotal();
     
-    return calculateProductPriceTotal() + optionTotal + optionalOptionTotal;
-  }, [formData.choicesTotal, calculateRequiredOptionTotal, calculateProductPriceTotal, calculateOptionTotal]);
+    // Dynamic Price 타입일 때만 초이스별 불포함 금액 포함
+    const notIncludedTotal = formData.priceType === 'dynamic' 
+      ? (formData.choiceNotIncludedTotal || 0)
+      : 0
+    
+    return calculateProductPriceTotal() + optionTotal + optionalOptionTotal + notIncludedTotal;
+  }, [formData.choicesTotal, formData.priceType, formData.choiceNotIncludedTotal, calculateRequiredOptionTotal, calculateProductPriceTotal, calculateOptionTotal]);
 
   const calculateTotalPrice = useCallback(() => {
     const subtotal = calculateSubtotal()
@@ -1874,10 +1958,10 @@ export default function ReservationForm({
         
         console.log('가격 자동 조회 트리거:', currentParams)
         prevPricingParams.current = currentParams
-        loadPricingInfo(formData.productId, formData.tourDate, formData.channelId, reservation?.id)
+        loadPricingInfo(formData.productId, formData.tourDate, formData.channelId, reservation?.id, formData.priceType || 'dynamic')
       }
     }
-  }, [formData.productId, formData.tourDate, formData.channelId, reservation?.id])
+  }, [formData.productId, formData.tourDate, formData.channelId, formData.priceType, reservation?.id, loadPricingInfo])
 
   // 상품, 날짜, 채널이 변경될 때 쿠폰 자동 선택 (기존 가격 정보가 로드되지 않은 경우에만)
   useEffect(() => {
@@ -1932,7 +2016,12 @@ export default function ReservationForm({
         optionalOptionTotal += option.price * option.quantity
       })
       
-      const newSubtotal = newProductPriceTotal + optionTotal + optionalOptionTotal
+      // Dynamic Price 타입일 때만 초이스별 불포함 금액 포함
+      const notIncludedTotal = prev.priceType === 'dynamic' 
+        ? (prev.choiceNotIncludedTotal || 0)
+        : 0
+      
+      const newSubtotal = newProductPriceTotal + optionTotal + optionalOptionTotal + notIncludedTotal
       const totalDiscount = prev.couponDiscount + prev.additionalDiscount
       const totalAdditional = prev.additionalCost + prev.cardFee + prev.tax +
         prev.prepaymentCost + prev.prepaymentTip +
