@@ -63,6 +63,88 @@ export const ChannelSelector = memo(function ChannelSelector({
       return `${year} (${daysCount}/${totalDays})`;
     }).join(', ');
   };
+
+  // 디버깅: channelPricingStats와 채널 목록 매칭 확인
+  React.useEffect(() => {
+    if (Object.keys(channelPricingStats).length > 0) {
+      const allChannelIds = new Set<string>();
+      const channelIdToName = new Map<string, string>();
+      const channelNameToId = new Map<string, string>();
+      
+      channelGroups.forEach(group => {
+        group.channels.forEach(channel => {
+          allChannelIds.add(channel.id);
+          channelIdToName.set(channel.id, channel.name);
+          // 채널 이름도 정규화해서 저장
+          const normalizedName = channel.name.toLowerCase().trim();
+          channelNameToId.set(normalizedName, channel.id);
+        });
+      });
+      
+      const statsChannelIds = new Set(Object.keys(channelPricingStats));
+      
+      // 채널 ID로 매칭 확인
+      const missingInStatsById = Array.from(allChannelIds).filter(id => !statsChannelIds.has(id));
+      
+      // 채널 이름으로 매칭 확인
+      const missingInStatsByName = Array.from(allChannelIds).filter(id => {
+        if (statsChannelIds.has(id)) return false; // ID로 이미 매칭됨
+        const channelName = channelIdToName.get(id);
+        if (!channelName) return true;
+        const normalizedName = channelName.toLowerCase().trim();
+        return !statsChannelIds.has(normalizedName);
+      });
+      
+      const missingInChannels = Array.from(statsChannelIds).filter(id => {
+        // ID로 매칭 확인
+        if (allChannelIds.has(id)) return false;
+        // 이름으로 매칭 확인
+        const matchingChannelId = Array.from(channelNameToId.entries()).find(([name, chId]) => {
+          return name === id.toLowerCase().trim();
+        });
+        return !matchingChannelId;
+      });
+      
+      // 각 채널의 매칭 상태 확인
+      const channelMatchingStatus = Array.from(allChannelIds).map(id => {
+        const name = channelIdToName.get(id) || '알 수 없음';
+        const matchedById = statsChannelIds.has(id);
+        const normalizedName = name.toLowerCase().trim();
+        const normalizedNameNoParens = normalizedName.replace(/[()]/g, '').replace(/\s+/g, ' ');
+        const matchedByName = statsChannelIds.has(normalizedName) || statsChannelIds.has(normalizedNameNoParens);
+        const matched = matchedById || matchedByName;
+        
+        return {
+          id,
+          name,
+          matchedById,
+          matchedByName,
+          matched,
+          normalizedName,
+          normalizedNameNoParens
+        };
+      });
+
+      // 매칭되지 않은 채널들 상세 정보
+      const unmatchedChannels = channelMatchingStatus.filter(ch => !ch.matched);
+      
+      console.log('ChannelSelector - 통계 매칭 확인:', {
+        totalChannels: allChannelIds.size,
+        totalStats: statsChannelIds.size,
+        matchedChannels: channelMatchingStatus.filter(ch => ch.matched).map(ch => ({ id: ch.id, name: ch.name })),
+        unmatchedChannels: unmatchedChannels.map(ch => ({
+          id: ch.id,
+          name: ch.name,
+          normalizedName: ch.normalizedName,
+          normalizedNameNoParens: ch.normalizedNameNoParens,
+          matchedById: ch.matchedById,
+          matchedByName: ch.matchedByName
+        })),
+        allStatsKeys: Object.keys(channelPricingStats),
+        statsByNameKeys: Object.keys(channelPricingStats).filter(key => !allChannelIds.has(key) && !Array.from(allChannelIds).some(id => id.toLowerCase() === key.toLowerCase()))
+      });
+    }
+  }, [channelPricingStats, channelGroups]);
   if (isLoadingChannels) {
     return (
       <div className="flex items-center justify-center p-4">
@@ -155,7 +237,26 @@ export const ChannelSelector = memo(function ChannelSelector({
             {finalDisplayChannels.map((channel) => {
               const channelAny = channel as any;
               const isSelected = selectedChannel === channel.id;
-              const stats = channelPricingStats[channel.id];
+              // 채널 ID로 먼저 찾고, 없으면 소문자 버전으로, 그 다음 채널 이름으로 찾기
+              let stats = channelPricingStats[channel.id];
+              if (!stats) {
+                // 소문자 버전으로 시도
+                stats = channelPricingStats[channel.id.toLowerCase()];
+              }
+              if (!stats) {
+                // 채널 이름 정규화 (소문자, 공백 제거, 특수문자 제거)
+                const normalizedName = channel.name
+                  .toLowerCase()
+                  .trim()
+                  .replace(/[()]/g, '') // 괄호 제거
+                  .replace(/\s+/g, ' '); // 여러 공백을 하나로
+                stats = channelPricingStats[normalizedName];
+                
+                // 여전히 없으면 원본 이름으로도 시도
+                if (!stats) {
+                  stats = channelPricingStats[channel.name.toLowerCase().trim()];
+                }
+              }
               const statsText = formatPricingStats(stats);
 
               return (
@@ -219,7 +320,26 @@ export const ChannelSelector = memo(function ChannelSelector({
           <div className="space-y-1">
             {otaGroup.channels.map((channel) => {
               const isSelected = selectedChannel === channel.id;
-              const stats = channelPricingStats[channel.id];
+              // 채널 ID로 먼저 찾고, 없으면 소문자 버전으로, 그 다음 채널 이름으로 찾기
+              let stats = channelPricingStats[channel.id];
+              if (!stats) {
+                // 소문자 버전으로 시도
+                stats = channelPricingStats[channel.id.toLowerCase()];
+              }
+              if (!stats) {
+                // 채널 이름 정규화 (소문자, 공백 제거, 특수문자 제거)
+                const normalizedName = channel.name
+                  .toLowerCase()
+                  .trim()
+                  .replace(/[()]/g, '') // 괄호 제거
+                  .replace(/\s+/g, ' '); // 여러 공백을 하나로
+                stats = channelPricingStats[normalizedName];
+                
+                // 여전히 없으면 원본 이름으로도 시도
+                if (!stats) {
+                  stats = channelPricingStats[channel.name.toLowerCase().trim()];
+                }
+              }
               const statsText = formatPricingStats(stats);
 
               return (

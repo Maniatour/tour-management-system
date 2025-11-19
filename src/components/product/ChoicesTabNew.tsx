@@ -1333,6 +1333,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                              src={option.image_url}
                              alt={option.image_alt || option.option_name_ko}
                              fill
+                             sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
                              className={`object-cover transition-all ${
                                dragOverStates[`${groupIndex}-${optionIndex}`]
                                  ? 'scale-105 brightness-110'

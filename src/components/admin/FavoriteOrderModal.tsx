@@ -266,3 +266,4 @@ export default function FavoriteOrderModal({ isOpen, onClose, onUpdate, locale }
   )
 }
 
+

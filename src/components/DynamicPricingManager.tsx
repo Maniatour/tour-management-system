@@ -701,80 +701,138 @@ export default function DynamicPricingManager({
   
   // 채널별 가격 통계 로드 함수 (저장 후에도 호출 가능하도록 분리)
   const loadChannelPricingStats = useCallback(async () => {
-    if (!productId) return;
+    if (!productId) {
+      setChannelPricingStats({});
+      return;
+    }
 
     try {
-      // 모든 채널의 동적 가격 데이터 가져오기
-      const { data, error } = await supabase
-        .from('dynamic_pricing')
-        .select('channel_id, date')
-        .eq('product_id', productId);
+      // dynamic_pricing 테이블에서 채널별 날짜 개수 가져오기 (채널 정보도 JOIN)
+      // 모든 데이터를 가져오기 위해 limit을 크게 설정
+      let allData: any[] = [];
+      let from = 0;
+      const pageSize = 1000;
+      let hasMore = true;
 
-      if (error) {
-        console.error('채널별 가격 통계 로드 오류:', error);
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('dynamic_pricing')
+          .select('channel_id, date, channels(id, name)')
+          .eq('product_id', productId)
+          .range(from, from + pageSize - 1);
+
+        if (error) {
+          console.error('채널별 가격 통계 로드 오류:', error);
+          setChannelPricingStats({});
+          return;
+        }
+
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          hasMore = data.length === pageSize;
+          from += pageSize;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      const data = allData;
+
+      if (!data || data.length === 0) {
+        console.log('동적 가격 데이터가 없습니다.');
+        setChannelPricingStats({});
         return;
       }
 
-      // 날짜 정규화 함수 (YYYY-MM-DD 형식으로 변환)
-      const normalizeDate = (dateStr: string | null | undefined): string | null => {
-        if (!dateStr) return null;
-        
-        const str = String(dateStr).trim();
-        // 이미 YYYY-MM-DD 형식인지 확인
-        if (str.match(/^\d{4}-\d{2}-\d{2}$/)) {
-          return str;
-        }
-        
-        // 날짜 문자열에서 YYYY-MM-DD 추출
-        const dateMatch = str.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
-        if (dateMatch) {
-          const year = dateMatch[1];
-          const month = String(parseInt(dateMatch[2], 10)).padStart(2, '0');
-          const day = String(parseInt(dateMatch[3], 10)).padStart(2, '0');
-          return `${year}-${month}-${day}`;
-        }
-        
-        // Date 객체로 파싱 시도
-        try {
-          const date = new Date(str);
-          if (!isNaN(date.getTime())) {
-            const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const day = String(date.getDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
+      // 채널별로 고유한 channel_id 추출 (디버깅용)
+      const uniqueChannelIds = new Set(data.map(item => item.channel_id).filter(Boolean));
+      const channelInfo = data
+        .filter(item => item.channel_id && item.channels)
+        .map(item => ({
+          id: item.channel_id,
+          name: (item.channels as any)?.name || '알 수 없음'
+        }))
+        .reduce((acc, curr) => {
+          if (!acc[curr.id]) {
+            acc[curr.id] = curr.name;
           }
-        } catch (e) {
-          // 파싱 실패
-        }
-        
-        return null;
-      };
+          return acc;
+        }, {} as Record<string, string>);
+      
+      console.log('dynamic_pricing에 있는 채널 ID들:', Array.from(uniqueChannelIds));
+      console.log('dynamic_pricing 채널 정보:', channelInfo);
 
-      // 채널별로 그룹화하고 연도별 날짜 수 계산
+      // 채널별, 연도별로 고유한 날짜 개수 계산
+      // 같은 채널, 같은 날짜에 여러 레코드가 있어도 하나로 카운트
       const stats: Record<string, Record<string, Set<string>>> = {};
       
-      if (data) {
-        data.forEach((item) => {
-          const channelId = item.channel_id;
-          const normalizedDate = normalizeDate(item.date);
-          
-          if (!normalizedDate) {
-            // 날짜가 유효하지 않으면 건너뛰기
-            return;
-          }
-          
-          const year = normalizedDate.split('-')[0];
+      data.forEach((item) => {
+        const channelId = item.channel_id;
+        const date = item.date;
+        
+        // channel_id와 date가 없으면 건너뛰기
+        if (!channelId || !date) {
+          return;
+        }
 
-          if (!stats[channelId]) {
-            stats[channelId] = {};
+        // date에서 연도 추출
+        let year: string | null = null;
+        
+        // 문자열로 변환
+        const dateStr = String(date).trim();
+        
+        // YYYY-MM-DD 형식에서 연도 추출
+        if (dateStr.match(/^\d{4}-\d{2}-\d{2}/)) {
+          year = dateStr.substring(0, 4);
+        }
+        // YYYY/MM/DD 형식에서 연도 추출
+        else if (dateStr.match(/^\d{4}\/\d{2}\/\d{2}/)) {
+          year = dateStr.substring(0, 4);
+        }
+        // Date 객체인 경우
+        else {
+          try {
+            const dateObj = new Date(dateStr);
+            if (!isNaN(dateObj.getTime())) {
+              year = String(dateObj.getFullYear());
+            }
+          } catch (e) {
+            // 파싱 실패
           }
-          if (!stats[channelId][year]) {
-            stats[channelId][year] = new Set();
+        }
+
+        if (!year || year.length !== 4) {
+          return;
+        }
+
+        // channel_id를 문자열로 정규화 (대소문자 통일)
+        const normalizedChannelId = String(channelId).trim();
+        // 원본 ID와 소문자 버전 모두 저장
+        const lowerChannelId = normalizedChannelId.toLowerCase();
+
+        // 통계 구조 초기화 (원본 ID로 저장)
+        if (!stats[normalizedChannelId]) {
+          stats[normalizedChannelId] = {};
+        }
+        if (!stats[normalizedChannelId][year]) {
+          stats[normalizedChannelId][year] = new Set();
+        }
+        
+        // 날짜를 Set에 추가 (중복 자동 제거)
+        // 같은 날짜에 dynamic과 base가 모두 있어도 하나로 카운트됨
+        stats[normalizedChannelId][year].add(dateStr);
+        
+        // 소문자 버전도 저장 (대소문자 구분 없이 매칭하기 위해)
+        if (lowerChannelId !== normalizedChannelId) {
+          if (!stats[lowerChannelId]) {
+            stats[lowerChannelId] = {};
           }
-          // 정규화된 날짜를 사용하여 중복 제거
-          stats[channelId][year].add(normalizedDate);
-        });
-      }
+          if (!stats[lowerChannelId][year]) {
+            stats[lowerChannelId][year] = new Set();
+          }
+          stats[lowerChannelId][year].add(dateStr);
+        }
+      });
 
       // Set을 개수로 변환
       const formattedStats: Record<string, Record<string, number>> = {};
@@ -785,9 +843,47 @@ export default function DynamicPricingManager({
         });
       });
 
-      setChannelPricingStats(formattedStats);
+      // 채널 이름으로도 매칭 가능하도록 추가
+      // dynamic_pricing에 있는 채널 이름을 키로 사용
+      const statsByName: Record<string, Record<string, number>> = {};
+      Object.keys(formattedStats).forEach(channelId => {
+        const channelName = channelInfo[channelId];
+        if (channelName) {
+          // 채널 이름을 여러 형식으로 정규화해서 저장
+          const normalizedName1 = channelName.toLowerCase().trim();
+          const normalizedName2 = channelName
+            .toLowerCase()
+            .trim()
+            .replace(/[()]/g, '') // 괄호 제거
+            .replace(/\s+/g, ' '); // 여러 공백을 하나로
+          
+          statsByName[normalizedName1] = formattedStats[channelId];
+          if (normalizedName2 !== normalizedName1) {
+            statsByName[normalizedName2] = formattedStats[channelId];
+          }
+        }
+      });
+
+      // ID와 이름 모두 포함한 통계
+      const allStats = {
+        ...formattedStats,
+        ...statsByName
+      };
+
+      console.log('채널별 가격 통계 계산 완료:', {
+        totalRecords: data.length,
+        uniqueChannelIds: Array.from(uniqueChannelIds),
+        statsChannelIds: Object.keys(formattedStats),
+        statsByName: Object.keys(statsByName),
+        stats: formattedStats,
+        allStats: allStats,
+        note: `총 ${data.length}개 레코드 처리됨`
+      });
+
+      setChannelPricingStats(allStats);
     } catch (error) {
       console.error('채널별 가격 통계 로드 오류:', error);
+      setChannelPricingStats({});
     }
   }, [productId]);
 

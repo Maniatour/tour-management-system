@@ -18,3 +18,4 @@ COMMENT ON COLUMN products.favorite_order IS '홈페이지에서 즐겨찾기 �
 CREATE INDEX IF NOT EXISTS idx_products_is_favorite ON products(is_favorite) WHERE is_favorite = true;
 CREATE INDEX IF NOT EXISTS idx_products_favorite_order ON products(favorite_order) WHERE is_favorite = true;
 
+

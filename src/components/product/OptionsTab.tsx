@@ -270,6 +270,7 @@ export default function OptionsTab({
                       src={option.imageUrl}
                       alt={option.imageAlt || option.name}
                       fill
+                      sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 25vw"
                       className={`object-cover transition-all ${
                         dragOverStates[option.id]
                           ? 'scale-105 brightness-110'
