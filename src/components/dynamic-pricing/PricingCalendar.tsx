@@ -211,14 +211,26 @@ export const PricingCalendar = memo(function PricingCalendar({
     if (selectedChannelId) {
       const mappedChannelId = mapChannelId(selectedChannelId);
       filteredRules = rules.filter(r => r.channel_id === mappedChannelId);
+      // 특정 채널이 선택된 경우, 필터링 결과가 없으면 undefined 반환
+      if (filteredRules.length === 0) {
+        // 디버깅: 필터링 결과가 없는 경우
+        console.log(`채널 ${selectedChannelId} (매핑: ${mappedChannelId})에 대한 규칙을 찾을 수 없음:`, {
+          totalRules: rules.length,
+          availableChannels: [...new Set(rules.map(r => r.channel_id))],
+          rules: rules.map(r => ({ id: r.id, channel_id: r.channel_id, date: r.date }))
+        });
+        return undefined;
+      }
     } else if (selectedChannelType === 'SELF') {
       filteredRules = rules.filter(r => r.channel_id?.startsWith('B'));
+      if (filteredRules.length === 0) {
+        return undefined;
+      }
     } else if (selectedChannelType === 'OTA') {
       filteredRules = rules.filter(r => !r.channel_id?.startsWith('B'));
-    }
-
-    if (filteredRules.length === 0) {
-      return rules[0]; // 필터링 결과가 없으면 첫 번째 규칙 반환
+      if (filteredRules.length === 0) {
+        return undefined;
+      }
     }
 
     // notIncludedFilter에 따라 price_type 필터링
@@ -320,7 +332,26 @@ export const PricingCalendar = memo(function PricingCalendar({
     
     const rule = pickRuleForChannel(pricingRules);
     if (!rule) {
+      // 디버깅: 규칙을 찾지 못한 경우
+      if (selectedChannelId) {
+        console.log(`날짜 ${date} - 선택된 채널 ${selectedChannelId}에 대한 규칙을 찾을 수 없음:`, {
+          availableRules: pricingRules.map(r => ({
+            id: r.id,
+            channel_id: r.channel_id,
+            date: r.date
+          }))
+        });
+      }
       return null;
+    }
+    
+    // 선택된 채널이 있는 경우, 규칙의 채널 ID가 일치하는지 확인
+    if (selectedChannelId) {
+      const mappedChannelId = mapChannelId(selectedChannelId);
+      if (rule.channel_id !== mappedChannelId) {
+        console.warn(`날짜 ${date} - 규칙의 채널 ID(${rule.channel_id})가 선택된 채널(${mappedChannelId})과 일치하지 않음`);
+        return null;
+      }
     }
     
     // 3. OTA 채널 여부 확인
@@ -340,7 +371,14 @@ export const PricingCalendar = memo(function PricingCalendar({
           : rule.choices_pricing;
         
         // 선택된 초이스 ID 결정 (선택된 초이스가 있으면 사용, 없으면 첫 번째 초이스)
-        const choiceId = selectedChoice || Object.keys(choicesData)[0];
+        // selectedChoice가 빈 문자열이거나 없으면 첫 번째 초이스 사용
+        let choiceId = selectedChoice;
+        if (!choiceId || choiceId === '') {
+          const firstChoiceId = Object.keys(choicesData)[0];
+          if (firstChoiceId) {
+            choiceId = firstChoiceId;
+          }
+        }
         
         if (choiceId && choicesData[choiceId]) {
           const choiceData = choicesData[choiceId];
@@ -359,7 +397,14 @@ export const PricingCalendar = memo(function PricingCalendar({
         const choicesData = typeof rule.choices_pricing === 'string' 
           ? JSON.parse(rule.choices_pricing) 
           : rule.choices_pricing;
-        const choiceId = selectedChoice || Object.keys(choicesData)[0];
+        // 선택된 초이스 ID 결정 (선택된 초이스가 있으면 사용, 없으면 첫 번째 초이스)
+        let choiceId = selectedChoice;
+        if (!choiceId || choiceId === '') {
+          const firstChoiceId = Object.keys(choicesData)[0];
+          if (firstChoiceId) {
+            choiceId = firstChoiceId;
+          }
+        }
         if (choiceId && choicesData[choiceId] && choicesData[choiceId].not_included_price !== undefined) {
           notIncludedPrice = choicesData[choiceId].not_included_price || 0;
         }
@@ -370,6 +415,7 @@ export const PricingCalendar = memo(function PricingCalendar({
     
     // 6. 최대 판매가 계산
     // choices_pricing이 있으면 basePrice + choicePrice를 사용, 없으면 basePrice만 사용
+    // 홈페이지 채널(M00001)의 경우: 기본가격이 0이고 초이스 가격만 있는 경우도 처리
     const totalBasePrice = basePrice + choicePrice;
     let maxSalePrice = 0;
     if (isOTA && otaSalePrice > 0) {
@@ -377,9 +423,15 @@ export const PricingCalendar = memo(function PricingCalendar({
       maxSalePrice = otaSalePrice;
     } else {
       // 기본 가격 + 초이스 가격 + 마크업
+      // 기본가격이 0이고 초이스 가격만 있는 경우도 처리 (홈페이지 채널 등)
       const markupAmount = rule.markup_amount || 0;
       const markupPercent = rule.markup_percent || 0;
-      maxSalePrice = totalBasePrice + markupAmount + (totalBasePrice * markupPercent / 100);
+      if (totalBasePrice > 0) {
+        maxSalePrice = totalBasePrice + markupAmount + (totalBasePrice * markupPercent / 100);
+      } else if (choicePrice > 0) {
+        // 기본가격이 0이고 초이스 가격만 있는 경우 (홈페이지 채널 등)
+        maxSalePrice = choicePrice + markupAmount + (choicePrice * markupPercent / 100);
+      }
     }
     
     // 7. 할인 가격 계산 (최대 판매가 × (1 - 쿠폰%))

@@ -1700,6 +1700,11 @@ export default function DynamicPricingManager({
 
   // 불포함 금액이 있는지 확인하는 함수
   const hasNotIncludedPrice = (rule: SimplePricingRule): boolean => {
+    // price_type이 'dynamic'이면 불포함 사항 있음
+    if (rule.price_type === 'dynamic') {
+      return true;
+    }
+    
     // 기본 not_included_price 확인
     if (rule.not_included_price && rule.not_included_price > 0) {
       return true;
@@ -1724,6 +1729,57 @@ export default function DynamicPricingManager({
     
     return false;
   };
+
+  // 불포함 사항 필터 자동 설정
+  useEffect(() => {
+    if (dynamicPricingData.length === 0) {
+      return;
+    }
+
+    // 모든 규칙을 확인하여 불포함 사항이 있는 규칙과 없는 규칙이 있는지 확인
+    let hasWithNotIncluded = false;
+    let hasWithoutNotIncluded = false;
+
+    for (const { rules } of dynamicPricingData) {
+      for (const rule of rules) {
+        const hasNotIncluded = hasNotIncludedPrice(rule);
+        if (hasNotIncluded) {
+          hasWithNotIncluded = true;
+        } else {
+          hasWithoutNotIncluded = true;
+        }
+        
+        // 둘 다 찾았으면 더 이상 확인할 필요 없음
+        if (hasWithNotIncluded && hasWithoutNotIncluded) {
+          break;
+        }
+      }
+      
+      if (hasWithNotIncluded && hasWithoutNotIncluded) {
+        break;
+      }
+    }
+
+    // 필터 자동 설정 (현재 값과 다를 때만 변경하여 무한 루프 방지)
+    if (hasWithNotIncluded && hasWithoutNotIncluded) {
+      // 둘 다 있으면 "불포함 사항 있음" 선택
+      if (notIncludedFilter !== 'with') {
+        setNotIncludedFilter('with');
+      }
+    } else if (hasWithNotIncluded) {
+      // 불포함 사항 있는 것만 있으면 "불포함 사항 있음" 선택
+      if (notIncludedFilter !== 'with') {
+        setNotIncludedFilter('with');
+      }
+    } else if (hasWithoutNotIncluded) {
+      // 불포함 사항 없는 것만 있으면 "불포함 사항 없음" 선택
+      if (notIncludedFilter !== 'without') {
+        setNotIncludedFilter('without');
+      }
+    }
+    // 둘 다 없으면 'all'로 유지 (변경하지 않음)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dynamicPricingData]);
 
   // 현재 월의 데이터 필터링
   const currentMonthData = useMemo(() => {
