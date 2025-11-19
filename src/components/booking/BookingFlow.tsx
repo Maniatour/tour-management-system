@@ -621,10 +621,13 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         setLoading(true)
         
         // 1. 먼저 dynamic_pricing에서 해당 상품의 모든 날짜들을 조회 (가격 정보 및 초이스 판매 상태 포함)
+        // 홈페이지 예약의 경우 기본 채널 'M00001' 사용, 동적 가격 타입만 조회
         const { data: pricingData, error: pricingError } = await supabase
           .from('dynamic_pricing')
-          .select('date, is_sale_available, adult_price, child_price, infant_price, choices_pricing')
+          .select('date, is_sale_available, adult_price, child_price, infant_price, choices_pricing, price_type')
           .eq('product_id', product.id)
+          .eq('channel_id', 'M00001') // 홈페이지 채널로 필터링
+          .eq('price_type', 'dynamic') // 동적 가격만 조회 (기본 가격 제외)
           .gte('date', new Date().toISOString().split('T')[0])
           .order('date', { ascending: true })
 
@@ -1230,8 +1233,8 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
   }, [bookingData.tourDate, bookingData.selectedOptions, choiceAvailability, requiredChoices])
 
   // 가격 계산
-  const calculateTotalPrice = () => {
-    // 선택된 날짜의 동적 가격 사용 (있으면)
+  // Base price만 계산 (초이스 가격 제외)
+  const calculateBasePrice = () => {
     const basePrice = product.base_price || 0
     
     if (bookingData.tourDate && datePrices[bookingData.tourDate]) {
@@ -1241,57 +1244,58 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
       const childTotal = (pricing.child_price || 0) * bookingData.participants.children
       const infantTotal = (pricing.infant_price || 0) * bookingData.participants.infants
       
-      let totalPrice = adultTotal + childTotal + infantTotal
-      
-      // 선택된 옵션 가격 추가 (필수 + 추가 선택)
-      const allChoices = [...requiredChoices, ...optionalChoices]
-      allChoices.forEach((group: ChoiceGroup) => {
-        const selectedOptionId = bookingData.selectedOptions[group.choice_id]
-        if (selectedOptionId) {
-          const option = group.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionId)
-          if (option && option.option_price) {
-            // 옵션 가격도 인원수에 따라 곱하기
-            const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
-            totalPrice += option.option_price * totalParticipants
-          }
-        }
-      })
-      
-      return totalPrice
+      return adultTotal + childTotal + infantTotal
     } else {
       // 동적 가격이 없으면 기존 로직 사용
-      let totalPrice = basePrice
-      
-      // 선택된 옵션 가격 추가 (필수 + 추가 선택)
-      const allChoices = [...requiredChoices, ...optionalChoices]
-      allChoices.forEach((group: ChoiceGroup) => {
-        const selectedOptionId = bookingData.selectedOptions[group.choice_id]
-        if (selectedOptionId) {
-          const option = group.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionId)
-          if (option && option.option_price) {
-            totalPrice += option.option_price
-          }
-        }
-      })
-
-      // 인원별 가격 계산 (성인 기준)
       const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
-      return totalPrice * totalParticipants
+      return basePrice * totalParticipants
     }
   }
 
-  // 쿠폰 할인 계산 함수
-  const calculateCouponDiscount = useCallback((coupon: Coupon | null, subtotal: number) => {
+  // 초이스 가격 계산
+  const calculateChoicesPrice = () => {
+    let choicesTotal = 0
+    const allChoices = [...requiredChoices, ...optionalChoices]
+    
+    allChoices.forEach((group: ChoiceGroup) => {
+      const selectedOptionId = bookingData.selectedOptions[group.choice_id]
+      if (selectedOptionId) {
+        const option = group.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionId)
+        if (option && option.option_price) {
+          if (bookingData.tourDate && datePrices[bookingData.tourDate]) {
+            // 동적 가격이 있는 경우 인원수에 따라 곱하기
+            const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
+            choicesTotal += option.option_price * totalParticipants
+          } else {
+            // 동적 가격이 없는 경우
+            const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
+            choicesTotal += option.option_price * totalParticipants
+          }
+        }
+      }
+    })
+    
+    return choicesTotal
+  }
+
+  const calculateTotalPrice = () => {
+    return calculateBasePrice() + calculateChoicesPrice()
+  }
+
+  // 쿠폰 할인 계산 함수 (base price에만 적용)
+  const calculateCouponDiscount = useCallback((coupon: Coupon | null) => {
     if (!coupon) return 0
     
+    const basePrice = calculateBasePrice()
+    
     if (coupon.discount_type === 'percentage' && coupon.percentage_value) {
-      return (subtotal * (Number(coupon.percentage_value) || 0)) / 100
+      return (basePrice * (Number(coupon.percentage_value) || 0)) / 100
     } else if (coupon.discount_type === 'fixed' && coupon.fixed_value) {
       return Number(coupon.fixed_value) || 0
     }
     
     return 0
-  }, [])
+  }, [bookingData.tourDate, bookingData.participants, datePrices, product.base_price])
 
   // 쿠폰 검증 및 적용 함수
   const handleApplyCoupon = async () => {
@@ -1304,21 +1308,24 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
     setCouponError('')
 
     try {
+      // 쿠폰 할인은 base price에만 적용되므로 base price만 전송
+      const basePrice = calculateBasePrice()
       const response = await fetch('/api/coupons/validate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          couponCode: couponCode.toUpperCase(),
-          productId: product.id,
+          couponCode: couponCode.trim(), // 대소문자 구분 없이 처리 (API에서 처리)
+          totalAmount: basePrice, // base price만 전송 (초이스 가격 제외)
+          productIds: [product.id], // productId를 배열로 변환
         }),
       })
 
       const data = await response.json()
 
       if (!response.ok || !data.valid) {
-        setCouponError(data.message || translate('유효하지 않은 쿠폰입니다.', 'Invalid coupon code.'))
+        setCouponError(data.error || data.message || translate('유효하지 않은 쿠폰입니다.', 'Invalid coupon code.'))
         setAppliedCoupon(null)
         return
       }
@@ -1343,9 +1350,11 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
 
   // 쿠폰 할인이 적용된 최종 가격 계산
   const calculateFinalPrice = () => {
-    const subtotal = calculateTotalPrice()
-    const discount = appliedCoupon ? calculateCouponDiscount(appliedCoupon, subtotal) : 0
-    return Math.max(0, subtotal - discount)
+    const basePrice = calculateBasePrice()
+    const choicesPrice = calculateChoicesPrice()
+    const discount = appliedCoupon ? calculateCouponDiscount(appliedCoupon) : 0
+    // 쿠폰 할인은 base price에만 적용되므로, base price에서 할인을 빼고 choices price를 더함
+    return Math.max(0, basePrice - discount) + choicesPrice
   }
 
   // 전화번호를 국제 형식으로 변환하는 함수
@@ -2551,6 +2560,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                 src={group.choice_thumbnail_url || group.choice_image_url}
                                 alt={isEnglish ? group.choice_name_en || group.choice_name : group.choice_name_ko || group.choice_name}
                                 fill
+                                sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
                                 className="object-cover"
                                 onError={() => {
                                   // 이미지 로드 실패 시 처리
@@ -2914,7 +2924,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                     {appliedCoupon && (
                       <div className="flex justify-between text-sm mb-2">
                         <span className="text-gray-600">{translate('쿠폰 할인', 'Coupon Discount')}</span>
-                        <span className="text-red-600">-${calculateCouponDiscount(appliedCoupon, calculateTotalPrice()).toFixed(2)}</span>
+                        <span className="text-red-600">-${calculateCouponDiscount(appliedCoupon).toFixed(2)}</span>
                       </div>
                     )}
                     <div className="flex justify-between font-semibold text-lg">
@@ -2938,7 +2948,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                         type="text"
                         value={couponCode}
                         onChange={(e) => {
-                          setCouponCode(e.target.value.toUpperCase())
+                          setCouponCode(e.target.value) // 대소문자 구분 없이 처리하므로 원본 그대로 저장
                           setCouponError('')
                         }}
                         placeholder={translate('쿠폰 코드 입력', 'Enter coupon code')}

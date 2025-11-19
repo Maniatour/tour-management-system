@@ -477,31 +477,40 @@ export async function getProductDetailsData(reservationId: string, language: 'ko
     console.log(`상품 세부정보 조회 시도: product_id=${reservation.product_id}, language=${language}`)
 
     // 상품의 다국어 세부정보 데이터 가져오기
-    const { data: productDetails, error: detailsError } = await supabase
+    // channel_id가 NULL인 공통 정보를 우선적으로 가져오기
+    let productDetails: any = null
+    
+    // 먼저 channel_id가 NULL인 공통 정보 조회
+    const { data: commonDetails, error: commonError } = await supabase
       .from('product_details_multilingual')
       .select('*')
       .eq('product_id', reservation.product_id)
       .eq('language_code', language)
-      .single()
-
-    if (detailsError) {
-      console.error('상품 세부정보 조회 실패:', {
-        error: detailsError,
-        product_id: reservation.product_id,
-        language: language,
-        error_code: detailsError.code,
-        error_message: detailsError.message
-      })
+      .is('channel_id', null)
+      .limit(1)
+    
+    if (!commonError && commonDetails && commonDetails.length > 0) {
+      productDetails = commonDetails[0]
+    } else {
+      // 공통 정보가 없으면 channel_id가 있는 것 중 첫 번째 가져오기
+      const { data: channelDetails, error: channelError } = await supabase
+        .from('product_details_multilingual')
+        .select('*')
+        .eq('product_id', reservation.product_id)
+        .eq('language_code', language)
+        .limit(1)
       
-      // 데이터가 없는 경우 빈 객체 반환 (오류가 아닌 경우)
-      if (detailsError.code === 'PGRST116') {
-        console.log(`상품 ID ${reservation.product_id}의 ${language} 언어 세부정보가 없습니다. 빈 객체를 반환합니다.`)
+      if (!channelError && channelDetails && channelDetails.length > 0) {
+        productDetails = channelDetails[0]
+      } else {
+        console.error('상품 세부정보 조회 실패:', {
+          error: channelError,
+          product_id: reservation.product_id,
+          language: language
+        })
+        // 데이터가 없는 경우 빈 객체 반환
         return {}
       }
-      
-      // 다른 오류의 경우에도 빈 객체를 반환하여 템플릿이 계속 작동하도록 함
-      console.warn('상품 세부정보 조회 오류가 발생했지만 템플릿 작동을 위해 빈 객체를 반환합니다.')
-      return {}
     }
 
     if (!productDetails) {

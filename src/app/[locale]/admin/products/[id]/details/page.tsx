@@ -101,15 +101,34 @@ export default function ProductDetailsPage() {
 
         // 상품 세부정보 로드
         // 한국어 데이터를 기본으로 로드
-        const { data: detailsData, error: detailsError } = await supabase
+        // channel_id가 NULL인 공통 정보를 우선적으로 가져오기
+        let detailsData: any = null
+        
+        // 먼저 channel_id가 NULL인 공통 정보 조회
+        const { data: commonDetails, error: commonError } = await supabase
           .from('product_details_multilingual')
           .select('*')
           .eq('product_id', productId)
           .eq('language_code', 'ko')
-          .maybeSingle()
-
-        if (detailsError && detailsError.code !== 'PGRST116') { // PGRST116은 "not found" 오류
-          throw detailsError
+          .is('channel_id', null)
+          .limit(1)
+        
+        if (!commonError && commonDetails && commonDetails.length > 0) {
+          detailsData = commonDetails[0]
+        } else {
+          // 공통 정보가 없으면 channel_id가 있는 것 중 첫 번째 가져오기
+          const { data: channelDetails, error: channelError } = await supabase
+            .from('product_details_multilingual')
+            .select('*')
+            .eq('product_id', productId)
+            .eq('language_code', 'ko')
+            .limit(1)
+          
+          if (!channelError && channelDetails && channelDetails.length > 0) {
+            detailsData = channelDetails[0]
+          } else if (channelError && channelError.code !== 'PGRST116') {
+            throw channelError
+          }
         }
 
         if (detailsData) {

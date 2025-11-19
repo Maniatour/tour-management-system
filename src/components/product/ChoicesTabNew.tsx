@@ -126,6 +126,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   const [showTemplateInfoModal, setShowTemplateInfoModal] = useState(false)
   const [showTypeInfoModal, setShowTypeInfoModal] = useState(false)
   const [showExportTemplateModal, setShowExportTemplateModal] = useState(false)
+  const [selectedChoiceIds, setSelectedChoiceIds] = useState<Set<string>>(new Set())
   const [uploadingImages, setUploadingImages] = useState<{[key: string]: boolean}>({})
   const [dragOverStates, setDragOverStates] = useState<{[key: string]: boolean}>({})
   const [draggedGroupIndex, setDraggedGroupIndex] = useState<number | null>(null)
@@ -903,8 +904,12 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   }, [importData])
 
   // 초이스를 템플릿으로 내보내기
-  const exportChoicesAsTemplates = useCallback(async () => {
-    if (productChoices.length === 0) {
+  const exportChoicesAsTemplates = useCallback(async (selectedIds?: Set<string>) => {
+    const choicesToExport = selectedIds && selectedIds.size > 0
+      ? productChoices.filter(choice => selectedIds.has(choice.id))
+      : productChoices
+
+    if (choicesToExport.length === 0) {
       alert('내보낼 초이스가 없습니다.')
       return
     }
@@ -925,7 +930,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
 
       // 각 초이스 그룹을 템플릿으로 변환
       let exportedCount = 0
-      for (const choice of productChoices) {
+      for (const choice of choicesToExport) {
         const templateGroupKo = choice.choice_group_ko || choice.choice_group || '템플릿'
         // template_group은 영문 키로 변환 (URL-friendly)
         const templateGroup = choice.choice_group || 
@@ -998,6 +1003,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
 
       setSaveMessage(`${exportedCount}개의 초이스가 템플릿으로 성공적으로 내보내졌습니다. 옵션 관리 > 초이스 관리에서 확인할 수 있습니다.`)
       setShowExportTemplateModal(false)
+      setSelectedChoiceIds(new Set())
     } catch (error) {
       console.error('Error exporting choices as templates:', error)
       setSaveMessage('템플릿 내보내기 중 오류가 발생했습니다.')
@@ -1662,9 +1668,14 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
       {/* 템플릿으로 내보내기 모달 */}
       {showExportTemplateModal && (
         <ExportTemplateModal
-          onExport={exportChoicesAsTemplates}
-          onClose={() => setShowExportTemplateModal(false)}
-          choiceCount={productChoices.length}
+          onExport={() => exportChoicesAsTemplates(selectedChoiceIds)}
+          onClose={() => {
+            setShowExportTemplateModal(false)
+            setSelectedChoiceIds(new Set())
+          }}
+          productChoices={productChoices}
+          selectedChoiceIds={selectedChoiceIds}
+          setSelectedChoiceIds={setSelectedChoiceIds}
         />
       )}
     </div>
@@ -1875,19 +1886,94 @@ function CopyToModal({ products, selectedTargetProductId, setSelectedTargetProdu
 interface ExportTemplateModalProps {
   onExport: () => void
   onClose: () => void
-  choiceCount: number
+  productChoices: ProductChoice[]
+  selectedChoiceIds: Set<string>
+  setSelectedChoiceIds: (ids: Set<string>) => void
 }
 
-function ExportTemplateModal({ onExport, onClose, choiceCount }: ExportTemplateModalProps) {
+function ExportTemplateModal({ onExport, onClose, productChoices, selectedChoiceIds, setSelectedChoiceIds }: ExportTemplateModalProps) {
+  const handleToggleAll = () => {
+    if (selectedChoiceIds.size === productChoices.length) {
+      setSelectedChoiceIds(new Set())
+    } else {
+      setSelectedChoiceIds(new Set(productChoices.map(choice => choice.id)))
+    }
+  }
+
+  const handleToggleChoice = (choiceId: string) => {
+    const newSelected = new Set(selectedChoiceIds)
+    if (newSelected.has(choiceId)) {
+      newSelected.delete(choiceId)
+    } else {
+      newSelected.add(choiceId)
+    }
+    setSelectedChoiceIds(newSelected)
+  }
+
+  const selectedCount = selectedChoiceIds.size
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-96">
+      <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <h3 className="text-lg font-medium text-gray-900 mb-4">템플릿으로 내보내기</h3>
         <div className="space-y-4">
           <div className="text-sm text-gray-600">
-            <p>현재 상품의 초이스 {choiceCount}개를 템플릿으로 내보냅니다.</p>
+            <p>내보낼 초이스 그룹을 선택하세요.</p>
             <p className="mt-2">내보낸 템플릿은 <strong>옵션 관리 &gt; 초이스 관리</strong>에서 확인할 수 있으며, 다른 상품에서도 사용할 수 있습니다.</p>
           </div>
+
+          {/* 전체 선택/해제 */}
+          <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+            <label className="flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selectedChoiceIds.size === productChoices.length && productChoices.length > 0}
+                onChange={handleToggleAll}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <span className="ml-2 text-sm font-medium text-gray-700">
+                전체 선택 ({selectedCount}/{productChoices.length})
+              </span>
+            </label>
+          </div>
+
+          {/* 초이스 그룹 목록 */}
+          <div className="border border-gray-200 rounded-lg max-h-96 overflow-y-auto">
+            {productChoices.length === 0 ? (
+              <div className="p-4 text-center text-gray-500 text-sm">
+                내보낼 초이스 그룹이 없습니다.
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-200">
+                {productChoices.map((choice) => (
+                  <label
+                    key={choice.id}
+                    className="flex items-start p-4 hover:bg-gray-50 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedChoiceIds.has(choice.id)}
+                      onChange={() => handleToggleChoice(choice.id)}
+                      className="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    <div className="ml-3 flex-1">
+                      <div className="font-medium text-gray-900">
+                        {choice.choice_group_ko || choice.choice_group || '이름 없음'}
+                      </div>
+                      <div className="text-sm text-gray-500 mt-1">
+                        타입: {choice.choice_type === 'single' ? '단일 선택' : choice.choice_type === 'multiple' ? '다중 선택' : '수량 선택'} | 
+                        초이스 {choice.options?.length || 0}개
+                        {choice.is_required && (
+                          <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-800 text-xs rounded">필수</span>
+                        )}
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
             <p className="text-xs text-yellow-800">
               <strong>주의:</strong> 같은 이름의 템플릿 그룹이 이미 존재하는 경우 덮어쓰기 여부를 확인합니다.
@@ -1903,9 +1989,10 @@ function ExportTemplateModal({ onExport, onClose, choiceCount }: ExportTemplateM
           </button>
           <button
             onClick={onExport}
-            className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700"
+            disabled={selectedCount === 0}
+            className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
-            내보내기
+            내보내기 ({selectedCount}개)
           </button>
         </div>
       </div>

@@ -101,27 +101,6 @@ const NavigationContent = () => {
               <Home className="w-4 h-4 mr-2" />
               {t('home')}
             </Link>
-            <Link 
-              href={`/${locale}/products`}
-              className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              <Calendar className="w-4 h-4 mr-2" />
-              {t('products')}
-            </Link>
-            <Link 
-              href={`/${locale}/products/tags`}
-              className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              <span className="w-4 h-4 mr-2">🏷️</span>
-              태그별 모아보기
-            </Link>
-            <Link 
-              href={`/${locale}/reservation-check`}
-              className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              <Search className="w-4 h-4 mr-2" />
-              예약 확인
-            </Link>
             <LanguageSwitcher />
             
             {/* 인증 상태에 따른 메뉴 */}
@@ -401,22 +380,6 @@ const NavigationContent = () => {
               >
                 <Home className="w-4 h-4 mr-3" />
                 {t('home')}
-              </Link>
-              <Link 
-                href={`/${locale}/products`}
-                className="flex items-center text-gray-600 hover:text-gray-900 transition-colors px-2 py-2"
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                <Calendar className="w-4 h-4 mr-3" />
-                {t('products')}
-              </Link>
-              <Link 
-                href={`/${locale}/reservation-check`}
-                className="flex items-center text-gray-600 hover:text-gray-900 transition-colors px-2 py-2"
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                <Search className="w-4 h-4 mr-3" />
-                예약 확인
               </Link>
               
               {/* 인증 상태에 따른 메뉴 */}

@@ -605,54 +605,62 @@ export default function ProductDetailPage() {
         setProduct(productData)
         
         // 2. 다국어 상세 정보 가져오기
-        const { data: detailsData, error: detailsError, status: detailsStatus } = await supabase
+        // channel_id가 NULL인 공통 정보를 우선적으로 가져오기
+        let detailsData: any = null
+        let detailsError: any = null
+        
+        // 먼저 channel_id가 NULL인 공통 정보 조회
+        const { data: commonDetails, error: commonError } = await supabase
           .from('product_details_multilingual')
           .select('*')
           .eq('product_id', productId)
           .eq('language_code', locale)
+          .is('channel_id', null)
           .limit(1)
-          .maybeSingle()
         
-        if (!detailsError && detailsData) {
+        if (!commonError && commonDetails && commonDetails.length > 0) {
+          detailsData = commonDetails[0]
+        } else {
+          // 공통 정보가 없으면 channel_id가 있는 것 중 첫 번째 가져오기
+          const { data: channelDetails, error: channelError } = await supabase
+            .from('product_details_multilingual')
+            .select('*')
+            .eq('product_id', productId)
+            .eq('language_code', locale)
+            .limit(1)
+          
+          if (!channelError && channelDetails && channelDetails.length > 0) {
+            detailsData = channelDetails[0]
+          } else {
+            detailsError = channelError
+          }
+        }
+        
+        if (detailsData) {
           setProductDetails(detailsData)
-        } else if (detailsError) {
-          // PGRST116은 여러 행이 반환되었을 때 발생 (이미 .limit(1)로 처리했지만 혹시 모를 경우 대비)
-          if (detailsError.code === 'PGRST116') {
-            // 여러 행이 있으면 첫 번째 행을 가져오기
-            const { data: multipleDetails } = await supabase
-              .from('product_details_multilingual')
-              .select('*')
-              .eq('product_id', productId)
-              .eq('language_code', locale)
-              .limit(1)
-            
-            if (multipleDetails && multipleDetails.length > 0) {
-              setProductDetails(multipleDetails[0])
-            } else if (locale !== 'ko') {
-              // 폴백: 한국어로 시도
-              const { data: fallbackDetails } = await supabase
-                .from('product_details_multilingual')
-                .select('*')
-                .eq('product_id', productId)
-                .eq('language_code', 'ko')
-                .limit(1)
-              
-              if (fallbackDetails && fallbackDetails.length > 0) {
-                setProductDetails(fallbackDetails[0])
-              }
-            }
-          } else if ((detailsStatus === 404 || detailsStatus === 406) && locale !== 'ko') {
-            // 데이터가 없을 때 폴백 시도
-            const { data: fallbackDetails, error: fallbackError } = await supabase
+        } else if (locale !== 'ko') {
+          // 폴백: 한국어로 시도
+          const { data: fallbackDetails } = await supabase
+            .from('product_details_multilingual')
+            .select('*')
+            .eq('product_id', productId)
+            .eq('language_code', 'ko')
+            .is('channel_id', null)
+            .limit(1)
+          
+          if (fallbackDetails && fallbackDetails.length > 0) {
+            setProductDetails(fallbackDetails[0])
+          } else {
+            // 한국어 channel_id가 있는 것 중 첫 번째 가져오기
+            const { data: koChannelDetails } = await supabase
               .from('product_details_multilingual')
               .select('*')
               .eq('product_id', productId)
               .eq('language_code', 'ko')
               .limit(1)
-              .maybeSingle()
-
-            if (!fallbackError && fallbackDetails) {
-              setProductDetails(fallbackDetails)
+            
+            if (koChannelDetails && koChannelDetails.length > 0) {
+              setProductDetails(koChannelDetails[0])
             }
           }
         }
@@ -869,9 +877,12 @@ export default function ProductDetailPage() {
             setProductChoices([])
           } else if (fallbackChoices) {
             const flattenedChoices: ProductChoice[] = fallbackChoices.flatMap((choice: any) => {
-              const choiceName = choice.choice_group || ''
+              // 로케일에 맞는 초이스 그룹명 우선 사용 (템플릿을 사용하지 않은 경우 choice_group이 아이디일 수 있음)
               const choiceNameKo = choice.choice_group_ko || null
               const choiceNameEn = choice.choice_group_en || null
+              // choice_name은 나중에 groupedChoices에서 로케일에 맞게 설정되므로, 여기서는 기본값만 설정
+              // choice_group이 아이디인지 확인 (한글/영어 이름이 없으면 choice_group 사용)
+              const choiceName = choiceNameKo || choiceNameEn || choice.choice_group || ''
               const choiceType = choice.choice_type || 'single'
               const options = Array.isArray(choice.options) ? choice.options.filter((opt: any) => opt.is_active !== false) : []
 
@@ -879,7 +890,7 @@ export default function ProductDetailPage() {
                 product_id: choice.product_id,
                 product_name: product?.name || product?.customer_name_ko || '',
                 choice_id: choice.id,
-                choice_name: choiceName,
+                choice_name: choiceName, // 기본값 (나중에 groupedChoices에서 로케일에 맞게 재설정됨)
                 choice_name_ko: choiceNameKo,
                 choice_name_en: choiceNameEn,
                 choice_type: choiceType,
@@ -1113,9 +1124,14 @@ export default function ProductDetailPage() {
   const groupedChoices = productChoices.reduce((groups, choice) => {
     const groupKey = choice.choice_id
     if (!groups[groupKey]) {
+      // 로케일에 맞는 초이스 그룹명 우선 사용
+      const displayName = isEnglish 
+        ? (choice.choice_name_en || choice.choice_name_ko || choice.choice_name)
+        : (choice.choice_name_ko || choice.choice_name_en || choice.choice_name)
+      
       groups[groupKey] = {
         choice_id: choice.choice_id,
-        choice_name: choice.choice_name,
+        choice_name: displayName, // 로케일에 맞는 이름으로 설정
         choice_name_ko: choice.choice_name_ko,
         choice_name_en: choice.choice_name_en || null,
         choice_type: choice.choice_type,
@@ -2036,7 +2052,7 @@ export default function ProductDetailPage() {
                         return (
                           <div key={group.choice_id} className="flex justify-between text-sm">
                             <span className="text-gray-600">
-                              {isEnglish ? group.choice_name || group.choice_name_ko : group.choice_name_ko || group.choice_name}
+                              {group.choice_name}
                             </span>
                             <span className="font-medium text-gray-900">
                               +${option.option_price}
@@ -2091,7 +2107,7 @@ export default function ProductDetailPage() {
                     {Object.values(groupedChoices).map((group: ChoiceGroup) => (
                       <div key={group.choice_id}>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {isEnglish ? group.choice_name || group.choice_name_ko : group.choice_name_ko || group.choice_name}
+                          {group.choice_name}
                         </label>
                         <select
                           value={selectedOptions[group.choice_id] || ''}
@@ -2244,7 +2260,7 @@ export default function ProductDetailPage() {
                   return (
                     <div key={group.choice_id} className="border-b border-gray-200 pb-6 last:border-b-0 last:pb-0">
                       <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                        {isEnglish ? group.choice_name_en || group.choice_name || group.choice_name_ko : group.choice_name_ko || group.choice_name}
+                        {group.choice_name}
                       </h3>
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                         <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
