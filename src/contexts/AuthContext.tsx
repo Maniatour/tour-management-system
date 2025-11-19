@@ -256,12 +256,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const savedSimulation = localStorage.getItem('positionSimulation')
     const simulationEndTime = localStorage.getItem('simulationEndTime')
     
-    // 시뮬레이션 종료 시점이 있으면 복원하지 않음
+    // 시뮬레이션 종료 시점이 있으면 복원하지 않음 (더 엄격하게 체크)
     if (simulationEndTime) {
-      console.log('AuthContext: Simulation was ended, not restoring:', simulationEndTime)
-      // 종료 시점 기록도 정리
-      localStorage.removeItem('simulationEndTime')
-      return
+      const endTime = parseInt(simulationEndTime, 10)
+      const now = Date.now()
+      // 종료 시점이 1시간 이내면 복원하지 않음 (더 엄격한 정책)
+      if (!isNaN(endTime) && (now - endTime) < 3600000) {
+        console.log('AuthContext: Simulation was ended recently, not restoring:', simulationEndTime)
+        // 종료 시점 기록은 유지 (다음 새로고침에서도 차단)
+        return
+      } else {
+        // 1시간 이상 지났으면 종료 시점 기록 정리
+        localStorage.removeItem('simulationEndTime')
+        sessionStorage.removeItem('simulationEndTime')
+      }
     }
     
     if (savedSimulation) {
@@ -279,11 +287,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const sessionSimulation = sessionStorage.getItem('positionSimulation')
       const sessionEndTime = sessionStorage.getItem('simulationEndTime')
       
-      // sessionStorage에서도 종료 시점이 있으면 복원하지 않음
+      // sessionStorage에서도 종료 시점이 있으면 복원하지 않음 (더 엄격하게 체크)
       if (sessionEndTime) {
-        console.log('AuthContext: Simulation was ended in session, not restoring:', sessionEndTime)
-        sessionStorage.removeItem('simulationEndTime')
-        return
+        const endTime = parseInt(sessionEndTime, 10)
+        const now = Date.now()
+        if (!isNaN(endTime) && (now - endTime) < 3600000) {
+          console.log('AuthContext: Simulation was ended recently in session, not restoring:', sessionEndTime)
+          return
+        } else {
+          sessionStorage.removeItem('simulationEndTime')
+        }
       }
       
       if (sessionSimulation) {
@@ -307,11 +320,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const simulationUserCookie = cookies.find(cookie => cookie.trim().startsWith('simulation_user='))
       const simulationEndCookie = cookies.find(cookie => cookie.trim().startsWith('simulation_end_time='))
       
-      // 쿠키에서도 종료 시점이 있으면 복원하지 않음
+      // 쿠키에서도 종료 시점이 있으면 복원하지 않음 (더 엄격하게 체크)
       if (simulationEndCookie) {
-        console.log('AuthContext: Simulation was ended in cookies, not restoring')
-        document.cookie = 'simulation_end_time=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
-        return
+        const cookieValue = simulationEndCookie.split('=')[1]
+        const endTime = parseInt(cookieValue, 10)
+        const now = Date.now()
+        if (!isNaN(endTime) && (now - endTime) < 3600000) {
+          console.log('AuthContext: Simulation was ended recently in cookies, not restoring')
+          return
+        } else {
+          // 1시간 이상 지났으면 쿠키 정리
+          const cookiePaths = ['/', '/ko', '/en']
+          cookiePaths.forEach(path => {
+            document.cookie = `simulation_end_time=; path=${path}; expires=Thu, 01 Jan 1970 00:00:00 GMT`
+          })
+        }
       }
       
       if (simulationActiveCookie && simulationUserCookie) {
@@ -775,6 +798,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
       
+      // 시뮬레이션 상태도 함께 초기화
+      stopSimulation()
+      
       await supabase.auth.signOut()
       
       // localStorage에서 토큰 제거
@@ -829,24 +855,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSimulatedUser(null)
       setIsSimulating(false)
       
-      // 시뮬레이션 종료 시점 기록
+      // 시뮬레이션 종료 시점 기록 (더 긴 만료 시간으로 설정하여 확실히 차단)
       const endTime = Date.now()
       localStorage.setItem('simulationEndTime', endTime.toString())
       sessionStorage.setItem('simulationEndTime', endTime.toString())
-      document.cookie = `simulation_end_time=${endTime}; path=/; max-age=3600; SameSite=Lax`
+      document.cookie = `simulation_end_time=${endTime}; path=/; max-age=86400; SameSite=Lax` // 24시간
       
-      // 로컬 스토리지 정리
+      // 로컬 스토리지 정리 (모든 가능한 키 제거)
       localStorage.removeItem('positionSimulation')
       sessionStorage.removeItem('positionSimulation')
-      
-      // 쿠키도 정리
-      document.cookie = 'simulation_active=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
-      document.cookie = 'simulation_user=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
-      document.cookie = 'simulation_end_time=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'
-      
-      // 추가적인 정리 작업
       localStorage.removeItem('simulation_active')
       sessionStorage.removeItem('simulation_active')
+      
+      // 쿠키도 정리 (모든 경로에서)
+      const cookiePaths = ['/', '/ko', '/en']
+      cookiePaths.forEach(path => {
+        document.cookie = `simulation_active=; path=${path}; expires=Thu, 01 Jan 1970 00:00:00 GMT`
+        document.cookie = `simulation_user=; path=${path}; expires=Thu, 01 Jan 1970 00:00:00 GMT`
+        document.cookie = `simulation_end_time=; path=${path}; expires=Thu, 01 Jan 1970 00:00:00 GMT`
+      })
+      
+      // 전역 이벤트 발생하여 다른 컴포넌트에 알림
+      window.dispatchEvent(new CustomEvent('simulationStopped'))
       
       console.log('시뮬레이션 중지 완료')
       setLoading(false)

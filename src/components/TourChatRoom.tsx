@@ -5,7 +5,6 @@ import { Send, Image as ImageIcon, Copy, Share2, Calendar, Megaphone, Trash2, Ch
 import PickupHotelPhotoGallery from './PickupHotelPhotoGallery'
 import ReactCountryFlag from 'react-country-flag'
 import { useRouter } from 'next/navigation'
-import { useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import ChatRoomShareModal from './ChatRoomShareModal'
 import PickupScheduleModal from './PickupScheduleModal'
@@ -130,15 +129,8 @@ export default function TourChatRoom({
 }: TourChatRoomProps) {
   const router = useRouter()
   
-  // next-intl 컨텍스트가 없을 수 있으므로 안전하게 처리
-  let locale: 'ko' | 'en' = customerLanguage === 'ko' ? 'ko' : 'en' // 고객 언어를 기본값으로 사용
-  try {
-    const nextIntlLocale = useLocale()
-    locale = nextIntlLocale === 'ko' ? 'ko' : 'en'
-  } catch {
-    console.warn('next-intl context not found, using customer language:', customerLanguage)
-    locale = customerLanguage === 'ko' ? 'ko' : 'en'
-  }
+  // customerLanguage prop을 사용하여 locale 결정 (next-intl 컨텍스트가 없을 수 있으므로)
+  const locale: 'ko' | 'en' = customerLanguage === 'ko' ? 'ko' : 'en'
   
   // 고객용 채팅에서 초기 props 디버깅
   if (isPublicView) {

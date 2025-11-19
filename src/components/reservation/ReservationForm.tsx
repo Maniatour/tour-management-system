@@ -2,7 +2,7 @@
 /* eslint-disable */
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import { Trash2 } from 'lucide-react'
+import { Trash2, Eye } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { sanitizeTimeInput } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
@@ -58,6 +58,7 @@ interface ReservationFormProps {
   onRefreshCustomers: () => Promise<void>
   onDelete: (id: string) => void
   layout?: 'modal' | 'page'
+  onViewCustomer?: () => void
 }
 
 type RezLike = Partial<Reservation> & {
@@ -92,7 +93,8 @@ export default function ReservationForm({
   onCancel, 
   onRefreshCustomers, 
   onDelete,
-  layout = 'modal'
+  layout = 'modal',
+  onViewCustomer
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
@@ -2447,6 +2449,17 @@ export default function ReservationForm({
                 <option value="cancelled">{t('status.cancelled')}</option>
               </select>
             </div>
+            {onViewCustomer && (
+              <button
+                type="button"
+                onClick={onViewCustomer}
+                className="px-3 py-2 text-sm bg-purple-50 text-purple-600 rounded-md hover:bg-purple-100 transition-colors flex items-center space-x-2 border border-purple-200"
+                title="고객 보기"
+              >
+                <Eye className="w-4 h-4" />
+                <span>고객 보기</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => window.history.back()}

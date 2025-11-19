@@ -294,6 +294,8 @@ export default function CustomerReservations() {
   const router = useRouter()
   const params = useParams()
   const locale = params.locale as string || 'ko'
+  const customerIdFromUrl = params.customer_id as string
+  const reservationIdFromUrl = params.id as string
   const t = useTranslations('common')
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [loading, setLoading] = useState(true)
@@ -997,6 +999,266 @@ export default function CustomerReservations() {
     }
   }, [authUser?.email, locale, t])
 
+  // URL의 customer_id로 고객 예약 정보 로드 (시뮬레이션 무시)
+  const loadCustomerReservationsById = useCallback(async (customerId: string) => {
+    if (!customerId) {
+      setLoading(false)
+      return
+    }
+
+    try {
+      setLoading(true)
+      
+      // 고객 정보 조회
+      const { data: customerData, error: customerError } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('id', customerId)
+        .single()
+
+      if (customerError) {
+        console.error('고객 정보 조회 오류:', customerError)
+        setCustomer(null)
+        setReservations([])
+        setLoading(false)
+        return
+      }
+
+      if (!customerData) {
+        setCustomer(null)
+        setReservations([])
+        setLoading(false)
+        return
+      }
+
+      setCustomer(customerData as Customer)
+      
+      // 고객의 예약 정보 조회
+      const { data: reservationsData, error: reservationsError } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('customer_id', customerId)
+        .order('tour_date', { ascending: false })
+
+      if (reservationsError) {
+        console.error('예약 정보 조회 오류:', reservationsError)
+        setReservations([])
+        setLoading(false)
+        return
+      }
+
+      if (reservationsData && reservationsData.length > 0) {
+        // 각 예약에 대해 상품 정보를 별도로 조회 (loadReservations와 동일한 로직)
+        const reservationsWithProducts = await Promise.all(
+          reservationsData.map(async (reservation: SupabaseReservation) => {
+            try {
+              const { data: productData, error: productError } = await supabase
+                .from('products')
+                .select('name, customer_name_ko, customer_name_en, duration, base_price, choices')
+                .eq('id', reservation.product_id)
+                .single()
+
+              if (productError) {
+                console.warn('상품 정보 조회 오류:', productError)
+              }
+
+              // 다국어 상품 세부 정보
+              let multilingualDetails = null
+              try {
+                let detailsData: Record<string, unknown> | null = null
+                if (reservation.channel_id) {
+                  const result = await supabase
+                    .from('product_details_multilingual')
+                    .select('*')
+                    .eq('product_id', reservation.product_id)
+                    .eq('language_code', locale)
+                    .eq('channel_id', reservation.channel_id)
+                    .maybeSingle()
+                  detailsData = result.data
+                }
+                
+                if (!detailsData) {
+                  const result = await supabase
+                    .from('product_details_multilingual')
+                    .select('*')
+                    .eq('product_id', reservation.product_id)
+                    .eq('language_code', locale)
+                    .is('channel_id', null)
+                    .maybeSingle()
+                  detailsData = result.data
+                }
+                
+                multilingualDetails = detailsData
+              } catch (error) {
+                console.warn('다국어 상품 세부 정보 조회 실패:', error)
+              }
+
+              // 픽업 호텔 정보
+              let pickupHotelInfo = null
+              if (reservation.pickup_hotel) {
+                try {
+                  const { data: hotelData } = await supabase
+                    .from('pickup_hotels')
+                    .select('hotel, pick_up_location, address, media, link, youtube_link')
+                    .eq('id', reservation.pickup_hotel)
+                    .single()
+                  pickupHotelInfo = hotelData
+                } catch (error) {
+                  console.warn('픽업 호텔 정보 조회 실패:', error)
+                }
+              }
+
+              // 가격 정보
+              let pricingInfo = null
+              try {
+                const { data: pricingData, error: pricingError } = await supabase
+                  .from('reservation_pricing')
+                  .select('adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, private_tour_additional_cost, total_price, deposit_amount, balance_amount, commission_percent, commission_amount, choices, choices_total')
+                  .eq('reservation_id', reservation.id.toString())
+                  .single()
+                
+                if (!pricingError) {
+                  pricingInfo = pricingData
+                }
+              } catch (error) {
+                console.warn('가격 정보 조회 실패:', error)
+              }
+
+              // 옵션 정보
+              let optionsInfo = null
+              try {
+                const { data: optionsData } = await supabase
+                  .from('reservation_options')
+                  .select('id, option_id, ea, price, total_price, status, note')
+                  .eq('reservation_id', reservation.id.toString())
+                  .eq('status', 'active')
+                optionsInfo = optionsData
+              } catch (error) {
+                console.warn('옵션 정보 조회 실패:', error)
+              }
+
+              // 결제 정보
+              let paymentsInfo = null
+              try {
+                const { data: paymentsData } = await supabase
+                  .from('payment_records')
+                  .select('id, payment_status, amount, payment_method, note, submit_on, submit_by, confirmed_on, confirmed_by, amount_krw')
+                  .eq('reservation_id', reservation.id.toString())
+                  .order('submit_on', { ascending: false })
+                paymentsInfo = paymentsData
+              } catch (error) {
+                console.warn('결제 정보 조회 실패:', error)
+              }
+
+              // 예약 선택 옵션 정보
+              let reservationChoicesInfo = null
+              try {
+                const { data: choicesData } = await supabase
+                  .from('reservation_choices')
+                  .select('id, choice_id, option_id, quantity, total_price')
+                  .eq('reservation_id', reservation.id.toString())
+                
+                reservationChoicesInfo = choicesData
+                
+                // choice와 option 정보 매핑
+                if (reservationChoicesInfo && reservationChoicesInfo.length > 0) {
+                  try {
+                    const choiceIds = [...new Set(reservationChoicesInfo.map((c: { choice_id: string }) => c.choice_id))]
+                    const optionIds = [...new Set(reservationChoicesInfo.map((c: { option_id: string }) => c.option_id))]
+                    
+                    const { data: choicesData2 } = await supabase
+                      .from('product_choices')
+                      .select('id, choice_group, choice_group_ko')
+                      .in('id', choiceIds)
+                    
+                    const { data: optionsData2 } = await supabase
+                      .from('choice_options')
+                      .select('id, option_key, option_name, option_name_ko')
+                      .in('id', optionIds)
+                    
+                    if (choicesData2 && optionsData2) {
+                      reservationChoicesInfo = reservationChoicesInfo.map((choice: {
+                        id: string
+                        choice_id: string
+                        option_id: string
+                        quantity: number
+                        total_price: number
+                      }) => {
+                        const choiceInfo = choicesData2.find((c: { id: string }) => c.id === choice.choice_id)
+                        const optionInfo = optionsData2.find((o: { id: string }) => o.id === choice.option_id)
+                        
+                        return {
+                          ...choice,
+                          choice: choiceInfo ? {
+                            id: choiceInfo.id,
+                            name_ko: choiceInfo.choice_group_ko,
+                            name_en: choiceInfo.choice_group
+                          } : null,
+                          option: optionInfo ? {
+                            id: optionInfo.id,
+                            name_ko: optionInfo.option_name_ko,
+                            name_en: optionInfo.option_name
+                          } : null
+                        }
+                      })
+                    }
+                  } catch (error) {
+                    console.warn('초이스 정보 매핑 실패:', error)
+                  }
+                }
+              } catch (error) {
+                console.warn('예약 선택 옵션 조회 실패:', error)
+              }
+
+              return {
+                ...reservation,
+                products: productData || { 
+                  name: t('noProductName'), 
+                  customer_name_ko: null,
+                  customer_name_en: null,
+                  duration: null, 
+                  base_price: null
+                },
+                multilingualDetails,
+                pickupHotelInfo,
+                pricing: pricingInfo,
+                options: optionsInfo,
+                payments: paymentsInfo,
+                reservationChoices: reservationChoicesInfo
+              } as unknown as Reservation
+            } catch (error) {
+              console.error('상품 정보 조회 중 예외:', error)
+              return {
+                ...reservation,
+                products: { 
+                  name: t('noProductName'), 
+                  customer_name_ko: null,
+                  customer_name_en: null,
+                  duration: null, 
+                  base_price: null
+                },
+                multilingualDetails: null,
+                pickupHotelInfo: null,
+                pricing: null,
+                options: null,
+                payments: null,
+                reservationChoices: null
+              } as unknown as Reservation
+            }
+          })
+        )
+        setReservations(reservationsWithProducts)
+      } else {
+        setReservations([])
+      }
+    } catch (error) {
+      console.error('고객 예약 정보 로드 오류:', error)
+      setReservations([])
+    } finally {
+      setLoading(false)
+    }
+  }, [locale, t])
+
   // 시뮬레이션된 사용자의 예약 정보 로드 (이메일 기반)
   const loadSimulatedReservationsByEmail = useCallback(async (email: string) => {
     if (!email) {
@@ -1335,6 +1597,13 @@ export default function CustomerReservations() {
 
   // 데이터 로딩 (시뮬레이션 상태와 분리)
   useEffect(() => {
+    // URL에 customer_id가 있으면 해당 고객의 예약을 표시 (시뮬레이션 무시)
+    if (customerIdFromUrl) {
+      console.log('Reservations: Loading customer data from URL:', customerIdFromUrl)
+      loadCustomerReservationsById(customerIdFromUrl)
+      return
+    }
+    
     // 시뮬레이션 중이 아닌 경우에만 고객 데이터 로드
     if (!isSimulating && user) {
       loadReservations()
@@ -1365,21 +1634,60 @@ export default function CustomerReservations() {
       console.log('Reservations: No user logged in, showing public page')
       setLoading(false)
     }
-  }, [isSimulating, simulatedUser, user, loadReservations, loadSimulatedReservationsByEmail])
+  }, [customerIdFromUrl, isSimulating, simulatedUser, user, loadReservations, loadSimulatedReservationsByEmail, loadCustomerReservationsById])
 
   // 상품 세부 정보 가져오기
-  const getProductDetails = useCallback(async (productId: string) => {
+  const getProductDetails = useCallback(async (productId: string, channelId?: string | null) => {
     try {
-      const { data: productDetails, error } = await supabase
-        .from('product_details_multilingual')
-        .select('*')
-        .eq('product_id', productId)
-        .eq('language_code', locale)
-        .single()
-
-      if (error) {
-        console.warn('상품 세부 정보 조회 오류:', error)
-        return null
+      let productDetails = null
+      
+      // 먼저 채널별 정보를 찾아보기 (채널 ID가 있는 경우에만)
+      if (channelId) {
+        const { data: channelDetails, error: channelError } = await supabase
+          .from('product_details_multilingual')
+          .select('*')
+          .eq('product_id', productId)
+          .eq('language_code', locale)
+          .eq('channel_id', channelId)
+          .maybeSingle()
+        
+        if (!channelError && channelDetails) {
+          productDetails = channelDetails
+        }
+      }
+      
+      // 채널별 정보가 없으면 공통 정보 가져오기 (channel_id가 NULL)
+      if (!productDetails) {
+        const { data: commonDetails, error: commonError } = await supabase
+          .from('product_details_multilingual')
+          .select('*')
+          .eq('product_id', productId)
+          .eq('language_code', locale)
+          .is('channel_id', null)
+          .maybeSingle()
+        
+        if (!commonError && commonDetails) {
+          productDetails = commonDetails
+        } else if (commonError && commonError.code !== 'PGRST116') {
+          // PGRST116은 데이터가 없을 때 발생하는 정상적인 오류
+          console.warn('상품 세부 정보 조회 오류:', commonError)
+        }
+      }
+      
+      // 공통 정보도 없으면 첫 번째 항목 가져오기 (fallback)
+      if (!productDetails) {
+        const { data: anyDetailsArray, error: anyError } = await supabase
+          .from('product_details_multilingual')
+          .select('*')
+          .eq('product_id', productId)
+          .eq('language_code', locale)
+          .limit(1)
+        
+        if (!anyError && anyDetailsArray && anyDetailsArray.length > 0) {
+          productDetails = anyDetailsArray[0]
+        } else if (anyError && anyError.code !== 'PGRST116') {
+          console.warn('상품 세부 정보 조회 오류:', anyError)
+        }
       }
 
       return productDetails
@@ -1645,7 +1953,7 @@ export default function CustomerReservations() {
       const reservation = reservations.find(r => r.id === reservationId)
       if (reservation) {
         const [productDetails, pickupSchedule, tourDetails, productSchedules] = await Promise.all([
-          getProductDetails(reservation.product_id),
+          getProductDetails(reservation.product_id, reservation.channel_id),
           getPickupSchedule(reservationId),
           getTourDetails(reservationId),
           getProductSchedules(reservation.product_id)

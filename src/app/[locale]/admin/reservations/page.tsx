@@ -1,8 +1,8 @@
 'use client'
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react'
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, Play, DollarSign } from 'lucide-react'
+import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, Play, DollarSign, Eye, X, GripVertical, Clock } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
@@ -16,6 +16,8 @@ import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import ReservationCalendar from '@/components/ReservationCalendar'
 import PaymentRecordsList from '@/components/PaymentRecordsList'
 import { useReservationData } from '@/hooks/useReservationData'
+import PickupTimeModal from '@/components/tour/modals/PickupTimeModal'
+import PickupHotelModal from '@/components/tour/modals/PickupHotelModal'
 import { 
   getPickupHotelDisplay, 
   getCustomerName, 
@@ -235,12 +237,38 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     })
   }
 
-  // 주간 통계 아코디언 상태
-  const [isWeeklyStatsCollapsed, setIsWeeklyStatsCollapsed] = useState(false)
+  // 주간 통계 아코디언 상태 (기본 접힘)
+  const [isWeeklyStatsCollapsed, setIsWeeklyStatsCollapsed] = useState(true)
 
   // 입금 내역 관련 상태
   const [showPaymentRecords, setShowPaymentRecords] = useState(false)
   const [selectedReservationForPayment, setSelectedReservationForPayment] = useState<Reservation | null>(null)
+
+  // 예약 상세 모달 관련 상태
+  const [showReservationDetailModal, setShowReservationDetailModal] = useState(false)
+  const [selectedReservationForDetail, setSelectedReservationForDetail] = useState<Reservation | null>(null)
+
+  // 투어 정보 상태
+  const [tourInfoMap, setTourInfoMap] = useState<Map<string, {
+    totalPeople: number
+    status: string
+    guideName: string
+    assistantName: string
+    vehicleName: string
+    tourDate: string
+    tourStartDatetime: string | null
+    isAssigned: boolean
+  }>>(new Map())
+
+  // 픽업 시간 수정 모달 상태
+  const [showPickupTimeModal, setShowPickupTimeModal] = useState(false)
+  const [selectedReservationForPickupTime, setSelectedReservationForPickupTime] = useState<Reservation | null>(null)
+  const [pickupTimeValue, setPickupTimeValue] = useState('')
+
+  // 픽업 호텔 수정 모달 상태
+  const [showPickupHotelModal, setShowPickupHotelModal] = useState(false)
+  const [selectedReservationForPickupHotel, setSelectedReservationForPickupHotel] = useState<Reservation | null>(null)
+  const [hotelSearchTerm, setHotelSearchTerm] = useState('')
 
   // 검색어에 따른 그룹화 상태 조정
   useEffect(() => {
@@ -252,6 +280,184 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       setGroupByDate(true)
     }
   }, [searchTerm])
+
+  // 투어 정보 가져오기
+  useEffect(() => {
+    const fetchTourInfo = async () => {
+      if (!reservations.length) return
+
+      // reservations에서 tour_id가 있는 예약들을 직접 확인
+      const tourIds = new Set<string>()
+      const reservationsWithTourId = reservations.filter(r => {
+        // tourId 또는 직접 tour_id 확인
+        const tourId = r.tourId || (r as any).tour_id
+        return tourId && tourId.trim() !== '' && tourId !== 'null' && tourId !== 'undefined'
+      })
+      
+      reservationsWithTourId.forEach(reservation => {
+        const tourId = reservation.tourId || (reservation as any).tour_id
+        if (tourId && tourId.trim() !== '') {
+          tourIds.add(tourId.trim())
+        }
+      })
+
+      console.log('투어 ID 수집:', { 
+        totalReservations: reservations.length,
+        reservationsWithTourId: reservationsWithTourId.length,
+        tourIdsCount: tourIds.size, 
+        tourIds: Array.from(tourIds),
+        sampleReservations: reservationsWithTourId.slice(0, 3).map(r => ({
+          id: r.id,
+          tourId: r.tourId,
+          tour_id: (r as any).tour_id
+        }))
+      })
+
+      if (tourIds.size === 0) {
+        console.log('투어 ID가 없어서 투어 정보를 가져오지 않습니다.')
+        setTourInfoMap(new Map()) // 빈 맵으로 초기화
+        return
+      }
+
+      try {
+        const { data: tours, error } = await supabase
+          .from('tours')
+          .select('id, tour_status, tour_guide_id, assistant_id, reservation_ids, tour_car_id, tour_date, tour_start_datetime')
+          .in('id', Array.from(tourIds))
+
+        if (error) {
+          console.error('투어 정보 조회 오류:', error)
+          return
+        }
+
+        console.log('투어 정보 조회 성공:', { toursCount: tours?.length || 0, tours })
+
+        const newTourInfoMap = new Map<string, {
+          totalPeople: number
+          status: string
+          guideName: string
+          assistantName: string
+          vehicleName: string
+          tourDate: string
+          tourStartDatetime: string | null
+          isAssigned: boolean
+        }>()
+
+        // 모든 가이드 이메일과 어시스턴트 이메일 수집
+        const guideEmails = new Set<string>()
+        const assistantEmails = new Set<string>()
+        const vehicleIds = new Set<string>()
+        
+        tours?.forEach(tour => {
+          if (tour.tour_guide_id) guideEmails.add(tour.tour_guide_id)
+          if (tour.assistant_id) assistantEmails.add(tour.assistant_id)
+          if (tour.tour_car_id) vehicleIds.add(tour.tour_car_id)
+        })
+
+        // 가이드 정보 일괄 조회
+        const guideMap = new Map<string, string>()
+        if (guideEmails.size > 0) {
+          const { data: guides } = await supabase
+            .from('team')
+            .select('email, name_ko')
+            .in('email', Array.from(guideEmails))
+          
+          guides?.forEach(guide => {
+            if (guide.email) {
+              guideMap.set(guide.email, guide.name_ko || '-')
+            }
+          })
+        }
+
+        // 어시스턴트 정보 일괄 조회
+        const assistantMap = new Map<string, string>()
+        if (assistantEmails.size > 0) {
+          const { data: assistants } = await supabase
+            .from('team')
+            .select('email, name_ko')
+            .in('email', Array.from(assistantEmails))
+          
+          assistants?.forEach(assistant => {
+            if (assistant.email) {
+              assistantMap.set(assistant.email, assistant.name_ko || '-')
+            }
+          })
+        }
+
+        // 차량 정보 일괄 조회
+        const vehicleMap = new Map<string, string>()
+        if (vehicleIds.size > 0) {
+          try {
+            const { data: vehicles } = await supabase
+              .from('vehicles')
+              .select('id, vehicle_number, vehicle_type')
+              .in('id', Array.from(vehicleIds))
+            
+            vehicles?.forEach(vehicle => {
+              if (vehicle.id) {
+                vehicleMap.set(vehicle.id, vehicle.vehicle_number || vehicle.vehicle_type || '-')
+              }
+            })
+          } catch (error) {
+            console.error('차량 정보 조회 오류:', error)
+          }
+        }
+
+        // 각 투어에 대해 정보 매핑
+        for (const tour of tours || []) {
+          let guideName = '-'
+          let assistantName = '-'
+          let vehicleName = '-'
+          let totalPeople = 0
+
+          // 가이드 정보
+          if (tour.tour_guide_id) {
+            guideName = guideMap.get(tour.tour_guide_id) || '-'
+          }
+
+          // 어시스턴트 정보
+          if (tour.assistant_id) {
+            assistantName = assistantMap.get(tour.assistant_id) || '-'
+          }
+
+          // 차량 정보
+          if (tour.tour_car_id) {
+            vehicleName = vehicleMap.get(tour.tour_car_id) || '-'
+          }
+
+          // 총 인원 계산
+          if (tour.reservation_ids) {
+            const reservationIds = Array.isArray(tour.reservation_ids)
+              ? tour.reservation_ids
+              : String(tour.reservation_ids).split(',').map(id => id.trim()).filter(id => id)
+            
+            totalPeople = reservationIds.reduce((sum, id) => {
+              const reservation = reservations.find(r => r.id === id)
+              return sum + (reservation?.totalPeople || 0)
+            }, 0)
+          }
+
+          newTourInfoMap.set(tour.id, {
+            totalPeople,
+            status: tour.tour_status || '-',
+            guideName,
+            assistantName,
+            vehicleName,
+            tourDate: tour.tour_date || '',
+            tourStartDatetime: tour.tour_start_datetime || null,
+            isAssigned: true // tour_id가 있으면 배정된 것으로 간주
+          })
+        }
+
+        console.log('투어 정보 맵 생성 완료:', { mapSize: newTourInfoMap.size, mapEntries: Array.from(newTourInfoMap.entries()) })
+        setTourInfoMap(newTourInfoMap)
+      } catch (error) {
+        console.error('투어 정보 조회 중 오류:', error)
+      }
+    }
+
+    fetchTourInfo()
+  }, [reservations])
 
   // 필터링 및 정렬 로직 - useMemo로 최적화
   const filteredAndSortedReservations = useMemo(() => {
@@ -424,6 +630,24 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     
     return sortedGroups
   }, [filteredReservations, groupByDate, currentWeek, formatWeekRange])
+
+  // 날짜별 그룹을 기본적으로 접힌 상태로 설정
+  useEffect(() => {
+    if (groupByDate && groupedReservations && Object.keys(groupedReservations).length > 0) {
+      const allDates = Object.keys(groupedReservations)
+      setCollapsedGroups(prev => {
+        // 이미 모든 날짜가 접힌 상태인지 확인
+        const allCollapsed = allDates.every(date => prev.has(date))
+        if (allCollapsed && prev.size === allDates.length) {
+          return prev // 이미 모든 날짜가 접힌 상태면 변경하지 않음
+        }
+        // 새로운 날짜를 포함하여 모든 날짜를 접힌 상태로 설정
+        const newSet = new Set(prev)
+        allDates.forEach(date => newSet.add(date))
+        return newSet
+      })
+    }
+  }, [groupedReservations, groupByDate])
 
   // 주간 통계 데이터 계산
   const weeklyStats = useMemo(() => {
@@ -801,6 +1025,104 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     setShowPricingModal(false)
     setPricingModalReservation(null)
   }
+
+  // 픽업 시간 수정 모달 열기
+  const handlePickupTimeClick = useCallback((reservation: Reservation, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setSelectedReservationForPickupTime(reservation)
+    setPickupTimeValue(reservation.pickUpTime || '')
+    setShowPickupTimeModal(true)
+  }, [])
+
+  // 픽업 시간 저장
+  const handleSavePickupTime = useCallback(async () => {
+    if (!selectedReservationForPickupTime) return
+
+    try {
+      const { error } = await supabase
+        .from('reservations')
+        .update({ pickup_time: pickupTimeValue || null })
+        .eq('id', selectedReservationForPickupTime.id)
+
+      if (error) {
+        console.error('픽업 시간 업데이트 오류:', error)
+        alert('픽업 시간 업데이트 중 오류가 발생했습니다.')
+        return
+      }
+
+      await refreshReservations()
+      setShowPickupTimeModal(false)
+      setSelectedReservationForPickupTime(null)
+    } catch (error) {
+      console.error('픽업 시간 저장 오류:', error)
+      alert('픽업 시간 저장 중 오류가 발생했습니다.')
+    }
+  }, [selectedReservationForPickupTime, pickupTimeValue, refreshReservations])
+
+  // 픽업 호텔 수정 모달 열기
+  const handlePickupHotelClick = useCallback((reservation: Reservation, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setSelectedReservationForPickupHotel(reservation)
+    setHotelSearchTerm('')
+    setShowPickupHotelModal(true)
+  }, [])
+
+  // 픽업 호텔 저장
+  const handleSavePickupHotel = useCallback(async (hotelId: string) => {
+    if (!selectedReservationForPickupHotel) return
+
+    try {
+      const { error } = await supabase
+        .from('reservations')
+        .update({ pickup_hotel: hotelId || null })
+        .eq('id', selectedReservationForPickupHotel.id)
+
+      if (error) {
+        console.error('픽업 호텔 업데이트 오류:', error)
+        alert('픽업 호텔 업데이트 중 오류가 발생했습니다.')
+        return
+      }
+
+      await refreshReservations()
+      setShowPickupHotelModal(false)
+      setSelectedReservationForPickupHotel(null)
+      setHotelSearchTerm('')
+    } catch (error) {
+      console.error('픽업 호텔 저장 오류:', error)
+      alert('픽업 호텔 저장 중 오류가 발생했습니다.')
+    }
+  }, [selectedReservationForPickupHotel, refreshReservations])
+
+  // 필터된 호텔 목록
+  const filteredHotels = useMemo(() => {
+    if (!hotelSearchTerm) {
+      return pickupHotels || []
+    }
+    const searchLower = hotelSearchTerm.toLowerCase()
+    return (pickupHotels || []).filter(hotel => 
+      hotel.hotel?.toLowerCase().includes(searchLower) ||
+      hotel.name?.toLowerCase().includes(searchLower) ||
+      hotel.name_ko?.toLowerCase().includes(searchLower) ||
+      hotel.pick_up_location?.toLowerCase().includes(searchLower) ||
+      hotel.address?.toLowerCase().includes(searchLower)
+    )
+  }, [hotelSearchTerm, pickupHotels])
+
+  // 고객 언어 가져오기
+  const getCustomerLanguage = useCallback((customerId: string) => {
+    const customer = (customers as Customer[]).find(c => c.id === customerId)
+    return customer?.language || 'ko'
+  }, [customers])
+
+  // 국가 코드 가져오기
+  const getCountryCode = useCallback((language: string) => {
+    const lang = language.toLowerCase()
+    if (lang === 'kr' || lang === 'ko' || lang === '한국어') return 'KR'
+    if (lang === 'en' || lang === '영어') return 'US'
+    if (lang === 'jp' || lang === '일본어') return 'JP'
+    if (lang === 'cn' || lang === '중국어') return 'CN'
+    return 'US'
+  }, [])
 
   const handleDeleteReservation = useCallback(async (id: string) => {
     if (confirm(t('deleteConfirm'))) {
@@ -1548,7 +1870,43 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(reservation.status)}`}>
                     {getStatusLabel(reservation.status, t)}
                   </span>
-                  <div className="text-xs text-gray-400">RN: {reservation.channelRN}</div>
+                  <div className="flex items-center space-x-2">
+                    {(() => {
+                      const channel = (channels as Array<{ id: string; name: string; favicon_url?: string }>)?.find(c => c.id === reservation.channelId)
+                      const channelWithFavicon = channel as { favicon_url?: string; name?: string } | undefined
+                      return (
+                        <>
+                          {channelWithFavicon?.favicon_url ? (
+                            <Image 
+                              src={channelWithFavicon.favicon_url} 
+                              alt={`${channelWithFavicon.name || 'Channel'} favicon`} 
+                              width={16}
+                              height={16}
+                              className="rounded flex-shrink-0"
+                              style={{ width: 'auto', height: 'auto' }}
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement
+                                target.style.display = 'none'
+                                const parent = target.parentElement
+                                if (parent) {
+                                  const fallback = document.createElement('div')
+                                  fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0'
+                                  fallback.innerHTML = '🌐'
+                                  parent.appendChild(fallback)
+                                }
+                              }}
+                            />
+                          ) : (
+                            <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0">
+                              <span className="text-gray-400 text-xs">🌐</span>
+                            </div>
+                          )}
+                          <span className="text-xs text-gray-600">{getChannelName(reservation.channelId, channels || [])}</span>
+                          <span className="text-xs text-gray-400">RN: {reservation.channelRN}</span>
+                        </>
+                      )
+                    })()}
+                  </div>
                 </div>
                 
                 {/* 고객 이름 */}
@@ -1581,8 +1939,39 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       return null;
                     })()}
                     <span>{getCustomerName(reservation.customerId, (customers as Customer[]) || [])}</span>
+                    {/* 인원 정보 */}
+                    {(() => {
+                      const hasChild = reservation.child > 0
+                      const hasInfant = reservation.infant > 0
+                      const hasAdult = reservation.adults > 0
+                      
+                      // 아동과 유아가 0명이면 성인만 표시
+                      if (!hasAdult) return null
+                      
+                      return (
+                        <span className="flex items-center space-x-1 text-xs text-gray-600 ml-2">
+                          <Users className="h-3 w-3" />
+                          <span>{reservation.adults}명</span>
+                          {hasChild && <span className="text-orange-600">{reservation.child}아</span>}
+                          {hasInfant && <span className="text-blue-600">{reservation.infant}유</span>}
+                        </span>
+                      )
+                    })()}
                   </div>
-                  <div className="text-xs text-gray-500">{(customers as Customer[]).find(c => c.id === reservation.customerId)?.email}</div>
+                  <a 
+                    href={`mailto:${(customers as Customer[]).find(c => c.id === reservation.customerId)?.email || ''}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-xs text-gray-500 hover:text-blue-600 hover:underline cursor-pointer block"
+                  >
+                    {(customers as Customer[]).find(c => c.id === reservation.customerId)?.email}
+                  </a>
+                  <a 
+                    href={`tel:${(customers as Customer[]).find(c => c.id === reservation.customerId)?.phone || ''}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-xs text-gray-500 hover:text-blue-600 hover:underline cursor-pointer block"
+                  >
+                    {(customers as Customer[]).find(c => c.id === reservation.customerId)?.phone || '-'}
+                  </a>
                 </div>
               </div>
 
@@ -1621,142 +2010,209 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   )}
                 </div>
 
-                {/* 투어 날짜 */}
+                {/* 투어 날짜 및 픽업 시간 */}
                 <div className="flex items-center space-x-2">
                   <Calendar className="h-4 w-4 text-gray-400" />
-                  <span className="text-sm text-gray-900">{reservation.tourDate}</span>
-                </div>
-
-                {/* 인원 정보 */}
-                <div className="flex items-center space-x-2">
-                  <Users className="h-4 w-4 text-gray-400" />
-                  <div className="text-sm text-gray-900">
-                    {t('participants.adults')} {reservation.adults}{t('participants.people')}, {t('participants.children')} {reservation.child}{t('participants.people')}, {t('participants.infants')} {reservation.infant}{t('participants.people')}
-                  </div>
+                  {(() => {
+                    const pickupTime = reservation.pickUpTime || ''
+                    let displayDate = reservation.tourDate
+                    
+                    // 픽업 시간이 21시(9PM) 이후면 날짜를 -1일
+                    if (pickupTime) {
+                      const timeMatch = pickupTime.match(/(\d{1,2}):(\d{2})/)
+                      if (timeMatch) {
+                        const hour = parseInt(timeMatch[1], 10)
+                        if (hour >= 21) {
+                          const date = new Date(reservation.tourDate)
+                          date.setDate(date.getDate() - 1)
+                          displayDate = date.toISOString().split('T')[0]
+                        }
+                      }
+                    }
+                    
+                    return (
+                      <>
+                        <span className="text-sm text-gray-900">{displayDate}</span>
+                        {pickupTime && (
+                          <>
+                            <span className="text-gray-400">|</span>
+                            <Clock className="h-4 w-4 text-gray-400" />
+                            <span 
+                              className="text-sm text-gray-900 hover:text-blue-600 hover:underline cursor-pointer"
+                              onClick={(e) => handlePickupTimeClick(reservation, e)}
+                            >
+                              {pickupTime}
+                            </span>
+                          </>
+                        )}
+                      </>
+                    )
+                  })()}
                 </div>
 
                 {/* 픽업 호텔 정보 */}
                 {reservation.pickUpHotel && (
                   <div className="flex items-center space-x-2">
                     <MapPin className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm text-gray-900">{getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels || [])}</span>
+                    <span 
+                      className="text-sm text-gray-900 hover:text-blue-600 hover:underline cursor-pointer"
+                      onClick={(e) => handlePickupHotelClick(reservation, e)}
+                    >
+                      {getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels || [])}
+                    </span>
                   </div>
                 )}
 
-                {/* 채널 정보 */}
-                <div className="flex items-center space-x-2">
-                  {(() => {
-                    const channel = (channels as Array<{ id: string; name: string; favicon_url?: string }>)?.find(c => c.id === reservation.channelId)
-                    const channelWithFavicon = channel as { favicon_url?: string; name?: string } | undefined
-                    return channelWithFavicon?.favicon_url ? (
-                      <Image 
-                        src={channelWithFavicon.favicon_url} 
-                        alt={`${channelWithFavicon.name || 'Channel'} favicon`} 
-                        width={16}
-                        height={16}
-                        className="rounded flex-shrink-0"
-                        style={{ width: 'auto', height: 'auto' }}
-                        onError={(e) => {
-                          // 파비콘 로드 실패 시 기본 아이콘으로 대체
-                          const target = e.target as HTMLImageElement
-                          target.style.display = 'none'
-                          const parent = target.parentElement
-                          if (parent) {
-                            const fallback = document.createElement('div')
-                            fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0'
-                            fallback.innerHTML = '🌐'
-                            parent.appendChild(fallback)
-                          }
-                        }}
-                      />
-                    ) : (
-                      <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0">
-                        <span className="text-gray-400 text-xs">🌐</span>
-                      </div>
-                    )
-                  })()}
-                    <div className="text-sm text-gray-900">{getChannelName(reservation.channelId, channels || [])}</div>
-                    <div className="text-xs text-gray-500">({(channels as Array<{ id: string; name: string; type?: string }>)?.find(c => c.id === reservation.channelId)?.type})</div>
-                </div>
-
                 {/* 가격 정보 */}
                 <div className="pt-2 border-t border-gray-100">
-                  <div className="flex items-center justify-between">
-                    <div className="text-lg font-bold text-blue-600">
-                      ${calculateTotalPrice(reservation, products || [], optionChoices || []).toLocaleString()}
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePricingInfoClick(reservation);
-                        }}
-                        className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
-                      >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                        </svg>
-                        <span>{t('actions.price')}</span>
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEditReservationClick(reservation);
-                        }}
-                        className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors border border-blue-200"
-                        title="빠른 수정"
-                      >
-                        {t('actions.edit')}
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          router.push(`/${locale}/admin/reservations/${reservation.id}`)
-                        }}
-                        className="px-2 py-1 text-xs bg-gray-50 text-gray-700 rounded-md hover:bg-gray-100 transition-colors border border-gray-200"
-                        title="상세 보기"
-                      >
-                        {t('actions.details')}
-                      </button>
-                      
-                      {/* 투어 생성 버튼 - Mania Tour/Service이고 투어가 없을 때만 표시 */}
+                  <div className="text-sm">
+                    <div className="flex items-center space-x-1">
+                      <span className="text-gray-600">${(reservation.totalPrice || reservation.pricingInfo?.totalPrice || calculateTotalPrice(reservation, products || [], optionChoices || [])).toLocaleString()}</span>
                       {(() => {
-                        const product = (products as Array<{ id: string; sub_category?: string }>)?.find(p => p.id === reservation.productId);
-                        const isManiaTour = product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service';
-                        
-                        // hasExistingTour 필드를 사용하여 투어 존재 여부 확인
-                        if (isManiaTour && !reservation.hasExistingTour) {
+                        const balance = reservation.balanceAmount || reservation.pricingInfo?.balanceAmount || 0
+                        if (balance > 0) {
                           return (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleCreateTour(reservation);
-                              }}
-                              className="px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md hover:bg-green-100 transition-colors flex items-center space-x-1 border border-green-200"
-                              title="투어 생성"
-                            >
-                              <Play className="w-3 h-3" />
-                              <span>{t('actions.tour')}</span>
-                            </button>
-                          );
+                            <>
+                              <span className="text-gray-400">(</span>
+                              <span className="text-red-600 font-medium">
+                                Balance: ${balance.toLocaleString()}
+                              </span>
+                              <span className="text-gray-400">)</span>
+                            </>
+                          )
                         }
-                        return null;
+                        return null
                       })()}
-
-                      {/* 입금 내역 버튼 */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedReservationForPayment(reservation);
-                          setShowPaymentRecords(true);
-                        }}
-                        className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
-                        title="입금 내역 관리"
-                      >
-                        <DollarSign className="w-3 h-3" />
-                        <span>{t('actions.deposit')}</span>
-                      </button>
                     </div>
+                  </div>
+                </div>
+
+                {/* 연결된 투어 정보 */}
+                {(() => {
+                  const tourId = reservation.tourId || (reservation as any).tour_id
+                  if (!tourId || tourId.trim() === '' || tourId === 'null' || tourId === 'undefined' || !tourInfoMap.has(tourId)) {
+                    return null
+                  }
+                  
+                  const tourInfo = tourInfoMap.get(tourId)!
+                  
+                  // 상태 색상
+                  const getStatusColor = (status: string) => {
+                    const statusLower = status.toLowerCase()
+                    if (statusLower === 'confirmed') return 'bg-green-100 text-green-800'
+                    if (statusLower === 'completed') return 'bg-blue-100 text-blue-800'
+                    if (statusLower === 'cancelled') return 'bg-red-100 text-red-800'
+                    return 'bg-gray-100 text-gray-800'
+                  }
+                  
+                  return (
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <div className="bg-white border border-gray-200 rounded-lg p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-xs font-semibold text-gray-900">
+                            연결된 투어 ({tourInfo.totalPeople}명)
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            {tourInfo.isAssigned && (
+                              <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                배정됨
+                              </span>
+                            )}
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(tourInfo.status)}`}>
+                              {tourInfo.status}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
+                          {tourInfo.guideName !== '-' && (
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                              {tourInfo.guideName}
+                            </span>
+                          )}
+                          {tourInfo.assistantName !== '-' && (
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">
+                              {tourInfo.assistantName}
+                            </span>
+                          )}
+                          {tourInfo.vehicleName !== '-' && (
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                              {tourInfo.vehicleName}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {/* 버튼들 - 가장 아래에 배치 */}
+                <div className="mt-3 pt-3 border-t border-gray-200">
+                  <div className="flex items-center flex-wrap gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePricingInfoClick(reservation);
+                      }}
+                      className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                      </svg>
+                      <span>{t('actions.price')}</span>
+                    </button>
+                    
+                    {/* 투어 생성 버튼 - Mania Tour/Service이고 투어가 없을 때만 표시 */}
+                    {(() => {
+                      const product = (products as Array<{ id: string; sub_category?: string }>)?.find(p => p.id === reservation.productId);
+                      const isManiaTour = product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service';
+                      
+                      // hasExistingTour 필드를 사용하여 투어 존재 여부 확인
+                      if (isManiaTour && !reservation.hasExistingTour) {
+                        return (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCreateTour(reservation);
+                            }}
+                            className="px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md hover:bg-green-100 transition-colors flex items-center space-x-1 border border-green-200"
+                            title="투어 생성"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>{t('actions.tour')}</span>
+                          </button>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* 입금 내역 버튼 */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedReservationForPayment(reservation);
+                        setShowPaymentRecords(true);
+                      }}
+                      className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
+                      title="입금 내역 관리"
+                    >
+                      <DollarSign className="w-3 h-3" />
+                      <span>{t('actions.deposit')}</span>
+                    </button>
+                    
+                    {/* 고객 보기 버튼 */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedReservationForDetail(reservation);
+                        setShowReservationDetailModal(true);
+                      }}
+                      className="px-2 py-1 text-xs bg-purple-50 text-purple-600 rounded-md hover:bg-purple-100 transition-colors flex items-center space-x-1 border border-purple-200"
+                      title="고객 보기"
+                    >
+                      <Eye className="w-3 h-3" />
+                      <span>고객 보기</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1804,7 +2260,43 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(reservation.status)}`}>
                       {getStatusLabel(reservation.status, t)}
                     </span>
-                    <div className="text-xs text-gray-400">RN: {reservation.channelRN}</div>
+                    <div className="flex items-center space-x-2">
+                      {(() => {
+                        const channel = (channels as Array<{ id: string; name: string; favicon_url?: string }>)?.find(c => c.id === reservation.channelId)
+                        const channelWithFavicon = channel as { favicon_url?: string; name?: string } | undefined
+                        return (
+                          <>
+                            {channelWithFavicon?.favicon_url ? (
+                              <Image 
+                                src={channelWithFavicon.favicon_url} 
+                                alt={`${channelWithFavicon.name || 'Channel'} favicon`} 
+                                width={16}
+                                height={16}
+                                className="rounded flex-shrink-0"
+                                style={{ width: 'auto', height: 'auto' }}
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement
+                                  target.style.display = 'none'
+                                  const parent = target.parentElement
+                                  if (parent) {
+                                    const fallback = document.createElement('div')
+                                    fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0'
+                                    fallback.innerHTML = '🌐'
+                                    parent.appendChild(fallback)
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0">
+                                <span className="text-gray-400 text-xs">🌐</span>
+                              </div>
+                            )}
+                            <span className="text-xs text-gray-600">{getChannelName(reservation.channelId, channels || [])}</span>
+                            <span className="text-xs text-gray-400">RN: {reservation.channelRN}</span>
+                          </>
+                        )
+                      })()}
+                    </div>
                   </div>
                   
                   {/* 고객 이름 */}
@@ -1837,8 +2329,39 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         return null;
                       })()}
                       <span>{getCustomerName(reservation.customerId, (customers as Customer[]) || [])}</span>
+                      {/* 인원 정보 */}
+                      {(() => {
+                        const hasChild = reservation.child > 0
+                        const hasInfant = reservation.infant > 0
+                        const hasAdult = reservation.adults > 0
+                        
+                        // 아동과 유아가 0명이면 성인만 표시
+                        if (!hasAdult) return null
+                        
+                        return (
+                          <span className="flex items-center space-x-1 text-xs text-gray-600 ml-2">
+                            <Users className="h-3 w-3" />
+                            <span>{reservation.adults}명</span>
+                            {hasChild && <span className="text-orange-600">{reservation.child}아</span>}
+                            {hasInfant && <span className="text-blue-600">{reservation.infant}유</span>}
+                          </span>
+                        )
+                      })()}
                     </div>
-                    <div className="text-xs text-gray-500">{(customers as Customer[]).find(c => c.id === reservation.customerId)?.email}</div>
+                    <a 
+                      href={`mailto:${(customers as Customer[]).find(c => c.id === reservation.customerId)?.email || ''}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-xs text-gray-500 hover:text-blue-600 hover:underline cursor-pointer block"
+                    >
+                      {(customers as Customer[]).find(c => c.id === reservation.customerId)?.email}
+                    </a>
+                    <a 
+                      href={`tel:${(customers as Customer[]).find(c => c.id === reservation.customerId)?.phone || ''}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-xs text-gray-500 hover:text-blue-600 hover:underline cursor-pointer block"
+                    >
+                      {(customers as Customer[]).find(c => c.id === reservation.customerId)?.phone || '-'}
+                    </a>
                   </div>
                 </div>
 
@@ -1878,123 +2401,210 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
                   </div>
 
-                  {/* 투어 날짜 */}
+                  {/* 투어 날짜 및 픽업 시간 */}
                   <div className="flex items-center space-x-2">
                     <Calendar className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm text-gray-900">{reservation.tourDate}</span>
-                  </div>
-
-                  {/* 인원 정보 */}
-                  <div className="flex items-center space-x-2">
-                    <Users className="h-4 w-4 text-gray-400" />
-                    <div className="text-sm text-gray-900">
-                      {t('participants.adults')} {reservation.adults}{t('participants.people')}, {t('participants.children')} {reservation.child}{t('participants.people')}, {t('participants.infants')} {reservation.infant}{t('participants.people')}
-                    </div>
+                    {(() => {
+                      const pickupTime = reservation.pickUpTime || ''
+                      let displayDate = reservation.tourDate
+                      
+                      // 픽업 시간이 21시(9PM) 이후면 날짜를 -1일
+                      if (pickupTime) {
+                        const timeMatch = pickupTime.match(/(\d{1,2}):(\d{2})/)
+                        if (timeMatch) {
+                          const hour = parseInt(timeMatch[1], 10)
+                          if (hour >= 21) {
+                            const date = new Date(reservation.tourDate)
+                            date.setDate(date.getDate() - 1)
+                            displayDate = date.toISOString().split('T')[0]
+                          }
+                        }
+                      }
+                      
+                      return (
+                        <>
+                          <span className="text-sm text-gray-900">{displayDate}</span>
+                          {pickupTime && (
+                            <>
+                              <span className="text-gray-400">|</span>
+                              <Clock className="h-4 w-4 text-gray-400" />
+                              <span 
+                                className="text-sm text-gray-900 hover:text-blue-600 hover:underline cursor-pointer"
+                                onClick={(e) => handlePickupTimeClick(reservation, e)}
+                              >
+                                {pickupTime}
+                              </span>
+                            </>
+                          )}
+                        </>
+                      )
+                    })()}
                   </div>
 
                   {/* 픽업 호텔 정보 */}
                   {reservation.pickUpHotel && (
                     <div className="flex items-center space-x-2">
                       <MapPin className="h-4 w-4 text-gray-400" />
-                      <span className="text-sm text-gray-900">{getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels || [])}</span>
+                      <span 
+                        className="text-sm text-gray-900 hover:text-blue-600 hover:underline cursor-pointer"
+                        onClick={(e) => handlePickupHotelClick(reservation, e)}
+                      >
+                        {getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels || [])}
+                      </span>
                     </div>
                   )}
 
-                  {/* 채널 정보 */}
-                  <div className="flex items-center space-x-2">
-                    {(() => {
-                      const channel = (channels as Array<{ id: string; name: string; favicon_url?: string }>)?.find(c => c.id === reservation.channelId)
-                      const channelWithFavicon = channel as { favicon_url?: string; name?: string } | undefined
-                      console.log('Channel data for reservation:', {
-                        channelId: reservation.channelId,
-                        channelName: channelWithFavicon?.name,
-                        favicon_url: channelWithFavicon?.favicon_url,
-                        fullChannel: channel
-                      })
-                      return channelWithFavicon?.favicon_url ? (
-                        <Image 
-                          src={channelWithFavicon.favicon_url} 
-                          alt={`${channelWithFavicon.name || 'Channel'} favicon`} 
-                          width={16}
-                          height={16}
-                          className="rounded flex-shrink-0"
-                          style={{ width: 'auto', height: 'auto' }}
-                          onError={(e) => {
-                            // 파비콘 로드 실패 시 기본 아이콘으로 대체
-                            const target = e.target as HTMLImageElement
-                            target.style.display = 'none'
-                            const parent = target.parentElement
-                            if (parent) {
-                              const fallback = document.createElement('div')
-                              fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0'
-                              fallback.innerHTML = '🌐'
-                              parent.appendChild(fallback)
-                            }
-                          }}
-                        />
-                      ) : (
-                        <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0">
-                          <span className="text-gray-400 text-xs">🌐</span>
-                        </div>
-                      )
-                    })()}
-                    <div className="text-sm text-gray-900">{getChannelName(reservation.channelId, channels || [])}</div>
-                    <div className="text-xs text-gray-500">({(channels as Array<{ id: string; name: string; type?: string }>)?.find(c => c.id === reservation.channelId)?.type})</div>
-                  </div>
-
                   {/* 가격 정보 */}
                   <div className="pt-2 border-t border-gray-100">
-                    <div className="flex items-center justify-between">
-                      <div className="text-lg font-bold text-blue-600">
-                        ${calculateTotalPrice(reservation, products || [], optionChoices || []).toLocaleString()}
+                    <div className="text-sm">
+                      <div className="flex items-center space-x-1">
+                        <span className="text-gray-600">${(reservation.totalPrice || reservation.pricingInfo?.totalPrice || calculateTotalPrice(reservation, products || [], optionChoices || [])).toLocaleString()}</span>
+                        {(() => {
+                          const balance = reservation.balanceAmount || reservation.pricingInfo?.balanceAmount || 0
+                          if (balance > 0) {
+                            return (
+                              <>
+                                <span className="text-gray-400">(</span>
+                                <span className="text-red-600 font-medium">
+                                  Balance: ${balance.toLocaleString()}
+                                </span>
+                                <span className="text-gray-400">)</span>
+                              </>
+                            )
+                          }
+                          return null
+                        })()}
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePricingInfoClick(reservation);
-                        }}
-                        className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
-                      >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                        </svg>
-                        <span>{t('actions.price')}</span>
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEditReservationClick(reservation);
-                        }}
-                        className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors border border-blue-200"
-                        title="빠른 수정"
-                      >
-                        {t('actions.edit')}
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          router.push(`/${locale}/admin/reservations/${reservation.id}`)
-                        }}
-                        className="px-2 py-1 text-xs bg-gray-50 text-gray-700 rounded-md hover:bg-gray-100 transition-colors border border-gray-200"
-                        title="상세 보기"
-                      >
-                        {t('actions.details')}
-                      </button>
-
-                      {/* 입금 내역 버튼 */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedReservationForPayment(reservation);
-                          setShowPaymentRecords(true);
-                        }}
-                        className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
-                        title="입금 내역 관리"
-                      >
-                        <DollarSign className="w-3 h-3" />
-                        <span>{t('actions.deposit')}</span>
-                      </button>
                     </div>
+                  </div>
+                </div>
+
+                {/* 연결된 투어 정보 */}
+                {(() => {
+                  const tourId = reservation.tourId || (reservation as any).tour_id
+                  if (!tourId || tourId.trim() === '' || tourId === 'null' || tourId === 'undefined' || !tourInfoMap.has(tourId)) {
+                    return null
+                  }
+                  
+                  const tourInfo = tourInfoMap.get(tourId)!
+                  
+                  // 상태 색상
+                  const getStatusColor = (status: string) => {
+                    const statusLower = status.toLowerCase()
+                    if (statusLower === 'confirmed') return 'bg-green-100 text-green-800'
+                    if (statusLower === 'completed') return 'bg-blue-100 text-blue-800'
+                    if (statusLower === 'cancelled') return 'bg-red-100 text-red-800'
+                    return 'bg-gray-100 text-gray-800'
+                  }
+                  
+                  return (
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <div className="bg-white border border-gray-200 rounded-lg p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-xs font-semibold text-gray-900">
+                            연결된 투어 ({tourInfo.totalPeople}명)
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            {tourInfo.isAssigned && (
+                              <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                배정됨
+                              </span>
+                            )}
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(tourInfo.status)}`}>
+                              {tourInfo.status}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
+                          {tourInfo.guideName !== '-' && (
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                              {tourInfo.guideName}
+                            </span>
+                          )}
+                          {tourInfo.assistantName !== '-' && (
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">
+                              {tourInfo.assistantName}
+                            </span>
+                          )}
+                          {tourInfo.vehicleName !== '-' && (
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                              {tourInfo.vehicleName}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {/* 버튼들 - 가장 아래에 배치 */}
+                <div className="mt-3 pt-3 border-t border-gray-200">
+                  <div className="flex items-center flex-wrap gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePricingInfoClick(reservation);
+                      }}
+                      className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                      </svg>
+                      <span>{t('actions.price')}</span>
+                    </button>
+                    
+                    {/* 투어 생성 버튼 - Mania Tour/Service이고 투어가 없을 때만 표시 */}
+                    {(() => {
+                      const product = (products as Array<{ id: string; sub_category?: string }>)?.find(p => p.id === reservation.productId);
+                      const isManiaTour = product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service';
+                      
+                      // hasExistingTour 필드를 사용하여 투어 존재 여부 확인
+                      if (isManiaTour && !reservation.hasExistingTour) {
+                        return (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCreateTour(reservation);
+                            }}
+                            className="px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md hover:bg-green-100 transition-colors flex items-center space-x-1 border border-green-200"
+                            title="투어 생성"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>{t('actions.tour')}</span>
+                          </button>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* 입금 내역 버튼 */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedReservationForPayment(reservation);
+                        setShowPaymentRecords(true);
+                      }}
+                      className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
+                      title="입금 내역 관리"
+                    >
+                      <DollarSign className="w-3 h-3" />
+                      <span>{t('actions.deposit')}</span>
+                    </button>
+                    
+                    {/* 고객 보기 버튼 */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedReservationForDetail(reservation);
+                        setShowReservationDetailModal(true);
+                      }}
+                      className="px-2 py-1 text-xs bg-purple-50 text-purple-600 rounded-md hover:bg-purple-100 transition-colors flex items-center space-x-1 border border-purple-200"
+                      title="고객 보기"
+                    >
+                      <Eye className="w-3 h-3" />
+                      <span>고객 보기</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -2188,6 +2798,170 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           </div>
         </div>
       )}
+
+      {/* 픽업 시간 수정 모달 */}
+      {showPickupTimeModal && selectedReservationForPickupTime && (
+        <PickupTimeModal
+          isOpen={showPickupTimeModal}
+          selectedReservation={{
+            id: selectedReservationForPickupTime.id,
+            customer_id: selectedReservationForPickupTime.customerId,
+            pickup_time: selectedReservationForPickupTime.pickUpTime,
+            pickup_hotel: selectedReservationForPickupTime.pickUpHotel
+          }}
+          pickupTimeValue={pickupTimeValue}
+          onTimeChange={setPickupTimeValue}
+          onSave={handleSavePickupTime}
+          onCancel={() => {
+            setShowPickupTimeModal(false)
+            setSelectedReservationForPickupTime(null)
+            setPickupTimeValue('')
+          }}
+          getCustomerName={(customerId: string) => getCustomerName(customerId, (customers as Customer[]) || [])}
+          getCustomerLanguage={getCustomerLanguage}
+          getPickupHotelName={(hotelId: string) => getPickupHotelDisplay(hotelId, pickupHotels || [])}
+          getCountryCode={getCountryCode}
+        />
+      )}
+
+      {/* 픽업 호텔 수정 모달 */}
+      {showPickupHotelModal && selectedReservationForPickupHotel && (
+        <PickupHotelModal
+          isOpen={showPickupHotelModal}
+          selectedReservation={{
+            id: selectedReservationForPickupHotel.id,
+            customer_id: selectedReservationForPickupHotel.customerId,
+            pickup_time: selectedReservationForPickupHotel.pickUpTime,
+            pickup_hotel: selectedReservationForPickupHotel.pickUpHotel
+          }}
+          hotelSearchTerm={hotelSearchTerm}
+          filteredHotels={filteredHotels.map(hotel => ({
+            id: hotel.id,
+            hotel: hotel.hotel || hotel.name || hotel.name_ko || '',
+            pick_up_location: hotel.pick_up_location || ''
+          }))}
+          onSearchChange={setHotelSearchTerm}
+          onHotelSelect={handleSavePickupHotel}
+          onCancel={() => {
+            setShowPickupHotelModal(false)
+            setSelectedReservationForPickupHotel(null)
+            setHotelSearchTerm('')
+          }}
+          getCustomerName={(customerId: string) => getCustomerName(customerId, (customers as Customer[]) || [])}
+        />
+      )}
+
+      {/* 예약 상세 모달 (고객 보기) */}
+      {showReservationDetailModal && selectedReservationForDetail && (
+        <ResizableModal
+          isOpen={showReservationDetailModal}
+          onClose={() => {
+            setShowReservationDetailModal(false)
+            setSelectedReservationForDetail(null)
+          }}
+          title={`고객 예약 상세 - ${getCustomerName(selectedReservationForDetail.customerId, (customers as Customer[]) || [])}`}
+          initialHeight={typeof window !== 'undefined' ? window.innerHeight * 0.9 : 600}
+          onHeightChange={() => {}}
+        >
+          <iframe
+            src={`/${locale}/dashboard/reservations/${selectedReservationForDetail.customerId}/${selectedReservationForDetail.id}`}
+            className="w-full h-full border-0"
+            title="예약 상세 정보"
+          />
+        </ResizableModal>
+      )}
+    </div>
+  )
+}
+
+// 리사이즈 가능한 모달 컴포넌트
+function ResizableModal({
+  isOpen,
+  onClose,
+  title,
+  children,
+  initialHeight,
+  onHeightChange
+}: {
+  isOpen: boolean
+  onClose: () => void
+  title: string
+  children: React.ReactNode
+  initialHeight: number
+  onHeightChange: (height: number) => void
+}) {
+  const [height, setHeight] = useState(initialHeight)
+  const [isResizing, setIsResizing] = useState(false)
+  const modalRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setHeight(initialHeight)
+  }, [initialHeight])
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsResizing(true)
+  }
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return
+      
+      const windowHeight = window.innerHeight
+      const newHeight = windowHeight - e.clientY
+      const minHeight = 300
+      const maxHeight = windowHeight - 100
+      
+      const clampedHeight = Math.max(minHeight, Math.min(maxHeight, newHeight))
+      setHeight(clampedHeight)
+      onHeightChange(clampedHeight)
+    }
+
+    const handleMouseUp = () => {
+      setIsResizing(false)
+    }
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mouseup', handleMouseUp)
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isResizing, onHeightChange])
+
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end justify-center z-50 p-4">
+      <div 
+        ref={modalRef}
+        className="bg-white rounded-t-lg shadow-xl w-full max-w-7xl overflow-hidden flex flex-col"
+        style={{ height: `${height}px`, maxHeight: '95vh' }}
+      >
+        {/* 리사이즈 핸들 */}
+        <div
+          onMouseDown={handleMouseDown}
+          className="w-full h-2 bg-gray-200 hover:bg-gray-300 cursor-ns-resize flex items-center justify-center group transition-colors"
+        >
+          <GripVertical className="w-4 h-4 text-gray-400 group-hover:text-gray-600" />
+        </div>
+        
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
+          <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-hidden" style={{ height: `calc(${height}px - 80px)` }}>
+          {children}
+        </div>
+      </div>
     </div>
   )
 }

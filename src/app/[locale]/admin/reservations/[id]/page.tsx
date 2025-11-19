@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useState, useCallback } from 'react'
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { useTranslations } from 'next-intl'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -8,6 +8,100 @@ import ReservationForm from '@/components/reservation/ReservationForm'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { Reservation, Customer } from '@/types/reservation'
 import { useAuth } from '@/contexts/AuthContext'
+import { Eye, X, GripVertical } from 'lucide-react'
+import { getCustomerName } from '@/utils/reservationUtils'
+
+// 리사이즈 가능한 모달 컴포넌트
+function ResizableModal({
+  isOpen,
+  onClose,
+  title,
+  children,
+  initialHeight,
+  onHeightChange
+}: {
+  isOpen: boolean
+  onClose: () => void
+  title: string
+  children: React.ReactNode
+  initialHeight: number
+  onHeightChange: (height: number) => void
+}) {
+  const [height, setHeight] = useState(initialHeight)
+  const [isResizing, setIsResizing] = useState(false)
+  const modalRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setHeight(initialHeight)
+  }, [initialHeight])
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsResizing(true)
+  }
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return
+      
+      const windowHeight = window.innerHeight
+      const newHeight = windowHeight - e.clientY
+      const minHeight = 300
+      const maxHeight = windowHeight - 100
+      
+      const clampedHeight = Math.max(minHeight, Math.min(maxHeight, newHeight))
+      setHeight(clampedHeight)
+      onHeightChange(clampedHeight)
+    }
+
+    const handleMouseUp = () => {
+      setIsResizing(false)
+    }
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mouseup', handleMouseUp)
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isResizing, onHeightChange])
+
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end justify-center z-50 p-4">
+      <div 
+        ref={modalRef}
+        className="bg-white rounded-t-lg shadow-xl w-full max-w-7xl overflow-hidden flex flex-col"
+        style={{ height: `${height}px`, maxHeight: '95vh' }}
+      >
+        {/* 리사이즈 핸들 */}
+        <div
+          onMouseDown={handleMouseDown}
+          className="w-full h-2 bg-gray-200 hover:bg-gray-300 cursor-ns-resize flex items-center justify-center group transition-colors"
+        >
+          <GripVertical className="w-4 h-4 text-gray-400 group-hover:text-gray-600" />
+        </div>
+        
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
+          <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-hidden" style={{ height: `calc(${height}px - 80px)` }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function ReservationDetailsPage() {
   const t = useTranslations('reservations')
@@ -34,6 +128,16 @@ export default function ReservationDetailsPage() {
   const [reservation, setReservation] = useState<Reservation | null>(null)
   const reservationId = params?.id || ''
   const [tourCreated, setTourCreated] = useState(false)
+  
+  // 예약 상세 모달 관련 상태
+  const [showReservationDetailModal, setShowReservationDetailModal] = useState(false)
+  const [modalHeight, setModalHeight] = useState(() => {
+    // 기본 높이를 화면 높이의 90%로 설정
+    if (typeof window !== 'undefined') {
+      return window.innerHeight * 0.9
+    }
+    return 600
+  })
 
   // 인증 로딩 중이거나 권한이 없는 경우 로딩 표시
   const isStaff = isInitialized && (hasPermission('canManageReservations') || hasPermission('canManageTours') || (userRole === 'admin' || userRole === 'manager'))
@@ -341,6 +445,7 @@ export default function ReservationDetailsPage() {
           onRefreshCustomers={refreshCustomers}
           onDelete={handleDelete}
           layout="page"
+          onViewCustomer={() => setShowReservationDetailModal(true)}
         />
       </div>
     )
@@ -357,8 +462,27 @@ export default function ReservationDetailsPage() {
         // 권한이 없을 때는 리다이렉트 중이므로 빈 화면 표시
         null
       ) : (
-        // 권한이 있을 때만 실제 콘텐츠 표시
-        content
+        <>
+          {/* 권한이 있을 때만 실제 콘텐츠 표시 */}
+          {content}
+          
+          {/* 예약 상세 모달 (고객 보기) */}
+          {showReservationDetailModal && reservation && (
+            <ResizableModal
+              isOpen={showReservationDetailModal}
+              onClose={() => setShowReservationDetailModal(false)}
+              title={`고객 예약 상세 - ${getCustomerName(reservation.customerId, (customers as Customer[]) || [])}`}
+              initialHeight={modalHeight}
+              onHeightChange={setModalHeight}
+            >
+              <iframe
+                src={`/${params?.locale || 'ko'}/dashboard/reservations/${reservation.customerId}/${reservation.id}`}
+                className="w-full h-full border-0"
+                title="예약 상세 정보"
+              />
+            </ResizableModal>
+          )}
+        </>
       )}
     </div>
   )
