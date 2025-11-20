@@ -260,6 +260,58 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     isAssigned: boolean
   }>>(new Map())
 
+  // reservation_pricing 데이터 상태
+  const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, {
+    total_price: number
+    balance_amount: number
+  }>>(new Map())
+
+  // reservation_pricing 데이터 가져오기
+  useEffect(() => {
+    const fetchReservationPricing = async () => {
+      if (!reservations.length) return
+
+      try {
+        const reservationIds = reservations.map(r => r.id)
+        
+        // URL 길이 제한을 피하기 위해 청크 단위로 나눠서 요청
+        const chunkSize = 100 // 한 번에 100개씩 요청
+        const pricingMap = new Map<string, {
+          total_price: number
+          balance_amount: number
+        }>()
+
+        // 청크 단위로 나눠서 요청
+        for (let i = 0; i < reservationIds.length; i += chunkSize) {
+          const chunk = reservationIds.slice(i, i + chunkSize)
+          
+          const { data: pricingData, error } = await supabase
+            .from('reservation_pricing')
+            .select('reservation_id, total_price, balance_amount')
+            .in('reservation_id', chunk)
+
+          if (error) {
+            console.error('reservation_pricing 조회 오류:', error)
+            continue // 다음 청크 계속 처리
+          }
+
+          pricingData?.forEach(p => {
+            pricingMap.set(p.reservation_id, {
+              total_price: typeof p.total_price === 'string' ? parseFloat(p.total_price) || 0 : (p.total_price || 0),
+              balance_amount: typeof p.balance_amount === 'string' ? parseFloat(p.balance_amount) || 0 : (p.balance_amount || 0)
+            })
+          })
+        }
+
+        setReservationPricingMap(pricingMap)
+      } catch (error) {
+        console.error('reservation_pricing 로드 오류:', error)
+      }
+    }
+
+    fetchReservationPricing()
+  }, [reservations])
+
   // 픽업 시간 수정 모달 상태
   const [showPickupTimeModal, setShowPickupTimeModal] = useState(false)
   const [selectedReservationForPickupTime, setSelectedReservationForPickupTime] = useState<Reservation | null>(null)
@@ -2067,21 +2119,36 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 <div className="pt-2 border-t border-gray-100">
                   <div className="text-sm">
                     <div className="flex items-center space-x-1">
-                      <span className="text-gray-600">${(reservation.totalPrice || reservation.pricingInfo?.totalPrice || calculateTotalPrice(reservation, products || [], optionChoices || [])).toLocaleString()}</span>
                       {(() => {
-                        const balance = reservation.balanceAmount || reservation.pricingInfo?.balanceAmount || 0
-                        if (balance > 0) {
-                          return (
-                            <>
-                              <span className="text-gray-400">(</span>
-                              <span className="text-red-600 font-medium">
-                                Balance: ${balance.toLocaleString()}
-                              </span>
-                              <span className="text-gray-400">)</span>
-                            </>
-                          )
-                        }
-                        return null
+                        // reservation_pricing에서 total_price 가져오기
+                        const pricing = reservationPricingMap.get(reservation.id)
+                        const totalPrice = pricing?.total_price || 0
+                        
+                        // payment_records에서 입금 내역 합계 계산 (나중에 추가 예정)
+                        // const totalPaid = 0 // TODO: payment_records 합계 계산
+                        
+                        // 잔금 계산: total_price - 입금 내역 합계
+                        // const balance = totalPrice - totalPaid
+                        
+                        return (
+                          <>
+                            <span className="text-gray-600">
+                              {totalPrice > 0 
+                                ? `$${totalPrice.toLocaleString()}` 
+                                : `$${(reservation.totalPrice || reservation.pricingInfo?.totalPrice || calculateTotalPrice(reservation, products || [], optionChoices || [])).toLocaleString()}`
+                              }
+                            </span>
+                            {pricing && pricing.balance_amount > 0 && (
+                              <>
+                                <span className="text-gray-400">(</span>
+                                <span className="text-red-600 font-medium">
+                                  Balance: ${pricing.balance_amount.toLocaleString()}
+                                </span>
+                                <span className="text-gray-400">)</span>
+                              </>
+                            )}
+                          </>
+                        )
                       })()}
                     </div>
                   </div>
@@ -2107,7 +2174,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   
                   return (
                     <div className="mt-3 pt-3 border-t border-gray-200">
-                      <div className="bg-white border border-gray-200 rounded-lg p-3">
+                      <div 
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          router.push(`/${locale}/admin/tours/${tourId}`)
+                        }}
+                        className="bg-white border border-gray-200 rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:border-blue-300 transition-colors"
+                      >
                         <div className="flex items-center justify-between mb-2">
                           <div className="text-xs font-semibold text-gray-900">
                             연결된 투어 ({tourInfo.totalPeople}명)
@@ -2499,7 +2572,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   
                   return (
                     <div className="mt-3 pt-3 border-t border-gray-200">
-                      <div className="bg-white border border-gray-200 rounded-lg p-3">
+                      <div 
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          router.push(`/${locale}/admin/tours/${tourId}`)
+                        }}
+                        className="bg-white border border-gray-200 rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:border-blue-300 transition-colors"
+                      >
                         <div className="flex items-center justify-between mb-2">
                           <div className="text-xs font-semibold text-gray-900">
                             연결된 투어 ({tourInfo.totalPeople}명)

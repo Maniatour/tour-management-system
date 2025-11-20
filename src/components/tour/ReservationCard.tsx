@@ -37,10 +37,11 @@ interface PaymentRecord {
 interface ReservationPricing {
   id: string
   reservation_id: string
-  balance_amount: number
-  total_amount: number
-  paid_amount: number
-  currency: string
+  balance_amount: number | string | null
+  total_price?: number | string | null
+  total_amount?: number | string | null
+  paid_amount?: number | string | null
+  currency?: string
 }
 
 interface ReservationCardProps {
@@ -123,22 +124,25 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       }
 
       const data = await response.json()
-      setReservationPricing(data.pricing || null)
+      if (data.pricing) {
+        // balance_amount를 숫자로 변환
+        const pricing = {
+          ...data.pricing,
+          balance_amount: typeof data.pricing.balance_amount === 'string' 
+            ? parseFloat(data.pricing.balance_amount) || 0
+            : (data.pricing.balance_amount || 0)
+        }
+        setReservationPricing(pricing)
+      } else {
+        setReservationPricing(null)
+      }
     } catch (error) {
       console.error('예약 가격 정보 조회 오류:', error)
     }
   }, [isStaff, reservation.id])
 
-  // 컴포넌트 마운트 시 가격 정보와 채널 정보 가져오기
-  useEffect(() => {
-    if (isStaff) {
-      fetchReservationPricing()
-    }
-    fetchChannelInfo()
-  }, [isStaff, reservation.id, fetchReservationPricing, fetchChannelInfo])
-
   // 입금 내역 가져오기
-  const fetchPaymentRecords = async () => {
+  const fetchPaymentRecords = useCallback(async () => {
     if (!isStaff) return
     
     setLoadingPayments(true)
@@ -162,10 +166,20 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       setPaymentRecords(data.paymentRecords || [])
     } catch (error) {
       console.error('입금 내역 조회 오류:', error)
+      setPaymentRecords([])
     } finally {
       setLoadingPayments(false)
     }
-  }
+  }, [isStaff, reservation.id])
+
+  // 컴포넌트 마운트 시 가격 정보, 입금 내역, 채널 정보 가져오기
+  useEffect(() => {
+    if (isStaff) {
+      fetchReservationPricing()
+      fetchPaymentRecords()
+    }
+    fetchChannelInfo()
+  }, [isStaff, reservation.id, fetchReservationPricing, fetchPaymentRecords, fetchChannelInfo])
 
   // 입금 내역 표시 토글
   const togglePaymentRecords = () => {
@@ -545,7 +559,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             <span>{getPickupHotelName()}</span>
           </div>
           
-          {/* 채널 정보 - 두 번째 줄 오른쪽 끝 */}
+          {/* 채널 정보 및 Grand Total - 두 번째 줄 오른쪽 끝 */}
           <div className="flex items-center space-x-2">
             {/* 채널 정보 */}
             {channelInfo && (
@@ -566,7 +580,17 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               </div>
             )}
             
-            
+            {/* Grand Total 표시 */}
+            {isStaff && reservationPricing && reservationPricing.total_price && (
+              <div className="text-xs font-semibold text-gray-700">
+                {formatCurrency(
+                  typeof reservationPricing.total_price === 'string'
+                    ? parseFloat(reservationPricing.total_price) || 0
+                    : (reservationPricing.total_price || 0),
+                  reservationPricing.currency || 'USD'
+                )}
+              </div>
+            )}
           </div>
         </div>
         {/* 3번째 줄 - pickup_location과 잔액 정보, 액션 버튼들 */}
@@ -577,12 +601,37 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               {getPickupLocation() || ''}
             </div>
             
-            {/* 잔액 뱃지 - $90만 표시 */}
-            {isStaff && reservationPricing && reservationPricing.balance_amount !== null && reservationPricing.balance_amount > 0 && (
-              <div className="px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">
-                {formatCurrency(reservationPricing.balance_amount, reservationPricing.currency)}
-              </div>
-            )}
+            {/* 잔액 뱃지 - 잔금이 있을 때만 표시 */}
+            {isStaff && (() => {
+              // reservation_pricing에서 total_price 가져오기
+              const totalPrice = reservationPricing 
+                ? (typeof reservationPricing.total_price === 'string'
+                    ? parseFloat(reservationPricing.total_price) || 0
+                    : (reservationPricing.total_price || 0))
+                : 0
+              
+              // payment_records 테이블에서 입금 내역 합계 계산 (모든 상태 합산)
+              const totalPaid = paymentRecords
+                .reduce((sum, record) => {
+                  const amount = typeof record.amount === 'string'
+                    ? parseFloat(record.amount) || 0
+                    : (record.amount || 0)
+                  return sum + amount
+                }, 0)
+              
+              // 잔금 계산: total_price - 입금 내역 합계
+              const calculatedBalance = totalPrice - totalPaid
+              
+              // 잔금이 0보다 크면 표시
+              if (calculatedBalance > 0) {
+                return (
+                  <div className="px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">
+                    {formatCurrency(calculatedBalance, reservationPricing?.currency || 'USD')}
+                  </div>
+                )
+              }
+              return null
+            })()}
           </div>
           
           {/* 오른쪽 액션 버튼들 */}

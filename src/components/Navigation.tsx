@@ -167,7 +167,7 @@ const NavigationContent = () => {
                           {/* 페이지 이동 메뉴 */}
                           <div className="px-4 py-2 border-t border-gray-100">
                             <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
-                              페이지 이동
+                              {t('pageNavigation')}
                             </p>
                             
                             {/* 홈페이지 */}
@@ -177,7 +177,7 @@ const NavigationContent = () => {
                               className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                             >
                               <Home className="w-4 h-4 mr-2" />
-                              홈페이지
+                              {t('homepage')}
                             </Link>
                             
                             {/* 고객 페이지 (모든 사용자) */}
@@ -187,7 +187,7 @@ const NavigationContent = () => {
                               className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                             >
                               <User className="w-4 h-4 mr-2" />
-                              고객 페이지
+                              {t('customerPage')}
                             </Link>
                             
                             {/* 관리자 페이지 (관리자/매니저/팀원) */}
@@ -198,7 +198,7 @@ const NavigationContent = () => {
                                 className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                               >
                                 <Settings className="w-4 h-4 mr-2" />
-                                관리자 페이지
+                                {t('adminPage')}
                               </Link>
                             )}
                             
@@ -210,7 +210,7 @@ const NavigationContent = () => {
                                 className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                               >
                                 <UserCheck className="w-4 h-4 mr-2" />
-                                가이드 페이지
+                                {t('guidePage')}
                               </Link>
                             )}
                           </div>
@@ -292,7 +292,7 @@ const NavigationContent = () => {
                           {currentUserRole === 'admin' && !isSimulating && (
                             <div className="px-4 py-2 border-t border-gray-100">
                               <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
-                                시뮬레이션
+                                {t('simulation')}
                               </p>
                               
                               {/* 가이드 시뮬레이션 */}
@@ -304,7 +304,7 @@ const NavigationContent = () => {
                                 className="w-full px-4 py-2 text-left text-sm text-blue-600 hover:bg-blue-50 flex items-center"
                               >
                                 <UserCheck className="w-4 h-4 mr-2" />
-                                가이드 시뮬레이션
+                                {t('guideSimulation')}
                               </button>
                               
                               {/* 고객 시뮬레이션 */}
@@ -316,7 +316,7 @@ const NavigationContent = () => {
                                 className="w-full px-4 py-2 text-left text-sm text-green-600 hover:bg-green-50 flex items-center"
                               >
                                 <User className="w-4 h-4 mr-2" />
-                                고객 시뮬레이션
+                                {t('customerSimulation')}
                               </button>
                             </div>
                           )}

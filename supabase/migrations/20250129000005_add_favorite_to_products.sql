@@ -19,3 +19,4 @@ CREATE INDEX IF NOT EXISTS idx_products_is_favorite ON products(is_favorite) WHE
 CREATE INDEX IF NOT EXISTS idx_products_favorite_order ON products(favorite_order) WHERE is_favorite = true;
 
 
+

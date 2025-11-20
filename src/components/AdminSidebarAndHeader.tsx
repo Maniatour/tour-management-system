@@ -669,7 +669,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                         {/* 페이지 이동 메뉴 */}
                         <div className="px-4 py-2 border-t border-gray-100">
                           <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
-                            페이지 이동
+                            {t('pageNavigation')}
                           </p>
                           
                           {/* 홈페이지 */}
@@ -679,7 +679,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                             className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                           >
                             <Home className="w-4 h-4 mr-2" />
-                            홈페이지
+                            {t('homepage')}
                           </Link>
                           
                           {/* 고객 페이지 */}
@@ -689,7 +689,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                             className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                           >
                             <User className="w-4 h-4 mr-2" />
-                            고객 페이지
+                            {t('customerPage')}
                           </Link>
                           
                           {/* 가이드 페이지 (팀원만) */}
@@ -700,7 +700,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                               className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
                             >
                               <UserCheck className="w-4 h-4 mr-2" />
-                              가이드 페이지
+                              {t('guidePage')}
                             </Link>
                           )}
                         </div>
@@ -709,7 +709,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                         {(userRole === 'admin' || (userRole === 'team_member' && isSimulating)) && (
                           <div className="px-4 py-2 border-t border-gray-100">
                             <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
-                              관리자 도구
+                              {t('adminTools')}
                             </p>
                             <Link
                               href={`/${locale}/admin/dev-tools`}
@@ -726,7 +726,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                         {userRole === 'admin' && (
                           <div className="px-4 py-2 border-t border-gray-100">
                             <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
-                              시뮬레이션
+                              {t('simulation')}
                             </p>
                             
                             {/* 가이드 시뮬레이션 */}
@@ -738,7 +738,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                               className="w-full px-4 py-2 text-left text-sm text-blue-600 hover:bg-blue-50 flex items-center"
                             >
                               <UserCheck className="w-4 h-4 mr-2" />
-                              가이드 시뮬레이션
+                              {t('guideSimulation')}
                             </button>
                             
                             {/* 고객 시뮬레이션 */}
@@ -750,7 +750,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                               className="w-full px-4 py-2 text-left text-sm text-green-600 hover:bg-green-50 flex items-center"
                             >
                               <User className="w-4 h-4 mr-2" />
-                              고객 시뮬레이션
+                              {t('customerSimulation')}
                             </button>
                           </div>
                         )}
@@ -759,7 +759,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                         {isSimulating && (
                           <div className="px-4 py-2 border-t border-gray-100">
                             <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
-                              현재 시뮬레이션
+                              {t('currentSimulation')}
                             </p>
                             {/* 가이드 시뮬레이션인 경우 */}
                             {userRole === 'team_member' && (
@@ -769,7 +769,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                                 className="w-full px-4 py-2 text-left text-sm text-green-600 hover:bg-green-50 flex items-center"
                               >
                                 <UserCheck className="w-4 h-4 mr-2" />
-                                가이드 페이지
+                                {t('guidePage')}
                               </Link>
                             )}
                             {/* 고객 시뮬레이션인 경우 */}
@@ -780,7 +780,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                                 className="w-full px-4 py-2 text-left text-sm text-green-600 hover:bg-green-50 flex items-center"
                               >
                                 <User className="w-4 h-4 mr-2" />
-                                고객 페이지
+                                {t('customerPage')}
                               </Link>
                             )}
                             <button
