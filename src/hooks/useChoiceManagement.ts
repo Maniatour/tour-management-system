@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { findChoicePricingData, migrateChoicePricing } from '@/utils/choicePricingMatcher';
 
 interface ChoiceOption {
   id: string;
@@ -163,7 +164,11 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
                 child_price: totalChildPrice,
                 infant_price: totalInfantPrice,
                 is_active: true,
-                combination_details: currentCombination
+                combination_details: currentCombination.map(item => ({
+                  groupId: item.group_id || '',
+                  optionId: item.id || '',
+                  optionKey: item.option_key || ''
+                }))
               });
             }
             return;
@@ -173,7 +178,7 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
           if (currentGroup.choice_options && currentGroup.choice_options.length > 0) {
             // 현재 그룹의 각 옵션에 대해 재귀 호출
             currentGroup.choice_options.forEach((option: any) => {
-              generateCombinations(groups, [...currentCombination, option], groupIndex + 1);
+              generateCombinations(groups, [...currentCombination, { ...option, group_id: currentGroup.id }], groupIndex + 1);
             });
           } else {
             // 옵션이 없는 그룹은 건너뛰기
@@ -183,7 +188,43 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
         
         generateCombinations(choicesData);
         
-        console.log('choice_options에서 생성된 조합들:', combinations);
+        // 동적 가격에서 기존 가격 찾아서 적용 (초이스 변경 시에도 기존 가격 유지)
+        if (pricingData && pricingData.length > 0) {
+          const choicesPricing = pricingData[0].choices_pricing;
+          let existingChoicesPricing: Record<string, any> = {};
+          
+          try {
+            existingChoicesPricing = typeof choicesPricing === 'string'
+              ? JSON.parse(choicesPricing)
+              : choicesPricing || {};
+          } catch (e) {
+            console.warn('기존 choices_pricing 파싱 오류:', e);
+          }
+          
+          // 각 조합에 대해 기존 가격 찾기
+          combinations.forEach(combination => {
+            const matchResult = findChoicePricingData(combination, existingChoicesPricing);
+            
+            if (matchResult.data && Object.keys(matchResult.data).length > 0) {
+              // 기존 가격이 있으면 적용 (기본 가격보다 우선)
+              const adultPrice = matchResult.data.adult || matchResult.data.adult_price;
+              const childPrice = matchResult.data.child || matchResult.data.child_price;
+              const infantPrice = matchResult.data.infant || matchResult.data.infant_price;
+              
+              if (adultPrice !== undefined) combination.adult_price = adultPrice;
+              if (childPrice !== undefined) combination.child_price = childPrice;
+              if (infantPrice !== undefined) combination.infant_price = infantPrice;
+              
+              console.log(`기존 가격 적용: ${combination.id} <- ${matchResult.matchedKey}`, {
+                adult: combination.adult_price,
+                child: combination.child_price,
+                infant: combination.infant_price
+              });
+            }
+          });
+        }
+        
+        console.log('choice_options에서 생성된 조합들 (기존 가격 적용 후):', combinations);
         setChoiceCombinations(combinations);
         return;
       }

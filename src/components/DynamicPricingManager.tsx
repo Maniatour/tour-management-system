@@ -14,7 +14,8 @@ import { useChannelManagement } from '@/hooks/useChannelManagement';
 import { useChoiceManagement } from '@/hooks/useChoiceManagement';
 import { usePricingData } from '@/hooks/usePricingData';
 import { usePriceCalculation } from '@/hooks/usePriceCalculation';
-import { calculateHomepageNetPrice } from '@/utils/homepagePriceCalculator';
+import { calculateHomepageNetPrice, findHomepageChoiceData } from '@/utils/homepagePriceCalculator';
+import { findChoicePricingData } from '@/utils/choicePricingMatcher';
 
 // UI 컴포넌트들
 import { ChannelSelector } from './dynamic-pricing/ChannelSelector';
@@ -558,38 +559,10 @@ export default function DynamicPricingManager({
           // 주의: homepagePricingConfig에서 M00001 채널의 고정 가격을 우선 사용
           const combination = choiceCombinations.find(c => c.id === choiceId);
           if (combination) {
-            // homepagePricingConfig에서 여러 키로 시도하여 가격 찾기
-            let homepageChoiceData: any = {};
-            if (homepagePricingConfig?.choices_pricing) {
-              // 1. choiceId로 시도
-              homepageChoiceData = homepagePricingConfig.choices_pricing[choiceId] || {};
-              
-              // 2. combination_key로 시도
-              if ((!homepageChoiceData || Object.keys(homepageChoiceData).length === 0) && combination.combination_key) {
-                homepageChoiceData = homepagePricingConfig.choices_pricing[combination.combination_key] || {};
-              }
-              
-              // 3. 정렬된 combination_key로 시도 (그룹 순서에 상관없이 매칭)
-              if ((!homepageChoiceData || Object.keys(homepageChoiceData).length === 0) && combination.combination_key) {
-                const sortedKey = combination.combination_key.split('+').sort().join('+');
-                if (sortedKey !== combination.combination_key) {
-                  homepageChoiceData = homepagePricingConfig.choices_pricing[sortedKey] || {};
-                }
-              }
-              
-              // 4. 모든 키를 순회하며 정렬된 키로 매칭 시도
-              if ((!homepageChoiceData || Object.keys(homepageChoiceData).length === 0) && combination.combination_key) {
-                const sortedKey = combination.combination_key.split('+').sort().join('+');
-                const availableKeys = Object.keys(homepagePricingConfig.choices_pricing);
-                const matchingKey = availableKeys.find(key => {
-                  const sortedAvailableKey = key.split('+').sort().join('+');
-                  return sortedAvailableKey === sortedKey;
-                });
-                if (matchingKey) {
-                  homepageChoiceData = homepagePricingConfig.choices_pricing[matchingKey];
-                }
-              }
-            }
+            // homepagePricingConfig에서 여러 키로 시도하여 가격 찾기 (유연한 매칭)
+            const homepageChoiceData = homepagePricingConfig 
+              ? findHomepageChoiceData(combination, homepagePricingConfig)
+              : {};
             
             // pricingConfig.choices_pricing의 값이 있으면 사용, 없으면 homepagePricingConfig 사용
             const finalAdultPrice = adultPrice || 
@@ -635,38 +608,8 @@ export default function DynamicPricingManager({
         let infantPrice = 0;
         
         if (hasHomepageConfig) {
-          // homepagePricingConfig에서 여러 키로 시도하여 가격 찾기
-          let homepageChoiceData: any = {};
-          if (homepagePricingConfig?.choices_pricing) {
-            // 1. combination.id로 시도
-            homepageChoiceData = homepagePricingConfig.choices_pricing[combination.id] || {};
-            
-            // 2. combination_key로 시도
-            if ((!homepageChoiceData || Object.keys(homepageChoiceData).length === 0) && combination.combination_key) {
-              homepageChoiceData = homepagePricingConfig.choices_pricing[combination.combination_key] || {};
-            }
-            
-            // 3. 정렬된 combination_key로 시도 (그룹 순서에 상관없이 매칭)
-            if ((!homepageChoiceData || Object.keys(homepageChoiceData).length === 0) && combination.combination_key) {
-              const sortedKey = combination.combination_key.split('+').sort().join('+');
-              if (sortedKey !== combination.combination_key) {
-                homepageChoiceData = homepagePricingConfig.choices_pricing[sortedKey] || {};
-              }
-            }
-            
-            // 4. 모든 키를 순회하며 정렬된 키로 매칭 시도
-            if ((!homepageChoiceData || Object.keys(homepageChoiceData).length === 0) && combination.combination_key) {
-              const sortedKey = combination.combination_key.split('+').sort().join('+');
-              const availableKeys = Object.keys(homepagePricingConfig.choices_pricing);
-              const matchingKey = availableKeys.find(key => {
-                const sortedAvailableKey = key.split('+').sort().join('+');
-                return sortedAvailableKey === sortedKey;
-              });
-              if (matchingKey) {
-                homepageChoiceData = homepagePricingConfig.choices_pricing[matchingKey];
-              }
-            }
-          }
+          // homepagePricingConfig에서 여러 키로 시도하여 가격 찾기 (유연한 매칭)
+          const homepageChoiceData = findHomepageChoiceData(combination, homepagePricingConfig);
           
           adultPrice = (homepageChoiceData.adult_price as number) ||
                       (homepageChoiceData.adult as number) ||
@@ -2139,28 +2082,10 @@ export default function DynamicPricingManager({
                               infant: productBasePrice.infant || 0
                             };
                             
-                            // 초이스 가격 찾기 (M00001 채널의 고정값)
-                            let homepageChoiceData: any = {};
-                            
-                            // 1. homepagePricingConfig에서 찾기
-                            if (homepagePricingConfig?.choices_pricing) {
-                              homepageChoiceData = homepagePricingConfig.choices_pricing[combination.id] || 
-                                                  homepagePricingConfig.choices_pricing[combination.combination_key || ''] || {};
-                              
-                              // 여러 키 시도
-                              if ((!homepageChoiceData || Object.keys(homepageChoiceData).length === 0)) {
-                                const availableKeys = Object.keys(homepagePricingConfig.choices_pricing);
-                                const matchingKey = availableKeys.find(key => {
-                                  return key === combination.id || 
-                                         key === combination.combination_key ||
-                                         (combination.combination_key && key.includes(combination.combination_key)) ||
-                                         (combination.id && key.includes(combination.id));
-                                });
-                                if (matchingKey) {
-                                  homepageChoiceData = homepagePricingConfig.choices_pricing[matchingKey];
-                                }
-                              }
-                            }
+                            // 초이스 가격 찾기 (M00001 채널의 고정값, 유연한 매칭 사용)
+                            let homepageChoiceData = homepagePricingConfig 
+                              ? findHomepageChoiceData(combination, homepagePricingConfig)
+                              : {};
                             
                             // 2. homepagePricingConfig에서 찾지 못한 경우, combination의 기본값 사용
                             if ((!homepageChoiceData || Object.keys(homepageChoiceData).length === 0 || 
@@ -2519,29 +2444,10 @@ export default function DynamicPricingManager({
                     // 직접 계산하여 디버깅 가능하도록
                     const basePrice = productBasePrice.adult || 0;
                     
-                    // 초이스 가격 찾기 (M00001 채널의 고정값 우선, 없으면 combination 기본값 사용)
-                    let foundChoiceData: any = {};
-                    
-                    // 1. homepagePricingConfig에서 찾기
-                    if (homepagePricingConfig?.choices_pricing) {
-                      // 직접 키로 찾기
-                      foundChoiceData = homepagePricingConfig.choices_pricing[combination.id] || 
-                                       homepagePricingConfig.choices_pricing[combination.combination_key || ''] || {};
-                      
-                      // 여러 키 시도
-                      if ((!foundChoiceData || Object.keys(foundChoiceData).length === 0)) {
-                        const availableKeys = Object.keys(homepagePricingConfig.choices_pricing);
-                        const matchingKey = availableKeys.find(key => {
-                          return key === combination.id || 
-                                 key === combination.combination_key ||
-                                 (combination.combination_key && key.includes(combination.combination_key)) ||
-                                 (combination.id && key.includes(combination.id));
-                        });
-                        if (matchingKey) {
-                          foundChoiceData = homepagePricingConfig.choices_pricing[matchingKey];
-                        }
-                      }
-                    }
+                    // 초이스 가격 찾기 (M00001 채널의 고정값 우선, 유연한 매칭 사용)
+                    const foundChoiceData = homepagePricingConfig 
+                      ? findHomepageChoiceData(combination, homepagePricingConfig)
+                      : {};
                     
                     // 2. homepagePricingConfig에서 찾지 못한 경우, combination의 기본값 사용
                     if ((!foundChoiceData || Object.keys(foundChoiceData).length === 0 || 
@@ -3014,25 +2920,10 @@ export default function DynamicPricingManager({
                   if (homepageChannel && otaSalePrice > 0) {
                     const basePrice = productBasePrice.adult || 0;
                     
-                    let foundChoiceData: any = {};
-                    
-                    if (homepagePricingConfig?.choices_pricing) {
-                      foundChoiceData = homepagePricingConfig.choices_pricing[combination.id] || 
-                                       homepagePricingConfig.choices_pricing[combination.combination_key || ''] || {};
-                      
-                      if ((!foundChoiceData || Object.keys(foundChoiceData).length === 0)) {
-                        const availableKeys = Object.keys(homepagePricingConfig.choices_pricing);
-                        const matchingKey = availableKeys.find(key => {
-                          return key === combination.id || 
-                                 key === combination.combination_key ||
-                                 (combination.combination_key && key.includes(combination.combination_key)) ||
-                                 (combination.id && key.includes(combination.id));
-                        });
-                        if (matchingKey) {
-                          foundChoiceData = homepagePricingConfig.choices_pricing[matchingKey];
-                        }
-                      }
-                    }
+                    // 초이스 가격 찾기 (유연한 매칭 사용)
+                    const foundChoiceData = homepagePricingConfig 
+                      ? findHomepageChoiceData(combination, homepagePricingConfig)
+                      : {};
                     
                     if ((!foundChoiceData || Object.keys(foundChoiceData).length === 0 || 
                          (foundChoiceData.adult_price === 0 && foundChoiceData.adult === 0)) && 

@@ -207,6 +207,66 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
     }
   }
 
+  // 템플릿 복사 함수
+  const handleCopyTemplate = async (template: ChoiceTemplate) => {
+    try {
+      // 같은 그룹 내의 최대 sort_order 찾기
+      const sameGroupTemplates = templates.filter(t => t.template_group === template.template_group)
+      const maxSortOrder = sameGroupTemplates.length > 0 
+        ? Math.max(...sameGroupTemplates.map(t => t.sort_order || 0))
+        : -1
+
+      const copiedTemplate = {
+        id: crypto.randomUUID(),
+        name: `${template.name} (복사본)`,
+        name_ko: template.name_ko ? `${template.name_ko} (복사본)` : undefined,
+        description: template.description,
+        description_ko: template.description_ko,
+        description_en: template.description_en,
+        category: template.category,
+        adult_price: template.adult_price,
+        child_price: template.child_price,
+        infant_price: template.infant_price,
+        price_type: template.price_type,
+        status: template.status,
+        tags: template.tags || [],
+        is_choice_template: true,
+        choice_type: template.choice_type,
+        min_selections: template.min_selections,
+        max_selections: template.max_selections,
+        template_group: template.template_group,
+        template_group_ko: template.template_group_ko,
+        template_group_description_ko: template.template_group_description_ko,
+        template_group_description_en: template.template_group_description_en,
+        is_required: template.is_required,
+        sort_order: maxSortOrder + 1,
+        image_url: template.image_url,
+        image_alt: template.image_alt,
+        thumbnail_url: template.thumbnail_url,
+        image_order: template.image_order
+      }
+
+      const { data, error } = await supabase
+        .from('options')
+        .insert([copiedTemplate])
+        .select()
+
+      if (error) {
+        console.error('Error copying template:', error)
+        alert('템플릿 복사 중 오류가 발생했습니다.')
+        return
+      }
+
+      if (data && data[0]) {
+        setTemplates([...templates, data[0] as ChoiceTemplate])
+        alert('템플릿이 성공적으로 복사되었습니다.')
+      }
+    } catch (error) {
+      console.error('Error copying template:', error)
+      alert('템플릿 복사 중 오류가 발생했습니다.')
+    }
+  }
+
   // 정렬순서 변경 함수
   const handleChangeSortOrder = async (templateId: string, direction: 'up' | 'down') => {
     try {
@@ -379,14 +439,16 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
             id: crypto.randomUUID(),
             name: option.option_name,
             name_ko: option.option_name_ko,
-            description: `${product.name_ko || product.name}에서 가져온 초이스`,
-            category: 'imported',
+            description: option.description || null,
+            description_ko: option.description_ko || null,
+            description_en: null,
+            category: null,
             adult_price: option.adult_price || 0,
             child_price: option.child_price || 0,
             infant_price: option.infant_price || 0,
             price_type: 'per_person',
             status: 'active',
-            tags: ['imported', product.name],
+            tags: [],
             is_choice_template: true,
             choice_type: choice.choice_type,
             min_selections: choice.min_selections,
@@ -655,9 +717,12 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
                             <Edit size={14} />
                           </button>
                           <button
-                            onClick={() => onTemplateSelect?.(template)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleCopyTemplate(template)
+                            }}
                             className="p-1 text-green-600 hover:text-green-900 hover:bg-green-50 rounded"
-                            title="사용하기"
+                            title="복사"
                           >
                             <Copy size={14} />
                           </button>

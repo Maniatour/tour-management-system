@@ -655,6 +655,52 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
     ))
   }, [])
 
+  // 초이스 옵션 복사
+  const copyChoiceOption = useCallback((groupIndex: number, optionIndex: number) => {
+    setProductChoices(prev => prev.map((group, i) => {
+      if (i !== groupIndex) return group
+      
+      const sortedOptions = [...group.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+      const optionToCopy = sortedOptions[optionIndex]
+      
+      if (!optionToCopy) return group
+      
+      const newOption: ChoiceOption = {
+        ...optionToCopy,
+        id: `temp_option_${Date.now()}_${Math.random()}`,
+        option_key: `${optionToCopy.option_key}_copy_${Date.now()}`,
+        sort_order: sortedOptions.length, // 맨 마지막에 추가
+        is_default: false // 복사본은 기본값 해제
+      }
+      
+      return { ...group, options: [...group.options, newOption] }
+    }))
+  }, [])
+
+  // 초이스 옵션 순서 변경
+  const moveChoiceOption = useCallback((groupIndex: number, optionIndex: number, direction: 'up' | 'down') => {
+    setProductChoices(prev => prev.map((group, i) => {
+      if (i !== groupIndex) return group
+      
+      const sortedOptions = [...group.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+      
+      if (direction === 'up' && optionIndex === 0) return group
+      if (direction === 'down' && optionIndex === sortedOptions.length - 1) return group
+      
+      const targetIndex = direction === 'up' ? optionIndex - 1 : optionIndex + 1
+      const [moved] = sortedOptions.splice(optionIndex, 1)
+      sortedOptions.splice(targetIndex, 0, moved)
+      
+      // sort_order 업데이트
+      const updatedOptions = sortedOptions.map((opt, idx) => ({
+        ...opt,
+        sort_order: idx
+      }))
+      
+      return { ...group, options: updatedOptions }
+    }))
+  }, [])
+
   // 초이스 업데이트
   const updateChoiceOption = useCallback((groupIndex: number, optionIndex: number, field: keyof ChoiceOption, value: string | number | boolean) => {
     setProductChoices(prev => prev.map((group, i) => 
@@ -968,14 +1014,16 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
             id: crypto.randomUUID(),
             name: option.option_name || option.option_name_ko || '템플릿',
             name_ko: option.option_name_ko || option.option_name || '템플릿',
-            description: `${product.name_ko || product.name}에서 가져온 초이스`,
-            category: 'imported',
+            description: option.description || null,
+            description_ko: option.description_ko || null,
+            description_en: null,
+            category: null,
             adult_price: option.adult_price || 0,
             child_price: option.child_price || 0,
             infant_price: option.infant_price || 0,
             price_type: 'per_person',
             status: option.is_active ? 'active' : 'inactive',
-            tags: ['imported', product.name_ko || product.name],
+            tags: [],
             is_choice_template: true,
             choice_type: choice.choice_type,
             min_selections: choice.min_selections,
@@ -1305,7 +1353,12 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
 
                 {/* 세로형 카드뷰 그리드 레이아웃 */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                 {choice.options.map((option, optionIndex) => (
+                 {[...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((option, optionIndex) => {
+                   const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                   const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
+                   const isFirst = actualIndex === 0
+                   const isLast = actualIndex === sortedOptions.length - 1
+                   return (
                    <div key={option.id} className="bg-white rounded-2xl border border-gray-100 shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden group flex flex-col">
                      {/* 이미지 섹션 (상단) */}
                      <div className="relative w-full h-48 bg-gray-100">
@@ -1341,12 +1394,12 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                              fill
                              sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
                              className={`object-cover transition-all ${
-                               dragOverStates[`${groupIndex}-${optionIndex}`]
+                               dragOverStates[`${groupIndex}-${actualIndex}`]
                                  ? 'scale-105 brightness-110'
                                  : ''
                              }`}
                            />
-                           {dragOverStates[`${groupIndex}-${optionIndex}`] && (
+                           {dragOverStates[`${groupIndex}-${actualIndex}`] && (
                              <div className="absolute inset-0 bg-blue-500 bg-opacity-30 flex items-center justify-center z-10">
                                <p className="text-sm font-medium text-white bg-blue-600 px-4 py-2 rounded-lg">이미지 놓기</p>
                              </div>
@@ -1356,21 +1409,21 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                              <input
                                type="file"
                                accept="image/*"
-                               disabled={uploadingImages[`${groupIndex}-${optionIndex}`]}
+                               disabled={uploadingImages[`${groupIndex}-${actualIndex}`]}
                                onChange={async (e) => {
                                  const file = e.target.files?.[0]
                                  if (file) {
-                                   await handleImageUpload(file, groupIndex, optionIndex)
+                                   await handleImageUpload(file, groupIndex, actualIndex)
                                    e.target.value = ''
                                  }
                                }}
                                className="hidden"
-                               id={`file-upload-${groupIndex}-${optionIndex}`}
+                               id={`file-upload-${groupIndex}-${actualIndex}`}
                              />
                              <button
                                onClick={() => {
-                                 if (!uploadingImages[`${groupIndex}-${optionIndex}`]) {
-                                   document.getElementById(`file-upload-${groupIndex}-${optionIndex}`)?.click()
+                                 if (!uploadingImages[`${groupIndex}-${actualIndex}`]) {
+                                   document.getElementById(`file-upload-${groupIndex}-${actualIndex}`)?.click()
                                  }
                                }}
                                className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md"
@@ -1380,8 +1433,8 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                              </button>
                              <button
                                onClick={() => {
-                                 updateChoiceOption(groupIndex, optionIndex, 'image_url', '')
-                                 updateChoiceOption(groupIndex, optionIndex, 'image_alt', '')
+                                 updateChoiceOption(groupIndex, actualIndex, 'image_url', '')
+                                 updateChoiceOption(groupIndex, actualIndex, 'image_alt', '')
                                }}
                                className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-md"
                                title="이미지 삭제"
@@ -1393,53 +1446,53 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                        ) : (
                          <div 
                            className={`w-full h-full border-2 border-dashed transition-all flex items-center justify-center ${
-                             dragOverStates[`${groupIndex}-${optionIndex}`]
+                             dragOverStates[`${groupIndex}-${actualIndex}`]
                                ? 'border-blue-400 bg-blue-50'
                                : 'border-gray-200 bg-gray-50'
-                           } ${uploadingImages[`${groupIndex}-${optionIndex}`] ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
+                           } ${uploadingImages[`${groupIndex}-${actualIndex}`] ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
                            onDragOver={(e) => {
                              e.preventDefault()
                              e.stopPropagation()
-                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: true }))
+                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${actualIndex}`]: true }))
                            }}
                            onDragLeave={(e) => {
                              e.preventDefault()
                              e.stopPropagation()
-                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: false }))
+                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${actualIndex}`]: false }))
                            }}
                            onDrop={async (e) => {
                              e.preventDefault()
                              e.stopPropagation()
-                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: false }))
+                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${actualIndex}`]: false }))
                              
                              const files = Array.from(e.dataTransfer.files)
                              const imageFiles = files.filter(file => file.type.startsWith('image/'))
                              
                              if (imageFiles.length > 0) {
-                               await handleImageUpload(imageFiles[0], groupIndex, optionIndex)
+                               await handleImageUpload(imageFiles[0], groupIndex, actualIndex)
                              }
                            }}
                            onClick={() => {
-                             if (!uploadingImages[`${groupIndex}-${optionIndex}`]) {
-                               document.getElementById(`file-upload-${groupIndex}-${optionIndex}`)?.click()
+                             if (!uploadingImages[`${groupIndex}-${actualIndex}`]) {
+                               document.getElementById(`file-upload-${groupIndex}-${actualIndex}`)?.click()
                              }
                            }}
                          >
                            <input
                              type="file"
                              accept="image/*"
-                             disabled={uploadingImages[`${groupIndex}-${optionIndex}`]}
+                             disabled={uploadingImages[`${groupIndex}-${actualIndex}`]}
                              onChange={async (e) => {
                                const file = e.target.files?.[0]
                                if (file) {
-                                 await handleImageUpload(file, groupIndex, optionIndex)
+                                 await handleImageUpload(file, groupIndex, actualIndex)
                                  e.target.value = ''
                                }
                              }}
                              className="hidden"
-                             id={`file-upload-${groupIndex}-${optionIndex}`}
+                             id={`file-upload-${groupIndex}-${actualIndex}`}
                            />
-                           {uploadingImages[`${groupIndex}-${optionIndex}`] ? (
+                           {uploadingImages[`${groupIndex}-${actualIndex}`] ? (
                              <div className="flex flex-col items-center justify-center">
                                <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
                                <p className="text-sm text-blue-600 font-medium">업로드 중...</p>
@@ -1455,7 +1508,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                        )}
                        {/* 번호 뱃지 */}
                        <div className="absolute top-2 left-2 w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-lg flex items-center justify-center text-sm font-bold shadow-lg">
-                         {optionIndex + 1}
+                         {actualIndex + 1}
                        </div>
                      </div>
 
@@ -1464,20 +1517,73 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                        {/* 헤더 */}
                        <div className="flex items-center justify-between mb-3">
                          <h4 className="text-base font-semibold text-gray-800">
-                           {option.option_name_ko || option.option_name || `초이스 ${optionIndex + 1}`}
+                           {option.option_name_ko || option.option_name || `초이스 ${actualIndex + 1}`}
                          </h4>
                          <div className="flex items-center gap-2">
+                           <div className="flex flex-col space-y-0.5 mr-1">
+                             <button
+                               onClick={(e) => {
+                                 e.stopPropagation()
+                                 const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                                 const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
+                                 moveChoiceOption(groupIndex, actualIndex, 'up')
+                               }}
+                               disabled={isFirst}
+                               className={`p-0.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded ${
+                                 isFirst ? 'opacity-30 cursor-not-allowed' : ''
+                               }`}
+                               title="위로 이동"
+                             >
+                               <ChevronUp size={12} />
+                             </button>
+                             <button
+                               onClick={(e) => {
+                                 e.stopPropagation()
+                                 const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                                 const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
+                                 moveChoiceOption(groupIndex, actualIndex, 'down')
+                               }}
+                               disabled={isLast}
+                               className={`p-0.5 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded ${
+                                 isLast ? 'opacity-30 cursor-not-allowed' : ''
+                               }`}
+                               title="아래로 이동"
+                             >
+                               <ChevronDown size={12} />
+                             </button>
+                           </div>
                            <label className="flex items-center text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded-md border border-gray-200 hover:border-blue-300 transition-colors cursor-pointer">
                              <input
                                type="checkbox"
                                checked={option.is_default}
-                               onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'is_default', e.target.checked)}
+                               onChange={(e) => {
+                                 const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                                 const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
+                                 updateChoiceOption(groupIndex, actualIndex, 'is_default', e.target.checked)
+                               }}
                                className="mr-1 w-3 h-3 text-blue-600 rounded focus:ring-blue-500"
                              />
                              기본값
                            </label>
                            <button
-                             onClick={() => removeChoiceOption(groupIndex, optionIndex)}
+                             onClick={(e) => {
+                               e.stopPropagation()
+                               const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                               const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
+                               copyChoiceOption(groupIndex, actualIndex)
+                             }}
+                             className="p-1.5 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-md transition-all"
+                             title="초이스 복사"
+                           >
+                             <Copy className="w-4 h-4" />
+                           </button>
+                           <button
+                             onClick={(e) => {
+                               e.stopPropagation()
+                               const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                               const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
+                               removeChoiceOption(groupIndex, actualIndex)
+                             }}
                              className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-all"
                              title="초이스 삭제"
                            >
@@ -1494,7 +1600,11 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                              <input
                                type="text"
                                value={option.option_name_ko}
-                               onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'option_name_ko', e.target.value)}
+                               onChange={(e) => {
+                                 const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                                 const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
+                                 updateChoiceOption(groupIndex, actualIndex, 'option_name_ko', e.target.value)
+                               }}
                                placeholder="초이스명 (한국어)"
                                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
                              />
@@ -1502,7 +1612,11 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                              <input
                                type="text"
                                value={option.option_name}
-                               onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'option_name', e.target.value)}
+                               onChange={(e) => {
+                                 const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                                 const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
+                                 updateChoiceOption(groupIndex, actualIndex, 'option_name', e.target.value)
+                               }}
                                placeholder="초이스명 (영어)"
                                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
                              />
@@ -1513,7 +1627,11 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                              <label className="block text-xs font-medium text-gray-600">설명 (한국어)</label>
                              <textarea
                                value={option.description_ko || ''}
-                               onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'description_ko', e.target.value)}
+                               onChange={(e) => {
+                                 const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                                 const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
+                                 updateChoiceOption(groupIndex, actualIndex, 'description_ko', e.target.value)
+                               }}
                                placeholder="설명 (한국어)"
                                rows={2}
                                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all bg-gray-50 focus:bg-white"
@@ -1521,7 +1639,11 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                              <label className="block text-xs font-medium text-gray-600">설명 (영어)</label>
                              <textarea
                                value={option.description || ''}
-                               onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'description', e.target.value)}
+                               onChange={(e) => {
+                                 const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                                 const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
+                                 updateChoiceOption(groupIndex, actualIndex, 'description', e.target.value)
+                               }}
                                placeholder="Description (English)"
                                rows={2}
                                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all bg-gray-50 focus:bg-white"
@@ -1537,7 +1659,11 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                  <input
                                    type="number"
                                    value={option.adult_price}
-                                   onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'adult_price', parseInt(e.target.value) || 0)}
+                                   onChange={(e) => {
+                                     const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                                     const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
+                                     updateChoiceOption(groupIndex, actualIndex, 'adult_price', parseInt(e.target.value) || 0)
+                                   }}
                                    placeholder="0"
                                    className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
                                  />
@@ -1547,7 +1673,11 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                  <input
                                    type="number"
                                    value={option.child_price}
-                                   onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'child_price', parseInt(e.target.value) || 0)}
+                                   onChange={(e) => {
+                                     const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                                     const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
+                                     updateChoiceOption(groupIndex, actualIndex, 'child_price', parseInt(e.target.value) || 0)
+                                   }}
                                    placeholder="0"
                                    className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
                                  />
@@ -1557,28 +1687,120 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                  <input
                                    type="number"
                                    value={option.infant_price}
-                                   onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'infant_price', parseInt(e.target.value) || 0)}
+                                   onChange={(e) => {
+                                     const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                                     const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
+                                     updateChoiceOption(groupIndex, actualIndex, 'infant_price', parseInt(e.target.value) || 0)
+                                   }}
                                    placeholder="0"
                                    className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
                                  />
                                </div>
                              </div>
                              <div className="flex items-center justify-between pt-2">
-                               <div>
-                                 <label className="block text-xs text-gray-500 mb-1">수용</label>
-                                 <input
-                                   type="number"
-                                   value={option.capacity}
-                                   onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'capacity', parseInt(e.target.value) || 1)}
-                                   placeholder="1"
-                                   className="w-20 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
-                                 />
-                               </div>
+                               {choice.choice_type === 'quantity' && (
+                                 <div>
+                                   <div className="flex items-center gap-1 mb-1">
+                                     <label className="block text-xs text-gray-500">수용</label>
+                                     <div className="relative inline-block">
+                                       <Info 
+                                         className="w-3.5 h-3.5 text-gray-400 hover:text-blue-500 cursor-help transition-colors" 
+                                         onMouseEnter={(e) => {
+                                           const tooltip = e.currentTarget.parentElement?.querySelector('[data-tooltip]') as HTMLElement;
+                                           if (tooltip) {
+                                             // 아이콘 위치 기준으로 계산
+                                             const iconRect = e.currentTarget.getBoundingClientRect();
+                                             const tooltipWidth = 256;
+                                             const tooltipHeight = 90;
+                                             const margin = 8;
+                                             
+                                             let left = iconRect.left + iconRect.width / 2;
+                                             let top = iconRect.top - tooltipHeight - margin;
+                                             
+                                             // 화면 경계 체크 및 조정
+                                             if (left - tooltipWidth / 2 < margin) {
+                                               left = tooltipWidth / 2 + margin;
+                                             } else if (left + tooltipWidth / 2 > window.innerWidth - margin) {
+                                               left = window.innerWidth - tooltipWidth / 2 - margin;
+                                             }
+                                             
+                                             // 위쪽 공간이 부족하면 아래쪽에 표시
+                                             if (top < margin) {
+                                               top = iconRect.bottom + margin;
+                                               tooltip.style.transform = 'translate(-50%, 0)';
+                                               const arrow = tooltip.querySelector('.tooltip-arrow') as HTMLElement;
+                                               if (arrow) {
+                                                 arrow.style.top = '0';
+                                                 arrow.style.bottom = 'auto';
+                                                 arrow.style.transform = 'translate(-50%, -100%)';
+                                                 arrow.innerHTML = '<div class="border-4 border-transparent border-b-gray-900"></div>';
+                                               }
+                                             } else {
+                                               tooltip.style.transform = 'translate(-50%, -100%)';
+                                               const arrow = tooltip.querySelector('.tooltip-arrow') as HTMLElement;
+                                               if (arrow) {
+                                                 arrow.style.top = 'auto';
+                                                 arrow.style.bottom = '0';
+                                                 arrow.style.transform = 'translate(-50%, 100%)';
+                                                 arrow.innerHTML = '<div class="border-4 border-transparent border-t-gray-900"></div>';
+                                               }
+                                             }
+                                             
+                                             tooltip.style.top = `${top}px`;
+                                             tooltip.style.left = `${left}px`;
+                                             tooltip.classList.remove('opacity-0', 'invisible');
+                                             tooltip.classList.add('opacity-100', 'visible');
+                                           }
+                                         }}
+                                         onMouseLeave={(e) => {
+                                           const tooltip = e.currentTarget.parentElement?.querySelector('[data-tooltip]') as HTMLElement;
+                                           if (tooltip) {
+                                             tooltip.classList.remove('opacity-100', 'visible');
+                                             tooltip.classList.add('opacity-0', 'invisible');
+                                           }
+                                         }}
+                                       />
+                                       <div 
+                                         data-tooltip
+                                         className="fixed w-64 p-2 bg-gray-900 text-white text-xs rounded-lg shadow-xl opacity-0 invisible transition-opacity duration-200 z-[9999] pointer-events-none"
+                                         style={{
+                                           transform: 'translate(-50%, -100%)',
+                                           marginTop: '-8px'
+                                         }}>
+                                         <div className="mb-1 font-semibold">수용 인원</div>
+                                         <div className="text-gray-300">
+                                           해당 옵션이 수용할 수 있는 인원 수입니다.<br/>
+                                           예: 1인 1실 = 1, 2인 1실 = 2<br/>
+                                           수량 기반 선택 시 예약 인원과 비교하여 검증됩니다.
+                                         </div>
+                                         <div className="tooltip-arrow absolute bottom-0 left-1/2 transform translate-x-1/2 translate-y-full">
+                                           <div className="border-4 border-transparent border-t-gray-900"></div>
+                                         </div>
+                                       </div>
+                                     </div>
+                                   </div>
+                                   <input
+                                     type="number"
+                                     value={option.capacity}
+                                     onChange={(e) => {
+                                       const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                                       const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
+                                       updateChoiceOption(groupIndex, actualIndex, 'capacity', parseInt(e.target.value) || 1)
+                                     }}
+                                     placeholder="1"
+                                     className="w-20 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
+                                   />
+                                 </div>
+                               )}
                                <label className="flex items-center text-xs text-gray-600 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200 hover:border-blue-300 transition-colors cursor-pointer">
                                  <input
                                    type="checkbox"
                                    checked={option.is_active}
-                                   onChange={(e) => updateChoiceOption(groupIndex, optionIndex, 'is_active', e.target.checked)}
+                                   onChange={(e) => {
+                                     const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+                                     const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
+                                     updateChoiceOption(groupIndex, actualIndex, 'is_active', e.target.checked)
+                                   }}
                                    className="mr-2 w-3 h-3 text-blue-600 rounded focus:ring-blue-500"
                                  />
                                  활성
@@ -1589,7 +1811,8 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                        )}
                      </div>
                    </div>
-                 ))}
+                   )
+                 })}
                </div>
               </div>
             </div>
