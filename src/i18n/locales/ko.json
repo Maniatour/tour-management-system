@@ -409,7 +409,11 @@
     "tour": "투어",
     "sightseeing": "관광",
     "outdoor": "야외",
-    "maxParticipants": "최대 참가자 수"
+    "maxParticipants": "최대 참가자 수",
+    "optionTotal": "옵션 합계",
+    "couponDiscount": "쿠폰 할인",
+    "optionalOptions": "선택 옵션",
+    "requiredOptions": "필수 옵션"
   },
   "products": {
     "title": "상품 관리",
