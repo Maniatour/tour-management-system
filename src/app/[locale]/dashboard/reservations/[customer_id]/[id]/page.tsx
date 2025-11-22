@@ -1259,69 +1259,109 @@ export default function CustomerReservations() {
     }
   }, [locale, t])
 
-  // 시뮬레이션된 사용자의 예약 정보 로드 (이메일 기반)
-  const loadSimulatedReservationsByEmail = useCallback(async (email: string) => {
-    if (!email) {
-      console.error('이메일이 없습니다.')
+  // 시뮬레이션된 사용자의 예약 정보 로드
+  const loadSimulatedReservations = useCallback(async () => {
+    if (!simulatedUser) {
       setReservations([])
       setLoading(false)
       return
     }
 
     try {
-      // 시뮬레이션 모드에서는 실제 고객 데이터가 없어도 시뮬레이션된 사용자 정보를 표시
-      console.log('시뮬레이션 모드: 실제 고객 데이터 조회 시도 중...', email)
+      setLoading(true)
+
+      // 실제 데이터베이스에서 고객 정보 가져오기
+      let customerData: SupabaseCustomer | null = null
+
+      // 방법 1: customer_id로 조회
+      if (simulatedUser.id) {
+        const { data, error } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('id', simulatedUser.id)
+          .maybeSingle()
+
+        if (!error && data) {
+          customerData = data as SupabaseCustomer
+        }
+      }
+
+      // 방법 2: 이메일로 조회 (customer_id로 찾지 못한 경우)
+      if (!customerData && simulatedUser.email) {
+        const { data, error } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('email', simulatedUser.email)
+          .maybeSingle()
+
+        if (!error && data) {
+          customerData = data as SupabaseCustomer
+        }
+      }
+
+      // 실제 고객 정보가 있으면 사용, 없으면 시뮬레이션 데이터 사용
+      if (customerData) {
+        setCustomer(customerData)
+      } else {
+        // 실제 데이터베이스에 고객 정보가 없는 경우 시뮬레이션 데이터 사용
+        setCustomer({
+          id: simulatedUser.id,
+          name: simulatedUser.name_ko || simulatedUser.name_en || '',
+          email: simulatedUser.email,
+          phone: simulatedUser.phone || null,
+          language: simulatedUser.language || 'ko',
+          created_at: simulatedUser.created_at || new Date().toISOString()
+        } as SupabaseCustomer)
+      }
+
+      // 예약 정보 조회: customer_id와 customer_email 둘 다 시도
+      let reservationsData: SupabaseReservation[] = []
+
+      // 방법 1: customer_id로 조회
+      if (simulatedUser.id) {
+        const { data: idReservations, error: idError } = await supabase
+          .from('reservations')
+          .select('*')
+          .eq('customer_id', simulatedUser.id)
+          .order('tour_date', { ascending: false })
+
+        if (!idError && idReservations) {
+          reservationsData = idReservations as SupabaseReservation[]
+        }
+      }
+
+      // 방법 2: customer_email로 조회
+      if (reservationsData.length === 0 && simulatedUser.email) {
+        const { data: emailReservations, error: emailError } = await supabase
+          .from('reservations')
+          .select('*')
+          .eq('customer_email', simulatedUser.email)
+          .order('tour_date', { ascending: false })
+
+        if (!emailError && emailReservations) {
+          const existingIds = new Set(reservationsData.map(r => r.id))
+          const newReservations = (emailReservations as SupabaseReservation[]).filter(r => !existingIds.has(r.id))
+          reservationsData = [...reservationsData, ...newReservations]
+        }
+      }
+
+      if (reservationsData.length === 0) {
+        setReservations([])
+        setLoading(false)
+        return
+      }
       
-      // 먼저 이메일로 고객 정보 조회 시도
-      const { data: customerData, error: customerError } = await supabase
-        .from('customers')
-        .select('id')
-        .eq('email', email)
-        .single()
-
-      if (customerError) {
-        console.log('시뮬레이션된 사용자의 실제 고객 정보가 없습니다 (정상적인 상황):', customerError.code)
-        // 시뮬레이션 모드에서는 실제 데이터가 없어도 빈 예약 목록으로 표시
-        setReservations([])
-        setLoading(false)
-        return
-      }
-
-      if (!customerData) {
-        console.log('시뮬레이션된 사용자의 고객 정보가 없습니다.')
-        setReservations([])
-        setLoading(false)
-        return
-      }
-
-      // 실제 고객 데이터가 있는 경우 예약 정보 조회
-      console.log('시뮬레이션된 사용자의 실제 고객 데이터 발견:', (customerData as SupabaseCustomer).id)
+      console.log('시뮬레이션 모드: 예약 데이터 발견:', reservationsData.length, '개')
+      console.log('시뮬레이션 모드: 예약 ID들:', reservationsData.map((r: SupabaseReservation) => r.id))
+      console.log('시뮬레이션 모드: 첫 번째 예약의 채널 정보:', {
+        id: (reservationsData[0] as SupabaseReservation).id,
+        channel_id: (reservationsData[0] as SupabaseReservation).channel_id,
+        channel_rn: (reservationsData[0] as SupabaseReservation).channel_rn,
+        전체데이터: reservationsData[0]
+      })
       
-      const { data: reservationsData, error: reservationsError } = await supabase
-        .from('reservations')
-        .select('*')
-        .eq('customer_id', (customerData as SupabaseCustomer).id)
-        .order('tour_date', { ascending: false })
-
-      if (reservationsError) {
-        console.error(t('simulationReservationError'), reservationsError)
-        setReservations([])
-        setLoading(false)
-        return
-      }
-
-      if (reservationsData && reservationsData.length > 0) {
-        console.log('시뮬레이션 모드: 예약 데이터 발견:', reservationsData.length, '개')
-        console.log('시뮬레이션 모드: 예약 ID들:', reservationsData.map((r: SupabaseReservation) => r.id))
-        console.log('시뮬레이션 모드: 첫 번째 예약의 채널 정보:', {
-          id: (reservationsData[0] as SupabaseReservation).id,
-          channel_id: (reservationsData[0] as SupabaseReservation).channel_id,
-          channel_rn: (reservationsData[0] as SupabaseReservation).channel_rn,
-          전체데이터: reservationsData[0]
-        })
-        
-        // 각 예약에 대해 상품 정보를 별도로 조회
-        const reservationsWithProducts = await Promise.all(
+      // 각 예약에 대해 상품 정보를 별도로 조회
+      const reservationsWithProducts = await Promise.all(
           reservationsData.map(async (reservation: SupabaseReservation) => {
             console.log('시뮬레이션 모드: 예약 처리 중:', reservation.id)
             try {
@@ -1583,58 +1623,36 @@ export default function CustomerReservations() {
             }
           })
         )
-        setReservations(reservationsWithProducts)
-      } else {
-        setReservations([])
-      }
+      setReservations(reservationsWithProducts)
     } catch (error) {
       console.error('시뮬레이션 예약 정보 로드 오류:', error)
       setReservations([])
     } finally {
       setLoading(false)
     }
-  }, [t, locale])
+  }, [simulatedUser, t, locale])
 
-  // 데이터 로딩 (시뮬레이션 상태와 분리)
+  // 데이터 로딩
   useEffect(() => {
     // URL에 customer_id가 있으면 해당 고객의 예약을 표시 (시뮬레이션 무시)
     if (customerIdFromUrl) {
-      console.log('Reservations: Loading customer data from URL:', customerIdFromUrl)
       loadCustomerReservationsById(customerIdFromUrl)
       return
     }
     
-    // 시뮬레이션 중이 아닌 경우에만 고객 데이터 로드
-    if (!isSimulating && user) {
+    // 시뮬레이션 모드
+    if (isSimulating && simulatedUser) {
+      loadSimulatedReservations()
+    } 
+    // 일반 모드
+    else if (!isSimulating && user && authUser?.email) {
       loadReservations()
-    } else if (isSimulating && simulatedUser) {
-      // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보로 설정
-      console.log('Reservations: Loading simulated customer data:', simulatedUser)
-      
-      // 시뮬레이션된 사용자에게 임시 ID 할당 (이메일 기반)
-      const simulatedCustomerId = simulatedUser.id || `sim_${simulatedUser.email.replace('@', '_').replace('.', '_')}`
-      
-      setCustomer({
-        id: simulatedCustomerId,
-        name: simulatedUser.name_ko || simulatedUser.name_en || simulatedUser.email.split('@')[0],
-        email: simulatedUser.email,
-        phone: simulatedUser.phone,
-        language: simulatedUser.language,
-        created_at: simulatedUser.created_at
-      })
-      
-      // 시뮬레이션된 사용자의 예약 정보 로드 (이메일 기반으로 실제 고객 조회)
-      loadSimulatedReservationsByEmail(simulatedUser.email)
-    } else if (isSimulating && !simulatedUser) {
-      // 시뮬레이션 중이지만 simulatedUser가 없는 경우
-      console.warn('Reservations: 시뮬레이션 중이지만 simulatedUser가 없습니다.')
-      setLoading(false)
-    } else if (!isSimulating && !user) {
-      // 로그인하지 않은 사용자의 경우 로딩 완료
-      console.log('Reservations: No user logged in, showing public page')
+    } 
+    // 로그인하지 않은 경우
+    else {
       setLoading(false)
     }
-  }, [customerIdFromUrl, isSimulating, simulatedUser, user, loadReservations, loadSimulatedReservationsByEmail, loadCustomerReservationsById])
+  }, [customerIdFromUrl, isSimulating, simulatedUser, user, authUser?.email, loadReservations, loadSimulatedReservations, loadCustomerReservationsById])
 
   // 상품 세부 정보 가져오기
   const getProductDetails = useCallback(async (productId: string, channelId?: string | null) => {

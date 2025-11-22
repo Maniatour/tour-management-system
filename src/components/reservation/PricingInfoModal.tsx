@@ -58,6 +58,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
   const [editData, setEditData] = useState<PricingData | null>(null)
   const [coupons, setCoupons] = useState<Coupon[]>([])
   const [selectedCoupon, setSelectedCoupon] = useState<string>('')
+  const [channelPricingType, setChannelPricingType] = useState<'separate' | 'single'>('separate')
 
   useEffect(() => {
     if (isOpen && reservation) {
@@ -79,6 +80,18 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     setError(null)
 
     try {
+      // 채널 정보 가져오기
+      if (reservation.channelId) {
+        const { data: channelData } = await supabase
+          .from('channels')
+          .select('pricing_type, has_not_included_price, not_included_type, not_included_price')
+          .eq('id', reservation.channelId)
+          .single()
+        
+        if (channelData?.pricing_type) {
+          setChannelPricingType(channelData.pricing_type as 'separate' | 'single')
+        }
+      }
       const { data, error } = await supabase
         .from('reservation_pricing')
         .select('*')
@@ -90,32 +103,69 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
         throw error
       }
 
-      // 데이터가 없으면 기본값 설정
+      // 데이터가 없으면 reservation 객체의 pricingInfo를 사용하거나 상품 정보로 기본 가격 계산
       if (!data) {
         console.log('📋 No reservation pricing data found for reservation:', reservation.id)
-        const defaultData = {
+        
+        // reservation 객체의 pricingInfo가 있으면 사용
+        const pricingInfo = reservation.pricingInfo
+        
+        // pricingInfo도 없으면 상품 정보를 가져와서 기본 가격 계산
+        let adultPrice = pricingInfo?.adultProductPrice || 0
+        let childPrice = pricingInfo?.childProductPrice || 0
+        let infantPrice = pricingInfo?.infantProductPrice || 0
+        
+        if (!adultPrice && !childPrice && !infantPrice && reservation.productId) {
+          try {
+            const { data: productData } = await supabase
+              .from('products')
+              .select('base_price')
+              .eq('id', reservation.productId)
+              .single()
+            
+            if (productData?.base_price) {
+              const basePrice = productData.base_price
+              adultPrice = basePrice
+              childPrice = basePrice * 0.7 // 아동은 성인의 70%
+              infantPrice = basePrice * 0.3 // 유아는 성인의 30%
+            }
+          } catch (err) {
+            console.error('상품 정보 조회 오류:', err)
+          }
+        }
+        
+        // 총 상품 가격 계산
+        const productPriceTotal = (adultPrice * (reservation.adults || 0)) + 
+                                 (childPrice * (reservation.child || 0)) + 
+                                 (infantPrice * (reservation.infant || 0))
+        
+        // 총 가격이 없으면 계산된 상품 가격 사용
+        const totalPrice = pricingInfo?.totalPrice || reservation.totalPrice || productPriceTotal
+        
+        const defaultData: PricingData = {
           reservation_id: reservation.id,
-          adult_product_price: 0,
-          child_product_price: 0,
-          infant_product_price: 0,
-          product_price_total: 0,
-          required_options: {},
-          required_option_total: 0,
-          subtotal: 0,
-          coupon_code: null,
-          coupon_discount: 0,
-          additional_discount: 0,
-          additional_cost: 0,
-          card_fee: 0,
-          tax: 0,
-          prepayment_cost: 0,
-          prepayment_tip: 0,
-          selected_options: {},
-          option_total: 0,
-          total_price: 0,
-          deposit_amount: 0,
-          balance_amount: 0,
-          private_tour_additional_cost: 0
+          adult_product_price: adultPrice,
+          child_product_price: childPrice,
+          infant_product_price: infantPrice,
+          product_price_total: productPriceTotal,
+          required_options: pricingInfo?.requiredOptions || {},
+          required_option_total: pricingInfo?.requiredOptionTotal || 0,
+          subtotal: pricingInfo?.subtotal || productPriceTotal,
+          coupon_code: pricingInfo?.couponCode || null,
+          coupon_discount: pricingInfo?.couponDiscount || 0,
+          additional_discount: pricingInfo?.additionalDiscount || 0,
+          additional_cost: pricingInfo?.additionalCost || 0,
+          card_fee: pricingInfo?.cardFee || 0,
+          tax: pricingInfo?.tax || 0,
+          prepayment_cost: pricingInfo?.prepaymentCost || 0,
+          prepayment_tip: pricingInfo?.prepaymentTip || 0,
+          selected_options: pricingInfo?.selectedOptionalOptions || {},
+          option_total: pricingInfo?.optionTotal || 0,
+          total_price: totalPrice,
+          deposit_amount: pricingInfo?.depositAmount || 0,
+          balance_amount: pricingInfo?.balanceAmount || reservation.balanceAmount || totalPrice,
+          is_private_tour: reservation.isPrivateTour || false,
+          private_tour_additional_cost: pricingInfo?.privateTourAdditionalCost || 0
         }
         setPricingData(defaultData)
         setEditData(defaultData)
@@ -149,8 +199,12 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       setCoupons(data || [])
       
       // 기존 가격 데이터에 쿠폰이 있으면 해당 쿠폰을 선택
+      // reservation_pricing.coupon_code는 coupons.coupon_code와 조인됨 (대소문자 구분 없이)
       if (pricingData?.coupon_code && data) {
-        const matchingCoupon = data.find(c => c.coupon_code === pricingData.coupon_code)
+        const matchingCoupon = data.find(c => 
+          c.coupon_code && 
+          c.coupon_code.trim().toLowerCase() === pricingData.coupon_code.trim().toLowerCase()
+        )
         if (matchingCoupon) {
           setSelectedCoupon(matchingCoupon.id)
         }
@@ -227,6 +281,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     
     if (!editData) return
     
+    // couponId는 여전히 coupons.id이지만, 저장할 때는 coupon_code를 사용
     const coupon = coupons.find(c => c.id === couponId)
     if (!coupon) {
       // 쿠폰이 선택되지 않은 경우
@@ -270,7 +325,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     
     const updatedData = { 
       ...editData, 
-      coupon_code: coupon.coupon_code, 
+      coupon_code: coupon.coupon_code, // coupons.coupon_code를 저장 (대소문자 구분 없이 사용)
       coupon_discount: discountAmount 
     }
     
@@ -386,48 +441,79 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                   <DollarSign className="w-4 h-4 mr-1 text-blue-600" />
                   상품 가격
                 </h3>
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">성인</span>
-                    <div className="relative">
-                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                      <input
-                        type="number"
-                        value={editData?.adult_product_price || 0}
-                        onChange={(e) => handleInputChange('adult_product_price', parseFloat(e.target.value) || 0)}
-                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                      />
+                {channelPricingType === 'single' ? (
+                  // 단일 가격 모드
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">단일 가격</span>
+                      <div className="relative">
+                        <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                        <input
+                          type="number"
+                          value={editData?.adult_product_price || 0}
+                          onChange={(e) => {
+                            const newPrice = parseFloat(e.target.value) || 0
+                            handleInputChange('adult_product_price', newPrice)
+                            // 단일 가격 모드일 때는 아동/유아 가격도 동일하게 설정
+                            handleInputChange('child_product_price', newPrice)
+                            handleInputChange('infant_product_price', newPrice)
+                          }}
+                          className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center bg-white rounded px-2 py-1">
+                      <span className="font-semibold text-gray-900">합계</span>
+                      <span className="font-bold">
+                        ${((editData?.adult_product_price || 0) * ((reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0))).toFixed(2)}
+                      </span>
                     </div>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">아동</span>
-                    <div className="relative">
-                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                      <input
-                        type="number"
-                        value={editData?.child_product_price || 0}
-                        onChange={(e) => handleInputChange('child_product_price', parseFloat(e.target.value) || 0)}
-                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                      />
+                ) : (
+                  // 분리 가격 모드 (성인/아동/유아)
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">성인</span>
+                      <div className="relative">
+                        <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                        <input
+                          type="number"
+                          value={editData?.adult_product_price || 0}
+                          onChange={(e) => handleInputChange('adult_product_price', parseFloat(e.target.value) || 0)}
+                          className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">아동</span>
+                      <div className="relative">
+                        <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                        <input
+                          type="number"
+                          value={editData?.child_product_price || 0}
+                          onChange={(e) => handleInputChange('child_product_price', parseFloat(e.target.value) || 0)}
+                          className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">유아</span>
+                      <div className="relative">
+                        <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                        <input
+                          type="number"
+                          value={editData?.infant_product_price || 0}
+                          onChange={(e) => handleInputChange('infant_product_price', parseFloat(e.target.value) || 0)}
+                          className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center bg-white rounded px-2 py-1">
+                      <span className="font-semibold text-gray-900">합계</span>
+                      <span className="font-bold">${(editData?.product_price_total || 0).toFixed(2)}</span>
                     </div>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">유아</span>
-                    <div className="relative">
-                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                      <input
-                        type="number"
-                        value={editData?.infant_product_price || 0}
-                        onChange={(e) => handleInputChange('infant_product_price', parseFloat(e.target.value) || 0)}
-                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center bg-white rounded px-2 py-1">
-                    <span className="font-semibold text-gray-900">합계</span>
-                    <span className="font-bold">${(editData?.product_price_total || 0).toFixed(2)}</span>
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* 옵션 가격 */}

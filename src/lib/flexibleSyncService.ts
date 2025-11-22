@@ -507,13 +507,37 @@ export const flexibleSync = async (
         if (error) {
           console.error('Upsert batch error:', error)
           results.errors += rowsBuffer.length
-          const errorMsg = `배치 처리 실패 (${rowsBuffer.length}개 행): ${error.message}`
+          
+          // 상세 에러 메시지 생성
+          let errorMsg = `배치 처리 실패 (${rowsBuffer.length}개 행): ${error.message}`
+          
+          // reservation_pricing 테이블의 경우 reservation_id 정보 추가
+          if (targetTable === 'reservation_pricing' && error.message.includes('duplicate key')) {
+            const reservationIds = payload.map(row => row.reservation_id).filter(Boolean)
+            if (reservationIds.length > 0) {
+              errorMsg += `\n   문제가 있는 reservation_id: ${reservationIds.slice(0, 10).join(', ')}${reservationIds.length > 10 ? ` 외 ${reservationIds.length - 10}개` : ''}`
+              
+              // 각 행의 상세 정보 추가 (최대 5개만)
+              const details = payload.slice(0, 5).map((row, idx) => {
+                return `   행 #${idx + 1}: reservation_id="${row.reservation_id || 'N/A'}", id="${row.id || 'N/A'}"`
+              }).join('\n')
+              if (details) {
+                errorMsg += `\n${details}`
+              }
+            }
+          }
+          
           results.errorDetails.push(errorMsg)
           onProgress?.({ type: 'error', message: errorMsg })
           
           // 구체적인 오류 원인 분석
           if (error.message.includes('duplicate key')) {
-            onProgress?.({ type: 'warn', message: '중복 키 오류: ID가 이미 존재합니다. upsert를 사용하여 업데이트됩니다.' })
+            const constraintMatch = error.message.match(/constraint "([^"]+)"/)
+            const constraintName = constraintMatch ? constraintMatch[1] : 'unknown'
+            onProgress?.({ 
+              type: 'warn', 
+              message: `중복 키 오류 (constraint: ${constraintName}): 이미 존재하는 키가 있습니다. upsert를 사용하여 업데이트됩니다.` 
+            })
           } else if (error.message.includes('foreign key')) {
             onProgress?.({ type: 'warn', message: '외래 키 오류: 참조하는 테이블에 해당 ID가 없습니다.' })
           } else if (error.message.includes('not null')) {
@@ -685,7 +709,12 @@ const executeUpsertWithRLSBypass = async (
   payload: Record<string, unknown>[]
 ): Promise<{ error: any }> => {
   try {
-    const conflictColumn = targetTable === 'team' ? 'email' : 'id'
+    // reservation_pricing 테이블은 reservation_id에 unique constraint가 있음
+    const conflictColumn = targetTable === 'team' 
+      ? 'email' 
+      : targetTable === 'reservation_pricing' 
+        ? 'reservation_id' 
+        : 'id'
     
     // 일반 upsert 시도
     const { error } = await db
@@ -693,6 +722,31 @@ const executeUpsertWithRLSBypass = async (
       .upsert(payload, { onConflict: conflictColumn })
     
     if (error) {
+      // 중복 키 오류인 경우 상세 로깅
+      if (error.message && error.message.includes('duplicate key value violates unique constraint')) {
+        const constraintMatch = error.message.match(/constraint "([^"]+)"/)
+        const constraintName = constraintMatch ? constraintMatch[1] : 'unknown'
+        
+        // reservation_pricing의 경우 reservation_id 추출
+        if (targetTable === 'reservation_pricing' && constraintName.includes('reservation_id')) {
+          const reservationIds = payload.map(row => row.reservation_id).filter(Boolean)
+          console.error(`❌ 중복 키 오류 (${targetTable}): constraint="${constraintName}"`)
+          console.error(`   문제가 있는 reservation_id 목록:`, reservationIds)
+          console.error(`   총 ${payload.length}개 행 중 ${reservationIds.length}개 행에 reservation_id가 있습니다.`)
+          
+          // 각 행의 상세 정보 로깅
+          payload.forEach((row, index) => {
+            if (row.reservation_id) {
+              console.error(`   행 #${index + 1}: reservation_id="${row.reservation_id}", id="${row.id || 'N/A'}"`)
+            }
+          })
+        } else {
+          const ids = payload.map(row => row.id || row[conflictColumn]).filter(Boolean)
+          console.error(`❌ 중복 키 오류 (${targetTable}): constraint="${constraintName}"`)
+          console.error(`   문제가 있는 ${conflictColumn} 목록:`, ids)
+        }
+      }
+      
       // RLS 오류인 경우 개별 처리로 폴백
       if (error.code === '42501') {
         console.log(`🔄 RLS 오류 감지 - 개별 처리로 폴백: ${targetTable}`)
@@ -721,33 +775,72 @@ const fallbackIndividualUpsert = async (
     
     let successCount = 0
     let errorCount = 0
+    const errorDetails: string[] = []
     
     // 개별 행 처리
-    for (const row of payload) {
+    for (let index = 0; index < payload.length; index++) {
+      const row = payload[index]
       try {
         const { error } = await db
           .from(targetTable)
           .upsert([row], { onConflict: conflictColumn })
         
         if (error) {
-          console.warn(`개별 upsert 오류 (${targetTable}):`, error)
+          // 상세 에러 정보 추출
+          const rowId = row.id || row[conflictColumn] || `행 #${index + 1}`
+          const reservationId = targetTable === 'reservation_pricing' ? row.reservation_id : null
+          
+          let errorMsg = `개별 upsert 오류 (${targetTable})`
+          if (reservationId) {
+            errorMsg += ` - reservation_id: "${reservationId}"`
+          }
+          errorMsg += ` - ${conflictColumn}: "${rowId}"`
+          
+          if (error.message) {
+            errorMsg += ` - 오류: ${error.message}`
+          }
+          
+          console.warn(errorMsg)
+          errorDetails.push(errorMsg)
           errorCount++
         } else {
           successCount++
         }
       } catch (rowError) {
-        console.warn(`개별 upsert 예외 (${targetTable}):`, rowError)
+        const rowId = row.id || row[conflictColumn] || `행 #${index + 1}`
+        const reservationId = targetTable === 'reservation_pricing' ? row.reservation_id : null
+        
+        let errorMsg = `개별 upsert 예외 (${targetTable})`
+        if (reservationId) {
+          errorMsg += ` - reservation_id: "${reservationId}"`
+        }
+        errorMsg += ` - ${conflictColumn}: "${rowId}"`
+        
+        if (rowError instanceof Error) {
+          errorMsg += ` - 예외: ${rowError.message}`
+        } else {
+          errorMsg += ` - 예외: ${String(rowError)}`
+        }
+        
+        console.warn(errorMsg)
+        errorDetails.push(errorMsg)
         errorCount++
       }
     }
     
     console.log(`✅ 개별 처리 완료: ${successCount}개 성공, ${errorCount}개 실패`)
+    if (errorDetails.length > 0) {
+      console.error('❌ 실패한 행 상세 정보:')
+      errorDetails.forEach((detail, idx) => {
+        console.error(`   ${idx + 1}. ${detail}`)
+      })
+    }
     
     // 일부라도 성공했으면 성공으로 간주
     if (successCount > 0) {
       return { error: null }
     } else {
-      return { error: new Error(`모든 개별 upsert 실패: ${errorCount}개 오류`) }
+      return { error: new Error(`모든 개별 upsert 실패: ${errorCount}개 오류\n${errorDetails.join('\n')}`) }
     }
   } catch (error) {
     console.error('개별 처리 폴백 예외:', error)

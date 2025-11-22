@@ -410,7 +410,7 @@ export default function GuideChatPage() {
         if (!response.ok) {
           const errorText = await response.text()
           console.error('메시지 전송 HTTP 오류:', response.status, errorText)
-          alert(`메시지 전송 실패: ${response.status} ${errorText}`)
+          alert(`${t('chatMessageSendFailed')}: ${response.status} ${errorText}`)
           return
         }
         
@@ -419,7 +419,7 @@ export default function GuideChatPage() {
 
         if (result.error) {
           console.error('메시지 전송 오류:', result.error)
-          alert(`메시지 전송 오류: ${result.error}`)
+          alert(`${t('chatMessageSendError')}: ${result.error}`)
           return
         }
       } else if (activeTab === 'tour' && 'tour_id' in selectedRoom) {
@@ -561,7 +561,7 @@ export default function GuideChatPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[90vh]">
-        <div className="text-gray-500">채팅을 불러오는 중...</div>
+        <div className="text-gray-500">{t('chatLoading')}</div>
       </div>
     )
   }
@@ -940,14 +940,14 @@ export default function GuideChatPage() {
                 onClick={() => setShowCreateRoom(false)}
                 className="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
               >
-                취소
+                {t('cancel')}
               </button>
               <button
                 onClick={createRoom}
                 disabled={!newRoomData.room_name.trim()}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                만들기
+                {t('create')}
               </button>
             </div>
           </div>

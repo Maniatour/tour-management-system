@@ -439,12 +439,12 @@ export default function GuideDashboard() {
     e.preventDefault()
     
     if (!currentUserEmail || !offScheduleForm.off_date || !offScheduleForm.reason.trim()) {
-      alert('날짜와 사유를 모두 입력해주세요.')
+      alert(t('offSchedule.validation.dateAndReasonRequired'))
       return
     }
 
     if (offScheduleForm.is_multi_day && (!offScheduleForm.end_date || offScheduleForm.end_date < offScheduleForm.off_date)) {
-      alert('종료 날짜를 시작 날짜 이후로 설정해주세요.')
+      alert(t('offSchedule.validation.endDateAfterStart'))
       return
     }
 
@@ -479,7 +479,7 @@ export default function GuideDashboard() {
         throw errors[0].error
       }
 
-      alert(`${dates.length}일의 오프 스케줄이 추가되었습니다.`)
+      alert(t('offSchedule.success.added', { count: dates.length }))
       closeOffScheduleModal()
       
       // 오프 스케줄 데이터 다시 로드
@@ -497,7 +497,7 @@ export default function GuideDashboard() {
       }
     } catch (error) {
       console.error('Error saving off schedule:', error)
-      alert('오프 스케줄 저장 중 오류가 발생했습니다.')
+      alert(t('offSchedule.error.saveFailed'))
     }
   }
 
@@ -520,7 +520,7 @@ export default function GuideDashboard() {
 {t('greeting')}, {isSimulating && simulatedUser ? simulatedUser.name_ko : currentUserEmail}!
           {isSimulating && simulatedUser && (
             <span className="text-sm font-normal text-blue-200 ml-2">
-              (시뮬레이션: {simulatedUser.position})
+              ({t('simulation')}: {simulatedUser.position})
             </span>
           )}
         </h1>
@@ -776,14 +776,14 @@ export default function GuideDashboard() {
                   type="submit"
                   className="flex-1 bg-blue-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
                 >
-                  추가하기
+                  {t('offSchedule.addButton')}
                 </button>
                 <button
                   type="button"
                   onClick={closeOffScheduleModal}
                   className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors text-sm"
                 >
-                  취소
+                  {t('cancel')}
                 </button>
               </div>
             </form>

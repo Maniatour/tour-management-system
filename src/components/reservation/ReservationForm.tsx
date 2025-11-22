@@ -1910,7 +1910,7 @@ export default function ReservationForm({
         
         setFormData(prev => ({
           ...prev,
-          couponCode: selectedCoupon.coupon_code || '',
+          couponCode: selectedCoupon.coupon_code || '', // coupons.coupon_code를 저장 (대소문자 구분 없이 사용)
           couponDiscount: couponDiscount
         }))
       }

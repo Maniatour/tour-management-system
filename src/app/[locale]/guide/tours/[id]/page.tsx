@@ -41,6 +41,7 @@ export default function GuideTourDetailPage() {
   const { user, userRole, simulatedUser, isSimulating } = useAuth()
   const { openChat } = useFloatingChat()
   const t = useTranslations('guideTour')
+  const tCommon = useTranslations('common')
   
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
@@ -152,35 +153,78 @@ export default function GuideTourDetailPage() {
       }
 
       // 예약 정보 가져오기 (투어에 배정된 예약만)
+      // 1. tours.reservation_ids에 있는 예약 ID들을 가져오고, 실제 reservations 테이블에 존재하는지 확인
+      const reservationIdsFromTours: string[] = []
       if ((tourData as TourRow & { reservation_ids?: string[] | string }).reservation_ids) {
-        const reservationIds = Array.isArray((tourData as TourRow & { reservation_ids: string[] | string }).reservation_ids) 
+        const ids = Array.isArray((tourData as TourRow & { reservation_ids: string[] | string }).reservation_ids) 
           ? (tourData as TourRow & { reservation_ids: string[] }).reservation_ids 
           : String((tourData as TourRow & { reservation_ids: string }).reservation_ids).split(',').map(id => id.trim()).filter(id => id)
-
-        if (reservationIds.length > 0) {
-          const { data: reservationsData } = await supabase
+        
+        // reservation_ids에 있는 ID들이 실제 reservations 테이블에 존재하는지 확인
+        if (ids.length > 0) {
+          const { data: existingReservations } = await supabase
             .from('reservations')
-            .select('*, choices')
-            .in('id', reservationIds)
+            .select('id')
+            .in('id', ids)
+          
+          // 실제로 존재하는 예약 ID만 추가
+          reservationIdsFromTours.push(...((existingReservations || []).map(r => r.id)))
+        }
+      }
 
-          const reservationsList = (reservationsData || []) as ReservationRow[]
-          
-          // 예약별 balance 정보 가져오기
-          const { data: pricingData } = await supabase
-            .from('reservation_pricing')
-            .select('reservation_id, balance_amount')
-            .in('reservation_id', reservationIds)
-          
-          setReservationPricing(pricingData || [])
-          
-          // 픽업 시간으로 정렬
-          const sortedReservations = reservationsList.sort((a, b) => {
-            const timeA = (a as ReservationRow).pickup_time || '00:00'
-            const timeB = (b as ReservationRow).pickup_time || '00:00'
-            return timeA.localeCompare(timeB)
-          })
-          
-          setReservations(sortedReservations)
+      // 2. reservations.tour_id가 현재 투어 ID와 일치하는 예약들 조회
+      // reservations.tour_id가 실제로 tours 테이블에 존재하는 투어 ID인지 확인
+      // 먼저 현재 투어가 실제로 tours 테이블에 존재하는지 확인
+      const { data: tourExists } = await supabase
+        .from('tours')
+        .select('id')
+        .eq('id', tourId)
+        .single()
+
+      // 현재 투어가 존재하는 경우에만 tour_id로 예약 조회
+      let reservationIdsFromTourId: string[] = []
+      if (tourExists) {
+        const { data: reservationsByTourId } = await supabase
+          .from('reservations')
+          .select('id, tour_id')
+          .eq('tour_id', tourId)
+          .not('tour_id', 'is', null)
+
+        // tour_id가 현재 투어 ID와 일치하고, 실제로 tours 테이블에 존재하는 투어 ID인지 확인
+        reservationIdsFromTourId = (reservationsByTourId || [])
+          .filter(r => r.tour_id === tourId)
+          .map(r => r.id)
+      }
+      
+      // 두 목록을 합치고 중복 제거
+      const allReservationIds = [...new Set([...reservationIdsFromTours, ...reservationIdsFromTourId])]
+
+      if (allReservationIds.length > 0) {
+        // 연결된 예약을 투어 상태, 배정 상태와 상관없이 모두 가져옴
+        const { data: reservationsData } = await supabase
+          .from('reservations')
+          .select('*, choices')
+          .in('id', allReservationIds)
+          // 상태 필터링 없음 - 모든 상태의 예약 표시
+
+        const reservationsList = (reservationsData || []) as ReservationRow[]
+        
+        // 예약별 balance 정보 가져오기
+        const { data: pricingData } = await supabase
+          .from('reservation_pricing')
+          .select('reservation_id, balance_amount')
+          .in('reservation_id', allReservationIds)
+        
+        setReservationPricing(pricingData || [])
+        
+        // 픽업 시간으로 정렬
+        const sortedReservations = reservationsList.sort((a, b) => {
+          const timeA = (a as ReservationRow).pickup_time || '00:00'
+          const timeB = (b as ReservationRow).pickup_time || '00:00'
+          return timeA.localeCompare(timeB)
+        })
+        
+        setReservations(sortedReservations)
 
           // 고객 정보 가져오기
           const customerIds = [...new Set(reservationsList.map(r => (r as ReservationRow & { customer_id?: string }).customer_id).filter(Boolean))]
@@ -674,7 +718,7 @@ export default function GuideTourDetailPage() {
                       {getProductName()}
                     </div>
                     <div className="text-right">
-                      <div className="text-sm text-gray-600">총 Balance</div>
+                      <div className="text-sm text-gray-600">{tCommon('totalBalance')}</div>
                       <div className="text-lg font-bold text-green-600">
                         ${getTotalBalance().toLocaleString()}
                       </div>

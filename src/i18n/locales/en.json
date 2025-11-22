@@ -191,6 +191,10 @@
     "employee": "Employee",
     "guide": "Guide",
     "driver": "Driver",
+    "assistant": "Assistant",
+    "vehicle": "Vehicle",
+    "capacity": "Capacity",
+    "color": "Color",
     "simulation": "Simulation",
     "stopSimulation": "Stop Simulation",
     "simulating": "Simulating",
@@ -207,6 +211,7 @@
     "customerSimulation": "Customer Simulation",
     "currentSimulation": "Current Simulation",
     "adminTools": "Admin Tools",
+    "totalBalance": "Total Balance",
     "logout": "Logout",
     "login": "Login",
     "email": "Email",
@@ -1648,12 +1653,23 @@
       "addButton": "Add",
       "editButton": "Edit",
       "deleteButton": "Delete",
+      "validation": {
+        "dateAndReasonRequired": "Please enter both date and reason.",
+        "endDateAfterStart": "Please set the end date after the start date."
+      },
+      "success": {
+        "added": "{count} days of off schedule have been added."
+      },
+      "error": {
+        "saveFailed": "An error occurred while saving the off schedule."
+      },
       "status": {
         "approved": "Approved",
         "pending": "Pending",
         "rejected": "Rejected"
       }
     },
+    "simulation": "Simulation",
     "quickActions": {
       "title": "Quick Actions",
       "offSchedule": "Off Schedule",
@@ -1687,6 +1703,9 @@
     "noCategory": "No category",
     "chat": "Chat",
     "chatSubtitle": "Communicate with your team",
+    "chatLoading": "Loading chat...",
+    "chatMessageSendFailed": "Message send failed",
+    "chatMessageSendError": "Message send error",
     "createRoom": "Create Room",
     "teamChat": "Team Chat",
     "tourChat": "Tour Chat",

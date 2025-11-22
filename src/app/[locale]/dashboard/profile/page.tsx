@@ -117,7 +117,7 @@ export default function CustomerProfile() {
         .from('customers')
         .select('*')
         .eq('email', authUser.email)
-        .single()
+        .maybeSingle()
 
       if (error) {
         console.error(t('customerInfoError'), {

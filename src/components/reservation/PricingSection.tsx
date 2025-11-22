@@ -181,14 +181,50 @@ export default function PricingSection({
   }, [expenseUpdateTrigger, fetchReservationExpenses])
 
   // 선택된 채널 정보 가져오기
-  const selectedChannel = channels.find(ch => ch.id === formData.channelId)
+  const selectedChannel = channels?.find(ch => ch.id === formData.channelId)
   const commissionBasePriceOnly = selectedChannel?.commission_base_price_only || false
   const isOTAChannel = selectedChannel && (
     (selectedChannel as any)?.type?.toLowerCase() === 'ota' || 
     (selectedChannel as any)?.category === 'OTA'
   )
+  // 채널의 pricing_type 확인 (단일 가격 모드 체크)
   const pricingType = (selectedChannel as any)?.pricing_type || 'separate'
   const isSinglePrice = pricingType === 'single'
+  
+  // 채널의 불포함 가격 정보 확인 (가격 타입 자동 결정)
+  const hasNotIncludedPrice = (selectedChannel as any)?.has_not_included_price || false
+  const notIncludedType = (selectedChannel as any)?.not_included_type || 'none'
+  // 채널 정보에 따라 가격 타입 자동 결정
+  // has_not_included_price가 true이거나 not_included_type이 'none'이 아니면 'dynamic' (불포함 있음)
+  // 그렇지 않으면 'base' (불포함 없음)
+  const autoPriceType: 'base' | 'dynamic' = (hasNotIncludedPrice || notIncludedType !== 'none') ? 'dynamic' : 'base'
+  
+  // 채널이 변경되면 가격 타입 자동 업데이트
+  useEffect(() => {
+    if (formData.channelId && autoPriceType && formData.priceType !== autoPriceType) {
+      setFormData(prev => ({ ...prev, priceType: autoPriceType }))
+    }
+  }, [formData.channelId, autoPriceType, formData.priceType, setFormData])
+  
+  // 디버깅용 로그 (개발 환경에서만)
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('PricingSection - 채널 정보:', {
+        channelId: formData.channelId,
+        selectedChannel: selectedChannel ? { 
+          id: selectedChannel.id, 
+          name: (selectedChannel as any).name, 
+          pricing_type: pricingType,
+          has_not_included_price: hasNotIncludedPrice,
+          not_included_type: notIncludedType
+        } : null,
+        isSinglePrice,
+        autoPriceType,
+        currentPriceType: formData.priceType,
+        channelsCount: channels?.length || 0
+      })
+    }
+  }, [formData.channelId, selectedChannel, pricingType, isSinglePrice, autoPriceType, formData.priceType, hasNotIncludedPrice, notIncludedType, channels])
 
   // 초이스별 불포함 금액 계산 (Dynamic Price 타입일 때만)
   const calculateChoiceNotIncludedTotal = useCallback(async () => {
@@ -393,11 +429,11 @@ export default function PricingSection({
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center space-x-3">
           <h3 className="text-base font-semibold text-gray-900">가격 정보</h3>
-          {/* 가격 타입 선택 */}
+          {/* 가격 타입 표시 (채널 정보에 따라 자동 결정) */}
           <div className="flex items-center space-x-2">
             <label className="text-xs text-gray-600">가격 타입:</label>
             <select
-              value={formData.priceType || 'dynamic'}
+              value={formData.priceType || autoPriceType || 'dynamic'}
               onChange={async (e) => {
                 const newPriceType = e.target.value as 'base' | 'dynamic'
                 setFormData({ ...formData, priceType: newPriceType })
@@ -407,11 +443,18 @@ export default function PricingSection({
                   // 실제 가격 로드는 ReservationForm의 useEffect에서 처리됨
                 }
               }}
-              className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+              disabled={!!formData.channelId} // 채널이 선택되면 자동 결정되므로 비활성화
+              className={`px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 ${
+                formData.channelId ? 'bg-gray-100 cursor-not-allowed' : ''
+              }`}
+              title={formData.channelId ? '채널 정보에 따라 자동으로 결정됩니다' : '가격 타입을 선택하세요'}
             >
               <option value="dynamic">불포함 있음</option>
               <option value="base">불포함 없음</option>
             </select>
+            {formData.channelId && (
+              <span className="text-xs text-gray-500">(자동)</span>
+            )}
           </div>
           {/* 기존 가격 정보 표시 */}
           {isExistingPricingLoaded && (
@@ -532,19 +575,39 @@ export default function PricingSection({
             </div>
             <div className="space-y-1">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-600">성인</span>
+                <span className="text-gray-600">{isSinglePrice ? '단일 가격' : '성인'}</span>
                 <div className="flex items-center space-x-1">
                   <span className="font-medium">$</span>
                   <input
                     type="number"
                     value={formData.adultProductPrice || ''}
-                    onChange={(e) => setFormData({ ...formData, adultProductPrice: Number(e.target.value) || 0 })}
+                    onChange={(e) => {
+                      const newPrice = Number(e.target.value) || 0
+                      setFormData({ 
+                        ...formData, 
+                        adultProductPrice: newPrice,
+                        // 단일 가격 모드일 때는 아동/유아 가격도 동일하게 설정
+                        ...(isSinglePrice ? {
+                          childProductPrice: newPrice,
+                          infantProductPrice: newPrice
+                        } : {})
+                      })
+                    }}
                     className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                     step="0.01"
                     placeholder="0"
                   />
-                  <span className="text-gray-500">x{formData.adults}</span>
-                  <span className="font-medium">${(formData.adultProductPrice * formData.adults).toFixed(2)}</span>
+                  {isSinglePrice ? (
+                    <span className="text-gray-500">x{formData.adults + formData.child + formData.infant}</span>
+                  ) : (
+                    <span className="text-gray-500">x{formData.adults}</span>
+                  )}
+                  <span className="font-medium">
+                    {isSinglePrice 
+                      ? `$${((formData.adultProductPrice || 0) * (formData.adults + formData.child + formData.infant)).toFixed(2)}`
+                      : `$${((formData.adultProductPrice || 0) * formData.adults).toFixed(2)}`
+                    }
+                  </span>
                 </div>
               </div>
               {/* 단일 가격 모드일 때는 아동/유아 필드 숨김 */}
@@ -709,7 +772,10 @@ export default function PricingSection({
                   value={formData.couponCode}
                   onChange={(e) => {
                     const selectedCouponCode = e.target.value
-                    const selectedCoupon = coupons.find(coupon => coupon.coupon_code === selectedCouponCode)
+                    const selectedCoupon = coupons.find(coupon => 
+                      coupon.coupon_code && 
+                      coupon.coupon_code.trim().toLowerCase() === selectedCouponCode.trim().toLowerCase()
+                    )
                     
                     // OTA 채널일 때는 OTA 판매가에 직접 쿠폰 할인 적용
                     const subtotal = isOTAChannel 
@@ -717,9 +783,9 @@ export default function PricingSection({
                       : calculateProductPriceTotal() + calculateChoiceTotal()
                     const couponDiscount = calculateCouponDiscount(selectedCoupon, subtotal)
                     
-                    setFormData({ 
-                      ...formData, 
-                      couponCode: selectedCouponCode,
+                    setFormData({
+                      ...formData,
+                      couponCode: selectedCoupon?.coupon_code || '', // coupons.coupon_code를 저장 (대소문자 구분 없이 사용)
                       couponDiscount: couponDiscount
                     })
                   }}
@@ -735,18 +801,24 @@ export default function PricingSection({
                     }
                     
                     return (
-                      <option key={coupon.id} value={coupon.coupon_code}>
+                      <option key={coupon.id} value={coupon.coupon_code || ''}>
                         {coupon.coupon_code} ({discountText})
                       </option>
                     )
                   })}
                 </select>
                 {/* 선택된 쿠폰 정보 표시 */}
-                {formData.couponCode && (
-                  <div className="mt-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                    선택된 쿠폰: {formData.couponCode} (할인: ${formData.couponDiscount.toFixed(2)})
-                  </div>
-                )}
+                {formData.couponCode && (() => {
+                  const selectedCoupon = coupons.find(c => 
+                    c.coupon_code && 
+                    c.coupon_code.trim().toLowerCase() === formData.couponCode.trim().toLowerCase()
+                  )
+                  return selectedCoupon ? (
+                    <div className="mt-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                      선택된 쿠폰: {selectedCoupon.coupon_code} (할인: ${formData.couponDiscount.toFixed(2)})
+                    </div>
+                  ) : null
+                })()}
               </div>
 
               {/* 추가 할인 및 비용 */}

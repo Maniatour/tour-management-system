@@ -20,3 +20,4 @@ CREATE INDEX IF NOT EXISTS idx_products_favorite_order ON products(favorite_orde
 
 
 
+

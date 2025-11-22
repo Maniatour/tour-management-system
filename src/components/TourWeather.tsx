@@ -500,14 +500,7 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
 
       <div className="space-y-2">
         <WeatherCard locationData={weatherData.grandCanyon} showSunriseSunset={true} />
-        
-        {/* Page City를 가운데 배치 */}
-        <div className="flex justify-center">
-          <div className="w-full max-w-sm">
-            <WeatherCard locationData={weatherData.pageCity} />
-          </div>
-        </div>
-        
+        <WeatherCard locationData={weatherData.pageCity} />
         <WeatherCard locationData={weatherData.zionCanyon} showSunriseSunset={true} />
       </div>
 

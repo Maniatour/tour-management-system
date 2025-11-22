@@ -91,41 +91,16 @@ export default function CustomerDashboard() {
     }
   }, [isSimulating, simulatedUser])
 
-  // 데이터 로딩 (시뮬레이션 상태와 분리)
-  useEffect(() => {
-    console.log('Dashboard: Data loading effect triggered', { isSimulating, hasSimulatedUser: !!simulatedUser, hasUser: !!user })
-    
-    // 시뮬레이션 중이 아닌 경우에만 고객 데이터 로드
-    if (!isSimulating && user) {
-      console.log('Dashboard: Loading normal customer data')
-      loadCustomerData()
-    } else if (isSimulating && simulatedUser && simulatedUser.id) {
-      // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보로 설정
-      console.log('Dashboard: Loading simulated customer data:', simulatedUser)
-      setCustomer({
-        id: simulatedUser.id,
-        name: simulatedUser.name_ko,
-        email: simulatedUser.email,
-        phone: simulatedUser.phone,
-        language: simulatedUser.language,
-        created_at: simulatedUser.created_at
-      })
-      
-      // 시뮬레이션된 사용자의 예약 정보도 로드
-      loadSimulatedReservations(simulatedUser.id)
-    } else if (isSimulating && !simulatedUser) {
-      // 시뮬레이션 중이지만 simulatedUser가 없는 경우
-      console.warn('Dashboard: 시뮬레이션 중이지만 simulatedUser가 없습니다.')
-      setLoading(false)
-    } else if (!isSimulating && !user) {
-      // 로그인하지 않은 사용자의 경우 로딩 완료
-      console.log('Dashboard: No user logged in, showing public page')
-      setLoading(false)
-    }
-  }, [isSimulating, simulatedUser, user]) // eslint-disable-line react-hooks/exhaustive-deps
+  // 시뮬레이션 복원 이벤트 리스너 (함수 정의 후에 추가됨)
 
   // 고객 정보 로드
   const loadCustomerData = useCallback(async () => {
+    // 시뮬레이션 중이면 실행하지 않음
+    if (isSimulating) {
+      console.warn('Dashboard: loadCustomerData - 시뮬레이션 중이므로 실행하지 않습니다.')
+      return
+    }
+
     if (!authUser?.email) {
       setLoading(false)
       return
@@ -133,13 +108,14 @@ export default function CustomerDashboard() {
 
     try {
       setLoading(true)
+      console.log('Dashboard: 일반 모드 - 고객 정보 조회:', authUser.email)
       
-      // 이메일로 고객 정보 조회
+      // 이메일로 고객 정보 조회 (maybeSingle 사용: 결과가 없어도 에러가 아님)
       const { data: customerData, error: customerError } = await supabase
         .from('customers')
         .select('*')
         .eq('email', authUser.email)
-        .single()
+        .maybeSingle()
 
       if (customerError) {
         console.error('고객 정보 조회 오류:', {
@@ -168,16 +144,10 @@ export default function CustomerDashboard() {
       if (customerData) {
         setCustomer(customerData)
         
-        // 고객의 예약 정보 조회
+        // 고객의 예약 정보 조회 (외래 키가 없으므로 별도로 조회)
         const { data: reservationsData, error: reservationsError } = await supabase
           .from('reservations')
-          .select(`
-            *,
-            products (
-              name,
-              description
-            )
-          `)
+          .select('*')
           .eq('customer_id', (customerData as { id: string }).id)
           .order('tour_date', { ascending: false })
 
@@ -189,8 +159,33 @@ export default function CustomerDashboard() {
           })
           console.error('전체 예약 오류 객체:', reservationsError)
           setReservations([])
+        } else if (reservationsData && reservationsData.length > 0) {
+          // 각 예약에 대해 상품 정보를 별도로 조회
+          const reservationsWithProducts = await Promise.all(
+            reservationsData.map(async (reservation) => {
+              try {
+                const { data: productData } = await supabase
+                  .from('products')
+                  .select('name, description')
+                  .eq('id', (reservation as { product_id: string }).product_id)
+                  .maybeSingle()
+
+                return {
+                  ...(reservation as Record<string, unknown>),
+                  products: productData || { name: '상품명 없음', description: null }
+                }
+              } catch (error) {
+                console.error('상품 정보 조회 오류:', error)
+                return {
+                  ...(reservation as Record<string, unknown>),
+                  products: { name: '상품명 없음', description: null }
+                }
+              }
+            })
+          )
+          setReservations(reservationsWithProducts as Reservation[])
         } else {
-          setReservations(reservationsData || [])
+          setReservations([])
         }
       } else {
         setCustomer(null)
@@ -203,56 +198,129 @@ export default function CustomerDashboard() {
     } finally {
       setLoading(false)
     }
-  }, [authUser?.email])
+  }, [authUser?.email, isSimulating])
 
-  // 시뮬레이션된 사용자의 예약 정보 로드
-  const loadSimulatedReservations = async (customerId: string) => {
-    if (!customerId) {
-      console.error('고객 ID가 없습니다.')
-      setReservations([])
+  // 시뮬레이션된 고객 데이터 로드
+  const loadSimulatedCustomerData = useCallback(async () => {
+    if (!simulatedUser) {
+      console.warn('Dashboard: loadSimulatedCustomerData - simulatedUser가 없습니다.')
       setLoading(false)
       return
     }
 
     try {
-      // 먼저 예약 정보만 조회
-      const { data: reservationsData, error: reservationsError } = await supabase
-        .from('reservations')
-        .select('*')
-        .eq('customer_id', customerId)
-        .order('tour_date', { ascending: false })
+      setLoading(true)
+      console.log('Dashboard: 시뮬레이션 고객 데이터 로드 시작:', {
+        id: simulatedUser.id,
+        email: simulatedUser.email,
+        name: simulatedUser.name_ko
+      })
 
-      if (reservationsError) {
-        console.error('시뮬레이션 예약 정보 조회 오류:', {
-          message: reservationsError?.message || 'Unknown error',
-          code: reservationsError?.code || 'No code',
-          details: reservationsError?.details || 'No details'
-        })
-        console.error('전체 시뮬레이션 예약 오류 객체:', reservationsError)
-        setReservations([])
-        setLoading(false)
-        return
+      // 실제 데이터베이스에서 고객 정보 가져오기
+      let customerData: Customer | null = null
+
+      // 방법 1: customer_id로 조회
+      if (simulatedUser.id) {
+        console.log('Dashboard: customer_id로 고객 정보 조회:', simulatedUser.id)
+        const { data, error } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('id', simulatedUser.id)
+          .maybeSingle()
+
+        if (error) {
+          console.warn('Dashboard: customer_id로 조회 실패:', error)
+        } else if (data) {
+          console.log('Dashboard: customer_id로 고객 정보 발견:', data.name, data.email)
+          customerData = data as Customer
+        }
       }
 
-      if (reservationsData && reservationsData.length > 0) {
-        // 각 예약에 대해 상품 정보를 별도로 조회
+      // 방법 2: 이메일로 조회 (customer_id로 찾지 못한 경우)
+      if (!customerData && simulatedUser.email) {
+        console.log('Dashboard: 이메일로 고객 정보 조회:', simulatedUser.email)
+        const { data, error } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('email', simulatedUser.email)
+          .maybeSingle()
+
+        if (error) {
+          console.warn('Dashboard: 이메일로 조회 실패:', error)
+        } else if (data) {
+          console.log('Dashboard: 이메일로 고객 정보 발견:', data.name, data.email)
+          customerData = data as Customer
+        }
+      }
+
+      // 실제 고객 정보가 있으면 사용, 없으면 시뮬레이션 데이터 사용
+      if (customerData) {
+        console.log('Dashboard: 실제 고객 정보로 설정:', customerData.name, customerData.email)
+        setCustomer(customerData)
+      } else {
+        // 실제 데이터베이스에 고객 정보가 없는 경우 시뮬레이션 데이터 사용
+        console.log('Dashboard: 실제 고객 정보 없음, 시뮬레이션 데이터 사용:', simulatedUser.name_ko, simulatedUser.email)
+        setCustomer({
+          id: simulatedUser.id,
+          name: simulatedUser.name_ko || simulatedUser.name_en || '',
+          email: simulatedUser.email,
+          phone: simulatedUser.phone || null,
+          language: simulatedUser.language || 'ko',
+          created_at: simulatedUser.created_at || new Date().toISOString()
+        } as Customer)
+      }
+
+      // 예약 정보 조회: customer_id와 customer_email 둘 다 시도
+      let reservationsData: any[] = []
+
+      // 방법 1: customer_id로 조회
+      if (simulatedUser.id) {
+        const { data: idReservations, error: idError } = await supabase
+          .from('reservations')
+          .select('*')
+          .eq('customer_id', simulatedUser.id)
+          .order('tour_date', { ascending: false })
+
+        if (!idError && idReservations) {
+          reservationsData = idReservations
+        }
+      }
+
+      // 방법 2: customer_email로 조회 (아직 예약이 없거나 customer_id로 찾지 못한 경우)
+      if (reservationsData.length === 0 && simulatedUser.email) {
+        const { data: emailReservations, error: emailError } = await supabase
+          .from('reservations')
+          .select('*')
+          .eq('customer_email', simulatedUser.email)
+          .order('tour_date', { ascending: false })
+
+        if (!emailError && emailReservations) {
+          // 중복 제거 (customer_id와 customer_email 둘 다 매칭되는 경우)
+          const existingIds = new Set(reservationsData.map(r => r.id))
+          const newReservations = emailReservations.filter(r => !existingIds.has(r.id))
+          reservationsData = [...reservationsData, ...newReservations]
+        }
+      }
+
+      // 상품 정보 추가
+      if (reservationsData.length > 0) {
         const reservationsWithProducts = await Promise.all(
           reservationsData.map(async (reservation) => {
             try {
               const { data: productData } = await supabase
                 .from('products')
                 .select('name, description')
-                .eq('id', (reservation as { product_id: string }).product_id)
-                .single()
+                .eq('id', reservation.product_id)
+                .maybeSingle()
 
               return {
-                ...(reservation as Record<string, unknown>),
+                ...reservation,
                 products: productData || { name: '상품명 없음', description: null }
               }
             } catch (error) {
               console.error('상품 정보 조회 오류:', error)
               return {
-                ...(reservation as Record<string, unknown>),
+                ...reservation,
                 products: { name: '상품명 없음', description: null }
               }
             }
@@ -263,12 +331,92 @@ export default function CustomerDashboard() {
         setReservations([])
       }
     } catch (error) {
-      console.error('시뮬레이션 예약 정보 로드 오류:', error)
+      console.error('시뮬레이션 고객 데이터 로드 오류:', error)
       setReservations([])
     } finally {
       setLoading(false)
     }
-  }
+  }, [simulatedUser])
+
+  // 시뮬레이션 복원 이벤트 리스너
+  useEffect(() => {
+    const handleSimulationRestored = (event: CustomEvent) => {
+      console.log('Dashboard: 시뮬레이션 복원 이벤트 수신:', event.detail)
+      // 시뮬레이션 상태가 복원되면 고객 정보 로드
+      if (event.detail && event.detail.email) {
+        setCustomer(null)
+        setReservations([])
+        // 약간의 지연 후 로드 (상태가 완전히 설정될 때까지 대기)
+        setTimeout(() => {
+          loadSimulatedCustomerData()
+        }, 100)
+      }
+    }
+
+    window.addEventListener('simulationRestored', handleSimulationRestored as EventListener)
+    
+    return () => {
+      window.removeEventListener('simulationRestored', handleSimulationRestored as EventListener)
+    }
+  }, [loadSimulatedCustomerData])
+
+  // 데이터 로딩
+  useEffect(() => {
+    // 시뮬레이션 상태 복원 대기 (localStorage 확인)
+    const checkSimulationState = () => {
+      try {
+        const savedSimulation = localStorage.getItem('positionSimulation')
+        if (savedSimulation && !isSimulating) {
+          console.log('Dashboard: 저장된 시뮬레이션 상태 발견, 복원 대기 중...')
+          // 시뮬레이션 상태가 복원될 때까지 잠시 대기
+          setTimeout(() => {
+            // 다시 확인
+            if (isSimulating && simulatedUser) {
+              console.log('Dashboard: 시뮬레이션 상태 복원됨, 고객 정보 로드')
+              setCustomer(null)
+              setReservations([])
+              loadSimulatedCustomerData()
+            }
+          }, 300)
+          return
+        }
+      } catch (error) {
+        console.error('Dashboard: 시뮬레이션 상태 확인 오류:', error)
+      }
+    }
+
+    // 시뮬레이션 모드 우선 확인
+    if (isSimulating && simulatedUser) {
+      console.log('Dashboard: 시뮬레이션 모드 - 고객 정보 로드:', simulatedUser.email, simulatedUser.id)
+      // 기존 고객 정보 초기화
+      setCustomer(null)
+      setReservations([])
+      // 시뮬레이션된 고객 정보 로드
+      loadSimulatedCustomerData()
+      return
+    }
+    
+    // 시뮬레이션 상태가 아직 복원되지 않았을 수 있음
+    if (!isSimulating) {
+      checkSimulationState()
+    }
+    
+    // 일반 모드: 시뮬레이션이 아닐 때만 실행
+    if (!isSimulating) {
+      if (user && authUser?.email) {
+        console.log('Dashboard: 일반 모드 - 고객 정보 로드:', authUser.email)
+        // 기존 고객 정보 초기화
+        setCustomer(null)
+        setReservations([])
+        loadCustomerData()
+      } else {
+        // 로그인하지 않은 경우
+        setCustomer(null)
+        setReservations([])
+        setLoading(false)
+      }
+    }
+  }, [isSimulating, simulatedUser, user, authUser?.email, loadSimulatedCustomerData, loadCustomerData])
 
   // 시뮬레이션 중지
   const handleStopSimulation = () => {
@@ -625,7 +773,15 @@ export default function CustomerDashboard() {
               {reservations.length > 0 ? (
                 <div className="space-y-4">
                   {reservations.map((reservation) => (
-                    <div key={reservation.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                    <div 
+                      key={reservation.id} 
+                      className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                      onClick={() => {
+                        if (customer) {
+                          router.push(`/${locale}/dashboard/reservations/${customer.id}/${reservation.id}`)
+                        }
+                      }}
+                    >
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <h3 className="font-semibold text-gray-900 mb-2">

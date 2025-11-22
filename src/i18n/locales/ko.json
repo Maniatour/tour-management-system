@@ -187,6 +187,10 @@
     "employee": "직원",
     "guide": "가이드",
     "driver": "운전자",
+    "assistant": "어시스턴트",
+    "vehicle": "차량",
+    "capacity": "정원",
+    "color": "색상",
     "simulation": "시뮬레이션",
     "stopSimulation": "시뮬레이션 중지",
     "simulating": "시뮬레이션 중",
@@ -203,6 +207,7 @@
     "customerSimulation": "고객 시뮬레이션",
     "currentSimulation": "현재 시뮬레이션",
     "adminTools": "관리자 도구",
+    "totalBalance": "총 Balance",
     "logout": "로그아웃",
     "login": "로그인",
     "email": "이메일",
@@ -1740,12 +1745,23 @@
       "addButton": "추가하기",
       "editButton": "수정하기",
       "deleteButton": "삭제",
+      "validation": {
+        "dateAndReasonRequired": "날짜와 사유를 모두 입력해주세요.",
+        "endDateAfterStart": "종료 날짜를 시작 날짜 이후로 설정해주세요."
+      },
+      "success": {
+        "added": "{count}일의 오프 스케줄이 추가되었습니다."
+      },
+      "error": {
+        "saveFailed": "오프 스케줄 저장 중 오류가 발생했습니다."
+      },
       "status": {
         "approved": "승인됨",
         "pending": "대기중",
         "rejected": "거부됨"
       }
     },
+    "simulation": "시뮬레이션",
     "quickActions": {
       "title": "빠른 액션",
       "offSchedule": "오프 스케줄",

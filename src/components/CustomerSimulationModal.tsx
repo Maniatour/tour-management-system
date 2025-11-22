@@ -5,6 +5,7 @@ import { X, User, Search } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
+import { useRouter } from 'next/navigation'
 
 interface Customer {
   id: string
@@ -22,6 +23,7 @@ interface CustomerSimulationModalProps {
 
 export default function CustomerSimulationModal({ isOpen, onClose }: CustomerSimulationModalProps) {
   const { startSimulation } = useAuth()
+  const router = useRouter()
   const t = useTranslations('common')
   const [customers, setCustomers] = useState<Customer[]>([])
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([])
@@ -77,8 +79,10 @@ export default function CustomerSimulationModal({ isOpen, onClose }: CustomerSim
     }
   }
 
-  const handleCustomerSelect = (customer: Customer) => {
+  const handleCustomerSelect = async (customer: Customer) => {
     try {
+      console.log('CustomerSimulationModal: 고객 선택:', customer.name, customer.email)
+      
       // 고객 정보를 시뮬레이션 데이터로 변환
       const simulationData = {
         id: customer.id,
@@ -92,13 +96,17 @@ export default function CustomerSimulationModal({ isOpen, onClose }: CustomerSim
         created_at: customer.created_at
       }
 
+      console.log('CustomerSimulationModal: 시뮬레이션 시작:', simulationData)
       startSimulation(simulationData)
+      
+      // 시뮬레이션 상태가 저장될 시간을 주기 위해 약간 대기
+      await new Promise(resolve => setTimeout(resolve, 200))
+      
       onClose()
       
-      // 고객 페이지로 이동
-      setTimeout(() => {
-        window.location.href = '/ko/dashboard'
-      }, 100)
+      // Next.js 라우터를 사용하여 페이지 이동 (상태 유지)
+      console.log('CustomerSimulationModal: 고객 대시보드로 이동')
+      router.push('/ko/dashboard')
     } catch (error) {
       console.error('고객 시뮬레이션 시작 중 오류:', error)
       setError('시뮬레이션을 시작하는데 실패했습니다.')

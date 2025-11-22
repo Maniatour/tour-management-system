@@ -30,6 +30,7 @@ import PickupTimeModal from '@/components/tour/modals/PickupTimeModal'
 import PickupHotelModal from '@/components/tour/modals/PickupHotelModal'
 import PrivateTourModal from '@/components/tour/modals/PrivateTourModal'
 import BookingModal from '@/components/tour/modals/BookingModal'
+import PickupScheduleAutoGenerateModal from '@/components/tour/modals/PickupScheduleAutoGenerateModal'
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
 import { 
@@ -107,6 +108,7 @@ export default function TourDetailPage() {
   const [editingTourHotelBooking, setEditingTourHotelBooking] = useState<LocalTourHotelBooking | null>(null)
   const [showTicketBookingDetails, setShowTicketBookingDetails] = useState<boolean>(false)
   const [editingReservation, setEditingReservation] = useState<any>(null)
+  const [showPickupScheduleModal, setShowPickupScheduleModal] = useState<boolean>(false)
   
   // 마일리지 관련 상태
   const [startMileage, setStartMileage] = useState<number>(0)
@@ -681,6 +683,43 @@ export default function TourDetailPage() {
     }
   }
 
+  // 픽업 스케줄 자동 생성 저장 핸들러
+  const handleSavePickupSchedule = async (pickupTimes: Record<string, string>) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('인증이 필요합니다.')
+      }
+
+      // 여러 예약의 픽업 시간을 일괄 업데이트
+      const updates = Object.entries(pickupTimes).map(([reservationId, pickupTime]) => ({
+        id: reservationId,
+        pickup_time: pickupTime
+      }))
+
+      // 각 예약을 개별적으로 업데이트
+      for (const update of updates) {
+        const { error } = await supabase
+          .from('reservations')
+          .update({ pickup_time: update.pickup_time })
+          .eq('id', update.id)
+
+        if (error) {
+          console.error(`예약 ${update.id} 픽업 시간 업데이트 오류:`, error)
+          throw error
+        }
+      }
+
+      // 데이터 새로고침 - 페이지 새로고침으로 대체
+      window.location.reload()
+
+      console.log('픽업 스케줄 저장 완료:', updates.length, '건')
+    } catch (error) {
+      console.error('픽업 스케줄 저장 오류:', error)
+      throw error
+    }
+  }
+
   const handleCancelEditPickupTime = () => {
     tourData.setShowTimeModal(false)
     tourData.setSelectedReservation(null)
@@ -933,7 +972,7 @@ export default function TourDetailPage() {
               connectionStatus={{ reservations: tourData.connectionStatus.reservations }}
               onToggleSection={tourData.toggleSection}
           onAutoGenerate={() => {
-            // 자동생성 로직
+            setShowPickupScheduleModal(true)
           }}
               getPickupHotelNameOnly={tourData.getPickupHotelNameOnly}
               getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || 'Unknown'}
@@ -1193,6 +1232,20 @@ export default function TourDetailPage() {
               />
         )}
       </BookingModal>
+
+      {/* 픽업 스케줄 자동 생성 모달 */}
+      {tourData.tour && (
+        <PickupScheduleAutoGenerateModal
+          isOpen={showPickupScheduleModal}
+          tourDate={tourData.tour.tour_date}
+          productId={tourData.product?.id || null}
+          assignedReservations={tourData.assignedReservations}
+          pickupHotels={tourData.pickupHotels}
+          onClose={() => setShowPickupScheduleModal(false)}
+          onSave={handleSavePickupSchedule}
+          getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || 'Unknown'}
+        />
+      )}
     </div>
   )
 }

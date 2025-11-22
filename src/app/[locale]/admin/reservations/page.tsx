@@ -114,8 +114,24 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
   }, [])
 
+  // 초이스 데이터 캐시 (깜빡거림 방지)
+  const choicesCacheRef = useRef<Map<string, Array<{
+    choice_id: string
+    option_id: string
+    quantity: number
+    choice_options: {
+      option_key: string
+      option_name: string
+      option_name_ko: string
+      product_choices: {
+        choice_group_ko: string
+      }
+    }
+  }>>>(new Map())
+
   // 새로운 초이스 시스템을 사용하는 Choices 표시 컴포넌트
-  const ChoicesDisplay = ({ reservation }: { reservation: Reservation }) => {
+  const ChoicesDisplay = React.memo(({ reservation }: { reservation: Reservation }) => {
+    const reservationId = reservation.id
     const [selectedChoices, setSelectedChoices] = useState<Array<{
       choice_id: string
       option_id: string
@@ -128,14 +144,32 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           choice_group_ko: string
         }
       }
-    }>>([])
-    const [loading, setLoading] = useState(true)
+    }>>(() => {
+      // 초기값을 캐시에서 가져오기
+      return choicesCacheRef.current.get(reservationId) || []
+    })
+    const [loading, setLoading] = useState(() => {
+      // 캐시에 있으면 로딩 상태 false
+      return !choicesCacheRef.current.has(reservationId)
+    })
 
     useEffect(() => {
+      // 캐시에 이미 있으면 캐시에서 가져오기
+      if (choicesCacheRef.current.has(reservationId)) {
+        const cachedChoices = choicesCacheRef.current.get(reservationId) || []
+        if (cachedChoices.length > 0) {
+          setSelectedChoices(cachedChoices)
+          setLoading(false)
+          return
+        }
+      }
+
+      // 캐시에 없으면 로드
       const loadChoices = async () => {
-        setLoading(true)
         try {
-          const choices = await getSelectedChoicesFromNewSystem(reservation.id)
+          const choices = await getSelectedChoicesFromNewSystem(reservationId)
+          // 캐시에 저장
+          choicesCacheRef.current.set(reservationId, choices)
           setSelectedChoices(choices)
         } catch (error) {
           console.error('Error loading choices:', error)
@@ -144,10 +178,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         }
       }
       
+      setLoading(true)
       loadChoices()
-    }, [reservation.id])
+    }, [reservationId])
 
-    if (loading) {
+    // 로딩 중이고 데이터가 없을 때만 null 반환
+    if (loading && selectedChoices.length === 0) {
       return null
     }
 
@@ -163,14 +199,17 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           const badgeClass = getGroupColorClasses(choice.choice_id, groupName)
           
           return (
-            <span key={index} className={badgeClass}>
+            <span key={`${choice.choice_id}-${choice.option_id}-${index}`} className={badgeClass}>
               ✓ {optionName}
             </span>
           )
         })}
       </>
     )
-  }
+  }, (prevProps, nextProps) => {
+    // 메모이제이션 비교: reservation.id만 비교
+    return prevProps.reservation.id === nextProps.reservation.id
+  })
 
   const router = useRouter()
   const routeParams = useParams() as { locale?: string }
@@ -199,6 +238,16 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
   // 상태 관리
   const [searchTerm, setSearchTerm] = useState('')
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
+  
+  // 검색어 debounce (300ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm)
+    }, 300)
+    
+    return () => clearTimeout(timer)
+  }, [searchTerm])
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingReservation, setEditingReservation] = useState<Reservation | null>(null)
   const [viewMode, setViewMode] = useState<'card' | 'calendar'>('card')
@@ -260,57 +309,134 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     isAssigned: boolean
   }>>(new Map())
 
-  // reservation_pricing 데이터 상태
+  // reservation_pricing 데이터 상태 (계산식 표시를 위한 모든 필드 포함)
   const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, {
     total_price: number
     balance_amount: number
+    adult_product_price?: number
+    child_product_price?: number
+    infant_product_price?: number
+    product_price_total?: number
+    coupon_discount?: number
+    additional_discount?: number
+    additional_cost?: number
+    commission_percent?: number
+    commission_amount?: number
+    currency?: string
   }>>(new Map())
 
-  // reservation_pricing 데이터 가져오기
-  useEffect(() => {
-    const fetchReservationPricing = async () => {
-      if (!reservations.length) return
-
-      try {
-        const reservationIds = reservations.map(r => r.id)
-        
-        // URL 길이 제한을 피하기 위해 청크 단위로 나눠서 요청
-        const chunkSize = 100 // 한 번에 100개씩 요청
-        const pricingMap = new Map<string, {
-          total_price: number
-          balance_amount: number
-        }>()
-
-        // 청크 단위로 나눠서 요청
-        for (let i = 0; i < reservationIds.length; i += chunkSize) {
-          const chunk = reservationIds.slice(i, i + chunkSize)
-          
-          const { data: pricingData, error } = await supabase
-            .from('reservation_pricing')
-            .select('reservation_id, total_price, balance_amount')
-            .in('reservation_id', chunk)
-
-          if (error) {
-            console.error('reservation_pricing 조회 오류:', error)
-            continue // 다음 청크 계속 처리
-          }
-
-          pricingData?.forEach(p => {
-            pricingMap.set(p.reservation_id, {
-              total_price: typeof p.total_price === 'string' ? parseFloat(p.total_price) || 0 : (p.total_price || 0),
-              balance_amount: typeof p.balance_amount === 'string' ? parseFloat(p.balance_amount) || 0 : (p.balance_amount || 0)
-            })
-          })
+  // Net Price 계산식 생성 함수
+  const generatePriceCalculation = (reservation: any, pricing: any): string => {
+    if (!pricing || !pricing.total_price) {
+      // pricing이 없으면 기본값 반환
+      return ''
+    }
+    
+    const toNumber = (val: number | undefined): number => val || 0
+    
+    const adultPrice = toNumber(pricing.adult_product_price)
+    const childPrice = toNumber(pricing.child_product_price)
+    const infantPrice = toNumber(pricing.infant_product_price)
+    const productPriceTotal = toNumber(pricing.product_price_total)
+    const couponDiscount = toNumber(pricing.coupon_discount)
+    const additionalDiscount = toNumber(pricing.additional_discount)
+    const additionalCost = toNumber(pricing.additional_cost)
+    const grandTotal = pricing.total_price
+    const commissionPercent = toNumber(pricing.commission_percent)
+    const commissionAmount = toNumber(pricing.commission_amount)
+    
+    const totalPeople = (reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)
+    const discountTotal = couponDiscount + additionalDiscount
+    const adjustmentTotal = additionalCost - discountTotal
+    
+    let calculatedCommission = 0
+    if (commissionAmount > 0) {
+      calculatedCommission = commissionAmount
+    } else if (commissionPercent > 0 && grandTotal > 0) {
+      calculatedCommission = grandTotal * (commissionPercent / 100)
+    }
+    
+    const netPrice = grandTotal > 0 ? (grandTotal - calculatedCommission) : 0
+    const currency = pricing.currency || 'USD'
+    const currencySymbol = currency === 'KRW' ? '₩' : '$'
+    
+    // 계산식 구성 (항상 최소한 grandTotal - commission = Net Price는 표시)
+    let calculationString = ''
+    let subtotal = productPriceTotal
+    
+    // subtotal 계산
+    if (subtotal === 0 && adultPrice > 0 && totalPeople > 0) {
+      subtotal = adultPrice * (reservation.adults || 0) + childPrice * (reservation.child || 0) + infantPrice * (reservation.infant || 0)
+    }
+    
+    if (subtotal === 0) {
+      subtotal = grandTotal + discountTotal - additionalCost
+      if (subtotal <= 0) subtotal = grandTotal
+    }
+    
+    // 1. 상품가격 x 총인원 = 소계
+    if (subtotal > 0 && totalPeople > 0) {
+      if (adultPrice > 0 && totalPeople === (reservation.adults || 0) && (reservation.child || 0) === 0 && (reservation.infant || 0) === 0) {
+        calculationString = `${currencySymbol}${adultPrice.toFixed(2)} × ${totalPeople} = ${currencySymbol}${subtotal.toFixed(2)}`
+      } else if (totalPeople > 0 && (adultPrice > 0 || childPrice > 0 || infantPrice > 0)) {
+        const priceParts: string[] = []
+        if ((reservation.adults || 0) > 0 && adultPrice > 0) {
+          priceParts.push(`${currencySymbol}${adultPrice.toFixed(2)} × ${reservation.adults || 0}`)
         }
-
-        setReservationPricingMap(pricingMap)
-      } catch (error) {
-        console.error('reservation_pricing 로드 오류:', error)
+        if ((reservation.child || 0) > 0 && childPrice > 0) {
+          priceParts.push(`${currencySymbol}${childPrice.toFixed(2)} × ${reservation.child || 0}`)
+        }
+        if ((reservation.infant || 0) > 0 && infantPrice > 0) {
+          priceParts.push(`${currencySymbol}${infantPrice.toFixed(2)} × ${reservation.infant || 0}`)
+        }
+        if (priceParts.length > 0) {
+          calculationString = `${priceParts.join(' + ')} = ${currencySymbol}${subtotal.toFixed(2)}`
+        } else if (subtotal > 0) {
+          calculationString = `${currencySymbol}${subtotal.toFixed(2)}`
+        }
+      } else if (subtotal > 0) {
+        calculationString = `${currencySymbol}${subtotal.toFixed(2)}`
       }
     }
-
-    fetchReservationPricing()
-  }, [reservations])
+    
+    // calculationString이 비어있으면 grandTotal부터 시작
+    if (!calculationString) {
+      calculationString = `${currencySymbol}${grandTotal.toFixed(2)}`
+    }
+    
+    // 2. 소계 - 할인/추가비용 = grand total
+    if (adjustmentTotal !== 0 && calculationString) {
+      const prevValue = subtotal > 0 ? subtotal : grandTotal
+      if (adjustmentTotal > 0) {
+        calculationString = `${currencySymbol}${prevValue.toFixed(2)} + ${currencySymbol}${adjustmentTotal.toFixed(2)} = ${currencySymbol}${grandTotal.toFixed(2)}`
+      } else {
+        calculationString = `${currencySymbol}${prevValue.toFixed(2)} - ${currencySymbol}${Math.abs(adjustmentTotal).toFixed(2)} = ${currencySymbol}${grandTotal.toFixed(2)}`
+      }
+    } else if (calculationString && subtotal > 0 && Math.abs(subtotal - grandTotal) > 0.01) {
+      calculationString += ` = ${currencySymbol}${grandTotal.toFixed(2)}`
+    }
+    
+    // 3. grand total - commission = Net price (항상 표시)
+    if (calculatedCommission > 0) {
+      calculationString += ` - ${currencySymbol}${calculatedCommission.toFixed(2)} = ${currencySymbol}${netPrice.toFixed(2)}`
+    } else if (Math.abs(grandTotal - netPrice) > 0.01) {
+      calculationString += ` = ${currencySymbol}${netPrice.toFixed(2)}`
+    } else {
+      // commission이 없어도 Net Price는 표시
+      calculationString += ` = ${currencySymbol}${netPrice.toFixed(2)}`
+    }
+    
+    // 최종 fallback: 계산식이 비어있으면 최소한 grandTotal - commission = Net Price 표시
+    if (!calculationString || calculationString.trim() === '') {
+      if (calculatedCommission > 0) {
+        calculationString = `${currencySymbol}${grandTotal.toFixed(2)} - ${currencySymbol}${calculatedCommission.toFixed(2)} = ${currencySymbol}${netPrice.toFixed(2)}`
+      } else {
+        calculationString = `${currencySymbol}${grandTotal.toFixed(2)} = ${currencySymbol}${netPrice.toFixed(2)}`
+      }
+    }
+    
+    return calculationString
+  }
 
   // 픽업 시간 수정 모달 상태
   const [showPickupTimeModal, setShowPickupTimeModal] = useState(false)
@@ -372,17 +498,39 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       }
 
       try {
-        const { data: tours, error } = await supabase
-          .from('tours')
-          .select('id, tour_status, tour_guide_id, assistant_id, reservation_ids, tour_car_id, tour_date, tour_start_datetime')
-          .in('id', Array.from(tourIds))
+        // 연결된 투어를 투어 상태, 배정 상태와 상관없이 모두 가져옴
+        // Supabase의 .in() 쿼리는 기본적으로 1000개 제한이 있으므로 청크로 나눠서 조회
+        const tourIdsArray = Array.from(tourIds)
+        const chunkSize = 1000 // 한 번에 1000개씩 조회
+        const allTours: any[] = []
 
-        if (error) {
-          console.error('투어 정보 조회 오류:', error)
-          return
+        // 투어 ID를 청크로 나눠서 여러 번 조회
+        for (let i = 0; i < tourIdsArray.length; i += chunkSize) {
+          const chunk = tourIdsArray.slice(i, i + chunkSize)
+          
+          const { data: toursChunk, error: chunkError } = await supabase
+            .from('tours')
+            .select('id, tour_status, tour_guide_id, assistant_id, reservation_ids, tour_car_id, tour_date, tour_start_datetime')
+            .in('id', chunk)
+            // 상태 필터링 없음 - 모든 상태의 투어 표시
+
+          if (chunkError) {
+            console.error(`투어 정보 조회 오류 (청크 ${i / chunkSize + 1}):`, chunkError)
+            continue // 오류가 발생해도 다음 청크는 계속 조회
+          }
+
+          if (toursChunk) {
+            allTours.push(...toursChunk)
+          }
         }
 
-        console.log('투어 정보 조회 성공:', { toursCount: tours?.length || 0, tours })
+        console.log('투어 정보 조회 성공:', { 
+          totalTourIds: tourIdsArray.length,
+          toursCount: allTours.length, 
+          chunks: Math.ceil(tourIdsArray.length / chunkSize)
+        })
+
+        const tours = allTours
 
         const newTourInfoMap = new Map<string, {
           totalPeople: number
@@ -406,50 +554,62 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           if (tour.tour_car_id) vehicleIds.add(tour.tour_car_id)
         })
 
-        // 가이드 정보 일괄 조회
+        // 가이드 정보 일괄 조회 (1000개 제한 대응)
         const guideMap = new Map<string, string>()
         if (guideEmails.size > 0) {
-          const { data: guides } = await supabase
-            .from('team')
-            .select('email, name_ko')
-            .in('email', Array.from(guideEmails))
-          
-          guides?.forEach(guide => {
-            if (guide.email) {
-              guideMap.set(guide.email, guide.name_ko || '-')
-            }
-          })
+          const guideEmailsArray = Array.from(guideEmails)
+          for (let i = 0; i < guideEmailsArray.length; i += chunkSize) {
+            const chunk = guideEmailsArray.slice(i, i + chunkSize)
+            const { data: guides } = await supabase
+              .from('team')
+              .select('email, name_ko')
+              .in('email', chunk)
+            
+            guides?.forEach(guide => {
+              if (guide.email) {
+                guideMap.set(guide.email, guide.name_ko || '-')
+              }
+            })
+          }
         }
 
-        // 어시스턴트 정보 일괄 조회
+        // 어시스턴트 정보 일괄 조회 (1000개 제한 대응)
         const assistantMap = new Map<string, string>()
         if (assistantEmails.size > 0) {
-          const { data: assistants } = await supabase
-            .from('team')
-            .select('email, name_ko')
-            .in('email', Array.from(assistantEmails))
-          
-          assistants?.forEach(assistant => {
-            if (assistant.email) {
-              assistantMap.set(assistant.email, assistant.name_ko || '-')
-            }
-          })
+          const assistantEmailsArray = Array.from(assistantEmails)
+          for (let i = 0; i < assistantEmailsArray.length; i += chunkSize) {
+            const chunk = assistantEmailsArray.slice(i, i + chunkSize)
+            const { data: assistants } = await supabase
+              .from('team')
+              .select('email, name_ko')
+              .in('email', chunk)
+            
+            assistants?.forEach(assistant => {
+              if (assistant.email) {
+                assistantMap.set(assistant.email, assistant.name_ko || '-')
+              }
+            })
+          }
         }
 
-        // 차량 정보 일괄 조회
+        // 차량 정보 일괄 조회 (1000개 제한 대응)
         const vehicleMap = new Map<string, string>()
         if (vehicleIds.size > 0) {
           try {
-            const { data: vehicles } = await supabase
-              .from('vehicles')
-              .select('id, vehicle_number, vehicle_type')
-              .in('id', Array.from(vehicleIds))
-            
-            vehicles?.forEach(vehicle => {
-              if (vehicle.id) {
-                vehicleMap.set(vehicle.id, vehicle.vehicle_number || vehicle.vehicle_type || '-')
-              }
-            })
+            const vehicleIdsArray = Array.from(vehicleIds)
+            for (let i = 0; i < vehicleIdsArray.length; i += chunkSize) {
+              const chunk = vehicleIdsArray.slice(i, i + chunkSize)
+              const { data: vehicles } = await supabase
+                .from('vehicles')
+                .select('id, vehicle_number, vehicle_type')
+                .in('id', chunk)
+              
+              vehicles?.forEach(vehicle => {
+                if (vehicle.id) {
+                  vehicleMap.set(vehicle.id, vehicle.vehicle_number || vehicle.vehicle_type || '-')
+                }
+              })
+            }
           } catch (error) {
             console.error('차량 정보 조회 오류:', error)
           }
@@ -522,17 +682,17 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const customerSpecialRequests = (customer as any)?.special_requests || ''
       
-      const matchesSearch = !searchTerm || 
-      reservation.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      reservation.channelRN.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      getCustomerName(reservation.customerId, (customers as Customer[]) || []).toLowerCase().includes(searchTerm.toLowerCase()) ||
-      getProductName(reservation.productId, products || []).toLowerCase().includes(searchTerm.toLowerCase()) ||
-      getChannelName(reservation.channelId, channels || []).toLowerCase().includes(searchTerm.toLowerCase()) ||
-      reservation.tourDate.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      reservation.tourTime.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      reservation.pickUpHotel.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      reservation.addedBy.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      customerSpecialRequests.toLowerCase().includes(searchTerm.toLowerCase())
+      const matchesSearch = !debouncedSearchTerm || 
+      reservation.id.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+      reservation.channelRN.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+      getCustomerName(reservation.customerId, (customers as Customer[]) || []).toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+      getProductName(reservation.productId, products || []).toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+      getChannelName(reservation.channelId, channels || []).toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+      reservation.tourDate.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+      reservation.tourTime.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+      reservation.pickUpHotel.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+      reservation.addedBy.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+      customerSpecialRequests.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
     
       // 상태 필터
     const matchesStatus = selectedStatus === 'all' || reservation.status === selectedStatus
@@ -589,7 +749,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     })
     
     return filtered
-  }, [reservations, customers, products, channels, searchTerm, selectedStatus, selectedChannel, dateRange, sortBy, sortOrder, customerIdFromUrl])
+  }, [reservations, customers, products, channels, debouncedSearchTerm, selectedStatus, selectedChannel, dateRange, sortBy, sortOrder, customerIdFromUrl])
   
   const filteredReservations = filteredAndSortedReservations
   
@@ -758,6 +918,81 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const startIndex = groupByDate ? 0 : (currentPage - 1) * itemsPerPage
   const endIndex = groupByDate ? filteredReservations.length : startIndex + itemsPerPage
   const paginatedReservations = groupByDate ? filteredReservations : filteredReservations.slice(startIndex, endIndex)
+
+  // reservation_pricing 데이터 가져오기 (성능 최적화: 페이지네이션된 reservation만)
+  useEffect(() => {
+    const fetchReservationPricing = async () => {
+      // 페이지네이션된 reservation만 가져오기 (성능 최적화)
+      if (!paginatedReservations.length) return
+
+      try {
+        // 현재 페이지의 reservation ID만 가져오기
+        const reservationIds = paginatedReservations.map(r => r.id)
+        if (reservationIds.length === 0) return
+        
+        // URL 길이 제한을 피하기 위해 청크 단위로 나눠서 요청
+        const chunkSize = 50 // 청크 크기 줄임 (성능 최적화)
+        const pricingMap = new Map<string, {
+          total_price: number
+          balance_amount: number
+          adult_product_price?: number
+          child_product_price?: number
+          infant_product_price?: number
+          product_price_total?: number
+          coupon_discount?: number
+          additional_discount?: number
+          additional_cost?: number
+          commission_percent?: number
+          commission_amount?: number
+          currency?: string
+        }>()
+
+        // 청크 단위로 나눠서 요청
+        for (let i = 0; i < reservationIds.length; i += chunkSize) {
+          const chunk = reservationIds.slice(i, i + chunkSize)
+          
+          const { data: pricingData, error } = await supabase
+            .from('reservation_pricing')
+            .select('reservation_id, total_price, balance_amount, adult_product_price, child_product_price, infant_product_price, product_price_total, coupon_discount, additional_discount, additional_cost, commission_percent, commission_amount')
+            .in('reservation_id', chunk)
+
+          if (error) {
+            console.error('reservation_pricing 조회 오류:', error)
+            continue // 다음 청크 계속 처리
+          }
+
+          pricingData?.forEach(p => {
+            const toNumber = (val: any): number => {
+              if (val === null || val === undefined) return 0
+              if (typeof val === 'string') return parseFloat(val) || 0
+              return val || 0
+            }
+            
+            pricingMap.set(p.reservation_id, {
+              total_price: toNumber(p.total_price),
+              balance_amount: toNumber(p.balance_amount),
+              adult_product_price: toNumber(p.adult_product_price),
+              child_product_price: toNumber(p.child_product_price),
+              infant_product_price: toNumber(p.infant_product_price),
+              product_price_total: toNumber(p.product_price_total),
+              coupon_discount: toNumber(p.coupon_discount),
+              additional_discount: toNumber(p.additional_discount),
+              additional_cost: toNumber(p.additional_cost),
+              commission_percent: toNumber(p.commission_percent),
+              commission_amount: toNumber(p.commission_amount),
+              currency: 'USD' // 기본값 USD (currency 컬럼이 없으므로)
+            })
+          })
+        }
+
+        setReservationPricingMap(pricingMap)
+      } catch (error) {
+        console.error('reservation_pricing 로드 오류:', error)
+      }
+    }
+
+    fetchReservationPricing()
+  }, [paginatedReservations])
 
   // 달력뷰용 데이터 변환
   const calendarReservations = useMemo(() => {
@@ -1705,10 +1940,42 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             onLoadComplete={() => setCalendarLoading(false)}
           />
         )
-      ) : (
-        /* 카드뷰 */
-        <>
-        {groupByDate ? (
+        ) : (
+          /* 카드뷰 */
+          <>
+            {filteredReservations.length === 0 ? (
+              /* 검색 결과가 없을 때 안내 메시지 */
+              <div className="text-center py-16">
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12">
+                  <Grid3X3 className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    {debouncedSearchTerm.trim() 
+                      ? `"${debouncedSearchTerm}" 검색 결과가 없습니다`
+                      : '선택한 조건에 예약이 없습니다'
+                    }
+                  </h3>
+                  <p className="text-gray-500 mb-6">
+                    {debouncedSearchTerm.trim() 
+                      ? '다른 검색어를 입력하거나 필터 조건을 변경해보세요.'
+                      : (dateRange.start && dateRange.end ? 
+                          `${new Date(dateRange.start).toLocaleDateString('ko-KR')} ~ ${new Date(dateRange.end).toLocaleDateString('ko-KR')} 기간에 등록된 예약이 없습니다.` :
+                          '현재 선택한 필터 조건에 해당하는 예약이 없습니다.')
+                    }
+                  </p>
+                  {debouncedSearchTerm.trim() && (
+                    <button
+                      onClick={() => {
+                        setSearchTerm('')
+                        setDebouncedSearchTerm('')
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                    >
+                      검색어 지우기
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : groupByDate ? (
           /* 날짜별 그룹화된 카드뷰 */
           <div className="space-y-8">
             {Object.keys(groupedReservations).length === 0 ? (
@@ -2017,13 +2284,26 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   >
                     {(customers as Customer[]).find(c => c.id === reservation.customerId)?.email}
                   </a>
-                  <a 
-                    href={`tel:${(customers as Customer[]).find(c => c.id === reservation.customerId)?.phone || ''}`}
-                    onClick={(e) => e.stopPropagation()}
-                    className="text-xs text-gray-500 hover:text-blue-600 hover:underline cursor-pointer block"
-                  >
-                    {(customers as Customer[]).find(c => c.id === reservation.customerId)?.phone || '-'}
-                  </a>
+                  {/* 전화번호와 등록일 - 같은 줄에 배치 */}
+                  <div className="flex items-center justify-between">
+                    <a 
+                      href={`tel:${(customers as Customer[]).find(c => c.id === reservation.customerId)?.phone || ''}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-xs text-gray-500 hover:text-blue-600 hover:underline cursor-pointer"
+                    >
+                      {(customers as Customer[]).find(c => c.id === reservation.customerId)?.phone || '-'}
+                    </a>
+                    {reservation.addedTime ? (
+                      <span className="text-xs text-gray-500">
+                        {new Date(reservation.addedTime).toLocaleDateString('ko-KR', { 
+                          year: 'numeric',
+                          month: 'short', 
+                          day: 'numeric',
+                          timeZone: 'America/Los_Angeles'
+                        })}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
 
@@ -2103,55 +2383,56 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 </div>
 
                 {/* 픽업 호텔 정보 */}
-                {reservation.pickUpHotel && (
-                  <div className="flex items-center space-x-2">
-                    <MapPin className="h-4 w-4 text-gray-400" />
-                    <span 
-                      className="text-sm text-gray-900 hover:text-blue-600 hover:underline cursor-pointer"
-                      onClick={(e) => handlePickupHotelClick(reservation, e)}
-                    >
-                      {getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels || [])}
-                    </span>
-                  </div>
-                )}
+                <div className="flex items-center space-x-2">
+                  <MapPin className="h-4 w-4 text-gray-400" />
+                  <span 
+                    className={`text-sm hover:text-blue-600 hover:underline cursor-pointer ${
+                      reservation.pickUpHotel 
+                        ? 'text-gray-900' 
+                        : 'text-gray-500 italic'
+                    }`}
+                    onClick={(e) => handlePickupHotelClick(reservation, e)}
+                  >
+                    {reservation.pickUpHotel 
+                      ? getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels || [])
+                      : '픽업 호텔 미정'
+                    }
+                  </span>
+                </div>
 
-                {/* 가격 정보 */}
+                {/* Net Price 계산식 표시 */}
                 <div className="pt-2 border-t border-gray-100">
-                  <div className="text-sm">
-                    <div className="flex items-center space-x-1">
-                      {(() => {
-                        // reservation_pricing에서 total_price 가져오기
-                        const pricing = reservationPricingMap.get(reservation.id)
-                        const totalPrice = pricing?.total_price || 0
-                        
-                        // payment_records에서 입금 내역 합계 계산 (나중에 추가 예정)
-                        // const totalPaid = 0 // TODO: payment_records 합계 계산
-                        
-                        // 잔금 계산: total_price - 입금 내역 합계
-                        // const balance = totalPrice - totalPaid
-                        
-                        return (
-                          <>
-                            <span className="text-gray-600">
-                              {totalPrice > 0 
-                                ? `$${totalPrice.toLocaleString()}` 
-                                : `$${(reservation.totalPrice || reservation.pricingInfo?.totalPrice || calculateTotalPrice(reservation, products || [], optionChoices || [])).toLocaleString()}`
-                              }
-                            </span>
-                            {pricing && pricing.balance_amount > 0 && (
-                              <>
-                                <span className="text-gray-400">(</span>
-                                <span className="text-red-600 font-medium">
-                                  Balance: ${pricing.balance_amount.toLocaleString()}
-                                </span>
-                                <span className="text-gray-400">)</span>
-                              </>
-                            )}
-                          </>
-                        )
-                      })()}
-                    </div>
-                  </div>
+                  {(() => {
+                    const pricing = reservationPricingMap.get(reservation.id)
+                    if (!pricing || !pricing.total_price) {
+                      // pricing 데이터가 없으면 기본 가격 표시
+                      const totalPrice = reservation.totalPrice || reservation.pricingInfo?.totalPrice || calculateTotalPrice(reservation, products || [], optionChoices || [])
+                      return (
+                        <div className="text-xs text-gray-700">
+                          <div className="text-gray-600 break-words font-medium">
+                            ${totalPrice.toLocaleString()}
+                          </div>
+                        </div>
+                      )
+                    }
+                    
+                    const calculationString = generatePriceCalculation(reservation, pricing)
+                    const currency = pricing.currency || 'USD'
+                    const currencySymbol = currency === 'KRW' ? '₩' : '$'
+                    
+                    return (
+                      <div className="text-xs text-gray-700">
+                        <div className="text-gray-600 break-words font-medium">
+                          {calculationString || `${currencySymbol}${pricing.total_price.toFixed(2)}`}
+                        </div>
+                        {pricing.balance_amount > 0 && (
+                          <div className="text-red-600 font-medium mt-1">
+                            Balance: {currencySymbol}{pricing.balance_amount.toFixed(2)}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
 
                 {/* 연결된 투어 정보 */}
@@ -2299,29 +2580,56 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             )}
           </div>
         ) : (
-          /* 일반 카드뷰 */
+          /* 일반 카드뷰 - 그룹화된 카드뷰와 동일한 구조 사용 */
           paginatedReservations.length === 0 ? (
             /* 예약이 없을 때 안내 메시지 */
             <div className="text-center py-16">
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12">
                 <Grid3X3 className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">선택한 조건에 예약이 없습니다</h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  {debouncedSearchTerm.trim() 
+                    ? `"${debouncedSearchTerm}" 검색 결과가 없습니다`
+                    : '선택한 조건에 예약이 없습니다'
+                  }
+                </h3>
                 <p className="text-gray-500 mb-6">
-                  {dateRange.start && dateRange.end ? 
-                    `${new Date(dateRange.start).toLocaleDateString('ko-KR')} ~ ${new Date(dateRange.end).toLocaleDateString('ko-KR')} 기간에 등록된 예약이 없습니다.` :
-                    '현재 선택한 필터 조건에 해당하는 예약이 없습니다.'
+                  {debouncedSearchTerm.trim() 
+                    ? '다른 검색어를 입력하거나 필터 조건을 변경해보세요.'
+                    : (dateRange.start && dateRange.end ? 
+                        `${new Date(dateRange.start).toLocaleDateString('ko-KR')} ~ ${new Date(dateRange.end).toLocaleDateString('ko-KR')} 기간에 등록된 예약이 없습니다.` :
+                        '현재 선택한 필터 조건에 해당하는 예약이 없습니다.')
                   }
                 </p>
                 <div className="space-y-2 text-sm text-gray-400">
-                  <p>• 다른 날짜 범위를 선택해보세요</p>
-                  <p>• 필터 조건을 변경해보세요</p>
-                  <p>• 새로운 예약을 등록해보세요</p>
+                  {debouncedSearchTerm.trim() ? (
+                    <>
+                      <p>• 다른 검색어를 입력해보세요</p>
+                      <p>• 필터 조건을 변경해보세요</p>
+                      <button
+                        onClick={() => {
+                          setSearchTerm('')
+                          setDebouncedSearchTerm('')
+                        }}
+                        className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                      >
+                        검색어 지우기
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p>• 다른 날짜 범위를 선택해보세요</p>
+                      <p>• 필터 조건을 변경해보세요</p>
+                      <p>• 새로운 예약을 등록해보세요</p>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {paginatedReservations.map((reservation) => (
+            /* 그룹화된 카드뷰와 동일한 구조 사용 (날짜 헤더 없이) */
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {paginatedReservations.map((reservation) => (
               <div
                 key={reservation.id}
                 onClick={() => router.push(`/${locale}/admin/reservations/${reservation.id}`)}
@@ -2428,13 +2736,26 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                     >
                       {(customers as Customer[]).find(c => c.id === reservation.customerId)?.email}
                     </a>
-                    <a 
-                      href={`tel:${(customers as Customer[]).find(c => c.id === reservation.customerId)?.phone || ''}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-xs text-gray-500 hover:text-blue-600 hover:underline cursor-pointer block"
-                    >
-                      {(customers as Customer[]).find(c => c.id === reservation.customerId)?.phone || '-'}
-                    </a>
+                    {/* 전화번호와 등록일 - 같은 줄에 배치 */}
+                    <div className="flex items-center justify-between">
+                      <a 
+                        href={`tel:${(customers as Customer[]).find(c => c.id === reservation.customerId)?.phone || ''}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-xs text-gray-500 hover:text-blue-600 hover:underline cursor-pointer"
+                      >
+                        {(customers as Customer[]).find(c => c.id === reservation.customerId)?.phone || '-'}
+                      </a>
+                      {reservation.addedTime ? (
+                        <span className="text-xs text-gray-500">
+                          {new Date(reservation.addedTime).toLocaleDateString('ko-KR', { 
+                            year: 'numeric',
+                            month: 'short', 
+                            day: 'numeric',
+                            timeZone: 'America/Los_Angeles'
+                          })}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
 
@@ -2515,40 +2836,56 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   </div>
 
                   {/* 픽업 호텔 정보 */}
-                  {reservation.pickUpHotel && (
-                    <div className="flex items-center space-x-2">
-                      <MapPin className="h-4 w-4 text-gray-400" />
-                      <span 
-                        className="text-sm text-gray-900 hover:text-blue-600 hover:underline cursor-pointer"
-                        onClick={(e) => handlePickupHotelClick(reservation, e)}
-                      >
-                        {getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels || [])}
-                      </span>
-                    </div>
-                  )}
+                  <div className="flex items-center space-x-2">
+                    <MapPin className="h-4 w-4 text-gray-400" />
+                    <span 
+                      className={`text-sm hover:text-blue-600 hover:underline cursor-pointer ${
+                        reservation.pickUpHotel 
+                          ? 'text-gray-900' 
+                          : 'text-gray-500 italic'
+                      }`}
+                      onClick={(e) => handlePickupHotelClick(reservation, e)}
+                    >
+                      {reservation.pickUpHotel 
+                        ? getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels || [])
+                        : '픽업 호텔 미정'
+                      }
+                    </span>
+                  </div>
 
-                  {/* 가격 정보 */}
+                  {/* Net Price 계산식 표시 */}
                   <div className="pt-2 border-t border-gray-100">
-                    <div className="text-sm">
-                      <div className="flex items-center space-x-1">
-                        <span className="text-gray-600">${(reservation.totalPrice || reservation.pricingInfo?.totalPrice || calculateTotalPrice(reservation, products || [], optionChoices || [])).toLocaleString()}</span>
-                        {(() => {
-                          const balance = reservation.balanceAmount || reservation.pricingInfo?.balanceAmount || 0
-                          if (balance > 0) {
-                            return (
-                              <>
-                                <span className="text-gray-400">(</span>
-                                <span className="text-red-600 font-medium">
-                                  Balance: ${balance.toLocaleString()}
-                                </span>
-                                <span className="text-gray-400">)</span>
-                              </>
-                            )
-                          }
-                          return null
-                        })()}
-                      </div>
-                    </div>
+                    {(() => {
+                      const pricing = reservationPricingMap.get(reservation.id)
+                      if (!pricing || !pricing.total_price) {
+                        // pricing 데이터가 없으면 기본 가격 표시
+                        const totalPrice = reservation.totalPrice || reservation.pricingInfo?.totalPrice || calculateTotalPrice(reservation, products || [], optionChoices || [])
+                        return (
+                          <div className="text-xs text-gray-700">
+                            <div className="text-gray-600 break-words font-medium">
+                              ${totalPrice.toLocaleString()}
+                            </div>
+                          </div>
+                        )
+                      }
+                      
+                      const calculationString = generatePriceCalculation(reservation, pricing)
+                      const currency = pricing.currency || 'USD'
+                      const currencySymbol = currency === 'KRW' ? '₩' : '$'
+                      
+                      return (
+                        <div className="text-xs text-gray-700">
+                          <div className="text-gray-600 break-words font-medium">
+                            {calculationString || `${currencySymbol}${pricing.total_price.toFixed(2)}`}
+                          </div>
+                          {pricing.balance_amount > 0 && (
+                            <div className="text-red-600 font-medium mt-1">
+                              Balance: {currencySymbol}{pricing.balance_amount.toFixed(2)}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
                 </div>
 
@@ -2687,8 +3024,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
+                ))}
+              </div>
+            </div>
           )
         )}
         
@@ -2868,7 +3206,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 </svg>
               </button>
             </div>
-            <div className="overflow-y-auto max-h-[calc(90vh-80px)]">
+            <div className="overflow-y-auto max-h-[calc(90vh-80px)] p-6">
               <PaymentRecordsList
                 reservationId={selectedReservationForPayment.id}
                 customerName={getCustomerName(selectedReservationForPayment.customerId, (customers as Customer[]) || [])}

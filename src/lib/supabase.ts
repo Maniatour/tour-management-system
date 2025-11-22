@@ -40,6 +40,10 @@ const fetchWithRetry = async (
       if (!headers.has('Connection')) {
         headers.set('Connection', 'keep-alive')
       }
+      // Accept 헤더 추가 (406 에러 방지)
+      if (!headers.has('Accept')) {
+        headers.set('Accept', 'application/json')
+      }
 
       // 기존 signal이 있으면 타임아웃과 함께 사용
       // (실제로는 Supabase가 signal을 전달하지 않으므로 controller.signal 사용)

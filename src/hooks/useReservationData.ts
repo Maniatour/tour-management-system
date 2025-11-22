@@ -90,7 +90,7 @@ export function useReservationData() {
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('channels')
-        .select('id, name, type, favicon_url')
+        .select('id, name, type, favicon_url, pricing_type, commission_base_price_only, category, has_not_included_price, not_included_type, not_included_price')
         .order('name', { ascending: true })
 
       if (error) {
@@ -98,7 +98,7 @@ export function useReservationData() {
         return []
       }
 
-      console.log('Fetched channels with favicon_url:', data?.map(ch => ({ name: ch.name, favicon_url: ch.favicon_url })))
+      console.log('Fetched channels with favicon_url and pricing_type:', data?.map(ch => ({ name: ch.name, favicon_url: ch.favicon_url, pricing_type: (ch as any).pricing_type })))
       return data || []
     },
     cacheKey: 'reservation-channels',
