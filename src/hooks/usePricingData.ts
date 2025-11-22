@@ -180,7 +180,14 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
               // 새로운 구조를 기존 구조로 변환
               choicesPricing = { combinations: {} };
               Object.entries(rawChoicesPricing).forEach(([choiceId, choiceData]: [string, any]) => {
-                if (choiceData && typeof choiceData === 'object') {
+                // no_choice 키는 combinations에 포함하지 않고 그대로 유지 (초이스가 없는 상품의 OTA 판매가 및 불포함 금액)
+                if (choiceId === 'no_choice') {
+                  // no_choice는 choices_pricing의 최상위 레벨에 그대로 유지
+                  if (!choicesPricing.no_choice) {
+                    choicesPricing.no_choice = {};
+                  }
+                  choicesPricing.no_choice = choiceData;
+                } else if (choiceData && typeof choiceData === 'object') {
                   choicesPricing.combinations[choiceId] = {
                     combination_key: choiceId,
                     combination_name: choiceId.replace(/_/g, ' '),

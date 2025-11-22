@@ -226,33 +226,32 @@ export default function GuideTourDetailPage() {
         
         setReservations(sortedReservations)
 
-          // 고객 정보 가져오기
-          const customerIds = [...new Set(reservationsList.map(r => (r as ReservationRow & { customer_id?: string }).customer_id).filter(Boolean))]
-          if (customerIds.length > 0) {
-            const { data: customersData } = await supabase
-              .from('customers')
-              .select('*')
-              .in('id', customerIds)
-            setCustomers(customersData || [])
-      }
-
-      // 픽업 호텔 정보 가져오기 (reservations의 pickup_hotel 정보 사용)
-          if (reservationsList.length > 0) {
-        // 예약에서 pickup_hotel ID들 수집
-        const pickupHotelIds = [...new Set(
-              reservationsList
-            .map(r => (r as ReservationRow & { pickup_hotel?: string }).pickup_hotel)
-            .filter(Boolean)
-        )]
-        
-        if (pickupHotelIds.length > 0) {
-          const { data: hotelsData } = await supabase
-            .from('pickup_hotels')
+        // 고객 정보 가져오기
+        const customerIds = [...new Set(reservationsList.map(r => (r as ReservationRow & { customer_id?: string }).customer_id).filter(Boolean))]
+        if (customerIds.length > 0) {
+          const { data: customersData } = await supabase
+            .from('customers')
             .select('*')
-            .in('id', pickupHotelIds)
-          setPickupHotels(hotelsData || [])
+            .in('id', customerIds)
+          setCustomers(customersData || [])
         }
-      }
+
+        // 픽업 호텔 정보 가져오기 (reservations의 pickup_hotel 정보 사용)
+        if (reservationsList.length > 0) {
+          // 예약에서 pickup_hotel ID들 수집
+          const pickupHotelIds = [...new Set(
+            reservationsList
+              .map(r => (r as ReservationRow & { pickup_hotel?: string }).pickup_hotel)
+              .filter(Boolean)
+          )]
+          
+          if (pickupHotelIds.length > 0) {
+            const { data: hotelsData } = await supabase
+              .from('pickup_hotels')
+              .select('*')
+              .in('id', pickupHotelIds)
+            setPickupHotels(hotelsData || [])
+          }
         }
       }
 

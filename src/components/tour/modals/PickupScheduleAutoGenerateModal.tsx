@@ -244,21 +244,27 @@ export default function PickupScheduleAutoGenerateModal({
           if (latitude === null && hotel.address && window.google && window.google.maps) {
             try {
               const geocoder = new window.google.maps.Geocoder()
-              const result = await new Promise<google.maps.GeocoderResult[]>((resolve, reject) => {
-                geocoder.geocode({ address: hotel.address }, (results, status) => {
-                  if (status === 'OK' && results) {
-                    resolve(results)
-                  } else {
-                    reject(new Error('Geocoding 실패'))
-                  }
-                })
-              })
+              const result = await Promise.race([
+                new Promise<google.maps.GeocoderResult[]>((resolve, reject) => {
+                  geocoder.geocode({ address: hotel.address }, (results, status) => {
+                    if (status === 'OK' && results) {
+                      resolve(results)
+                    } else {
+                      reject(new Error('Geocoding 실패'))
+                    }
+                  })
+                }),
+                new Promise<never>((_, reject) => 
+                  setTimeout(() => reject(new Error('Geocoding timeout')), 10000) // 10초 타임아웃
+                )
+              ])
               
               if (result && result.length > 0) {
                 latitude = result[0].geometry.location.lat()
               }
             } catch (error) {
               console.error('Geocoding 오류:', error)
+              // 타임아웃 발생 시 기본값 사용 (정렬에 영향 없도록)
             }
           }
 
@@ -487,6 +493,12 @@ export default function PickupScheduleAutoGenerateModal({
     const destination = waypoints[waypoints.length - 1].location
     const intermediateWaypoints = waypoints // 모든 호텔을 경유지로 설정
 
+    // 타임아웃 설정
+    const routeTimeout = setTimeout(() => {
+      console.error('Directions Service timeout')
+      alert('경로 계산 시간이 초과되었습니다. 네트워크 연결을 확인하고 다시 시도해주세요.')
+    }, 30000) // 30초 타임아웃
+
     directionsService.route(
       {
         origin: origin instanceof google.maps.LatLng 
@@ -504,6 +516,8 @@ export default function PickupScheduleAutoGenerateModal({
         travelMode: window.google.maps.TravelMode.DRIVING
       },
       (result, status) => {
+        clearTimeout(routeTimeout) // 타임아웃 클리어
+        
         if (status === 'OK' && result && result.routes && result.routes.length > 0) {
           directionsRenderer.setDirections(result)
           
@@ -529,9 +543,24 @@ export default function PickupScheduleAutoGenerateModal({
           }
         } else {
           console.error('경로 계산 실패:', status)
+          clearTimeout(routeTimeout) // 타임아웃 클리어
+          if (status === 'ZERO_RESULTS') {
+            alert('경로를 찾을 수 없습니다. 주소를 확인해주세요.')
+          } else if (status === 'OVER_QUERY_LIMIT') {
+            alert('Google Maps API 할당량을 초과했습니다. 잠시 후 다시 시도해주세요.')
+          } else if (status === 'REQUEST_DENIED') {
+            alert('Google Maps API 요청이 거부되었습니다. API 키를 확인해주세요.')
+          } else if (status !== 'OK') {
+            alert(`경로 계산 실패: ${status}`)
+          }
         }
       }
     )
+
+    // cleanup 함수에서 타임아웃 클리어
+    return () => {
+      clearTimeout(routeTimeout)
+    }
   }, [map, directionsService, directionsRenderer, pickupSchedule.length, routeCalculated, updatePickupTimesWithTravelTimes]) // pickupSchedule.length만 의존성으로 사용하여 핀 깜빡임 방지
 
   // 구글맵 공유 링크 생성

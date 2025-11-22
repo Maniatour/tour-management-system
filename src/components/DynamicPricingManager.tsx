@@ -1376,13 +1376,51 @@ export default function DynamicPricingManager({
           const notIncludedPrice = ((pricingConfig as Record<string, unknown>).not_included_price as number) || 0;
           const priceType = notIncludedPrice > 0 ? 'dynamic' : 'base';
           
-          const defaultRuleData: SimplePricingRuleDto = {
-            ...commonFields,
-            price_type: priceType,
-            not_included_price: notIncludedPrice,
-            choices_pricing: {}
-          };
-          rulesData.push(defaultRuleData);
+          // no_choice 키가 있는지 확인 (초이스가 없는 상품의 OTA 판매가 및 불포함 금액)
+          const noChoiceKey = 'no_choice';
+          const noChoiceData = (pricingConfig.choices_pricing as any)?.[noChoiceKey];
+          const choicesPricingForNoChoice: Record<string, any> = {};
+          
+          // no_choice 데이터가 있으면 choices_pricing에 포함
+          if (noChoiceData) {
+            const noChoiceNotIncludedPrice = noChoiceData.not_included_price !== undefined && noChoiceData.not_included_price !== null
+              ? noChoiceData.not_included_price
+              : notIncludedPrice;
+            
+            // no_choice의 불포함 금액이 있으면 그것을 우선 사용
+            const finalNotIncludedPrice = noChoiceNotIncludedPrice > 0 ? noChoiceNotIncludedPrice : notIncludedPrice;
+            const finalPriceType = finalNotIncludedPrice > 0 ? 'dynamic' : 'base';
+            
+            // OTA 판매가가 있으면 choices_pricing에 포함
+            if (noChoiceData.ota_sale_price !== undefined && noChoiceData.ota_sale_price !== null && noChoiceData.ota_sale_price > 0) {
+              choicesPricingForNoChoice[noChoiceKey] = {
+                ota_sale_price: noChoiceData.ota_sale_price,
+                ...(finalNotIncludedPrice > 0 ? { not_included_price: finalNotIncludedPrice } : {})
+              };
+            } else if (finalNotIncludedPrice > 0) {
+              // OTA 판매가는 없지만 불포함 금액이 있으면 choices_pricing에 포함
+              choicesPricingForNoChoice[noChoiceKey] = {
+                not_included_price: finalNotIncludedPrice
+              };
+            }
+            
+            const defaultRuleData: SimplePricingRuleDto = {
+              ...commonFields,
+              price_type: finalPriceType,
+              not_included_price: finalNotIncludedPrice,
+              choices_pricing: choicesPricingForNoChoice
+            };
+            rulesData.push(defaultRuleData);
+          } else {
+            // no_choice 데이터가 없으면 기존 로직 사용
+            const defaultRuleData: SimplePricingRuleDto = {
+              ...commonFields,
+              price_type: priceType,
+              not_included_price: notIncludedPrice,
+              choices_pricing: {}
+            };
+            rulesData.push(defaultRuleData);
+          }
         }
       }
     }
@@ -3272,6 +3310,207 @@ export default function DynamicPricingManager({
                 )}
               </div>
             </div>
+            );
+          })()}
+
+          {/* 초이스가 없는 상품의 경우 OTA 판매가 및 불포함 금액 입력 */}
+          {choiceCombinations.length === 0 && (() => {
+            // OTA 채널인지 확인
+            const foundChannel = selectedChannel ? channelGroups
+              .flatMap(group => group.channels)
+              .find(ch => ch.id === selectedChannel) : null;
+            const isOTAChannel = foundChannel && (
+              (foundChannel as any).type?.toLowerCase() === 'ota' || 
+              (foundChannel as any).category === 'OTA'
+            );
+
+            if (!isOTAChannel) return null;
+
+            // 초이스가 없을 때는 no_choice 키를 사용하거나 최상위 레벨에서 가져오기
+            const noChoiceKey = 'no_choice';
+            const currentNoChoiceData = (pricingConfig.choices_pricing as any)?.[noChoiceKey] || {};
+            const otaSalePrice = currentNoChoiceData.ota_sale_price || 0;
+            const notIncludedPrice = currentNoChoiceData.not_included_price !== undefined && currentNoChoiceData.not_included_price !== null
+              ? currentNoChoiceData.not_included_price
+              : ((pricingConfig as any)?.not_included_price || 0);
+            const commissionPercent = pricingConfig.commission_percent || 0;
+            const couponPercent = pricingConfig.coupon_percent || 0;
+
+            // Net Price 계산
+            let netPrice = 0;
+            if (otaSalePrice > 0) {
+              const baseNetPrice = otaSalePrice * (1 - couponPercent / 100) * (1 - commissionPercent / 100);
+              if (notIncludedPrice > 0) {
+                netPrice = baseNetPrice + notIncludedPrice;
+              } else {
+                netPrice = baseNetPrice;
+              }
+            }
+
+            return (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                <h4 className="text-md font-semibold text-gray-900 mb-4">가격 설정 (초이스 없음)</h4>
+                
+                <div className="space-y-3">
+                  {/* OTA 판매가와 불포함 금액을 같은 줄에 배치 */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        OTA 판매가 ($)
+                      </label>
+                      <input
+                        type="number"
+                        value={otaSalePrice === 0 ? '' : otaSalePrice}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const currentPricing = pricingConfig.choices_pricing || {};
+                          const currentNoChoiceData = (currentPricing as any)?.[noChoiceKey] || {};
+                          
+                          const preservedData = {
+                            ...currentNoChoiceData,
+                            not_included_price: currentNoChoiceData.not_included_price !== undefined 
+                              ? currentNoChoiceData.not_included_price 
+                              : notIncludedPrice
+                          };
+                          
+                          if (value === '' || value === '-') {
+                            updatePricingConfig({
+                              choices_pricing: {
+                                ...currentPricing,
+                                [noChoiceKey]: {
+                                  ...preservedData,
+                                  ota_sale_price: 0
+                                }
+                              }
+                            });
+                            return;
+                          }
+                          const numValue = parseFloat(value);
+                          if (!isNaN(numValue)) {
+                            updatePricingConfig({
+                              choices_pricing: {
+                                ...currentPricing,
+                                [noChoiceKey]: {
+                                  ...preservedData,
+                                  ota_sale_price: numValue
+                                }
+                              }
+                            });
+                          }
+                        }}
+                        onBlur={(e) => {
+                          const value = e.target.value;
+                          if (value === '' || value === '-') {
+                            const currentPricing = pricingConfig.choices_pricing || {};
+                            const currentNoChoiceData = (currentPricing as any)?.[noChoiceKey] || {};
+                            const preservedData = {
+                              ...currentNoChoiceData,
+                              not_included_price: currentNoChoiceData.not_included_price !== undefined 
+                                ? currentNoChoiceData.not_included_price 
+                                : notIncludedPrice
+                            };
+                            updatePricingConfig({
+                              choices_pricing: {
+                                ...currentPricing,
+                                [noChoiceKey]: {
+                                  ...preservedData,
+                                  ota_sale_price: 0
+                                }
+                              }
+                            });
+                          }
+                        }}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="예: 384"
+                      />
+                    </div>
+                    {/* 불포함 금액 입력 필드 */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        불포함 금액 ($)
+                      </label>
+                      <input
+                        type="number"
+                        value={notIncludedPrice === 0 ? '' : notIncludedPrice}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          const currentPricing = pricingConfig.choices_pricing || {};
+                          const currentNoChoiceData = (currentPricing as any)?.[noChoiceKey] || {};
+                          
+                          const preservedData = {
+                            ...currentNoChoiceData,
+                            ota_sale_price: currentNoChoiceData.ota_sale_price !== undefined 
+                              ? currentNoChoiceData.ota_sale_price 
+                              : otaSalePrice
+                          };
+                          
+                          if (value === '' || value === '-') {
+                            updatePricingConfig({
+                              choices_pricing: {
+                                ...currentPricing,
+                                [noChoiceKey]: {
+                                  ...preservedData,
+                                  not_included_price: 0
+                                }
+                              }
+                            });
+                            // 동적 가격의 최상위 레벨 not_included_price도 업데이트
+                            handlePricingConfigUpdate({ not_included_price: 0 });
+                            return;
+                          }
+                          const numValue = parseFloat(value);
+                          if (!isNaN(numValue) && numValue >= 0) {
+                            updatePricingConfig({
+                              choices_pricing: {
+                                ...currentPricing,
+                                [noChoiceKey]: {
+                                  ...preservedData,
+                                  not_included_price: numValue
+                                }
+                              }
+                            });
+                            // 동적 가격의 최상위 레벨 not_included_price도 업데이트
+                            handlePricingConfigUpdate({ not_included_price: numValue });
+                          }
+                        }}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="0"
+                        step="0.01"
+                        min="0"
+                      />
+                    </div>
+                  </div>
+                  {otaSalePrice > 0 && (
+                    <div className="bg-blue-50 border border-blue-200 rounded p-2">
+                      <div className="text-xs text-gray-600 mb-1">
+                        <div>수수료: {commissionPercent}%</div>
+                        <div>쿠폰 할인: {couponPercent}%</div>
+                      </div>
+                      {/* 불포함 금액 표시 */}
+                      {notIncludedPrice > 0 && (
+                        <div className="text-sm font-semibold text-orange-600 mb-1">
+                          불포함 금액: 
+                          <span className="ml-2">${notIncludedPrice.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="text-sm font-semibold text-blue-900 mb-1">
+                        Net Price: ${netPrice.toFixed(2)}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {notIncludedPrice > 0 ? (
+                          <>
+                            계산식: ${otaSalePrice.toFixed(2)} × (1 - {couponPercent}%) × (1 - {commissionPercent}%) + ${notIncludedPrice.toFixed(2)} (불포함) = ${netPrice.toFixed(2)}
+                          </>
+                        ) : (
+                          <>
+                            계산식: ${otaSalePrice.toFixed(2)} × (1 - {couponPercent}%) × (1 - {commissionPercent}%) = ${netPrice.toFixed(2)}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             );
           })()}
 
