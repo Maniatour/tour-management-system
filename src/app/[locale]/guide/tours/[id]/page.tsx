@@ -261,7 +261,7 @@ export default function GuideTourDetailPage() {
         .from('tour_hotel_bookings')
         .select('*')
         .eq('tour_id', tourId)
-        .not('status', 'ilike', 'cancelled')
+        .not('status', 'ilike', 'cancelled');
       setTourHotelBookings(hotelBookingsData || [])
 
       // 티켓 부킹 정보 가져오기 (confirmed 상태만)
@@ -269,19 +269,19 @@ export default function GuideTourDetailPage() {
         .from('ticket_bookings')
         .select('*')
         .eq('tour_id', tourId)
-        .eq('status', 'confirmed')
+        .eq('status', 'confirmed');
       setTicketBookings(ticketBookingsData || [])
 
       // 팀 멤버 정보 가져오기 (가이드와 어시스턴트 이름 표시용)
       const { data: teamData } = await supabase
         .from('team')
-        .select('email, name_ko, name_en, phone')
+        .select('email, name_ko, name_en, phone');
       setTeamMembers(teamData || [])
 
       // 채널 정보 가져오기
       const { data: channelsData } = await supabase
         .from('channels')
-        .select('id, name, favicon_url')
+        .select('id, name, favicon_url');
       setChannels(channelsData || [])
 
     } catch (err) {
