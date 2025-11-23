@@ -1913,6 +1913,7 @@ export default function DynamicPricingManager({
                 .find(ch => ch.id === selectedChannel) || null : null}
               notIncludedFilter={notIncludedFilter}
               onNotIncludedFilterChange={setNotIncludedFilter}
+              productBasePrice={productBasePrice}
             />
           ) : (
             <PricingListView

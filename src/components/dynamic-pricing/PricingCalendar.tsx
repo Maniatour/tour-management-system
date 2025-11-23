@@ -97,6 +97,11 @@ interface PricingCalendarProps {
   } | null;
   notIncludedFilter?: 'all' | 'with' | 'without';
   onNotIncludedFilterChange?: (filter: 'all' | 'with' | 'without') => void;
+  productBasePrice?: {
+    adult: number;
+    child: number;
+    infant: number;
+  };
 }
 
 export const PricingCalendar = memo(function PricingCalendar({
@@ -111,7 +116,8 @@ export const PricingCalendar = memo(function PricingCalendar({
   selectedChannelType,
   channelInfo,
   notIncludedFilter = 'all',
-  onNotIncludedFilterChange
+  onNotIncludedFilterChange,
+  productBasePrice = { adult: 0, child: 0, infant: 0 }
 }: PricingCalendarProps) {
   const [selectedChoice, setSelectedChoice] = useState<string>('');
   const [selectedPriceTypes, setSelectedPriceTypes] = useState<Set<string>>(
@@ -361,7 +367,9 @@ export const PricingCalendar = memo(function PricingCalendar({
     // 4. 초이스 가격 정보 가져오기
     let otaSalePrice = 0;
     let choicePrice = 0;
-    const basePrice = rule.adult_price || 0;
+    // rule.adult_price는 증차감 금액(price_adjustment)이므로, 실제 기본 가격은 상품 기본 가격을 사용
+    const priceAdjustment = rule.adult_price || 0;
+    const basePrice = productBasePrice.adult + priceAdjustment;
     
     if (rule.choices_pricing) {
       try {
