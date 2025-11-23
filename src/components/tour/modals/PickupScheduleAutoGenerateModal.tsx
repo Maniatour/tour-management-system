@@ -62,6 +62,7 @@ export default function PickupScheduleAutoGenerateModal({
   const [travelTimes, setTravelTimes] = useState<number[]>([]) // 각 구간의 이동 시간 (초)
   const [routeCalculated, setRouteCalculated] = useState(false) // 경로 계산 완료 플래그
   const [linkCopied, setLinkCopied] = useState(false) // 링크 복사 상태
+  const [markers, setMarkers] = useState<google.maps.Marker[]>([]) // 커스텀 마커 배열
 
   // 일출 투어 여부 확인
   const isSunriseTour = productId === 'MDGCSUNRISE'
@@ -144,7 +145,7 @@ export default function PickupScheduleAutoGenerateModal({
           const service = new window.google.maps.DirectionsService()
           const renderer = new window.google.maps.DirectionsRenderer({
             map: newMap,
-            suppressMarkers: false
+            suppressMarkers: true // 기본 마커 숨기고 커스텀 마커 사용
           })
 
           setMap(newMap)
@@ -210,6 +211,7 @@ export default function PickupScheduleAutoGenerateModal({
   // 픽업 스케줄 자동 생성
   const generatePickupSchedule = useCallback(async () => {
     if (!assignedReservations.length || !pickupHotels.length) return
+    if (!window.google || !window.google.maps) return // Google Maps API가 로드되지 않았으면 대기
 
     // 호텔별로 예약 그룹화
     const reservationsByHotel = assignedReservations.reduce((acc, reservation) => {
@@ -222,26 +224,32 @@ export default function PickupScheduleAutoGenerateModal({
       return acc
     }, {} as Record<string, Reservation[]>)
 
-    // 호텔 정보 가져오기 및 북쪽부터 정렬 (위도 기준)
+    // 호텔 정보 가져오기 및 좌표 정보 수집
     const hotelsWithReservations = await Promise.all(
       Object.entries(reservationsByHotel)
         .map(async ([hotelId, reservations]) => {
           const hotel = pickupHotels.find(h => h.id === hotelId)
           if (!hotel) return null
 
-          // 위도 가져오기 (pin 필드 또는 Geocoding API 사용)
+          // 좌표 가져오기 (pin 필드 또는 Geocoding API 사용)
           let latitude: number | null = null
+          let longitude: number | null = null
+          let position: google.maps.LatLng | null = null
           
           // pin 필드에 좌표가 있으면 사용
           if (hotel.pin) {
             const coords = hotel.pin.split(',')
             if (coords.length >= 2) {
               latitude = parseFloat(coords[0].trim())
+              longitude = parseFloat(coords[1].trim())
+              if (!isNaN(latitude) && !isNaN(longitude)) {
+                position = new window.google.maps.LatLng(latitude, longitude)
+              }
             }
           }
           
           // pin이 없으면 주소로 Geocoding
-          if (latitude === null && hotel.address && window.google && window.google.maps) {
+          if (!position && hotel.address && window.google && window.google.maps) {
             try {
               const geocoder = new window.google.maps.Geocoder()
               const result = await Promise.race([
@@ -260,25 +268,228 @@ export default function PickupScheduleAutoGenerateModal({
               ])
               
               if (result && result.length > 0) {
-                latitude = result[0].geometry.location.lat()
+                position = result[0].geometry.location
+                latitude = position.lat()
+                longitude = position.lng()
               }
             } catch (error) {
               console.error('Geocoding 오류:', error)
-              // 타임아웃 발생 시 기본값 사용 (정렬에 영향 없도록)
+              // 타임아웃 발생 시 기본값 사용
             }
           }
 
-          return { hotel, reservations, latitude: latitude ?? 0 }
+          return { 
+            hotel, 
+            reservations, 
+            latitude: latitude ?? 0,
+            longitude: longitude ?? 0,
+            position: position
+          }
         })
     )
 
     const validHotels = hotelsWithReservations.filter(
-      (item): item is { hotel: PickupHotel; reservations: Reservation[]; latitude: number } => 
-        item !== null
+      (item): item is { 
+        hotel: PickupHotel
+        reservations: Reservation[]
+        latitude: number
+        longitude: number
+        position: google.maps.LatLng | null
+      } => 
+        item !== null && item.position !== null
     )
 
-    // 북쪽부터 정렬 (위도가 높을수록 북쪽)
-    validHotels.sort((a, b) => b.latitude - a.latitude)
+    // 동선 최적화: 그리디 알고리즘으로 최적 경로 구성
+    const optimizedRoute: typeof validHotels = []
+    const remainingHotels = [...validHotels]
+    const startAddress = '4525 W Spring Mountain Rd, Las Vegas, NV 89102'
+    
+    // 시작점 좌표 가져오기
+    let currentPosition: google.maps.LatLng | null = null
+    if (window.google && window.google.maps) {
+      try {
+        const geocoder = new window.google.maps.Geocoder()
+        const startResult = await new Promise<google.maps.GeocoderResult[]>((resolve, reject) => {
+          geocoder.geocode({ address: startAddress }, (results, status) => {
+            if (status === 'OK' && results) {
+              resolve(results)
+            } else {
+              reject(new Error('시작점 Geocoding 실패'))
+            }
+          })
+        })
+        if (startResult && startResult.length > 0) {
+          currentPosition = startResult[0].geometry.location
+        }
+      } catch (error) {
+        console.error('시작점 Geocoding 오류:', error)
+        // 시작점 좌표를 가져오지 못하면 기본값 사용
+        currentPosition = new window.google.maps.LatLng(36.1304, -115.2003)
+      }
+    }
+
+    if (!currentPosition) {
+      // Google Maps API를 사용할 수 없으면 북쪽부터 정렬 (기존 방식)
+      validHotels.sort((a, b) => b.latitude - a.latitude)
+      const fallbackHotels = validHotels.map((item, index) => ({
+        ...item,
+        order: index + 1
+      }))
+      
+      // 일출 투어인 경우 마지막 픽업 시간 계산
+      let lastPickupTime: string = '08:00'
+      if (isSunriseTour && sunriseTime) {
+        const [sunriseHours, sunriseMinutes] = sunriseTime.split(':').map(Number)
+        let totalMinutes = sunriseHours * 60 + sunriseMinutes - (6 * 60 + 30)
+        if (totalMinutes < 0) {
+          totalMinutes += 24 * 60
+        }
+        const lastPickupHours = Math.floor(totalMinutes / 60) % 24
+        const lastPickupMins = totalMinutes % 60
+        lastPickupTime = `${String(lastPickupHours).padStart(2, '0')}:${String(lastPickupMins).padStart(2, '0')}`
+      }
+
+      const schedule = fallbackHotels.map((item, index) => {
+        let pickupTime: string
+        if (isSunriseTour && sunriseTime) {
+          const timeInterval = 10
+          const minutesFromLast = (fallbackHotels.length - index - 1) * timeInterval
+          const [lastHours, lastMinutes] = lastPickupTime.split(':').map(Number)
+          let totalMinutes = lastHours * 60 + lastMinutes - minutesFromLast
+          if (totalMinutes < 0) {
+            totalMinutes += 24 * 60
+          }
+          const hours = Math.floor(totalMinutes / 60) % 24
+          const mins = totalMinutes % 60
+          pickupTime = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
+        } else {
+          const timeInterval = 10
+          const startHours = 8
+          const startMinutes = 0
+          const totalMinutes = startHours * 60 + startMinutes + (index * timeInterval)
+          const hours = Math.floor(totalMinutes / 60) % 24
+          const mins = totalMinutes % 60
+          pickupTime = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
+        }
+        return {
+          hotel: item.hotel,
+          reservations: item.reservations,
+          pickupTime,
+          order: index + 1
+        }
+      })
+      
+      setPickupSchedule(schedule)
+      return
+    }
+
+    // 첫 번째 픽업: 가장 북쪽 호텔 선택 (위도가 높을수록 북쪽)
+    if (remainingHotels.length > 0) {
+      remainingHotels.sort((a, b) => b.latitude - a.latitude)
+      const firstHotel = remainingHotels[0]
+      optimizedRoute.push(firstHotel)
+      
+      // 선택된 호텔을 remainingHotels에서 제거
+      const firstIndex = remainingHotels.findIndex(h => h.hotel.id === firstHotel.hotel.id)
+      if (firstIndex !== -1) {
+        remainingHotels.splice(firstIndex, 1)
+      }
+
+      // 현재 위치를 첫 번째 호텔로 업데이트
+      currentPosition = firstHotel.position
+    }
+
+    // 두 번째 호텔부터 그리디 알고리즘으로 최적 경로 구성
+    while (remainingHotels.length > 0) {
+      // 현재 위치에서 각 호텔까지의 거리와 이동 시간 계산
+      const hotelDistances = await Promise.all(
+        remainingHotels.map(async (hotel) => {
+          if (!hotel.position) {
+            return { hotel, distance: Infinity, duration: Infinity }
+          }
+
+          // 직선 거리 계산 (Haversine 공식)
+          const R = 6371 // 지구 반지름 (km)
+          const dLat = (hotel.position.lat() - currentPosition.lat()) * Math.PI / 180
+          const dLon = (hotel.position.lng() - currentPosition.lng()) * Math.PI / 180
+          const a = 
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(currentPosition.lat() * Math.PI / 180) * Math.cos(hotel.position.lat() * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2)
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+          const distance = R * c // km
+
+          // 실제 이동 시간 계산 (Directions Service 사용)
+          let duration = Infinity
+          if (window.google && window.google.maps) {
+            try {
+              const result = await new Promise<google.maps.DirectionsResult | null>((resolve) => {
+                const service = new window.google.maps.DirectionsService()
+                service.route(
+                  {
+                    origin: currentPosition,
+                    destination: hotel.position,
+                    travelMode: window.google.maps.TravelMode.DRIVING
+                  },
+                  (result, status) => {
+                    if (status === 'OK' && result) {
+                      resolve(result)
+                    } else {
+                      resolve(null)
+                    }
+                  }
+                )
+              })
+              
+              if (result && result.routes && result.routes[0] && result.routes[0].legs && result.routes[0].legs[0]) {
+                duration = result.routes[0].legs[0].duration?.value || Infinity // 초 단위
+              }
+            } catch (error) {
+              console.error('이동 시간 계산 오류:', error)
+              // 오류 발생 시 직선 거리를 기반으로 추정 (시속 50km 가정)
+              duration = distance * 72 // km를 초로 변환 (50km/h = 약 72초/km)
+            }
+          } else {
+            // Directions Service를 사용할 수 없으면 직선 거리 기반 추정
+            duration = distance * 72 // km를 초로 변환 (50km/h = 약 72초/km)
+          }
+
+          return { hotel, distance, duration }
+        })
+      )
+
+      // 거리와 이동 시간을 고려하여 최적 호텔 선택
+      // 비슷한 거리(10% 이내)에 여러 호텔이 있다면 이동 시간이 작은 것을 선택
+      hotelDistances.sort((a, b) => {
+        // 거리가 비슷한지 확인 (10% 이내)
+        const distanceDiff = Math.abs(a.distance - b.distance) / Math.max(a.distance, b.distance)
+        const isSimilarDistance = distanceDiff < 0.1
+
+        if (isSimilarDistance) {
+          // 비슷한 거리면 이동 시간이 작은 것을 우선
+          return a.duration - b.duration
+        } else {
+          // 거리가 다르면 거리가 가까운 것을 우선
+          return a.distance - b.distance
+        }
+      })
+
+      // 가장 최적의 호텔 선택
+      const selectedHotel = hotelDistances[0].hotel
+      optimizedRoute.push(selectedHotel)
+      
+      // 선택된 호텔을 remainingHotels에서 제거
+      const index = remainingHotels.findIndex(h => h.hotel.id === selectedHotel.hotel.id)
+      if (index !== -1) {
+        remainingHotels.splice(index, 1)
+      }
+
+      // 현재 위치를 선택된 호텔로 업데이트
+      currentPosition = selectedHotel.position
+    }
+
+    // 최적화된 경로를 사용
+    const finalHotels = optimizedRoute
 
     // 일출 투어인 경우 마지막 픽업 시간 계산
     let lastPickupTime: string = '08:00' // 기본값
@@ -299,7 +510,7 @@ export default function PickupScheduleAutoGenerateModal({
     }
 
     // 픽업 시간 계산 (역순으로 배치)
-    const totalHotels = validHotels.length
+    const totalHotels = finalHotels.length
     const schedule: Array<{
       hotel: PickupHotel
       reservations: Reservation[]
@@ -307,7 +518,7 @@ export default function PickupScheduleAutoGenerateModal({
       order: number
     }> = []
 
-    validHotels.forEach((item, index) => {
+    finalHotels.forEach((item, index) => {
       let pickupTime: string
       
       if (isSunriseTour && sunriseTime) {
@@ -445,6 +656,15 @@ export default function PickupScheduleAutoGenerateModal({
     }
   }, [isOpen])
 
+  // 모달이 닫힐 때 마커 정리
+  useEffect(() => {
+    if (!isOpen) {
+      markers.forEach(marker => marker.setMap(null))
+      setMarkers([])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen])
+
   // 구글 맵에 동선 표시 및 실제 이동 시간 계산
   useEffect(() => {
     if (!map || !directionsService || !directionsRenderer || pickupSchedule.length === 0) return
@@ -541,6 +761,111 @@ export default function PickupScheduleAutoGenerateModal({
               updatePickupTimesWithTravelTimes(times)
             }
           }
+
+          // 기존 마커 제거
+          markers.forEach(marker => marker.setMap(null))
+          const newMarkers: google.maps.Marker[] = []
+
+          // 시작점 마커 생성 (S) - 고정 좌표 사용
+          const startPosition = new window.google.maps.LatLng(36.1304, -115.2003) // 4525 W Spring Mountain Rd 근사치
+          const geocoder = new window.google.maps.Geocoder()
+          
+          // 시작점 geocoding
+          geocoder.geocode({ address: origin }, (startResults, startStatus) => {
+            const startPos = startStatus === 'OK' && startResults && startResults[0] 
+              ? startResults[0].geometry.location 
+              : startPosition
+
+            const startMarker = new window.google.maps.Marker({
+              position: startPos,
+              map: map,
+              icon: {
+                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+                  <svg width="32" height="32" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="16" cy="16" r="14" fill="#1e40af" stroke="#ffffff" stroke-width="2"/>
+                    <text x="16" y="21" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="bold">S</text>
+                  </svg>
+                `),
+                scaledSize: new window.google.maps.Size(32, 32),
+                anchor: new window.google.maps.Point(16, 16)
+              }
+            })
+            newMarkers.push(startMarker)
+
+            // 각 호텔 마커 생성 (1, 2, 3, 4...)
+            let geocodePromises: Promise<void>[] = []
+
+            pickupSchedule.forEach((item) => {
+              const hotel = item.hotel
+              let position: google.maps.LatLng | null = null
+
+              // pin 좌표 사용
+              if (hotel.pin) {
+                const coords = hotel.pin.split(',')
+                if (coords.length >= 2) {
+                  const lat = parseFloat(coords[0].trim())
+                  const lng = parseFloat(coords[1].trim())
+                  if (!isNaN(lat) && !isNaN(lng)) {
+                    position = new window.google.maps.LatLng(lat, lng)
+                  }
+                }
+              }
+
+              if (position) {
+                // pin 좌표가 있으면 바로 마커 생성
+                const marker = new window.google.maps.Marker({
+                  position: position,
+                  map: map,
+                  icon: {
+                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+                      <svg width="32" height="32" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="16" cy="16" r="14" fill="#2563eb" stroke="#ffffff" stroke-width="2"/>
+                        <text x="16" y="21" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="bold">${item.order}</text>
+                      </svg>
+                    `),
+                    scaledSize: new window.google.maps.Size(32, 32),
+                    anchor: new window.google.maps.Point(16, 16)
+                  }
+                })
+                newMarkers.push(marker)
+              } else if (hotel.address) {
+                // pin이 없으면 주소로 Geocoding
+                const geocodePromise = new Promise<void>((resolve) => {
+                  geocoder.geocode({ address: hotel.address! }, (results, status) => {
+                    if (status === 'OK' && results && results[0]) {
+                      const marker = new window.google.maps.Marker({
+                        position: results[0].geometry.location,
+                        map: map,
+                        icon: {
+                          url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+                            <svg width="32" height="32" xmlns="http://www.w3.org/2000/svg">
+                              <circle cx="16" cy="16" r="14" fill="#2563eb" stroke="#ffffff" stroke-width="2"/>
+                              <text x="16" y="21" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="bold">${item.order}</text>
+                            </svg>
+                          `),
+                          scaledSize: new window.google.maps.Size(32, 32),
+                          anchor: new window.google.maps.Point(16, 16)
+                        }
+                      })
+                      newMarkers.push(marker)
+                    }
+                    resolve()
+                  })
+                })
+                geocodePromises.push(geocodePromise)
+              }
+            })
+
+            // 모든 geocoding이 완료된 후 마커 배열 업데이트
+            Promise.all(geocodePromises).then(() => {
+              setMarkers(newMarkers)
+            })
+            
+            // geocoding이 없는 경우에도 마커 배열 업데이트
+            if (geocodePromises.length === 0) {
+              setMarkers(newMarkers)
+            }
+          })
         } else {
           console.error('경로 계산 실패:', status)
           clearTimeout(routeTimeout) // 타임아웃 클리어
@@ -557,11 +882,12 @@ export default function PickupScheduleAutoGenerateModal({
       }
     )
 
-    // cleanup 함수에서 타임아웃 클리어
+    // cleanup 함수에서 타임아웃 클리어 및 마커 제거
     return () => {
       clearTimeout(routeTimeout)
+      markers.forEach(marker => marker.setMap(null))
     }
-  }, [map, directionsService, directionsRenderer, pickupSchedule.length, routeCalculated, updatePickupTimesWithTravelTimes]) // pickupSchedule.length만 의존성으로 사용하여 핀 깜빡임 방지
+  }, [map, directionsService, directionsRenderer, pickupSchedule.length, routeCalculated, updatePickupTimesWithTravelTimes, markers]) // pickupSchedule.length만 의존성으로 사용하여 핀 깜빡임 방지
 
   // 구글맵 공유 링크 생성
   const generateGoogleMapsLink = (): string => {
