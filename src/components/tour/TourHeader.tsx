@@ -23,6 +23,7 @@ interface TourHeaderProps {
   getStatusText: (status: string | null, locale: string) => string
   getAssignmentStatusColor: () => string
   getAssignmentStatusText: () => string
+  onEditClick?: () => void
 }
 
 export default function TourHeader({
@@ -43,7 +44,8 @@ export default function TourHeader({
   getStatusColor,
   getStatusText,
   getAssignmentStatusColor,
-  getAssignmentStatusText
+  getAssignmentStatusText,
+  onEditClick
 }: TourHeaderProps) {
   const router = useRouter()
   const t = useTranslations('tours.tourHeader')
@@ -99,6 +101,7 @@ export default function TourHeader({
             getStatusText={getStatusText}
             getAssignmentStatusColor={getAssignmentStatusColor}
             getAssignmentStatusText={getAssignmentStatusText}
+            onEditClick={onEditClick}
           />
 
           {/* 데스크톱 요약/액션 */}
@@ -192,7 +195,10 @@ export default function TourHeader({
                 <Trash2 size={16} />
                 <span>{t('delete')}</span>
               </button>
-              <button className="px-4 py-2 text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 flex items-center space-x-2">
+              <button 
+                onClick={onEditClick}
+                className="px-4 py-2 text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 flex items-center space-x-2"
+              >
                 <Edit size={16} />
                 <span>{t('edit')}</span>
               </button>

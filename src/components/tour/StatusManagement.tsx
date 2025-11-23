@@ -18,6 +18,7 @@ interface StatusManagementProps {
   getStatusText: (status: string | null) => string
   getAssignmentStatusColor: () => string
   getAssignmentStatusText: () => string
+  onEditClick?: () => void
 }
 
 export const StatusManagement: React.FC<StatusManagementProps> = ({
@@ -36,7 +37,8 @@ export const StatusManagement: React.FC<StatusManagementProps> = ({
   getStatusColor,
   getStatusText,
   getAssignmentStatusColor,
-  getAssignmentStatusText
+  getAssignmentStatusText,
+  onEditClick
 }) => {
   return (
     <div className="flex sm:hidden flex-col w-full mt-1 space-y-3">
@@ -125,7 +127,10 @@ export const StatusManagement: React.FC<StatusManagementProps> = ({
           <button className="p-1.5 text-red-700 bg-red-100 rounded-lg hover:bg-red-200">
             <Trash2 size={16} />
           </button>
-          <button className="p-1.5 text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200">
+          <button 
+            onClick={onEditClick}
+            className="p-1.5 text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200"
+          >
             <Edit size={16} />
           </button>
         </div>

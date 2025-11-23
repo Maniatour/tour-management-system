@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { supabase } from '@/lib/supabase';
@@ -75,6 +76,9 @@ export default function TicketBookingList() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [teamMemberMap, setTeamMemberMap] = useState<Map<string, string>>(new Map());
   const [supplierProductsMap, setSupplierProductsMap] = useState<Map<string, { season_dates: any }>>(new Map());
+  const [openStatusDropdown, setOpenStatusDropdown] = useState<string | null>(null);
+  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
+  const statusButtonRefs = useRef<Map<string, HTMLSpanElement>>(new Map());
 
   // 상품 이름을 로케일에 따라 반환하는 함수
   const getProductName = (product: { name?: string; name_en?: string; name_ko?: string } | undefined) => {
@@ -470,6 +474,22 @@ export default function TicketBookingList() {
     fetchBookings();
   }, []);
 
+  // 드롭다운 외부 클릭 시 닫기
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (openStatusDropdown) {
+        setOpenStatusDropdown(null);
+      }
+    };
+
+    if (openStatusDropdown) {
+      document.addEventListener('click', handleClickOutside);
+      return () => {
+        document.removeEventListener('click', handleClickOutside);
+      };
+    }
+  }, [openStatusDropdown]);
+
   useEffect(() => {
     fetchTourEvents();
   }, [fetchTourEvents]);
@@ -698,33 +718,11 @@ export default function TicketBookingList() {
     }
   };
 
-  const handleStatusToggle = async (booking: TicketBooking) => {
-    const currentStatus = booking.status?.toLowerCase();
-    let nextStatus: string;
-
-    // 상태 순환: pending -> confirmed -> cancelled -> completed -> pending
-    switch (currentStatus) {
-      case 'pending':
-        nextStatus = 'confirmed';
-        break;
-      case 'confirmed':
-        nextStatus = 'cancelled';
-        break;
-      case 'cancelled':
-      case 'canceled':
-        nextStatus = 'completed';
-        break;
-      case 'completed':
-        nextStatus = 'pending';
-        break;
-      default:
-        nextStatus = 'pending';
-    }
-
+  const handleStatusChange = async (booking: TicketBooking, newStatus: string) => {
     try {
       const { error } = await supabase
         .from('ticket_bookings')
-        .update({ status: nextStatus })
+        .update({ status: newStatus })
         .eq('id', booking.id);
 
       if (error) throw error;
@@ -732,14 +730,29 @@ export default function TicketBookingList() {
       // 로컬 상태 업데이트
       setBookings(prev =>
         prev.map(b =>
-          b.id === booking.id ? { ...b, status: nextStatus } : b
+          b.id === booking.id ? { ...b, status: newStatus } : b
         )
       );
+
+      // 드롭다운 닫기
+      setOpenStatusDropdown(null);
+      setDropdownPosition(null);
     } catch (error) {
       console.error('상태 변경 오류:', error);
       alert('상태 변경 중 오류가 발생했습니다.');
     }
   };
+
+  const statusOptions = [
+    { value: 'pending', label: '대기', color: 'bg-yellow-100 text-yellow-800' },
+    { value: 'confirmed', label: '확정', color: 'bg-green-100 text-green-800' },
+    { value: 'cancelled', label: '취소', color: 'bg-red-100 text-red-800' },
+    { value: 'completed', label: '완료', color: 'bg-blue-100 text-blue-800' },
+    { value: 'cancellation_requested', label: '전체 취소 요청', color: 'bg-orange-100 text-orange-800' },
+    { value: 'guest_change_requested', label: '인원 변경 요청', color: 'bg-purple-100 text-purple-800' },
+    { value: 'time_change_requested', label: '시간 변경 요청', color: 'bg-indigo-100 text-indigo-800' },
+    { value: 'payment_requested', label: '결제 요청', color: 'bg-pink-100 text-pink-800' },
+  ];
 
   const handleTourClick = (tourId: string) => {
     router.push(`/ko/admin/tours/${tourId}`);
@@ -753,6 +766,10 @@ export default function TicketBookingList() {
       case 'cancelled':
       case 'canceled': return 'bg-red-100 text-red-800';
       case 'completed': return 'bg-blue-100 text-blue-800';
+      case 'cancellation_requested': return 'bg-orange-100 text-orange-800';
+      case 'guest_change_requested': return 'bg-purple-100 text-purple-800';
+      case 'time_change_requested': return 'bg-indigo-100 text-indigo-800';
+      case 'payment_requested': return 'bg-pink-100 text-pink-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -765,6 +782,10 @@ export default function TicketBookingList() {
       case 'cancelled':
       case 'canceled': return t('cancelled');
       case 'completed': return t('completed');
+      case 'cancellation_requested': return '전체 취소 요청';
+      case 'guest_change_requested': return '인원 변경 요청';
+      case 'time_change_requested': return '시간 변경 요청';
+      case 'payment_requested': return '결제 요청';
       default: return status;
     }
   };
@@ -987,10 +1008,65 @@ export default function TicketBookingList() {
       {/* 데이터 표시 영역 */}
       <div className="px-1 sm:px-6">
         {viewMode === 'table' ? (
-          /* 테이블 뷰 - 모바일 최적화 */
-          <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-full divide-y divide-gray-200">
+          <>
+            {/* 상태 설명 */}
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3">
+              <div className="text-xs font-semibold text-gray-700 mb-2">상태 설명:</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800 whitespace-nowrap">
+                    확정
+                  </span>
+                  <span className="text-xs text-gray-600">확정 예약으로 티켓값을 지불한 상태</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800 whitespace-nowrap">
+                    대기
+                  </span>
+                  <span className="text-xs text-gray-600">가예약으로 티켓값을 지불하기 전 상태</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-800 whitespace-nowrap">
+                    취소
+                  </span>
+                  <span className="text-xs text-gray-600">전체 취소된 상태</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 whitespace-nowrap">
+                    완료
+                  </span>
+                  <span className="text-xs text-gray-600">이벤트가 종료 된 상태</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-orange-100 text-orange-800 whitespace-nowrap">
+                    전체 취소 요청
+                  </span>
+                  <span className="text-xs text-gray-600">전체 취소 요청 상태</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-800 whitespace-nowrap">
+                    인원 변경 요청
+                  </span>
+                  <span className="text-xs text-gray-600">인원 변경 요청 상태</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-800 whitespace-nowrap">
+                    시간 변경 요청
+                  </span>
+                  <span className="text-xs text-gray-600">시간 변경 요청 상태</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-pink-100 text-pink-800 whitespace-nowrap">
+                    결제 요청
+                  </span>
+                  <span className="text-xs text-gray-600">결제 요청 상태</span>
+                </div>
+              </div>
+            </div>
+            {/* 테이블 뷰 - 모바일 최적화 */}
+            <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10">
@@ -1061,16 +1137,74 @@ export default function TicketBookingList() {
                   {sortedBookings.map((booking) => (
                     <tr key={booking.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-2 py-1.5 whitespace-nowrap text-xs sticky left-0 bg-white z-10">
-                        <span 
-                          className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full cursor-pointer hover:opacity-80 transition-opacity ${getStatusColor(booking.status)}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleStatusToggle(booking);
-                          }}
-                          title="클릭하여 상태 변경"
-                        >
-                          {getStatusText(booking.status)}
-                        </span>
+                        <div className="relative z-50">
+                          <span 
+                            ref={(el) => {
+                              if (el) {
+                                statusButtonRefs.current.set(booking.id, el);
+                              } else {
+                                statusButtonRefs.current.delete(booking.id);
+                              }
+                            }}
+                            className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full cursor-pointer hover:opacity-80 transition-opacity ${getStatusColor(booking.status)}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const button = statusButtonRefs.current.get(booking.id);
+                              if (button) {
+                                const rect = button.getBoundingClientRect();
+                                setDropdownPosition({
+                                  top: rect.bottom + 4,
+                                  left: rect.left
+                                });
+                              }
+                              setOpenStatusDropdown(openStatusDropdown === booking.id ? null : booking.id);
+                            }}
+                            title="클릭하여 상태 선택"
+                          >
+                            {getStatusText(booking.status)}
+                          </span>
+                          
+                          {openStatusDropdown === booking.id && dropdownPosition && typeof window !== 'undefined' && createPortal(
+                            <>
+                              {/* 오버레이로 다른 요소 클릭 방지 */}
+                              <div 
+                                className="fixed inset-0 z-[9998]"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenStatusDropdown(null);
+                                  setDropdownPosition(null);
+                                }}
+                              />
+                              <div 
+                                className="fixed bg-black border-2 border-gray-600 rounded-lg shadow-2xl z-[9999] w-36 overflow-hidden"
+                                style={{
+                                  top: `${dropdownPosition.top}px`,
+                                  left: `${dropdownPosition.left}px`
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {statusOptions.map((option) => (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleStatusChange(booking, option.value);
+                                    }}
+                                    className={`w-full text-left px-3 py-2.5 text-xs hover:bg-gray-800 transition-colors flex items-center gap-2 border-b border-gray-700 last:border-b-0 ${
+                                      booking.status?.toLowerCase() === option.value ? 'bg-gray-900 font-semibold' : 'bg-black'
+                                    }`}
+                                  >
+                                    <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${option.color}`}>
+                                      {option.label}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            </>,
+                            document.body
+                          )}
+                        </div>
                       </td>
                       <td className="px-2 py-1.5 whitespace-nowrap text-xs">
                         <div className="text-gray-900">{booking.company}</div>
@@ -1183,6 +1317,7 @@ export default function TicketBookingList() {
               </div>
             )}
           </div>
+          </>
         ) : viewMode === 'calendar' ? (
           /* 달력 뷰 - 실제 달력 UI에 라벨로 표시 */
           <div>

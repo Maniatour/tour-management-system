@@ -242,12 +242,12 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
 
             <div className="space-y-4">
               {/* 가이드 선택 */}
-              <div className="flex items-center space-x-4">
-                <label className="w-20 text-sm font-medium text-gray-700">{t('guide')}</label>
+              <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+                <label className="text-sm font-medium text-gray-700 flex-shrink-0 whitespace-nowrap">{t('guide')}</label>
                 <select
                   value={selectedGuide || ''}
                   onChange={(e) => onGuideSelect(e.target.value)}
-                  className="flex-1 text-sm border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="flex-1 min-w-0 text-sm border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="">{t('selectGuide')}</option>
                   {getFilteredTeamMembers().map((member) => (
@@ -256,7 +256,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                     </option>
                   ))}
                 </select>
-                <div className="flex items-center space-x-2 relative">
+                <div className="flex items-center space-x-2 relative flex-shrink-0">
                   <input
                     type="number"
                     value={guideFee || ''}
@@ -287,14 +287,14 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
 
               {/* 2차 가이드/드라이버 선택 */}
               {(teamType === '2guide' || teamType === 'guide+driver') && (
-                <div className="flex items-center space-x-4">
-                  <label className="w-20 text-sm font-medium text-gray-700">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+                  <label className="text-sm font-medium text-gray-700 flex-shrink-0 whitespace-nowrap">
                     {teamType === '2guide' ? t('secondGuide') : t('driver')}
                   </label>
                   <select
                     value={selectedAssistant || ''}
                     onChange={(e) => onAssistantSelect(e.target.value)}
-                    className="flex-1 text-sm border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="flex-1 min-w-0 text-sm border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="">{t('selectGuide')}</option>
                     {getFilteredTeamMembers(selectedGuide).map((member) => (
@@ -303,7 +303,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                       </option>
                     ))}
                   </select>
-                  <div className="flex items-center space-x-2 relative">
+                  <div className="flex items-center space-x-2 relative flex-shrink-0">
                     <input
                       type="number"
                       value={assistantFee || ''}
@@ -334,12 +334,12 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
               )}
 
               {/* 차량 선택 */}
-              <div className="flex items-center space-x-4">
-                <label className="w-20 text-sm font-medium text-gray-700">{t('vehicle')}</label>
+              <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+                <label className="text-sm font-medium text-gray-700 flex-shrink-0 whitespace-nowrap">{t('vehicle')}</label>
                 <select
                   value={selectedVehicleId || ''}
                   onChange={(e) => onVehicleSelect(e.target.value)}
-                  className="flex-1 text-sm border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="flex-1 min-w-0 text-sm border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   disabled={vehiclesLoading}
                 >
                   <option value="">{t('selectVehicle')}</option>
@@ -356,35 +356,39 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
 
               {/* 마일리지 입력 */}
               {selectedVehicleId && (
-                <div className="flex items-center space-x-4">
-                  <label className="w-20 text-sm font-medium text-gray-700">{t('start')}</label>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="number"
-                      value={startMileage || ''}
-                      onChange={(e) => onStartMileageChange(Number(e.target.value) || 0)}
-                      className="text-sm border rounded px-2 py-1 w-32 text-gray-900 border-gray-300"
-                      placeholder="0"
-                      min="0"
-                      disabled={isMileageLoading}
-                    />
-                    <span className="text-sm text-gray-500">miles</span>
-                    {isMileageLoading && (
-                      <span className="text-sm text-gray-500">로딩...</span>
-                    )}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <label className="text-sm font-medium text-gray-700 flex-shrink-0 whitespace-nowrap">{t('start')}</label>
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <input
+                        type="number"
+                        value={startMileage || ''}
+                        onChange={(e) => onStartMileageChange(Number(e.target.value) || 0)}
+                        className="text-sm border rounded px-2 py-1 flex-1 min-w-0 max-w-full text-gray-900 border-gray-300"
+                        placeholder="0"
+                        min="0"
+                        disabled={isMileageLoading}
+                      />
+                      <span className="text-sm text-gray-500 flex-shrink-0">miles</span>
+                      {isMileageLoading && (
+                        <span className="text-sm text-gray-500 flex-shrink-0">로딩...</span>
+                      )}
+                    </div>
                   </div>
                   
-                  <label className="w-20 text-sm font-medium text-gray-700">{t('end')}</label>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="number"
-                      value={endMileage || ''}
-                      onChange={(e) => onEndMileageChange(Number(e.target.value) || 0)}
-                      className="text-sm border rounded px-2 py-1 w-32 text-gray-900 border-gray-300"
-                      placeholder="0"
-                      min="0"
-                    />
-                    <span className="text-sm text-gray-500">miles</span>
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <label className="text-sm font-medium text-gray-700 flex-shrink-0 whitespace-nowrap">{t('end')}</label>
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <input
+                        type="number"
+                        value={endMileage || ''}
+                        onChange={(e) => onEndMileageChange(Number(e.target.value) || 0)}
+                        className="text-sm border rounded px-2 py-1 flex-1 min-w-0 max-w-full text-gray-900 border-gray-300"
+                        placeholder="0"
+                        min="0"
+                      />
+                      <span className="text-sm text-gray-500 flex-shrink-0">miles</span>
+                    </div>
                   </div>
                 </div>
               )}

@@ -31,6 +31,7 @@ import PickupHotelModal from '@/components/tour/modals/PickupHotelModal'
 import PrivateTourModal from '@/components/tour/modals/PrivateTourModal'
 import BookingModal from '@/components/tour/modals/BookingModal'
 import PickupScheduleAutoGenerateModal from '@/components/tour/modals/PickupScheduleAutoGenerateModal'
+import TourEditModal from '@/components/tour/modals/TourEditModal'
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
 import { 
@@ -109,6 +110,7 @@ export default function TourDetailPage() {
   const [showTicketBookingDetails, setShowTicketBookingDetails] = useState<boolean>(false)
   const [editingReservation, setEditingReservation] = useState<any>(null)
   const [showPickupScheduleModal, setShowPickupScheduleModal] = useState<boolean>(false)
+  const [showTourEditModal, setShowTourEditModal] = useState<boolean>(false)
   
   // 마일리지 관련 상태
   const [startMileage, setStartMileage] = useState<number>(0)
@@ -213,6 +215,77 @@ export default function TourDetailPage() {
     if (!tourData.tour) return
     tourData.setTourNote(note)
     await tourHandlers.handleTourNoteChange(tourData.tour, note)
+  }
+
+  // 투어 날짜 업데이트 핸들러
+  const handleTourDateChange = async (date: string) => {
+    if (!tourData.tour) return
+
+    try {
+      const { error } = await supabase
+        .from('tours')
+        .update({ tour_date: date })
+        .eq('id', tourData.tour.id)
+
+      if (error) {
+        console.error('투어 날짜 업데이트 오류:', error)
+        alert(locale === 'ko' ? '투어 날짜 업데이트 중 오류가 발생했습니다.' : 'Error updating tour date.')
+        return
+      }
+
+      // 투어 데이터 업데이트
+      tourData.setTour(prev => prev ? { ...prev, tour_date: date } : null)
+    } catch (error) {
+      console.error('투어 날짜 업데이트 오류:', error)
+      alert(locale === 'ko' ? '투어 날짜 업데이트 중 오류가 발생했습니다.' : 'Error updating tour date.')
+    }
+  }
+
+  // 투어 시작 시간 업데이트 핸들러
+  const handleTourTimeChange = async (datetime: string) => {
+    if (!tourData.tour) return
+
+    try {
+      const { error } = await supabase
+        .from('tours')
+        .update({ tour_start_datetime: datetime })
+        .eq('id', tourData.tour.id)
+
+      if (error) {
+        console.error('투어 시작 시간 업데이트 오류:', error)
+        alert(locale === 'ko' ? '투어 시작 시간 업데이트 중 오류가 발생했습니다.' : 'Error updating tour start time.')
+        return
+      }
+
+      // 투어 데이터 업데이트
+      tourData.setTour(prev => prev ? { ...prev, tour_start_datetime: datetime } : null)
+    } catch (error) {
+      console.error('투어 시작 시간 업데이트 오류:', error)
+      alert(locale === 'ko' ? '투어 시작 시간 업데이트 중 오류가 발생했습니다.' : 'Error updating tour start time.')
+    }
+  }
+
+  // 투어 product_id 업데이트 핸들러
+  const handleTourProductUpdate = async (productId: string) => {
+    if (!tourData.tour) return
+
+    try {
+      const { error } = await supabase
+        .from('tours')
+        .update({ product_id: productId })
+        .eq('id', tourData.tour.id)
+
+      if (error) {
+        console.error('투어 product_id 업데이트 오류:', error)
+        throw error
+      }
+
+      // 투어 데이터 새로고침
+      window.location.reload()
+    } catch (error) {
+      console.error('투어 product_id 업데이트 오류:', error)
+      throw error
+    }
   }
 
   // 부킹 데이터 로드
@@ -933,6 +1006,7 @@ export default function TourDetailPage() {
               getStatusText={(status) => getStatusText(status, locale)}
         getAssignmentStatusColor={() => getAssignmentStatusColor(tourData.tour)}
         getAssignmentStatusText={() => getAssignmentStatusText(tourData.tour, locale)}
+        onEditClick={() => setShowTourEditModal(true)}
       />
 
       <div className="px-0 py-6">
@@ -950,6 +1024,9 @@ export default function TourDetailPage() {
               params={{ locale }}
               onTourNoteChange={handleTourNoteChange}
               onPrivateTourToggle={handlePrivateTourToggle}
+              onTourDateChange={handleTourDateChange}
+              onTourTimeChange={handleTourTimeChange}
+              onProductChange={handleTourProductUpdate}
               getStatusColor={getStatusColor}
               getStatusText={getStatusText}
             />
@@ -1244,6 +1321,21 @@ export default function TourDetailPage() {
           onClose={() => setShowPickupScheduleModal(false)}
           onSave={handleSavePickupSchedule}
           getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || 'Unknown'}
+        />
+      )}
+
+      {/* 투어 편집 모달 */}
+      {tourData.tour && (
+        <TourEditModal
+          isOpen={showTourEditModal}
+          tour={{
+            id: tourData.tour.id,
+            product_id: tourData.tour.product_id
+          }}
+          currentProduct={tourData.product}
+          locale={locale}
+          onClose={() => setShowTourEditModal(false)}
+          onSave={handleTourProductUpdate}
         />
       )}
     </div>
