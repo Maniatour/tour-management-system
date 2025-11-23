@@ -24,6 +24,7 @@ interface BookingHistoryProps {
 export default function BookingHistory({ bookingType, bookingId, onClose }: BookingHistoryProps) {
   const [history, setHistory] = useState<BookingHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [teamMemberMap, setTeamMemberMap] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
     fetchHistory();
@@ -40,7 +41,47 @@ export default function BookingHistory({ bookingType, bookingId, onClose }: Book
         .order('changed_at', { ascending: false });
 
       if (error) throw error;
-      setHistory(data || []);
+      
+      // 수정 날짜와 시간 순으로 정렬 (최신순)
+      const sortedHistory = (data || []).sort((a, b) => {
+        const dateA = new Date(a.changed_at).getTime();
+        const dateB = new Date(b.changed_at).getTime();
+        return dateB - dateA; // 내림차순 (최신순)
+      });
+      
+      setHistory(sortedHistory);
+
+      // changed_by 이메일로 team 테이블에서 name_ko 조회
+      const changedByEmails = [...new Set(
+        (sortedHistory || [])
+          .map((item) => item.changed_by)
+          .filter((email): email is string => !!email && typeof email === 'string' && email.includes('@'))
+      )];
+
+      if (changedByEmails.length > 0) {
+        try {
+          const { data: teamData, error: teamError } = await supabase
+            .from('team')
+            .select('email, name_ko')
+            .in('email', changedByEmails);
+
+          if (!teamError && teamData) {
+            const emailToNameMap = new Map<string, string>();
+            (teamData || []).forEach((member: { email: string; name_ko: string | null }) => {
+              if (member.email && member.name_ko) {
+                emailToNameMap.set(member.email.toLowerCase(), member.name_ko);
+              }
+            });
+            setTeamMemberMap(emailToNameMap);
+          } else {
+            console.warn('Team 정보 조회 오류:', teamError);
+            setTeamMemberMap(new Map());
+          }
+        } catch (error) {
+          console.error('Team 정보 조회 중 오류:', error);
+          setTeamMemberMap(new Map());
+        }
+      }
     } catch (error) {
       console.error('부킹 히스토리 조회 오류:', error);
     } finally {
@@ -129,6 +170,172 @@ export default function BookingHistory({ bookingType, bookingId, onClose }: Book
     return String(value);
   };
 
+  // 테이블 뷰와 동일한 컬럼 순서 정의
+  const getTableColumns = () => {
+    return [
+      { key: 'action', label: '작업', className: 'sticky left-0 bg-gray-50 z-10' },
+      { key: 'status', label: '상태', className: 'sticky left-[80px] bg-gray-50 z-10' },
+      { key: 'company', label: '공급업체' },
+      { key: 'check_in_date', label: '날짜' },
+      { key: 'time', label: '시간' },
+      { key: 'ea', label: '수량' },
+      { key: 'expense', label: '비용(USD)', className: 'hidden lg:table-cell' },
+      { key: 'income', label: '수입(USD)', className: 'hidden lg:table-cell' },
+      { key: 'rn_number', label: 'RN#', className: 'hidden md:table-cell' },
+      { key: 'payment_method', label: '결제방법', className: 'hidden lg:table-cell' },
+      { key: 'cc', label: 'CC', className: 'hidden md:table-cell' },
+      { key: 'tour_id', label: '투어연결', className: 'hidden lg:table-cell' },
+      { key: 'submit_on', label: '제출일' },
+      { key: 'submitted_by', label: '예약자', className: 'hidden md:table-cell' },
+      { key: 'changed_at', label: '수정날짜' },
+      { key: 'changed_time', label: '수정시간' },
+      { key: 'changed_by', label: '변경자', className: 'hidden md:table-cell' },
+    ];
+  };
+
+  // 상태 텍스트 변환
+  const getStatusText = (status: string) => {
+    const normalizedStatus = status?.toLowerCase();
+    switch (normalizedStatus) {
+      case 'pending': return '대기';
+      case 'confirmed': return '확정';
+      case 'cancelled':
+      case 'canceled': return '취소';
+      case 'completed': return '완료';
+      default: return status || '-';
+    }
+  };
+
+  // 상태 색상
+  const getStatusColor = (status: string) => {
+    const normalizedStatus = status?.toLowerCase();
+    switch (normalizedStatus) {
+      case 'pending': return 'bg-yellow-100 text-yellow-800';
+      case 'confirmed': return 'bg-green-100 text-green-800';
+      case 'cancelled':
+      case 'canceled': return 'bg-red-100 text-red-800';
+      case 'completed': return 'bg-blue-100 text-blue-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  // 결제 방법 텍스트 변환
+  const getPaymentMethodText = (method: string) => {
+    switch (method) {
+      case 'credit_card': return '신용카드';
+      case 'bank_transfer': return '계좌이체';
+      case 'cash': return '현금';
+      case 'other': return '기타';
+      default: return method || '-';
+    }
+  };
+
+  // CC 상태 텍스트
+  const getCCStatusText = (cc: string) => {
+    switch (cc) {
+      case 'sent': return 'CC 발송 완료';
+      case 'not_sent': return '미발송';
+      case 'not_needed': return '필요없음';
+      default: return cc || '-';
+    }
+  };
+
+  // CC 상태 색상
+  const getCCStatusColor = (cc: string) => {
+    switch (cc) {
+      case 'sent': return 'bg-green-100 text-green-800';
+      case 'not_sent': return 'bg-yellow-100 text-yellow-800';
+      case 'not_needed': return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  // 컬럼 값 가져오기
+  const getColumnValue = (data: any, columnKey: string) => {
+    switch (columnKey) {
+      case 'status':
+        return { 
+          display: getStatusText(data[columnKey]), 
+          isBadge: true,
+          color: getStatusColor(data[columnKey])
+        };
+      case 'check_in_date':
+        return { 
+          display: data[columnKey] ? new Date(data[columnKey]).toISOString().split('T')[0] : '-',
+          isBadge: false
+        };
+      case 'time':
+        return { 
+          display: data[columnKey]?.replace(/:\d{2}$/, '') || '-',
+          isBadge: false
+        };
+      case 'ea':
+        return { 
+          display: `${data[columnKey] || 0}개`,
+          isBadge: false
+        };
+      case 'expense':
+        return { 
+          display: `$${data[columnKey] || '-'}`,
+          isBadge: false
+        };
+      case 'income':
+        return { 
+          display: `$${data[columnKey] || '-'}`,
+          isBadge: false
+        };
+      case 'payment_method':
+        return { 
+          display: getPaymentMethodText(data[columnKey]),
+          isBadge: false
+        };
+      case 'cc':
+        return { 
+          display: getCCStatusText(data[columnKey]),
+          isBadge: true,
+          color: getCCStatusColor(data[columnKey])
+        };
+      case 'submit_on':
+        return { 
+          display: data[columnKey] ? new Date(data[columnKey]).toISOString().split('T')[0] : '-',
+          isBadge: false
+        };
+      case 'tour_id':
+        return { 
+          display: data[columnKey] ? '연결됨' : '미연결',
+          isBadge: false
+        };
+      case 'submitted_by':
+        return { 
+          display: data[columnKey] || '-',
+          isBadge: false
+        };
+      case 'action':
+        // action은 별도로 처리
+        return { 
+          display: '',
+          isBadge: false
+        };
+      case 'changed_at':
+        // changed_at은 별도로 처리
+        return { 
+          display: '',
+          isBadge: false
+        };
+      case 'changed_time':
+        // changed_time은 별도로 처리
+        return { 
+          display: '',
+          isBadge: false
+        };
+      default:
+        return { 
+          display: formatValue(data[columnKey]),
+          isBadge: false
+        };
+    }
+  };
+
   if (loading) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -163,87 +370,180 @@ export default function BookingHistory({ bookingType, bookingId, onClose }: Book
             변경 이력이 없습니다.
           </div>
         ) : (
-          <div className="space-y-4">
-            {history.map((item, index) => (
-              <div key={item.id} className="border rounded-lg p-4">
-                <div className="flex justify-between items-start mb-2">
-                  <div className="flex items-center space-x-2">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getActionColor(item.action)}`}>
-                      {getActionText(item.action)}
-                    </span>
-                    <span className="text-sm text-gray-500">
-                      {new Date(item.changed_at).toLocaleString('ko-KR')}
-                    </span>
-                  </div>
-                  <div className="text-sm text-gray-500">
-                    변경자: {item.changed_by}
-                  </div>
-                </div>
-
-                {item.action === 'created' && item.new_values && (
-                  <div className="mt-2">
-                    <h4 className="font-medium text-gray-900 mb-2">생성된 데이터:</h4>
-                    <div className="bg-green-50 p-3 rounded">
-                      <pre className="text-sm text-gray-700 whitespace-pre-wrap">
-                        {JSON.stringify(item.new_values, null, 2)}
-                      </pre>
-                    </div>
-                  </div>
-                )}
-
-                {item.action === 'updated' && item.old_values && item.new_values && (
-                  <div className="mt-2">
-                    <h4 className="font-medium text-gray-900 mb-2">변경 사항:</h4>
-                    <div className="space-y-2">
-                      {formatChanges(item.old_values, item.new_values).map((change, changeIndex) => (
-                        <div key={`${item.id}-${change.field}-${changeIndex}`} className="bg-blue-50 p-3 rounded">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <span className="font-medium text-blue-900">
-                              {getFieldDisplayName(change.field)}
-                            </span>
-                            <span className="text-blue-600">→</span>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-                            <div>
-                              <span className="text-red-600 font-medium">이전:</span>
-                              <div className="bg-red-100 p-2 rounded mt-1">
-                                {formatValue(change.oldValue)}
-                              </div>
-                            </div>
-                            <div>
-                              <span className="text-green-600 font-medium">변경 후:</span>
-                              <div className="bg-green-100 p-2 rounded mt-1">
-                                {formatValue(change.newValue)}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {item.action === 'cancelled' && item.old_values && (
-                  <div className="mt-2">
-                    <h4 className="font-medium text-gray-900 mb-2">취소된 데이터:</h4>
-                    <div className="bg-red-50 p-3 rounded">
-                      <pre className="text-sm text-gray-700 whitespace-pre-wrap">
-                        {JSON.stringify(item.old_values, null, 2)}
-                      </pre>
-                    </div>
-                  </div>
-                )}
-
-                {item.reason && (
-                  <div className="mt-2">
-                    <h4 className="font-medium text-gray-900 mb-1">변경 사유:</h4>
-                    <p className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
-                      {item.reason}
-                    </p>
-                  </div>
-                )}
-              </div>
-            ))}
+          <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    {getTableColumns().map((column) => (
+                      <th 
+                        key={column.key}
+                        className={`px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${column.className || ''}`}
+                      >
+                        {column.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {history.map((item) => {
+                    // 각 히스토리 항목에 따라 표시할 데이터 결정
+                    const displayData = item.action === 'cancelled' 
+                      ? item.old_values 
+                      : item.new_values || item.old_values;
+                    
+                    // 이전 데이터 (updated의 경우)
+                    const oldData = item.action === 'updated' ? item.old_values : null;
+                    
+                    // 수정 날짜와 시간 포맷팅
+                    const changedDate = new Date(item.changed_at);
+                    const formattedDate = changedDate.toISOString().split('T')[0];
+                    const formattedTime = changedDate.toTimeString().split(' ')[0].replace(/:\d{2}$/, '');
+                    
+                    return (
+                      <tr key={item.id} className="hover:bg-gray-50">
+                        {getTableColumns().map((column) => {
+                          // 작업 컬럼
+                          if (column.key === 'action') {
+                            // 작업 컬럼의 배경색 결정
+                            let actionBgColor = 'bg-white';
+                            if (item.action === 'created') {
+                              actionBgColor = 'bg-green-50';
+                            } else if (item.action === 'cancelled') {
+                              actionBgColor = 'bg-red-50';
+                            }
+                            
+                            return (
+                              <td 
+                                key={column.key}
+                                className={`px-2 py-1.5 whitespace-nowrap text-xs sticky left-0 z-10 ${actionBgColor}`}
+                              >
+                                <span className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${getActionColor(item.action)}`}>
+                                  {getActionText(item.action)}
+                                </span>
+                              </td>
+                            );
+                          }
+                          
+                          // 수정날짜 컬럼
+                          if (column.key === 'changed_at') {
+                            return (
+                              <td 
+                                key={column.key}
+                                className={`px-2 py-1.5 whitespace-nowrap text-xs ${column.className || ''}`}
+                              >
+                                <div className="text-gray-900">{formattedDate}</div>
+                              </td>
+                            );
+                          }
+                          
+                          // 수정시간 컬럼
+                          if (column.key === 'changed_time') {
+                            return (
+                              <td 
+                                key={column.key}
+                                className={`px-2 py-1.5 whitespace-nowrap text-xs ${column.className || ''}`}
+                              >
+                                <div className="text-gray-900">{formattedTime}</div>
+                              </td>
+                            );
+                          }
+                          
+                          // 변경자 컬럼
+                          if (column.key === 'changed_by') {
+                            const changedByEmail = item.changed_by?.toLowerCase() || '';
+                            const nameKo = teamMemberMap.get(changedByEmail) || item.changed_by || '-';
+                            
+                            // 배경색 결정
+                            let bgColor = 'bg-white';
+                            if (item.action === 'created') {
+                              bgColor = 'bg-green-50';
+                            } else if (item.action === 'cancelled') {
+                              bgColor = 'bg-red-50';
+                            }
+                            
+                            return (
+                              <td 
+                                key={column.key}
+                                className={`px-2 py-1.5 whitespace-nowrap text-xs ${column.className || ''} ${bgColor}`}
+                              >
+                                <div className={item.action === 'cancelled' ? 'text-red-800' : item.action === 'created' ? 'text-green-800' : 'text-gray-900'}>
+                                  {nameKo}
+                                </div>
+                              </td>
+                            );
+                          }
+                          
+                          // 나머지 컬럼들
+                          const newValueInfo = getColumnValue(displayData, column.key);
+                          const oldValueInfo = oldData ? getColumnValue(oldData, column.key) : null;
+                          const isChanged = oldValueInfo && oldValueInfo.display !== newValueInfo.display;
+                          
+                          // 배경색 결정
+                          let bgColor = 'bg-white';
+                          if (item.action === 'created') {
+                            bgColor = 'bg-green-50';
+                          } else if (item.action === 'cancelled') {
+                            bgColor = 'bg-red-50';
+                          } else if (isChanged) {
+                            bgColor = 'bg-yellow-50';
+                          }
+                          
+                          // sticky 컬럼의 배경색 처리
+                          let cellClassName = column.className || '';
+                          if (column.className?.includes('sticky')) {
+                            // sticky 컬럼은 기존 bg-gray-50을 제거하고 새로운 배경색 적용
+                            cellClassName = column.className.replace('bg-gray-50', '').trim() + ` ${bgColor}`;
+                          } else {
+                            cellClassName = `${column.className || ''} ${bgColor}`;
+                          }
+                          
+                          return (
+                            <td 
+                              key={column.key}
+                              className={`px-2 py-1.5 whitespace-nowrap text-xs ${cellClassName}`}
+                            >
+                              {isChanged ? (
+                                <div className="space-y-1">
+                                  <div className={`text-red-600 line-through text-[10px] ${oldValueInfo?.isBadge ? 'inline-block' : ''}`}>
+                                    {oldValueInfo?.isBadge ? (
+                                      <span className={`inline-flex px-1 py-0.5 text-[10px] font-semibold rounded-full ${oldValueInfo.color}`}>
+                                        {oldValueInfo.display}
+                                      </span>
+                                    ) : (
+                                      oldValueInfo?.display
+                                    )}
+                                  </div>
+                                  <div className={`${item.action === 'cancelled' ? 'text-red-800' : 'text-green-800'} font-medium ${newValueInfo.isBadge ? 'inline-block' : ''}`}>
+                                    {newValueInfo.isBadge ? (
+                                      <span className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${newValueInfo.color}`}>
+                                        {newValueInfo.display}
+                                      </span>
+                                    ) : (
+                                      newValueInfo.display
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className={item.action === 'cancelled' ? 'text-red-800' : item.action === 'created' ? 'text-green-800' : 'text-gray-900'}>
+                                  {newValueInfo.isBadge ? (
+                                    <span className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${newValueInfo.color}`}>
+                                      {newValueInfo.display}
+                                    </span>
+                                  ) : (
+                                    newValueInfo.display
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 

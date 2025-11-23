@@ -20,7 +20,7 @@ export default function BookingManagementPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="py-4 sm:py-6 lg:py-8">
+      <div className="pt-2 sm:pt-3 lg:pt-4 pb-4 sm:pb-6 lg:pb-8">
         {/* 헤더 - 모바일 최적화 */}
         <div className="mb-6 sm:mb-8 px-1 sm:px-6 lg:px-8">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{t('title')}</h1>

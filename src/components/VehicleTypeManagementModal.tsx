@@ -346,13 +346,13 @@ export default function VehicleTypeManagementModal({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-2 mx-auto p-5 border w-11/12 max-w-6xl shadow-lg rounded-md bg-white max-h-[95vh]">
-        <div className="flex items-center justify-between mb-4">
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-[9999]">
+      <div className="relative top-20 mx-auto p-5 border w-11/12 max-w-6xl shadow-lg rounded-md bg-white max-h-[85vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4 sticky top-0 bg-white z-10 pb-2 border-b">
           <h3 className="text-lg font-medium text-gray-900">차종 관리</h3>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-gray-400 hover:text-gray-600 z-20"
           >
             <X className="w-6 h-6" />
           </button>
@@ -464,7 +464,7 @@ export default function VehicleTypeManagementModal({
 
         {/* 차종 편집 모달 */}
         {isEditModalOpen && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-60">
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-[10000]">
             <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
               <div className="mt-3">
                 <div className="flex items-center justify-between mb-4">
@@ -473,7 +473,7 @@ export default function VehicleTypeManagementModal({
                   </h3>
                   <button
                     onClick={closeEditModal}
-                    className="text-gray-400 hover:text-gray-600"
+                    className="text-gray-400 hover:text-gray-600 z-20"
                   >
                     ×
                   </button>

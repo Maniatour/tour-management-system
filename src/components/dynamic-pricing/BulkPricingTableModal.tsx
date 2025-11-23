@@ -520,11 +520,18 @@ export default function BulkPricingTableModal({
         }
 
         // 시작일부터 종료일까지 모든 날짜 생성
-        const startDate = new Date(row.startDate);
-        const endDate = new Date(row.endDate);
+        // 날짜 문자열을 직접 파싱하여 시간대 문제 방지
+        const [startYear = 0, startMonth = 0, startDay = 0] = row.startDate.split('-').map(Number);
+        const [endYear = 0, endMonth = 0, endDay = 0] = row.endDate.split('-').map(Number);
+        const startDate = new Date(startYear, startMonth - 1, startDay);
+        const endDate = new Date(endYear, endMonth - 1, endDay);
         
         for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
-          const dateString = date.toISOString().split('T')[0];
+          // 로컬 시간대 기준으로 날짜 문자열 생성 (YYYY-MM-DD)
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          const dateString = `${year}-${month}-${day}`;
           
           // 초이스별 가격 구조 생성
           const choicesPricing: Record<string, {

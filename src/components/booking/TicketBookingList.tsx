@@ -6,7 +6,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { supabase } from '@/lib/supabase';
 import TicketBookingForm from './TicketBookingForm';
 import BookingHistory from './BookingHistory';
-import { Grid, Calendar as CalendarIcon, Plus, Search, Calendar } from 'lucide-react';
+import { Grid, Calendar as CalendarIcon, Plus, Search, Calendar, Table } from 'lucide-react';
 
 interface TicketBooking {
   id: string;
@@ -21,6 +21,8 @@ interface TicketBooking {
   cc: string;
   unit_price: number;
   total_price: number;
+  expense?: number;
+  income?: number;
   payment_method: string;
   website: string;
   rn_number: string;
@@ -64,9 +66,15 @@ export default function TicketBookingList() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
   const [tourFilter, setTourFilter] = useState('all'); // 'all', 'connected', 'unconnected'
+  const [futureEventFilter, setFutureEventFilter] = useState(false);
+  const [cancelDeadlineFilter, setCancelDeadlineFilter] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'card' | 'calendar'>('calendar');
+  const [viewMode, setViewMode] = useState<'card' | 'calendar' | 'table'>('calendar');
+  const [sortField, setSortField] = useState<'date' | 'submit_on' | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [teamMemberMap, setTeamMemberMap] = useState<Map<string, string>>(new Map());
+  const [supplierProductsMap, setSupplierProductsMap] = useState<Map<string, { season_dates: any }>>(new Map());
 
   // 상품 이름을 로케일에 따라 반환하는 함수
   const getProductName = (product: { name?: string; name_en?: string; name_ko?: string } | undefined) => {
@@ -131,6 +139,39 @@ export default function TicketBookingList() {
         .order('submit_on', { ascending: false });
 
       if (bookingsError) throw bookingsError;
+
+      // supplier_ticket_purchases를 통해 supplier_product 정보 조회
+      if (bookingsData && bookingsData.length > 0) {
+        try {
+          const bookingIds = bookingsData.map((b: TicketBooking) => b.id);
+          const { data: purchasesData } = await supabase
+            .from('supplier_ticket_purchases')
+            .select(`
+              booking_id,
+              supplier_product_id,
+              supplier_products (
+                id,
+                season_dates
+              )
+            `)
+            .in('booking_id', bookingIds);
+
+          if (purchasesData) {
+            const productMap = new Map<string, { season_dates: any }>();
+            purchasesData.forEach((purchase: any) => {
+              if (purchase.booking_id && purchase.supplier_products) {
+                productMap.set(purchase.booking_id, {
+                  season_dates: purchase.supplier_products.season_dates
+                });
+              }
+            });
+            setSupplierProductsMap(productMap);
+            console.log('Supplier products 매핑:', productMap);
+          }
+        } catch (error) {
+          console.warn('Supplier product 정보 조회 오류:', error);
+        }
+      }
 
       console.log('입장권 부킹 데이터:', bookingsData);
 
@@ -207,6 +248,45 @@ export default function TicketBookingList() {
 
       console.log('최종 입장권 부킹 데이터:', bookingsWithTours);
       setBookings(bookingsWithTours);
+
+      // submitted_by 이메일로 team 테이블에서 name_ko 조회
+      const submittedByEmails = [...new Set(
+        (bookingsData || [])
+          .map((booking: TicketBooking) => booking.submitted_by)
+          .filter((email): email is string => !!email && typeof email === 'string' && email.includes('@'))
+      )];
+
+      console.log('조회할 submitted_by 이메일들:', submittedByEmails);
+
+      if (submittedByEmails.length > 0) {
+        try {
+          // team 테이블에서 email 컬럼으로 검색 (대소문자 구분 없이)
+          const { data: teamData, error: teamError } = await supabase
+            .from('team')
+            .select('email, name_ko')
+            .in('email', submittedByEmails);
+
+          if (!teamError && teamData) {
+            const emailToNameMap = new Map<string, string>();
+            (teamData || []).forEach((member: { email: string; name_ko: string | null }) => {
+              if (member.email && member.name_ko) {
+                // 이메일을 소문자로 변환하여 저장 (대소문자 구분 없이 매칭)
+                emailToNameMap.set(member.email.toLowerCase(), member.name_ko);
+              }
+            });
+            setTeamMemberMap(emailToNameMap);
+            console.log('Team 멤버 매핑 (submitted_by -> name_ko):', emailToNameMap);
+          } else {
+            console.warn('Team 정보 조회 오류:', teamError);
+            setTeamMemberMap(new Map());
+          }
+        } catch (error) {
+          console.error('Team 정보 조회 중 오류:', error);
+          setTeamMemberMap(new Map());
+        }
+      } else {
+        setTeamMemberMap(new Map());
+      }
     } catch (error) {
       console.error('입장권 부킹 조회 오류:', error);
     } finally {
@@ -434,40 +514,256 @@ export default function TicketBookingList() {
     setEditingBooking(null);
   };
 
-  const filteredBookings = bookings.filter(booking => {
-    const matchesSearch = 
-      booking.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      booking.reservation_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      booking.rn_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      booking.company.toLowerCase().includes(searchTerm.toLowerCase());
-
-    const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
+  // 시즌 여부 확인 함수 (check_in_date 기준)
+  const checkIfSeason = (company: string, checkInDate: string, supplierProduct?: { season_dates: any }): boolean => {
+    if (!checkInDate || !supplierProduct?.season_dates) return false;
     
-    const matchesDate = !dateFilter || booking.submit_on === dateFilter;
+    const seasonDates = supplierProduct.season_dates;
+    if (!Array.isArray(seasonDates)) return false;
+    
+    const checkIn = new Date(checkInDate);
+    checkIn.setHours(0, 0, 0, 0);
+    
+    return seasonDates.some((period: { start: string; end: string }) => {
+      const start = new Date(period.start);
+      const end = new Date(period.end);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+      return checkIn >= start && checkIn <= end;
+    });
+  };
 
-    const matchesTour = 
-      tourFilter === 'all' || 
-      (tourFilter === 'connected' && booking.tour_id) ||
-      (tourFilter === 'unconnected' && !booking.tour_id);
+  // 취소 기한 계산 함수
+  const getCancelDeadlineDays = (company: string, checkInDate: string, supplierProduct?: { season_dates: any }): number => {
+    const isSeason = checkIfSeason(company, checkInDate, supplierProduct);
+    
+    switch (company) {
+      case 'Antelope X':
+        return 4; // 시즌과 상관없이 4일전
+      case 'SEE CANYON':
+        return isSeason ? 5 : 4; // 시즌 = 5일전, 시즌이 아니면 4일전
+      case 'Mei Tour':
+        return isSeason ? 8 : 5; // 시즌 = 8일전, 시즌이 아니면 5일전
+      default:
+        return 0; // 알 수 없는 공급업체
+    }
+  };
 
-    return matchesSearch && matchesStatus && matchesDate && matchesTour;
+  // 오늘부터 취소 기한 날짜까지의 모든 예약인지 확인
+  const isWithinCancelDeadline = (booking: TicketBooking): boolean => {
+    if (!booking.check_in_date || !booking.company) return false;
+    
+    const supplierProduct = supplierProductsMap.get(booking.id);
+    const cancelDeadlineDays = getCancelDeadlineDays(booking.company, booking.check_in_date, supplierProduct);
+    if (cancelDeadlineDays === 0) return false;
+    
+    const checkInDate = new Date(booking.check_in_date);
+    checkInDate.setHours(0, 0, 0, 0);
+    
+    const cancelDeadline = new Date(checkInDate);
+    cancelDeadline.setDate(cancelDeadline.getDate() - cancelDeadlineDays);
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // 오늘보다 앞에 있는 예약 중에서
+    // 취소 기한 날짜가 오늘과 체크인 날짜 사이에 있는 예약만 표시
+    // 조건: 체크인 날짜 > 오늘 && 오늘 <= 취소 기한 날짜 <= 체크인 날짜
+    return checkInDate > today && today <= cancelDeadline && cancelDeadline <= checkInDate;
+  };
+
+  // Future Event 필터: 체크인 날짜가 오늘 이후인 예약만 표시
+  const matchesFutureEvent = (booking: TicketBooking): boolean => {
+    if (!futureEventFilter) return true;
+    
+    const checkInDate = booking.check_in_date ? new Date(booking.check_in_date) : null;
+    if (!checkInDate) return false;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    checkInDate.setHours(0, 0, 0, 0);
+    
+    return checkInDate >= today;
+  };
+
+  // 취소 기한 필터: 취소 기한 날짜가 오늘이거나 과거이고, 체크인 날짜가 오늘이거나 미래인 예약만 표시
+  const matchesCancelDeadline = (booking: TicketBooking): boolean => {
+    if (!cancelDeadlineFilter) return true;
+    
+    if (!booking.check_in_date || !booking.company) return false;
+    
+    const supplierProduct = supplierProductsMap.get(booking.id);
+    const cancelDeadlineDays = getCancelDeadlineDays(booking.company, booking.check_in_date, supplierProduct);
+    if (cancelDeadlineDays === 0) return false;
+    
+    const checkInDate = new Date(booking.check_in_date);
+    checkInDate.setHours(0, 0, 0, 0);
+    
+    const cancelDeadline = new Date(checkInDate);
+    cancelDeadline.setDate(cancelDeadline.getDate() - cancelDeadlineDays);
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // 취소 기한 날짜가 오늘이거나 과거이고, 체크인 날짜가 오늘이거나 미래인 예약만 표시
+    // 조건: 취소 기한 날짜 <= 오늘 && 체크인 날짜 >= 오늘
+    return cancelDeadline <= today && checkInDate >= today;
+  };
+
+  // 검색 필터
+  const matchesSearch = (booking: TicketBooking): boolean => {
+    if (!searchTerm) return true;
+    
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      (booking.category || '').toLowerCase().includes(searchLower) ||
+      (booking.reservation_name || '').toLowerCase().includes(searchLower) ||
+      (booking.rn_number || '').toLowerCase().includes(searchLower) ||
+      (booking.company || '').toLowerCase().includes(searchLower)
+    );
+  };
+
+  // 상태 필터
+  const matchesStatus = (booking: TicketBooking): boolean => {
+    if (statusFilter === 'all') return true;
+    
+    const bookingStatus = booking.status?.toLowerCase();
+    if (statusFilter === 'cancelled') {
+      return bookingStatus === 'cancelled' || bookingStatus === 'canceled';
+    }
+    if (statusFilter === 'confirmed') {
+      return bookingStatus === 'confirmed';
+    }
+    
+    return bookingStatus === statusFilter.toLowerCase();
+  };
+
+  // 제출일 필터
+  const matchesDate = (booking: TicketBooking): boolean => {
+    if (!dateFilter) return true;
+    return booking.submit_on === dateFilter;
+  };
+
+  // 투어 연결 필터
+  const matchesTour = (booking: TicketBooking): boolean => {
+    if (tourFilter === 'all') return true;
+    if (tourFilter === 'connected') return !!booking.tour_id;
+    if (tourFilter === 'unconnected') return !booking.tour_id;
+    return true;
+  };
+
+  // 모든 필터를 적용한 부킹 목록
+  const filteredBookings = bookings.filter(booking => {
+    return (
+      matchesSearch(booking) &&
+      matchesStatus(booking) &&
+      matchesDate(booking) &&
+      matchesTour(booking) &&
+      matchesFutureEvent(booking) &&
+      matchesCancelDeadline(booking)
+    );
   });
 
+  // 정렬된 부킹 목록
+  const sortedBookings = [...filteredBookings].sort((a, b) => {
+    if (!sortField) return 0;
+
+    if (sortField === 'date') {
+      const dateA = a.check_in_date 
+        ? new Date(a.check_in_date).getTime() 
+        : 0;
+      const dateB = b.check_in_date 
+        ? new Date(b.check_in_date).getTime() 
+        : 0;
+      
+      return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+    }
+
+    if (sortField === 'submit_on') {
+      const dateA = a.submit_on ? new Date(a.submit_on).getTime() : 0;
+      const dateB = b.submit_on ? new Date(b.submit_on).getTime() : 0;
+      
+      return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+    }
+
+    return 0;
+  });
+
+  const handleSort = (field: 'date' | 'submit_on') => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const handleStatusToggle = async (booking: TicketBooking) => {
+    const currentStatus = booking.status?.toLowerCase();
+    let nextStatus: string;
+
+    // 상태 순환: pending -> confirmed -> cancelled -> completed -> pending
+    switch (currentStatus) {
+      case 'pending':
+        nextStatus = 'confirmed';
+        break;
+      case 'confirmed':
+        nextStatus = 'cancelled';
+        break;
+      case 'cancelled':
+      case 'canceled':
+        nextStatus = 'completed';
+        break;
+      case 'completed':
+        nextStatus = 'pending';
+        break;
+      default:
+        nextStatus = 'pending';
+    }
+
+    try {
+      const { error } = await supabase
+        .from('ticket_bookings')
+        .update({ status: nextStatus })
+        .eq('id', booking.id);
+
+      if (error) throw error;
+
+      // 로컬 상태 업데이트
+      setBookings(prev =>
+        prev.map(b =>
+          b.id === booking.id ? { ...b, status: nextStatus } : b
+        )
+      );
+    } catch (error) {
+      console.error('상태 변경 오류:', error);
+      alert('상태 변경 중 오류가 발생했습니다.');
+    }
+  };
+
+  const handleTourClick = (tourId: string) => {
+    router.push(`/ko/admin/tours/${tourId}`);
+  };
+
   const getStatusColor = (status: string) => {
-    switch (status) {
+    const normalizedStatus = status?.toLowerCase();
+    switch (normalizedStatus) {
       case 'pending': return 'bg-yellow-100 text-yellow-800';
       case 'confirmed': return 'bg-green-100 text-green-800';
-      case 'cancelled': return 'bg-red-100 text-red-800';
+      case 'cancelled':
+      case 'canceled': return 'bg-red-100 text-red-800';
       case 'completed': return 'bg-blue-100 text-blue-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
 
   const getStatusText = (status: string) => {
-    switch (status) {
+    const normalizedStatus = status?.toLowerCase();
+    switch (normalizedStatus) {
       case 'pending': return t('pending');
       case 'confirmed': return t('confirmed');
-      case 'cancelled': return t('cancelled');
+      case 'cancelled':
+      case 'canceled': return t('cancelled');
       case 'completed': return t('completed');
       default: return status;
     }
@@ -518,10 +814,6 @@ export default function TicketBookingList() {
     setShowBookingModal(true);
   };
 
-  const handleTourClick = (tourId: string) => {
-    router.push(`/ko/admin/tours/${tourId}`);
-  };
-
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -558,6 +850,16 @@ export default function TicketBookingList() {
             >
               <CalendarIcon size={14} />
             </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={`p-1.5 rounded-md transition-colors ${
+                viewMode === 'table'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Table size={14} />
+            </button>
           </div>
           <button
             onClick={() => setShowForm(true)}
@@ -572,7 +874,7 @@ export default function TicketBookingList() {
 
       {/* 필터 - 모바일 최적화 */}
       <div className="px-1 sm:px-6 py-4">
-        <div className="flex flex-row sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+        <div className="flex flex-row sm:grid sm:grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-4">
           <div className="flex-1 min-w-0">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
               {t('search')}
@@ -635,12 +937,253 @@ export default function TicketBookingList() {
               />
             </div>
           </div>
+
+          <div className="flex-1 min-w-0">
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+              필터
+            </label>
+            <div className="flex space-x-2">
+              <button
+                onClick={() => {
+                  const newValue = !futureEventFilter;
+                  setFutureEventFilter(newValue);
+                  // 필터 활성화 시 자동으로 날짜순 정렬
+                  if (newValue) {
+                    setSortField('date');
+                    setSortDirection('asc');
+                  }
+                }}
+                className={`flex-1 px-4 py-1 rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                  futureEventFilter
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Future Event
+              </button>
+              <button
+                onClick={() => {
+                  const newValue = !cancelDeadlineFilter;
+                  setCancelDeadlineFilter(newValue);
+                  // 필터 활성화 시 자동으로 날짜순 정렬
+                  if (newValue) {
+                    setSortField('date');
+                    setSortDirection('asc');
+                  }
+                }}
+                className={`flex-1 px-4 py-1 rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                  cancelDeadlineFilter
+                    ? 'bg-red-600 text-white hover:bg-red-700'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                취소 기한
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* 데이터 표시 영역 */}
       <div className="px-1 sm:px-6">
-        {viewMode === 'calendar' ? (
+        {viewMode === 'table' ? (
+          /* 테이블 뷰 - 모바일 최적화 */
+          <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10">
+                      상태
+                    </th>
+                    <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      공급업체
+                    </th>
+                    <th 
+                      className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={() => handleSort('date')}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>날짜</span>
+                        {sortField === 'date' && (
+                          <span className="text-blue-600">
+                            {sortDirection === 'asc' ? '↑' : '↓'}
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                    <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      시간
+                    </th>
+                    <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      수량
+                    </th>
+                    <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      비용(USD)
+                    </th>
+                    <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      수입(USD)
+                    </th>
+                    <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      RN#
+                    </th>
+                    <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      결제방법
+                    </th>
+                    <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      CC
+                    </th>
+                    <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      투어연결
+                    </th>
+                    <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      액션
+                    </th>
+                    <th 
+                      className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={() => handleSort('submit_on')}
+                    >
+                      <div className="flex items-center space-x-1">
+                        <span>제출일</span>
+                        {sortField === 'submit_on' && (
+                          <span className="text-blue-600">
+                            {sortDirection === 'asc' ? '↑' : '↓'}
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                    <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      예약자
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {sortedBookings.map((booking) => (
+                    <tr key={booking.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-2 py-1.5 whitespace-nowrap text-xs sticky left-0 bg-white z-10">
+                        <span 
+                          className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full cursor-pointer hover:opacity-80 transition-opacity ${getStatusColor(booking.status)}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStatusToggle(booking);
+                          }}
+                          title="클릭하여 상태 변경"
+                        >
+                          {getStatusText(booking.status)}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1.5 whitespace-nowrap text-xs">
+                        <div className="text-gray-900">{booking.company}</div>
+                      </td>
+                      <td className="px-2 py-1.5 whitespace-nowrap text-xs">
+                        <div className="text-gray-900">
+                          {booking.check_in_date 
+                            ? new Date(booking.check_in_date).toISOString().split('T')[0]
+                            : '-'}
+                        </div>
+                      </td>
+                      <td className="px-2 py-1.5 whitespace-nowrap text-xs">
+                        <div className="text-gray-900">{booking.time?.replace(/:\d{2}$/, '') || '-'}</div>
+                      </td>
+                      <td className="px-2 py-1.5 whitespace-nowrap text-xs">
+                        <div className="text-gray-900 font-medium">{booking.ea}개</div>
+                      </td>
+                      <td className="hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+                        <div className="text-gray-900">${booking.expense || '-'}</div>
+                      </td>
+                      <td className="hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+                        <div className="text-gray-900">${booking.income || '-'}</div>
+                      </td>
+                      <td className="hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+                        <div className="text-gray-900">{booking.rn_number || '-'}</div>
+                      </td>
+                      <td className="hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+                        <div className="text-gray-900">{getPaymentMethodText(booking.payment_method) || '-'}</div>
+                      </td>
+                      <td className="hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+                        <span className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc)}`}>
+                          {getCCStatusText(booking.cc)}
+                        </span>
+                      </td>
+                      <td className="hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+                        {booking.tours && booking.tour_id ? (
+                          <div 
+                            className="text-gray-900 text-xs cursor-pointer hover:text-blue-600 hover:underline transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleTourClick(booking.tour_id!);
+                            }}
+                            title="투어 상세 보기"
+                          >
+                            {getProductName(booking.tours.products)} {booking.tours.tour_date ? new Date(booking.tours.tour_date).toISOString().split('T')[0] : ''}
+                          </div>
+                        ) : (
+                          <span className="text-red-500 text-xs">미연결</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 whitespace-nowrap text-xs">
+                        <div className="flex space-x-0.5 relative z-20">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleEdit(booking);
+                            }}
+                            className="px-1.5 py-0.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors relative z-20"
+                            title="편집"
+                          >
+                            편집
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleViewHistory(booking.id);
+                            }}
+                            className="px-1.5 py-0.5 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors relative z-20"
+                            title="히스토리"
+                          >
+                            히스토리
+                          </button>
+                        </div>
+                      </td>
+                      <td className="px-2 py-1.5 whitespace-nowrap text-xs">
+                        <div className="text-gray-900">
+                          {booking.submit_on ? new Date(booking.submit_on).toISOString().split('T')[0] : '-'}
+                        </div>
+                      </td>
+                      <td className="hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+                        <div className="text-gray-900">
+                          {(() => {
+                            const submittedByEmail = booking.submitted_by?.toLowerCase() || '';
+                            const nameKo = teamMemberMap.get(submittedByEmail);
+                            // team 테이블에서 name_ko를 찾으면 표시, 없으면 submitted_by 이메일 표시
+                            return nameKo || booking.submitted_by || '-';
+                          })()}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {sortedBookings.length === 0 && (
+              <div className="text-center py-12 text-gray-500">
+                <div className="text-lg font-medium mb-2">
+                  {searchTerm || statusFilter !== 'all' || dateFilter 
+                    ? '검색 조건에 맞는 부킹이 없습니다.' 
+                    : '등록된 입장권 부킹이 없습니다.'
+                  }
+                </div>
+                <p className="text-sm text-gray-400">
+                  {!searchTerm && statusFilter === 'all' && !dateFilter && '새 부킹을 추가해보세요.'}
+                </p>
+              </div>
+            )}
+          </div>
+        ) : viewMode === 'calendar' ? (
           /* 달력 뷰 - 실제 달력 UI에 라벨로 표시 */
           <div>
                         <div>
@@ -1054,16 +1597,41 @@ export default function TicketBookingList() {
 
       {/* 폼 모달 */}
       {showForm && (
-        <TicketBookingForm
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          booking={editingBooking as any}
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          onSave={handleSave as any}
-          onCancel={() => {
-            setShowForm(false);
-            setEditingBooking(null);
-          }}
-        />
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto relative">
+            <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center z-10">
+              <h3 className="text-xl font-semibold">
+                {editingBooking ? '입장권 부킹 편집' : '새 입장권 부킹 추가'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowForm(false);
+                  setEditingBooking(null);
+                }}
+                className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              <TicketBookingForm
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                booking={editingBooking as any}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                onSave={handleSave as any}
+                onCancel={() => {
+                  setShowForm(false);
+                  setEditingBooking(null);
+                }}
+                onDelete={(id) => {
+                  handleDelete(id);
+                  setShowForm(false);
+                  setEditingBooking(null);
+                }}
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 히스토리 모달 */}

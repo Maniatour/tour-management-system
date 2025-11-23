@@ -3269,24 +3269,35 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       )}
 
       {/* 예약 상세 모달 (고객 보기) */}
-      {showReservationDetailModal && selectedReservationForDetail && (
-        <ResizableModal
-          isOpen={showReservationDetailModal}
-          onClose={() => {
-            setShowReservationDetailModal(false)
-            setSelectedReservationForDetail(null)
-          }}
-          title={`고객 예약 상세 - ${getCustomerName(selectedReservationForDetail.customerId, (customers as Customer[]) || [])}`}
-          initialHeight={typeof window !== 'undefined' ? window.innerHeight * 0.9 : 600}
-          onHeightChange={() => {}}
-        >
-          <iframe
-            src={`/${locale}/dashboard/reservations/${selectedReservationForDetail.customerId}/${selectedReservationForDetail.id}`}
-            className="w-full h-full border-0"
-            title="예약 상세 정보"
-          />
-        </ResizableModal>
-      )}
+      {showReservationDetailModal && selectedReservationForDetail && (() => {
+        // 고객의 언어를 가져와서 locale로 변환
+        const customer = (customers as Customer[]).find(c => c.id === selectedReservationForDetail.customerId)
+        const customerLanguage = customer?.language
+        // 고객 언어를 locale 형식으로 변환 ('EN' 또는 'en' -> 'en', 그 외 -> 'ko')
+        const customerLocale = customerLanguage && 
+          (customerLanguage.toLowerCase() === 'en' || customerLanguage === 'EN' || customerLanguage === '영어') 
+          ? 'en' 
+          : 'ko'
+        
+        return (
+          <ResizableModal
+            isOpen={showReservationDetailModal}
+            onClose={() => {
+              setShowReservationDetailModal(false)
+              setSelectedReservationForDetail(null)
+            }}
+            title={`고객 예약 상세 - ${getCustomerName(selectedReservationForDetail.customerId, (customers as Customer[]) || [])}`}
+            initialHeight={typeof window !== 'undefined' ? window.innerHeight * 0.9 : 600}
+            onHeightChange={() => {}}
+          >
+            <iframe
+              src={`/${customerLocale}/dashboard/reservations/${selectedReservationForDetail.customerId}/${selectedReservationForDetail.id}`}
+              className="w-full h-full border-0"
+              title="예약 상세 정보"
+            />
+          </ResizableModal>
+        )
+      })()}
     </div>
   )
 }

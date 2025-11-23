@@ -99,6 +99,8 @@
     "cancelled": "Cancelled",
     "print": "Print",
     "people": "people",
+    "person": "person",
+    "specialNotes": "Special Notes",
     "cancellationPolicy": "Cancellation Policy",
     "luggageInfo": "Luggage Information",
     "tourOperationInfo": "Tour Operation Information",
@@ -122,6 +124,7 @@
     "adults": "Adults",
     "productTotal": "Product Total",
     "subtotal": "Subtotal (Product + Options)",
+    "grandTotal": "Grand Total",
     "deposit": "Deposit",
     "productDetails": "Product Details",
     "included": "Included",
@@ -295,6 +298,8 @@
     "receipt": "Receipt",
     "refund": "Refund",
     "discount": "Discount",
+    "couponDiscount": "Coupon Discount",
+    "additionalDiscount": "Additional Discount",
     "tax": "Tax",
     "fee": "Fee",
     "commission": "Commission",
@@ -1788,5 +1793,193 @@
     "saveReport": "Save Report",
     "noOptions": "No options",
     "noOptionsSelected": "No options selected"
+  },
+  "paymentMethod": {
+    "title": "Payment Method Management",
+    "addMethod": "Add Payment Method",
+    "methodList": "Payment Method List",
+    "noMethods": "No payment methods registered.",
+    "form": {
+      "id": "ID",
+      "method": "Method Name",
+      "methodType": "Type",
+      "userEmail": "User",
+      "limitAmount": "Limit Amount",
+      "status": "Status",
+      "cardNumberLast4": "Card Number Last 4 Digits",
+      "cardType": "Card Type",
+      "cardHolderName": "Card Holder Name",
+      "expiryDate": "Expiry Date",
+      "monthlyLimit": "Monthly Limit",
+      "dailyLimit": "Daily Limit",
+      "notes": "Notes"
+    },
+    "methodTypes": {
+      "card": "Card",
+      "cash": "Cash",
+      "transfer": "Bank Transfer",
+      "mobile": "Mobile",
+      "other": "Other"
+    },
+    "cardTypes": {
+      "visa": "Visa",
+      "mastercard": "Mastercard",
+      "amex": "American Express",
+      "discover": "Discover",
+      "jcb": "JCB",
+      "other": "Other"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive",
+      "suspended": "Suspended",
+      "expired": "Expired"
+    },
+    "buttons": {
+      "register": "Register",
+      "cancel": "Cancel",
+      "edit": "Edit",
+      "delete": "Delete",
+      "save": "Save",
+      "resetFilters": "Reset Filters"
+    },
+    "messages": {
+      "methodAdded": "Payment method has been registered.",
+      "methodUpdated": "Payment method has been updated.",
+      "methodDeleted": "Payment method has been deleted.",
+      "confirmDelete": "Are you sure you want to delete this payment method?"
+    },
+    "usage": {
+      "monthlyUsage": "Monthly Usage",
+      "dailyUsage": "Daily Usage",
+      "lastUsed": "Last Used",
+      "noLimit": "No Limit"
+    },
+    "filters": {
+      "status": "Status",
+      "methodType": "Method Type",
+      "user": "User"
+    }
+  },
+  "vehicleMaintenance": {
+    "title": "Vehicle Maintenance Management",
+    "addMaintenance": "Add Maintenance",
+    "maintenanceList": "Maintenance List",
+    "noMaintenance": "No maintenance records registered.",
+    "form": {
+      "id": "ID",
+      "vehicleId": "Vehicle",
+      "maintenanceDate": "Maintenance Date",
+      "mileage": "Mileage",
+      "maintenanceType": "Maintenance Type",
+      "category": "Category",
+      "subcategory": "Subcategory",
+      "description": "Description",
+      "totalCost": "Total Cost",
+      "laborCost": "Labor Cost",
+      "partsCost": "Parts Cost",
+      "otherCost": "Other Cost",
+      "serviceProvider": "Service Provider",
+      "serviceProviderContact": "Service Provider Contact",
+      "serviceProviderAddress": "Service Provider Address",
+      "warrantyPeriod": "Warranty Period (Days)",
+      "warrantyExpires": "Warranty Expires",
+      "warrantyNotes": "Warranty Notes",
+      "isScheduledMaintenance": "Scheduled Maintenance",
+      "nextMaintenanceDate": "Next Maintenance Date",
+      "nextMaintenanceMileage": "Next Maintenance Mileage",
+      "maintenanceInterval": "Maintenance Interval (Days)",
+      "mileageInterval": "Mileage Interval",
+      "partsReplaced": "Parts Replaced",
+      "partsCostBreakdown": "Parts Cost Breakdown",
+      "qualityRating": "Quality Rating",
+      "satisfactionRating": "Satisfaction Rating",
+      "issuesFound": "Issues Found",
+      "recommendations": "Recommendations",
+      "photos": "Maintenance Photos",
+      "receipts": "Receipts",
+      "documents": "Related Documents",
+      "notes": "Notes",
+      "technicianNotes": "Technician Notes",
+      "status": "Status"
+    },
+    "maintenanceTypes": {
+      "maintenance": "Scheduled Maintenance",
+      "repair": "Repair",
+      "service": "Service",
+      "inspection": "Inspection",
+      "emergency": "Emergency Repair"
+    },
+    "categories": {
+      "engine": "Engine",
+      "transmission": "Transmission",
+      "brakes": "Brakes",
+      "tires": "Tires",
+      "electrical": "Electrical",
+      "air_conditioning": "Air Conditioning",
+      "body": "Body",
+      "interior": "Interior",
+      "exterior": "Exterior",
+      "other": "Other"
+    },
+    "subcategories": {
+      "oil_change": "Oil Change",
+      "tire_rotation": "Tire Rotation",
+      "brake_pad": "Brake Pad",
+      "battery": "Battery",
+      "filter": "Filter",
+      "belt": "Belt",
+      "spark_plug": "Spark Plug",
+      "alignment": "Alignment",
+      "car_wash": "Car Wash",
+      "windshield_wiper": "Windshield Wiper",
+      "other": "Other"
+    },
+    "status": {
+      "scheduled": "Scheduled",
+      "in_progress": "In Progress",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "buttons": {
+      "register": "Register",
+      "cancel": "Cancel",
+      "edit": "Edit",
+      "delete": "Delete",
+      "save": "Save",
+      "resetFilters": "Reset Filters"
+    },
+    "messages": {
+      "maintenanceAdded": "Maintenance record has been registered.",
+      "maintenanceUpdated": "Maintenance record has been updated.",
+      "maintenanceDeleted": "Maintenance record has been deleted.",
+      "confirmDelete": "Are you sure you want to delete this maintenance record?"
+    },
+    "filters": {
+      "vehicle": "Vehicle",
+      "maintenanceType": "Maintenance Type",
+      "category": "Category",
+      "status": "Status",
+      "dateRange": "Date Range",
+      "search": "Search",
+      "all": "All",
+      "searchPlaceholder": "Search by service provider or description"
+    },
+    "statistics": {
+      "totalCost": "Total Cost",
+      "averageCost": "Average Cost",
+      "maintenanceCount": "Maintenance Count",
+      "byVehicle": "By Vehicle",
+      "byCategory": "By Category",
+      "byMonth": "By Month",
+      "upcomingMaintenance": "Upcoming Maintenance",
+      "warrantyExpiring": "Warranty Expiring Soon"
+    },
+    "warranty": {
+      "active": "Active",
+      "expired": "Expired",
+      "expiringSoon": "Expiring Soon",
+      "noWarranty": "No Warranty"
+    }
   }
 }

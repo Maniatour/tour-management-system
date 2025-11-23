@@ -1400,10 +1400,19 @@ export default function ReservationForm({
           const pricingType = (selectedChannel as any)?.pricing_type || 'separate'
           const isSinglePrice = pricingType === 'single'
           
+          // 불포함 있음 채널 확인 (commission_base_price_only 또는 has_not_included_price)
+          const hasNotIncludedPrice = (selectedChannel as any)?.has_not_included_price || false
+          const commissionBasePriceOnly = (selectedChannel as any)?.commission_base_price_only || false
+          const shouldLoadBalanceAmount = hasNotIncludedPrice || commissionBasePriceOnly
+          
           // 단일 가격 모드인 경우 adult_product_price를 모든 가격에 적용
           const adultPrice = existingPricing.adult_product_price || 0
           const childPrice = isSinglePrice ? adultPrice : (existingPricing.child_product_price || 0)
           const infantPrice = isSinglePrice ? adultPrice : (existingPricing.infant_product_price || 0)
+          
+          // 불포함 있음 채널인 경우 balance_amount를 onSiteBalanceAmount에 설정
+          const balanceAmount = Number(existingPricing.balance_amount) || 0
+          const onSiteBalanceAmount = shouldLoadBalanceAmount && balanceAmount > 0 ? balanceAmount : 0
           
           setFormData(prev => {
             const updated = {
@@ -1425,7 +1434,8 @@ export default function ReservationForm({
               isPrivateTour: reservation?.isPrivateTour || false,
               privateTourAdditionalCost: Number(existingPricing.private_tour_additional_cost) || 0,
               commission_percent: Number((existingPricing as any).commission_percent) || 0,
-              commission_amount: Number((existingPricing as any).commission_amount) || 0
+              commission_amount: Number((existingPricing as any).commission_amount) || 0,
+              onSiteBalanceAmount: onSiteBalanceAmount
             }
             
             // 가격 계산 수행 (단일 가격 모드 적용 후 재계산)
@@ -1470,13 +1480,18 @@ export default function ReservationForm({
             const newTotalPrice = Math.max(0, newSubtotal - totalDiscount + totalAdditional)
             const newBalance = Math.max(0, newTotalPrice - updated.depositAmount)
             
+            // 불포함 있음 채널인 경우 onSiteBalanceAmount를 우선 사용, 없으면 계산된 balance 사용
+            const finalBalanceAmount = shouldLoadBalanceAmount && updated.onSiteBalanceAmount > 0 
+              ? updated.onSiteBalanceAmount 
+              : newBalance
+            
             return {
               ...updated,
               productPriceTotal: newProductPriceTotal,
               requiredOptionTotal: requiredOptionTotal,
               subtotal: newSubtotal,
               totalPrice: newTotalPrice,
-              balanceAmount: updated.onSiteBalanceAmount > 0 ? updated.onSiteBalanceAmount : newBalance
+              balanceAmount: finalBalanceAmount
             }
           })
           

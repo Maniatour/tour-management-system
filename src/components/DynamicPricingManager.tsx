@@ -361,16 +361,48 @@ export default function DynamicPricingManager({
     
     // 선택된 날짜 범위와 요일을 기반으로 실제 날짜들 생성
     const dates: string[] = [];
-    const startDate = new Date(selection.startDate);
-    const endDate = new Date(selection.endDate);
     
+    // 요일이 선택되지 않은 경우 처리
+    if (!selection.selectedDays || selection.selectedDays.length === 0) {
+      console.warn('요일이 선택되지 않았습니다. 날짜를 선택할 수 없습니다.');
+      setSelectedDates([]);
+      return;
+    }
+    
+    // 모든 요일이 선택된 경우 (7개) - 전체 기간 저장
+    const allDaysSelected = selection.selectedDays.length === 7 && 
+      selection.selectedDays.every(day => [0, 1, 2, 3, 4, 5, 6].includes(day));
+    
+    // 날짜 문자열을 직접 파싱하여 시간대 문제 방지
+    const [startYear, startMonth, startDay] = selection.startDate.split('-').map(Number);
+    const [endYear, endMonth, endDay] = selection.endDate.split('-').map(Number);
+    
+    const startDate = new Date(startYear, startMonth - 1, startDay);
+    const endDate = new Date(endYear, endMonth - 1, endDay);
+    
+    // 디버깅: 선택된 요일 확인
+    const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+    const selectedDayNames = selection.selectedDays.map(day => dayNames[day]).join(', ');
+    console.log('날짜 범위 선택:', {
+      startDate: selection.startDate,
+      endDate: selection.endDate,
+      selectedDays: selection.selectedDays,
+      selectedDayNames
+    });
+    
+    // 날짜를 로컬 시간대로 처리하여 시간대 변환 문제 방지
     for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
       const dayOfWeek = date.getDay();
       if (selection.selectedDays.includes(dayOfWeek)) {
-        dates.push(date.toISOString().split('T')[0]);
+        // 로컬 시간대 기준으로 날짜 문자열 생성 (YYYY-MM-DD)
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        dates.push(`${year}-${month}-${day}`);
       }
     }
     
+    console.log('필터링된 날짜:', dates);
     setSelectedDates(dates);
   }, []);
 
@@ -966,10 +998,16 @@ export default function DynamicPricingManager({
       // 판매 상태만 변경하므로 가격 정보는 전달하지 않음 (기존 값 유지)
       for (const channelId of channelIds) {
         for (const date of dates) {
+          // 로컬 시간대 기준으로 날짜 문자열 생성 (YYYY-MM-DD)
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          const dateString = `${year}-${month}-${day}`;
+          
           const ruleData: Partial<SimplePricingRuleDto> = {
             product_id: productId,
             channel_id: channelId,
-            date: date.toISOString().split('T')[0],
+            date: dateString,
             // 판매 상태만 설정, 가격 정보는 전달하지 않음 (기존 값 유지)
             is_sale_available: status === 'sale',
             // choices_pricing이 있으면 포함

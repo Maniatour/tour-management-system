@@ -960,6 +960,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         <option value="수리 중">수리 중</option>
                         <option value="대기 중">대기 중</option>
                         <option value="폐차">폐차</option>
+                        <option value="사용 종료">사용 종료</option>
                       </select>
                     </div>
 

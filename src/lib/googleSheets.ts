@@ -415,8 +415,11 @@ export const getSheetNames = async (spreadsheetId: string, retryCount: number = 
     console.log('Google Sheets client created')
 
     // 타임아웃 설정 (120초로 증가)
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Google Sheets API timeout after 120 seconds')), 120000)
+    let timeoutId: NodeJS.Timeout | null = null
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error('Google Sheets API timeout after 120 seconds'))
+      }, 120000)
     })
 
     console.log('Making API request to Google Sheets...')
@@ -424,39 +427,63 @@ export const getSheetNames = async (spreadsheetId: string, retryCount: number = 
       spreadsheetId,
     })
 
-    const response = await Promise.race([fetchPromise, timeoutPromise]) as GoogleSheetsResponse
-    console.log('API response received:', !!response?.data)
-
-    const allSheets = response.data.sheets || []
-    
-    // 첫 글자가 'S'인 시트만 필터링하고 메타데이터 포함
-    const filteredSheets = allSheets
-      .filter(sheet => {
-        const title = sheet.properties?.title
-        return title && title.charAt(0).toUpperCase() === 'S'
+    try {
+      const response = await Promise.race([fetchPromise, timeoutPromise]) as GoogleSheetsResponse
+      // 성공 시 타임아웃 타이머 정리
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
+      console.log('API response received:', !!response?.data)
+      
+      const allSheets = response.data.sheets || []
+      
+      // 첫 글자가 'S'인 시트만 필터링하고 메타데이터 포함
+      const filteredSheets = allSheets
+        .filter(sheet => {
+          const title = sheet.properties?.title
+          return title && title.charAt(0).toUpperCase() === 'S'
+        })
+        .map(sheet => ({
+          name: sheet.properties?.title || '',
+          rowCount: sheet.properties?.gridProperties?.rowCount || 0,
+          columnCount: sheet.properties?.gridProperties?.columnCount || 0
+        }))
+      
+      console.log(`Total sheets: ${allSheets.length}, Filtered sheets (starting with 'S'): ${filteredSheets.length}`)
+      console.log('Filtered sheet names:', filteredSheets.map(s => s.name))
+      
+      // 캐시에 저장
+      sheetInfoCache.set(cacheKey, {
+        data: filteredSheets,
+        timestamp: Date.now()
       })
-      .map(sheet => ({
-        name: sheet.properties?.title || '',
-        rowCount: sheet.properties?.gridProperties?.rowCount || 0,
-        columnCount: sheet.properties?.gridProperties?.columnCount || 0
-      }))
-    
-    console.log(`Total sheets: ${allSheets.length}, Filtered sheets (starting with 'S'): ${filteredSheets.length}`)
-    console.log('Filtered sheet names:', filteredSheets.map(s => s.name))
-    
-    // 캐시에 저장
-    sheetInfoCache.set(cacheKey, {
-      data: filteredSheets,
-      timestamp: Date.now()
-    })
-    
-    return filteredSheets
+      
+      return filteredSheets
+    } catch (raceError) {
+      // 타임아웃 타이머 정리
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
+      // 타임아웃 에러인 경우 명시적으로 처리
+      if (raceError instanceof Error && raceError.message.includes('timeout')) {
+        throw new Error('Google Sheets API timeout after 120 seconds')
+      }
+      throw raceError
+    }
   } catch (error) {
     console.error('Error getting sheet names:', error)
     
+    // TimeoutError 또는 타임아웃 관련 에러 체크
+    const isTimeoutError = error instanceof Error && (
+      error.name === 'TimeoutError' ||
+      error.message.includes('timeout') ||
+      error.message.includes('TIMEOUT_ERR') ||
+      (error as any).code === 23 // TIMEOUT_ERR 코드
+    )
+    
     // 재시도 로직 (최대 2번)
     if (retryCount < 2 && error instanceof Error && (
-      error.message.includes('timeout') || 
+      isTimeoutError ||
       error.message.includes('ECONNRESET') ||
       error.message.includes('ETIMEDOUT')
     )) {
@@ -473,10 +500,11 @@ export const getSheetNames = async (spreadsheetId: string, retryCount: number = 
       console.error('Google Sheets API Error Details:', {
         message: error.message,
         error: errorString,
-        name: error.name
+        name: error.name,
+        code: (error as any).code
       })
       
-      if (errorMessage.includes('timeout')) {
+      if (isTimeoutError || errorMessage.includes('timeout')) {
         throw new Error('구글 시트 API 응답 시간 초과 (120초). 네트워크 연결을 확인하고 다시 시도해주세요.')
       } else if (errorMessage.includes('403') || errorMessage.includes('permission') || errorMessage.includes('caller does not have permission')) {
         throw new Error(

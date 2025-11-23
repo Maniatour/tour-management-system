@@ -1,4 +1,4 @@
-import React, { memo, useState, useCallback } from 'react';
+import React, { memo, useState, useCallback, useEffect } from 'react';
 import { Calendar, ChevronLeft, ChevronRight, Edit3 } from 'lucide-react';
 import { DateRangeSelection, DAY_NAMES } from '@/lib/types/dynamic-pricing';
 
@@ -32,15 +32,30 @@ export const DateRangeSelector = memo(function DateRangeSelector({
   const toggleDay = useCallback((dayOfWeek: number) => {
     setSelectedDays(prev => 
       prev.includes(dayOfWeek) 
-        ? prev.filter(day => day !== dayOfWeek)
+        ? prev.filter(day => day !== dayOfWeek).sort()
         : [...prev, dayOfWeek].sort()
     );
   }, []);
+  
+  // 요일이 변경되면 날짜 범위가 있으면 콜백 호출 (렌더링 후 실행)
+  useEffect(() => {
+    if (startDate && endDate && startDate <= endDate) {
+      onDateRangeSelect({
+        startDate,
+        endDate,
+        selectedDays
+      });
+    }
+  }, [selectedDays, startDate, endDate, onDateRangeSelect]);
 
   // 날짜 더블클릭 핸들러 (판매 상태 토글)
   const handleDateDoubleClick = useCallback((date: Date) => {
     if (onDateStatusToggle) {
-      const dateString = date.toISOString().split('T')[0];
+      // 로컬 시간대 기준으로 날짜 문자열 생성 (YYYY-MM-DD)
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const dateString = `${year}-${month}-${day}`;
       // 해당 날짜의 현재 상태를 확인 (dateStatusMap에서 우선, 없으면 기본값 사용)
       const currentStatus = dateStatusMap[dateString] || saleStatus;
       onDateStatusToggle(dateString, currentStatus);
@@ -51,7 +66,11 @@ export const DateRangeSelector = memo(function DateRangeSelector({
   const handleDateClick = useCallback((date: Date) => {
     if (disableDateSelection) return; // 날짜 선택 비활성화 시 클릭 무시
     
-    const dateString = date.toISOString().split('T')[0];
+    // 로컬 시간대 기준으로 날짜 문자열 생성 (YYYY-MM-DD)
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const dateString = `${year}-${month}-${day}`;
     
     if (!isSelectingRange) {
       // 시작일 설정
@@ -240,11 +259,23 @@ export const DateRangeSelector = memo(function DateRangeSelector({
           {/* 날짜 그리드 */}
           <div className="grid grid-cols-7 gap-1">
             {calendarDays.map(({ date, isCurrentMonth }, index) => {
-              const dateString = date.toISOString().split('T')[0];
+              // 로컬 시간대 기준으로 날짜 문자열 생성 (YYYY-MM-DD)
+              const year = date.getFullYear();
+              const month = String(date.getMonth() + 1).padStart(2, '0');
+              const day = String(date.getDate()).padStart(2, '0');
+              const dateString = `${year}-${month}-${day}`;
+              
               const isStartDate = dateString === startDate;
               const isEndDate = dateString === endDate;
               const isInRange = startDate && endDate && dateString >= startDate && dateString <= endDate;
-              const isToday = dateString === new Date().toISOString().split('T')[0];
+              
+              // 오늘 날짜 비교도 로컬 시간대 기준으로
+              const today = new Date();
+              const todayYear = today.getFullYear();
+              const todayMonth = String(today.getMonth() + 1).padStart(2, '0');
+              const todayDay = String(today.getDate()).padStart(2, '0');
+              const todayString = `${todayYear}-${todayMonth}-${todayDay}`;
+              const isToday = dateString === todayString;
               
               // 날짜별 상태 확인 (우선순위: 개별 설정 > 전역 설정)
               // dateStatusMap에 없으면 기본값은 마감(closed) - 데이터가 없다는 의미

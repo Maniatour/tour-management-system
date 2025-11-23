@@ -11,21 +11,14 @@ export async function GET(
 
     const { data, error } = await supabase
       .from('payment_methods')
-      .select(`
-        *,
-        team:user_email (
-          email,
-          name_ko,
-          name_en
-        )
-      `)
+      .select('*')
       .eq('id', id)
       .single()
 
     if (error) {
       console.error('Error fetching payment method:', error)
       return NextResponse.json(
-        { success: false, message: 'Failed to fetch payment method' },
+        { success: false, message: 'Failed to fetch payment method', error: error.message },
         { status: 500 }
       )
     }
@@ -37,9 +30,30 @@ export async function GET(
       )
     }
 
+    // team 정보 별도 조회
+    let team = null
+    if (data.user_email) {
+      const { data: teamData } = await supabase
+        .from('team')
+        .select('email, name_ko, name_en')
+        .eq('email', data.user_email)
+        .maybeSingle()
+      
+      if (teamData) {
+        team = {
+          email: teamData.email,
+          name_ko: teamData.name_ko,
+          name_en: teamData.name_en
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      data
+      data: {
+        ...data,
+        team
+      }
     })
 
   } catch (error) {

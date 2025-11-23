@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase'
 interface Reservation {
   id: string
   customer_id: string
+  customer_email?: string | null
   product_id: string
   tour_date: string
   tour_time: string | null
@@ -388,6 +389,26 @@ export default function CustomerReservations() {
           #reservation-${reservation.id} .grid.print\\:grid-cols-2 > div:nth-child(6) { order: 6; } /* 픽업 시간 */
           #reservation-${reservation.id} .grid.print\\:grid-cols-2 > div:nth-child(7) { order: 7; } /* 픽업 호텔 */
           #reservation-${reservation.id} .grid.print\\:grid-cols-2 > div:nth-child(8) { order: 8; } /* 채널 */
+          
+          /* 이메일 주소 전체 표시 */
+          #reservation-${reservation.id} .print-email-full {
+            white-space: normal !important;
+            overflow: visible !important;
+            text-overflow: clip !important;
+            word-break: break-all !important;
+          }
+          
+          /* 채널 정보 두 줄 표시 */
+          #reservation-${reservation.id} .print\\:flex-col {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+          }
+          #reservation-${reservation.id} .print\\:mb-1 {
+            margin-bottom: 0.25rem !important;
+          }
+          #reservation-${reservation.id} .print\\:block {
+            display: block !important;
+          }
         }
       `
       
@@ -716,15 +737,19 @@ export default function CustomerReservations() {
                 let pickupHotelInfo = null
                 if (reservation.pickup_hotel) {
                   try {
-                    const { data: hotelData } = await supabase
+                    const { data: hotelData, error: hotelError } = await supabase
                       .from('pickup_hotels')
                       .select('hotel, pick_up_location, address, media, link, youtube_link')
                       .eq('id', reservation.pickup_hotel)
                       .single()
                     
-                    pickupHotelInfo = hotelData
+                    if (!hotelError && hotelData) {
+                      pickupHotelInfo = hotelData
+                    } else {
+                      console.warn('픽업 호텔 정보 조회 실패:', hotelError)
+                    }
                   } catch (error) {
-                    console.warn('픽업 호텔 정보 조회 실패:', error)
+                    console.warn('픽업 호텔 정보 조회 중 오류:', error)
                   }
                 }
 
@@ -1097,12 +1122,17 @@ export default function CustomerReservations() {
               let pickupHotelInfo = null
               if (reservation.pickup_hotel) {
                 try {
-                  const { data: hotelData } = await supabase
+                  const { data: hotelData, error: hotelError } = await supabase
                     .from('pickup_hotels')
                     .select('hotel, pick_up_location, address, media, link, youtube_link')
                     .eq('id', reservation.pickup_hotel)
                     .single()
-                  pickupHotelInfo = hotelData
+                  
+                  if (!hotelError && hotelData) {
+                    pickupHotelInfo = hotelData
+                  } else {
+                    console.warn('픽업 호텔 정보 조회 실패:', hotelError)
+                  }
                 } catch (error) {
                   console.warn('픽업 호텔 정보 조회 실패:', error)
                 }
@@ -1435,13 +1465,17 @@ export default function CustomerReservations() {
               if (reservation.pickup_hotel) {
                 console.log('시뮬레이션 모드: 픽업 호텔 정보 조회 시작, pickup_hotel:', reservation.pickup_hotel)
                 try {
-                  const { data: hotelData } = await supabase
+                  const { data: hotelData, error: hotelError } = await supabase
                     .from('pickup_hotels')
                     .select('hotel, pick_up_location, address, media, link, youtube_link')
                     .eq('id', reservation.pickup_hotel)
                     .single()
                   
-                  pickupHotelInfo = hotelData
+                  if (!hotelError && hotelData) {
+                    pickupHotelInfo = hotelData
+                  } else {
+                    console.warn('시뮬레이션 모드: 픽업 호텔 정보 조회 실패:', hotelError)
+                  }
                   console.log('시뮬레이션 모드: 픽업 호텔 정보 조회 성공:', hotelData)
                 } catch (error) {
                   console.warn('시뮬레이션 모드: 픽업 호텔 정보 조회 실패:', error)
@@ -1744,21 +1778,29 @@ export default function CustomerReservations() {
 
       // 현재 예약의 픽업 호텔 정보 조회
       if ((currentReservation as SupabaseReservation)?.pickup_hotel) {
-        const { data: hotelInfo } = await supabase
-          .from('pickup_hotels')
-          .select(`
-            hotel,
-            pick_up_location,
-            address,
-            description_ko,
-            link,
-            media,
-            youtube_link
-          `)
-          .eq('id', (currentReservation as SupabaseReservation).pickup_hotel!)
-          .single()
+        try {
+          const { data: hotelInfo, error: hotelError } = await supabase
+            .from('pickup_hotels')
+            .select(`
+              hotel,
+              pick_up_location,
+              address,
+              description_ko,
+              link,
+              media,
+              youtube_link
+            `)
+            .eq('id', (currentReservation as SupabaseReservation).pickup_hotel!)
+            .single()
 
-        result.pickup_hotels = hotelInfo
+          if (!hotelError && hotelInfo) {
+            result.pickup_hotels = hotelInfo
+          } else {
+            console.warn('픽업 호텔 정보 조회 실패:', hotelError)
+          }
+        } catch (error) {
+          console.warn('픽업 호텔 정보 조회 중 오류:', error)
+        }
       }
 
       // 투어 ID가 있으면 같은 투어의 모든 예약 정보 조회
@@ -1789,11 +1831,22 @@ export default function CustomerReservations() {
                 .single()
 
               // 호텔 정보 조회
-              const { data: hotelInfo } = await supabase
-                .from('pickup_hotels')
-                .select('hotel, pick_up_location, address, link')
-                .eq('id', res.pickup_hotel!)
-                .single()
+              let hotelInfo = null
+              try {
+                const { data, error: hotelError } = await supabase
+                  .from('pickup_hotels')
+                  .select('hotel, pick_up_location, address, link')
+                  .eq('id', res.pickup_hotel!)
+                  .single()
+                
+                if (!hotelError && data) {
+                  hotelInfo = data
+                } else {
+                  console.warn('픽업 호텔 정보 조회 실패:', hotelError)
+                }
+              } catch (error) {
+                console.warn('픽업 호텔 정보 조회 중 오류:', error)
+              }
 
               return {
                 reservation_id: res.id,
@@ -1900,14 +1953,16 @@ export default function CustomerReservations() {
             .single()
 
           let vehiclePhotosData = null
+          // vehicle_type_photos를 우선으로 사용
           if (vehicleTypeData && typeof vehicleTypeData === 'object' && 'id' in vehicleTypeData && (vehicleTypeData as SupabaseVehicleTypeData).id) {
             const vehicleTypeDataTyped = vehicleTypeData as SupabaseVehicleTypeData
-            // vehicle_type_photos 테이블에서 사진들 가져오기
+            // vehicle_type_photos 테이블에서 사진들 가져오기 (우선 사용)
             const { data: photosData } = await supabase
               .from('vehicle_type_photos')
-              .select('photo_url, photo_name, description, is_primary')
+              .select('photo_url, photo_name, description, is_primary, display_order')
               .eq('vehicle_type_id', vehicleTypeDataTyped.id)
               .order('display_order', { ascending: true })
+              .order('is_primary', { ascending: false })
             vehiclePhotosData = photosData
           }
 
@@ -2287,39 +2342,35 @@ export default function CustomerReservations() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4 print:grid-cols-2 print:gap-6">
+                {/* 첫 번째 줄: 이름, 전화번호, 이메일 (4열 그리드, 이메일 3-4열 머지) */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 print:grid-cols-4 print:gap-6">
                   {/* 고객 이름 */}
                   {customer && (
                     <div className="flex items-center text-gray-600">
-                      <User className="w-4 h-4 mr-2" />
-                      <span className="text-sm font-semibold">{customer.name}</span>
-                    </div>
-                  )}
-
-                  {/* 고객 이메일 */}
-                  {customer && (
-                    <div className="flex items-center text-gray-600">
-                      <Mail className="w-4 h-4 mr-2" />
-                      <span className="text-sm font-semibold">{customer.email}</span>
+                      <User className="w-4 h-4 mr-2 flex-shrink-0" />
+                      <span className="text-sm font-semibold truncate">{customer.name}</span>
                     </div>
                   )}
 
                   {/* 고객 전화번호 */}
                   {customer && (
                     <div className="flex items-center text-gray-600">
-                      <Phone className="w-4 h-4 mr-2" />
-                      <span className="text-sm font-semibold">{customer.phone || 'N/A'}</span>
+                      <Phone className="w-4 h-4 mr-2 flex-shrink-0" />
+                      <span className="text-sm font-semibold truncate">{customer.phone || 'N/A'}</span>
                     </div>
                   )}
 
-                  {/* 총 인원 */}
-                  <div className="flex items-center text-gray-600">
-                    <Users className="w-4 h-4 mr-2" />
-                    <span className="text-sm font-semibold">
-                      Total {reservation.total_people} people <span className="text-xs font-normal">(Adults: {reservation.adults}, Children: {reservation.child}, Infants: {reservation.infant})</span>
-                    </span>
-                  </div>
+                  {/* 고객 이메일 - 3,4열 머지 */}
+                  {(customer?.email || reservation.customer_email) && (
+                    <div className="flex items-center text-gray-600 md:col-span-2 min-w-0">
+                      <Mail className="w-4 h-4 mr-2 flex-shrink-0" />
+                      <span className="text-sm font-semibold truncate print-email-full">{customer?.email || reservation.customer_email || 'N/A'}</span>
+                    </div>
+                  )}
+                </div>
 
+                {/* 두 번째 줄: 투어날짜, 총인원, 채널 (4열 그리드, 1,2,3열에 배치, 4열 비움) */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 print:grid-cols-4 print:gap-6">
                   {/* 투어 날짜 */}
                   <div className="flex items-center text-gray-600">
                     <Calendar className="w-4 h-4 mr-2" />
@@ -2328,68 +2379,57 @@ export default function CustomerReservations() {
                     </span>
                   </div>
 
-                  {/* 픽업 시간 */}
-                  {reservation.pickup_time && (
-                    <div className="flex items-center text-gray-600">
-                      <Clock className="w-4 h-4 mr-2" />
-                      <span className="text-sm">
-                        {t('pickup')}: <span className="font-semibold text-blue-600">{formatTimeToAMPM(reservation.pickup_time)}</span>
-                        {reservation.tour_date && (
-                          <span className="ml-1 font-semibold text-blue-600">
-                            ({calculatePickupDate(reservation.pickup_time, reservation.tour_date)})
-                          </span>
-                        )}
+                  {/* 총 인원 */}
+                  <div className="flex items-center text-gray-600">
+                    <Users className="w-4 h-4 mr-2" />
+                    <div className="flex flex-col">
+                      <span className="text-sm font-semibold">
+                        Total {reservation.total_people} {reservation.total_people === 1 ? 'person' : 'people'}
+                      </span>
+                      <span className="text-xs font-normal text-gray-500">
+                        (Adults: {reservation.adults}, Children: {reservation.child}, Infants: {reservation.infant})
                       </span>
                     </div>
-                  )}
-
-                  {/* 픽업 호텔 */}
-                  {reservation.pickupHotelInfo && (
-                    <div className="flex items-center text-gray-600">
-                      <MapPin className="w-4 h-4 mr-2" />
-                      <div>
-                        <span className="text-sm font-medium">{reservation.pickupHotelInfo.hotel}</span>
-                        <span className="text-xs text-gray-500 ml-2">({reservation.pickupHotelInfo.pick_up_location})</span>
-                      </div>
-                    </div>
-                  )}
+                  </div>
 
                   {/* 채널 정보 */}
                   {(reservation.channel_id || reservation.channel_rn) && (
-                    <div className="flex items-center text-gray-600">
+                    <div className="flex items-center text-gray-600 print:flex-col print:items-start">
                       {(() => {
                         const channel = channels.find(c => c.id === reservation.channel_id)
                         return (
                           <>
                             {channel && (
                           <>
-                            {channel.favicon_url ? (
-                              <Image 
-                                src={channel.favicon_url} 
-                                alt={`${channel.name} favicon`} 
-                                width={16}
-                                height={16}
-                                    className="rounded mr-2 flex-shrink-0 print:w-6 print:h-6 print:mr-2"
-                                onError={(e) => {
-                                  const target = e.target as HTMLImageElement
-                                  target.style.display = 'none'
-                                  const parent = target.parentElement
-                                  if (parent) {
-                                    const fallback = document.createElement('div')
-                                    fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0 mr-2'
-                                    fallback.innerHTML = '🌐'
-                                    parent.appendChild(fallback)
-                                  }
-                                }}
-                              />
-                            ) : (
-                              <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0 mr-2">
-                                🌐
-                              </div>
-                            )}
-                            <span className="text-sm">{channel.name}</span>
+                            <div className="flex items-center print:mb-1">
+                              {channel.favicon_url ? (
+                                <Image 
+                                  src={channel.favicon_url} 
+                                  alt={`${channel.name} favicon`} 
+                                  width={16}
+                                  height={16}
+                                      className="rounded mr-2 flex-shrink-0 print:w-6 print:h-6 print:mr-2"
+                                  onError={(e) => {
+                                    const target = e.target as HTMLImageElement
+                                    target.style.display = 'none'
+                                    const parent = target.parentElement
+                                    if (parent) {
+                                      const fallback = document.createElement('div')
+                                      fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0 mr-2'
+                                      fallback.innerHTML = '🌐'
+                                      parent.appendChild(fallback)
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0 mr-2">
+                                  🌐
+                                </div>
+                              )}
+                              <span className="text-sm">{channel.name}</span>
+                            </div>
                   {reservation.channel_rn && (
-                                  <span className="text-sm ml-2 text-blue-600 font-medium">
+                                  <span className="text-sm ml-2 text-blue-600 font-medium print:ml-0 print:block">
                                     (#{reservation.channel_rn})
                       </span>
                                 )}
@@ -2408,7 +2448,40 @@ export default function CustomerReservations() {
                       })()}
                     </div>
                   )}
+                </div>
 
+                {/* 세 번째 줄: 픽업 시간 (1열), 픽업 호텔 및 픽업 장소 (2,3,4열 머지) */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 print:grid-cols-4 print:gap-6">
+                  {/* 픽업 시간 */}
+                  {reservation.pickup_time && (
+                    <div className="flex items-center text-gray-600">
+                      <Clock className="w-4 h-4 mr-2" />
+                      <span className="text-sm">
+                        {t('pickup')}: <span className="font-semibold text-blue-600">{formatTimeToAMPM(reservation.pickup_time)}</span>
+                        {reservation.tour_date && (
+                          <span className="ml-1 font-semibold text-blue-600">
+                            ({calculatePickupDate(reservation.pickup_time, reservation.tour_date)})
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* 픽업 호텔 및 픽업 장소 (2,3,4열 머지) */}
+                  {reservation.pickupHotelInfo && (
+                    <div className="flex items-center text-gray-600 md:col-span-3">
+                      <MapPin className="w-4 h-4 mr-2 flex-shrink-0" />
+                      <div className="min-w-0">
+                        <span className="text-sm font-medium">{reservation.pickupHotelInfo.hotel}</span>
+                        {reservation.pickupHotelInfo.pick_up_location && (
+                          <span className="text-xs text-gray-500 ml-2">({reservation.pickupHotelInfo.pick_up_location})</span>
+                        )}
+                        {reservation.pickupHotelInfo.address && (
+                          <span className="text-xs text-gray-500 ml-2">- {reservation.pickupHotelInfo.address}</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                  {/* 가격 정보 */}
@@ -2421,30 +2494,30 @@ export default function CustomerReservations() {
                            {/* 상품 가격 */}
                            <div className="p-4">
                              <div className="space-y-2 text-sm">
-                               {reservation.adults > 0 && (
-                                 <div className="flex justify-between items-center">
-                                   <span className="text-gray-600">{t('adults')} {reservation.adults}{t('people')}</span>
-                                   <span className="font-medium text-gray-900">
-                                     ${((reservation.pricing.adult_product_price || 0) * reservation.adults).toFixed(2)}
-                                   </span>
-                                 </div>
-                               )}
-                               {reservation.child > 0 && (
-                                 <div className="flex justify-between items-center">
-                                   <span className="text-gray-600">{t('children')} {reservation.child}{t('people')}</span>
-                                   <span className="font-medium text-gray-900">
-                                     ${((reservation.pricing.child_product_price || 0) * reservation.child).toFixed(2)}
-                                   </span>
-                                 </div>
-                               )}
-                               {reservation.infant > 0 && (
-                                 <div className="flex justify-between items-center">
-                                   <span className="text-gray-600">{t('infants')} {reservation.infant}{t('people')}</span>
-                                   <span className="font-medium text-gray-900">
-                                     ${((reservation.pricing.infant_product_price || 0) * reservation.infant).toFixed(2)}
-                                   </span>
-                                 </div>
-                               )}
+                              {reservation.adults > 0 && (
+                                <div className="flex justify-between items-center">
+                                  <span className="text-gray-600">{t('adults')} x {reservation.adults}</span>
+                                  <span className="font-medium text-gray-900">
+                                    ${((reservation.pricing.adult_product_price || 0) * reservation.adults).toFixed(2)}
+                                  </span>
+                                </div>
+                              )}
+                              {reservation.child > 0 && (
+                                <div className="flex justify-between items-center">
+                                  <span className="text-gray-600">{t('children')} x {reservation.child}</span>
+                                  <span className="font-medium text-gray-900">
+                                    ${((reservation.pricing.child_product_price || 0) * reservation.child).toFixed(2)}
+                                  </span>
+                                </div>
+                              )}
+                              {reservation.infant > 0 && (
+                                <div className="flex justify-between items-center">
+                                  <span className="text-gray-600">{t('infants')} x {reservation.infant}</span>
+                                  <span className="font-medium text-gray-900">
+                                    ${((reservation.pricing.infant_product_price || 0) * reservation.infant).toFixed(2)}
+                                  </span>
+                                </div>
+                              )}
                                <div className="flex justify-between items-center pt-2 border-t border-gray-100 font-semibold">
                                  <span className="text-gray-800">{t('productTotal')}</span>
                                  <span className="text-gray-900">${(reservation.pricing.product_price_total || 0).toFixed(2)}</span>
@@ -2482,52 +2555,79 @@ export default function CustomerReservations() {
                              </div>
                            )}
 
-                           {/* 소계 */}
-                           <div className="p-4 bg-blue-50">
-                             <div className="flex justify-between items-center">
-                               <span className="text-sm font-semibold text-blue-800">{t('subtotal')}</span>
-                               <span className="text-lg font-bold text-blue-900">${(reservation.pricing.subtotal || 0).toFixed(2)}</span>
-                             </div>
-                           </div>
+                          {/* 소계 */}
+                          <div className="p-4 bg-blue-50">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm font-semibold text-blue-800">{t('subtotal')}</span>
+                              <span className="text-lg font-bold text-blue-900">${(reservation.pricing.subtotal || 0).toFixed(2)}</span>
+                            </div>
+                          </div>
 
-                           {/* 결제 정보 */}
-                           <div className="p-4 bg-gray-50">
-                             <div className="space-y-1 text-sm">
-                               <div className="flex justify-between items-center">
-                                 <div className="flex items-center space-x-1">
-                                   <span className="text-gray-600">{t('deposit')}</span>
-                                   {reservation.payments && reservation.payments.length > 0 && (
-                                     <span className="text-xs text-gray-500">
-                                       ({new Date(reservation.payments[0].submit_on).toLocaleDateString()})
-                                     </span>
-                                   )}
-                                 </div>
-                                 <span className="font-bold text-indigo-600">${(reservation.pricing.deposit_amount || 0).toFixed(2)}</span>
-                               </div>
-                               <div className="flex justify-between items-center">
-                                 <span className="text-gray-600">{t('balance')}</span>
-                                 <span className="font-bold text-purple-600">${(reservation.pricing.balance_amount || 0).toFixed(2)}</span>
-                               </div>
-                             </div>
-                           </div>
+                          {/* 쿠폰 할인 */}
+                          {reservation.pricing.coupon_discount !== 0 && reservation.pricing.coupon_discount !== null && (
+                            <div className="p-4 bg-green-50">
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-semibold text-green-800">{t('couponDiscount')}</span>
+                                <span className="text-lg font-bold text-green-900">
+                                  {reservation.pricing.coupon_discount < 0 
+                                    ? `-$${Math.abs(reservation.pricing.coupon_discount).toFixed(2)}` 
+                                    : `$${reservation.pricing.coupon_discount.toFixed(2)}`}
+                                </span>
+                              </div>
+                            </div>
+                          )}
 
-                           {/* 할인 및 추가 비용 */}
-                           {(reservation.pricing.coupon_discount !== 0 || reservation.pricing.additional_discount !== 0 || 
-                             reservation.pricing.additional_cost !== 0 || reservation.pricing.card_fee !== 0 || 
-                             reservation.pricing.tax !== 0 || reservation.pricing.prepayment_cost !== 0 || 
-                             reservation.pricing.prepayment_tip !== 0 || reservation.pricing.private_tour_additional_cost > 0) && (
-                             <div className="p-4">
-                               <div className="space-y-2 text-sm">
-                                 {reservation.pricing.coupon_discount !== 0 && reservation.pricing.coupon_discount !== null && (
-                                   <div className="flex justify-between items-center">
-                                     <span className="text-gray-600">{t('couponDiscount')}</span>
-                                     <span className="font-medium text-green-600">
-                                       {reservation.pricing.coupon_discount < 0 
-                                         ? `-$${Math.abs(reservation.pricing.coupon_discount).toFixed(2)}` 
-                                         : `$${reservation.pricing.coupon_discount.toFixed(2)}`}
-                                     </span>
-                                   </div>
-                                 )}
+                          {/* Grand Total (할인 후 최종 결제액) */}
+                          {reservation.pricing.coupon_discount !== 0 && reservation.pricing.coupon_discount !== null && (
+                            <div className="p-4 bg-blue-100">
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-semibold text-blue-900">{t('grandTotal')}</span>
+                                <span className="text-lg font-bold text-blue-900">
+                                  ${((reservation.pricing.subtotal || 0) - Math.abs(reservation.pricing.coupon_discount || 0)).toFixed(2)}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                          {/* 쿠폰 할인이 없을 때도 Grand Total 표시 */}
+                          {(!reservation.pricing.coupon_discount || reservation.pricing.coupon_discount === 0) && (
+                            <div className="p-4 bg-blue-100">
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-semibold text-blue-900">{t('grandTotal')}</span>
+                                <span className="text-lg font-bold text-blue-900">
+                                  ${(reservation.pricing.subtotal || 0).toFixed(2)}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 결제 정보 */}
+                          <div className="p-4 bg-gray-50">
+                            <div className="space-y-1 text-sm">
+                              <div className="flex justify-between items-center">
+                                <div className="flex items-center space-x-1">
+                                  <span className="text-gray-600">{t('deposit')}</span>
+                                  {reservation.payments && reservation.payments.length > 0 && (
+                                    <span className="text-xs text-gray-500">
+                                      ({new Date(reservation.payments[0].submit_on).toLocaleDateString()})
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="font-bold text-indigo-600">${(reservation.pricing.deposit_amount || 0).toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between items-center">
+                                <span className="text-gray-600">{t('balance')}</span>
+                                <span className="font-bold text-purple-600">${(reservation.pricing.balance_amount || 0).toFixed(2)}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 기타 할인 및 추가 비용 */}
+                          {(reservation.pricing.additional_discount !== 0 || 
+                            reservation.pricing.additional_cost !== 0 || reservation.pricing.card_fee !== 0 || 
+                            reservation.pricing.tax !== 0 || reservation.pricing.prepayment_cost !== 0 || 
+                            reservation.pricing.prepayment_tip !== 0 || reservation.pricing.private_tour_additional_cost > 0) && (
+                            <div className="p-4">
+                              <div className="space-y-2 text-sm">
                                  {reservation.pricing.additional_discount !== 0 && reservation.pricing.additional_discount !== null && (
                                    <div className="flex justify-between items-center">
                                      <span className="text-gray-600">{t('additionalDiscount')}</span>
@@ -2598,10 +2698,10 @@ export default function CustomerReservations() {
                                  ${(reservation.products?.base_price || 0).toFixed(2)} / {t('perPerson')}
                                </span>
                              </div>
-                             <div className="flex justify-between items-center">
-                               <span className="text-gray-600">{t('totalPeople')}</span>
-                               <span className="font-medium text-gray-900">{reservation.total_people}{t('people')}</span>
-                             </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">{t('totalPeople')}</span>
+                              <span className="font-medium text-gray-900">{reservation.total_people} {reservation.total_people === 1 ? t('person') : t('people')}</span>
+                            </div>
                              <div className="flex justify-between items-center pt-2 border-t border-gray-200 font-semibold">
                                <span className="text-gray-800">{t('estimatedTotal')}</span>
                                <span className="text-gray-900">
@@ -3065,29 +3165,67 @@ export default function CustomerReservations() {
                                 {t('vehicle')}
                               </h5>
                               <div className="bg-white p-3 rounded-md">
-                                {reservationDetails[reservation.id]?.tourDetails?.vehicle?.vehicle_type_info && (
-                                  <div className="mb-3">
-                                    <p className="text-sm font-medium text-gray-900">
-                                      {reservationDetails[reservation.id]?.tourDetails?.vehicle?.vehicle_type_info?.name}
-                                    </p>
-                                    <p className="text-xs text-gray-600">
-                                      {reservationDetails[reservation.id]?.tourDetails?.vehicle?.vehicle_type_info?.brand} {reservationDetails[reservation.id]?.tourDetails?.vehicle?.vehicle_type_info?.model}
-                                    </p>
-                                    <p className="text-xs text-gray-600">
-                                      {t('capacity')}: {reservationDetails[reservation.id]?.tourDetails?.vehicle?.vehicle_type_info?.passenger_capacity} {t('people')}
-                                    </p>
-                                    {reservationDetails[reservation.id]?.tourDetails?.vehicle?.color && (
+                                <div className="flex flex-col md:flex-row gap-4">
+                                  {/* 차량 사진 */}
+                                  {(() => {
+                                    const photos = reservationDetails[reservation.id]?.tourDetails?.vehicle?.vehicle_type_photos
+                                    const primaryPhoto = photos && Array.isArray(photos) && photos.length > 0
+                                      ? photos.find((p: any) => p.is_primary) || photos[0]
+                                      : null
+                                    
+                                    if (primaryPhoto?.photo_url) {
+                                      return (
+                                        <div className="flex-shrink-0">
+                                          <div 
+                                            className="relative cursor-pointer group w-full md:w-48 h-32 rounded-lg overflow-hidden border"
+                                            onClick={() => setSelectedMedia(primaryPhoto.photo_url)}
+                                          >
+                                            <Image 
+                                              src={primaryPhoto.photo_url}
+                                              alt={primaryPhoto.photo_name || 'Vehicle'}
+                                              width={192}
+                                              height={128}
+                                              className="w-full h-full object-cover hover:opacity-80 transition-opacity"
+                                              onError={(e) => {
+                                                const target = e.target as HTMLImageElement;
+                                                target.style.display = 'none';
+                                              }}
+                                            />
+                                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 flex items-center justify-center">
+                                              <ExternalLink className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )
+                                    }
+                                    return null
+                                  })()}
+                                  
+                                  {/* 차량 정보 텍스트 */}
+                                  {reservationDetails[reservation.id]?.tourDetails?.vehicle?.vehicle_type_info && (
+                                    <div className="flex-1">
+                                      <p className="text-sm font-medium text-gray-900">
+                                        {reservationDetails[reservation.id]?.tourDetails?.vehicle?.vehicle_type_info?.name}
+                                      </p>
                                       <p className="text-xs text-gray-600">
-                                        {t('color')}: {reservationDetails[reservation.id]?.tourDetails?.vehicle?.color}
+                                        {reservationDetails[reservation.id]?.tourDetails?.vehicle?.vehicle_type_info?.brand} {reservationDetails[reservation.id]?.tourDetails?.vehicle?.vehicle_type_info?.model}
                                       </p>
-                                    )}
-                                    {reservationDetails[reservation.id]?.tourDetails?.vehicle?.vehicle_type_info?.description && (
-                                      <p className="text-xs text-gray-500 mt-1">
-                                        {reservationDetails[reservation.id]?.tourDetails?.vehicle?.vehicle_type_info?.description}
+                                      <p className="text-xs text-gray-600">
+                                        {t('capacity')}: {reservationDetails[reservation.id]?.tourDetails?.vehicle?.vehicle_type_info?.passenger_capacity} {t('people')}
                                       </p>
-                                    )}
-                                  </div>
-                                )}
+                                      {reservationDetails[reservation.id]?.tourDetails?.vehicle?.color && (
+                                        <p className="text-xs text-gray-600">
+                                          {t('color')}: {reservationDetails[reservation.id]?.tourDetails?.vehicle?.color}
+                                        </p>
+                                      )}
+                                      {reservationDetails[reservation.id]?.tourDetails?.vehicle?.vehicle_type_info?.description && (
+                                        <p className="text-xs text-gray-500 mt-1">
+                                          {reservationDetails[reservation.id]?.tourDetails?.vehicle?.vehicle_type_info?.description}
+                                        </p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
                                 {(() => {
                                   const photos = reservationDetails[reservation.id]?.tourDetails?.vehicle?.vehicle_type_photos
                                   return photos && Array.isArray(photos) && photos.length > 0

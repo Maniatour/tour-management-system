@@ -90,7 +90,50 @@ export default function VehiclesPage() {
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      setVehicles(data || [])
+      
+      // 차량 타입별 사진도 함께 가져오기
+      const vehiclesWithTypePhotos = await Promise.all(
+        (data || []).map(async (vehicle) => {
+          // vehicle_photos가 없으면 vehicle_type_photos에서 가져오기
+          if (!vehicle.photos || vehicle.photos.length === 0) {
+            try {
+              // vehicle_types 테이블에서 vehicle_type_id 찾기
+              const { data: vehicleTypeData } = await supabase
+                .from('vehicle_types')
+                .select('id')
+                .eq('name', vehicle.vehicle_type)
+                .maybeSingle()
+              
+              if (vehicleTypeData?.id) {
+                // vehicle_type_photos에서 사진 가져오기
+                const { data: typePhotos } = await supabase
+                  .from('vehicle_type_photos')
+                  .select('photo_url, photo_name, description, is_primary, display_order')
+                  .eq('vehicle_type_id', vehicleTypeData.id)
+                  .order('is_primary', { ascending: false })
+                  .order('display_order', { ascending: true })
+                  .limit(1)
+                
+                if (typePhotos && typePhotos.length > 0) {
+                  // vehicle_type_photos를 vehicle_photos 형식으로 변환
+                  return {
+                    ...vehicle,
+                    photos: typePhotos.map(photo => ({
+                      ...photo,
+                      vehicle_id: vehicle.id
+                    }))
+                  }
+                }
+              }
+            } catch (typePhotoError) {
+              console.error(`차량 타입 사진 조회 오류 (${vehicle.vehicle_number}):`, typePhotoError)
+            }
+          }
+          return vehicle
+        })
+      )
+      
+      setVehicles(vehiclesWithTypePhotos)
     } catch (error) {
       console.error('차량 목록을 불러오는 중 오류가 발생했습니다:', error)
     } finally {
@@ -340,9 +383,10 @@ export default function VehiclesPage() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case '운행 가능': return 'bg-green-100 text-green-800'
-      case '수리 중': return 'bg-red-100 text-red-800'
-      case '대기 중': return 'bg-yellow-100 text-yellow-800'
+      case '수리 중': return 'bg-yellow-100 text-yellow-800'
+      case '대기 중': return 'bg-blue-100 text-blue-800'
       case '폐차': return 'bg-gray-100 text-gray-800'
+      case '사용 종료': return 'bg-red-100 text-red-800'
       default: return 'bg-gray-100 text-gray-800'
     }
   }
@@ -513,6 +557,7 @@ export default function VehiclesPage() {
                         <option value="수리 중">수리 중</option>
                         <option value="대기 중">대기 중</option>
                         <option value="폐차">폐차</option>
+                        <option value="사용 종료">사용 종료</option>
                       </select>
                     ) : activeTab === 'rental_active' ? (
                       <select

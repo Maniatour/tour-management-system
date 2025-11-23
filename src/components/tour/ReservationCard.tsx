@@ -92,18 +92,48 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   const [loadingPayments, setLoadingPayments] = useState(false)
   const [reservationPricing, setReservationPricing] = useState<ReservationPricing | null>(null)
   const [showSimplePickupModal, setShowSimplePickupModal] = useState(false)
-  const [channelInfo, setChannelInfo] = useState<{ name: string; favicon?: string } | null>(null)
+  const [channelInfo, setChannelInfo] = useState<{ name: string; favicon?: string; has_not_included_price?: boolean; commission_base_price_only?: boolean } | null>(null)
   
   // 채널 정보 가져오기
   const fetchChannelInfo = useCallback(async () => {
-    if (!getChannelInfo || !reservation.channel_id) return
+    if (!reservation.channel_id) return
     
     try {
-      const info = await getChannelInfo(reservation.channel_id)
-      setChannelInfo(info || null)
+      // 채널 정보 직접 조회 (has_not_included_price, commission_base_price_only 포함)
+      const { data: channelData, error } = await supabase
+        .from('channels')
+        .select('name, favicon_url, has_not_included_price, commission_base_price_only')
+        .eq('id', reservation.channel_id)
+        .maybeSingle()
+      
+      if (!error && channelData) {
+        setChannelInfo({
+          name: channelData.name || 'Unknown',
+          favicon: channelData.favicon_url || undefined,
+          has_not_included_price: channelData.has_not_included_price || false,
+          commission_base_price_only: channelData.commission_base_price_only || false
+        })
+      } else if (getChannelInfo) {
+        // fallback: getChannelInfo 사용
+        const info = await getChannelInfo(reservation.channel_id)
+        setChannelInfo(info ? { ...info, has_not_included_price: false, commission_base_price_only: false } : null)
+      } else {
+        setChannelInfo(null)
+      }
     } catch (error) {
       console.error('채널 정보 조회 오류:', error)
-      setChannelInfo(null)
+      // fallback: getChannelInfo 사용
+      if (getChannelInfo) {
+        try {
+          const info = await getChannelInfo(reservation.channel_id!)
+          setChannelInfo(info ? { ...info, has_not_included_price: false, commission_base_price_only: false } : null)
+        } catch (fallbackError) {
+          console.error('채널 정보 조회 fallback 오류:', fallbackError)
+          setChannelInfo(null)
+        }
+      } else {
+        setChannelInfo(null)
+      }
     }
   }, [getChannelInfo, reservation.channel_id])
 
@@ -749,6 +779,27 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             
             {/* 잔액 뱃지 - 잔금이 있을 때만 표시 */}
             {isStaff && (() => {
+              // 불포함 있음 채널 확인
+              const hasNotIncludedPrice = channelInfo?.has_not_included_price || false
+              const commissionBasePriceOnly = channelInfo?.commission_base_price_only || false
+              const shouldShowBalanceAmount = hasNotIncludedPrice || commissionBasePriceOnly
+              
+              // 불포함 있음 채널인 경우 balance_amount 사용
+              if (shouldShowBalanceAmount && reservationPricing?.balance_amount) {
+                const balanceAmount = typeof reservationPricing.balance_amount === 'string'
+                  ? parseFloat(reservationPricing.balance_amount) || 0
+                  : (reservationPricing.balance_amount || 0)
+                
+                if (balanceAmount > 0) {
+                  return (
+                    <div className="px-2 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700 border border-purple-200">
+                      {formatCurrency(balanceAmount, reservationPricing?.currency || 'USD')}
+                    </div>
+                  )
+                }
+              }
+              
+              // 일반 채널인 경우 기존 로직 사용
               // reservation_pricing에서 total_price 가져오기
               const totalPrice = reservationPricing 
                 ? (typeof reservationPricing.total_price === 'string'

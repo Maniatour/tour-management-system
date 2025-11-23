@@ -13,14 +13,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('payment_methods')
-      .select(`
-        *,
-        team:user_email (
-          email,
-          name_ko,
-          name_en
-        )
-      `)
+      .select('*')
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
@@ -40,14 +33,42 @@ export async function GET(request: NextRequest) {
     if (error) {
       console.error('Error fetching payment methods:', error)
       return NextResponse.json(
-        { success: false, message: 'Failed to fetch payment methods' },
+        { success: false, message: 'Failed to fetch payment methods', error: error.message },
         { status: 500 }
       )
     }
 
+    // team 정보 별도 조회
+    const paymentMethods = data || []
+    const userEmails = [...new Set(paymentMethods.map((pm: any) => pm.user_email).filter(Boolean))]
+    
+    let teamMap: Record<string, { email: string; name_ko: string | null; name_en: string | null }> = {}
+    if (userEmails.length > 0) {
+      const { data: teamData } = await supabase
+        .from('team')
+        .select('email, name_ko, name_en')
+        .in('email', userEmails)
+      
+      if (teamData) {
+        teamData.forEach(team => {
+          teamMap[team.email] = {
+            email: team.email,
+            name_ko: team.name_ko,
+            name_en: team.name_en
+          }
+        })
+      }
+    }
+
+    // team 정보 추가
+    const paymentMethodsWithTeam = paymentMethods.map((pm: any) => ({
+      ...pm,
+      team: teamMap[pm.user_email] || null
+    }))
+
     return NextResponse.json({
       success: true,
-      data: data || []
+      data: paymentMethodsWithTeam
     })
 
   } catch (error) {

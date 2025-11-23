@@ -467,21 +467,32 @@ export default function ReservationDetailsPage() {
           {content}
           
           {/* 예약 상세 모달 (고객 보기) */}
-          {showReservationDetailModal && reservation && (
-            <ResizableModal
-              isOpen={showReservationDetailModal}
-              onClose={() => setShowReservationDetailModal(false)}
-              title={`고객 예약 상세 - ${getCustomerName(reservation.customerId, (customers as Customer[]) || [])}`}
-              initialHeight={modalHeight}
-              onHeightChange={setModalHeight}
-            >
-              <iframe
-                src={`/${params?.locale || 'ko'}/dashboard/reservations/${reservation.customerId}/${reservation.id}`}
-                className="w-full h-full border-0"
-                title="예약 상세 정보"
-              />
-            </ResizableModal>
-          )}
+          {showReservationDetailModal && reservation && (() => {
+            // 고객의 언어를 가져와서 locale로 변환
+            const customer = (customers as Customer[]).find(c => c.id === reservation.customerId)
+            const customerLanguage = customer?.language
+            // 고객 언어를 locale 형식으로 변환 ('EN' 또는 'en' -> 'en', 그 외 -> 'ko')
+            const customerLocale = customerLanguage && 
+              (customerLanguage.toLowerCase() === 'en' || customerLanguage === 'EN' || customerLanguage === '영어') 
+              ? 'en' 
+              : 'ko'
+            
+            return (
+              <ResizableModal
+                isOpen={showReservationDetailModal}
+                onClose={() => setShowReservationDetailModal(false)}
+                title={`고객 예약 상세 - ${getCustomerName(reservation.customerId, (customers as Customer[]) || [])}`}
+                initialHeight={modalHeight}
+                onHeightChange={setModalHeight}
+              >
+                <iframe
+                  src={`/${customerLocale}/dashboard/reservations/${reservation.customerId}/${reservation.id}`}
+                  className="w-full h-full border-0"
+                  title="예약 상세 정보"
+                />
+              </ResizableModal>
+            )
+          })()}
         </>
       )}
     </div>

@@ -50,13 +50,15 @@ interface TicketBookingFormProps {
   booking?: TicketBooking;
   onSave: (booking: TicketBooking) => void;
   onCancel: () => void;
+  onDelete?: (id: string) => void;
   tourId?: string;
 }
 
 export default function TicketBookingForm({ 
   booking, 
   onSave, 
-  onCancel, 
+  onCancel,
+  onDelete,
   tourId 
 }: TicketBookingFormProps) {
   const t = useTranslations('booking.ticketBooking');
@@ -1276,21 +1278,36 @@ export default function TicketBookingForm({
             </div>
           </div>
 
-          <div className="flex justify-end space-x-3 pt-4">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="px-4 py-2 text-gray-600 bg-gray-200 rounded-md hover:bg-gray-300"
-            >
-              {t('cancel')}
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-            >
-              {loading ? t('saving') : t('save')}
-            </button>
+          <div className="flex justify-between items-center pt-4">
+            {booking?.id && onDelete && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm('정말로 이 부킹을 삭제하시겠습니까?')) {
+                    onDelete(booking.id);
+                  }
+                }}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                삭제
+              </button>
+            )}
+            <div className="flex space-x-3 ml-auto">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="px-4 py-2 text-gray-600 bg-gray-200 rounded-md hover:bg-gray-300"
+              >
+                {t('cancel')}
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+              >
+                {loading ? t('saving') : t('save')}
+              </button>
+            </div>
           </div>
         </form>
     </div>
