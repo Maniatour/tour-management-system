@@ -10,6 +10,7 @@ interface Channel {
   id: string;
   name: string;
   type: string;
+  category?: string;
   pricing_type?: 'separate' | 'single';
   commission_percent?: number;
   commission_base_price_only?: boolean;
@@ -106,10 +107,11 @@ export default function BulkPricingTableModal({
 
         if (error) throw error;
 
+        const productData = data as { adult_base_price?: number; child_base_price?: number; infant_base_price?: number } | null;
         setProductBasePrice({
-          adult: data?.adult_base_price || 0,
-          child: data?.child_base_price || 0,
-          infant: data?.infant_base_price || 0
+          adult: productData?.adult_base_price || 0,
+          child: productData?.child_base_price || 0,
+          infant: productData?.infant_base_price || 0
         });
       } catch (error) {
         console.error('상품 기본 가격 로드 오류:', error);
@@ -121,26 +123,12 @@ export default function BulkPricingTableModal({
     }
   }, [productId, isOpen]);
 
-  // 모든 채널이 단일 가격인지 확인
-  const isAllSinglePrice = useMemo(() => {
-    if (channels.length === 0) return false;
-    const allSingle = channels.every(channel => {
-      const pricingType = (channel as any).pricing_type;
-      return pricingType === 'single';
-    });
-    console.log('BulkPricingTableModal - isAllSinglePrice 계산:', {
-      channelsCount: channels.length,
-      channels: channels.map(ch => ({ id: ch.id, name: ch.name, pricing_type: (ch as any).pricing_type })),
-      isAllSinglePrice: allSingle
-    });
-    return allSingle;
-  }, [channels]);
 
   // OTA 채널만 필터링
   const otaChannels = useMemo(() => {
     return channels.filter(ch => {
       const type = ch.type?.toLowerCase() || '';
-      const category = (ch as any)?.category?.toLowerCase() || '';
+      const category = ch.category?.toLowerCase() || '';
       return type === 'ota' || category === 'ota';
     });
   }, [channels]);
@@ -221,285 +209,7 @@ export default function BulkPricingTableModal({
     }));
   }, [rows, channels, productBasePrice]);
 
-  // 초이스 가격 업데이트
-  const handleUpdateChoicePricing = useCallback((
-    rowId: string,
-    choiceId: string,
-    priceType: 'adult' | 'child' | 'infant',
-    value: number,
-    isSinglePriceMode?: boolean
-  ) => {
-    setRows(rows.map(row => {
-      if (row.id === rowId) {
-        // 단일 가격 모드이고 성인 가격을 업데이트하는 경우, child와 infant도 동일하게 설정
-        const updatedChoicePricing = {
-          ...row.choicePricing,
-          [choiceId]: {
-            ...row.choicePricing[choiceId],
-            [priceType]: value,
-            ...(isSinglePriceMode && priceType === 'adult' ? {
-              child: value,
-              infant: value
-            } : {})
-          }
-        };
-        return { ...row, choicePricing: updatedChoicePricing };
-      }
-      return row;
-    }));
-  }, [rows]);
 
-  // 가격 계산 함수 (초이스별 가격 포함)
-  const calculatePrices = useCallback((row: BulkPricingRow, choiceId?: string) => {
-    // 선택된 채널 정보 확인 (OTA 채널만)
-    const selectedChannel = otaChannels.find(ch => ch.id === row.channelId);
-    const isOTAChannel = selectedChannel && (
-      selectedChannel.type?.toLowerCase() === 'ota' || 
-      selectedChannel.category === 'OTA'
-    );
-
-    // 단일 가격 모드 확인
-    const isSinglePrice = (selectedChannel as any)?.pricing_type === 'single';
-
-    // 성인 가격에만 수수료/쿠폰 할인 적용하는 플랫폼인지 확인
-    // 하위 호환성: 특정 플랫폼 이름으로 판단
-    const commissionAdultOnly = selectedChannel && (
-      selectedChannel.name?.toLowerCase().includes('getyourguide') ||
-      selectedChannel.name?.toLowerCase().includes('viator') ||
-      selectedChannel.id?.toLowerCase().includes('gyg') ||
-      selectedChannel.id?.toLowerCase().includes('viator')
-    );
-
-    // 판매가격에만 커미션 & 쿠폰 적용 여부 확인
-    const commissionBasePriceOnly = (selectedChannel as any)?.commission_base_price_only || false;
-
-    // 기본 가격 (불포함 금액은 계산식에 포함하지 않음)
-    let basePrice = {
-      adult: row.adultPrice,
-      child: row.childPrice,
-      infant: row.infantPrice
-    };
-
-    // 초이스별 가격 저장 (나중에 밸런스 계산에 사용)
-    let choicePrice = {
-      adult: 0,
-      child: 0,
-      infant: 0
-    };
-
-    // 초이스별 가격이 있으면 저장
-    if (choiceId && row.choicePricing[choiceId]) {
-      const choicePricing = row.choicePricing[choiceId];
-      // 단일 가격 모드: adult 가격만 사용하고, child와 infant는 adult와 동일하게 설정
-      if (isSinglePrice) {
-        const singleChoicePrice = choicePricing.adult || 0;
-        choicePrice = {
-          adult: singleChoicePrice,
-          child: singleChoicePrice,
-          infant: singleChoicePrice
-        };
-      } else {
-        choicePrice = {
-          adult: choicePricing.adult || 0,
-          child: choicePricing.child || 0,
-          infant: choicePricing.infant || 0
-        };
-      }
-      
-      // 판매가격에만 커미션 적용이 체크되어 있지 않으면 기본 가격에 초이스 가격 추가
-      if (!commissionBasePriceOnly) {
-        basePrice = {
-          adult: basePrice.adult + choicePrice.adult,
-          child: basePrice.child + choicePrice.child,
-          infant: basePrice.infant + choicePrice.infant
-        };
-      }
-    }
-
-    // 마크업 적용
-    const markupPrice = {
-      adult: basePrice.adult + row.markupAmount + (basePrice.adult * row.markupPercent / 100),
-      child: basePrice.child + row.markupAmount + (basePrice.child * row.markupPercent / 100),
-      infant: basePrice.infant + row.markupAmount + (basePrice.infant * row.markupPercent / 100)
-    };
-
-    // 최대 판매가 계산
-    // commissionBasePriceOnly가 true이면 초이스 가격은 basePrice에 포함되지 않았으므로, 최대 판매가에 초이스 가격 추가
-    let maxPrice = {
-      adult: markupPrice.adult,
-      child: markupPrice.child,
-      infant: markupPrice.infant
-    };
-    
-    // commissionBasePriceOnly가 true이고 초이스 가격이 있으면, 최대 판매가에 초이스 가격 추가
-    if (commissionBasePriceOnly && choiceId && row.choicePricing[choiceId]) {
-      maxPrice = {
-        adult: markupPrice.adult + choicePrice.adult,
-        child: markupPrice.child + choicePrice.child,
-        infant: markupPrice.infant + choicePrice.infant
-      };
-    }
-
-    // 할인 적용 (쿠폰 퍼센트)
-    // 성인 가격에만 적용하는 플랫폼인 경우
-    const discountPrice = commissionAdultOnly ? {
-      adult: maxPrice.adult * (1 - row.couponPercent / 100),
-      child: maxPrice.child, // 아동/유아는 할인 없음
-      infant: maxPrice.infant // 아동/유아는 할인 없음
-    } : {
-      adult: maxPrice.adult * (1 - row.couponPercent / 100),
-      child: maxPrice.child * (1 - row.couponPercent / 100),
-      infant: maxPrice.infant * (1 - row.couponPercent / 100)
-    };
-
-    // OTA 판매가 계산
-    const commissionRate = row.commissionPercent / 100;
-    const couponDiscountRate = row.couponPercent / 100;
-    const notIncludedType = (selectedChannel as any)?.not_included_type || 'none';
-    
-    let otaPrice;
-    
-    if (commissionBasePriceOnly) {
-      // 판매가격에만 커미션 적용: 기본 가격에서 직접 수수료 역산 (20% 할인 제외, 쿠폰 할인 제외)
-      // not_included_type이 'amount_and_choice'일 때는 초이스 가격을 제외한 기본 가격만 역산
-      const priceForCommission = notIncludedType === 'amount_and_choice' 
-        ? markupPrice  // 초이스 가격 제외
-        : maxPrice;    // 초이스 가격 포함
-      
-      const commissionDenominator = 1 - commissionRate;
-      otaPrice = {
-        adult: commissionDenominator > 0 && commissionDenominator !== 0 
-          ? priceForCommission.adult / commissionDenominator 
-          : priceForCommission.adult,
-        child: commissionDenominator > 0 && commissionDenominator !== 0 
-          ? priceForCommission.child / commissionDenominator 
-          : priceForCommission.child,
-        infant: commissionDenominator > 0 && commissionDenominator !== 0 
-          ? priceForCommission.infant / commissionDenominator 
-          : priceForCommission.infant
-      };
-    } else {
-      // 기존 로직: OTA 판매가 = (최대 판매가 × 0.8) / ((1 - 쿠폰 할인%) × (1 - 수수료율))
-      // 20% 할인 적용 후, 쿠폰 할인과 수수료를 역산하여 OTA 판매가 계산
-      
-      // 최대 판매가에 20% 할인 적용
-      const priceAfter20PercentDiscount = {
-        adult: maxPrice.adult * 0.8,
-        child: maxPrice.child * 0.8,
-        infant: maxPrice.infant * 0.8
-      };
-      
-      // 쿠폰 할인 역산: 할인된 가격을 원래 가격으로 복원
-      // 성인 가격에만 적용하는 플랫폼인 경우
-      const couponDenominator = 1 - couponDiscountRate;
-      const priceAfterCouponReverse = commissionAdultOnly ? {
-        adult: couponDenominator > 0 && couponDenominator !== 0
-          ? priceAfter20PercentDiscount.adult / couponDenominator
-          : priceAfter20PercentDiscount.adult,
-        child: priceAfter20PercentDiscount.child, // 아동/유아는 쿠폰 할인 역산 없음
-        infant: priceAfter20PercentDiscount.infant // 아동/유아는 쿠폰 할인 역산 없음
-      } : {
-        adult: couponDenominator > 0 && couponDenominator !== 0
-          ? priceAfter20PercentDiscount.adult / couponDenominator
-          : priceAfter20PercentDiscount.adult,
-        child: couponDenominator > 0 && couponDenominator !== 0
-          ? priceAfter20PercentDiscount.child / couponDenominator
-          : priceAfter20PercentDiscount.child,
-        infant: couponDenominator > 0 && couponDenominator !== 0
-          ? priceAfter20PercentDiscount.infant / couponDenominator
-          : priceAfter20PercentDiscount.infant
-      };
-      
-      // 수수료 역산
-      // 성인 가격에만 적용하는 플랫폼인 경우
-      const commissionDenominator = 1 - commissionRate;
-      otaPrice = commissionAdultOnly ? {
-        adult: commissionDenominator > 0 && commissionDenominator !== 0 
-          ? priceAfterCouponReverse.adult / commissionDenominator 
-          : priceAfterCouponReverse.adult,
-        child: priceAfterCouponReverse.child, // 아동/유아는 수수료 역산 없음
-        infant: priceAfterCouponReverse.infant // 아동/유아는 수수료 역산 없음
-      } : {
-        adult: commissionDenominator > 0 && commissionDenominator !== 0 
-          ? priceAfterCouponReverse.adult / commissionDenominator 
-          : priceAfterCouponReverse.adult,
-        child: commissionDenominator > 0 && commissionDenominator !== 0 
-          ? priceAfterCouponReverse.child / commissionDenominator 
-          : priceAfterCouponReverse.child,
-        infant: commissionDenominator > 0 && commissionDenominator !== 0 
-          ? priceAfterCouponReverse.infant / commissionDenominator 
-          : priceAfterCouponReverse.infant
-      };
-    }
-
-    // Net Price 계산
-    let netPrice;
-    if (isOTAChannel && commissionBasePriceOnly) {
-      // OTA 채널이고 판매가격에만 커미션 적용이 체크되어 있으면
-      const baseAdultPrice = basePrice.adult;
-      const baseChildPrice = basePrice.child;
-      const baseInfantPrice = basePrice.infant;
-      
-      const notIncludedPrice = row.notIncludedPrice || 0;
-      
-      // 불포함 금액이 있는 경우: Net Price = 기본 가격 × (1 - 수수료%) + 초이스 가격 + 불포함 가격
-      // 불포함 금액이 없는 경우: Net Price = 기본 가격 × (1 - 수수료%) + 초이스 가격
-      if (notIncludedPrice > 0) {
-        // Net Price = 기본 가격 × (1 - 수수료%) + 초이스 가격 + 불포함 가격
-        netPrice = {
-          adult: baseAdultPrice * (1 - commissionRate) + choicePrice.adult + notIncludedPrice,
-          child: baseChildPrice * (1 - commissionRate) + choicePrice.child + notIncludedPrice,
-          infant: baseInfantPrice * (1 - commissionRate) + choicePrice.infant + notIncludedPrice
-        };
-      } else {
-        // Net Price = 기본 가격 × (1 - 수수료%) + 초이스 가격
-        netPrice = {
-          adult: baseAdultPrice * (1 - commissionRate) + choicePrice.adult,
-          child: baseChildPrice * (1 - commissionRate) + choicePrice.child,
-          infant: baseInfantPrice * (1 - commissionRate) + choicePrice.infant
-        };
-      }
-    } else if (isOTAChannel) {
-      // OTA 채널: OTA 판매가에 쿠폰 할인 적용 후 수수료 적용
-      // 성인 가격에만 적용하는 플랫폼인 경우
-      const otaPriceAfterCoupon = commissionAdultOnly ? {
-        adult: otaPrice.adult * (1 - row.couponPercent / 100),
-        child: otaPrice.child, // 아동/유아는 쿠폰 할인 없음
-        infant: otaPrice.infant // 아동/유아는 쿠폰 할인 없음
-      } : {
-        adult: otaPrice.adult * (1 - row.couponPercent / 100),
-        child: otaPrice.child * (1 - row.couponPercent / 100),
-        infant: otaPrice.infant * (1 - row.couponPercent / 100)
-      };
-      netPrice = commissionAdultOnly ? {
-        adult: otaPriceAfterCoupon.adult * (1 - row.commissionPercent / 100),
-        child: otaPriceAfterCoupon.child, // 아동/유아는 수수료 없음
-        infant: otaPriceAfterCoupon.infant // 아동/유아는 수수료 없음
-      } : {
-        adult: otaPriceAfterCoupon.adult * (1 - row.commissionPercent / 100),
-        child: otaPriceAfterCoupon.child * (1 - row.commissionPercent / 100),
-        infant: otaPriceAfterCoupon.infant * (1 - row.commissionPercent / 100)
-      };
-    } else {
-      // 일반 채널: 할인 가격에 수수료 적용
-      // 성인 가격에만 적용하는 플랫폼인 경우
-      netPrice = commissionAdultOnly ? {
-        adult: discountPrice.adult * (1 - row.commissionPercent / 100),
-        child: discountPrice.child, // 아동/유아는 수수료 없음
-        infant: discountPrice.infant // 아동/유아는 수수료 없음
-      } : {
-        adult: discountPrice.adult * (1 - row.commissionPercent / 100),
-        child: discountPrice.child * (1 - row.commissionPercent / 100),
-        infant: discountPrice.infant * (1 - row.commissionPercent / 100)
-      };
-    }
-
-    return {
-      maxPrice,
-      netPrice,
-      otaPrice
-    };
-  }, [otaChannels]);
 
   // 저장
   const handleSave = useCallback(async () => {
@@ -585,7 +295,7 @@ export default function BulkPricingTableModal({
             is_sale_available: true,
             not_included_price: row.notIncludedPrice,
             markup_percent: row.markupPercent,
-            choices_pricing: Object.keys(choicesPricing).length > 0 ? choicesPricing : undefined
+            choices_pricing: Object.keys(choicesPricing).length > 0 ? choicesPricing : {}
           };
 
           rulesData.push(ruleData);
@@ -732,7 +442,7 @@ export default function BulkPricingTableModal({
                       <tr>
                         <td colSpan={18} className="px-4 py-8 text-center text-gray-500">
                           <div className="space-y-2">
-                            <p>행이 없습니다. "행 추가" 버튼을 클릭하여 행을 추가하세요.</p>
+                            <p>행이 없습니다. &quot;행 추가&quot; 버튼을 클릭하여 행을 추가하세요.</p>
                             {(() => {
                               const homepageChannel = channels.find(ch => {
                                 const id = ch.id?.toLowerCase() || '';
@@ -759,8 +469,6 @@ export default function BulkPricingTableModal({
                         // 메인 행 (기본 정보)
                         // rowSpan 계산: 메인 행 1개 + 서브 행 (choiceCombinations.length - 1)개 = choiceCombinations.length개
                         const rowSpanValue = Math.max(choiceCombinations.length, 1);
-                        // OTA 채널만 사용하므로 항상 separate pricing
-                        const selectedChannel = otaChannels.find(ch => ch.id === row.channelId);
                         // 홈페이지 채널 찾기 (더 넓은 조건)
                         const homepageChannel = channels.find(ch => {
                           const id = ch.id?.toLowerCase() || '';
@@ -806,8 +514,8 @@ export default function BulkPricingTableModal({
                                   const selectedChannel = otaChannels.find(ch => ch.id === row.channelId);
                                   if (!selectedChannel) return null;
                                   
-                                  const notIncludedType = (selectedChannel as any)?.not_included_type || 'none';
-                                  const commissionBasePriceOnly = (selectedChannel as any)?.commission_base_price_only || false;
+                                  const notIncludedType = selectedChannel?.not_included_type || 'none';
+                                  const commissionBasePriceOnly = selectedChannel?.commission_base_price_only || false;
                                   
                                   const notIncludedTypeLabels: Record<string, string> = {
                                     'none': '불포함 금액 없음',
@@ -852,7 +560,6 @@ export default function BulkPricingTableModal({
                             {/* 초이스별 가격 입력 및 계산 결과 - 첫 번째 초이스 또는 기본 가격 */}
                             {choiceCombinations.length > 0 ? (() => {
                               const firstChoice = choiceCombinations[0];
-                              const calculated = calculatePrices(row, firstChoice.id);
                               
                               // 계산식 업데이트
                               // Gross Price = 판매가 × 0.8 (20% 할인) - 여기서 판매가는 기본 가격 + 초이스 가격
@@ -861,8 +568,8 @@ export default function BulkPricingTableModal({
                               // 차액 = Net Price - 홈페이지
                               
                               const selectedChannel = otaChannels.find(ch => ch.id === row.channelId);
-                              const commissionBasePriceOnly = (selectedChannel as any)?.commission_base_price_only || false;
-                              const notIncludedType = (selectedChannel as any)?.not_included_type || 'none';
+                              const commissionBasePriceOnly = selectedChannel?.commission_base_price_only || false;
+                              const notIncludedType = selectedChannel?.not_included_type || 'none';
                               
                               // 단일 가격 모드: adult 가격 사용
                               const basePrice = row.adultPrice || 0;
@@ -1021,7 +728,7 @@ export default function BulkPricingTableModal({
                             })() : (() => {
                               // 초이스가 없을 때 계산 - 단일 가격 모드
                               const selectedChannel = otaChannels.find(ch => ch.id === row.channelId);
-                              const notIncludedType = (selectedChannel as any)?.not_included_type || 'none';
+                              const notIncludedType = selectedChannel?.not_included_type || 'none';
                               
                               const basePrice = productBasePrice.adult || 0;
                               const choicePrice = 0;
@@ -1063,7 +770,7 @@ export default function BulkPricingTableModal({
                               // 차액 계산: 불포함 금액 타입에 따라 다름
                               // 불포함 금액 없음('none')이면 Net Price와 홈페이지 Gross 비교
                               // 그 외에는 Net Price와 홈페이지 Net 비교
-                              let priceDifference = notIncludedType === 'none' 
+                              const priceDifference = notIncludedType === 'none' 
                                 ? netPrice - homepageGross 
                                 : netPrice - homepageNet;
                               
@@ -1184,12 +891,10 @@ export default function BulkPricingTableModal({
                           </tr>
                           {/* 초이스별 서브 행들 */}
                           {choiceCombinations.slice(1).map((choice, choiceIndex) => {
-                            const calculated = calculatePrices(row, choice.id);
-                            
                             // 계산식 업데이트 (첫 번째 초이스와 동일) - 단일 가격 모드
                             const selectedChannel = otaChannels.find(ch => ch.id === row.channelId);
-                            const commissionBasePriceOnly = (selectedChannel as any)?.commission_base_price_only || false;
-                            const notIncludedType = (selectedChannel as any)?.not_included_type || 'none';
+                            const commissionBasePriceOnly = selectedChannel?.commission_base_price_only || false;
+                            const notIncludedType = selectedChannel?.not_included_type || 'none';
                             
                             // 단일 가격 모드: adult 가격 사용
                             const basePrice = row.adultPrice || 0;
@@ -1234,12 +939,12 @@ export default function BulkPricingTableModal({
                             const homepageGross = homepageSalePrice * 0.8;
                             const homepageNet = homepageGross - homepageChoicePrice;
                             
-                            // 차액 계산: 불포함 금액 타입에 따라 다름
-                            // 불포함 금액 없음('none')이면 Net Price와 홈페이지 Gross 비교
-                            // 그 외에는 Net Price와 홈페이지 Net 비교
-                            let priceDifference = notIncludedType === 'none' 
-                              ? netPrice - homepageGross 
-                              : netPrice - homepageNet;
+                              // 차액 계산: 불포함 금액 타입에 따라 다름
+                              // 불포함 금액 없음('none')이면 Net Price와 홈페이지 Gross 비교
+                              // 그 외에는 Net Price와 홈페이지 Net 비교
+                              const priceDifference = notIncludedType === 'none' 
+                                ? netPrice - homepageGross 
+                                : netPrice - homepageNet;
                             
                             return (
                               <tr key={`${row.id}-${choice.id}-${choiceIndex}`} className="hover:bg-gray-50">

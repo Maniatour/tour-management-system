@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, Play, DollarSign, Eye, X, GripVertical, Clock } from 'lucide-react'
+import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, DollarSign, Eye, X, GripVertical, Clock, Mail, ChevronDown } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
@@ -18,6 +18,7 @@ import PaymentRecordsList from '@/components/PaymentRecordsList'
 import { useReservationData } from '@/hooks/useReservationData'
 import PickupTimeModal from '@/components/tour/modals/PickupTimeModal'
 import PickupHotelModal from '@/components/tour/modals/PickupHotelModal'
+import EmailPreviewModal from '@/components/reservation/EmailPreviewModal'
 import { 
   getPickupHotelDisplay, 
   getCustomerName, 
@@ -130,7 +131,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   }>>>(new Map())
 
   // 새로운 초이스 시스템을 사용하는 Choices 표시 컴포넌트
-  const ChoicesDisplay = React.memo(({ reservation }: { reservation: Reservation }) => {
+  const ChoicesDisplay = React.memo(function ChoicesDisplay({ reservation }: { reservation: Reservation }) {
     const reservationId = reservation.id
     const [selectedChoices, setSelectedChoices] = useState<Array<{
       choice_id: string
@@ -264,6 +265,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   
   // 주간 페이지네이션 상태
   const [currentWeek, setCurrentWeek] = useState(0) // 0은 현재 주, 음수는 이전 주, 양수는 다음 주
+  const [isInitialLoad, setIsInitialLoad] = useState(true) // 초기 로딩 여부 추적
   
   // 고급 필터링 상태
   const [selectedChannel, setSelectedChannel] = useState<string>('all')
@@ -296,6 +298,37 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   // 예약 상세 모달 관련 상태
   const [showReservationDetailModal, setShowReservationDetailModal] = useState(false)
   const [selectedReservationForDetail, setSelectedReservationForDetail] = useState<Reservation | null>(null)
+
+  // 이메일 발송 관련 상태
+  const [emailDropdownOpen, setEmailDropdownOpen] = useState<string | null>(null)
+  const [sendingEmail, setSendingEmail] = useState<string | null>(null)
+  const [showEmailPreview, setShowEmailPreview] = useState(false)
+  const [emailPreviewData, setEmailPreviewData] = useState<{
+    reservationId: string
+    emailType: 'confirmation' | 'departure' | 'pickup'
+    customerEmail: string
+    pickupTime?: string | null
+    tourDate?: string | null
+  } | null>(null)
+
+  // 이메일 드롭다운 외부 클릭 시 닫기
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (emailDropdownOpen) {
+        const target = event.target as HTMLElement
+        if (!target.closest('.relative')) {
+          setEmailDropdownOpen(null)
+        }
+      }
+    }
+
+    if (emailDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [emailDropdownOpen])
 
   // 투어 정보 상태
   const [tourInfoMap, setTourInfoMap] = useState<Map<string, {
@@ -565,11 +598,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               .select('email, name_ko')
               .in('email', chunk)
             
-            guides?.forEach(guide => {
-              if (guide.email) {
-                guideMap.set(guide.email, guide.name_ko || '-')
-              }
-            })
+            if (guides) {
+              guides.forEach((guide: { email: string; name_ko: string | null }) => {
+                if (guide.email) {
+                  guideMap.set(guide.email, guide.name_ko || '-')
+                }
+              })
+            }
           }
         }
 
@@ -584,11 +619,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               .select('email, name_ko')
               .in('email', chunk)
             
-            assistants?.forEach(assistant => {
-              if (assistant.email) {
-                assistantMap.set(assistant.email, assistant.name_ko || '-')
-              }
-            })
+            if (assistants) {
+              assistants.forEach((assistant: { email: string; name_ko: string | null }) => {
+                if (assistant.email) {
+                  assistantMap.set(assistant.email, assistant.name_ko || '-')
+                }
+              })
+            }
           }
         }
 
@@ -604,11 +641,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 .select('id, vehicle_number, vehicle_type')
                 .in('id', chunk)
               
-              vehicles?.forEach(vehicle => {
-                if (vehicle.id) {
-                  vehicleMap.set(vehicle.id, vehicle.vehicle_number || vehicle.vehicle_type || '-')
-                }
-              })
+              if (vehicles) {
+                vehicles.forEach((vehicle: { id: string; vehicle_number: string | null; vehicle_type: string | null }) => {
+                  if (vehicle.id) {
+                    vehicleMap.set(vehicle.id, vehicle.vehicle_number || vehicle.vehicle_type || '-')
+                  }
+                })
+              }
             }
           } catch (error) {
             console.error('차량 정보 조회 오류:', error)
@@ -641,9 +680,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           if (tour.reservation_ids) {
             const reservationIds = Array.isArray(tour.reservation_ids)
               ? tour.reservation_ids
-              : String(tour.reservation_ids).split(',').map(id => id.trim()).filter(id => id)
+              : String(tour.reservation_ids).split(',').map((id: string) => id.trim()).filter((id: string) => id)
             
-            totalPeople = reservationIds.reduce((sum, id) => {
+            totalPeople = reservationIds.reduce((sum: number, id: string) => {
               const reservation = reservations.find(r => r.id === id)
               return sum + (reservation?.totalPeople || 0)
             }, 0)
@@ -773,6 +812,21 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   }, [getWeekStartDate])
 
   const formatWeekRange = useCallback((weekOffset: number) => {
+    // 초기 로딩 시 오늘부터 과거 7일 표시
+    if (isInitialLoad && weekOffset === 0) {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const weekStart = new Date(today)
+      weekStart.setDate(today.getDate() - 6) // 오늘부터 과거 7일 (오늘 포함)
+      const weekEnd = new Date(today)
+      weekEnd.setHours(23, 59, 59, 999)
+      return {
+        start: weekStart.toISOString().split('T')[0],
+        end: weekEnd.toISOString().split('T')[0],
+        display: `${weekStart.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}`
+      }
+    }
+    
     const weekStart = getWeekStartDate(weekOffset)
     const weekEnd = getWeekEndDate(weekOffset)
     return {
@@ -780,7 +834,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       end: weekEnd.toISOString().split('T')[0],
       display: `${weekStart.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}`
     }
-  }, [getWeekStartDate, getWeekEndDate])
+  }, [getWeekStartDate, getWeekEndDate, isInitialLoad])
 
   // 날짜별 그룹화 로직 (created_at 기준) - 주간 페이지네이션 적용
   const groupedReservations = useMemo(() => {
@@ -961,28 +1015,43 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             continue // 다음 청크 계속 처리
           }
 
-          pricingData?.forEach(p => {
-            const toNumber = (val: any): number => {
-              if (val === null || val === undefined) return 0
-              if (typeof val === 'string') return parseFloat(val) || 0
-              return val || 0
-            }
-            
-            pricingMap.set(p.reservation_id, {
-              total_price: toNumber(p.total_price),
-              balance_amount: toNumber(p.balance_amount),
-              adult_product_price: toNumber(p.adult_product_price),
-              child_product_price: toNumber(p.child_product_price),
-              infant_product_price: toNumber(p.infant_product_price),
-              product_price_total: toNumber(p.product_price_total),
-              coupon_discount: toNumber(p.coupon_discount),
-              additional_discount: toNumber(p.additional_discount),
-              additional_cost: toNumber(p.additional_cost),
-              commission_percent: toNumber(p.commission_percent),
-              commission_amount: toNumber(p.commission_amount),
-              currency: 'USD' // 기본값 USD (currency 컬럼이 없으므로)
+          if (pricingData) {
+            pricingData.forEach((p: {
+              reservation_id: string
+              total_price: number | null
+              balance_amount: number | null
+              adult_product_price: number | null
+              child_product_price: number | null
+              infant_product_price: number | null
+              product_price_total: number | null
+              coupon_discount: number | null
+              additional_discount: number | null
+              additional_cost: number | null
+              commission_percent: number | null
+              commission_amount: number | null
+            }) => {
+              const toNumber = (val: number | null | undefined): number => {
+                if (val === null || val === undefined) return 0
+                if (typeof val === 'string') return parseFloat(val) || 0
+                return val || 0
+              }
+              
+              pricingMap.set(p.reservation_id, {
+                total_price: toNumber(p.total_price),
+                balance_amount: toNumber(p.balance_amount),
+                adult_product_price: toNumber(p.adult_product_price),
+                child_product_price: toNumber(p.child_product_price),
+                infant_product_price: toNumber(p.infant_product_price),
+                product_price_total: toNumber(p.product_price_total),
+                coupon_discount: toNumber(p.coupon_discount),
+                additional_discount: toNumber(p.additional_discount),
+                additional_cost: toNumber(p.additional_cost),
+                commission_percent: toNumber(p.commission_percent),
+                commission_amount: toNumber(p.commission_amount),
+                currency: 'USD' // 기본값 USD (currency 컬럼이 없으므로)
+              })
             })
-          })
+          }
         }
 
         setReservationPricingMap(pricingMap)
@@ -1224,7 +1293,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         alert(t('messages.reservationUpdateError') + (error instanceof Error ? error.message : 'Unknown error'))
       }
     }
-  }, [editingReservation, refreshReservations])
+  }, [editingReservation, refreshReservations, t])
 
   // 예약 편집 모달 열기
   const handleEditReservationClick = useCallback((reservation: Reservation) => {
@@ -1313,6 +1382,113 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     setPricingModalReservation(null)
   }
 
+  // 이메일 미리보기 모달 열기
+  const handleOpenEmailPreview = (reservation: Reservation, emailType: 'confirmation' | 'departure' | 'pickup') => {
+    const customer = (customers as Customer[]).find(c => c.id === reservation.customerId)
+    if (!customer?.email) {
+      alert('고객 이메일 주소가 없습니다.')
+      return
+    }
+
+    if (emailType === 'pickup' && (!reservation.pickUpTime || !reservation.tourDate)) {
+      alert('픽업 시간과 투어 날짜가 필요합니다.')
+      return
+    }
+
+    setEmailPreviewData({
+      reservationId: reservation.id,
+      emailType,
+      customerEmail: customer.email,
+      pickupTime: reservation.pickUpTime,
+      tourDate: reservation.tourDate
+    })
+    setShowEmailPreview(true)
+    setEmailDropdownOpen(null)
+  }
+
+  // 이메일 실제 발송 함수
+  const handleSendEmailFromPreview = async () => {
+    if (!emailPreviewData) return
+
+    setSendingEmail(emailPreviewData.reservationId)
+
+    try {
+      let response: Response
+      const customer = (customers as Customer[]).find(c => {
+        const reservation = reservations.find(r => r.id === emailPreviewData.reservationId)
+        return reservation && c.id === reservation.customerId
+      })
+      
+      const customerLanguage = customer?.language?.toLowerCase() || 'ko'
+      const locale = customerLanguage === 'en' || customerLanguage === 'english' ? 'en' : 'ko'
+
+      if (emailPreviewData.emailType === 'confirmation') {
+        // 예약 확인 이메일
+        response = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            reservationId: emailPreviewData.reservationId,
+            email: emailPreviewData.customerEmail,
+            type: 'both',
+            locale
+          })
+        })
+      } else if (emailPreviewData.emailType === 'departure') {
+        // 투어 출발 확정 이메일
+        response = await fetch('/api/send-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            reservationId: emailPreviewData.reservationId,
+            email: emailPreviewData.customerEmail,
+            type: 'voucher',
+            locale
+          })
+        })
+      } else {
+        // 픽업 notification 이메일
+        if (!emailPreviewData.pickupTime || !emailPreviewData.tourDate) {
+          throw new Error('픽업 시간과 투어 날짜가 필요합니다.')
+        }
+
+        response = await fetch('/api/send-pickup-schedule-notification', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            reservationId: emailPreviewData.reservationId,
+            pickupTime: emailPreviewData.pickupTime.includes(':') 
+              ? emailPreviewData.pickupTime 
+              : `${emailPreviewData.pickupTime}:00`,
+            tourDate: emailPreviewData.tourDate,
+            locale
+          })
+        })
+      }
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || '이메일 발송에 실패했습니다.')
+      }
+
+      alert('이메일이 성공적으로 발송되었습니다.')
+      setShowEmailPreview(false)
+      setEmailPreviewData(null)
+    } catch (error) {
+      console.error('이메일 발송 오류:', error)
+      alert(error instanceof Error ? error.message : '이메일 발송 중 오류가 발생했습니다.')
+    } finally {
+      setSendingEmail(null)
+    }
+  }
+
   // 픽업 시간 수정 모달 열기
   const handlePickupTimeClick = useCallback((reservation: Reservation, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -1326,7 +1502,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     if (!selectedReservationForPickupTime) return
 
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('reservations')
         .update({ pickup_time: pickupTimeValue || null })
         .eq('id', selectedReservationForPickupTime.id)
@@ -1336,6 +1512,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         alert('픽업 시간 업데이트 중 오류가 발생했습니다.')
         return
       }
+
+      // 자동 알림 발송은 제거 (일괄 발송 버튼 사용)
 
       await refreshReservations()
       setShowPickupTimeModal(false)
@@ -1359,7 +1537,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     if (!selectedReservationForPickupHotel) return
 
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('reservations')
         .update({ pickup_hotel: hotelId || null })
         .eq('id', selectedReservationForPickupHotel.id)
@@ -1386,7 +1564,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       return pickupHotels || []
     }
     const searchLower = hotelSearchTerm.toLowerCase()
-    return (pickupHotels || []).filter(hotel => 
+    return (pickupHotels || []).filter((hotel: {
+      id: string
+      hotel?: string | null
+      name?: string | null
+      name_ko?: string | null
+      pick_up_location?: string | null
+      address?: string | null
+    }) => 
       hotel.hotel?.toLowerCase().includes(searchLower) ||
       hotel.name?.toLowerCase().includes(searchLower) ||
       hotel.name_ko?.toLowerCase().includes(searchLower) ||
@@ -1466,7 +1651,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       console.error('Error adding customer:', error)
       alert(t('messages.customerAddErrorGeneric'))
     }
-  }, [showAddForm, refreshCustomers])
+  }, [showAddForm, refreshCustomers, t])
 
   // 로딩 화면
   if (loading) {
@@ -1745,16 +1930,22 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 {/* 네비게이션 버튼들 - 초컴팩트 */}
                 <div className="flex items-center space-x-1">
                   <button
-                    onClick={() => setCurrentWeek(prev => prev - 1)}
+                    onClick={() => {
+                      setIsInitialLoad(false);
+                      setCurrentWeek(prev => prev - 1);
+                    }}
                     className="px-1.5 py-1 text-xs font-medium text-blue-700 bg-white border border-blue-300 rounded hover:bg-blue-50"
                   >
                     ←
                   </button>
                   
                   <button
-                    onClick={() => setCurrentWeek(0)}
+                    onClick={() => {
+                      setIsInitialLoad(false);
+                      setCurrentWeek(0);
+                    }}
                     className={`px-1.5 py-1 text-xs font-medium rounded ${
-                      currentWeek === 0
+                      currentWeek === 0 && !isInitialLoad
                         ? 'text-white bg-blue-600 border border-blue-600'
                         : 'text-blue-700 bg-white border border-blue-300 hover:bg-blue-50'
                     }`}
@@ -1763,7 +1954,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   </button>
                   
                   <button
-                    onClick={() => setCurrentWeek(prev => prev + 1)}
+                    onClick={() => {
+                      setIsInitialLoad(false);
+                      setCurrentWeek(prev => prev + 1);
+                    }}
                     className="px-1.5 py-1 text-xs font-medium text-blue-700 bg-white border border-blue-300 rounded hover:bg-blue-50"
                   >
                     →
@@ -2567,6 +2761,53 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       <Eye className="w-3 h-3" />
                       <span>고객 보기</span>
                     </button>
+
+                    {/* 이메일 발송 드롭다운 */}
+                    <div className="relative">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEmailDropdownOpen(emailDropdownOpen === reservation.id ? null : reservation.id);
+                        }}
+                        disabled={sendingEmail === reservation.id}
+                        className="px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md hover:bg-green-100 transition-colors flex items-center space-x-1 border border-green-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="이메일 발송"
+                      >
+                        <Mail className="w-3 h-3" />
+                        <span>{sendingEmail === reservation.id ? '발송 중...' : '이메일'}</span>
+                        <ChevronDown className="w-3 h-3" />
+                      </button>
+
+                      {emailDropdownOpen === reservation.id && (
+                        <div 
+                          className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-50"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            onClick={() => handleOpenEmailPreview(reservation, 'confirmation')}
+                            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
+                          >
+                            <Mail className="w-3 h-3" />
+                            <span>예약 확인 이메일</span>
+                          </button>
+                          <button
+                            onClick={() => handleOpenEmailPreview(reservation, 'departure')}
+                            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
+                          >
+                            <Mail className="w-3 h-3" />
+                            <span>투어 출발 확정 이메일</span>
+                          </button>
+                          <button
+                            onClick={() => handleOpenEmailPreview(reservation, 'pickup')}
+                            disabled={!reservation.pickUpTime || !reservation.tourDate}
+                            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <Mail className="w-3 h-3" />
+                            <span>픽업 notification 이메일</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3021,6 +3262,53 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       <Eye className="w-3 h-3" />
                       <span>고객 보기</span>
                     </button>
+
+                    {/* 이메일 발송 드롭다운 */}
+                    <div className="relative">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEmailDropdownOpen(emailDropdownOpen === reservation.id ? null : reservation.id);
+                        }}
+                        disabled={sendingEmail === reservation.id}
+                        className="px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md hover:bg-green-100 transition-colors flex items-center space-x-1 border border-green-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="이메일 발송"
+                      >
+                        <Mail className="w-3 h-3" />
+                        <span>{sendingEmail === reservation.id ? '발송 중...' : '이메일'}</span>
+                        <ChevronDown className="w-3 h-3" />
+                      </button>
+
+                      {emailDropdownOpen === reservation.id && (
+                        <div 
+                          className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-50"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            onClick={() => handleOpenEmailPreview(reservation, 'confirmation')}
+                            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
+                          >
+                            <Mail className="w-3 h-3" />
+                            <span>예약 확인 이메일</span>
+                          </button>
+                          <button
+                            onClick={() => handleOpenEmailPreview(reservation, 'departure')}
+                            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
+                          >
+                            <Mail className="w-3 h-3" />
+                            <span>투어 출발 확정 이메일</span>
+                          </button>
+                          <button
+                            onClick={() => handleOpenEmailPreview(reservation, 'pickup')}
+                            disabled={!reservation.pickUpTime || !reservation.tourDate}
+                            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <Mail className="w-3 h-3" />
+                            <span>픽업 notification 이메일</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3252,7 +3540,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             pickup_hotel: selectedReservationForPickupHotel.pickUpHotel
           }}
           hotelSearchTerm={hotelSearchTerm}
-          filteredHotels={filteredHotels.map(hotel => ({
+          filteredHotels={filteredHotels.map((hotel: {
+            id: string
+            hotel?: string | null
+            name?: string | null
+            name_ko?: string | null
+            pick_up_location?: string | null
+          }) => ({
             id: hotel.id,
             hotel: hotel.hotel || hotel.name || hotel.name_ko || '',
             pick_up_location: hotel.pick_up_location || ''
@@ -3265,6 +3559,23 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             setHotelSearchTerm('')
           }}
           getCustomerName={(customerId: string) => getCustomerName(customerId, (customers as Customer[]) || [])}
+        />
+      )}
+
+      {/* 이메일 미리보기 모달 */}
+      {showEmailPreview && emailPreviewData && (
+        <EmailPreviewModal
+          isOpen={showEmailPreview}
+          onClose={() => {
+            setShowEmailPreview(false)
+            setEmailPreviewData(null)
+          }}
+          reservationId={emailPreviewData.reservationId}
+          emailType={emailPreviewData.emailType}
+          customerEmail={emailPreviewData.customerEmail}
+          pickupTime={emailPreviewData.pickupTime}
+          tourDate={emailPreviewData.tourDate}
+          onSend={handleSendEmailFromPreview}
         />
       )}
 

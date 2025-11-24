@@ -1,5 +1,5 @@
-import React from 'react'
-import { ChevronDown, ChevronUp, MapPin, Map, Users } from 'lucide-react'
+import React, { useState } from 'react'
+import { ChevronDown, ChevronUp, MapPin, Map, Users, Mail, Eye } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { ConnectionStatusLabel } from './TourUIComponents'
 
@@ -12,6 +12,7 @@ interface PickupScheduleProps {
     adults: number | null
     children?: number | null
     infants?: number | null
+    tour_date?: string | null
   }>
   pickupHotels: Array<{
     id: string
@@ -23,6 +24,8 @@ interface PickupScheduleProps {
   connectionStatus: { reservations: boolean }
   onToggleSection: (sectionId: string) => void
   onAutoGenerate: () => void
+  onBatchSendNotification?: () => Promise<void>
+  onPreviewEmail?: () => void
   getPickupHotelNameOnly: (hotelId: string) => string
   getCustomerName: (customerId: string) => string
   openGoogleMaps: (link: string) => void
@@ -35,11 +38,43 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
   connectionStatus,
   onToggleSection,
   onAutoGenerate,
+  onBatchSendNotification,
+  onPreviewEmail,
   getPickupHotelNameOnly,
   getCustomerName,
   openGoogleMaps
 }) => {
   const t = useTranslations('tours.pickupSchedule')
+  const [sendingNotifications, setSendingNotifications] = useState(false)
+  
+  // 픽업 시간이 설정된 예약 개수 확인
+  const reservationsWithPickupTime = assignedReservations.filter(
+    (res) => res.pickup_time && res.pickup_time.trim() !== ''
+  ).length
+
+  const handleBatchSend = async () => {
+    if (!onBatchSendNotification) return
+    
+    if (reservationsWithPickupTime === 0) {
+      alert('픽업 시간이 설정된 예약이 없습니다. 먼저 픽업 시간을 설정해주세요.')
+      return
+    }
+
+    if (!confirm(`픽업 시간이 설정된 ${reservationsWithPickupTime}건의 예약에 대해 고객에게 알림을 발송하시겠습니까?`)) {
+      return
+    }
+
+    setSendingNotifications(true)
+    try {
+      await onBatchSendNotification()
+      alert(`픽업 스케줄 알림이 ${reservationsWithPickupTime}건 발송되었습니다.`)
+    } catch (error) {
+      console.error('일괄 알림 발송 오류:', error)
+      alert('일괄 알림 발송 중 오류가 발생했습니다.')
+    } finally {
+      setSendingNotifications(false)
+    }
+  }
   const renderPickupSchedule = () => {
     if (assignedReservations.length === 0) {
       return (
@@ -135,6 +170,46 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
             >
               자동생성
             </button>
+            {reservationsWithPickupTime > 0 && (
+              <>
+                {onPreviewEmail && (
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onPreviewEmail()
+                    }}
+                    className="px-3 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700 flex items-center gap-1"
+                    title="이메일 미리보기"
+                  >
+                    <Eye size={14} />
+                    <span>미리보기</span>
+                  </button>
+                )}
+                {onBatchSendNotification && (
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleBatchSend()
+                    }}
+                    disabled={sendingNotifications}
+                    className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                    title={`픽업 시간 일괄 발송 (${reservationsWithPickupTime}건)`}
+                  >
+                    {sendingNotifications ? (
+                      <>
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                        <span>발송 중...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Mail size={14} />
+                        <span>일괄 발송 ({reservationsWithPickupTime})</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </>
+            )}
             {expandedSections.has('pickup-schedule') ? (
               <ChevronUp className="w-5 h-5 text-gray-500" />
             ) : (

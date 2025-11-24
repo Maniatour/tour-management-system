@@ -187,6 +187,8 @@ interface TourDetails {
   tour_guide_id?: string
   assistant_id?: string
   tour_car_id?: string
+  status?: string
+  tour_status?: string
   tour_guide?: {
     name_ko?: string
     name_en?: string
@@ -296,7 +298,6 @@ export default function CustomerReservations() {
   const params = useParams()
   const locale = params.locale as string || 'ko'
   const customerIdFromUrl = params.customer_id as string
-  const reservationIdFromUrl = params.id as string
   const t = useTranslations('common')
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [loading, setLoading] = useState(true)
@@ -489,6 +490,26 @@ export default function CustomerReservations() {
       console.error('Channels 로딩 중 예외:', error)
     }
   }, [])
+
+  // 투어 날짜로부터 48시간 이전인지 확인하는 함수 (48시간 전까지)
+  const isBefore48Hours = (tourDate: string) => {
+    if (!tourDate) return false
+    
+    try {
+      const tourDateObj = new Date(tourDate)
+      if (isNaN(tourDateObj.getTime())) return false
+      
+      const now = new Date()
+      const diffMs = tourDateObj.getTime() - now.getTime()
+      const diffHours = diffMs / (1000 * 60 * 60)
+      
+      // 48시간 이전인지 확인 (48시간보다 많이 남았는지)
+      return diffHours > 48
+    } catch (error) {
+      console.error('날짜 계산 오류:', error)
+      return false
+    }
+  }
 
   // 픽업 날짜 계산 함수
   const calculatePickupDate = (pickupTime: string, tourDate: string) => {
@@ -1214,8 +1235,8 @@ export default function CustomerReservations() {
                         quantity: number
                         total_price: number
                       }) => {
-                        const choiceInfo = choicesData2.find((c: { id: string }) => c.id === choice.choice_id)
-                        const optionInfo = optionsData2.find((o: { id: string }) => o.id === choice.option_id)
+                        const choiceInfo = choicesData2.find((c: { id: string; choice_group: string; choice_group_ko: string }) => c.id === choice.choice_id) as { id: string; choice_group: string; choice_group_ko: string } | undefined
+                        const optionInfo = optionsData2.find((o: { id: string; option_name: string; option_name_ko: string }) => o.id === choice.option_id) as { id: string; option_name: string; option_name_ko: string } | undefined
                         
                         return {
                           ...choice,
@@ -2727,6 +2748,28 @@ export default function CustomerReservations() {
 
                 {/* 상세 정보 */}
                   <div className="border-t border-gray-200 pt-6 mt-4 space-y-6">
+                    {/* Recruiting 상태 안내문 - Product Details 위에 표시 */}
+                    {((reservationDetails[reservation.id]?.tourDetails?.tour_status?.toLowerCase() === 'recruiting' || 
+                       reservationDetails[reservation.id]?.tourDetails?.status?.toLowerCase() === 'recruiting') && 
+                       (reservationDetails[reservation.id]?.productDetails || reservation.multilingualDetails)) && (
+                      <div className="mb-6">
+                        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+                          <div className="flex items-start">
+                            <div className="flex-shrink-0">
+                              <svg className="h-5 w-5 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                            <div className="ml-3 flex-1">
+                              <p className="text-sm font-semibold text-blue-800">
+                                {t('recruitingNotice')}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {/* 상품 세부 정보 */}
                     {(reservationDetails[reservation.id]?.productDetails || reservation.multilingualDetails) && (
                       <div>
@@ -2921,16 +2964,45 @@ export default function CustomerReservations() {
                               <h6 className="font-medium text-gray-900 mb-2">{t('pickupTime')}</h6>
                               {(() => {
                                 const pickupTime = reservationDetails[reservation.id]?.pickupSchedule?.pickup_time
-                                const tourDate = reservationDetails[reservation.id]?.pickupSchedule?.tour_date
+                                const tourDate = reservationDetails[reservation.id]?.pickupSchedule?.tour_date || reservation.tour_date
+                                const isBefore48H = tourDate ? isBefore48Hours(tourDate) : false
                                 return pickupTime ? (
-                                  <p className="text-sm text-gray-700">
-                                    <span className="font-semibold text-blue-600">{formatTimeToAMPM(pickupTime)}</span>
-                                    {tourDate && (
-                                      <span className="ml-2 font-semibold text-blue-600">
-                                        ({calculatePickupDate(pickupTime, tourDate)})
+                                  <>
+                                    <p className="text-sm text-gray-700">
+                                      <span className={`font-semibold ${isBefore48H ? 'text-orange-600' : 'text-blue-600'}`}>
+                                        {formatTimeToAMPM(pickupTime)}
                                       </span>
+                                      {tourDate && (
+                                        <span className={`ml-2 font-semibold ${isBefore48H ? 'text-orange-600' : 'text-blue-600'}`}>
+                                          ({calculatePickupDate(pickupTime, tourDate)})
+                                        </span>
+                                      )}
+                                      {isBefore48H && (
+                                        <span className="ml-2 text-xs text-orange-600 font-medium">
+                                          (대략적인 시간)
+                                        </span>
+                                      )}
+                                    </p>
+                                    {/* 48시간 전 안내문 */}
+                                    {tourDate && isBefore48Hours(tourDate) && (
+                                      <div className="mt-3 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r space-y-2">
+                                        <p className="text-sm text-yellow-800 font-semibold">
+                                          {t('pickupTimeApproximate')}
+                                        </p>
+                                        <p className="text-xs text-yellow-700 leading-relaxed">
+                                          {t('pickupTimeNotice')}
+                                        </p>
+                                      </div>
                                     )}
-                                  </p>
+                                    {/* 픽업 호텔 미선택 안내 */}
+                                    {tourDate && isBefore48Hours(tourDate) && !reservation.pickup_hotel && (
+                                      <div className="mt-2 bg-red-50 border-l-4 border-red-400 p-3 rounded-r">
+                                        <p className="text-xs text-red-800 font-medium">
+                                          {t('pickupHotelNotSelected')}
+                                        </p>
+                                      </div>
+                                    )}
+                                  </>
                                 ) : null
                               })()}
                             </div>
@@ -3031,6 +3103,21 @@ export default function CustomerReservations() {
                               <Users className="w-4 h-4 mr-1" />
                               {t('allPickups')}
                             </h5>
+                            {/* All Pickups 안내문 */}
+                            {(() => {
+                              const tourDate = reservationDetails[reservation.id]?.pickupSchedule?.tour_date || reservation.tour_date
+                              const isBefore48H = tourDate ? isBefore48Hours(tourDate) : false
+                              return isBefore48H ? (
+                                <div className="mb-3 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r space-y-2">
+                                  <p className="text-sm text-yellow-800 font-semibold">
+                                    {t('allPickupTimeNotice')}
+                                  </p>
+                                  <p className="text-xs text-yellow-700 leading-relaxed">
+                                    {t('pickupTimeNotice')}
+                                  </p>
+                                </div>
+                              ) : null
+                            })()}
                             <div className="space-y-3">
                               {reservationDetails[reservation.id]?.pickupSchedule?.allPickups!.map((pickup) => (
                                 <div key={pickup.reservation_id} className={`p-3 rounded-md border-l-4 ${
@@ -3038,14 +3125,25 @@ export default function CustomerReservations() {
                                 }`}>
                                   <div className="space-y-2">
                                     {/* 첫 번째 줄: 픽업 시간과 날짜 */}
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-sm font-semibold text-blue-600">
-                                          {formatTimeToAMPM(pickup.pickup_time)}
-                                        </span>
-                                      <span className="text-sm font-semibold text-blue-600">
-                                          {pickup.tour_date && calculatePickupDate(pickup.pickup_time, pickup.tour_date)}
-                                        </span>
-                                    </div>
+                                    {(() => {
+                                      const tourDate = reservationDetails[reservation.id]?.pickupSchedule?.tour_date || reservation.tour_date
+                                      const isBefore48H = tourDate ? isBefore48Hours(tourDate) : false
+                                      return (
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className={`text-sm font-semibold ${isBefore48H ? 'text-orange-600' : 'text-blue-600'}`}>
+                                            {formatTimeToAMPM(pickup.pickup_time)}
+                                          </span>
+                                          <span className={`text-sm font-semibold ${isBefore48H ? 'text-orange-600' : 'text-blue-600'}`}>
+                                            {pickup.tour_date && calculatePickupDate(pickup.pickup_time, pickup.tour_date)}
+                                          </span>
+                                          {isBefore48H && (
+                                            <span className="text-xs text-orange-600 font-medium">
+                                              ({t('approximateTime')})
+                                            </span>
+                                          )}
+                                        </div>
+                                      )
+                                    })()}
                                     
                                     {/* 두 번째 줄: 호텔 이름 */}
                                     <div>
@@ -3169,8 +3267,14 @@ export default function CustomerReservations() {
                                   {/* 차량 사진 */}
                                   {(() => {
                                     const photos = reservationDetails[reservation.id]?.tourDetails?.vehicle?.vehicle_type_photos
+                                    type PhotoType = {
+                                      photo_url?: string
+                                      photo_name?: string
+                                      description?: string
+                                      is_primary?: boolean
+                                    }
                                     const primaryPhoto = photos && Array.isArray(photos) && photos.length > 0
-                                      ? photos.find((p: any) => p.is_primary) || photos[0]
+                                      ? photos.find((p: PhotoType) => p.is_primary) || photos[0]
                                       : null
                                     
                                     if (primaryPhoto?.photo_url) {
@@ -3178,7 +3282,7 @@ export default function CustomerReservations() {
                                         <div className="flex-shrink-0">
                                           <div 
                                             className="relative cursor-pointer group w-full md:w-48 h-32 rounded-lg overflow-hidden border"
-                                            onClick={() => setSelectedMedia(primaryPhoto.photo_url)}
+                                            onClick={() => primaryPhoto.photo_url && setSelectedMedia(primaryPhoto.photo_url)}
                                           >
                                             <Image 
                                               src={primaryPhoto.photo_url}

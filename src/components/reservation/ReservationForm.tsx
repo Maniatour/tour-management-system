@@ -1,7 +1,7 @@
 'use client'
 /* eslint-disable */
 
-import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { Trash2, Eye } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { sanitizeTimeInput } from '@/lib/utils'
@@ -18,7 +18,6 @@ import TourConnectionSection from '@/components/reservation/TourConnectionSectio
 import PaymentRecordsList from '@/components/PaymentRecordsList'
 import ReservationExpenseManager from '@/components/ReservationExpenseManager'
 import ReservationOptionsSection from '@/components/reservation/ReservationOptionsSection'
-import QuantityBasedAccommodationSelector from '@/components/reservation/QuantityBasedAccommodationSelector'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import { getOptionalOptionsForProduct } from '@/utils/reservationUtils'
 import type { 
@@ -103,8 +102,8 @@ export default function ReservationForm({
   const tCommon = useTranslations('common')
   const customerSearchRef = useRef<HTMLDivElement | null>(null)
   const rez: RezLike = (reservation as unknown as RezLike) || ({} as RezLike)
-  const [channelAccordionExpanded, setChannelAccordionExpanded] = useState(layout === 'modal')
-  const [productAccordionExpanded, setProductAccordionExpanded] = useState(layout === 'modal')
+  const [, setChannelAccordionExpanded] = useState(layout === 'modal')
+  const [, setProductAccordionExpanded] = useState(layout === 'modal')
   const [reservationOptionsTotalPrice, setReservationOptionsTotalPrice] = useState(0)
   const [expenseUpdateTrigger, setExpenseUpdateTrigger] = useState(0)
   
@@ -378,15 +377,12 @@ export default function ReservationForm({
     choiceNotIncludedTotal: 0
   })
 
-  type OptionsPricingArray = Array<{ option_id: string; adult_price?: number | null; child_price?: number | null; infant_price?: number | null }>
-  type OptionsPricingRecord = Record<string, { adult?: number | null; adult_price?: number | null; child?: number | null; child_price?: number | null; infant?: number | null; infant_price?: number | null }>
-  type OptionsPricing = OptionsPricingArray | OptionsPricingRecord
 
   // 현재 사용자 정보 가져오기
   const [, setCurrentUser] = useState<{ email: string } | null>(null)
   
   // 가격 자동 입력 알림 상태
-  const [priceAutoFillMessage, setPriceAutoFillMessage] = useState<string>('')
+  const [, setPriceAutoFillMessage] = useState<string>('')
   // 기존 가격 정보가 로드되었는지 추적
   const [isExistingPricingLoaded, setIsExistingPricingLoaded] = useState<boolean>(false)
   
@@ -870,7 +866,7 @@ export default function ReservationForm({
       } else {
         console.log('ReservationForm: 새로운 테이블에 초이스 데이터가 없음')
         // 새로운 테이블에 데이터가 없으면 기존 choices 데이터 사용
-        if (reservation && reservation.choices && reservation.choices.required && reservation.choices.required.length > 0) {
+        if (reservation && reservation.choices && typeof reservation.choices === 'object' && 'required' in reservation.choices && Array.isArray(reservation.choices.required) && reservation.choices.required.length > 0) {
           console.log('ReservationForm: 기존 choices 데이터로 fallback:', reservation.choices)
           // 기존 choices 데이터 처리 로직 실행
           processExistingChoicesData(reservation.choices)
@@ -949,6 +945,30 @@ export default function ReservationForm({
     try {
       console.log('ReservationForm: 기존 products.choices에서 초이스 데이터 로드 시도:', productId);
       
+      type ProductChoices = {
+        required?: Array<{
+          id: string
+          name?: string
+          name_ko?: string
+          type?: string
+          validation?: { min_selections?: number; max_selections?: number }
+          options?: Array<{
+            id: string
+            name?: string
+            name_ko?: string
+            adult_price?: number
+            child_price?: number
+            infant_price?: number
+            capacity?: number
+            is_default?: boolean
+          }>
+        }>
+      }
+
+      type ProductRow = {
+        choices?: ProductChoices | null
+      }
+
       const { data: product, error } = await supabase
         .from('products')
         .select('choices')
@@ -960,11 +980,39 @@ export default function ReservationForm({
         return;
       }
 
-      if (product && product.choices) {
-        console.log('ReservationForm: 기존 products.choices 데이터 발견:', product.choices);
+      const productRow = product as ProductRow | null
+      if (productRow && productRow.choices) {
+        const productChoicesData = productRow.choices as ProductChoices
+        console.log('ReservationForm: 기존 products.choices 데이터 발견:', productChoicesData);
         
         // 기존 choices 데이터를 새로운 형식으로 변환
-        const productChoices: any[] = [];
+        type ChoiceOption = {
+          id: string
+          option_key: string
+          option_name: string
+          option_name_ko: string
+          adult_price: number
+          child_price: number
+          infant_price: number
+          capacity: number
+          is_default: boolean
+          is_active: boolean
+          sort_order: number
+        }
+
+        type ChoiceData = {
+          id: string
+          choice_group: string
+          choice_group_ko: string
+          choice_type: string
+          is_required: boolean
+          min_selections: number
+          max_selections: number
+          sort_order: number
+          options: ChoiceOption[]
+        }
+
+        const productChoices: ChoiceData[] = [];
         const selectedChoices: Array<{
           choice_id: string
           option_id: string
@@ -973,13 +1021,13 @@ export default function ReservationForm({
         }> = [];
         const choicesData: Record<string, any> = {};
 
-        if (product.choices.required && Array.isArray(product.choices.required)) {
-          product.choices.required.forEach((choice: any) => {
-            const choiceData = {
+        if (productChoicesData.required && Array.isArray(productChoicesData.required)) {
+          productChoicesData.required.forEach((choice) => {
+            const choiceData: ChoiceData = {
               id: choice.id,
               choice_group: choice.name || choice.id,
               choice_group_ko: choice.name_ko || choice.name || choice.id,
-              choice_type: choice.type || 'single',
+              choice_type: (choice.type || 'single') as 'single' | 'multiple' | 'quantity',
               is_required: true,
               min_selections: choice.validation?.min_selections || 1,
               max_selections: choice.validation?.max_selections || 10,
@@ -988,8 +1036,8 @@ export default function ReservationForm({
             };
 
             if (choice.options && Array.isArray(choice.options)) {
-              choice.options.forEach((option: any) => {
-                const optionData = {
+              choice.options.forEach((option) => {
+                const optionData: ChoiceOption = {
                   id: option.id,
                   option_key: option.id,
                   option_name: option.name || option.id,
@@ -1038,7 +1086,7 @@ export default function ReservationForm({
 
         setFormData(prev => ({
           ...prev,
-          productChoices,
+          productChoices: productChoices as typeof prev.productChoices,
           selectedChoices,
           choices: choicesData,
           choicesTotal
@@ -1178,7 +1226,7 @@ export default function ReservationForm({
       // 새로운 reservation_choices 테이블에서 데이터 로드
       console.log('ReservationForm: 편집 모드 - 새로운 테이블에서 초이스 데이터 로드 시도:', reservation.id)
       loadReservationChoicesFromNewTable(reservation.id, reservation.productId)
-    } else if (reservation && reservation.choices && reservation.choices.required && reservation.choices.required.length > 0) {
+    } else if (reservation && reservation.choices && typeof reservation.choices === 'object' && 'required' in reservation.choices && Array.isArray(reservation.choices.required) && reservation.choices.required.length > 0) {
       console.log('ReservationForm: 복원할 choices 데이터:', reservation.choices)
       
       // choices.required에서 선택된 옵션 찾기
@@ -1339,14 +1387,14 @@ export default function ReservationForm({
       }> = [];
       
       if (!reservation?.id) {
-        data?.forEach(choice => {
-          const defaultOption = choice.options?.find(opt => opt.is_default);
+        data?.forEach((choice: { id: string; options?: Array<{ id: string; is_default?: boolean; adult_price?: number }> }) => {
+          const defaultOption = choice.options?.find((opt: { id: string; is_default?: boolean; adult_price?: number }) => opt.is_default);
           if (defaultOption) {
             defaultChoices.push({
               choice_id: choice.id,
               option_id: defaultOption.id,
               quantity: 1,
-              total_price: defaultOption.adult_price
+              total_price: defaultOption.adult_price || 0
             });
           }
         });
@@ -1449,10 +1497,11 @@ export default function ReservationForm({
               const isSelected = updated.selectedOptions && 
                 updated.selectedOptions[optionId] && 
                 updated.selectedOptions[optionId].length > 0
-              if (isSelected) {
-                requiredOptionTotal += (option.adult * updated.adults) + 
-                                      (option.child * updated.child) + 
-                                      (option.infant * updated.infant)
+              if (isSelected && option && typeof option === 'object' && 'adult' in option && 'child' in option && 'infant' in option) {
+                const optionData = option as { adult: number; child: number; infant: number }
+                requiredOptionTotal += (optionData.adult * updated.adults) + 
+                                      (optionData.child * updated.child) + 
+                                      (optionData.infant * updated.infant)
               }
             })
             
@@ -1462,8 +1511,11 @@ export default function ReservationForm({
             
             // 선택 옵션 총합 계산
             let optionalOptionTotal = 0
-            Object.values(updated.selectedOptionalOptions).forEach(option => {
-              optionalOptionTotal += option.price * option.quantity
+            Object.values(updated.selectedOptionalOptions).forEach((option) => {
+              if (option && typeof option === 'object' && 'price' in option && 'quantity' in option) {
+                const opt = option as { price: number; quantity: number }
+                optionalOptionTotal += opt.price * opt.quantity
+              }
             })
             
             // Dynamic Price 타입일 때만 초이스별 불포함 금액 포함
@@ -1512,6 +1564,13 @@ export default function ReservationForm({
         // Base Price 타입: products 테이블에서 base_price 조회
         console.log('Base price 조회 시작:', { productId })
         
+        type ProductData = {
+          adult_base_price?: number | null
+          child_base_price?: number | null
+          infant_base_price?: number | null
+          base_price?: string | { adult?: number; adult_price?: number; child?: number; child_price?: number; infant?: number; infant_price?: number } | null
+        }
+
         const { data: productData, error: productError } = await supabase
           .from('products')
           .select('adult_base_price, child_base_price, infant_base_price, base_price')
@@ -1530,30 +1589,34 @@ export default function ReservationForm({
           return
         }
 
+        const product = productData as ProductData | null
+
         // base_price가 JSON 형태인 경우 파싱
-        if (productData?.base_price) {
+        if (product?.base_price) {
           try {
-            const basePrice = typeof productData.base_price === 'string' 
-              ? JSON.parse(productData.base_price) 
-              : productData.base_price
+            const basePrice = typeof product.base_price === 'string' 
+              ? JSON.parse(product.base_price) 
+              : product.base_price
             
-            adultPrice = basePrice.adult || basePrice.adult_price || 0
-            childPrice = basePrice.child || basePrice.child_price || 0
-            infantPrice = basePrice.infant || basePrice.infant_price || 0
+            if (basePrice && typeof basePrice === 'object') {
+              adultPrice = (basePrice as { adult?: number; adult_price?: number }).adult || (basePrice as { adult?: number; adult_price?: number }).adult_price || 0
+              childPrice = (basePrice as { child?: number; child_price?: number }).child || (basePrice as { child?: number; child_price?: number }).child_price || 0
+              infantPrice = (basePrice as { infant?: number; infant_price?: number }).infant || (basePrice as { infant?: number; infant_price?: number }).infant_price || 0
+            }
           } catch (e) {
             console.warn('base_price 파싱 오류:', e)
           }
         }
 
         // adult_base_price, child_base_price, infant_base_price 컬럼이 있는 경우 사용
-        if (productData?.adult_base_price !== undefined && productData?.adult_base_price !== null) {
-          adultPrice = productData.adult_base_price
+        if (product?.adult_base_price !== undefined && product?.adult_base_price !== null) {
+          adultPrice = product.adult_base_price
         }
-        if (productData?.child_base_price !== undefined && productData?.child_base_price !== null) {
-          childPrice = productData.child_base_price
+        if (product?.child_base_price !== undefined && product?.child_base_price !== null) {
+          childPrice = product.child_base_price
         }
-        if (productData?.infant_base_price !== undefined && productData?.infant_base_price !== null) {
-          infantPrice = productData.infant_base_price
+        if (product?.infant_base_price !== undefined && product?.infant_base_price !== null) {
+          infantPrice = product.infant_base_price
         }
 
         console.log('Base price 데이터 조회 성공:', { adultPrice, childPrice, infantPrice })
@@ -2003,6 +2066,8 @@ export default function ReservationForm({
   }, [formData.productId, formData.tourDate, formData.channelId, isExistingPricingLoaded])
 
   // 가격 정보 자동 업데이트 (무한 렌더링 방지를 위해 useEffect 완전 제거)
+  // 사용되지 않지만 향후 사용을 위해 주석 처리
+  /*
   const updatePrices = useCallback(() => {
     setFormData(prev => {
       // 현재 상태를 기반으로 계산
@@ -2058,6 +2123,7 @@ export default function ReservationForm({
       }
     })
   }, [reservationOptionsTotalPrice])
+  */
 
   // 예약 옵션 총 가격이 변경될 때 가격 재계산 (편집 모드에서는 자동 저장 방지)
   useEffect(() => {
@@ -2160,9 +2226,8 @@ export default function ReservationForm({
         deposit_amount: formData.depositAmount,
         balance_amount: formData.balanceAmount,
         private_tour_additional_cost: formData.privateTourAdditionalCost,
-        commission_percent: formData.commission_percent,
-        commission_amount: formData.commission_amount
-      }
+        commission_percent: formData.commission_percent
+      } as Database['public']['Tables']['reservation_pricing']['Insert'] & { commission_amount?: number }
 
       let error: unknown
       if (checkError && checkError.code !== 'PGRST116') { // PGRST116은 "no rows returned" 오류
@@ -2262,7 +2327,6 @@ export default function ReservationForm({
           status: formData.customerStatus || 'active'
         }
         
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: newCustomer, error: customerError } = await (supabase as any)
           .from('customers')
           .insert(customerData)
@@ -2294,7 +2358,6 @@ export default function ReservationForm({
           status: formData.customerStatus || 'active'
         }
         
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { error: customerError } = await (supabase as any)
           .from('customers')
           .update(customerData)
@@ -2329,12 +2392,13 @@ export default function ReservationForm({
         // 기존 객체 형태의 selectedChoices 처리
         Object.entries(formData.selectedChoices).forEach(([choiceId, choiceData]) => {
           if (choiceData && typeof choiceData === 'object' && 'selected' in choiceData) {
+            const choice = choiceData as { selected: string; timestamp?: string }
             choicesData.required.push({
               choice_id: choiceId,
-              option_id: choiceData.selected,
+              option_id: choice.selected,
               quantity: 1,
               total_price: 0, // 기존 시스템에서는 가격이 별도로 계산됨
-              timestamp: choiceData.timestamp || new Date().toISOString()
+              timestamp: choice.timestamp || new Date().toISOString()
             })
           }
         })
@@ -2346,6 +2410,7 @@ export default function ReservationForm({
         customerId: finalCustomerId || formData.customerId,
         totalPeople,
         choices: choicesData,
+        selectedChoices: formData.selectedChoices as any,
         // 가격 정보를 포함하여 전달
         pricingInfo: {
           adultProductPrice: formData.adultProductPrice,
@@ -2356,6 +2421,8 @@ export default function ReservationForm({
           requiredOptionTotal: formData.requiredOptionTotal,
           choices: choicesData,
           choicesTotal: formData.choicesTotal,
+          quantityBasedChoices: {},
+          quantityBasedChoiceTotal: 0,
           subtotal: formData.subtotal,
           couponCode: formData.couponCode,
           couponDiscount: formData.couponDiscount,
@@ -2372,8 +2439,7 @@ export default function ReservationForm({
           balanceAmount: formData.balanceAmount,
           isPrivateTour: formData.isPrivateTour,
           privateTourAdditionalCost: formData.privateTourAdditionalCost,
-          commission_percent: formData.commission_percent,
-          commission_amount: formData.commission_amount
+          commission_percent: formData.commission_percent
         }
       })
       
@@ -2649,7 +2715,7 @@ export default function ReservationForm({
 
               <div className="space-y-2">
                 <PricingSection
-                  formData={formData}
+                  formData={formData as any}
                   setFormData={setFormData}
                   savePricingInfo={savePricingInfo}
                   calculateProductPriceTotal={calculateProductPriceTotal}
@@ -2662,7 +2728,7 @@ export default function ReservationForm({
                   autoSelectCoupon={autoSelectCoupon}
                   reservationOptionsTotalPrice={reservationOptionsTotalPrice}
                   isExistingPricingLoaded={isExistingPricingLoaded}
-                  reservationId={reservation?.id}
+                  {...(reservation?.id ? { reservationId: reservation.id } : {})}
                   expenseUpdateTrigger={expenseUpdateTrigger}
                   channels={channels}
                 />

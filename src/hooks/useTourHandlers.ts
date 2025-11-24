@@ -301,11 +301,22 @@ export function useTourHandlers() {
   }, [])
 
   // 픽업 시간 저장 함수
-  const handleSavePickupTime = useCallback(async (selectedReservation: { id: string }, pickupTimeValue: string) => {
+  const handleSavePickupTime = useCallback(async (selectedReservation: { id: string }, pickupTimeValue: string, sendNotification: boolean = false) => {
     if (!selectedReservation) return
 
     try {
       const timeValue = pickupTimeValue ? `${pickupTimeValue}:00` : null
+      
+      // 예약 정보 조회 (투어 날짜 확인용)
+      const { data: reservationData, error: reservationFetchError } = await supabase
+        .from('reservations')
+        .select('tour_date')
+        .eq('id', selectedReservation.id)
+        .single()
+
+      if (reservationFetchError) {
+        console.error('Error fetching reservation:', reservationFetchError)
+      }
       
       const { error } = await (supabase as any)
         .from('reservations')
@@ -315,6 +326,28 @@ export function useTourHandlers() {
       if (error) {
         console.error('Error updating pickup time:', error)
         return false
+      }
+
+      // 픽업 시간이 설정되었고 알림을 보내야 하는 경우
+      if (timeValue && sendNotification && reservationData?.tour_date) {
+        try {
+          await fetch('/api/send-pickup-schedule-notification', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              reservationId: selectedReservation.id,
+              pickupTime: timeValue,
+              tourDate: reservationData.tour_date
+            })
+          }).catch(error => {
+            console.error('픽업 스케줄 알림 발송 오류 (무시):', error)
+            // 알림 발송 실패해도 픽업 시간 저장은 성공한 것으로 처리
+          })
+        } catch (error) {
+          console.error('픽업 스케줄 알림 발송 오류 (무시):', error)
+        }
       }
 
       return true

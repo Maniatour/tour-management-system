@@ -1,0 +1,577 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { supabase } from '@/lib/supabase'
+import { Resend } from 'resend'
+
+/**
+ * POST /api/send-pickup-schedule-notification
+ * 
+ * 픽업 스케줄 확정 알림 이메일 발송 API
+ * 
+ * 요청 본문:
+ * {
+ *   reservationId: string,
+ *   pickupTime: string,
+ *   tourDate: string,
+ *   locale?: 'ko' | 'en'
+ * }
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { reservationId, pickupTime, tourDate, locale = 'ko' } = body
+
+    if (!reservationId || !pickupTime || !tourDate) {
+      return NextResponse.json(
+        { error: '예약 ID, 픽업 시간, 투어 날짜가 필요합니다.' },
+        { status: 400 }
+      )
+    }
+
+    // 예약 정보 조회 (고객 정보 포함)
+    const { data: reservation, error: reservationError } = await supabase
+      .from('reservations')
+      .select(`
+        *,
+        customers (
+          id,
+          name,
+          email,
+          language
+        ),
+        products (
+          id,
+          name,
+          name_ko,
+          name_en,
+          customer_name_ko,
+          customer_name_en
+        ),
+        pickup_hotels (
+          id,
+          hotel,
+          pick_up_location,
+          address,
+          link,
+          media
+        )
+      `)
+      .eq('id', reservationId)
+      .single()
+
+    if (reservationError || !reservation) {
+      return NextResponse.json(
+        { error: '예약을 찾을 수 없습니다.' },
+        { status: 404 }
+      )
+    }
+
+    const customer = (reservation.customers as any)
+    const product = (reservation.products as any)
+    const pickupHotel = (reservation.pickup_hotels as any)
+
+    if (!customer || !customer.email) {
+      return NextResponse.json(
+        { error: '고객 이메일을 찾을 수 없습니다.' },
+        { status: 404 }
+      )
+    }
+
+    // 고객 언어에 따라 locale 결정
+    const customerLanguage = customer.language?.toLowerCase()
+    const isEnglish = locale === 'en' || customerLanguage === 'en' || customerLanguage === 'english' || customerLanguage === '영어'
+
+    // All Pickup Schedule 조회 (같은 tour_id의 모든 예약)
+    let allPickups: any[] = []
+    if (reservation.tour_id) {
+      const { data: allReservations } = await supabase
+        .from('reservations')
+        .select('id, pickup_hotel, pickup_time, customer_id, total_people, tour_date')
+        .eq('tour_id', reservation.tour_id)
+        .not('pickup_time', 'is', null)
+        .not('pickup_hotel', 'is', null)
+
+      if (allReservations) {
+        allPickups = await Promise.all(
+          allReservations.map(async (res: any) => {
+            const { data: customerInfo } = await supabase
+              .from('customers')
+              .select('name')
+              .eq('id', res.customer_id)
+              .maybeSingle()
+
+            const { data: hotelInfo } = await supabase
+              .from('pickup_hotels')
+              .select('hotel, pick_up_location, address, link')
+              .eq('id', res.pickup_hotel)
+              .maybeSingle()
+
+            return {
+              reservation_id: res.id,
+              pickup_time: res.pickup_time || '',
+              pickup_hotel: res.pickup_hotel || '',
+              hotel_name: hotelInfo?.hotel || 'Unknown Hotel',
+              pick_up_location: hotelInfo?.pick_up_location || '',
+              address: hotelInfo?.address || '',
+              link: hotelInfo?.link || '',
+              customer_name: customerInfo?.name || 'Unknown Customer',
+              total_people: res.total_people,
+              tour_date: res.tour_date
+            }
+          })
+        )
+        // 시간순으로 정렬
+        allPickups.sort((a, b) => a.pickup_time.localeCompare(b.pickup_time))
+      }
+    }
+
+    // Tour Details 조회
+    let tourDetails: any = null
+    if (reservation.tour_id) {
+      const { data: tourData } = await supabase
+        .from('tours')
+        .select('*')
+        .eq('id', reservation.tour_id)
+        .maybeSingle()
+
+      if (tourData) {
+        let tourGuideInfo = null
+        let assistantInfo = null
+        let vehicleInfo = null
+
+        if (tourData.tour_guide_id) {
+          const { data: guideData } = await supabase
+            .from('team')
+            .select('name_ko, name_en, phone, email, languages')
+            .eq('email', tourData.tour_guide_id)
+            .maybeSingle()
+          tourGuideInfo = guideData
+        }
+
+        if (tourData.assistant_id) {
+          const { data: assistantData } = await supabase
+            .from('team')
+            .select('name_ko, name_en, phone, email')
+            .eq('email', tourData.assistant_id)
+            .maybeSingle()
+          assistantInfo = assistantData
+        }
+
+        if (tourData.tour_car_id) {
+          const { data: vehicleData } = await supabase
+            .from('vehicles')
+            .select('vehicle_type, capacity, color')
+            .eq('id', tourData.tour_car_id)
+            .maybeSingle()
+
+          if (vehicleData?.vehicle_type) {
+            const { data: vehicleTypeData } = await supabase
+              .from('vehicle_types')
+              .select('id, name, brand, model, passenger_capacity, description')
+              .eq('name', vehicleData.vehicle_type)
+              .maybeSingle()
+
+            const { data: photosData } = await supabase
+              .from('vehicle_type_photos')
+              .select('photo_url, photo_name, description, is_primary, display_order')
+              .eq('vehicle_type_id', vehicleTypeData?.id || '')
+              .order('display_order', { ascending: true })
+              .order('is_primary', { ascending: false })
+
+            vehicleInfo = {
+              vehicle_type: vehicleData.vehicle_type,
+              color: vehicleData.color,
+              vehicle_type_info: vehicleTypeData ? {
+                name: vehicleTypeData.name,
+                brand: vehicleTypeData.brand,
+                model: vehicleTypeData.model,
+                passenger_capacity: vehicleTypeData.passenger_capacity || vehicleData.capacity,
+                description: vehicleTypeData.description
+              } : {
+                name: vehicleData.vehicle_type,
+                passenger_capacity: vehicleData.capacity
+              },
+              vehicle_type_photos: photosData || []
+            }
+          }
+        }
+
+        tourDetails = {
+          ...tourData,
+          tour_guide: tourGuideInfo,
+          assistant: assistantInfo,
+          vehicle: vehicleInfo
+        }
+      }
+    }
+
+    // 이메일 내용 생성
+    const emailContent = generatePickupScheduleEmailContent(
+      reservation,
+      customer,
+      product,
+      pickupHotel,
+      pickupTime,
+      tourDate,
+      isEnglish,
+      allPickups,
+      tourDetails
+    )
+
+    // Resend를 사용한 이메일 발송
+    const resendApiKey = process.env.RESEND_API_KEY
+    if (!resendApiKey) {
+      console.error('RESEND_API_KEY 환경 변수가 설정되지 않았습니다.')
+      return NextResponse.json(
+        { error: '이메일 서비스 설정 오류입니다.' },
+        { status: 500 }
+      )
+    }
+
+    const resend = new Resend(resendApiKey)
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'
+
+    try {
+      const { data: emailResult, error: emailError } = await resend.emails.send({
+        from: fromEmail,
+        to: customer.email,
+        subject: emailContent.subject,
+        html: emailContent.html,
+      })
+
+      if (emailError) {
+        console.error('Resend 이메일 발송 오류:', emailError)
+        return NextResponse.json(
+          { error: '이메일 발송에 실패했습니다.', details: emailError.message },
+          { status: 500 }
+        )
+      }
+
+      console.log('픽업 스케줄 알림 이메일 발송 성공:', {
+        to: customer.email,
+        subject: emailContent.subject,
+        reservationId,
+        emailId: emailResult?.id
+      })
+    } catch (error) {
+      console.error('이메일 발송 오류:', error)
+      return NextResponse.json(
+        { error: '이메일 발송 중 오류가 발생했습니다.' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: '픽업 스케줄 알림 이메일이 발송되었습니다.',
+    })
+
+  } catch (error) {
+    console.error('픽업 스케줄 알림 발송 오류:', error)
+    return NextResponse.json(
+      { error: '서버 오류가 발생했습니다.' },
+      { status: 500 }
+    )
+  }
+}
+
+export function generatePickupScheduleEmailContent(
+  reservation: any,
+  customer: any,
+  product: any,
+  pickupHotel: any,
+  pickupTime: string,
+  tourDate: string,
+  isEnglish: boolean,
+  allPickups?: any[],
+  tourDetails?: any
+) {
+  const productName = isEnglish 
+    ? (product?.customer_name_en || product?.name_en || product?.name) 
+    : (product?.customer_name_ko || product?.name_ko || product?.name)
+  
+  const formattedTourDate = new Date(tourDate).toLocaleDateString(isEnglish ? 'en-US' : 'ko-KR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long'
+  })
+
+  // 픽업 시간 포맷팅 (HH:MM -> HH:MM AM/PM)
+  const formatTime = (time: string) => {
+    if (!time) return time
+    const [hours, minutes] = time.split(':')
+    const hour = parseInt(hours, 10)
+    const period = hour >= 12 ? 'PM' : 'AM'
+    const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour
+    return `${displayHour}:${minutes || '00'} ${period}`
+  }
+
+  const formattedPickupTime = formatTime(pickupTime)
+
+  const subject = isEnglish
+    ? `Pickup Schedule Confirmed - ${productName} on ${formattedTourDate}`
+    : `픽업 스케줄 확정 안내 - ${formattedTourDate} ${productName}`
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #2563eb; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
+        .content { background: #f9fafb; padding: 20px; border: 1px solid #e5e7eb; }
+        .footer { background: #f3f4f6; padding: 15px; text-align: center; font-size: 12px; color: #6b7280; border-radius: 0 0 8px 8px; }
+        .info-box { background: white; border-left: 4px solid #2563eb; padding: 15px; margin: 15px 0; border-radius: 4px; }
+        .info-row { margin: 10px 0; }
+        .label { font-weight: bold; color: #374151; }
+        .value { color: #1f2937; font-size: 18px; }
+        .highlight { background: #fef3c7; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #f59e0b; }
+        .button { display: inline-block; padding: 12px 24px; background: #2563eb; color: white; text-decoration: none; border-radius: 6px; margin-top: 15px; }
+        .media-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 15px 0; }
+        .media-item { width: 100%; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: transform 0.2s, box-shadow 0.2s; }
+        .media-item:hover { transform: scale(1.02); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
+        .media-item a { display: block; text-decoration: none; }
+        .media-item img { width: 100%; height: auto; display: block; }
+        .pickup-location-box { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 15px 0; border-radius: 4px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>${isEnglish ? 'Pickup Schedule Confirmed' : '픽업 스케줄 확정 안내'}</h1>
+        </div>
+        <div class="content">
+          <p>${isEnglish ? `Dear ${customer.name},` : `${customer.name}님,`}</p>
+          
+          <p>${isEnglish 
+            ? `Your pickup schedule for the tour has been confirmed. Please find the details below:`
+            : `투어 픽업 스케줄이 확정되었습니다. 아래 내용을 확인해주세요.`}</p>
+
+          <div class="info-box">
+            <div class="info-row">
+              <span class="label">${isEnglish ? 'Tour:' : '투어:'}</span>
+              <span class="value">${productName}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">${isEnglish ? 'Tour Date:' : '투어 날짜:'}</span>
+              <span class="value">${formattedTourDate}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">${isEnglish ? 'Pickup Time:' : '픽업 시간:'}</span>
+              <span class="value" style="color: #2563eb; font-weight: bold; font-size: 20px;">${formattedPickupTime}</span>
+            </div>
+            ${pickupHotel ? `
+            <div class="info-row">
+              <span class="label">${isEnglish ? 'Pickup Hotel:' : '픽업 호텔:'}</span>
+              <span class="value">${pickupHotel.hotel}</span>
+            </div>
+            ${pickupHotel.address ? `
+            <div class="info-row">
+              <span class="label">${isEnglish ? 'Address:' : '주소:'}</span>
+              <span class="value">${pickupHotel.address}</span>
+            </div>
+            ` : ''}
+            ${pickupHotel.link ? `
+            <div class="info-row">
+              <a href="${pickupHotel.link}" target="_blank" class="button">${isEnglish ? 'View on Map' : '지도에서 보기'}</a>
+            </div>
+            ` : ''}
+            ` : ''}
+          </div>
+
+          ${pickupHotel && pickupHotel.pick_up_location ? `
+          <div class="pickup-location-box">
+            <div class="info-row">
+              <span class="label" style="font-size: 16px;">${isEnglish ? '📍 Pickup Location:' : '📍 픽업 장소:'}</span>
+              <span class="value" style="font-size: 18px; color: #1e40af; font-weight: bold;">${pickupHotel.pick_up_location}</span>
+            </div>
+          </div>
+          ` : ''}
+
+          ${pickupHotel && pickupHotel.media && Array.isArray(pickupHotel.media) && pickupHotel.media.length > 0 ? `
+          <div class="info-box">
+            <div class="info-row">
+              <span class="label" style="font-size: 16px; margin-bottom: 10px; display: block;">${isEnglish ? '📸 Pickup Location Images:' : '📸 픽업 장소 이미지:'}</span>
+              <p style="font-size: 12px; color: #6b7280; margin-top: 5px;">${isEnglish ? '(Click on images to view in full size)' : '(이미지를 클릭하면 크게 볼 수 있습니다)'}</p>
+            </div>
+            <div class="media-gallery">
+              ${pickupHotel.media.map((mediaUrl: string) => `
+                <div class="media-item">
+                  <a href="${mediaUrl}" target="_blank" style="display: block; cursor: pointer;">
+                    <img src="${mediaUrl}" alt="${isEnglish ? 'Pickup location' : '픽업 장소'}" style="max-width: 100%; height: auto; transition: transform 0.2s;" />
+                  </a>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          ` : ''}
+
+          ${allPickups && allPickups.length > 0 ? `
+          <div class="info-box" style="margin-top: 30px;">
+            <h2 style="font-size: 20px; font-weight: bold; color: #1e40af; margin-bottom: 15px; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;">
+              ${isEnglish ? '🚌 All Pickup Schedule' : '🚌 모든 픽업 스케줄'}
+            </h2>
+            <div style="space-y: 10px;">
+              ${allPickups.map((pickup: any) => {
+                const isMyReservation = pickup.reservation_id === reservation.id
+                const pickupTimeFormatted = formatTime(pickup.pickup_time)
+                return `
+                  <div style="padding: 15px; margin-bottom: 15px; border-left: 4px solid ${isMyReservation ? '#2563eb' : '#9ca3af'}; background: ${isMyReservation ? '#eff6ff' : '#f9fafb'}; border-radius: 4px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                      <div>
+                        <span style="font-size: 18px; font-weight: bold; color: ${isMyReservation ? '#2563eb' : '#374151'};">
+                          ${pickupTimeFormatted}
+                        </span>
+                        ${isMyReservation ? `<span style="background: #2563eb; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; margin-left: 8px;">${isEnglish ? 'My Reservation' : '내 예약'}</span>` : ''}
+                      </div>
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                      <span style="font-weight: bold; color: #1f2937;">${pickup.hotel_name}</span>
+                    </div>
+                    ${pickup.pick_up_location ? `
+                    <div style="margin-bottom: 8px;">
+                      <span style="color: #ea580c; font-weight: 600; font-size: 15px;">📍 ${pickup.pick_up_location}</span>
+                    </div>
+                    ` : ''}
+                    ${pickup.address ? `
+                    <div style="margin-bottom: 8px; color: #6b7280; font-size: 14px;">
+                      ${pickup.address}
+                    </div>
+                    ` : ''}
+                    ${pickup.link ? `
+                    <div style="margin-top: 10px;">
+                      <a href="${pickup.link}" target="_blank" style="color: #2563eb; text-decoration: none; font-size: 13px;">
+                        ${isEnglish ? '📍 View on Map' : '📍 지도에서 보기'}
+                      </a>
+                    </div>
+                    ` : ''}
+                  </div>
+                `
+              }).join('')}
+            </div>
+          </div>
+          ` : ''}
+
+          ${tourDetails ? `
+          <div class="info-box" style="margin-top: 30px;">
+            <h2 style="font-size: 20px; font-weight: bold; color: #1e40af; margin-bottom: 15px; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;">
+              ${isEnglish ? '👥 Tour Details' : '👥 투어 상세 정보'}
+            </h2>
+            ${tourDetails.tour_guide ? `
+            <div style="margin-bottom: 20px; padding: 15px; background: #f0f9ff; border-radius: 8px; border-left: 4px solid #0ea5e9;">
+              <div style="font-weight: bold; color: #0c4a6e; margin-bottom: 8px; font-size: 16px;">
+                ${isEnglish ? '👨‍🏫 Tour Guide' : '👨‍🏫 투어 가이드'}
+              </div>
+              <div style="color: #1e293b;">
+                <div style="margin-bottom: 5px;">
+                  <strong>${isEnglish ? 'Name:' : '이름:'}</strong> 
+                  ${isEnglish 
+                    ? (tourDetails.tour_guide.name_en || tourDetails.tour_guide.name_ko || 'N/A')
+                    : (tourDetails.tour_guide.name_ko || tourDetails.tour_guide.name_en || 'N/A')}
+                </div>
+                ${tourDetails.tour_guide.phone ? `
+                <div style="margin-bottom: 5px;">
+                  <strong>${isEnglish ? 'Phone:' : '전화번호:'}</strong> ${tourDetails.tour_guide.phone}
+                </div>
+                ` : ''}
+                ${tourDetails.tour_guide.languages ? `
+                <div style="margin-bottom: 5px;">
+                  <strong>${isEnglish ? 'Languages:' : '언어:'}</strong> 
+                  ${Array.isArray(tourDetails.tour_guide.languages) 
+                    ? tourDetails.tour_guide.languages.join(', ')
+                    : tourDetails.tour_guide.languages}
+                </div>
+                ` : ''}
+              </div>
+            </div>
+            ` : ''}
+            ${tourDetails.assistant ? `
+            <div style="margin-bottom: 20px; padding: 15px; background: #f0fdf4; border-radius: 8px; border-left: 4px solid #10b981;">
+              <div style="font-weight: bold; color: #065f46; margin-bottom: 8px; font-size: 16px;">
+                ${isEnglish ? '👨‍💼 Assistant' : '👨‍💼 어시스턴트'}
+              </div>
+              <div style="color: #1e293b;">
+                <div style="margin-bottom: 5px;">
+                  <strong>${isEnglish ? 'Name:' : '이름:'}</strong> 
+                  ${isEnglish 
+                    ? (tourDetails.assistant.name_en || tourDetails.assistant.name_ko || 'N/A')
+                    : (tourDetails.assistant.name_ko || tourDetails.assistant.name_en || 'N/A')}
+                </div>
+                ${tourDetails.assistant.phone ? `
+                <div style="margin-bottom: 5px;">
+                  <strong>${isEnglish ? 'Phone:' : '전화번호:'}</strong> ${tourDetails.assistant.phone}
+                </div>
+                ` : ''}
+              </div>
+            </div>
+            ` : ''}
+            ${tourDetails.vehicle ? `
+            <div style="margin-bottom: 20px; padding: 15px; background: #fef3c7; border-radius: 8px; border-left: 4px solid #f59e0b;">
+              <div style="font-weight: bold; color: #92400e; margin-bottom: 8px; font-size: 16px;">
+                ${isEnglish ? '🚗 Vehicle' : '🚗 차량'}
+              </div>
+              <div style="color: #1e293b;">
+                ${tourDetails.vehicle.vehicle_type_info ? `
+                <div style="margin-bottom: 5px;">
+                  <strong>${isEnglish ? 'Type:' : '타입:'}</strong> ${tourDetails.vehicle.vehicle_type_info.name || tourDetails.vehicle.vehicle_type || 'N/A'}
+                </div>
+                ${tourDetails.vehicle.vehicle_type_info.brand && tourDetails.vehicle.vehicle_type_info.model ? `
+                <div style="margin-bottom: 5px;">
+                  <strong>${isEnglish ? 'Model:' : '모델:'}</strong> ${tourDetails.vehicle.vehicle_type_info.brand} ${tourDetails.vehicle.vehicle_type_info.model}
+                </div>
+                ` : ''}
+                ${tourDetails.vehicle.vehicle_type_info.passenger_capacity ? `
+                <div style="margin-bottom: 5px;">
+                  <strong>${isEnglish ? 'Capacity:' : '정원:'}</strong> ${tourDetails.vehicle.vehicle_type_info.passenger_capacity} ${isEnglish ? 'people' : '명'}
+                </div>
+                ` : ''}
+                ${tourDetails.vehicle.color ? `
+                <div style="margin-bottom: 5px;">
+                  <strong>${isEnglish ? 'Color:' : '색상:'}</strong> ${tourDetails.vehicle.color}
+                </div>
+                ` : ''}
+                ${tourDetails.vehicle.vehicle_type_info.description ? `
+                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #d1d5db;">
+                  <div style="font-size: 14px; color: #4b5563;">${tourDetails.vehicle.vehicle_type_info.description}</div>
+                </div>
+                ` : ''}
+                ` : `
+                <div style="margin-bottom: 5px;">
+                  <strong>${isEnglish ? 'Type:' : '타입:'}</strong> ${tourDetails.vehicle.vehicle_type || 'N/A'}
+                </div>
+                `}
+              </div>
+            </div>
+            ` : ''}
+          </div>
+          ` : ''}
+
+          <div class="highlight">
+            <p style="margin: 0; font-weight: bold;">${isEnglish 
+              ? '⚠️ Important: Please arrive at the pickup location 5 minutes before the scheduled time.'
+              : '⚠️ 중요: 픽업 시간보다 5분 전에 픽업 장소에 도착해주세요.'}</p>
+          </div>
+
+          <p>${isEnglish 
+            ? `If you have any questions or need to make changes, please contact us as soon as possible.`
+            : `궁금한 사항이 있거나 변경이 필요한 경우, 가능한 한 빨리 연락주시기 바랍니다.`}</p>
+
+          <p>${isEnglish 
+            ? `We look forward to seeing you on the tour!`
+            : `투어에서 만나뵙기를 기대하겠습니다!`}</p>
+        </div>
+        <div class="footer">
+          <p>${isEnglish 
+            ? 'This is an automated email. Please do not reply to this email.'
+            : '이 이메일은 자동으로 발송된 메일입니다. 회신하지 마세요.'}</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `
+
+  return { subject, html }
+}
+

@@ -1353,6 +1353,8 @@ function CustomerForm({
   onCancel: () => void
   onDelete?: () => void
 }) {
+  const t = useTranslations('customers')
+  
   // 랜덤 ID 생성 함수 (useCallback으로 메모이제이션)
   const generateRandomId = useCallback(() => {
     const timestamp = Date.now().toString(36)

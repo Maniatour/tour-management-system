@@ -79,7 +79,12 @@ interface PricingSectionProps {
   channels?: Array<{
     id: string
     name: string
+    type?: string
+    category?: string
+    pricing_type?: 'separate' | 'single'
     commission_base_price_only?: boolean
+    has_not_included_price?: boolean
+    not_included_type?: 'none' | 'amount_only' | 'amount_and_choice'
     [key: string]: unknown
   }>
   reservationId?: string
@@ -184,16 +189,16 @@ export default function PricingSection({
   const selectedChannel = channels?.find(ch => ch.id === formData.channelId)
   const commissionBasePriceOnly = selectedChannel?.commission_base_price_only || false
   const isOTAChannel = selectedChannel && (
-    (selectedChannel as any)?.type?.toLowerCase() === 'ota' || 
-    (selectedChannel as any)?.category === 'OTA'
+    selectedChannel.type?.toLowerCase() === 'ota' || 
+    selectedChannel.category === 'OTA'
   )
   // 채널의 pricing_type 확인 (단일 가격 모드 체크)
-  const pricingType = (selectedChannel as any)?.pricing_type || 'separate'
+  const pricingType = selectedChannel?.pricing_type || 'separate'
   const isSinglePrice = pricingType === 'single'
   
   // 채널의 불포함 가격 정보 확인 (가격 타입 자동 결정)
-  const hasNotIncludedPrice = (selectedChannel as any)?.has_not_included_price || false
-  const notIncludedType = (selectedChannel as any)?.not_included_type || 'none'
+  const hasNotIncludedPrice = selectedChannel?.has_not_included_price || false
+  const notIncludedType = selectedChannel?.not_included_type || 'none'
   // 채널 정보에 따라 가격 타입 자동 결정
   // has_not_included_price가 true이거나 not_included_type이 'none'이 아니면 'dynamic' (불포함 있음)
   // 그렇지 않으면 'base' (불포함 없음)
@@ -202,7 +207,7 @@ export default function PricingSection({
   // 채널이 변경되면 가격 타입 자동 업데이트
   useEffect(() => {
     if (formData.channelId && autoPriceType && formData.priceType !== autoPriceType) {
-      setFormData(prev => ({ ...prev, priceType: autoPriceType }))
+      setFormData((prev: typeof formData) => ({ ...prev, priceType: autoPriceType }))
     }
   }, [formData.channelId, autoPriceType, formData.priceType, setFormData])
   
@@ -213,7 +218,7 @@ export default function PricingSection({
         channelId: formData.channelId,
         selectedChannel: selectedChannel ? { 
           id: selectedChannel.id, 
-          name: (selectedChannel as any).name, 
+          name: selectedChannel.name, 
           pricing_type: pricingType,
           has_not_included_price: hasNotIncludedPrice,
           not_included_type: notIncludedType
@@ -251,11 +256,18 @@ export default function PricingSection({
         return 0
       }
 
-      const pricing = pricingData[0] as any
+      type PricingData = {
+        not_included_price?: number
+        choices_pricing?: string | Record<string, { not_included_price?: number }>
+      }
+      const pricing = pricingData[0] as PricingData | undefined
       const defaultNotIncludedPrice = pricing?.not_included_price || 0
       
       // choices_pricing 파싱
-      let choicesPricing: Record<string, any> = {}
+      type ChoicePricing = {
+        not_included_price?: number
+      }
+      let choicesPricing: Record<string, ChoicePricing> = {}
       if (pricing?.choices_pricing) {
         try {
           choicesPricing = typeof pricing.choices_pricing === 'string'
@@ -272,7 +284,7 @@ export default function PricingSection({
       
       // 새로운 간결한 초이스 시스템 (selectedChoices가 배열인 경우)
       if (Array.isArray(formData.selectedChoices)) {
-        formData.selectedChoices.forEach((choice: any) => {
+        formData.selectedChoices.forEach((choice: { choice_id?: string; id?: string; option_id?: string }) => {
           // choices_pricing의 키는 choice_id 또는 option_id일 수 있음
           const choiceId = choice.choice_id || choice.id
           const optionId = choice.option_id
@@ -295,7 +307,7 @@ export default function PricingSection({
         })
       } else if (formData.selectedChoices && typeof formData.selectedChoices === 'object') {
         // 기존 객체 형태의 selectedChoices 처리
-        Object.entries(formData.selectedChoices).forEach(([choiceId, choiceData]: [string, any]) => {
+        Object.entries(formData.selectedChoices).forEach(([choiceId]) => {
           if (choicesPricing[choiceId]) {
             const choicePricing = choicesPricing[choiceId]
             const choiceNotIncludedPrice = choicePricing.not_included_price !== undefined && choicePricing.not_included_price !== null
@@ -326,12 +338,12 @@ export default function PricingSection({
       calculateChoiceNotIncludedTotal().then(total => {
         setChoiceNotIncludedTotal(total)
         // formData에도 업데이트
-        setFormData(prev => ({ ...prev, choiceNotIncludedTotal: total }))
+        setFormData((prev: typeof formData) => ({ ...prev, choiceNotIncludedTotal: total }))
       })
     } else {
       // Base price 타입일 때는 불포함 금액을 0으로 설정
       setChoiceNotIncludedTotal(0)
-      setFormData(prev => ({ ...prev, choiceNotIncludedTotal: 0 }))
+      setFormData((prev: typeof formData) => ({ ...prev, choiceNotIncludedTotal: 0 }))
     }
   }, [calculateChoiceNotIncludedTotal, formData.priceType, setFormData])
 
@@ -416,9 +428,10 @@ export default function PricingSection({
     if (formData.commission_percent > 0) {
       const calculatedAmount = calculateCommissionAmount()
       if (Math.abs(calculatedAmount - formData.commission_amount) > 0.01) {
-        setFormData(prev => ({ ...prev, commission_amount: calculatedAmount }))
+        setFormData((prev: typeof formData) => ({ ...prev, commission_amount: calculatedAmount }))
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.commission_percent, formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.additionalCost, formData.subtotal, formData.optionTotal, calculateCommissionAmount])
 
   return (
@@ -1076,7 +1089,7 @@ export default function PricingSection({
                         // 포커스를 잃을 때 다시 자동 계산
                         if (formData.commission_percent > 0) {
                           const calculatedAmount = calculateCommissionAmount()
-                          setFormData(prev => ({ ...prev, commission_amount: calculatedAmount }))
+                          setFormData((prev: typeof formData) => ({ ...prev, commission_amount: calculatedAmount }))
                         }
                       }}
                       className="w-16 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"

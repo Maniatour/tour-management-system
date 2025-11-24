@@ -100,6 +100,13 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     
     try {
       // 채널 정보 직접 조회 (has_not_included_price, commission_base_price_only 포함)
+      type ChannelData = {
+        name?: string | null
+        favicon_url?: string | null
+        has_not_included_price?: boolean | null
+        commission_base_price_only?: boolean | null
+      }
+      
       const { data: channelData, error } = await supabase
         .from('channels')
         .select('name, favicon_url, has_not_included_price, commission_base_price_only')
@@ -107,11 +114,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         .maybeSingle()
       
       if (!error && channelData) {
+        const channel = channelData as ChannelData
         setChannelInfo({
-          name: channelData.name || 'Unknown',
-          favicon: channelData.favicon_url || undefined,
-          has_not_included_price: channelData.has_not_included_price || false,
-          commission_base_price_only: channelData.commission_base_price_only || false
+          name: channel.name || 'Unknown',
+          ...(channel.favicon_url ? { favicon: channel.favicon_url } : {}),
+          has_not_included_price: channel.has_not_included_price || false,
+          commission_base_price_only: channel.commission_base_price_only || false
         })
       } else if (getChannelInfo) {
         // fallback: getChannelInfo 사용

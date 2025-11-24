@@ -31,6 +31,7 @@ import PickupHotelModal from '@/components/tour/modals/PickupHotelModal'
 import PrivateTourModal from '@/components/tour/modals/PrivateTourModal'
 import BookingModal from '@/components/tour/modals/BookingModal'
 import PickupScheduleAutoGenerateModal from '@/components/tour/modals/PickupScheduleAutoGenerateModal'
+import PickupScheduleEmailPreviewModal from '@/components/tour/modals/PickupScheduleEmailPreviewModal'
 import TourEditModal from '@/components/tour/modals/TourEditModal'
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
@@ -110,6 +111,7 @@ export default function TourDetailPage() {
   const [showTicketBookingDetails, setShowTicketBookingDetails] = useState<boolean>(false)
   const [editingReservation, setEditingReservation] = useState<any>(null)
   const [showPickupScheduleModal, setShowPickupScheduleModal] = useState<boolean>(false)
+  const [showEmailPreviewModal, setShowEmailPreviewModal] = useState<boolean>(false)
   const [showTourEditModal, setShowTourEditModal] = useState<boolean>(false)
   
   // 마일리지 관련 상태
@@ -222,7 +224,7 @@ export default function TourDetailPage() {
     if (!tourData.tour) return
 
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('tours')
         .update({ tour_date: date })
         .eq('id', tourData.tour.id)
@@ -246,7 +248,7 @@ export default function TourDetailPage() {
     if (!tourData.tour) return
 
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('tours')
         .update({ tour_start_datetime: datetime })
         .eq('id', tourData.tour.id)
@@ -270,7 +272,7 @@ export default function TourDetailPage() {
     if (!tourData.tour) return
 
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('tours')
         .update({ product_id: productId })
         .eq('id', tourData.tour.id)
@@ -756,6 +758,68 @@ export default function TourDetailPage() {
     }
   }
 
+  // 픽업 시간 일괄 발송 핸들러
+  const handleBatchSendPickupScheduleNotifications = async () => {
+    try {
+      // 배정된 예약 중 픽업 시간이 설정된 예약만 필터링
+      const reservationsWithPickupTime = tourData.assignedReservations.filter(
+        (res: any) => res.pickup_time && res.pickup_time.trim() !== ''
+      )
+
+      if (reservationsWithPickupTime.length === 0) {
+        alert('픽업 시간이 설정된 예약이 없습니다.')
+        return
+      }
+
+      // 각 예약에 대해 알림 발송
+      let successCount = 0
+      let failCount = 0
+
+      for (const reservation of reservationsWithPickupTime) {
+        try {
+          // 예약 정보에서 투어 날짜 확인
+          const tourDate = reservation.tour_date || tourData.tour?.tour_date
+          
+          if (!tourDate) {
+            console.warn(`예약 ${reservation.id}의 투어 날짜를 찾을 수 없습니다.`)
+            failCount++
+            continue
+          }
+
+          await fetch('/api/send-pickup-schedule-notification', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              reservationId: reservation.id,
+              pickupTime: reservation.pickup_time && reservation.pickup_time.includes(':') 
+                ? reservation.pickup_time 
+                : reservation.pickup_time 
+                  ? `${reservation.pickup_time}:00`
+                  : '',
+              tourDate: tourDate
+            })
+          })
+          
+          successCount++
+        } catch (error) {
+          console.error(`예약 ${reservation.id} 알림 발송 오류:`, error)
+          failCount++
+        }
+      }
+
+      if (successCount > 0) {
+        alert(`픽업 스케줄 알림이 ${successCount}건 발송되었습니다.${failCount > 0 ? ` (${failCount}건 실패)` : ''}`)
+      } else {
+        alert('알림 발송에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('일괄 알림 발송 오류:', error)
+      alert('일괄 알림 발송 중 오류가 발생했습니다.')
+    }
+  }
+
   // 픽업 스케줄 자동 생성 저장 핸들러
   const handleSavePickupSchedule = async (pickupTimes: Record<string, string>) => {
     try {
@@ -770,9 +834,9 @@ export default function TourDetailPage() {
         pickup_time: pickupTime
       }))
 
-      // 각 예약을 개별적으로 업데이트
+      // 각 예약을 개별적으로 업데이트하고 알림 발송
       for (const update of updates) {
-        const { error } = await supabase
+        const { error } = await (supabase as any)
           .from('reservations')
           .update({ pickup_time: update.pickup_time })
           .eq('id', update.id)
@@ -781,6 +845,8 @@ export default function TourDetailPage() {
           console.error(`예약 ${update.id} 픽업 시간 업데이트 오류:`, error)
           throw error
         }
+
+        // 자동 알림 발송은 제거 (일괄 발송 버튼 사용)
       }
 
       // 데이터 새로고침 - 페이지 새로고침으로 대체
@@ -1043,13 +1109,20 @@ export default function TourDetailPage() {
 
         {/* 픽업 스케줄 */}
         <PickupSchedule
-              assignedReservations={tourData.assignedReservations}
+              assignedReservations={tourData.assignedReservations.map((res: any) => ({
+                ...res,
+                tour_date: res.tour_date || tourData.tour?.tour_date
+              }))}
               pickupHotels={tourData.pickupHotels}
               expandedSections={tourData.expandedSections}
               connectionStatus={{ reservations: tourData.connectionStatus.reservations }}
               onToggleSection={tourData.toggleSection}
           onAutoGenerate={() => {
             setShowPickupScheduleModal(true)
+          }}
+          onBatchSendNotification={handleBatchSendPickupScheduleNotifications}
+          onPreviewEmail={() => {
+            setShowEmailPreviewModal(true)
           }}
               getPickupHotelNameOnly={tourData.getPickupHotelNameOnly}
               getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || 'Unknown'}
@@ -1317,10 +1390,26 @@ export default function TourDetailPage() {
           tourDate={tourData.tour.tour_date}
           productId={tourData.product?.id || null}
           assignedReservations={tourData.assignedReservations}
-          pickupHotels={tourData.pickupHotels}
+          pickupHotels={tourData.pickupHotels as any}
           onClose={() => setShowPickupScheduleModal(false)}
           onSave={handleSavePickupSchedule}
           getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || 'Unknown'}
+        />
+      )}
+
+      {/* 픽업 스케줄 이메일 미리보기 모달 */}
+      {tourData.tour && (
+        <PickupScheduleEmailPreviewModal
+          isOpen={showEmailPreviewModal}
+          onClose={() => setShowEmailPreviewModal(false)}
+          reservations={tourData.assignedReservations.map((res: any) => ({
+            id: res.id,
+            customer_id: res.customer_id,
+            pickup_time: res.pickup_time,
+            tour_date: res.tour_date || tourData.tour?.tour_date
+          }))}
+          tourDate={tourData.tour.tour_date}
+          onSend={handleBatchSendPickupScheduleNotifications}
         />
       )}
 
@@ -1330,7 +1419,7 @@ export default function TourDetailPage() {
           isOpen={showTourEditModal}
           tour={{
             id: tourData.tour.id,
-            product_id: tourData.tour.product_id
+            product_id: tourData.tour.product_id || ''
           }}
           currentProduct={tourData.product}
           locale={locale}

@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, Users, MapPin, X, ArrowUp, ArrowDown, GripVe
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useLocale } from 'next-intl'
+import { useAuth } from '@/contexts/AuthContext'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Tour = any
@@ -43,6 +44,7 @@ interface DailyData {
 
 export default function ScheduleView() {
   const locale = useLocale()
+  const { user, userRole } = useAuth()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [products, setProducts] = useState<Product[]>([])
   const [teamMembers, setTeamMembers] = useState<Team[]>([])
@@ -51,6 +53,18 @@ export default function ScheduleView() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [selectedProducts, setSelectedProducts] = useState<string[]>([])
   const [selectedTeamMembers, setSelectedTeamMembers] = useState<string[]>([])
+  
+  // 관리자 권한 확인 (super 또는 admin)
+  const isSuperAdmin = useMemo(() => {
+    if (!user?.email) return false
+    const normalizedEmail = user.email.toLowerCase()
+    const superAdminEmails = ['info@maniatour.com', 'wooyong.shim09@gmail.com']
+    if (superAdminEmails.includes(normalizedEmail)) return true
+    
+    // team 테이블에서 position 확인
+    const teamMember = teamMembers.find(m => m.email === user.email)
+    return teamMember?.position?.toLowerCase() === 'super' || userRole === 'admin'
+  }, [user, userRole, teamMembers])
   const [loading, setLoading] = useState(true)
   const [showProductModal, setShowProductModal] = useState(false)
   const [showTeamModal, setShowTeamModal] = useState(false)
@@ -70,11 +84,18 @@ export default function ScheduleView() {
   const [confirmModalContent, setConfirmModalContent] = useState({ title: '', message: '', onConfirm: () => {}, buttonText: '확인', buttonColor: 'bg-red-500 hover:bg-red-600' })
   const [showGuideModal, setShowGuideModal] = useState(false)
   const [guideModalContent, setGuideModalContent] = useState({ title: '', content: '', tourId: '' })
+  const [shareProductsSetting, setShareProductsSetting] = useState(false)
+  const [shareTeamMembersSetting, setShareTeamMembersSetting] = useState(false)
 
   // 배치 저장용 변경 대기 상태
   const [pendingChanges, setPendingChanges] = useState<{ [tourId: string]: Partial<Tour> }>({})
-  const [pendingOffScheduleChanges, setPendingOffScheduleChanges] = useState<{ [key: string]: { team_email: string; off_date: string; reason: string; status: string; action: 'approve' | 'delete' } }>({})
+  const [pendingOffScheduleChanges, setPendingOffScheduleChanges] = useState<{ [key: string]: { team_email: string; off_date: string; reason: string; status: string; action: 'approve' | 'delete' | 'reject' } }>({})
   const pendingCount = useMemo(() => Object.keys(pendingChanges).length + Object.keys(pendingOffScheduleChanges).length, [pendingChanges, pendingOffScheduleChanges])
+  
+  // 오프 스케줄 액션 모달 상태
+  const [showOffScheduleActionModal, setShowOffScheduleActionModal] = useState(false)
+  const [selectedOffSchedule, setSelectedOffSchedule] = useState<{ team_email: string; off_date: string; reason: string; status: string } | null>(null)
+  const [newOffScheduleReason, setNewOffScheduleReason] = useState('')
 
   // 통합 스크롤 컨테이너는 하나의 스크롤로 동기화됨
 
@@ -96,8 +117,59 @@ export default function ScheduleView() {
     setShowGuideModal(true)
   }
 
+  // 공유 설정 저장 (관리자만, 데이터베이스에 저장)
+  const saveSharedSetting = async (key: string, value: string[] | number | boolean) => {
+    if (!isSuperAdmin || !user?.id) return
+    
+    try {
+      if (Array.isArray(value) && value.length === 0) {
+        console.log('Skipping save for empty array:', key)
+        // 빈 배열인 경우 데이터베이스에서 삭제
+        await supabase
+          .from('shared_settings')
+          .delete()
+          .eq('setting_key', key)
+        return
+      }
+      
+      if (value === null || value === undefined) {
+        console.log('Skipping save for null/undefined value:', key)
+        return
+      }
+
+      // 데이터베이스에 저장 (upsert 사용)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        .from('shared_settings')
+        .upsert({
+          setting_key: key,
+          setting_value: value,
+          updated_by: user.id
+        }, {
+          onConflict: 'setting_key'
+        })
+
+      if (error) {
+        console.error('Error saving shared setting to database:', error)
+        // 실패 시 localStorage에 fallback 저장
+        const sharedKey = `shared_${key}`
+        localStorage.setItem(sharedKey, JSON.stringify(value))
+      } else {
+        console.log('Shared setting saved to database:', key, value)
+        // 성공 시 localStorage에도 저장 (캐시용)
+        const sharedKey = `shared_${key}`
+        localStorage.setItem(sharedKey, JSON.stringify(value))
+      }
+    } catch (error) {
+      console.error('Error saving shared setting:', error)
+      // 에러 발생 시 localStorage에 fallback 저장
+      const sharedKey = `shared_${key}`
+      localStorage.setItem(sharedKey, JSON.stringify(value))
+    }
+  }
+
   // 사용자 설정 저장
-  const saveUserSetting = async (key: string, value: string[] | number | boolean) => {
+  const saveUserSetting = async (key: string, value: string[] | number | boolean, saveAsShared: boolean = false) => {
     try {
       // 빈 배열이나 유효하지 않은 값은 저장하지 않음
       if (Array.isArray(value) && value.length === 0) {
@@ -110,7 +182,12 @@ export default function ScheduleView() {
         return
       }
 
-      // localStorage에 저장
+      // 관리자가 공유 설정으로 저장하는 경우
+      if (saveAsShared && isSuperAdmin) {
+        await saveSharedSetting(key, value)
+      }
+
+      // 개인 설정은 항상 저장
       localStorage.setItem(key, JSON.stringify(value))
       console.log('User setting saved to localStorage:', key, value)
     } catch (error) {
@@ -123,9 +200,67 @@ export default function ScheduleView() {
   // 사용자 설정 불러오기
   const loadUserSettings = useCallback(async () => {
     try {
-      // 먼저 localStorage에서 설정 불러오기 (기본값)
-      const savedProducts = localStorage.getItem('schedule_selected_products')
-      const savedTeamMembers = localStorage.getItem('schedule_selected_team_members')
+      // 먼저 데이터베이스에서 공유 설정 로드
+      const { data: sharedSettings, error: sharedError } = await supabase
+        .from('shared_settings')
+        .select('setting_key, setting_value')
+        .in('setting_key', ['schedule_selected_products', 'schedule_selected_team_members'])
+
+      if (sharedError) {
+        console.warn('Error loading shared settings from database:', sharedError)
+      }
+
+      // 공유 설정을 Map으로 변환
+      type SharedSetting = {
+        setting_key: string
+        setting_value: string[] | number | boolean
+      }
+      const sharedSettingsMap = new Map<string, string[] | number | boolean>()
+      if (sharedSettings) {
+        (sharedSettings as SharedSetting[]).forEach(setting => {
+          sharedSettingsMap.set(setting.setting_key, setting.setting_value)
+          // localStorage에도 캐시 저장
+          localStorage.setItem(`shared_${setting.setting_key}`, JSON.stringify(setting.setting_value))
+        })
+      }
+
+      // 공유 설정이 있으면 우선 사용, 없으면 localStorage에서 확인, 그래도 없으면 개인 설정 사용
+      const sharedProducts = sharedSettingsMap.get('schedule_selected_products')
+        || (() => {
+          const cached = localStorage.getItem('shared_schedule_selected_products')
+          return cached ? JSON.parse(cached) : null
+        })()
+      
+      const sharedTeamMembers = sharedSettingsMap.get('schedule_selected_team_members')
+        || (() => {
+          const cached = localStorage.getItem('shared_schedule_selected_team_members')
+          return cached ? JSON.parse(cached) : null
+        })()
+
+      const savedProducts = sharedProducts || localStorage.getItem('schedule_selected_products')
+      const savedTeamMembers = sharedTeamMembers || localStorage.getItem('schedule_selected_team_members')
+      
+      if (savedProducts) {
+        try {
+          const products = typeof savedProducts === 'string' ? JSON.parse(savedProducts) : savedProducts
+          setSelectedProducts(products)
+        } catch (parseError) {
+          console.warn('Error parsing saved products:', parseError)
+        }
+      }
+      if (savedTeamMembers) {
+        try {
+          const members = typeof savedTeamMembers === 'string' ? JSON.parse(savedTeamMembers) : savedTeamMembers
+          setSelectedTeamMembers(members)
+        } catch (parseError) {
+          console.warn('Error parsing saved team members:', parseError)
+        }
+      }
+    } catch (error) {
+      console.warn('Error in loadUserSettings, using localStorage fallback:', error)
+      // localStorage에서 직접 로드
+      const savedProducts = localStorage.getItem('shared_schedule_selected_products') || localStorage.getItem('schedule_selected_products')
+      const savedTeamMembers = localStorage.getItem('shared_schedule_selected_team_members') || localStorage.getItem('schedule_selected_team_members')
       
       if (savedProducts) {
         try {
@@ -141,11 +276,6 @@ export default function ScheduleView() {
           console.warn('Error parsing saved team members from localStorage:', parseError)
         }
       }
-
-      // localStorage만 사용하므로 데이터베이스 조회 제거
-    } catch (error) {
-      console.warn('Error in loadUserSettings, using localStorage fallback:', error)
-      // localStorage 설정은 이미 위에서 로드했으므로 여기서는 아무것도 하지 않음
     }
   }, [])
 
@@ -192,6 +322,107 @@ export default function ScheduleView() {
     }
     return colorMap[colorClass] || '#6b7280'
   }
+
+  // 테두리 색상 클래스를 실제 색상 값으로 변환
+  const getBorderColorValue = (borderColorClass: string) => {
+    const colorMap: { [key: string]: string } = {
+      'border-black': '#000000',
+      'border-red-500': '#ef4444',
+      'border-blue-500': '#3b82f6',
+      'border-green-500': '#10b981',
+      'border-yellow-500': '#eab308',
+      'border-purple-500': '#8b5cf6',
+      'border-pink-500': '#ec4899',
+      'border-indigo-500': '#6366f1',
+      'border-orange-500': '#f97316',
+      'border-cyan-500': '#06b6d4',
+      'border-lime-500': '#84cc16',
+      'border-gray-500': '#6b7280',
+      'border-slate-500': '#64748b',
+      'border-teal-500': '#14b8a6',
+      'border-amber-500': '#f59e0b',
+      'border-emerald-500': '#10b981',
+      'border-violet-500': '#8b5cf6'
+    }
+    return colorMap[borderColorClass] || '#000000'
+  }
+
+  // 같은 날짜 같은 product_id의 투어들을 팀별(가이드 기준)로 그룹화하여 테두리 색상 매핑
+  const getTourBorderColor = useMemo(() => {
+    const borderColors = [
+      'border-black',      // 검은색 (첫 번째 팀)
+      'border-red-500',    // 빨간색 (두 번째 팀)
+      'border-blue-500',
+      'border-green-500',
+      'border-yellow-500',
+      'border-purple-500',
+      'border-pink-500',
+      'border-indigo-500',
+      'border-orange-500',
+      'border-cyan-500',
+      'border-lime-500',
+      'border-gray-500',
+      'border-slate-500',
+      'border-teal-500',
+      'border-amber-500',
+      'border-emerald-500',
+      'border-violet-500'
+    ]
+    
+    // 날짜별, product_id별로 투어들을 그룹화하고 가이드 기준으로 팀 식별
+    // Key: "date_productId", Value: Map<guideId, color>
+    const dateProductTeamColorMap = new Map<string, Map<string, string>>()
+    
+    // 모든 투어를 날짜별, product_id별로 그룹화
+    const dateProductToursMap = new Map<string, Array<{ tour: Tour; guideId: string }>>()
+    
+    tours.forEach(tour => {
+      if (tour.tour_date && tour.product_id && tour.tour_guide_id) {
+        const key = `${tour.tour_date}_${tour.product_id}`
+        if (!dateProductToursMap.has(key)) {
+          dateProductToursMap.set(key, [])
+        }
+        dateProductToursMap.get(key)!.push({
+          tour,
+          guideId: tour.tour_guide_id
+        })
+      }
+    })
+    
+    // 각 날짜-product_id 조합에서 투어 ID별로 팀을 식별하고 색상 할당
+    dateProductToursMap.forEach((tourList, dateProductKey) => {
+      // 같은 투어 ID를 가진 투어들을 하나의 팀으로 봄
+      const tourIdSet = new Set<string>()
+      tourList.forEach(({ tour }) => {
+        if (tour.id) {
+          tourIdSet.add(tour.id)
+        }
+      })
+      
+      // 같은 날짜, 같은 product_id에서 여러 투어 ID(팀)가 있으면 색상 할당
+      if (tourIdSet.size > 1) {
+        Array.from(tourIdSet).forEach((tourId, teamIndex) => {
+          const color = borderColors[teamIndex % borderColors.length]
+          
+          if (!dateProductTeamColorMap.has(dateProductKey)) {
+            dateProductTeamColorMap.set(dateProductKey, new Map())
+          }
+          const tourIdColorMap = dateProductTeamColorMap.get(dateProductKey)!
+          tourIdColorMap.set(tourId, color)
+        })
+      }
+    })
+    
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    return (tourId: string, dateString: string, productId: string, _guideId: string) => {
+      const key = `${dateString}_${productId}`
+      const tourIdColorMap = dateProductTeamColorMap.get(key)
+      if (tourIdColorMap) {
+        return tourIdColorMap.get(tourId) || ''
+      }
+      return ''
+    }
+  }, [tours])
 
   // 현재 월의 첫 번째 날과 마지막 날 계산 (dayjs)
   const firstDayOfMonth = useMemo(() => dayjs(currentDate).startOf('month'), [currentDate])
@@ -426,6 +657,7 @@ export default function ScheduleView() {
         e.returnValue = '저장되지 않은 변경사항이 있습니다. 페이지를 벗어나시겠습니까?'
         return '저장되지 않은 변경사항이 있습니다. 페이지를 벗어나시겠습니까?'
       }
+      return undefined
     }
 
     window.addEventListener('beforeunload', handleBeforeUnload)
@@ -713,16 +945,23 @@ export default function ScheduleView() {
   }
 
   // 상품 선택 토글
-  const toggleProduct = async (productId: string) => {
+  const toggleProduct = async (productId: string, saveAsShared: boolean = false) => {
     const newSelection = selectedProducts.includes(productId) 
       ? selectedProducts.filter(id => id !== productId)
       : [...selectedProducts, productId]
     
     setSelectedProducts(newSelection)
     
-    // 데이터베이스에 저장 (빈 배열이 아닐 때만)
-    if (newSelection.length > 0) {
-      await saveUserSetting('schedule_selected_products', newSelection)
+    // 관리자가 공유 설정으로 저장하는 경우
+    if (saveAsShared && isSuperAdmin) {
+      if (newSelection.length > 0) {
+        await saveSharedSetting('schedule_selected_products', newSelection)
+      }
+    } else {
+      // 개인 설정으로 저장
+      if (newSelection.length > 0) {
+        await saveUserSetting('schedule_selected_products', newSelection)
+      }
     }
     
     // 로컬 스토리지에는 항상 저장 (fallback)
@@ -730,16 +969,23 @@ export default function ScheduleView() {
   }
 
   // 팀 멤버 선택 토글
-  const toggleTeamMember = async (teamMemberId: string) => {
+  const toggleTeamMember = async (teamMemberId: string, saveAsShared: boolean = false) => {
     const newSelection = selectedTeamMembers.includes(teamMemberId) 
       ? selectedTeamMembers.filter(id => id !== teamMemberId)
       : [...selectedTeamMembers, teamMemberId]
     
     setSelectedTeamMembers(newSelection)
     
-    // 데이터베이스에 저장 (빈 배열이 아닐 때만)
-    if (newSelection.length > 0) {
-      await saveUserSetting('schedule_selected_team_members', newSelection)
+    // 관리자가 공유 설정으로 저장하는 경우
+    if (saveAsShared && isSuperAdmin) {
+      if (newSelection.length > 0) {
+        await saveSharedSetting('schedule_selected_team_members', newSelection)
+      }
+    } else {
+      // 개인 설정으로 저장
+      if (newSelection.length > 0) {
+        await saveUserSetting('schedule_selected_team_members', newSelection)
+      }
     }
     
     // 로컬 스토리지에는 항상 저장 (fallback)
@@ -803,7 +1049,6 @@ export default function ScheduleView() {
   }
 
 
-  // 오프 스케줄 삭제 (더블클릭)
   // 오프 스케줄 삭제 (배치 저장용)
   const handleOffScheduleDelete = (offSchedule: { team_email: string; off_date: string; reason: string; status: string }) => {
     const key = `${offSchedule.team_email}_${offSchedule.off_date}`
@@ -815,6 +1060,24 @@ export default function ScheduleView() {
       }
     }))
     showMessage('삭제 대기', '오프 스케줄 삭제가 대기 목록에 추가되었습니다. 저장 버튼을 눌러 변경사항을 저장하세요.', 'success')
+    setShowOffScheduleActionModal(false)
+    setSelectedOffSchedule(null)
+  }
+
+  // 오프 스케줄 액션 모달 열기
+  const openOffScheduleActionModal = (offSchedule: { team_email: string; off_date: string; reason: string; status: string } | null, teamMemberId?: string, dateString?: string) => {
+    if (offSchedule) {
+      setSelectedOffSchedule(offSchedule)
+    } else if (teamMemberId && dateString) {
+      // 빈칸 클릭 시 새로운 오프 스케줄 생성용
+      setSelectedOffSchedule({
+        team_email: teamMemberId,
+        off_date: dateString,
+        reason: '',
+        status: 'pending'
+      })
+    }
+    setShowOffScheduleActionModal(true)
   }
 
   // 오프 스케줄 승인 (배치 저장용)
@@ -828,6 +1091,23 @@ export default function ScheduleView() {
       }
     }))
     showMessage('승인 대기', '오프 스케줄 승인이 대기 목록에 추가되었습니다. 저장 버튼을 눌러 변경사항을 저장하세요.', 'success')
+    setShowOffScheduleActionModal(false)
+    setSelectedOffSchedule(null)
+  }
+
+  // 오프 스케줄 거절 (배치 저장용)
+  const handleOffScheduleReject = (offSchedule: { team_email: string; off_date: string; reason: string; status: string }) => {
+    const key = `${offSchedule.team_email}_${offSchedule.off_date}`
+    setPendingOffScheduleChanges(prev => ({
+      ...prev,
+      [key]: {
+        ...offSchedule,
+        action: 'reject'
+      }
+    }))
+    showMessage('거절 대기', '오프 스케줄 거절이 대기 목록에 추가되었습니다. 저장 버튼을 눌러 변경사항을 저장하세요.', 'success')
+    setShowOffScheduleActionModal(false)
+    setSelectedOffSchedule(null)
   }
 
   // 오프 스케줄 생성
@@ -1191,7 +1471,10 @@ export default function ScheduleView() {
             <div className="flex gap-2">
               {/* 상품 선택 버튼 */}
               <button
-                onClick={() => setShowProductModal(true)}
+                onClick={() => {
+                  setShareProductsSetting(false)
+                  setShowProductModal(true)
+                }}
                 className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors relative"
                 title={`상품 선택 (${selectedProducts.length}개)`}
               >
@@ -1205,7 +1488,10 @@ export default function ScheduleView() {
 
               {/* 팀원 선택 버튼 */}
               <button
-                onClick={() => setShowTeamModal(true)}
+                onClick={() => {
+                  setShareTeamMembersSetting(false)
+                  setShowTeamModal(true)
+                }}
                 className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors relative"
                 title={`팀원 선택 (${selectedTeamMembers.length}개)`}
               >
@@ -1264,6 +1550,20 @@ export default function ScheduleView() {
                       if (error) {
                         console.error('Off schedule approve error:', error)
                         showMessage('저장 실패', '오프 스케줄 승인에 실패했습니다.', 'error')
+                        return
+                      }
+                    } else if (change.action === 'reject') {
+                      // 오프 스케줄 거절
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      const { error } = await (supabase as any)
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        .from('off_schedules' as any)
+                        .update({ status: 'rejected' })
+                        .eq('team_email', change.team_email)
+                        .eq('off_date', change.off_date)
+                      if (error) {
+                        console.error('Off schedule reject error:', error)
+                        showMessage('저장 실패', '오프 스케줄 거절에 실패했습니다.', 'error')
                         return
                       }
                     } else if (change.action === 'delete') {
@@ -1354,9 +1654,25 @@ export default function ScheduleView() {
           
           {/* 상품별 스케줄 테이블 */}
           <div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center">
-              <MapPin className="w-5 h-5 mr-2 text-blue-500" />
-              상품별 투어 인원
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center justify-between">
+              <div className="flex items-center">
+                <MapPin className="w-5 h-5 mr-2 text-blue-500" />
+                상품별 투어 인원
+              </div>
+              <div className="flex items-center gap-3 text-xs text-gray-600">
+                <div className="flex items-center gap-1">
+                  <div className="w-4 h-4 bg-yellow-100 border border-yellow-300 rounded"></div>
+                  <span>한국어진행</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-4 h-4 bg-red-100 border border-red-300 rounded"></div>
+                  <span>영어진행</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-4 h-4 bg-orange-100 border border-orange-300 rounded"></div>
+                  <span>한국어 & 영어</span>
+                </div>
+              </div>
             </h3>
             <div className="overflow-visible">
           <table className="w-full" style={{tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px`}}>
@@ -1722,28 +2038,11 @@ export default function ScheduleView() {
                                                 : 'bg-gray-500 text-white hover:bg-gray-600'
                                           } rounded px-1 py-0.5 text-xs font-bold flex items-center justify-center h-full cursor-pointer transition-colors select-none`}
                                           onClick={() => {
-                                            if (isPending) {
-                                              showConfirm(
-                                                '오프 스케줄 승인',
-                                                '오프 스케줄을 승인하시겠습니까?',
-                                                () => handleOffScheduleApprove(offSchedule!),
-                                                '승인',
-                                                'bg-green-500 hover:bg-green-600'
-                                              )
-                                            }
-                                          }}
-                                          onDoubleClick={() => {
                                             if (offSchedule) {
-                                              showConfirm(
-                                                '오프 스케줄 삭제',
-                                                '오프 스케줄을 삭제하시겠습니까?',
-                                                () => handleOffScheduleDelete(offSchedule),
-                                                '삭제',
-                                                'bg-red-500 hover:bg-red-600'
-                                              )
+                                              openOffScheduleActionModal(offSchedule)
                                             }
                                           }}
-                                          title={`오프 스케줄 (${isPending ? '대기중' : isApproved ? '승인됨' : '알 수 없음'}) - ${isPending ? '클릭하여 승인' : ''} 더블클릭하여 삭제`}
+                                          title={`오프 스케줄 (${isPending ? '대기중' : isApproved ? '승인됨' : '알 수 없음'}) - 클릭하여 액션 선택`}
                                           >
                                             OFF
                                           </div>
@@ -1835,6 +2134,73 @@ export default function ScheduleView() {
                                       
                                       // 차량 배차 여부
                                       const hasUnassignedVehicle = guideTours.some(t => !t.tour_car_id || String(t.tour_car_id).trim().length === 0)
+                                      
+                                      // 같은 날짜에 같은 product_id의 투어가 여러 팀(가이드)으로 나가는지 확인
+                                      if (guideTours.length > 0 && guideTours[0].product_id && guideTours[0].id) {
+                                        // 같은 날짜, 같은 product_id를 가진 모든 투어 확인
+                                        const sameDateProductTours = tours.filter(t => 
+                                          t.tour_date === dateString && 
+                                          t.product_id === guideTours[0].product_id &&
+                                          t.tour_guide_id // 가이드가 배정된 투어만
+                                        )
+                                        
+                                        // 같은 product_id에서 여러 가이드(팀)가 있으면 테두리 색상 적용
+                                        const uniqueGuides = new Set(sameDateProductTours.map(t => t.tour_guide_id).filter(Boolean))
+                                        const hasMultipleTeams = uniqueGuides.size > 1
+                                        
+                                        const borderColor = hasMultipleTeams
+                                          ? getTourBorderColor(
+                                              guideTours[0].id,
+                                              dateString,
+                                              guideTours[0].product_id,
+                                              teamMemberId
+                                            )
+                                          : ''
+                                        
+                                        return (
+                                          <div 
+                                            className={`absolute inset-0 flex items-center justify-center gap-1 font-bold text-white px-2 py-0 text-xs rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
+                                              dayData.assignedPeople === 0 
+                                                ? 'bg-gray-400' 
+                                                : 'bg-transparent'
+                                            } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''} ${borderColor ? 'border-2 border-white' : ''}`}
+                                            style={{
+                                              backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
+                                                ? getColorFromClass(Object.values(dayData.productColors)[0])
+                                                : undefined,
+                                              boxShadow: borderColor ? `0 0 0 2px ${getBorderColorValue(borderColor)}` : undefined
+                                            }}
+                                            draggable
+                                            onDragStart={(e) => {
+                                              if (guideTours.length > 0) {
+                                                setDraggedRole('guide')
+                                                handleDragStart(e, guideTours[0])
+                                              }
+                                            }}
+                                            onDoubleClick={() => {
+                                              if (guideTours.length > 0) {
+                                                handleTourDoubleClick(guideTours[0].id)
+                                              }
+                                            }}
+                                            onClick={() => {
+                                              if (guideTours.length > 0) {
+                                                showGuideModalContent('투어 상세 정보', getTourSummary(guideTours[0]), guideTours[0].id)
+                                              }
+                                            }}
+                                          >
+                                            {hasUnassignedVehicle && (
+                                              <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
+                                            )}
+                                            {hasPrivateTour && <span>🔒</span>}
+                                            <span>{dayData.assignedPeople}</span>
+                                            {dayData.extendsToNextMonth && (
+                                              <span className="text-xs opacity-75">→</span>
+                                            )}
+                                          </div>
+                                        )
+                                      }
+                                      
+                                      // 기본 렌더링 (product_id가 없는 경우)
                                       return (
                                         <div 
                                           className={`absolute inset-0 flex items-center justify-center gap-1 font-bold text-white px-2 py-0 text-xs rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
@@ -1890,6 +2256,73 @@ export default function ScheduleView() {
                                       
                                       // 차량 배차 여부
                                       const hasUnassignedVehicle = assistantTours.some(t => !t.tour_car_id || String(t.tour_car_id).trim().length === 0)
+                                      
+                                      // 같은 날짜에 같은 product_id의 투어가 여러 팀(가이드)으로 나가는지 확인
+                                      if (assistantTours.length > 0 && assistantTours[0].product_id && assistantTours[0].id && assistantTours[0].tour_guide_id) {
+                                        // 같은 날짜, 같은 product_id를 가진 모든 투어 확인
+                                        const sameDateProductTours = tours.filter(t => 
+                                          t.tour_date === dateString && 
+                                          t.product_id === assistantTours[0].product_id &&
+                                          t.tour_guide_id // 가이드가 배정된 투어만
+                                        )
+                                        
+                                        // 같은 product_id에서 여러 가이드(팀)가 있으면 테두리 색상 적용
+                                        const uniqueGuides = new Set(sameDateProductTours.map(t => t.tour_guide_id).filter(Boolean))
+                                        const hasMultipleTeams = uniqueGuides.size > 1
+                                        
+                                        const borderColor = hasMultipleTeams
+                                          ? getTourBorderColor(
+                                              assistantTours[0].id,
+                                              dateString,
+                                              assistantTours[0].product_id,
+                                              assistantTours[0].tour_guide_id
+                                            )
+                                          : ''
+                                        
+                                        return (
+                                          <div 
+                                            className={`absolute inset-0 flex items-center justify-center gap-1 font-bold text-white px-2 py-0 text-xs rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
+                                              dayData.assignedPeople === 0 
+                                                ? 'bg-gray-400' 
+                                                : 'bg-transparent'
+                                            } ${isToday(dateString) ? 'ring-2 ring-red-300' : ''} ${borderColor ? 'border-2 border-white' : ''}`}
+                                            style={{
+                                              backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
+                                                ? getColorFromClass(Object.values(dayData.productColors)[0])
+                                                : undefined,
+                                              boxShadow: borderColor ? `0 0 0 2px ${getBorderColorValue(borderColor)}` : undefined
+                                            }}
+                                          draggable
+                                          onDragStart={(e) => {
+                                            if (assistantTours.length > 0) {
+                                              setDraggedRole('assistant')
+                                              handleDragStart(e, assistantTours[0])
+                                            }
+                                          }}
+                                          onDoubleClick={() => {
+                                            if (assistantTours.length > 0) {
+                                              handleTourDoubleClick(assistantTours[0].id)
+                                            }
+                                          }}
+                                          onClick={() => {
+                                            if (assistantTours.length > 0) {
+                                              showGuideModalContent('투어 상세 정보', getTourSummary(assistantTours[0]), assistantTours[0].id)
+                                            }
+                                          }}
+                                        >
+                                          {hasUnassignedVehicle && (
+                                            <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
+                                          )}
+                                          {hasPrivateTour && <span>🔒</span>}
+                                          <span>{dayData.guideInitials || 'A'}</span>
+                                          {dayData.extendsToNextMonth && (
+                                            <span className="text-xs opacity-75">→</span>
+                                          )}
+                                        </div>
+                                      )
+                                      }
+                                      
+                                      // 기본 렌더링 (product_id가 없거나 tour_guide_id가 없는 경우)
                                       return (
                                         <div 
                                           className={`absolute inset-0 flex items-center justify-center gap-1 font-bold text-white px-2 py-0 text-xs rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
@@ -1964,39 +2397,26 @@ export default function ScheduleView() {
                                                   : 'bg-gray-500 text-white hover:bg-gray-600'
                                             } rounded px-1 py-0.5 text-xs font-bold cursor-pointer transition-colors select-none`}
                                             onClick={() => {
-                                              if (isPending) {
-                                                showConfirm(
-                                                  '오프 스케줄 승인',
-                                                  '오프 스케줄을 승인하시겠습니까?',
-                                                  () => handleOffScheduleApprove(offSchedule!),
-                                                  '승인',
-                                                  'bg-green-500 hover:bg-green-600'
-                                                )
-                                              }
-                                            }}
-                                            onDoubleClick={() => {
                                               if (offSchedule) {
-                                                showConfirm(
-                                                  '오프 스케줄 삭제',
-                                                  '오프 스케줄을 삭제하시겠습니까?',
-                                                  () => handleOffScheduleDelete(offSchedule),
-                                                  '삭제',
-                                                  'bg-red-500 hover:bg-red-600'
-                                                )
+                                                openOffScheduleActionModal(offSchedule)
                                               }
                                             }}
-                                            title={`오프 스케줄 (${isPending ? '대기중' : isApproved ? '승인됨' : '알 수 없음'}) - ${isPending ? '클릭하여 승인' : ''} 더블클릭하여 삭제`}
+                                            title={`오프 스케줄 (${isPending ? '대기중' : isApproved ? '승인됨' : '알 수 없음'}) - 클릭하여 액션 선택`}
                                           >
                                             OFF
                                           </div>
                                         )
                                       })()
                                     ) : (
-                                      /* 드롭 영역 - 더블클릭으로 오프 스케줄 생성 */
+                                      /* 드롭 영역 - 클릭으로 오프 스케줄 액션 모달, 더블클릭으로 오프 스케줄 생성 */
                                       <div 
                                         className="h-full flex items-center justify-center cursor-pointer hover:bg-gray-100 transition-colors"
-                                        onDoubleClick={() => handleCreateOffSchedule(teamMemberId, dateString)}
-                                        title="더블클릭하여 오프 스케줄 생성"
+                                        onClick={() => openOffScheduleActionModal(null, teamMemberId, dateString)}
+                                        onDoubleClick={(e) => {
+                                          e.stopPropagation()
+                                          handleCreateOffSchedule(teamMemberId, dateString)
+                                        }}
+                                        title="클릭: 오프 스케줄 액션, 더블클릭: 오프 스케줄 생성"
                                       >
                                         <div className="text-gray-300 text-xs">+</div>
                                       </div>
@@ -2313,23 +2733,54 @@ export default function ScheduleView() {
               </div>
             </div>
 
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={async () => {
-                  setSelectedProducts([])
-                  await saveUserSetting('schedule_selected_products', [])
-                  localStorage.removeItem('schedule_selected_products')
-                }}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800"
-              >
-                전체 해제
-              </button>
-              <button
-                onClick={() => setShowProductModal(false)}
-                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
-              >
-                확인
-              </button>
+            <div className="flex flex-col space-y-3">
+              {isSuperAdmin && (
+                <div className="flex items-center space-x-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <input
+                    type="checkbox"
+                    id="share-products"
+                    checked={shareProductsSetting}
+                    onChange={(e) => setShareProductsSetting(e.target.checked)}
+                    className="w-4 h-4 text-yellow-600 border-gray-300 rounded focus:ring-yellow-500"
+                  />
+                  <label htmlFor="share-products" className="text-sm text-gray-700 cursor-pointer">
+                    모든 사용자에게 공유 (관리자 전용)
+                  </label>
+                </div>
+              )}
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={async () => {
+                    setSelectedProducts([])
+                    setShareProductsSetting(false)
+                    await saveUserSetting('schedule_selected_products', [])
+                    localStorage.removeItem('schedule_selected_products')
+                    if (isSuperAdmin) {
+                      // 데이터베이스에서 공유 설정 삭제
+                      await supabase
+                        .from('shared_settings')
+                        .delete()
+                        .eq('setting_key', 'schedule_selected_products')
+                      localStorage.removeItem('shared_schedule_selected_products')
+                    }
+                  }}
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                >
+                  전체 해제
+                </button>
+                <button
+                  onClick={async () => {
+                    if (shareProductsSetting && selectedProducts.length > 0) {
+                      await saveSharedSetting('schedule_selected_products', selectedProducts)
+                    }
+                    setShareProductsSetting(false)
+                    setShowProductModal(false)
+                  }}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                >
+                  확인
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -2405,23 +2856,54 @@ export default function ScheduleView() {
               </div>
             </div>
 
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={async () => {
-                  setSelectedTeamMembers([])
-                  await saveUserSetting('schedule_selected_team_members', [])
-                  localStorage.removeItem('schedule_selected_team_members')
-                }}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800"
-              >
-                전체 해제
-              </button>
-              <button
-                onClick={() => setShowTeamModal(false)}
-                className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
-              >
-                확인
-              </button>
+            <div className="flex flex-col space-y-3">
+              {isSuperAdmin && (
+                <div className="flex items-center space-x-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <input
+                    type="checkbox"
+                    id="share-team-members"
+                    checked={shareTeamMembersSetting}
+                    onChange={(e) => setShareTeamMembersSetting(e.target.checked)}
+                    className="w-4 h-4 text-yellow-600 border-gray-300 rounded focus:ring-yellow-500"
+                  />
+                  <label htmlFor="share-team-members" className="text-sm text-gray-700 cursor-pointer">
+                    모든 사용자에게 공유 (관리자 전용)
+                  </label>
+                </div>
+              )}
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={async () => {
+                    setSelectedTeamMembers([])
+                    setShareTeamMembersSetting(false)
+                    await saveUserSetting('schedule_selected_team_members', [])
+                    localStorage.removeItem('schedule_selected_team_members')
+                    if (isSuperAdmin) {
+                      // 데이터베이스에서 공유 설정 삭제
+                      await supabase
+                        .from('shared_settings')
+                        .delete()
+                        .eq('setting_key', 'schedule_selected_team_members')
+                      localStorage.removeItem('shared_schedule_selected_team_members')
+                    }
+                  }}
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                >
+                  전체 해제
+                </button>
+                <button
+                  onClick={async () => {
+                    if (shareTeamMembersSetting && selectedTeamMembers.length > 0) {
+                      await saveSharedSetting('schedule_selected_team_members', selectedTeamMembers)
+                    }
+                    setShareTeamMembersSetting(false)
+                    setShowTeamModal(false)
+                  }}
+                  className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+                >
+                  확인
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -2486,7 +2968,7 @@ export default function ScheduleView() {
 
       {/* 확인 모달 */}
       {showConfirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-3">
@@ -2577,6 +3059,178 @@ export default function ScheduleView() {
           </div>
         </div>
       )}
+
+      {/* 오프 스케줄 액션 모달 */}
+      {showOffScheduleActionModal && selectedOffSchedule && (() => {
+        // 기존 오프 스케줄인지 확인 (reason이 있고, offSchedules에 존재하는지 확인)
+        const existingOffSchedule = offSchedules.find(off => 
+          off.team_email === selectedOffSchedule.team_email && 
+          off.off_date === selectedOffSchedule.off_date
+        )
+        const isNewSchedule = !existingOffSchedule && (!selectedOffSchedule.reason || selectedOffSchedule.reason.trim() === '')
+        
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" style={{ zIndex: showConfirmModal ? 40 : 50 }}>
+            <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {isNewSchedule ? '오프 스케줄 추가' : '오프 스케줄 액션'}
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowOffScheduleActionModal(false)
+                    setSelectedOffSchedule(null)
+                    setNewOffScheduleReason('')
+                  }}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              
+              <div className="mb-6">
+                <div className="text-sm text-gray-600 mb-4">
+                  <span className="font-medium">날짜:</span> {dayjs(selectedOffSchedule.off_date).format('YYYY년 MM월 DD일 (ddd)')}
+                </div>
+                
+                {isNewSchedule ? (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      사유
+                    </label>
+                    <input
+                      type="text"
+                      value={newOffScheduleReason}
+                      onChange={(e) => setNewOffScheduleReason(e.target.value)}
+                      placeholder="오프 스케줄 사유를 입력하세요"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      autoFocus
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-sm text-gray-600 mb-2">
+                      <span className="font-medium">사유:</span> {selectedOffSchedule.reason}
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      <span className="font-medium">상태:</span> {
+                        selectedOffSchedule.status === 'pending' ? '대기중' :
+                        selectedOffSchedule.status === 'approved' ? '승인됨' :
+                        selectedOffSchedule.status === 'rejected' ? '거절됨' :
+                        '알 수 없음'
+                      }
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="flex flex-col space-y-3">
+                {isNewSchedule ? (
+                  <button
+                    onClick={async () => {
+                      if (!newOffScheduleReason.trim()) {
+                        showMessage('입력 필요', '사유를 입력해주세요.', 'error')
+                        return
+                      }
+                      
+                      try {
+                        const { error } = await supabase
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                          .from('off_schedules' as any)
+                          .insert({
+                            id: crypto.randomUUID(),
+                            team_email: selectedOffSchedule.team_email,
+                            off_date: selectedOffSchedule.off_date,
+                            reason: newOffScheduleReason.trim(),
+                            status: 'pending'
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                          } as any)
+
+                        if (error) {
+                          console.error('Error creating off schedule:', error)
+                          showMessage('생성 실패', '오프 스케줄 생성에 실패했습니다.', 'error')
+                          return
+                        }
+
+                        await fetchData()
+                        setShowOffScheduleActionModal(false)
+                        setSelectedOffSchedule(null)
+                        setNewOffScheduleReason('')
+                        showMessage('생성 완료', '오프 스케줄이 생성되었습니다.', 'success')
+                      } catch (error) {
+                        console.error('Error creating off schedule:', error)
+                        showMessage('오류 발생', '오프 스케줄 생성 중 오류가 발생했습니다.', 'error')
+                      }
+                    }}
+                    className="w-full px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium"
+                  >
+                    오프 스케줄 추가
+                  </button>
+                ) : (
+                  <>
+                    {selectedOffSchedule.status === 'pending' && (
+                      <button
+                        onClick={() => {
+                          showConfirm(
+                            '오프 스케줄 승인',
+                            '오프 스케줄을 승인하시겠습니까?',
+                            () => handleOffScheduleApprove(selectedOffSchedule),
+                            '승인',
+                            'bg-green-500 hover:bg-green-600'
+                          )
+                        }}
+                        className="w-full px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-medium"
+                      >
+                        승인
+                      </button>
+                    )}
+                    {selectedOffSchedule.status === 'pending' && (
+                      <button
+                        onClick={() => {
+                          showConfirm(
+                            '오프 스케줄 거절',
+                            '오프 스케줄을 거절하시겠습니까?',
+                            () => handleOffScheduleReject(selectedOffSchedule),
+                            '거절',
+                            'bg-orange-500 hover:bg-orange-600'
+                          )
+                        }}
+                        className="w-full px-4 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium"
+                      >
+                        거절
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        showConfirm(
+                          '오프 스케줄 삭제',
+                          '오프 스케줄을 삭제하시겠습니까?',
+                          () => handleOffScheduleDelete(selectedOffSchedule),
+                          '삭제',
+                          'bg-red-500 hover:bg-red-600'
+                        )
+                      }}
+                      className="w-full px-4 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium"
+                    >
+                      삭제
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => {
+                    setShowOffScheduleActionModal(false)
+                    setSelectedOffSchedule(null)
+                    setNewOffScheduleReason('')
+                  }}
+                  className="w-full px-4 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors font-medium"
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
     </div>
   )

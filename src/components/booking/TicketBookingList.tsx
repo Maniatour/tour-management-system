@@ -75,7 +75,8 @@ export default function TicketBookingList() {
   const [sortField, setSortField] = useState<'date' | 'submit_on' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [teamMemberMap, setTeamMemberMap] = useState<Map<string, string>>(new Map());
-  const [supplierProductsMap, setSupplierProductsMap] = useState<Map<string, { season_dates: any }>>(new Map());
+  type SeasonDate = { start: string; end: string };
+  const [supplierProductsMap, setSupplierProductsMap] = useState<Map<string, { season_dates: SeasonDate[] | null }>>(new Map());
   const [openStatusDropdown, setOpenStatusDropdown] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
   const statusButtonRefs = useRef<Map<string, HTMLSpanElement>>(new Map());
@@ -131,6 +132,7 @@ export default function TicketBookingList() {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedBookings, setSelectedBookings] = useState<TicketBooking[]>([]);
   const [tourEvents, setTourEvents] = useState<TourEvent[]>([]);
+  const [isInitialLoad, setIsInitialLoad] = useState(true); // 초기 로딩 여부 추적
 
   const fetchBookings = async () => {
     try {
@@ -161,8 +163,8 @@ export default function TicketBookingList() {
             .in('booking_id', bookingIds);
 
           if (purchasesData) {
-            const productMap = new Map<string, { season_dates: any }>();
-            purchasesData.forEach((purchase: any) => {
+            const productMap = new Map<string, { season_dates: SeasonDate[] | null }>();
+            purchasesData.forEach((purchase: { booking_id: string; supplier_products?: { season_dates: SeasonDate[] | null } }) => {
               if (purchase.booking_id && purchase.supplier_products) {
                 productMap.set(purchase.booking_id, {
                   season_dates: purchase.supplier_products.season_dates
@@ -300,9 +302,20 @@ export default function TicketBookingList() {
 
   const fetchTourEvents = useCallback(async () => {
     try {
-      // 현재 달력에 표시되는 월의 시작일과 종료일 계산
-      const startDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-      const endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+      // 초기 로딩 시 오늘부터 7일 후까지, 그 외에는 현재 달력에 표시되는 월의 시작일과 종료일 계산
+      let startDate: Date;
+      let endDate: Date;
+      
+      if (isInitialLoad) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        startDate = new Date(today);
+        endDate = new Date(today);
+        endDate.setDate(endDate.getDate() + 6); // 오늘부터 7일 후
+      } else {
+        startDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+        endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+      }
       
       console.log('투어 이벤트 조회 기간:', startDate.toISOString().split('T')[0], '~', endDate.toISOString().split('T')[0]);
 
@@ -468,26 +481,25 @@ export default function TicketBookingList() {
       console.error('오류 상세:', JSON.stringify(error, null, 2));
       setTourEvents([]);
     }
-  }, [currentDate]);
+  }, [currentDate, isInitialLoad]);
 
   useEffect(() => {
     fetchBookings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 드롭다운 외부 클릭 시 닫기
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (openStatusDropdown) {
-        setOpenStatusDropdown(null);
-      }
+    if (!openStatusDropdown) return;
+
+    const handleClickOutside = () => {
+      setOpenStatusDropdown(null);
     };
 
-    if (openStatusDropdown) {
-      document.addEventListener('click', handleClickOutside);
-      return () => {
-        document.removeEventListener('click', handleClickOutside);
-      };
-    }
+    document.addEventListener('click', handleClickOutside);
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
   }, [openStatusDropdown]);
 
   useEffect(() => {
@@ -535,7 +547,7 @@ export default function TicketBookingList() {
   };
 
   // 시즌 여부 확인 함수 (check_in_date 기준)
-  const checkIfSeason = (company: string, checkInDate: string, supplierProduct?: { season_dates: any }): boolean => {
+  const checkIfSeason = (checkInDate: string, supplierProduct?: { season_dates: SeasonDate[] | null }): boolean => {
     if (!checkInDate || !supplierProduct?.season_dates) return false;
     
     const seasonDates = supplierProduct.season_dates;
@@ -554,8 +566,8 @@ export default function TicketBookingList() {
   };
 
   // 취소 기한 계산 함수
-  const getCancelDeadlineDays = (company: string, checkInDate: string, supplierProduct?: { season_dates: any }): number => {
-    const isSeason = checkIfSeason(company, checkInDate, supplierProduct);
+  const getCancelDeadlineDays = (company: string, checkInDate: string, supplierProduct?: { season_dates: SeasonDate[] | null }): number => {
+    const isSeason = checkIfSeason(checkInDate, supplierProduct);
     
     switch (company) {
       case 'Antelope X':
@@ -569,28 +581,6 @@ export default function TicketBookingList() {
     }
   };
 
-  // 오늘부터 취소 기한 날짜까지의 모든 예약인지 확인
-  const isWithinCancelDeadline = (booking: TicketBooking): boolean => {
-    if (!booking.check_in_date || !booking.company) return false;
-    
-    const supplierProduct = supplierProductsMap.get(booking.id);
-    const cancelDeadlineDays = getCancelDeadlineDays(booking.company, booking.check_in_date, supplierProduct);
-    if (cancelDeadlineDays === 0) return false;
-    
-    const checkInDate = new Date(booking.check_in_date);
-    checkInDate.setHours(0, 0, 0, 0);
-    
-    const cancelDeadline = new Date(checkInDate);
-    cancelDeadline.setDate(cancelDeadline.getDate() - cancelDeadlineDays);
-    
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    // 오늘보다 앞에 있는 예약 중에서
-    // 취소 기한 날짜가 오늘과 체크인 날짜 사이에 있는 예약만 표시
-    // 조건: 체크인 날짜 > 오늘 && 오늘 <= 취소 기한 날짜 <= 체크인 날짜
-    return checkInDate > today && today <= cancelDeadline && cancelDeadline <= checkInDate;
-  };
 
   // Future Event 필터: 체크인 날짜가 오늘 이후인 예약만 표시
   const matchesFutureEvent = (booking: TicketBooking): boolean => {
@@ -720,7 +710,8 @@ export default function TicketBookingList() {
 
   const handleStatusChange = async (booking: TicketBooking, newStatus: string) => {
     try {
-      const { error } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
         .from('ticket_bookings')
         .update({ status: newStatus })
         .eq('id', booking.id);
@@ -1343,31 +1334,49 @@ export default function TicketBookingList() {
 
                 // 선택된 월 기준으로 달력 생성
                 const now = new Date();
-                const currentYear = currentDate.getFullYear();
-                const currentMonth = currentDate.getMonth();
+                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
                 
-                // 이번 달의 첫 번째 날
-                const firstDay = new Date(currentYear, currentMonth, 1);
-                const startDate = new Date(firstDay);
-                startDate.setDate(startDate.getDate() - firstDay.getDay()); // 일요일부터 시작
+                const calendarDays: Date[] = [];
                 
-                // 6주 표시를 위해 42일 생성
-                const calendarDays = [];
-                for (let i = 0; i < 42; i++) {
-                  const date = new Date(startDate);
-                  date.setDate(startDate.getDate() + i);
-                  calendarDays.push(date);
+                // 초기 로딩 시 오늘부터 7일만 표시
+                if (isInitialLoad) {
+                  for (let i = 0; i < 7; i++) {
+                    const date = new Date(today);
+                    date.setDate(today.getDate() + i);
+                    calendarDays.push(date);
+                  }
+                } else {
+                  // 일반 달력 뷰 (전체 월)
+                  const currentYear = currentDate.getFullYear();
+                  const currentMonth = currentDate.getMonth();
+                  
+                  // 이번 달의 첫 번째 날
+                  const firstDay = new Date(currentYear, currentMonth, 1);
+                  const startDate = new Date(firstDay);
+                  startDate.setDate(startDate.getDate() - firstDay.getDay()); // 일요일부터 시작
+                  
+                  // 6주 표시를 위해 42일 생성
+                  for (let i = 0; i < 42; i++) {
+                    const date = new Date(startDate);
+                    date.setDate(startDate.getDate() + i);
+                    calendarDays.push(date);
+                  }
                 }
 
                 const monthNames = t.raw('monthNames');
                 const dayNames = t.raw('dayNames');
+                const currentYear = currentDate.getFullYear();
+                const currentMonth = currentDate.getMonth();
 
                 return (
                   <div className="space-y-4">
                     {/* 달력 헤더 */}
                     <div className="flex items-center justify-between">
                           <button
-                        onClick={goToPreviousMonth}
+                        onClick={() => {
+                          setIsInitialLoad(false);
+                          goToPreviousMonth();
+                        }}
                         className="p-2 hover:bg-gray-100 rounded-md transition-colors"
                         title={t('previousMonth')}
                           >
@@ -1378,18 +1387,27 @@ export default function TicketBookingList() {
                       
                       <div className="text-center">
                         <h4 className="text-xl font-semibold text-gray-900">
-                          {currentYear} {monthNames[currentMonth]}
+                          {isInitialLoad 
+                            ? `오늘부터 7일 (${today.toISOString().split('T')[0]} ~ ${new Date(today.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]})`
+                            : `${currentYear} ${monthNames[currentMonth]}`
+                          }
                         </h4>
                           <button
-                          onClick={goToToday}
+                          onClick={() => {
+                            setIsInitialLoad(true);
+                            goToToday();
+                          }}
                           className="text-sm text-blue-600 hover:text-blue-800 mt-1"
                           >
-                          {t('goToToday')}
+                          {isInitialLoad ? t('goToToday') : '7일 보기'}
                           </button>
                       </div>
                       
                           <button
-                        onClick={goToNextMonth}
+                        onClick={() => {
+                          setIsInitialLoad(false);
+                          goToNextMonth();
+                        }}
                         className="p-2 hover:bg-gray-100 rounded-md transition-colors"
                         title={t('nextMonth')}
                       >
@@ -1409,10 +1427,10 @@ export default function TicketBookingList() {
                     </div>
 
                     {/* 달력 그리드 */}
-                    <div className="grid grid-cols-7 gap-1">
+                    <div className={`grid gap-1 ${isInitialLoad ? 'grid-cols-7' : 'grid-cols-7'}`}>
                       {calendarDays.map((date, index) => {
                         const dateString = date.toISOString().split('T')[0];
-                        const isCurrentMonth = date.getMonth() === currentMonth;
+                        const isCurrentMonth = isInitialLoad ? true : date.getMonth() === currentMonth;
                         const isToday = date.toDateString() === now.toDateString();
                         const dayBookings = groupedByDate[dateString] || [];
                         const totalQuantity = dayBookings.reduce((sum, booking) => sum + booking.ea, 0);

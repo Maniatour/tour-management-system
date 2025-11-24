@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function generateEmailContent(reservation: any, product: any, type: 'receipt' | 'voucher' | 'both', isEnglish: boolean) {
+export function generateEmailContent(reservation: any, product: any, type: 'receipt' | 'voucher' | 'both', isEnglish: boolean) {
   const productName = isEnglish 
     ? (product?.customer_name_en || product?.name_en || product?.name) 
     : (product?.customer_name_ko || product?.name_ko || product?.name)
