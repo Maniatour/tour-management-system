@@ -33,13 +33,20 @@ export async function GET(request: NextRequest) {
       .limit(1)
       .single()
 
-    if (error && error.code !== 'PGRST116') { // PGRST116은 "no rows found" 에러
+    // PGRST116은 "no rows found" 에러, PGRST205는 "table not found" 에러
+    // 테이블이 없어도 동기화는 계속 진행할 수 있도록 조용히 처리
+    if (error && error.code !== 'PGRST116' && error.code !== 'PGRST205') {
       console.error('Error fetching sync history:', error)
-      return NextResponse.json({ 
-        success: false, 
-        message: '동기화 히스토리 조회 실패',
-        error: error.message 
-      })
+      // 테이블이 없는 경우는 경고만 출력하고 계속 진행
+      if (error.code === 'PGRST205') {
+        console.warn('sync_history 테이블이 없습니다. 동기화는 계속 진행됩니다.')
+      } else {
+        return NextResponse.json({ 
+          success: false, 
+          message: '동기화 히스토리 조회 실패',
+          error: error.message 
+        })
+      }
     }
 
     return NextResponse.json({

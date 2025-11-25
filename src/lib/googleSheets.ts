@@ -88,12 +88,43 @@ const getAuthClient = () => {
 // 재시도 로직을 위한 헬퍼 함수
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
+// Google API 에러를 사용자 친화적인 메시지로 변환
+const formatGoogleApiError = (error: unknown, spreadsheetId: string, sheetName?: string): Error => {
+  if (error && typeof error === 'object' && 'code' in error) {
+    const code = error.code as number
+    const message = error.message || 'Unknown error'
+    
+    if (code === 404) {
+      const serviceAccountEmail = process.env.GOOGLE_CLIENT_EMAIL
+      return new Error(
+        `스프레드시트를 찾을 수 없습니다 (404). ` +
+        `가능한 원인:\n` +
+        `1. 스프레드시트 ID가 잘못되었습니다: ${spreadsheetId}\n` +
+        `2. 서비스 계정(${serviceAccountEmail})에 스프레드시트 접근 권한이 없습니다.\n` +
+        `   → Google Sheets에서 "공유" 버튼을 클릭하고 서비스 계정 이메일을 추가해주세요.\n` +
+        `3. 시트 이름이 잘못되었습니다${sheetName ? `: ${sheetName}` : ''}\n` +
+        `4. 스프레드시트가 삭제되었거나 이동되었습니다.`
+      )
+    } else if (code === 403) {
+      return new Error(
+        `스프레드시트 접근 권한이 없습니다 (403). ` +
+        `서비스 계정(${process.env.GOOGLE_CLIENT_EMAIL})에 스프레드시트 읽기 권한을 부여해주세요.`
+      )
+    } else if (code === 400) {
+      return new Error(`잘못된 요청입니다 (400): ${message}`)
+    }
+  }
+  
+  return error instanceof Error ? error : new Error(String(error))
+}
+
 // 지수 백오프 재시도 함수
 const retryWithBackoff = async <T>(
   operation: () => Promise<T>,
   maxRetries: number = MAX_RETRIES,
   baseDelay: number = BASE_DELAY,
-  maxDelay: number = MAX_DELAY
+  maxDelay: number = MAX_DELAY,
+  context?: { spreadsheetId?: string; sheetName?: string }
 ): Promise<T> => {
   let lastError: Error
   
@@ -101,11 +132,27 @@ const retryWithBackoff = async <T>(
     try {
       return await operation()
     } catch (error) {
-      lastError = error as Error
+      // Google API 에러인 경우 상세 정보 추출
+      let apiError: any = error
+      if (error && typeof error === 'object' && 'response' in error) {
+        apiError = (error as any).response
+      } else if (error && typeof error === 'object' && 'code' in error) {
+        apiError = error
+      }
+      
+      lastError = formatGoogleApiError(apiError, context?.spreadsheetId || 'unknown', context?.sheetName)
       
       // 마지막 시도인 경우 에러 던지기
       if (attempt === maxRetries) {
         throw lastError
+      }
+      
+      // 404, 403 같은 권한/리소스 오류는 재시도하지 않음
+      if (apiError && typeof apiError === 'object' && 'code' in apiError) {
+        const code = apiError.code as number
+        if (code === 404 || code === 403 || code === 400) {
+          throw lastError
+        }
       }
       
       // 중단 오류나 네트워크 오류인 경우에만 재시도
@@ -120,7 +167,7 @@ const retryWithBackoff = async <T>(
         await sleep(delay)
       } else {
         // 재시도할 수 없는 오류인 경우 즉시 던지기
-        throw error
+        throw lastError
       }
     }
   }
@@ -147,10 +194,12 @@ const readGoogleSheetInChunks = async (
     const [, sheetName, startCol, endCol] = rangeMatch
     
     // 먼저 전체 행 수 확인
-    const { data: sheetInfo } = await sheets.spreadsheets.get({
-      spreadsheetId,
-      includeGridData: false
-    })
+    const { data: sheetInfo } = await retryWithBackoff(async () => {
+      return await sheets.spreadsheets.get({
+        spreadsheetId,
+        includeGridData: false
+      })
+    }, 3, 2000, 8000, { spreadsheetId, sheetName })
     
     const sheet = sheetInfo.sheets?.find(s => s.properties?.title === sheetName)
     const totalRows = sheet?.properties?.gridProperties?.rowCount || 1000
@@ -171,7 +220,7 @@ const readGoogleSheetInChunks = async (
         valueRenderOption: 'UNFORMATTED_VALUE',
         dateTimeRenderOption: 'FORMATTED_STRING'
       })
-    }, 3, 2000, 8000)
+    }, 3, 2000, 8000, { spreadsheetId, sheetName })
     
     if (!firstResponse.data.values || firstResponse.data.values.length === 0) {
       console.log(`❌ 첫 번째 청크에서 데이터 없음`)
@@ -221,7 +270,7 @@ const readGoogleSheetInChunks = async (
               valueRenderOption: 'UNFORMATTED_VALUE',
               dateTimeRenderOption: 'FORMATTED_STRING'
             })
-          }, 2, 1500, 6000)
+          }, 2, 1500, 6000, { spreadsheetId, sheetName })
           
           if (chunkResponse.data.values && chunkResponse.data.values.length > 0) {
             const chunkData = chunkResponse.data.values.map((row: string[]) => {
@@ -266,6 +315,10 @@ export const readGoogleSheet = async (spreadsheetId: string, range: string, chun
       return await readGoogleSheetInChunks(spreadsheetId, range, chunkSize, sheets as unknown as GoogleSheetsClient)
     }
 
+    // 범위에서 시트 이름 추출
+    const sheetNameMatch = range.match(/^(.+)!/)
+    const sheetName = sheetNameMatch ? sheetNameMatch[1] : undefined
+    
     const response = await retryWithBackoff(async () => {
       return await sheets.spreadsheets.values.get({
         spreadsheetId,
@@ -273,7 +326,7 @@ export const readGoogleSheet = async (spreadsheetId: string, range: string, chun
         valueRenderOption: 'UNFORMATTED_VALUE',
         dateTimeRenderOption: 'FORMATTED_STRING'
       })
-    }, 3, 2000, 8000)
+    }, 3, 2000, 8000, { spreadsheetId, sheetName })
 
     console.log(`🔍 Raw response for ${range}:`, {
       status: response.status,
@@ -542,12 +595,18 @@ export const getSheetUsedRange = async (spreadsheetId: string, sheetName: string
     const sheets = google.sheets({ version: 'v4', auth })
 
     // 실제 사용된 범위를 정확히 파악하기 위해 시트 메타데이터 조회
-    const response = await sheets.spreadsheets.get({
-      spreadsheetId,
-      includeGridData: false
-    })
+    const response = await retryWithBackoff(async () => {
+      return await sheets.spreadsheets.get({
+        spreadsheetId,
+        includeGridData: false
+      })
+    }, 3, 2000, 8000, { spreadsheetId, sheetName })
 
     const sheet = response.data.sheets?.find(s => s.properties?.title === sheetName)
+    
+    if (!sheet) {
+      throw new Error(`시트 "${sheetName}"을(를) 찾을 수 없습니다. 스프레드시트에 해당 시트가 존재하는지 확인해주세요.`)
+    }
     
     if (sheet?.properties?.gridProperties) {
       const gridProperties = sheet.properties.gridProperties
@@ -560,11 +619,13 @@ export const getSheetUsedRange = async (spreadsheetId: string, sheetName: string
       if (sheet.properties.sheetType === 'GRID' && sheet.properties.gridProperties) {
         // 시트의 실제 데이터 범위를 확인하기 위해 첫 번째 행 읽기 시도
         try {
-          const firstRowResponse = await sheets.spreadsheets.values.get({
-            spreadsheetId,
-            range: `${sheetName}!1:1`,
-            valueRenderOption: 'UNFORMATTED_VALUE'
-          })
+          const firstRowResponse = await retryWithBackoff(async () => {
+            return await sheets.spreadsheets.values.get({
+              spreadsheetId,
+              range: `${sheetName}!1:1`,
+              valueRenderOption: 'UNFORMATTED_VALUE'
+            })
+          }, 2, 1500, 6000, { spreadsheetId, sheetName })
           
           if (firstRowResponse.data.values && firstRowResponse.data.values[0]) {
             // 첫 번째 행에서 실제 데이터가 있는 마지막 컬럼 찾기
@@ -635,7 +696,7 @@ const getQuickColumnCount = async (spreadsheetId: string, sheetName: string): Pr
             range: `${sheetName}!A1:Z1`, // A부터 Z까지 (26개 컬럼만)
             valueRenderOption: 'UNFORMATTED_VALUE'
           })
-        }, 3, 1000, 5000), // 최대 3회 재시도, 1초부터 시작하여 최대 5초까지
+        }, 3, 1000, 5000, { spreadsheetId, sheetName }), // 최대 3회 재시도, 1초부터 시작하여 최대 5초까지
         new Promise<never>((_, reject) => 
           setTimeout(() => reject(new Error('Simple column count timeout after 30 seconds')), 30000)
         )

@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, DollarSign, Eye, X, GripVertical, Clock, Mail, ChevronDown } from 'lucide-react'
+import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, DollarSign, Eye, X, GripVertical, Clock, Mail, ChevronDown, Edit } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
@@ -19,6 +19,8 @@ import { useReservationData } from '@/hooks/useReservationData'
 import PickupTimeModal from '@/components/tour/modals/PickupTimeModal'
 import PickupHotelModal from '@/components/tour/modals/PickupHotelModal'
 import EmailPreviewModal from '@/components/reservation/EmailPreviewModal'
+import EmailLogsModal from '@/components/reservation/EmailLogsModal'
+import { useAuth } from '@/contexts/AuthContext'
 import { 
   getPickupHotelDisplay, 
   getCustomerName, 
@@ -39,6 +41,7 @@ interface AdminReservationsProps {
 
 export default function AdminReservations({ }: AdminReservationsProps) {
   const t = useTranslations('reservations')
+  const { user } = useAuth()
   
   // 그룹별 색상 매핑 함수
   const getGroupColorClasses = (groupId: string, groupName?: string) => {
@@ -310,6 +313,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     pickupTime?: string | null
     tourDate?: string | null
   } | null>(null)
+  const [showEmailLogs, setShowEmailLogs] = useState(false)
+  const [selectedReservationForEmailLogs, setSelectedReservationForEmailLogs] = useState<string | null>(null)
 
   // 이메일 드롭다운 외부 클릭 시 닫기
   useEffect(() => {
@@ -340,6 +345,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     tourDate: string
     tourStartDatetime: string | null
     isAssigned: boolean
+    reservationIds: string[]
   }>>(new Map())
 
   // reservation_pricing 데이터 상태 (계산식 표시를 위한 모든 필드 포함)
@@ -574,6 +580,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           tourDate: string
           tourStartDatetime: string | null
           isAssigned: boolean
+          reservationIds: string[]
         }>()
 
         // 모든 가이드 이메일과 어시스턴트 이메일 수집
@@ -676,15 +683,25 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             vehicleName = vehicleMap.get(tour.tour_car_id) || '-'
           }
 
-          // 총 인원 계산
+          // 총 인원 계산 및 reservation_ids 저장
+          let reservationIds: string[] = []
           if (tour.reservation_ids) {
-            const reservationIds = Array.isArray(tour.reservation_ids)
+            reservationIds = Array.isArray(tour.reservation_ids)
               ? tour.reservation_ids
               : String(tour.reservation_ids).split(',').map((id: string) => id.trim()).filter((id: string) => id)
             
+            // reservation_ids에 있는 예약들의 total_people 합계 계산 (취소된 예약 제외)
             totalPeople = reservationIds.reduce((sum: number, id: string) => {
               const reservation = reservations.find(r => r.id === id)
-              return sum + (reservation?.totalPeople || 0)
+              if (!reservation) return sum
+              
+              // 취소된 예약은 제외
+              const statusLower = reservation.status?.toLowerCase() || ''
+              if (statusLower === 'cancelled' || statusLower === 'canceled') {
+                return sum
+              }
+              
+              return sum + (reservation.totalPeople || 0)
             }, 0)
           }
 
@@ -696,7 +713,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             vehicleName,
             tourDate: tour.tour_date || '',
             tourStartDatetime: tour.tour_start_datetime || null,
-            isAssigned: true // tour_id가 있으면 배정된 것으로 간주
+            isAssigned: true, // tour_id가 있으면 배정된 것으로 간주
+            reservationIds: reservationIds
           })
         }
 
@@ -1433,7 +1451,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             reservationId: emailPreviewData.reservationId,
             email: emailPreviewData.customerEmail,
             type: 'both',
-            locale
+            locale,
+            sentBy: user?.email || null
           })
         })
       } else if (emailPreviewData.emailType === 'departure') {
@@ -1447,7 +1466,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             reservationId: emailPreviewData.reservationId,
             email: emailPreviewData.customerEmail,
             type: 'voucher',
-            locale
+            locale,
+            sentBy: user?.email || null
           })
         })
       } else {
@@ -1467,7 +1487,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               ? emailPreviewData.pickupTime 
               : `${emailPreviewData.pickupTime}:00`,
             tourDate: emailPreviewData.tourDate,
-            locale
+            locale,
+            sentBy: user?.email || null
           })
         })
       }
@@ -2374,8 +2395,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   {reservations.map((reservation) => (
             <div
               key={reservation.id}
-              onClick={() => router.push(`/${locale}/admin/reservations/${reservation.id}`)}
-              className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-200 cursor-pointer group"
+              className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-200 group"
             >
               {/* 카드 헤더 - 상태 표시 */}
               <div className="p-4 border-b border-gray-100">
@@ -2489,12 +2509,17 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                     </a>
                     {reservation.addedTime ? (
                       <span className="text-xs text-gray-500">
-                        {new Date(reservation.addedTime).toLocaleDateString('ko-KR', { 
-                          year: 'numeric',
-                          month: 'short', 
-                          day: 'numeric',
-                          timeZone: 'America/Los_Angeles'
-                        })}
+                        {(() => {
+                          const utcDate = new Date(reservation.addedTime)
+                          // UTC 시간을 로스앤젤레스 시간대로 변환하여 날짜만 표시
+                          const formatter = new Intl.DateTimeFormat('ko-KR', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            timeZone: 'America/Los_Angeles'
+                          })
+                          return formatter.format(utcDate)
+                        })()}
                       </span>
                     ) : null}
                   </div>
@@ -2631,12 +2656,23 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
                 {/* 연결된 투어 정보 */}
                 {(() => {
+                  // 취소된 예약은 연결된 투어를 표시하지 않음
+                  const statusLower = reservation.status?.toLowerCase() || ''
+                  if (statusLower === 'cancelled' || statusLower === 'canceled') {
+                    return null
+                  }
+                  
                   const tourId = reservation.tourId || (reservation as any).tour_id
                   if (!tourId || tourId.trim() === '' || tourId === 'null' || tourId === 'undefined' || !tourInfoMap.has(tourId)) {
                     return null
                   }
                   
                   const tourInfo = tourInfoMap.get(tourId)!
+                  
+                  // 예약 ID가 투어의 reservation_ids에 포함되어 있는지 확인
+                  if (!tourInfo.reservationIds.includes(reservation.id)) {
+                    return null
+                  }
                   
                   // 상태 색상
                   const getStatusColor = (status: string) => {
@@ -2658,7 +2694,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       >
                         <div className="flex items-center justify-between mb-2">
                           <div className="text-xs font-semibold text-gray-900">
-                            연결된 투어 ({tourInfo.totalPeople}명)
+                            배정된 투어 ({tourInfo.totalPeople}명)
                           </div>
                           <div className="flex items-center space-x-2">
                             {tourInfo.isAssigned && (
@@ -2805,9 +2841,35 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                             <Mail className="w-3 h-3" />
                             <span>픽업 notification 이메일</span>
                           </button>
+                          <div className="border-t border-gray-200 my-1"></div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedReservationForEmailLogs(reservation.id);
+                              setShowEmailLogs(true);
+                              setEmailDropdownOpen(null);
+                            }}
+                            className="w-full text-left px-3 py-2 text-xs text-blue-600 hover:bg-blue-50 flex items-center space-x-2"
+                          >
+                            <Clock className="w-3 h-3" />
+                            <span>이메일 발송 내역</span>
+                          </button>
                         </div>
                       )}
                     </div>
+
+                    {/* 수정 버튼 */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(`/${locale}/admin/reservations/${reservation.id}`);
+                      }}
+                      className="px-2 py-1 text-xs bg-orange-50 text-orange-600 rounded-md hover:bg-orange-100 transition-colors flex items-center space-x-1 border border-orange-200"
+                      title="예약 수정"
+                    >
+                      <Edit className="w-3 h-3" />
+                      <span>수정</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -2873,8 +2935,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 {paginatedReservations.map((reservation) => (
               <div
                 key={reservation.id}
-                onClick={() => router.push(`/${locale}/admin/reservations/${reservation.id}`)}
-                className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-200 cursor-pointer group"
+                className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-200 group"
               >
                 {/* 카드 헤더 - 상태 표시 */}
                 <div className="p-4 border-b border-gray-100">
@@ -3132,12 +3193,23 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
                 {/* 연결된 투어 정보 */}
                 {(() => {
+                  // 취소된 예약은 연결된 투어를 표시하지 않음
+                  const statusLower = reservation.status?.toLowerCase() || ''
+                  if (statusLower === 'cancelled' || statusLower === 'canceled') {
+                    return null
+                  }
+                  
                   const tourId = reservation.tourId || (reservation as any).tour_id
                   if (!tourId || tourId.trim() === '' || tourId === 'null' || tourId === 'undefined' || !tourInfoMap.has(tourId)) {
                     return null
                   }
                   
                   const tourInfo = tourInfoMap.get(tourId)!
+                  
+                  // 예약 ID가 투어의 reservation_ids에 포함되어 있는지 확인
+                  if (!tourInfo.reservationIds.includes(reservation.id)) {
+                    return null
+                  }
                   
                   // 상태 색상
                   const getStatusColor = (status: string) => {
@@ -3159,7 +3231,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       >
                         <div className="flex items-center justify-between mb-2">
                           <div className="text-xs font-semibold text-gray-900">
-                            연결된 투어 ({tourInfo.totalPeople}명)
+                            배정된 투어 ({tourInfo.totalPeople}명)
                           </div>
                           <div className="flex items-center space-x-2">
                             {tourInfo.isAssigned && (
@@ -3306,9 +3378,35 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                             <Mail className="w-3 h-3" />
                             <span>픽업 notification 이메일</span>
                           </button>
+                          <div className="border-t border-gray-200 my-1"></div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedReservationForEmailLogs(reservation.id);
+                              setShowEmailLogs(true);
+                              setEmailDropdownOpen(null);
+                            }}
+                            className="w-full text-left px-3 py-2 text-xs text-blue-600 hover:bg-blue-50 flex items-center space-x-2"
+                          >
+                            <Clock className="w-3 h-3" />
+                            <span>이메일 발송 내역</span>
+                          </button>
                         </div>
                       )}
                     </div>
+
+                    {/* 수정 버튼 */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(`/${locale}/admin/reservations/${reservation.id}`);
+                      }}
+                      className="px-2 py-1 text-xs bg-orange-50 text-orange-600 rounded-md hover:bg-orange-100 transition-colors flex items-center space-x-1 border border-orange-200"
+                      title="예약 수정"
+                    >
+                      <Edit className="w-3 h-3" />
+                      <span>수정</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -3573,9 +3671,21 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           reservationId={emailPreviewData.reservationId}
           emailType={emailPreviewData.emailType}
           customerEmail={emailPreviewData.customerEmail}
-          pickupTime={emailPreviewData.pickupTime}
-          tourDate={emailPreviewData.tourDate}
+          pickupTime={emailPreviewData.pickupTime || null}
+          tourDate={emailPreviewData.tourDate || null}
           onSend={handleSendEmailFromPreview}
+        />
+      )}
+
+      {/* 이메일 발송 내역 모달 */}
+      {showEmailLogs && selectedReservationForEmailLogs && (
+        <EmailLogsModal
+          isOpen={showEmailLogs}
+          onClose={() => {
+            setShowEmailLogs(false)
+            setSelectedReservationForEmailLogs(null)
+          }}
+          reservationId={selectedReservationForEmailLogs}
         />
       )}
 

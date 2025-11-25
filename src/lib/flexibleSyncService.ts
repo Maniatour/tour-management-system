@@ -3,6 +3,17 @@ import { readSheetDataDynamic } from './googleSheets'
 
 // 하드코딩된 매핑 제거 - 실제 데이터베이스 스키마 기반으로 동적 매핑 생성
 
+// Google Sheets 에러 값 감지 함수
+const isGoogleSheetsError = (value: unknown): boolean => {
+  if (typeof value !== 'string') return false
+  const str = value.trim()
+  // Google Sheets 에러 값들: #N/A, #REF!, #VALUE!, #DIV/0!, #NAME?, #NULL!, #NUM!, #ERROR!
+  return /^#(N\/A|REF!|VALUE!|DIV\/0!|NAME\?|NULL!|NUM!|ERROR!)/i.test(str) || 
+         str.includes('#N/A') || 
+         str.includes('FILTER evaluation') ||
+         str.includes('No matches are found')
+}
+
 // 안전한 문자열→문자열 배열 변환 (PostgreSQL 배열 리터럴 형식)
 const coerceStringToStringArray = (raw: unknown): string[] => {
   if (Array.isArray(raw)) {
@@ -66,11 +77,25 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
   }
   
   dateFields.forEach(field => {
-    if (converted[field] && converted[field] !== '') {
-      try {
-        converted[field] = new Date(String(converted[field])).toISOString().split('T')[0]
-      } catch {
-        console.warn(`Invalid date format for ${field}:`, converted[field])
+    if (converted[field] !== undefined && converted[field] !== null && converted[field] !== '') {
+      // Google Sheets 에러 값 체크
+      if (isGoogleSheetsError(converted[field])) {
+        console.warn(`Google Sheets 에러 값 감지 (${field}):`, converted[field], '→ null로 변환')
+        converted[field] = null
+      } else {
+        try {
+          const dateValue = new Date(String(converted[field]))
+          // 유효한 날짜인지 확인
+          if (isNaN(dateValue.getTime())) {
+            console.warn(`Invalid date format for ${field}:`, converted[field], '→ null로 변환')
+            converted[field] = null
+          } else {
+            converted[field] = dateValue.toISOString().split('T')[0]
+          }
+        } catch (error) {
+          console.warn(`Invalid date format for ${field}:`, converted[field], '→ null로 변환', error)
+          converted[field] = null
+        }
       }
     }
   })
@@ -126,12 +151,25 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
     console.log('Final converted data keys:', Object.keys(converted))
     
     // submit_on 필드가 있으면 타임스탬프로 변환
-    if (converted.submit_on && converted.submit_on !== '') {
-      try {
-        converted.submit_on = new Date(String(converted.submit_on)).toISOString()
-      } catch {
-        console.warn(`Invalid submit_on format:`, converted.submit_on)
-        converted.submit_on = new Date().toISOString()
+    if (converted.submit_on !== undefined && converted.submit_on !== null && converted.submit_on !== '') {
+      // Google Sheets 에러 값 체크
+      if (isGoogleSheetsError(converted.submit_on)) {
+        console.warn(`Google Sheets 에러 값 감지 (submit_on):`, converted.submit_on, '→ null로 변환')
+        converted.submit_on = null
+      } else {
+        try {
+          const dateValue = new Date(String(converted.submit_on))
+          // 유효한 날짜인지 확인
+          if (isNaN(dateValue.getTime())) {
+            console.warn(`Invalid submit_on format:`, converted.submit_on, '→ null로 변환')
+            converted.submit_on = null
+          } else {
+            converted.submit_on = dateValue.toISOString()
+          }
+        } catch (error) {
+          console.warn(`Invalid submit_on format:`, converted.submit_on, '→ null로 변환', error)
+          converted.submit_on = null
+        }
       }
     }
   }
@@ -245,7 +283,12 @@ const saveSyncHistory = async (tableName: string, spreadsheetId: string, recordC
       })
 
     if (error) {
-      console.error('Failed to save sync history:', error)
+      // PGRST205는 "table not found" 에러 - 테이블이 없어도 동기화는 계속 진행
+      if (error.code === 'PGRST205') {
+        console.warn('sync_history 테이블이 없습니다. 동기화는 계속 진행됩니다.')
+      } else {
+        console.error('Failed to save sync history:', error)
+      }
     }
   } catch (error) {
     console.error('Error saving sync history:', error)
@@ -294,10 +337,66 @@ export const flexibleSync = async (
       return { success: true, message: 'No data to sync', count: 0 }
     }
 
+    // 테이블별 필수 필드 정의
+    const getRequiredFields = (tableName: string): string[] => {
+      const requiredFieldsMap: Record<string, string[]> = {
+        payment_records: ['reservation_id', 'amount', 'payment_method'],
+        reservations: ['customer_email', 'product_id'],
+        tours: ['product_id'],
+        // 다른 테이블의 필수 필드도 여기에 추가 가능
+      }
+      return requiredFieldsMap[tableName] || []
+    }
+    
+    // 필수 필드 목록 가져오기
+    const requiredFieldsForTable = getRequiredFields(targetTable)
+
+    // 빈 행 필터링 및 필수 필드 검증을 위한 헬퍼 함수
+    const isRowEmpty = (row: Record<string, unknown>): boolean => {
+      // id가 없고 다른 필드도 모두 비어있는 경우 빈 행으로 간주
+      const hasId = row.id !== undefined && row.id !== null && row.id !== '' && 
+                    (typeof row.id !== 'string' || row.id.trim() !== '')
+      
+      // id가 없으면 빈 행으로 간주
+      if (!hasId) {
+        // 다른 필수 필드가 있는지 확인
+        if (requiredFieldsForTable.length > 0) {
+          const hasRequiredField = requiredFieldsForTable.some(field => {
+            const value = row[field]
+            return value !== undefined && 
+                   value !== null && 
+                   value !== '' && 
+                   (typeof value !== 'string' || value.trim() !== '')
+          })
+          // 필수 필드가 하나도 없으면 빈 행
+          if (!hasRequiredField) {
+            return true
+          }
+        } else {
+          // 필수 필드가 정의되지 않은 경우, 모든 값이 비어있으면 빈 행
+          const values = Object.values(row)
+          return values.every(val => 
+            val === undefined || 
+            val === null || 
+            val === '' || 
+            (typeof val === 'string' && val.trim() === '')
+          )
+        }
+      }
+      
+      return false
+    }
+
     // 데이터 변환 (전체 동기화)
     onProgress?.({ type: 'info', message: '데이터 변환 중...' })
     const transformedData = sheetData
       .map((row, index) => {
+        // 빈 행 체크 (변환 전 - Google Sheets 컬럼명 기준)
+        if (isRowEmpty(row)) {
+          console.log(`행 ${index + 1} 건너뜀: 빈 행`)
+          return null
+        }
+
         const transformed: Record<string, unknown> = {}
         
         // 사용자 정의 컬럼 매핑 적용
@@ -311,8 +410,10 @@ export const flexibleSync = async (
         if (index === 0) {
           console.log('First row mapping:', {
             originalRow: Object.keys(row),
+            originalRowValues: row,
             columnMapping: columnMapping,
-            transformedBeforeConversion: Object.keys(transformed)
+            transformedBeforeConversion: Object.keys(transformed),
+            transformedValues: transformed
           })
         }
 
@@ -320,10 +421,43 @@ export const flexibleSync = async (
         
         // 첫 번째 행에 대한 디버그 로그
         if (index === 0) {
-          console.log('First row after conversion:', Object.keys(converted))
+          console.log('First row after conversion:', {
+            keys: Object.keys(converted),
+            values: converted
+          })
         }
         
         return converted
+      })
+      .filter((row): row is Record<string, unknown> => {
+        // null인 행 제거 (빈 행)
+        if (!row) return false
+        
+        // 필수 필드 검증 (변환 후 - 데이터베이스 컬럼명 기준)
+        if (requiredFieldsForTable.length > 0) {
+          const missingFields = requiredFieldsForTable.filter(field => {
+            const value = row[field]
+            return value === undefined || 
+                   value === null || 
+                   value === '' || 
+                   (typeof value === 'string' && value.trim() === '')
+          })
+          
+          if (missingFields.length > 0) {
+            console.warn(`행 건너뜀: 필수 필드 누락 (${missingFields.join(', ')})`, {
+              rowKeys: Object.keys(row),
+              rowValues: row,
+              missingFields
+            })
+            onProgress?.({ 
+              type: 'warn', 
+              message: `행 건너뜀: 필수 필드 누락 - ${missingFields.join(', ')}. 사용 가능한 필드: ${Object.keys(row).join(', ')}` 
+            })
+            return false
+          }
+        }
+        
+        return true
       })
 
     const totalRows = transformedData.length
@@ -489,9 +623,11 @@ export const flexibleSync = async (
       try {
         const nowIso = new Date().toISOString()
         
-        // updated_at 컬럼이 실제로 존재하는 경우에만 추가
+        // 타임스탬프 필드 검증 및 updated_at 컬럼 추가
         const payload = rowsBuffer.map(r => {
-          const row = { ...r }
+          // 먼저 타임스탬프 필드 검증
+          const sanitized = sanitizeTimestampFields(r)
+          const row = { ...sanitized }
           if (tableColumns && tableColumns.has('updated_at')) {
             row.updated_at = nowIso
           }
@@ -661,9 +797,47 @@ export const flexibleSync = async (
   }
 }
 
+// 타임스탬프 필드 검증 및 정리 함수
+const sanitizeTimestampFields = (row: Record<string, unknown>): Record<string, unknown> => {
+  const sanitized = { ...row }
+  
+  // 모든 필드를 순회하며 타임스탬프 필드 검증
+  Object.keys(sanitized).forEach(key => {
+    const value = sanitized[key]
+    
+    // 필드명이 타임스탬프 관련인지 확인 (_at, _on, _time 등으로 끝나는 필드)
+    if (key.match(/_at$|_on$|_time$/i) && value !== undefined && value !== null && value !== '') {
+      // Google Sheets 에러 값 체크
+      if (isGoogleSheetsError(value)) {
+        console.warn(`Google Sheets 에러 값 감지 (${key}):`, value, '→ null로 변환')
+        sanitized[key] = null
+      } else if (typeof value === 'string') {
+        // 문자열인 경우 유효한 타임스탬프인지 확인
+        try {
+          const dateValue = new Date(value)
+          if (isNaN(dateValue.getTime())) {
+            console.warn(`Invalid timestamp format for ${key}:`, value, '→ null로 변환')
+            sanitized[key] = null
+          } else {
+            // 유효한 날짜면 ISO 형식으로 변환
+            sanitized[key] = dateValue.toISOString()
+          }
+        } catch (error) {
+          console.warn(`Error parsing timestamp for ${key}:`, value, '→ null로 변환', error)
+          sanitized[key] = null
+        }
+      }
+    }
+  })
+  
+  return sanitized
+}
+
 // 삽입 시에만 기본값을 적용 (업데이트 시에는 기존 DB 값을 보존)
 const applyInsertDefaults = (tableName: string, row: Record<string, unknown>, tableColumns?: Set<string> | null) => {
-  const payload = { ...row }
+  // 먼저 타임스탬프 필드 검증
+  const sanitized = sanitizeTimestampFields(row)
+  const payload = { ...sanitized }
   const nowIso = new Date().toISOString()
 
   // created_at/updated_at 컬럼이 실제로 존재하는 경우에만 보완

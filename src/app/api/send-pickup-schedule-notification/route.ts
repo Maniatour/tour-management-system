@@ -18,7 +18,7 @@ import { Resend } from 'resend'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { reservationId, pickupTime, tourDate, locale = 'ko' } = body
+    const { reservationId, pickupTime, tourDate, locale = 'ko', sentBy } = body
 
     if (!reservationId || !pickupTime || !tourDate) {
       return NextResponse.json(
@@ -252,8 +252,52 @@ export async function POST(request: NextRequest) {
         reservationId,
         emailId: emailResult?.id
       })
+
+      // 이메일 발송 기록 저장
+      try {
+        const { error: logError } = await supabase
+          .from('email_logs')
+          .insert({
+            reservation_id: reservationId,
+            email: customer.email,
+            email_type: 'pickup',
+            subject: emailContent.subject,
+            status: 'sent',
+            sent_at: new Date().toISOString(),
+            sent_by: sentBy || null
+          } as never)
+          .catch(() => {
+            // email_logs 테이블이 없으면 무시
+          })
+
+        if (logError) {
+          console.error('이메일 로그 저장 오류 (무시):', logError)
+        }
+      } catch (error) {
+        console.log('이메일 로그 테이블이 없습니다. (무시됨)')
+      }
     } catch (error) {
       console.error('이메일 발송 오류:', error)
+      
+      // 실패 기록 저장
+      try {
+        await supabase
+          .from('email_logs')
+          .insert({
+            reservation_id: reservationId,
+            email: customer.email,
+            email_type: 'pickup',
+            subject: emailContent.subject,
+            status: 'failed',
+            error_message: error instanceof Error ? error.message : 'Unknown error',
+            sent_at: new Date().toISOString(),
+            sent_by: sentBy || null
+          } as never)
+          .catch(() => {})
+      } catch (logError) {
+        // 무시
+      }
+      
       return NextResponse.json(
         { error: '이메일 발송 중 오류가 발생했습니다.' },
         { status: 500 }

@@ -114,6 +114,13 @@ interface GlobalOption {
   priceType: 'perPerson' | 'perTour' | 'perHour' | 'fixed'
   status: 'active' | 'inactive' | 'seasonal'
   tags: string[]
+  imageUrl?: string
+  imageAlt?: string
+  thumbnailUrl?: string
+  nameKo?: string
+  nameEn?: string
+  descriptionKo?: string
+  descriptionEn?: string
 }
 
 interface AdminProductEditProps {
@@ -375,6 +382,13 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
           price_type: 'perPerson' | 'perTour' | 'perHour' | 'fixed'
           status: 'active' | 'inactive' | 'seasonal'
           tags: string[] | null
+          image_url?: string | null
+          image_alt?: string | null
+          thumbnail_url?: string | null
+          name_ko?: string | null
+          name_en?: string | null
+          description_ko?: string | null
+          description_en?: string | null
         }
         const formattedOptions: GlobalOption[] = (data as unknown as OptionRow[]).map((option) => ({
           id: option.id,
@@ -386,7 +400,14 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
           infantPrice: option.infant_price || 0,
           priceType: option.price_type,
           status: option.status,
-          tags: option.tags || []
+          tags: option.tags || [],
+          imageUrl: option.image_url || undefined,
+          imageAlt: option.image_alt || undefined,
+          thumbnailUrl: option.thumbnail_url || undefined,
+          nameKo: option.name_ko || undefined,
+          nameEn: option.name_en || undefined,
+          descriptionKo: option.description_ko || undefined,
+          descriptionEn: option.description_en || undefined
         }))
         setGlobalOptions(formattedOptions)
       }
@@ -986,6 +1007,8 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         adultPrice: Number(globalOption.adultPrice) || 0,
         childPrice: Number(globalOption.childPrice) || 0,
         infantPrice: Number(globalOption.infantPrice) || 0,
+        imageUrl: globalOption.imageUrl || globalOption.thumbnailUrl,
+        imageAlt: globalOption.imageAlt || globalOption.name,
         choices: [{
           id: `choice-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           name: globalOption.name || '새 선택 항목',

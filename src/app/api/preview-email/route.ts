@@ -96,6 +96,7 @@ export async function POST(request: NextRequest) {
 
     const customerLanguage = customer.language?.toLowerCase()
     const isEnglish = locale === 'en' || customerLanguage === 'en' || customerLanguage === 'english' || customerLanguage === '영어'
+    const languageCode = isEnglish ? 'en' : 'ko'
 
     console.log('[preview-email] 이메일 내용 생성 중...', { customerLanguage, isEnglish, type })
     console.log('[preview-email] 예약 데이터:', JSON.stringify(reservation, null, 2))
@@ -116,10 +117,153 @@ export async function POST(request: NextRequest) {
       total_price: reservation.total_price ?? 0
     }
 
-    // 이메일 내용 생성 (product를 객체로 전달)
+    // 가격 정보 조회
+    let pricing = null
+    const { data: pricingData } = await supabase
+      .from('reservation_pricing')
+      .select('*')
+      .eq('reservation_id', reservationId)
+      .maybeSingle()
+    pricing = pricingData
+
+    // 상품 상세 정보 조회 (multilingual)
+    let productDetails = null
+    if (reservation.channel_id) {
+      const { data: channelDetails } = await supabase
+        .from('product_details_multilingual')
+        .select('*')
+        .eq('product_id', reservation.product_id)
+        .eq('language_code', languageCode)
+        .eq('channel_id', reservation.channel_id)
+        .maybeSingle()
+      productDetails = channelDetails
+    }
+    
+    if (!productDetails) {
+      const { data: commonDetails } = await supabase
+        .from('product_details_multilingual')
+        .select('*')
+        .eq('product_id', reservation.product_id)
+        .eq('language_code', languageCode)
+        .is('channel_id', null)
+        .maybeSingle()
+      productDetails = commonDetails
+    }
+
+    // 투어 스케줄 조회
+    let productSchedules = null
+    const { data: schedulesData } = await supabase
+      .from('product_schedules')
+      .select('id, day_number, start_time, end_time, title_ko, title_en, description_ko, description_en, show_to_customers, order_index')
+      .eq('product_id', reservation.product_id)
+      .eq('show_to_customers', true)
+      .order('day_number', { ascending: true })
+      .order('order_index', { ascending: true })
+    productSchedules = schedulesData || []
+
+    // 투어 상태 조회 및 Tour Details 조회
+    let tourStatus = null
+    let tourDetails: any = null
+    if (reservation.tour_id) {
+      const { data: tourData } = await supabase
+        .from('tours')
+        .select('*')
+        .eq('id', reservation.tour_id)
+        .maybeSingle()
+      
+      tourStatus = tourData?.tour_status || tourData?.status || reservation.status
+
+      // Tour Details 조회 (가이드, 어시스턴트, 차량 정보)
+      if (tourData) {
+        let tourGuideInfo = null
+        let assistantInfo = null
+        let vehicleInfo = null
+
+        if (tourData.tour_guide_id) {
+          const { data: guideData } = await supabase
+            .from('team')
+            .select('name_ko, name_en, phone, email, languages')
+            .eq('email', tourData.tour_guide_id)
+            .maybeSingle()
+          tourGuideInfo = guideData
+        }
+
+        if (tourData.assistant_id) {
+          const { data: assistantData } = await supabase
+            .from('team')
+            .select('name_ko, name_en, phone, email')
+            .eq('email', tourData.assistant_id)
+            .maybeSingle()
+          assistantInfo = assistantData
+        }
+
+        if (tourData.tour_car_id) {
+          const { data: vehicleData } = await supabase
+            .from('vehicles')
+            .select('vehicle_type, capacity, color')
+            .eq('id', tourData.tour_car_id)
+            .maybeSingle()
+
+          if (vehicleData?.vehicle_type) {
+            const { data: vehicleTypeData } = await supabase
+              .from('vehicle_types')
+              .select('id, name, brand, model, passenger_capacity, description')
+              .eq('name', vehicleData.vehicle_type)
+              .maybeSingle()
+
+            const { data: photosData } = await supabase
+              .from('vehicle_type_photos')
+              .select('photo_url, photo_name, description, is_primary, display_order')
+              .eq('vehicle_type_id', vehicleTypeData?.id || '')
+              .order('display_order', { ascending: true })
+              .order('is_primary', { ascending: false })
+
+            vehicleInfo = {
+              vehicle_type: vehicleData.vehicle_type,
+              color: vehicleData.color,
+              vehicle_type_info: vehicleTypeData ? {
+                name: vehicleTypeData.name,
+                brand: vehicleTypeData.brand,
+                model: vehicleTypeData.model,
+                passenger_capacity: vehicleTypeData.passenger_capacity || vehicleData.capacity,
+                description: vehicleTypeData.description
+              } : {
+                name: vehicleData.vehicle_type,
+                passenger_capacity: vehicleData.capacity
+              },
+              vehicle_type_photos: photosData || []
+            }
+          }
+        }
+
+        tourDetails = {
+          ...tourData,
+          tour_guide: tourGuideInfo,
+          assistant: assistantInfo,
+          vehicle: vehicleInfo
+        }
+      }
+    } else {
+      tourStatus = reservation.status
+    }
+
+    // 이메일 내용 생성
+    const isDepartureConfirmation = type === 'voucher'
     let emailContent
     try {
-      emailContent = generateEmailContent(reservationForEmail, product as any, type, isEnglish)
+      emailContent = generateEmailContent(
+        reservationForEmail,
+        customer,
+        product as any,
+        pricing,
+        productDetails,
+        productSchedules,
+        tourStatus,
+        tourDetails,
+        type,
+        isEnglish,
+        isDepartureConfirmation
+      )
       console.log('[preview-email] 이메일 내용 생성 완료')
     } catch (genError) {
       console.error('[preview-email] 이메일 내용 생성 오류:', genError)

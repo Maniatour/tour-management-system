@@ -132,38 +132,71 @@ export default function OptionsTab({
 
       // 새 옵션들 추가 - 간단한 구조
       for (const option of formData.productOptions) {
+        // nullable 필드는 값이 있을 때만 포함
+        const insertData: Record<string, unknown> = {
+          product_id: productId,
+          name: option.name,
+          description: option.description || null,
+          is_required: option.isRequired,
+          is_multiple: option.isMultiple,
+          adult_price_adjustment: option.adultPrice || 0,
+          child_price_adjustment: option.childPrice || 0,
+          infant_price_adjustment: option.infantPrice || 0,
+          is_default: true
+        }
+
+        // nullable 필드는 값이 있을 때만 추가
+        if (option.linkedOptionId) {
+          insertData.linked_option_id = option.linkedOptionId
+        }
+        if (option.imageUrl) {
+          insertData.image_url = option.imageUrl
+        }
+        if (option.imageAlt) {
+          insertData.image_alt = option.imageAlt
+        }
+
         const { data: optionData, error: optionError } = await supabase
           .from('product_options')
-          .insert({
-            product_id: productId,
-            name: option.name,
-            description: option.description,
-            is_required: option.isRequired,
-            is_multiple: option.isMultiple,
-            linked_option_id: option.linkedOptionId || null,
-            choice_name: null,
-            choice_description: null,
-            adult_price_adjustment: option.adultPrice || 0,
-            child_price_adjustment: option.childPrice || 0,
-            infant_price_adjustment: option.infantPrice || 0,
-            is_default: true,
-            image_url: option.imageUrl || null,
-            image_alt: option.imageAlt || null
-          } as never)
+          .insert(insertData as never)
           .select()
           .single()
 
-        if (optionError) throw optionError
+        if (optionError) {
+          console.error('옵션 저장 상세 오류:', {
+            error: optionError,
+            code: optionError.code,
+            message: optionError.message,
+            details: optionError.details,
+            hint: optionError.hint,
+            insertData
+          })
+          throw optionError
+        }
         console.log('옵션 저장됨:', (optionData as { id: string })?.id)
       }
 
       setSaveMessage('옵션 정보가 성공적으로 저장되었습니다!')
       setTimeout(() => setSaveMessage(''), 3000)
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
-      console.error('옵션 저장 오류:', errorMessage)
+      let errorMessage = '알 수 없는 오류가 발생했습니다.'
+      
+      if (error && typeof error === 'object' && 'message' in error) {
+        errorMessage = String(error.message)
+        // Supabase 에러의 경우 더 자세한 정보 포함
+        if ('details' in error && error.details) {
+          errorMessage += ` (상세: ${error.details})`
+        }
+        if ('hint' in error && error.hint) {
+          errorMessage += ` (힌트: ${error.hint})`
+        }
+      } else if (error instanceof Error) {
+        errorMessage = error.message
+      }
+      
+      console.error('옵션 저장 오류:', error)
       setSaveMessage(`옵션 저장에 실패했습니다: ${errorMessage}`)
-      setTimeout(() => setSaveMessage(''), 3000)
+      setTimeout(() => setSaveMessage(''), 5000)
     } finally {
       setSaving(false)
     }
