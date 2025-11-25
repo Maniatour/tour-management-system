@@ -3354,7 +3354,7 @@ export default function DynamicPricingManager({
 
           {/* 초이스가 없는 상품의 경우 OTA 판매가 및 불포함 금액 입력 */}
           {choiceCombinations.length === 0 && (() => {
-            // OTA 채널인지 확인
+            // 채널 정보 확인 (모든 채널에서 표시)
             const foundChannel = selectedChannel ? channelGroups
               .flatMap(group => group.channels)
               .find(ch => ch.id === selectedChannel) : null;
@@ -3362,8 +3362,6 @@ export default function DynamicPricingManager({
               (foundChannel as any).type?.toLowerCase() === 'ota' || 
               (foundChannel as any).category === 'OTA'
             );
-
-            if (!isOTAChannel) return null;
 
             // 초이스가 없을 때는 no_choice 키를 사용하거나 최상위 레벨에서 가져오기
             const noChoiceKey = 'no_choice';

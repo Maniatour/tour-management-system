@@ -230,75 +230,161 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
       }
 
       // dynamic_pricing에서 choices_pricing 데이터가 있으면 사용
-      if (pricingData && pricingData.length > 0) {
+      // 단, 실제 product_choices/choice_options 테이블에 존재하는 옵션만 필터링
+      // 중요: choicesData가 비어있으면 (초이스가 모두 삭제된 경우) dynamic_pricing에서 조합을 생성하지 않음
+      if (pricingData && pricingData.length > 0 && choicesData && choicesData.length > 0) {
         const choicesPricing = pricingData[0].choices_pricing;
-        const choicesData = typeof choicesPricing === 'string' 
+        const pricingChoicesData = typeof choicesPricing === 'string' 
           ? JSON.parse(choicesPricing) 
           : choicesPricing;
 
-        console.log('동적 가격에서 로드된 choices_pricing:', choicesData);
-        console.log('choices_pricing 타입:', typeof choicesData);
-        console.log('choices_pricing 키들:', Object.keys(choicesData || {}));
+        console.log('동적 가격에서 로드된 choices_pricing:', pricingChoicesData);
+        console.log('choices_pricing 타입:', typeof pricingChoicesData);
+        console.log('choices_pricing 키들:', Object.keys(pricingChoicesData || {}));
+
+        // 실제 존재하는 옵션 키들을 수집 (choice_options 테이블에서 - 위에서 로드한 choicesData 사용)
+        const validOptionKeys = new Set<string>();
+        const validOptionIds = new Set<string>();
+        choicesData.forEach((group: any) => {
+          if (group.choice_options && Array.isArray(group.choice_options)) {
+            group.choice_options.forEach((option: any) => {
+              if (option.option_key) {
+                validOptionKeys.add(option.option_key);
+              }
+              if (option.id) {
+                validOptionIds.add(option.id);
+                validOptionKeys.add(option.id); // id도 키로 사용 가능
+              }
+            });
+          }
+        });
+
+        // 조합 키 생성 함수 (option_key들을 조합하여 유효한 조합 키 생성)
+        const getValidCombinationKeys = (): Set<string> => {
+          const keys = new Set<string>();
+          const generateKeys = (groups: any[], currentKey: string[] = [], groupIndex: number = 0) => {
+            if (groupIndex >= groups.length) {
+              if (currentKey.length > 0) {
+                keys.add(currentKey.join('+'));
+              }
+              return;
+            }
+            const currentGroup = groups[groupIndex];
+            if (currentGroup.choice_options && currentGroup.choice_options.length > 0) {
+              currentGroup.choice_options.forEach((option: any) => {
+                const optionKey = option.option_key || option.id;
+                if (optionKey) {
+                  generateKeys(groups, [...currentKey, optionKey], groupIndex + 1);
+                }
+              });
+            } else {
+              generateKeys(groups, currentKey, groupIndex + 1);
+            }
+          };
+          generateKeys(choicesData);
+          return keys;
+        };
+
+        const validCombinationKeys = getValidCombinationKeys();
+        console.log('유효한 옵션 키들:', Array.from(validOptionKeys));
+        console.log('유효한 조합 키들:', Array.from(validCombinationKeys));
 
         const combinations: ChoiceCombination[] = [];
 
         // 새로운 조합 구조 처리 (choices_pricing이 직접 조합 데이터인 경우)
-        if (choicesData.combinations) {
-          Object.entries(choicesData.combinations).forEach(([combinationId, combinationData]: [string, any]) => {
-            console.log(`조합 처리: ${combinationId} ->`, combinationData);
-            combinations.push({
-              id: combinationId,
-              combination_key: combinationData.combination_key,
-              combination_name: combinationData.combination_name,
-              combination_name_ko: combinationData.combination_name_ko,
-              adult_price: combinationData.adult_price,
-              child_price: combinationData.child_price,
-              infant_price: combinationData.infant_price,
-              is_active: true
-            });
-          });
-        } else if (typeof choicesData === 'object' && choicesData !== null) {
-          // 새로운 구조: { choiceId: { adult: 50, child: 30, infant: 20 } }
-          Object.entries(choicesData).forEach(([choiceId, choiceData]: [string, any]) => {
-            if (choiceData && typeof choiceData === 'object') {
-              console.log(`새로운 구조 조합 처리: ${choiceId} ->`, choiceData);
+        if (pricingChoicesData.combinations) {
+          Object.entries(pricingChoicesData.combinations).forEach(([combinationId, combinationData]: [string, any]) => {
+            // 실제 존재하는 조합 키인지 확인
+            if (validCombinationKeys.has(combinationId)) {
+              console.log(`조합 처리: ${combinationId} ->`, combinationData);
               combinations.push({
-                id: choiceId,
-                combination_key: choiceId,
-                combination_name: choiceId.replace(/_/g, ' '),
-                combination_name_ko: choiceId.replace(/_/g, ' '),
-                adult_price: choiceData.adult || choiceData.adult_price || 0,
-                child_price: choiceData.child || choiceData.child_price || 0,
-                infant_price: choiceData.infant || choiceData.infant_price || 0,
+                id: combinationId,
+                combination_key: combinationData.combination_key,
+                combination_name: combinationData.combination_name,
+                combination_name_ko: combinationData.combination_name_ko,
+                adult_price: combinationData.adult_price,
+                child_price: combinationData.child_price,
+                infant_price: combinationData.infant_price,
                 is_active: true
               });
+            } else {
+              console.log(`삭제된 조합 건너뛰기: ${combinationId}`);
+            }
+          });
+        } else if (typeof pricingChoicesData === 'object' && pricingChoicesData !== null && !Array.isArray(pricingChoicesData)) {
+          // 새로운 구조: { choiceId: { adult: 50, child: 30, infant: 20 } }
+          // 예: { "option_1": { adult: 50, child: 30, infant: 20 }, "option_2": { ... } }
+          Object.entries(pricingChoicesData).forEach(([choiceId, choiceData]: [string, any]) => {
+            if (choiceData && typeof choiceData === 'object' && !Array.isArray(choiceData)) {
+              // 실제 존재하는 옵션 키인지 확인
+              // choiceId가 option_1, option_2 같은 형태일 수 있으므로 확인
+              // validOptionKeys나 validCombinationKeys에 포함되어 있는지 확인
+              const isValidKey = validOptionKeys.has(choiceId) || 
+                                validOptionIds.has(choiceId) ||
+                                validCombinationKeys.has(choiceId) ||
+                                // 조합 키의 일부인지 확인 (예: "option_1+option_2"에서 "option_1" 포함 여부)
+                                Array.from(validCombinationKeys).some(key => key.includes(choiceId));
+              
+              if (isValidKey) {
+                console.log(`새로운 구조 조합 처리: ${choiceId} ->`, choiceData);
+                combinations.push({
+                  id: choiceId,
+                  combination_key: choiceId,
+                  combination_name: choiceId.replace(/_/g, ' '),
+                  combination_name_ko: choiceId.replace(/_/g, ' '),
+                  adult_price: choiceData.adult || choiceData.adult_price || 0,
+                  child_price: choiceData.child || choiceData.child_price || 0,
+                  infant_price: choiceData.infant || choiceData.infant_price || 0,
+                  is_active: true
+                });
+              } else {
+                console.log(`삭제된 옵션 건너뛰기: ${choiceId} (유효한 키: ${Array.from(validOptionKeys).join(', ')})`);
+              }
             }
           });
         } else {
           // 기존 그룹별 구조 처리 (하위 호환성)
-          Object.entries(choicesData).forEach(([groupKey, groupData]: [string, any]) => {
+          // 예: { "group1": { options: { "option_1": {...}, "option_2": {...} } } }
+          Object.entries(pricingChoicesData).forEach(([groupKey, groupData]: [string, any]) => {
             console.log(`초이스 그룹 처리: ${groupKey} ->`, groupData);
             
             if (groupData?.options) {
               Object.entries(groupData.options).forEach(([optionKey, option]: [string, any]) => {
-                console.log(`초이스 조합 생성: ${groupKey}_${optionKey} ->`, option);
-                combinations.push({
-                  id: `${groupKey}_${optionKey}`,
-                  combination_key: `${groupKey}_${optionKey}`,
-                  combination_name: option.name,
-                  combination_name_ko: option.name_ko,
-                  adult_price: option.adult_price,
-                  child_price: option.child_price,
-                  infant_price: option.infant_price,
-                  is_active: true
-                });
+                // 실제 존재하는 옵션 키인지 확인
+                const fullKey = `${groupKey}_${optionKey}`;
+                const isValidKey = validOptionKeys.has(optionKey) || 
+                                  validOptionIds.has(optionKey) ||
+                                  validCombinationKeys.has(fullKey) ||
+                                  // 조합 키의 일부인지 확인
+                                  Array.from(validCombinationKeys).some(key => key.includes(optionKey));
+                
+                if (isValidKey) {
+                  console.log(`초이스 조합 생성: ${fullKey} ->`, option);
+                  combinations.push({
+                    id: fullKey,
+                    combination_key: fullKey,
+                    combination_name: option.name,
+                    combination_name_ko: option.name_ko,
+                    adult_price: option.adult_price,
+                    child_price: option.child_price,
+                    infant_price: option.infant_price,
+                    is_active: true
+                  });
+                } else {
+                  console.log(`삭제된 옵션 건너뛰기: ${fullKey} (유효한 키: ${Array.from(validOptionKeys).join(', ')})`);
+                }
               });
             }
           });
         }
 
-        console.log('동적 가격에서 생성된 초이스 조합:', combinations);
+        console.log('동적 가격에서 생성된 초이스 조합 (필터링 후):', combinations);
         setChoiceCombinations(combinations);
+        return;
+      } else if (pricingData && pricingData.length > 0 && (!choicesData || choicesData.length === 0)) {
+        // choicesData가 비어있으면 (초이스가 모두 삭제된 경우) 빈 배열 설정
+        console.log('초이스가 모두 삭제되어 동적 가격에서 조합을 생성하지 않음');
+        setChoiceCombinations([]);
         return;
       }
 
