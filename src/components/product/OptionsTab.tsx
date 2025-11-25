@@ -156,11 +156,30 @@ export default function OptionsTab({
           insertData.image_alt = option.imageAlt
         }
 
-        const { data: optionData, error: optionError } = await supabase
+        let { data: optionData, error: optionError } = await supabase
           .from('product_options')
           .insert(insertData as never)
           .select()
           .single()
+
+        // 이미지 필드가 없는 경우 (마이그레이션 미적용) 필드를 제거하고 재시도
+        if (optionError && optionError.code === 'PGRST204' && 
+            (optionError.message?.includes('image_url') || optionError.message?.includes('image_alt'))) {
+          console.warn('이미지 필드가 아직 적용되지 않았습니다. 이미지 필드를 제외하고 저장합니다.')
+          // 이미지 필드 제거
+          const insertDataWithoutImage = { ...insertData }
+          delete insertDataWithoutImage.image_url
+          delete insertDataWithoutImage.image_alt
+          
+          const retryResult = await supabase
+            .from('product_options')
+            .insert(insertDataWithoutImage as never)
+            .select()
+            .single()
+          
+          optionData = retryResult.data
+          optionError = retryResult.error
+        }
 
         if (optionError) {
           console.error('옵션 저장 상세 오류:', {

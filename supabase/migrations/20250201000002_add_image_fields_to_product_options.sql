@@ -1,5 +1,5 @@
 -- Add image fields to product_options table
--- Migration: add_image_fields_to_product_options
+-- Migration: 20250201000002_add_image_fields_to_product_options
 
 -- Add image fields to product_options table
 ALTER TABLE product_options 
