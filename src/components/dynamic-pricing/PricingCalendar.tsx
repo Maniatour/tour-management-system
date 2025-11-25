@@ -378,20 +378,27 @@ export const PricingCalendar = memo(function PricingCalendar({
           ? JSON.parse(rule.choices_pricing) 
           : rule.choices_pricing;
         
-        // 선택된 초이스 ID 결정 (선택된 초이스가 있으면 사용, 없으면 첫 번째 초이스)
-        // selectedChoice가 빈 문자열이거나 없으면 첫 번째 초이스 사용
-        let choiceId = selectedChoice;
-        if (!choiceId || choiceId === '') {
-          const firstChoiceId = Object.keys(choicesData)[0];
-          if (firstChoiceId) {
-            choiceId = firstChoiceId;
+        // 초이스가 없는 경우 (no_choice) 처리
+        if (choicesData['no_choice']) {
+          const noChoiceData = choicesData['no_choice'];
+          otaSalePrice = noChoiceData?.ota_sale_price || 0;
+          choicePrice = 0;
+        } else {
+          // 선택된 초이스 ID 결정 (선택된 초이스가 있으면 사용, 없으면 첫 번째 초이스)
+          // selectedChoice가 빈 문자열이거나 없으면 첫 번째 초이스 사용
+          let choiceId = selectedChoice;
+          if (!choiceId || choiceId === '') {
+            const firstChoiceId = Object.keys(choicesData)[0];
+            if (firstChoiceId && firstChoiceId !== 'no_choice') {
+              choiceId = firstChoiceId;
+            }
           }
-        }
-        
-        if (choiceId && choicesData[choiceId]) {
-          const choiceData = choicesData[choiceId];
-          otaSalePrice = choiceData?.ota_sale_price || 0;
-          choicePrice = choiceData?.adult_price || choiceData?.adult || 0;
+          
+          if (choiceId && choicesData[choiceId]) {
+            const choiceData = choicesData[choiceId];
+            otaSalePrice = choiceData?.ota_sale_price || 0;
+            choicePrice = choiceData?.adult_price || choiceData?.adult || 0;
+          }
         }
       } catch (e) {
         console.warn('choices_pricing 파싱 오류:', e);
@@ -426,8 +433,14 @@ export const PricingCalendar = memo(function PricingCalendar({
     // 홈페이지 채널(M00001)의 경우: 기본가격이 0이고 초이스 가격만 있는 경우도 처리
     const totalBasePrice = basePrice + choicePrice;
     let maxSalePrice = 0;
-    if (isOTA && otaSalePrice > 0) {
-      // OTA 채널이고 OTA 판매가가 있으면 OTA 판매가 사용
+    
+    // 홈페이지 채널 확인
+    const isHomepageChannel = selectedChannelId === 'M00001' || 
+                              selectedChannelId?.toLowerCase() === 'm00001' ||
+                              (channelInfo && (channelInfo as any).id === 'M00001');
+    
+    if ((isOTA || isHomepageChannel) && otaSalePrice > 0) {
+      // OTA 채널 또는 홈페이지 채널이고 판매가가 있으면 판매가 사용
       maxSalePrice = otaSalePrice;
     } else {
       // 기본 가격 + 초이스 가격 + 마크업
@@ -451,8 +464,8 @@ export const PricingCalendar = memo(function PricingCalendar({
     const commissionPercent = rule.commission_percent || 0;
     const commissionBasePriceOnly = channelInfo?.commission_base_price_only || false;
     
-    if (isOTA && otaSalePrice > 0) {
-      // OTA 채널인 경우: 기본 계산 후 불포함 금액 추가
+    if ((isOTA || isHomepageChannel) && otaSalePrice > 0) {
+      // OTA 채널 또는 홈페이지 채널인 경우: 기본 계산 후 불포함 금액 추가
       const baseNetPrice = otaSalePrice * (1 - couponPercent / 100) * (1 - commissionPercent / 100);
       // 불포함 금액이 있으면 항상 Net Price에 추가
       netPrice = baseNetPrice + notIncludedPrice;

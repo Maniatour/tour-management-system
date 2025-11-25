@@ -540,6 +540,47 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
     }
   }, [loadDynamicPricingData]);
 
+  const deletePricingRulesByDates = useCallback(async (
+    dates: string[],
+    channelId?: string,
+    channelType?: string
+  ) => {
+    try {
+      setSaving(true);
+      
+      let query = supabase
+        .from('dynamic_pricing')
+        .delete()
+        .eq('product_id', productId)
+        .in('date', dates);
+
+      // 채널 필터링
+      if (channelId) {
+        query = query.eq('channel_id', channelId);
+      } else if (channelType === 'SELF') {
+        query = query.like('channel_id', 'B%');
+      } else if (channelType === 'OTA') {
+        // OTA 채널은 B로 시작하지 않는 채널들
+        query = query.not('channel_id', 'like', 'B%');
+      }
+
+      const { error } = await query;
+
+      if (error) throw error;
+
+      setSaveMessage(`${dates.length}개 날짜의 가격 규칙이 삭제되었습니다.`);
+      setTimeout(() => setSaveMessage(''), 3000);
+
+      await loadDynamicPricingData();
+    } catch (error) {
+      console.error('가격 규칙 삭제 실패:', error);
+      setSaveMessage('가격 규칙 삭제에 실패했습니다.');
+      setTimeout(() => setSaveMessage(''), 3000);
+    } finally {
+      setSaving(false);
+    }
+  }, [productId, loadDynamicPricingData]);
+
   useEffect(() => {
     if (productId) {
       loadDynamicPricingData();
@@ -559,6 +600,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
     savePricingRule,
     savePricingRulesBatch,
     deletePricingRule,
+    deletePricingRulesByDates,
     setMessage
   };
 }

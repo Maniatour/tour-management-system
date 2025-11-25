@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { Save, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
+import { Save, Loader2, AlertCircle, CheckCircle, Trash2 } from 'lucide-react';
 
 interface PricingControlsProps {
   saving: boolean;
@@ -8,6 +8,8 @@ interface PricingControlsProps {
   onCancel?: () => void;
   canSave?: boolean;
   batchProgress?: { completed: number; total: number } | null;
+  onDelete?: () => void;
+  canDelete?: boolean;
 }
 
 export const PricingControls = memo(function PricingControls({
@@ -16,7 +18,9 @@ export const PricingControls = memo(function PricingControls({
   onSave,
   onCancel,
   canSave = true,
-  batchProgress
+  batchProgress,
+  onDelete,
+  canDelete = false
 }: PricingControlsProps) {
   const getMessageIcon = () => {
     if (saveMessage.includes('성공')) {
@@ -107,6 +111,21 @@ export const PricingControls = memo(function PricingControls({
               className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               취소
+            </button>
+          )}
+
+          {onDelete && (
+            <button
+              onClick={onDelete}
+              disabled={saving || !canDelete}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
+                saving || !canDelete
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-red-600 text-white hover:bg-red-700'
+              }`}
+            >
+              <Trash2 className="h-4 w-4" />
+              <span>선택한 날짜 삭제</span>
             </button>
           )}
         </div>

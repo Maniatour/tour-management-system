@@ -168,6 +168,7 @@ export default function DynamicPricingManager({
     savePricingRule,
     savePricingRulesBatch,
     deletePricingRule,
+    deletePricingRulesByDates,
     setMessage
   } = useDynamicPricing({ 
     productId, 
@@ -1603,6 +1604,25 @@ export default function DynamicPricingManager({
     }
   }, [deletePricingRule]);
 
+  // 선택한 날짜들의 가격 규칙 삭제 핸들러
+  const handleDeleteSelectedDates = useCallback(async () => {
+    if (selectedDates.length === 0) {
+      setMessage('삭제할 날짜를 선택해주세요.');
+      return;
+    }
+
+    const dateList = selectedDates.map(date => {
+      // 날짜 문자열을 직접 파싱하여 타임존 변환 문제 방지
+      const [year, month, day] = date.split('-');
+      return `${year}-${month}-${day}`;
+    }).join(', ');
+
+    if (confirm(`선택한 ${selectedDates.length}개 날짜(${dateList})의 가격 규칙을 삭제하시겠습니까?`)) {
+      await deletePricingRulesByDates(selectedDates, selectedChannel, selectedChannelType);
+      setSelectedDates([]); // 삭제 후 선택 해제
+    }
+  }, [selectedDates, selectedChannel, selectedChannelType, deletePricingRulesByDates, setMessage]);
+
   // 저장 가능 여부 계산
   const canSave = useMemo(() => {
     const hasSelectedDates = selectedDates.length > 0;
@@ -1614,7 +1634,19 @@ export default function DynamicPricingManager({
       choice.adult_price > 0 || choice.child_price > 0 || choice.infant_price > 0
     );
     
-    const canSaveResult = hasSelectedDates && hasSelectedChannels && (hasValidPrices || hasChoicePrices);
+    // 초이스가 없을 때 OTA 판매가나 불포함 금액이 있는지 확인
+    const noChoiceData = (pricingConfig.choices_pricing as any)?.['no_choice'] || {};
+    const hasNoChoiceOtaPrice = noChoiceData.ota_sale_price > 0;
+    const hasNoChoiceNotIncluded = noChoiceData.not_included_price !== undefined && 
+                                   noChoiceData.not_included_price !== null && 
+                                   noChoiceData.not_included_price > 0;
+    const hasNoChoicePrice = hasNoChoiceOtaPrice || hasNoChoiceNotIncluded;
+    
+    // 기본 불포함 금액이 있는지 확인
+    const hasNotIncludedPrice = ((pricingConfig as any)?.not_included_price || 0) > 0;
+    
+    const canSaveResult = hasSelectedDates && hasSelectedChannels && 
+                          (hasValidPrices || hasChoicePrices || hasNoChoicePrice || hasNotIncludedPrice);
     
     // 디버깅: canSave 변경 시에만 로그 출력 (불필요한 중복 로그 제거)
     // console.log('canSave 계산:', {
@@ -1622,6 +1654,8 @@ export default function DynamicPricingManager({
     //   hasSelectedChannels,
     //   hasValidPrices,
     //   hasChoicePrices,
+    //   hasNoChoicePrice,
+    //   hasNotIncludedPrice,
     //   selectedDates: selectedDates.length,
     //   selectedChannelType,
     //   selectedChannel,
@@ -3352,7 +3386,7 @@ export default function DynamicPricingManager({
             );
           })()}
 
-          {/* 초이스가 없는 상품의 경우 OTA 판매가 및 불포함 금액 입력 */}
+          {/* 초이스가 없는 상품의 경우 판매가 및 불포함 금액 입력 */}
           {choiceCombinations.length === 0 && (() => {
             // 채널 정보 확인 (모든 채널에서 표시)
             const foundChannel = selectedChannel ? channelGroups
@@ -3361,6 +3395,12 @@ export default function DynamicPricingManager({
             const isOTAChannel = foundChannel && (
               (foundChannel as any).type?.toLowerCase() === 'ota' || 
               (foundChannel as any).category === 'OTA'
+            );
+            const isHomepageChannel = foundChannel && (
+              (foundChannel as any).id === 'M00001' ||
+              (foundChannel as any).id?.toLowerCase() === 'm00001' ||
+              (foundChannel as any).name?.toLowerCase().includes('홈페이지') ||
+              (foundChannel as any).name?.toLowerCase().includes('homepage')
             );
 
             // 초이스가 없을 때는 no_choice 키를 사용하거나 최상위 레벨에서 가져오기
@@ -3393,7 +3433,7 @@ export default function DynamicPricingManager({
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">
-                        OTA 판매가 ($)
+                        {isHomepageChannel ? '판매가 ($)' : 'OTA 판매가 ($)'}
                       </label>
                       <input
                         type="number"
@@ -3558,6 +3598,8 @@ export default function DynamicPricingManager({
             onSave={handleSavePricingRule}
             canSave={canSave}
             batchProgress={batchProgress}
+            onDelete={handleDeleteSelectedDates}
+            canDelete={selectedDates.length > 0}
           />
 
           {/* 선택된 날짜 정보 */}
@@ -3569,7 +3611,12 @@ export default function DynamicPricingManager({
                     선택된 날짜 ({selectedDates.length}개)
                   </h4>
                   <p className="text-sm text-blue-700 mt-1">
-                    {selectedDates.map(date => new Date(date).toLocaleDateString('ko-KR')).join(', ')}
+                    {selectedDates.map(date => {
+                      // 날짜 문자열을 직접 파싱하여 타임존 변환 문제 방지
+                      const [year, month, day] = date.split('-');
+                      const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                      return dateObj.toLocaleDateString('ko-KR');
+                    }).join(', ')}
                   </p>
                 </div>
                 <button
@@ -3589,7 +3636,11 @@ export default function DynamicPricingManager({
         isOpen={isSaleStatusModalOpen}
         onClose={handleCloseSaleStatusModal}
         onSave={handleSaveSaleStatus}
-        initialDates={selectedDates.map(date => new Date(date))}
+        initialDates={selectedDates.map(date => {
+          // 날짜 문자열을 직접 파싱하여 타임존 변환 문제 방지
+          const [year, month, day] = date.split('-');
+          return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+        })}
         initialStatus="sale"
         choiceCombinations={choiceCombinations.map(choice => ({
           id: choice.id,
