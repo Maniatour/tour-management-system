@@ -132,7 +132,6 @@ export default function TicketBookingList() {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedBookings, setSelectedBookings] = useState<TicketBooking[]>([]);
   const [tourEvents, setTourEvents] = useState<TourEvent[]>([]);
-  const [isInitialLoad, setIsInitialLoad] = useState(true); // 초기 로딩 여부 추적
 
   const fetchBookings = async () => {
     try {
@@ -302,20 +301,9 @@ export default function TicketBookingList() {
 
   const fetchTourEvents = useCallback(async () => {
     try {
-      // 초기 로딩 시 오늘부터 7일 후까지, 그 외에는 현재 달력에 표시되는 월의 시작일과 종료일 계산
-      let startDate: Date;
-      let endDate: Date;
-      
-      if (isInitialLoad) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        startDate = new Date(today);
-        endDate = new Date(today);
-        endDate.setDate(endDate.getDate() + 6); // 오늘부터 7일 후
-      } else {
-        startDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-        endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
-      }
+      // 현재 달력에 표시되는 월의 시작일과 종료일 계산
+      const startDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+      const endDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
       
       console.log('투어 이벤트 조회 기간:', startDate.toISOString().split('T')[0], '~', endDate.toISOString().split('T')[0]);
 
@@ -481,7 +469,7 @@ export default function TicketBookingList() {
       console.error('오류 상세:', JSON.stringify(error, null, 2));
       setTourEvents([]);
     }
-  }, [currentDate, isInitialLoad]);
+  }, [currentDate]);
 
   useEffect(() => {
     fetchBookings();
@@ -579,6 +567,24 @@ export default function TicketBookingList() {
       default:
         return 0; // 알 수 없는 공급업체
     }
+  };
+
+  // Cancel Due 날짜 계산 함수
+  const getCancelDueDate = (booking: TicketBooking): string | null => {
+    if (!booking.check_in_date || !booking.company) return null;
+    
+    const supplierProduct = supplierProductsMap.get(booking.id);
+    const cancelDeadlineDays = getCancelDeadlineDays(booking.company, booking.check_in_date, supplierProduct);
+    
+    if (cancelDeadlineDays === 0) return null;
+    
+    const checkInDate = new Date(booking.check_in_date);
+    checkInDate.setHours(0, 0, 0, 0);
+    
+    const cancelDueDate = new Date(checkInDate);
+    cancelDueDate.setDate(cancelDueDate.getDate() - cancelDeadlineDays);
+    
+    return cancelDueDate.toISOString().split('T')[0];
   };
 
 
@@ -739,6 +745,7 @@ export default function TicketBookingList() {
     { value: 'confirmed', label: '확정', color: 'bg-green-100 text-green-800' },
     { value: 'cancelled', label: '취소', color: 'bg-red-100 text-red-800' },
     { value: 'completed', label: '완료', color: 'bg-blue-100 text-blue-800' },
+    { value: 'credit', label: '크레딧', color: 'bg-cyan-100 text-cyan-800' },
     { value: 'cancellation_requested', label: '전체 취소 요청', color: 'bg-orange-100 text-orange-800' },
     { value: 'guest_change_requested', label: '인원 변경 요청', color: 'bg-purple-100 text-purple-800' },
     { value: 'time_change_requested', label: '시간 변경 요청', color: 'bg-indigo-100 text-indigo-800' },
@@ -757,6 +764,7 @@ export default function TicketBookingList() {
       case 'cancelled':
       case 'canceled': return 'bg-red-100 text-red-800';
       case 'completed': return 'bg-blue-100 text-blue-800';
+      case 'credit': return 'bg-cyan-100 text-cyan-800';
       case 'cancellation_requested': return 'bg-orange-100 text-orange-800';
       case 'guest_change_requested': return 'bg-purple-100 text-purple-800';
       case 'time_change_requested': return 'bg-indigo-100 text-indigo-800';
@@ -773,6 +781,7 @@ export default function TicketBookingList() {
       case 'cancelled':
       case 'canceled': return t('cancelled');
       case 'completed': return t('completed');
+      case 'credit': return '크레딧';
       case 'cancellation_requested': return '전체 취소 요청';
       case 'guest_change_requested': return '인원 변경 요청';
       case 'time_change_requested': return '시간 변경 요청';
@@ -917,6 +926,7 @@ export default function TicketBookingList() {
               <option value="confirmed">{t('confirmed')}</option>
               <option value="cancelled">{t('cancelled')}</option>
               <option value="completed">{t('completed')}</option>
+              <option value="credit">크레딧</option>
             </select>
           </div>
 
@@ -1029,6 +1039,12 @@ export default function TicketBookingList() {
                   <span className="text-xs text-gray-600">이벤트가 종료 된 상태</span>
                 </div>
                 <div className="flex items-start gap-2">
+                  <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-cyan-100 text-cyan-800 whitespace-nowrap">
+                    크레딧
+                  </span>
+                  <span className="text-xs text-gray-600">날씨 등으로 인한 당일 크레딧 상태</span>
+                </div>
+                <div className="flex items-start gap-2">
                   <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-orange-100 text-orange-800 whitespace-nowrap">
                     전체 취소 요청
                   </span>
@@ -1085,6 +1101,9 @@ export default function TicketBookingList() {
                     <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       수량
                     </th>
+                    <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Cancel Due
+                    </th>
                     <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       비용(USD)
                     </th>
@@ -1125,9 +1144,55 @@ export default function TicketBookingList() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {sortedBookings.map((booking) => (
-                    <tr key={booking.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-2 py-1.5 whitespace-nowrap text-xs sticky left-0 bg-white z-10">
+                  {(() => {
+                    // Cancel Due 날짜별로 그룹화하여 배경색 매핑 생성
+                    const cancelDueColorMap = new Map<string, string>();
+                    const backgroundColors = [
+                      'bg-white',
+                      'bg-blue-50',
+                      'bg-green-50',
+                      'bg-yellow-50',
+                      'bg-purple-50',
+                      'bg-pink-50',
+                      'bg-indigo-50',
+                      'bg-cyan-50',
+                    ];
+                    const hoverColors = [
+                      'hover:bg-gray-50',
+                      'hover:bg-blue-100',
+                      'hover:bg-green-100',
+                      'hover:bg-yellow-100',
+                      'hover:bg-purple-100',
+                      'hover:bg-pink-100',
+                      'hover:bg-indigo-100',
+                      'hover:bg-cyan-100',
+                    ];
+                    
+                    let colorIndex = 0;
+                    const usedDates = new Set<string>();
+                    
+                    // sortedBookings를 순회하면서 각 booking의 Cancel Due 날짜에 색상 할당
+                    sortedBookings.forEach((booking) => {
+                      const cancelDueDate = getCancelDueDate(booking);
+                      if (cancelDueDate && !usedDates.has(cancelDueDate)) {
+                        cancelDueColorMap.set(cancelDueDate, backgroundColors[colorIndex % backgroundColors.length]);
+                        usedDates.add(cancelDueDate);
+                        colorIndex++;
+                      }
+                    });
+                    
+                    return sortedBookings.map((booking) => {
+                      const cancelDueDate = getCancelDueDate(booking);
+                      const bgColor = cancelDueDate 
+                        ? (cancelDueColorMap.get(cancelDueDate) || 'bg-white')
+                        : 'bg-white';
+                      const hoverColor = cancelDueDate
+                        ? (hoverColors[backgroundColors.indexOf(bgColor)] || 'hover:bg-gray-50')
+                        : 'hover:bg-gray-50';
+                      
+                      return (
+                        <tr key={booking.id} className={`${bgColor} ${hoverColor} transition-colors`}>
+                      <td className={`px-2 py-1.5 whitespace-nowrap text-xs sticky left-0 ${bgColor} z-10`}>
                         <div className="relative z-50">
                           <span 
                             ref={(el) => {
@@ -1213,6 +1278,28 @@ export default function TicketBookingList() {
                       <td className="px-2 py-1.5 whitespace-nowrap text-xs">
                         <div className="text-gray-900 font-medium">{booking.ea}개</div>
                       </td>
+                      <td className="hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+                        <div className="text-gray-900">
+                          {(() => {
+                            const cancelDueDate = getCancelDueDate(booking);
+                            if (!cancelDueDate) return '-';
+                            
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            const dueDate = new Date(cancelDueDate);
+                            dueDate.setHours(0, 0, 0, 0);
+                            
+                            // 취소 기한이 지났으면 빨간색으로 표시
+                            const isOverdue = dueDate < today;
+                            
+                            return (
+                              <span className={isOverdue ? 'text-red-600 font-semibold' : ''}>
+                                {cancelDueDate}
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      </td>
                       <td className="hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
                         <div className="text-gray-900">${booking.expense || '-'}</div>
                       </td>
@@ -1289,8 +1376,10 @@ export default function TicketBookingList() {
                           })()}
                         </div>
                       </td>
-                    </tr>
-                  ))}
+                        </tr>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -1338,76 +1427,53 @@ export default function TicketBookingList() {
                 
                 const calendarDays: Date[] = [];
                 
-                // 초기 로딩 시 오늘부터 7일만 표시
-                if (isInitialLoad) {
-                  for (let i = 0; i < 7; i++) {
-                    const date = new Date(today);
-                    date.setDate(today.getDate() + i);
-                    calendarDays.push(date);
-                  }
-                } else {
-                  // 일반 달력 뷰 (전체 월)
-                  const currentYear = currentDate.getFullYear();
-                  const currentMonth = currentDate.getMonth();
-                  
-                  // 이번 달의 첫 번째 날
-                  const firstDay = new Date(currentYear, currentMonth, 1);
-                  const startDate = new Date(firstDay);
-                  startDate.setDate(startDate.getDate() - firstDay.getDay()); // 일요일부터 시작
-                  
-                  // 6주 표시를 위해 42일 생성
-                  for (let i = 0; i < 42; i++) {
-                    const date = new Date(startDate);
-                    date.setDate(startDate.getDate() + i);
-                    calendarDays.push(date);
-                  }
+                // 월별 달력 뷰 (전체 월)
+                const currentYear = currentDate.getFullYear();
+                const currentMonth = currentDate.getMonth();
+                
+                // 이번 달의 첫 번째 날
+                const firstDay = new Date(currentYear, currentMonth, 1);
+                const startDate = new Date(firstDay);
+                startDate.setDate(startDate.getDate() - firstDay.getDay()); // 일요일부터 시작
+                
+                // 6주 표시를 위해 42일 생성
+                for (let i = 0; i < 42; i++) {
+                  const date = new Date(startDate);
+                  date.setDate(startDate.getDate() + i);
+                  calendarDays.push(date);
                 }
 
                 const monthNames = t.raw('monthNames');
                 const dayNames = t.raw('dayNames');
-                const currentYear = currentDate.getFullYear();
-                const currentMonth = currentDate.getMonth();
 
                 return (
                   <div className="space-y-4">
                     {/* 달력 헤더 */}
                     <div className="flex items-center justify-between">
-                          <button
-                        onClick={() => {
-                          setIsInitialLoad(false);
-                          goToPreviousMonth();
-                        }}
+                      <button
+                        onClick={goToPreviousMonth}
                         className="p-2 hover:bg-gray-100 rounded-md transition-colors"
                         title={t('previousMonth')}
-                          >
+                      >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                         </svg>
-                          </button>
+                      </button>
                       
                       <div className="text-center">
                         <h4 className="text-xl font-semibold text-gray-900">
-                          {isInitialLoad 
-                            ? `오늘부터 7일 (${today.toISOString().split('T')[0]} ~ ${new Date(today.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]})`
-                            : `${currentYear} ${monthNames[currentMonth]}`
-                          }
+                          {currentYear} {monthNames[currentMonth]}
                         </h4>
-                          <button
-                          onClick={() => {
-                            setIsInitialLoad(true);
-                            goToToday();
-                          }}
+                        <button
+                          onClick={goToToday}
                           className="text-sm text-blue-600 hover:text-blue-800 mt-1"
-                          >
-                          {isInitialLoad ? t('goToToday') : '7일 보기'}
-                          </button>
+                        >
+                          {t('goToToday')}
+                        </button>
                       </div>
                       
-                          <button
-                        onClick={() => {
-                          setIsInitialLoad(false);
-                          goToNextMonth();
-                        }}
+                      <button
+                        onClick={goToNextMonth}
                         className="p-2 hover:bg-gray-100 rounded-md transition-colors"
                         title={t('nextMonth')}
                       >
@@ -1427,10 +1493,10 @@ export default function TicketBookingList() {
                     </div>
 
                     {/* 달력 그리드 */}
-                    <div className={`grid gap-1 ${isInitialLoad ? 'grid-cols-7' : 'grid-cols-7'}`}>
+                    <div className="grid gap-1 grid-cols-7">
                       {calendarDays.map((date, index) => {
                         const dateString = date.toISOString().split('T')[0];
-                        const isCurrentMonth = isInitialLoad ? true : date.getMonth() === currentMonth;
+                        const isCurrentMonth = date.getMonth() === currentMonth;
                         const isToday = date.toDateString() === now.toDateString();
                         const dayBookings = groupedByDate[dateString] || [];
                         const totalQuantity = dayBookings.reduce((sum, booking) => sum + booking.ea, 0);
@@ -1826,6 +1892,7 @@ export default function TicketBookingList() {
                       booking.status === 'confirmed' ? 'bg-green-50 border-green-200' :
                       booking.status === 'cancelled' ? 'bg-red-50 border-red-200' :
                       booking.status === 'completed' ? 'bg-blue-50 border-blue-200' :
+                      booking.status === 'credit' ? 'bg-cyan-50 border-cyan-200' :
                       'bg-gray-50 border-gray-200'
                     }`}>
                       <div className="flex items-center justify-between">

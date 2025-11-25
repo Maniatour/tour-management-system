@@ -416,6 +416,66 @@ export default function TicketBookingForm({
     });
   };
 
+  // 시즌 여부 확인 함수 (check_in_date 기준)
+  const checkIfSeason = (checkInDate: string): boolean => {
+    if (!checkInDate) return false;
+    
+    // supplier_product_id가 있으면 해당 product의 season_dates 확인
+    if (formData.supplier_product_id) {
+      const selectedProduct = supplierProducts.find(p => p.id === formData.supplier_product_id);
+      if (selectedProduct?.season_dates && Array.isArray(selectedProduct.season_dates)) {
+        const checkIn = new Date(checkInDate);
+        checkIn.setHours(0, 0, 0, 0);
+        
+        return selectedProduct.season_dates.some((period: any) => {
+          const start = new Date(period.start);
+          const end = new Date(period.end);
+          start.setHours(0, 0, 0, 0);
+          end.setHours(0, 0, 0, 0);
+          return checkIn >= start && checkIn <= end;
+        });
+      }
+    }
+    
+    // supplier_product_id가 없으면 formData.season 필드 사용
+    return formData.season === 'yes';
+  };
+
+  // 취소 기한 일수 계산 함수
+  const getCancelDeadlineDays = (company: string, checkInDate: string): number => {
+    if (!company || !checkInDate) return 0;
+    
+    const isSeason = checkIfSeason(checkInDate);
+    
+    switch (company) {
+      case 'Antelope X':
+        return 4; // 시즌과 상관없이 4일전
+      case 'SEE CANYON':
+        return isSeason ? 5 : 4; // 시즌 = 5일전, 시즌이 아니면 4일전
+      case 'Mei Tour':
+        return isSeason ? 8 : 5; // 시즌 = 8일전, 시즌이 아니면 5일전
+      default:
+        return 0; // 알 수 없는 공급업체
+    }
+  };
+
+  // Cancel Due 날짜 계산 함수
+  const getCancelDueDate = (): string | null => {
+    if (!formData.check_in_date || !formData.company) return null;
+    
+    const cancelDeadlineDays = getCancelDeadlineDays(formData.company, formData.check_in_date);
+    
+    if (cancelDeadlineDays === 0) return null;
+    
+    const checkInDate = new Date(formData.check_in_date);
+    checkInDate.setHours(0, 0, 0, 0);
+    
+    const cancelDueDate = new Date(checkInDate);
+    cancelDueDate.setDate(cancelDueDate.getDate() - cancelDeadlineDays);
+    
+    return cancelDueDate.toISOString().split('T')[0];
+  };
+
   // 파일 업로드 핸들러
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || [])
@@ -811,6 +871,23 @@ export default function TicketBookingForm({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {t('checkInDate')} *
+                {formData.check_in_date && formData.company && (() => {
+                  const cancelDueDate = getCancelDueDate();
+                  if (cancelDueDate) {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const dueDate = new Date(cancelDueDate);
+                    dueDate.setHours(0, 0, 0, 0);
+                    const isOverdue = dueDate < today;
+                    
+                    return (
+                      <span className={`ml-2 text-xs font-normal ${isOverdue ? 'text-red-600' : 'text-gray-600'}`}>
+                        (Cancel Due: {cancelDueDate})
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
               </label>
               <div className="relative">
                 <input
@@ -1127,12 +1204,30 @@ export default function TicketBookingForm({
                 <option value="confirmed">{t('statusConfirmed')}</option>
                 <option value="paid">{t('statusPaid')}</option>
                 <option value="cancelled">{t('statusCancelled')}</option>
+                <option value="credit">크레딧</option>
               </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {t('season')}
+                {formData.check_in_date && formData.company && (() => {
+                  const cancelDueDate = getCancelDueDate();
+                  if (cancelDueDate) {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const dueDate = new Date(cancelDueDate);
+                    dueDate.setHours(0, 0, 0, 0);
+                    const isOverdue = dueDate < today;
+                    
+                    return (
+                      <span className={`ml-2 text-xs font-normal ${isOverdue ? 'text-red-600' : 'text-gray-600'}`}>
+                        (Cancel Due: {cancelDueDate})
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
               </label>
               <select
                 name="season"

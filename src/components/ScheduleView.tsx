@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useLocale } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
+import DateNoteModal from './DateNoteModal'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Tour = any
@@ -86,6 +87,12 @@ export default function ScheduleView() {
   const [guideModalContent, setGuideModalContent] = useState({ title: '', content: '', tourId: '' })
   const [shareProductsSetting, setShareProductsSetting] = useState(false)
   const [shareTeamMembersSetting, setShareTeamMembersSetting] = useState(false)
+  
+  // 날짜별 노트 상태
+  const [dateNotes, setDateNotes] = useState<{ [date: string]: { note: string; created_by?: string } }>({})
+  const [showDateNoteModal, setShowDateNoteModal] = useState(false)
+  const [selectedDateForNote, setSelectedDateForNote] = useState<string | null>(null)
+  const [hoveredDate, setHoveredDate] = useState<string | null>(null)
 
   // 배치 저장용 변경 대기 상태
   const [pendingChanges, setPendingChanges] = useState<{ [tourId: string]: Partial<Tour> }>({})
@@ -100,10 +107,10 @@ export default function ScheduleView() {
   // 통합 스크롤 컨테이너는 하나의 스크롤로 동기화됨
 
   // 메시지 모달 표시 함수
-  const showMessage = (title: string, message: string, type: 'success' | 'error' = 'success') => {
+  const showMessage = useCallback((title: string, message: string, type: 'success' | 'error' = 'success') => {
     setMessageModalContent({ title, message, type })
     setShowMessageModal(true)
-  }
+  }, [])
 
   // 확인 모달 표시 함수
   const showConfirm = (title: string, message: string, onConfirm: () => void, buttonText: string = '확인', buttonColor: string = 'bg-red-500 hover:bg-red-600') => {
@@ -116,6 +123,106 @@ export default function ScheduleView() {
     setGuideModalContent({ title, content, tourId })
     setShowGuideModal(true)
   }
+
+  // 날짜 노트 모달 열기
+  const openDateNoteModal = useCallback((dateString: string) => {
+    setSelectedDateForNote(dateString)
+    setShowDateNoteModal(true)
+  }, [])
+
+  // 날짜 노트 저장
+  const saveDateNote = useCallback(async (noteText: string) => {
+    if (!selectedDateForNote) return
+
+    try {
+      const noteData = {
+        note_date: selectedDateForNote,
+        note: noteText.trim() || null,
+        created_by: user?.email || null
+      }
+
+      // 노트가 비어있으면 삭제, 있으면 upsert
+      if (!noteText.trim()) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error } = await (supabase as any)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .from('date_notes' as any)
+          .delete()
+          .eq('note_date', selectedDateForNote)
+
+        if (error) throw error
+
+        // 상태 업데이트
+        setDateNotes(prev => {
+          const newNotes = { ...prev }
+          delete newNotes[selectedDateForNote]
+          return newNotes
+        })
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error } = await (supabase as any)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .from('date_notes' as any)
+          .upsert(noteData, { onConflict: 'note_date' })
+
+        if (error) throw error
+
+        // 상태 업데이트
+        setDateNotes(prev => ({
+          ...prev,
+          [selectedDateForNote]: {
+            note: noteText.trim(),
+            created_by: user?.email || undefined
+          }
+        }))
+      }
+
+      setShowDateNoteModal(false)
+      setSelectedDateForNote(null)
+      showMessage('저장 완료', '날짜 노트가 저장되었습니다.', 'success')
+    } catch (error) {
+      console.error('Error saving date note:', error)
+      showMessage('저장 실패', '날짜 노트 저장 중 오류가 발생했습니다.', 'error')
+      throw error
+    }
+  }, [selectedDateForNote, user?.email, showMessage])
+
+  // 날짜 노트 삭제
+  const deleteDateNote = useCallback(async () => {
+    if (!selectedDateForNote) return
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('date_notes' as any)
+        .delete()
+        .eq('note_date', selectedDateForNote)
+
+      if (error) throw error
+
+      // 상태 업데이트
+      setDateNotes(prev => {
+        const newNotes = { ...prev }
+        delete newNotes[selectedDateForNote]
+        return newNotes
+      })
+
+      setShowDateNoteModal(false)
+      setSelectedDateForNote(null)
+      showMessage('삭제 완료', '날짜 노트가 삭제되었습니다.', 'success')
+    } catch (error) {
+      console.error('Error deleting date note:', error)
+      showMessage('삭제 실패', '날짜 노트 삭제 중 오류가 발생했습니다.', 'error')
+      throw error
+    }
+  }, [selectedDateForNote, showMessage])
+
+  // 날짜 노트 모달 닫기
+  const closeDateNoteModal = useCallback(() => {
+    setShowDateNoteModal(false)
+    setSelectedDateForNote(null)
+  }, [])
 
   // 공유 설정 저장 (관리자만, 데이터베이스에 저장)
   const saveSharedSetting = async (key: string, value: string[] | number | boolean) => {
@@ -613,6 +720,26 @@ export default function ScheduleView() {
         .gte('off_date', firstDayOfMonth.format('YYYY-MM-DD'))
         .lte('off_date', lastDayOfMonth.format('YYYY-MM-DD'))
 
+      // 날짜별 노트 데이터 가져오기 (현재 월)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: dateNotesData } = await (supabase as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('date_notes' as any)
+        .select('note_date, note, created_by')
+        .gte('note_date', firstDayOfMonth.format('YYYY-MM-DD'))
+        .lte('note_date', lastDayOfMonth.format('YYYY-MM-DD'))
+
+      // 날짜별 노트를 객체로 변환
+      const notesMap: { [date: string]: { note: string; created_by?: string } } = {}
+      if (dateNotesData) {
+        dateNotesData.forEach((item: { note_date: string; note: string | null; created_by?: string | null }) => {
+          notesMap[item.note_date] = {
+            note: item.note || '',
+            created_by: item.created_by || undefined
+          }
+        })
+      }
+
       console.log('=== ScheduleView 데이터 로딩 결과 ===')
       console.log('Loaded products:', productsData?.length || 0, productsData)
       console.log('Loaded team members:', teamData?.length || 0, teamData)
@@ -627,6 +754,7 @@ export default function ScheduleView() {
       setCustomers((customersData || []) as Customer[])
       setTicketBookings(ticketBookingsData || [])
       setOffSchedules(offSchedulesData || [])
+      setDateNotes(notesMap)
 
       // 저장된 사용자 설정 불러오기 (오류가 발생해도 계속 진행)
       try {
@@ -1681,18 +1809,54 @@ export default function ScheduleView() {
                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   상품명
                 </th>
-                {monthDays.map(({ date, dayOfWeek, dateString }) => (
-                  <th 
-                    key={date} 
-                    className={"p-0 text-center text-xs font-medium text-gray-700"}
-                    style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
-                  >
-                    <div className={`${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''} px-1 py-2`}>
-                      <div className={isToday(dateString) ? 'font-bold text-red-700' : ''}>{date}일</div>
-                      <div className={`text-xs ${isToday(dateString) ? 'text-red-600' : 'text-gray-500'}`}>{dayOfWeek}</div>
-                    </div>
-                  </th>
-                ))}
+                {monthDays.map(({ date, dayOfWeek, dateString }) => {
+                  const hasNote = dateNotes[dateString]?.note
+                  return (
+                    <th 
+                      key={date} 
+                      className={"p-0 text-center text-xs font-medium text-gray-700 relative"}
+                      style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
+                    >
+                      <div 
+                        className={`
+                          px-1 py-2 cursor-pointer transition-colors relative
+                          ${isToday(dateString) 
+                            ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
+                            : hasNote 
+                              ? 'bg-yellow-50 border-2 border-yellow-400 rounded' 
+                              : ''
+                          }
+                          ${hasNote && !isToday(dateString) ? 'hover:bg-yellow-100' : 'hover:bg-blue-100'}
+                        `}
+                        onClick={() => openDateNoteModal(dateString)}
+                        onMouseEnter={() => setHoveredDate(dateString)}
+                        onMouseLeave={() => setHoveredDate(null)}
+                        title={hasNote ? dateNotes[dateString].note : '클릭하여 날짜 노트 작성'}
+                      >
+                        <div className={`flex items-center justify-center gap-1 ${isToday(dateString) ? 'font-bold text-red-700' : hasNote ? 'font-semibold text-yellow-800' : ''}`}>
+                          <span>{date}일</span>
+                          {hasNote && (
+                            <span className="text-yellow-600 text-sm font-bold" title="노트 있음">📝</span>
+                          )}
+                        </div>
+                        <div className={`text-xs flex items-center justify-center gap-1 ${isToday(dateString) ? 'text-red-600' : hasNote ? 'text-yellow-700 font-medium' : 'text-gray-500'}`}>
+                          {dayOfWeek}
+                          {hasNote && (
+                            <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>
+                          )}
+                        </div>
+                        {/* 마우스 오버 시 노트 표시 */}
+                        {hoveredDate === dateString && hasNote && (
+                          <div className="absolute z-50 top-full left-1/2 transform -translate-x-1/2 mt-1 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg pointer-events-none">
+                            <div className="font-semibold mb-1">{dateString}</div>
+                            <div className="whitespace-pre-wrap break-words">{dateNotes[dateString].note}</div>
+                            <div className="absolute -top-1 left-1/2 transform -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45"></div>
+                          </div>
+                        )}
+                      </div>
+                    </th>
+                  )
+                })}
                 <th className="px-2 py-2 text-center text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   합계
                 </th>
@@ -2965,6 +3129,16 @@ export default function ScheduleView() {
           </div>
         </div>
       )}
+
+      {/* 날짜 노트 모달 */}
+      <DateNoteModal
+        isOpen={showDateNoteModal}
+        dateString={selectedDateForNote}
+        initialNote={selectedDateForNote ? (dateNotes[selectedDateForNote]?.note || '') : ''}
+        onClose={closeDateNoteModal}
+        onSave={saveDateNote}
+        onDelete={deleteDateNote}
+      />
 
       {/* 확인 모달 */}
       {showConfirmModal && (
