@@ -138,8 +138,27 @@ export default function TicketBookingForm({
     return initialData;
   });
 
-  const [tours, setTours] = useState<any[]>([]);
-  const [reservations, setReservations] = useState<any[]>([]);
+  interface Tour {
+    id: string;
+    tour_date: string;
+    product_id: string | null;
+    products?: {
+      name: string;
+    };
+  }
+
+  interface Reservation {
+    id: string;
+    tour_date: string;
+    status: string;
+    product_id: string | null;
+    products?: {
+      name: string;
+    };
+  }
+
+  const [tours, setTours] = useState<Tour[]>([]);
+  const [reservations, setReservations] = useState<Reservation[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [companies, setCompanies] = useState<string[]>([]);
   const [supplierProducts, setSupplierProducts] = useState<SupplierProduct[]>([]);
@@ -169,7 +188,7 @@ export default function TicketBookingForm({
       console.log('투어 목록 조회 시작...');
       
       // 먼저 tours만 조회
-      const { data: toursData, error: toursError } = await supabase
+      const { data: toursData, error: toursError } = await (supabase as any)
         .from('tours')
         .select('id, tour_date, product_id')
         .gte('tour_date', today) // 오늘 날짜 이후의 투어만
@@ -187,18 +206,21 @@ export default function TicketBookingForm({
         return;
       }
 
+      // 타입 단언
+      const typedToursData = toursData as Tour[];
+
       // product_id가 있는 투어들만 필터링
-      const toursWithProductId = toursData.filter(tour => tour.product_id);
+      const toursWithProductId = typedToursData.filter((tour: Tour) => tour.product_id);
       
       if (toursWithProductId.length === 0) {
-        setTours(toursData);
+        setTours(typedToursData);
         return;
       }
 
       // 모든 product_id를 한 번에 조회
-      const productIds = [...new Set(toursWithProductId.map(tour => tour.product_id))];
+      const productIds = [...new Set(toursWithProductId.map((tour: Tour) => tour.product_id).filter(Boolean))] as string[];
       
-      const { data: productsData, error: productsError } = await supabase
+      const { data: productsData, error: productsError } = await (supabase as any)
         .from('products')
         .select(`
           id,
@@ -208,20 +230,20 @@ export default function TicketBookingForm({
 
       if (productsError) {
         console.warn('상품 정보 조회 오류:', productsError);
-        setTours(toursData);
+        setTours(typedToursData);
         return;
       }
 
       // products 데이터를 Map으로 변환하여 빠른 조회 가능하게 함
-      const productsMap = new Map();
-      (productsData || []).forEach(product => {
+      const productsMap = new Map<string, { id: string; name: string }>();
+      ((productsData || []) as Array<{ id: string; name: string }>).forEach((product: { id: string; name: string }) => {
         productsMap.set(product.id, product);
       });
 
       // 투어 데이터에 상품 정보 추가
-      const toursWithProducts = toursData.map(tour => {
+      const toursWithProducts = typedToursData.map((tour: Tour) => {
         if (tour.product_id && productsMap.has(tour.product_id)) {
-          const product = productsMap.get(tour.product_id);
+          const product = productsMap.get(tour.product_id)!;
           return {
             ...tour,
             products: {
@@ -245,7 +267,7 @@ export default function TicketBookingForm({
       
       console.log('예약 목록 조회 시작...');
       // 먼저 reservations만 조회
-      const { data: reservationsData, error: reservationsError } = await supabase
+      const { data: reservationsData, error: reservationsError } = await (supabase as any)
         .from('reservations')
         .select(`
           id, 
@@ -267,17 +289,18 @@ export default function TicketBookingForm({
       }
 
       // product_id가 있는 예약들만 필터링
-      const reservationsWithProductId = reservationsData.filter(reservation => reservation.product_id);
+      const typedReservationsData = (reservationsData || []) as Reservation[];
+      const reservationsWithProductId = typedReservationsData.filter((reservation: Reservation) => reservation.product_id);
       
       if (reservationsWithProductId.length === 0) {
-        setReservations(reservationsData);
+        setReservations(typedReservationsData);
         return;
       }
 
       // 모든 product_id를 한 번에 조회
-      const productIds = [...new Set(reservationsWithProductId.map(reservation => reservation.product_id))];
+      const productIds = [...new Set(reservationsWithProductId.map((reservation: Reservation) => reservation.product_id).filter(Boolean))] as string[];
       
-      const { data: productsData, error: productsError } = await supabase
+      const { data: productsData, error: productsError } = await (supabase as any)
         .from('products')
         .select(`
           id,
@@ -287,20 +310,20 @@ export default function TicketBookingForm({
 
       if (productsError) {
         console.warn('상품 정보 조회 오류:', productsError);
-        setReservations(reservationsData);
+        setReservations(typedReservationsData);
         return;
       }
 
       // products 데이터를 Map으로 변환하여 빠른 조회 가능하게 함
-      const productsMap = new Map();
-      (productsData || []).forEach(product => {
+      const productsMap = new Map<string, { id: string; name: string }>();
+      ((productsData || []) as Array<{ id: string; name: string }>).forEach((product: { id: string; name: string }) => {
         productsMap.set(product.id, product);
       });
 
       // 예약 데이터에 상품 정보 추가
-      const reservationsWithProducts = reservationsData.map(reservation => {
+      const reservationsWithProducts = typedReservationsData.map((reservation: Reservation) => {
         if (reservation.product_id && productsMap.has(reservation.product_id)) {
-          const product = productsMap.get(reservation.product_id);
+          const product = productsMap.get(reservation.product_id)!;
           return {
             ...reservation,
             products: {
@@ -320,14 +343,14 @@ export default function TicketBookingForm({
 
   const fetchCategories = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('ticket_bookings')
         .select('category')
         .not('category', 'is', null)
         .order('category');
       
       if (error) throw error;
-      const uniqueCategories = [...new Set(data?.map(item => item.category) || [])];
+      const uniqueCategories = [...new Set((data as Array<{ category: string }>)?.map((item: { category: string }) => item.category) || [])];
       setCategories(uniqueCategories);
     } catch (error) {
       console.error('카테고리 목록 조회 오류:', error);
@@ -336,14 +359,14 @@ export default function TicketBookingForm({
 
   const fetchCompanies = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('ticket_bookings')
         .select('company')
         .not('company', 'is', null)
         .order('company');
       
       if (error) throw error;
-      const uniqueCompanies = [...new Set(data?.map(item => item.company) || [])];
+      const uniqueCompanies = [...new Set((data as Array<{ company: string }>)?.map((item: { company: string }) => item.company) || [])];
       setCompanies(uniqueCompanies);
     } catch (error) {
       console.error('공급업체 목록 조회 오류:', error);
@@ -352,7 +375,7 @@ export default function TicketBookingForm({
 
   const fetchSupplierProducts = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('supplier_products')
         .select(`
           *,
@@ -374,7 +397,7 @@ export default function TicketBookingForm({
     }
   };
 
-  const createSupplierTicketPurchase = async (bookingId: string, supplierProductId: string, quantity: number, unitPrice: number) => {
+  const createSupplierTicketPurchase = async (bookingId: string, supplierProductId: string, quantity: number) => {
     try {
       const selectedProduct = supplierProducts.find(p => p.id === supplierProductId);
       if (!selectedProduct) return;
@@ -396,7 +419,7 @@ export default function TicketBookingForm({
         notes: `부킹 ID: ${bookingId}`
       };
 
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('supplier_ticket_purchases')
         .insert([purchaseData]);
 
@@ -591,12 +614,6 @@ export default function TicketBookingForm({
         }
       }
 
-      // UUID 유효성 검사 함수
-      const isValidUUID = (uuid: string) => {
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-        return uuidRegex.test(uuid);
-      };
-
       const bookingData = {
         ...formData,
         tour_id: formData.tour_id && formData.tour_id.trim() !== '' ? formData.tour_id : null,
@@ -627,7 +644,7 @@ export default function TicketBookingForm({
         };
         console.log('업데이트할 데이터:', updateData);
         
-        const { error: updateError } = await supabase
+        const { error: updateError } = await (supabase as any)
           .from('ticket_bookings')
           .update(updateData)
           .eq('id', booking.id);
@@ -635,7 +652,7 @@ export default function TicketBookingForm({
       } else {
         // 새로 생성인 경우
         console.log('새로 생성 모드');
-        const { data: insertedData, error: insertError } = await supabase
+        const { data: insertedData, error: insertError } = await (supabase as any)
           .from('ticket_bookings')
           .insert(bookingData)
           .select()
@@ -651,7 +668,7 @@ export default function TicketBookingForm({
 
       // 공급업체 티켓을 사용한 경우 구매 기록 생성
       if (formData.supplier_product_id && bookingData.id) {
-        await createSupplierTicketPurchase(bookingData.id, formData.supplier_product_id, formData.ea, formData.expense);
+        await createSupplierTicketPurchase(bookingData.id, formData.supplier_product_id, formData.ea);
       }
 
       onSave(bookingData as TicketBooking);
@@ -738,7 +755,10 @@ export default function TicketBookingForm({
                 onChange={(e) => {
                   setUseSupplierTicket(e.target.checked);
                   if (!e.target.checked) {
-                    setFormData(prev => ({ ...prev, supplier_product_id: undefined }));
+                    setFormData(prev => {
+                      const { supplier_product_id, ...rest } = prev;
+                      return rest;
+                    });
                   }
                 }}
                 className="mr-2"
@@ -1378,7 +1398,7 @@ export default function TicketBookingForm({
               <button
                 type="button"
                 onClick={() => {
-                  if (confirm('정말로 이 부킹을 삭제하시겠습니까?')) {
+                  if (booking?.id && confirm('정말로 이 부킹을 삭제하시겠습니까?')) {
                     onDelete(booking.id);
                   }
                 }}

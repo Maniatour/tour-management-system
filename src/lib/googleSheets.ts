@@ -92,7 +92,7 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 const formatGoogleApiError = (error: unknown, spreadsheetId: string, sheetName?: string): Error => {
   if (error && typeof error === 'object' && 'code' in error) {
     const code = error.code as number
-    const message = error.message || 'Unknown error'
+    const message = ('message' in error && typeof error.message === 'string') ? error.message : 'Unknown error'
     
     if (code === 404) {
       const serviceAccountEmail = process.env.GOOGLE_CLIENT_EMAIL
@@ -133,9 +133,9 @@ const retryWithBackoff = async <T>(
       return await operation()
     } catch (error) {
       // Google API 에러인 경우 상세 정보 추출
-      let apiError: any = error
+      let apiError: unknown = error
       if (error && typeof error === 'object' && 'response' in error) {
-        apiError = (error as any).response
+        apiError = (error as { response: unknown }).response
       } else if (error && typeof error === 'object' && 'code' in error) {
         apiError = error
       }
@@ -326,7 +326,7 @@ export const readGoogleSheet = async (spreadsheetId: string, range: string, chun
         valueRenderOption: 'UNFORMATTED_VALUE',
         dateTimeRenderOption: 'FORMATTED_STRING'
       })
-    }, 3, 2000, 8000, { spreadsheetId, sheetName })
+    }, 3, 2000, 8000, sheetName ? { spreadsheetId, sheetName } : { spreadsheetId })
 
     console.log(`🔍 Raw response for ${range}:`, {
       status: response.status,
@@ -531,7 +531,7 @@ export const getSheetNames = async (spreadsheetId: string, retryCount: number = 
       error.name === 'TimeoutError' ||
       error.message.includes('timeout') ||
       error.message.includes('TIMEOUT_ERR') ||
-      (error as any).code === 23 // TIMEOUT_ERR 코드
+      (error && typeof error === 'object' && 'code' in error && (error as { code: unknown }).code === 23) // TIMEOUT_ERR 코드
     )
     
     // 재시도 로직 (최대 2번)
@@ -554,7 +554,7 @@ export const getSheetNames = async (spreadsheetId: string, retryCount: number = 
         message: error.message,
         error: errorString,
         name: error.name,
-        code: (error as any).code
+        code: (error && typeof error === 'object' && 'code' in error) ? (error as { code: unknown }).code : undefined
       })
       
       if (isTimeoutError || errorMessage.includes('timeout')) {

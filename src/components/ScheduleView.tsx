@@ -74,8 +74,10 @@ export default function ScheduleView() {
   const [draggedTour, setDraggedTour] = useState<Tour | null>(null)
   const [dragOverCell, setDragOverCell] = useState<string | null>(null)
   const [unassignedTours, setUnassignedTours] = useState<Tour[]>([])
-  const [ticketBookings, setTicketBookings] = useState<Array<{ id: string; tour_id: string | null; status: string | null; ea: number | null }>>([])
+  const [ticketBookings, setTicketBookings] = useState<Array<{ id: string; tour_id: string | null; status: string | null; ea: number | null; company?: string; time?: string; check_in_date?: string }>>([])
+  const [tourHotelBookings, setTourHotelBookings] = useState<Array<{ id: string; tour_id: string | null; status: string | null; rooms: number | null; hotel?: string; check_in_date?: string }>>([])
   const [highlightedDate, setHighlightedDate] = useState<string | null>(null)
+  const [hoveredBookingDate, setHoveredBookingDate] = useState<string | null>(null)
   const [offSchedules, setOffSchedules] = useState<Array<{ team_email: string; off_date: string; reason: string; status: string }>>([])
   const [draggedUnassignedTour, setDraggedUnassignedTour] = useState<Tour | null>(null)
   const [draggedRole, setDraggedRole] = useState<'guide' | 'assistant' | null>(null)
@@ -172,7 +174,7 @@ export default function ScheduleView() {
           ...prev,
           [selectedDateForNote]: {
             note: noteText.trim(),
-            created_by: user?.email || undefined
+            ...(user?.email ? { created_by: user.email } : {})
           }
         }))
       }
@@ -706,7 +708,16 @@ export default function ScheduleView() {
       const { data: ticketBookingsData } = await (supabase as any)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .from('ticket_bookings' as any)
-        .select('id, tour_id, status, ea')
+        .select('id, tour_id, status, ea, company, time, check_in_date')
+        .gte('check_in_date', startDate)
+        .lte('check_in_date', endDate)
+
+      // 투어 호텔 부킹 데이터 가져오기
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: tourHotelBookingsData } = await (supabase as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('tour_hotel_bookings' as any)
+        .select('id, tour_id, status, rooms, hotel, check_in_date')
         .gte('check_in_date', startDate)
         .lte('check_in_date', endDate)
 
@@ -735,7 +746,7 @@ export default function ScheduleView() {
         dateNotesData.forEach((item: { note_date: string; note: string | null; created_by?: string | null }) => {
           notesMap[item.note_date] = {
             note: item.note || '',
-            created_by: item.created_by || undefined
+            ...(item.created_by ? { created_by: item.created_by } : {})
           }
         })
       }
@@ -753,6 +764,7 @@ export default function ScheduleView() {
       setReservations(reservationsData || [])
       setCustomers((customersData || []) as Customer[])
       setTicketBookings(ticketBookingsData || [])
+      setTourHotelBookings(tourHotelBookingsData || [])
       setOffSchedules(offSchedulesData || [])
       setDateNotes(notesMap)
 
@@ -1544,6 +1556,72 @@ export default function ScheduleView() {
 
     return dailyTotals
   }, [productScheduleData, monthDays])
+
+  // 공급업체 이름 변환 함수
+  const getCompanyDisplayName = (company: string): string => {
+    if (company === 'SEE Canyon') {
+      return "Dixie's"
+    }
+    return company
+  }
+
+  // 부킹 데이터 날짜별 합산
+  const bookingTotals = useMemo(() => {
+    const dailyTotals: { [date: string]: { 
+      ticketCount: number; 
+      hotelCount: number; 
+      totalCount: number;
+      ticketDetails: Array<{ company: string; time: string; ea: number }>;
+      hotelDetails: Array<{ hotel: string; rooms: number }>;
+    } } = {}
+    
+    monthDays.forEach(({ dateString }) => {
+      dailyTotals[dateString] = { 
+        ticketCount: 0, 
+        hotelCount: 0, 
+        totalCount: 0,
+        ticketDetails: [],
+        hotelDetails: []
+      }
+    })
+
+    // 입장권 부킹 합산
+    ticketBookings.forEach(booking => {
+      if (booking.check_in_date && (booking.status === 'confirmed' || booking.status === 'paid')) {
+        const dateString = booking.check_in_date
+        if (dailyTotals[dateString]) {
+          dailyTotals[dateString].ticketCount += booking.ea || 0
+          dailyTotals[dateString].totalCount += booking.ea || 0
+          if (booking.company && booking.time) {
+            dailyTotals[dateString].ticketDetails.push({
+              company: booking.company,
+              time: booking.time,
+              ea: booking.ea || 0
+            })
+          }
+        }
+      }
+    })
+
+    // 투어 호텔 부킹 합산
+    tourHotelBookings.forEach(booking => {
+      if (booking.check_in_date && (booking.status === 'confirmed' || booking.status === 'paid')) {
+        const dateString = booking.check_in_date
+        if (dailyTotals[dateString]) {
+          dailyTotals[dateString].hotelCount += booking.rooms || 0
+          dailyTotals[dateString].totalCount += booking.rooms || 0
+          if (booking.hotel) {
+            dailyTotals[dateString].hotelDetails.push({
+              hotel: booking.hotel,
+              rooms: booking.rooms || 0
+            })
+          }
+        }
+      }
+    })
+
+    return dailyTotals
+  }, [ticketBookings, tourHotelBookings, monthDays])
 
   // 가이드별 총계 계산
   const guideTotals = useMemo(() => {
@@ -2712,6 +2790,80 @@ export default function ScheduleView() {
               })}
             </tbody>
           </table>
+            </div>
+          </div>
+
+          {/* 부킹 테이블 */}
+          <div>
+            <div className="overflow-visible">
+              <table className="w-full" style={{tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px`}}>
+                <tbody className="divide-y divide-gray-200">
+                  <tr className="bg-purple-50">
+                    <td className="px-2 py-2 text-xs font-medium text-gray-900" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
+                      부킹
+                    </td>
+                    {monthDays.map(({ dateString }) => {
+                      const bookingData = bookingTotals[dateString]
+                      const hasBooking = bookingData && bookingData.totalCount > 0
+                      return (
+                        <td 
+                          key={dateString} 
+                          className="p-0 text-center text-xs relative"
+                          style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
+                          onMouseEnter={() => setHoveredBookingDate(dateString)}
+                          onMouseLeave={() => setHoveredBookingDate(null)}
+                        >
+                          <div className={`px-1 py-2 ${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''}`}>
+                            {hasBooking ? (
+                              <div className={`font-medium ${
+                                bookingData.totalCount === 0 
+                                  ? 'text-gray-300' 
+                                  : bookingData.totalCount < 5 
+                                    ? 'text-blue-600' 
+                                    : 'text-red-600'
+                              } ${isToday(dateString) ? 'text-red-700' : ''}`}>
+                                {bookingData.totalCount}
+                              </div>
+                            ) : (
+                              <div className="text-gray-300">-</div>
+                            )}
+                          </div>
+                          {/* 마우스 오버 시 부킹 상세 정보 표시 */}
+                          {hoveredBookingDate === dateString && hasBooking && bookingData && (
+                            <div className="absolute z-50 bottom-full left-1/2 transform -translate-x-1/2 mb-1 w-80 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg pointer-events-none">
+                              <div className="font-semibold mb-2">{dateString}</div>
+                              {bookingData.ticketDetails.length > 0 && (
+                                <div className="mb-2">
+                                  <div className="font-semibold text-yellow-400 mb-1">입장권 부킹</div>
+                                  {bookingData.ticketDetails.map((detail, idx) => (
+                                    <div key={idx} className="ml-2 mb-1">
+                                      {getCompanyDisplayName(detail.company)} - {detail.time} ({detail.ea}개)
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {bookingData.hotelDetails.length > 0 && (
+                                <div>
+                                  <div className="font-semibold text-yellow-400 mb-1">호텔 부킹</div>
+                                  {bookingData.hotelDetails.map((detail, idx) => (
+                                    <div key={idx} className="ml-2 mb-1">
+                                      {detail.hotel} ({detail.rooms}실)
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45"></div>
+                            </div>
+                          )}
+                        </td>
+                      )
+                    })}
+                    <td className="px-2 py-2 text-center text-xs font-medium" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
+                      <div>{Object.values(bookingTotals).reduce((sum, day) => sum + day.totalCount, 0)}</div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

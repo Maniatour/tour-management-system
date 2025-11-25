@@ -21,7 +21,8 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    // 타입 단언: 위에서 이미 체크했으므로 undefined가 아님
+    const supabase = createClient(supabaseUrl as string, supabaseServiceKey as string)
 
     // 마지막 동기화 시간 조회
     const { data: history, error } = await supabase
@@ -78,7 +79,8 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    // 타입 단언: 위에서 이미 체크했으므로 undefined가 아님
+    const supabase = createClient(supabaseUrl as string, supabaseServiceKey as string)
 
     // 동기화 히스토리 저장
     const { data, error } = await supabase
