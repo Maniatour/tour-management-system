@@ -1833,11 +1833,8 @@ export default function ScheduleView() {
                         onMouseLeave={() => setHoveredDate(null)}
                         title={hasNote ? dateNotes[dateString].note : '클릭하여 날짜 노트 작성'}
                       >
-                        <div className={`flex items-center justify-center gap-1 ${isToday(dateString) ? 'font-bold text-red-700' : hasNote ? 'font-semibold text-yellow-800' : ''}`}>
+                        <div className={`flex items-center justify-center ${isToday(dateString) ? 'font-bold text-red-700' : hasNote ? 'font-semibold text-yellow-800' : ''}`}>
                           <span>{date}일</span>
-                          {hasNote && (
-                            <span className="text-yellow-600 text-sm font-bold" title="노트 있음">📝</span>
-                          )}
                         </div>
                         <div className={`text-xs flex items-center justify-center gap-1 ${isToday(dateString) ? 'text-red-600' : hasNote ? 'text-yellow-700 font-medium' : 'text-gray-500'}`}>
                           {dayOfWeek}
@@ -2126,13 +2123,16 @@ export default function ScheduleView() {
                           
                           // 멀티데이 투어의 연속된 날짜인 경우: 셀 내용은 비워두고(드롭존만 유지), 상단 오버레이에서 하나의 박스로 표시
                           if (continuationTour && !dayData) {
+                            const hasNote = dateNotes[dateString]?.note
                             return (
                               <div 
                                 key={dateString} 
-                                className={`px-1 py-0 text-center text-xs bg-white relative ${
+                                className={`px-1 py-0 text-center text-xs relative ${
                                   isToday(dateString) 
                                     ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
-                                    : ''
+                                    : hasNote
+                                      ? 'bg-yellow-100'
+                                      : 'bg-white'
                                 }`}
                                 style={{ minWidth: '40px', boxSizing: 'border-box' }}
                               >
@@ -2222,13 +2222,16 @@ export default function ScheduleView() {
                           }
                           
                           // 일반 셀 렌더링 (1일 투어 또는 멀티데이 투어 시작일)
+                          const hasNote = dateNotes[dateString]?.note
                           return (
                             <div 
                               key={dateString} 
-                              className={`px-1 py-0 text-center text-xs bg-white relative ${
+                              className={`px-1 py-0 text-center text-xs relative ${
                                 isToday(dateString) 
                                   ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
-                                  : ''
+                                  : hasNote
+                                    ? 'bg-yellow-100'
+                                    : 'bg-white'
                               } ${highlightedDate === dateString ? 'bg-yellow-200' : ''}`}
                               style={{ minWidth: '40px', boxSizing: 'border-box' }}
                             >
