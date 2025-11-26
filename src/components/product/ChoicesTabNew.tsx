@@ -701,14 +701,14 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
     }))
   }, [])
 
-  // 초이스 업데이트
-  const updateChoiceOption = useCallback((groupIndex: number, optionIndex: number, field: keyof ChoiceOption, value: string | number | boolean) => {
+  // 초이스 업데이트 - optionId로 찾아서 업데이트 (정렬 순서와 무관하게 정확히 업데이트)
+  const updateChoiceOption = useCallback((groupIndex: number, optionId: string, field: keyof ChoiceOption, value: string | number | boolean) => {
     setProductChoices(prev => prev.map((group, i) => 
       i === groupIndex 
         ? { 
             ...group, 
-            options: group.options.map((option, j) => 
-              j === optionIndex ? { ...option, [field]: value } : option
+            options: group.options.map((option) => 
+              option.id === optionId ? { ...option, [field]: value } : option
             )
           }
         : group
@@ -716,9 +716,9 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   }, [])
 
 
-  // 이미지 업로드 처리 함수
-  const handleImageUpload = useCallback(async (file: File, groupIndex: number, optionIndex: number) => {
-    const uploadKey = `${groupIndex}-${optionIndex}`
+  // 이미지 업로드 처리 함수 - optionId로 찾아서 업데이트
+  const handleImageUpload = useCallback(async (file: File, groupIndex: number, optionId: string) => {
+    const uploadKey = `${groupIndex}-${optionId}`
     setUploadingImages(prev => ({ ...prev, [uploadKey]: true }))
     
     try {
@@ -771,8 +771,8 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         .getPublicUrl(fileName)
 
       // 이미지 URL과 alt 텍스트 업데이트
-      updateChoiceOption(groupIndex, optionIndex, 'image_url', urlData.publicUrl)
-      updateChoiceOption(groupIndex, optionIndex, 'image_alt', file.name)
+      updateChoiceOption(groupIndex, optionId, 'image_url', urlData.publicUrl)
+      updateChoiceOption(groupIndex, optionId, 'image_alt', file.name)
     } catch (error) {
       console.error('이미지 업로드 오류:', error)
       alert(`이미지 업로드 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
@@ -1368,23 +1368,23 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                            onDragOver={(e) => {
                              e.preventDefault()
                              e.stopPropagation()
-                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: true }))
+                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${option.id}`]: true }))
                            }}
                            onDragLeave={(e) => {
                              e.preventDefault()
                              e.stopPropagation()
-                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: false }))
+                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${option.id}`]: false }))
                            }}
                            onDrop={async (e) => {
                              e.preventDefault()
                              e.stopPropagation()
-                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${optionIndex}`]: false }))
+                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${option.id}`]: false }))
                              
                              const files = Array.from(e.dataTransfer.files)
                              const imageFiles = files.filter(file => file.type.startsWith('image/'))
                              
                              if (imageFiles.length > 0) {
-                               await handleImageUpload(imageFiles[0], groupIndex, optionIndex)
+                               await handleImageUpload(imageFiles[0], groupIndex, option.id)
                              }
                            }}
                          >
@@ -1394,12 +1394,12 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                              fill
                              sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
                              className={`object-cover transition-all ${
-                               dragOverStates[`${groupIndex}-${actualIndex}`]
+                               dragOverStates[`${groupIndex}-${option.id}`]
                                  ? 'scale-105 brightness-110'
                                  : ''
                              }`}
                            />
-                           {dragOverStates[`${groupIndex}-${actualIndex}`] && (
+                           {dragOverStates[`${groupIndex}-${option.id}`] && (
                              <div className="absolute inset-0 bg-blue-500 bg-opacity-30 flex items-center justify-center z-10">
                                <p className="text-sm font-medium text-white bg-blue-600 px-4 py-2 rounded-lg">이미지 놓기</p>
                              </div>
@@ -1409,21 +1409,21 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                              <input
                                type="file"
                                accept="image/*"
-                               disabled={uploadingImages[`${groupIndex}-${actualIndex}`]}
+                               disabled={uploadingImages[`${groupIndex}-${option.id}`]}
                                onChange={async (e) => {
                                  const file = e.target.files?.[0]
                                  if (file) {
-                                   await handleImageUpload(file, groupIndex, actualIndex)
+                                   await handleImageUpload(file, groupIndex, option.id)
                                    e.target.value = ''
                                  }
                                }}
                                className="hidden"
-                               id={`file-upload-${groupIndex}-${actualIndex}`}
+                               id={`file-upload-${groupIndex}-${option.id}`}
                              />
                              <button
                                onClick={() => {
-                                 if (!uploadingImages[`${groupIndex}-${actualIndex}`]) {
-                                   document.getElementById(`file-upload-${groupIndex}-${actualIndex}`)?.click()
+                                 if (!uploadingImages[`${groupIndex}-${option.id}`]) {
+                                   document.getElementById(`file-upload-${groupIndex}-${option.id}`)?.click()
                                  }
                                }}
                                className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md"
@@ -1433,8 +1433,8 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                              </button>
                              <button
                                onClick={() => {
-                                 updateChoiceOption(groupIndex, actualIndex, 'image_url', '')
-                                 updateChoiceOption(groupIndex, actualIndex, 'image_alt', '')
+                                 updateChoiceOption(groupIndex, option.id, 'image_url', '')
+                                 updateChoiceOption(groupIndex, option.id, 'image_alt', '')
                                }}
                                className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-md"
                                title="이미지 삭제"
@@ -1446,53 +1446,53 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                        ) : (
                          <div 
                            className={`w-full h-full border-2 border-dashed transition-all flex items-center justify-center ${
-                             dragOverStates[`${groupIndex}-${actualIndex}`]
+                             dragOverStates[`${groupIndex}-${option.id}`]
                                ? 'border-blue-400 bg-blue-50'
                                : 'border-gray-200 bg-gray-50'
-                           } ${uploadingImages[`${groupIndex}-${actualIndex}`] ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
+                           } ${uploadingImages[`${groupIndex}-${option.id}`] ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}
                            onDragOver={(e) => {
                              e.preventDefault()
                              e.stopPropagation()
-                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${actualIndex}`]: true }))
+                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${option.id}`]: true }))
                            }}
                            onDragLeave={(e) => {
                              e.preventDefault()
                              e.stopPropagation()
-                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${actualIndex}`]: false }))
+                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${option.id}`]: false }))
                            }}
                            onDrop={async (e) => {
                              e.preventDefault()
                              e.stopPropagation()
-                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${actualIndex}`]: false }))
+                             setDragOverStates(prev => ({ ...prev, [`${groupIndex}-${option.id}`]: false }))
                              
                              const files = Array.from(e.dataTransfer.files)
                              const imageFiles = files.filter(file => file.type.startsWith('image/'))
                              
                              if (imageFiles.length > 0) {
-                               await handleImageUpload(imageFiles[0], groupIndex, actualIndex)
+                               await handleImageUpload(imageFiles[0], groupIndex, option.id)
                              }
                            }}
                            onClick={() => {
-                             if (!uploadingImages[`${groupIndex}-${actualIndex}`]) {
-                               document.getElementById(`file-upload-${groupIndex}-${actualIndex}`)?.click()
+                             if (!uploadingImages[`${groupIndex}-${option.id}`]) {
+                               document.getElementById(`file-upload-${groupIndex}-${option.id}`)?.click()
                              }
                            }}
                          >
                            <input
                              type="file"
                              accept="image/*"
-                             disabled={uploadingImages[`${groupIndex}-${actualIndex}`]}
+                             disabled={uploadingImages[`${groupIndex}-${option.id}`]}
                              onChange={async (e) => {
                                const file = e.target.files?.[0]
                                if (file) {
-                                 await handleImageUpload(file, groupIndex, actualIndex)
+                                 await handleImageUpload(file, groupIndex, option.id)
                                  e.target.value = ''
                                }
                              }}
                              className="hidden"
-                             id={`file-upload-${groupIndex}-${actualIndex}`}
+                             id={`file-upload-${groupIndex}-${option.id}`}
                            />
-                           {uploadingImages[`${groupIndex}-${actualIndex}`] ? (
+                           {uploadingImages[`${groupIndex}-${option.id}`] ? (
                              <div className="flex flex-col items-center justify-center">
                                <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
                                <p className="text-sm text-blue-600 font-medium">업로드 중...</p>
@@ -1557,9 +1557,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                type="checkbox"
                                checked={option.is_default}
                                onChange={(e) => {
-                                 const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-                                 const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
-                                 updateChoiceOption(groupIndex, actualIndex, 'is_default', e.target.checked)
+                                 updateChoiceOption(groupIndex, option.id, 'is_default', e.target.checked)
                                }}
                                className="mr-1 w-3 h-3 text-blue-600 rounded focus:ring-blue-500"
                              />
@@ -1601,9 +1599,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                type="text"
                                value={option.option_name_ko}
                                onChange={(e) => {
-                                 const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-                                 const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
-                                 updateChoiceOption(groupIndex, actualIndex, 'option_name_ko', e.target.value)
+                                 updateChoiceOption(groupIndex, option.id, 'option_name_ko', e.target.value)
                                }}
                                placeholder="초이스명 (한국어)"
                                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
@@ -1613,9 +1609,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                type="text"
                                value={option.option_name}
                                onChange={(e) => {
-                                 const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-                                 const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
-                                 updateChoiceOption(groupIndex, actualIndex, 'option_name', e.target.value)
+                                 updateChoiceOption(groupIndex, option.id, 'option_name', e.target.value)
                                }}
                                placeholder="초이스명 (영어)"
                                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
@@ -1628,9 +1622,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                              <textarea
                                value={option.description_ko || ''}
                                onChange={(e) => {
-                                 const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-                                 const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
-                                 updateChoiceOption(groupIndex, actualIndex, 'description_ko', e.target.value)
+                                 updateChoiceOption(groupIndex, option.id, 'description_ko', e.target.value)
                                }}
                                placeholder="설명 (한국어)"
                                rows={2}
@@ -1640,9 +1632,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                              <textarea
                                value={option.description || ''}
                                onChange={(e) => {
-                                 const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-                                 const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
-                                 updateChoiceOption(groupIndex, actualIndex, 'description', e.target.value)
+                                 updateChoiceOption(groupIndex, option.id, 'description', e.target.value)
                                }}
                                placeholder="Description (English)"
                                rows={2}
@@ -1660,9 +1650,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                    type="number"
                                    value={option.adult_price}
                                    onChange={(e) => {
-                                     const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-                                     const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
-                                     updateChoiceOption(groupIndex, actualIndex, 'adult_price', parseInt(e.target.value) || 0)
+                                     updateChoiceOption(groupIndex, option.id, 'adult_price', parseInt(e.target.value) || 0)
                                    }}
                                    placeholder="0"
                                    className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
@@ -1674,9 +1662,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                    type="number"
                                    value={option.child_price}
                                    onChange={(e) => {
-                                     const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-                                     const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
-                                     updateChoiceOption(groupIndex, actualIndex, 'child_price', parseInt(e.target.value) || 0)
+                                     updateChoiceOption(groupIndex, option.id, 'child_price', parseInt(e.target.value) || 0)
                                    }}
                                    placeholder="0"
                                    className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
@@ -1688,9 +1674,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                    type="number"
                                    value={option.infant_price}
                                    onChange={(e) => {
-                                     const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-                                     const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
-                                     updateChoiceOption(groupIndex, actualIndex, 'infant_price', parseInt(e.target.value) || 0)
+                                     updateChoiceOption(groupIndex, option.id, 'infant_price', parseInt(e.target.value) || 0)
                                    }}
                                    placeholder="0"
                                    className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
@@ -1783,9 +1767,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                      type="number"
                                      value={option.capacity}
                                      onChange={(e) => {
-                                       const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-                                       const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
-                                       updateChoiceOption(groupIndex, actualIndex, 'capacity', parseInt(e.target.value) || 1)
+                                       updateChoiceOption(groupIndex, option.id, 'capacity', parseInt(e.target.value) || 1)
                                      }}
                                      placeholder="1"
                                      className="w-20 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
@@ -1797,9 +1779,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                                    type="checkbox"
                                    checked={option.is_active}
                                    onChange={(e) => {
-                                     const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-                                     const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
-                                     updateChoiceOption(groupIndex, actualIndex, 'is_active', e.target.checked)
+                                     updateChoiceOption(groupIndex, option.id, 'is_active', e.target.checked)
                                    }}
                                    className="mr-2 w-3 h-3 text-blue-600 rounded focus:ring-blue-500"
                                  />

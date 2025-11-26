@@ -260,7 +260,6 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const [showPricingModal, setShowPricingModal] = useState(false)
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
-  const [calendarLoading, setCalendarLoading] = useState(false)
 
   // 페이지네이션 상태
   const [currentPage, setCurrentPage] = useState(1)
@@ -1088,7 +1087,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       product_id: reservation.productId,
       product_name: getProductName(reservation.productId, products || []),
       tour_date: reservation.tourDate,
-      tour_status: reservation.status,
+      status: reservation.status,
       tour_time: reservation.tourTime,
       pickup_hotel: reservation.pickUpHotel,
       pickup_time: reservation.pickUpTime,
@@ -1744,7 +1743,6 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               </button>
               <button
                 onClick={() => {
-                  setCalendarLoading(true)
                   setViewMode('calendar')
                 }}
                 className={`flex items-center space-x-1 px-2 py-1 rounded-md transition-colors text-xs ${
@@ -2142,20 +2140,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         </div>
       ) : viewMode === 'calendar' ? (
         /* 달력뷰 */
-        calendarLoading ? (
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">달력을 불러오는 중...</p>
-          </div>
-        ) : (
-          <ReservationCalendar 
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            reservations={calendarReservations as any} 
-            onReservationClick={handleCalendarReservationClick}
-            onLoadComplete={() => setCalendarLoading(false)}
-          />
-        )
-        ) : (
+        <ReservationCalendar 
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          reservations={calendarReservations as any} 
+          onReservationClick={handleCalendarReservationClick}
+        />
+      ) : (
           /* 카드뷰 */
           <>
             {filteredReservations.length === 0 ? (

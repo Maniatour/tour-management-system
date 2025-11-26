@@ -340,8 +340,8 @@ export const flexibleSync = async (
     // 테이블별 필수 필드 정의
     const getRequiredFields = (tableName: string): string[] => {
       const requiredFieldsMap: Record<string, string[]> = {
-        payment_records: ['reservation_id', 'amount', 'payment_method'],
-        reservations: ['customer_email', 'product_id'],
+        payment_records: ['reservation_id'],  // amount, payment_method는 nullable
+        reservations: ['product_id'],  // customer_email은 customers 테이블에서 customer_id로 조회하는 데이터
         tours: ['product_id'],
         // 다른 테이블의 필수 필드도 여기에 추가 가능
       }
@@ -432,33 +432,46 @@ export const flexibleSync = async (
       .filter((row): row is Record<string, unknown> => {
         // null인 행 제거 (빈 행)
         if (!row) return false
-        
-        // 필수 필드 검증 (변환 후 - 데이터베이스 컬럼명 기준)
-        if (requiredFieldsForTable.length > 0) {
-          const missingFields = requiredFieldsForTable.filter(field => {
-            const value = row[field]
-            return value === undefined || 
-                   value === null || 
-                   value === '' || 
-                   (typeof value === 'string' && value.trim() === '')
-          })
-          
-          if (missingFields.length > 0) {
-            console.warn(`행 건너뜀: 필수 필드 누락 (${missingFields.join(', ')})`, {
-              rowKeys: Object.keys(row),
-              rowValues: row,
-              missingFields
-            })
-            onProgress?.({ 
-              type: 'warn', 
-              message: `행 건너뜀: 필수 필드 누락 - ${missingFields.join(', ')}. 사용 가능한 필드: ${Object.keys(row).join(', ')}` 
-            })
-            return false
-          }
-        }
-        
         return true
       })
+
+    // 필수 필드 검증 - 누락된 행이 있으면 에러 발생
+    if (requiredFieldsForTable.length > 0) {
+      const validationErrors: { rowId: string; missingFields: string[] }[] = []
+      
+      transformedData.forEach((row, index) => {
+        const missingFields = requiredFieldsForTable.filter(field => {
+          const value = row[field]
+          return value === undefined || 
+                 value === null || 
+                 value === '' || 
+                 (typeof value === 'string' && value.trim() === '')
+        })
+        
+        if (missingFields.length > 0) {
+          const rowId = (row.id as string) || `행 ${index + 1}`
+          validationErrors.push({ rowId, missingFields })
+          console.error(`필수 필드 누락 에러 (${rowId}): ${missingFields.join(', ')}`, {
+            rowKeys: Object.keys(row),
+            rowValues: row,
+            missingFields
+          })
+        }
+      })
+      
+      if (validationErrors.length > 0) {
+        const errorMessage = `동기화 실패: ${validationErrors.length}개 행에서 필수 필드가 누락되었습니다.\n` +
+          validationErrors.slice(0, 10).map(e => `- ${e.rowId}: ${e.missingFields.join(', ')}`).join('\n') +
+          (validationErrors.length > 10 ? `\n... 외 ${validationErrors.length - 10}개 더` : '')
+        
+        onProgress?.({ 
+          type: 'error', 
+          message: errorMessage 
+        })
+        
+        throw new Error(errorMessage)
+      }
+    }
 
     const totalRows = transformedData.length
     const mode: 'incremental' | 'full' = 'full'

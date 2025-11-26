@@ -125,13 +125,15 @@ const ReservationCalendar = memo(function ReservationCalendar({
     return date.getMonth() === currentDate.getMonth()
   }, [currentDate])
 
-  // 예약 상태에 따른 색상 반환 (메모이제이션)
+  // 예약 상태에 따른 색상 반환 (메모이제이션) - 대소문자 구분 없이 비교
   const getReservationStatusColor = useCallback((status: string) => {
-    switch (status) {
+    const normalizedStatus = status?.toLowerCase() || ''
+    switch (normalizedStatus) {
       case 'pending': return 'bg-yellow-500'
       case 'confirmed': return 'bg-green-500'
       case 'completed': return 'bg-blue-500'
-      case 'cancelled': return 'bg-red-500'
+      case 'cancelled': 
+      case 'canceled': return 'bg-red-500'
       case 'recruiting': return 'bg-purple-500'
       default: return 'bg-gray-500'
     }
@@ -184,13 +186,15 @@ const ReservationCalendar = memo(function ReservationCalendar({
     isCurrentMonthDay: boolean
     isTodayDate: boolean
   }) => {
-    // 예약 상태에 따른 색상 반환 (로컬 함수)
+    // 예약 상태에 따른 색상 반환 (로컬 함수) - 대소문자 구분 없이 비교
     const getReservationStatusColor = (status: string) => {
-      switch (status) {
+      const normalizedStatus = status?.toLowerCase() || ''
+      switch (normalizedStatus) {
         case 'pending': return 'bg-yellow-500'
         case 'confirmed': return 'bg-green-500'
         case 'completed': return 'bg-blue-500'
-        case 'cancelled': return 'bg-red-500'
+        case 'cancelled': 
+        case 'canceled': return 'bg-red-500'
         case 'recruiting': return 'bg-purple-500'
         default: return 'bg-gray-500'
       }
@@ -217,10 +221,25 @@ const ReservationCalendar = memo(function ReservationCalendar({
               ? (reservation.products?.name_en || reservation.product_name_en || reservation.product_name || reservation.product_id || '상품명 없음')
               : (reservation.products?.name_ko || reservation.product_name || reservation.products?.name_en || reservation.product_id || '상품명 없음')
             const totalPeople = reservation.total_people || 0
-            const status = reservation.status || '상태 없음'
+            const rawStatus = reservation.status || ''
+            
+            // 상태 라벨 한글 변환 (대소문자 구분 없이)
+            const getStatusLabel = (status: string) => {
+              const normalizedStatus = status?.toLowerCase() || ''
+              switch (normalizedStatus) {
+                case 'pending': return '대기중'
+                case 'confirmed': return '확정'
+                case 'completed': return '완료'
+                case 'cancelled': 
+                case 'canceled': return '취소'
+                case 'recruiting': return '모집중'
+                default: return status || '상태 없음'
+              }
+            }
+            const statusLabel = getStatusLabel(rawStatus)
             
             // 툴팁 텍스트 구성
-            let tooltipText = `고객: ${customerName}\n상품: ${productName}\n총인원: ${totalPeople}명\n상태: ${status}`
+            let tooltipText = `고객: ${customerName}\n상품: ${productName}\n총인원: ${totalPeople}명\n상태: ${statusLabel}`
             
             // 추가 정보가 있으면 툴팁에 포함
             if (reservation.pickup_hotel) {
@@ -234,7 +253,7 @@ const ReservationCalendar = memo(function ReservationCalendar({
             }
             
             // 상태에 따른 색상 결정
-            const statusColor = getReservationStatusColor(status)
+            const statusColor = getReservationStatusColor(rawStatus)
             
             // 고유한 key 생성
             const uniqueKey = `${reservation.id}-${reservationIndex}-${date.getTime()}`
@@ -249,7 +268,7 @@ const ReservationCalendar = memo(function ReservationCalendar({
                 <div className="truncate">
                   <div className="font-medium">{customerName}</div>
                   <div className="opacity-90 text-xs">
-                    {productName} | {totalPeople}명 | {status}
+                    {productName} | {totalPeople}명 | {statusLabel}
                   </div>
                 </div>
               </div>
