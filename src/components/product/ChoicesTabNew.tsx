@@ -988,24 +988,45 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
             .substring(0, 50) || 'template'
 
         // 템플릿 그룹이 이미 존재하는지 확인 (template_group 또는 template_group_ko로 검색)
-        const { data: existingTemplate } = await supabase
+        // 주의: is_choice_template = true AND (template_group = X OR template_group_ko = Y) 조건으로 검색
+        const { data: existingByGroup } = await supabase
           .from('options')
           .select('id')
           .eq('is_choice_template', true)
-          .or(`template_group.eq.${templateGroup},template_group_ko.eq.${templateGroupKo}`)
+          .eq('template_group', templateGroup)
           .limit(1)
 
-        if (existingTemplate && existingTemplate.length > 0) {
+        const { data: existingByGroupKo } = await supabase
+          .from('options')
+          .select('id')
+          .eq('is_choice_template', true)
+          .eq('template_group_ko', templateGroupKo)
+          .limit(1)
+
+        const existingTemplate = (existingByGroup && existingByGroup.length > 0) || 
+                                 (existingByGroupKo && existingByGroupKo.length > 0)
+
+        if (existingTemplate) {
           // 이미 존재하는 경우 업데이트할지 물어보기
           if (!confirm(`템플릿 "${templateGroupKo}"이 이미 존재합니다. 덮어쓰시겠습니까?`)) {
             continue
           }
-          // 기존 템플릿 삭제
-          await supabase
-            .from('options')
-            .delete()
-            .eq('is_choice_template', true)
-            .or(`template_group.eq.${templateGroup},template_group_ko.eq.${templateGroupKo}`)
+          // 기존 템플릿 삭제 - template_group으로 삭제
+          if (existingByGroup && existingByGroup.length > 0) {
+            await supabase
+              .from('options')
+              .delete()
+              .eq('is_choice_template', true)
+              .eq('template_group', templateGroup)
+          }
+          // template_group_ko로도 삭제 (다른 레코드일 수 있음)
+          if (existingByGroupKo && existingByGroupKo.length > 0) {
+            await supabase
+              .from('options')
+              .delete()
+              .eq('is_choice_template', true)
+              .eq('template_group_ko', templateGroupKo)
+          }
         }
 
         // 각 옵션을 템플릿으로 변환
