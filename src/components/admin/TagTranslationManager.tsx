@@ -1,16 +1,18 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { Plus, Edit2, Trash2, Save, X } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { Plus, Edit2, Trash2, Save, X, Upload, Image as ImageIcon } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 import TranslationManager from './TranslationManager'
 import JsonSyncManager from './JsonSyncManager'
+import Image from 'next/image'
 
 interface Tag {
   id: string
   key: string
   is_system: boolean
+  icon_url?: string
   translations: {
     [locale: string]: {
       label: string
@@ -40,9 +42,14 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
   const [newTagKey, setNewTagKey] = useState('')
   const [newTagIsSystem, setNewTagIsSystem] = useState(false)
   const [newTagTranslations, setNewTagTranslations] = useState<{ [locale: string]: { label: string; pronunciation?: string; notes?: string } }>({})
+  const [newTagIconUrl, setNewTagIconUrl] = useState('')
+  const [uploadingIcon, setUploadingIcon] = useState(false)
+  const [iconPreview, setIconPreview] = useState<string | null>(null)
+  const iconInputRef = useRef<HTMLInputElement>(null)
   const [unmigratedTags, setUnmigratedTags] = useState<string[]>([])
   const [showUnmigratedTags, setShowUnmigratedTags] = useState(false)
   const [migrating, setMigrating] = useState(false)
+  const [editingIconTagId, setEditingIconTagId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchTags()
@@ -58,6 +65,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
           id,
           key,
           is_system,
+          icon_url,
           tag_translations (
             locale,
             label,
@@ -76,6 +84,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const tagsWithTranslations = (tagsData || []).map((tag: any) => ({
         ...tag,
+        icon_url: tag.icon_url,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         translations: ((tag.tag_translations as any[]) || []).reduce((acc: any, trans: any) => {
           acc[trans.locale] = {
@@ -215,6 +224,124 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
     }))
   }
 
+  // 아이콘 업로드 함수
+  const handleIconUpload = async (file: File, tagId?: string) => {
+    if (!file) return null
+
+    // 이미지 파일 검증
+    if (!file.type.startsWith('image/')) {
+      alert('이미지 파일만 업로드할 수 있습니다.')
+      return null
+    }
+
+    // 파일 크기 제한 (2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      alert('파일 크기는 2MB 이하여야 합니다.')
+      return null
+    }
+
+    setUploadingIcon(true)
+
+    try {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${tagId || `new_${Date.now()}`}_${Date.now()}.${fileExt}`
+      const filePath = `tag-icons/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('tag-icons')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true
+        })
+
+      if (uploadError) {
+        console.error('Icon upload error:', uploadError)
+        alert('아이콘 업로드 중 오류가 발생했습니다.')
+        return null
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('tag-icons')
+        .getPublicUrl(filePath)
+
+      return publicUrl
+    } catch (error) {
+      console.error('Icon upload error:', error)
+      alert('아이콘 업로드 중 오류가 발생했습니다.')
+      return null
+    } finally {
+      setUploadingIcon(false)
+    }
+  }
+
+  // 새 태그용 아이콘 선택 핸들러
+  const handleNewTagIconSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // 미리보기 생성
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      setIconPreview(reader.result as string)
+    }
+    reader.readAsDataURL(file)
+
+    const iconUrl = await handleIconUpload(file)
+    if (iconUrl) {
+      setNewTagIconUrl(iconUrl)
+    }
+  }
+
+  // 기존 태그 아이콘 업데이트
+  const handleUpdateTagIcon = async (tagId: string, file: File) => {
+    const iconUrl = await handleIconUpload(file, tagId)
+    if (!iconUrl) return
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        .from('tags')
+        .update({ icon_url: iconUrl })
+        .eq('id', tagId)
+
+      if (error) {
+        console.error('Error updating tag icon:', error)
+        alert('아이콘 업데이트 중 오류가 발생했습니다.')
+        return
+      }
+
+      await fetchTags()
+      setEditingIconTagId(null)
+      alert('아이콘이 업데이트되었습니다.')
+    } catch (error) {
+      console.error('Error updating tag icon:', error)
+    }
+  }
+
+  // 태그 아이콘 삭제
+  const handleDeleteTagIcon = async (tagId: string) => {
+    if (!confirm('아이콘을 삭제하시겠습니까?')) return
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        .from('tags')
+        .update({ icon_url: null })
+        .eq('id', tagId)
+
+      if (error) {
+        console.error('Error deleting tag icon:', error)
+        alert('아이콘 삭제 중 오류가 발생했습니다.')
+        return
+      }
+
+      await fetchTags()
+      alert('아이콘이 삭제되었습니다.')
+    } catch (error) {
+      console.error('Error deleting tag icon:', error)
+    }
+  }
+
   const handleAddTag = async () => {
     if (!newTagKey.trim()) {
       alert(t('tagKeyRequired'))
@@ -236,7 +363,8 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
         .insert({
           id: crypto.randomUUID(),
           key: newTagKey.trim(),
-          is_system: newTagIsSystem
+          is_system: newTagIsSystem,
+          icon_url: newTagIconUrl || null
         })
         .select()
         .single()
@@ -290,6 +418,8 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
       setNewTagKey('')
       setNewTagIsSystem(false)
       setNewTagTranslations({})
+      setNewTagIconUrl('')
+      setIconPreview(null)
       await fetchTags()
       await fetchUnmigratedTags()
     } catch (error) {
@@ -564,6 +694,9 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  아이콘
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   {t('tagKey')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -579,6 +712,58 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
             <tbody className="bg-white divide-y divide-gray-200">
               {tags.map((tag) => (
                 <tr key={tag.id}>
+                  {/* 아이콘 셀 */}
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center space-x-2">
+                      {tag.icon_url ? (
+                        <div className="relative group">
+                          <Image
+                            src={tag.icon_url}
+                            alt={`${tag.key} icon`}
+                            width={32}
+                            height={32}
+                            className="w-8 h-8 object-contain rounded"
+                          />
+                          <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded">
+                            <button
+                              onClick={() => setEditingIconTagId(tag.id)}
+                              className="text-white p-1 hover:text-blue-300"
+                              title="아이콘 변경"
+                            >
+                              <Edit2 size={12} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTagIcon(tag.id)}
+                              className="text-white p-1 hover:text-red-300"
+                              title="아이콘 삭제"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setEditingIconTagId(tag.id)}
+                          className="w-8 h-8 border-2 border-dashed border-gray-300 rounded flex items-center justify-center text-gray-400 hover:border-blue-500 hover:text-blue-500 transition-colors"
+                          title="아이콘 추가"
+                        >
+                          <ImageIcon size={16} />
+                        </button>
+                      )}
+                      {/* 아이콘 업로드 입력 */}
+                      {editingIconTagId === tag.id && (
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) handleUpdateTagIcon(tag.id, file)
+                          }}
+                          className="text-xs w-24"
+                        />
+                      )}
+                    </div>
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {tag.key}
                   </td>
@@ -706,6 +891,64 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                 </div>
               </div>
 
+              {/* 아이콘 업로드 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  태그 아이콘 (선택사항)
+                </label>
+                <div className="flex items-center space-x-4">
+                  {/* 미리보기 */}
+                  <div className="w-16 h-16 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center overflow-hidden bg-gray-50">
+                    {iconPreview || newTagIconUrl ? (
+                      <Image
+                        src={iconPreview || newTagIconUrl}
+                        alt="Icon preview"
+                        width={64}
+                        height={64}
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <ImageIcon className="w-8 h-8 text-gray-400" />
+                    )}
+                  </div>
+                  
+                  {/* 업로드 버튼 */}
+                  <div className="flex-1">
+                    <input
+                      ref={iconInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleNewTagIconSelect}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => iconInputRef.current?.click()}
+                      disabled={uploadingIcon}
+                      className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                    >
+                      <Upload size={16} />
+                      <span>{uploadingIcon ? '업로드 중...' : '아이콘 업로드'}</span>
+                    </button>
+                    <p className="text-xs text-gray-500 mt-1">
+                      PNG, JPG, SVG (최대 2MB)
+                    </p>
+                    {newTagIconUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewTagIconUrl('')
+                          setIconPreview(null)
+                        }}
+                        className="text-xs text-red-600 hover:text-red-700 mt-1"
+                      >
+                        아이콘 제거
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* 언어별 번역 입력 */}
               <div className="border-t pt-4">
                 <h4 className="text-sm font-medium text-gray-700 mb-3">{t('translationAdd')}</h4>
@@ -755,6 +998,8 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                   setNewTagKey('')
                   setNewTagIsSystem(false)
                   setNewTagTranslations({})
+                  setNewTagIconUrl('')
+                  setIconPreview(null)
                 }}
                 className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400"
               >

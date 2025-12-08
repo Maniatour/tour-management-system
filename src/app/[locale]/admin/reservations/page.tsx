@@ -43,44 +43,33 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const t = useTranslations('reservations')
   const { user } = useAuth()
   
-  // 그룹별 색상 매핑 함수
-  const getGroupColorClasses = (groupId: string, groupName?: string) => {
-    // 그룹 이름이나 ID에 따라 색상 결정
-    const groupNameStr = (groupName || groupId).toLowerCase()
-    
-    // 특정 그룹에 대한 색상 매핑
-    if (groupNameStr.includes('canyon') || groupNameStr.includes('캐년')) {
-      return "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200"
-    }
-    if (groupNameStr.includes('hotel') || groupNameStr.includes('호텔') || groupNameStr.includes('room') || groupNameStr.includes('룸')) {
-      return "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200"
-    }
-    if (groupNameStr.includes('meal') || groupNameStr.includes('식사') || groupNameStr.includes('food')) {
-      return "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200"
-    }
-    if (groupNameStr.includes('transport') || groupNameStr.includes('교통') || groupNameStr.includes('vehicle')) {
-      return "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200"
-    }
-    if (groupNameStr.includes('activity') || groupNameStr.includes('활동') || groupNameStr.includes('experience')) {
-      return "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-pink-100 text-pink-800 border border-pink-200"
-    }
-    
-    // 기본 색상 팔레트 (그룹 ID 해시 기반)
+  // 초이스 옵션별 색상 매핑 함수 (옵션 이름 기준으로 색상 결정)
+  const getGroupColorClasses = (groupId: string, groupName?: string, optionName?: string) => {
+    // 풍부한 색상 팔레트 (각 옵션마다 다른 색상)
     const colorPalette = [
-      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200",
-      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800 border border-teal-200",
-      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-cyan-100 text-cyan-800 border border-cyan-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200",
       "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200",
-      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-violet-100 text-violet-800 border border-violet-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200",
       "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-rose-100 text-rose-800 border border-rose-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-violet-100 text-violet-800 border border-violet-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-cyan-100 text-cyan-800 border border-cyan-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800 border border-teal-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-pink-100 text-pink-800 border border-pink-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-lime-100 text-lime-800 border border-lime-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-fuchsia-100 text-fuchsia-800 border border-fuchsia-200",
       "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-sky-100 text-sky-800 border border-sky-200",
-      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-lime-100 text-lime-800 border border-lime-200"
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200",
+      "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200"
     ]
     
-    // 그룹 ID의 해시값으로 색상 선택
+    // 옵션 이름을 기준으로 해시값 계산 (같은 옵션 이름은 항상 같은 색상)
+    const hashSource = optionName || groupName || groupId
     let hash = 0
-    for (let i = 0; i < groupId.length; i++) {
-      hash = groupId.charCodeAt(i) + ((hash << 5) - hash)
+    for (let i = 0; i < hashSource.length; i++) {
+      hash = hashSource.charCodeAt(i) + ((hash << 5) - hash)
     }
     
     return colorPalette[Math.abs(hash) % colorPalette.length]
@@ -200,7 +189,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         {selectedChoices.map((choice, index) => {
           const optionName = choice.choice_options?.option_name_ko || choice.choice_options?.option_name || 'Unknown'
           const groupName = choice.choice_options?.product_choices?.choice_group_ko || 'Unknown'
-          const badgeClass = getGroupColorClasses(choice.choice_id, groupName)
+          const badgeClass = getGroupColorClasses(choice.choice_id, groupName, optionName)
           
           return (
             <span key={`${choice.choice_id}-${choice.option_id}-${index}`} className={badgeClass}>
@@ -868,7 +857,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     
     
     filteredReservations.forEach((reservation) => {
-      // addedTime 날짜를 한국 시간대로 변환하여 YYYY-MM-DD 형식으로 변환
+      // addedTime 날짜를 라스베가스 시간대로 변환하여 YYYY-MM-DD 형식으로 변환
       if (!reservation.addedTime) {
         return // addedTime이 없으면 건너뛰기
       }
@@ -880,14 +869,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         return // 유효하지 않은 날짜면 건너뛰기
       }
       
-      const koreaDate = new Date(utcDate.toLocaleString("en-US", {timeZone: "Asia/Seoul"}))
+      const lasVegasDate = new Date(utcDate.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
       
       // 변환된 날짜가 유효한지 확인
-      if (isNaN(koreaDate.getTime())) {
+      if (isNaN(lasVegasDate.getTime())) {
         return // 유효하지 않은 날짜면 건너뛰기
       }
       
-      const addedDate = koreaDate.toISOString().split('T')[0]
+      const addedDate = lasVegasDate.toISOString().split('T')[0]
       
       // 현재 주 범위에 포함되는지 확인
       const reservationDate = new Date(addedDate)

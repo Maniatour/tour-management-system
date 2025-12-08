@@ -14,6 +14,49 @@ const isGoogleSheetsError = (value: unknown): boolean => {
          str.includes('No matches are found')
 }
 
+// 12시간 형식 시간을 24시간 형식으로 변환하는 함수
+// 예: "11:55:00 PM" → "23:55:00", "12:00:00 AM" → "00:00:00"
+const convert12HourTo24Hour = (timeStr: string): string | null => {
+  if (!timeStr || typeof timeStr !== 'string') return null
+  
+  const trimmed = timeStr.trim()
+  
+  // 이미 24시간 형식인지 확인 (HH:MM 또는 HH:MM:SS)
+  const time24Match = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/)
+  if (time24Match) {
+    const hours = parseInt(time24Match[1], 10)
+    const minutes = time24Match[2]
+    const seconds = time24Match[3] || '00'
+    if (hours >= 0 && hours < 24) {
+      return `${String(hours).padStart(2, '0')}:${minutes}:${seconds}`
+    }
+  }
+  
+  // 12시간 형식 파싱: "11:55:00 PM", "7:00 AM", "12:30:45 PM" 등
+  const time12Match = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i)
+  if (time12Match) {
+    let hours = parseInt(time12Match[1], 10)
+    const minutes = time12Match[2]
+    const seconds = time12Match[3] || '00'
+    const period = time12Match[4].toUpperCase()
+    
+    // 12시간 → 24시간 변환
+    if (period === 'PM' && hours !== 12) {
+      hours += 12
+    } else if (period === 'AM' && hours === 12) {
+      hours = 0
+    }
+    
+    return `${String(hours).padStart(2, '0')}:${minutes}:${seconds}`
+  }
+  
+  // 파싱 실패시 null 반환
+  return null
+}
+
+// 순수 시간 필드 목록 (TIME 타입, 날짜 없이 시간만 저장)
+const TIME_ONLY_FIELDS = ['pickup_time', 'tour_time']
+
 // 안전한 문자열→문자열 배열 변환 (PostgreSQL 배열 리터럴 형식)
 const coerceStringToStringArray = (raw: unknown): string[] => {
   if (Array.isArray(raw)) {
@@ -818,8 +861,26 @@ const sanitizeTimestampFields = (row: Record<string, unknown>): Record<string, u
   Object.keys(sanitized).forEach(key => {
     const value = sanitized[key]
     
-    // 필드명이 타임스탬프 관련인지 확인 (_at, _on, _time 등으로 끝나는 필드)
-    if (key.match(/_at$|_on$|_time$/i) && value !== undefined && value !== null && value !== '') {
+    // 순수 시간 필드 (TIME 타입) 별도 처리
+    if (TIME_ONLY_FIELDS.includes(key) && value !== undefined && value !== null && value !== '') {
+      // Google Sheets 에러 값 체크
+      if (isGoogleSheetsError(value)) {
+        console.warn(`Google Sheets 에러 값 감지 (${key}):`, value, '→ null로 변환')
+        sanitized[key] = null
+      } else if (typeof value === 'string') {
+        // 12시간 형식 → 24시간 형식 변환 시도
+        const converted = convert12HourTo24Hour(value)
+        if (converted) {
+          console.log(`시간 형식 변환 성공 (${key}): "${value}" → "${converted}"`)
+          sanitized[key] = converted
+        } else {
+          // 변환 실패시 원본 값 유지 (이미 올바른 형식일 수 있음)
+          console.warn(`시간 형식 변환 실패 (${key}): "${value}" - 원본 유지`)
+        }
+      }
+    }
+    // 필드명이 타임스탬프 관련인지 확인 (_at, _on 등으로 끝나는 필드, 순수 시간 필드 제외)
+    else if (key.match(/_at$|_on$/i) && value !== undefined && value !== null && value !== '') {
       // Google Sheets 에러 값 체크
       if (isGoogleSheetsError(value)) {
         console.warn(`Google Sheets 에러 값 감지 (${key}):`, value, '→ null로 변환')

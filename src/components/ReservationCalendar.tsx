@@ -179,12 +179,14 @@ const ReservationCalendar = memo(function ReservationCalendar({
     date, 
     dayReservations, 
     isCurrentMonthDay, 
-    isTodayDate 
+    isTodayDate,
+    dateFilter
   }: {
     date: Date
     dayReservations: typeof reservations
     isCurrentMonthDay: boolean
     isTodayDate: boolean
+    dateFilter: 'created_at' | 'tour_date'
   }) => {
     // 예약 상태에 따른 색상 반환 (로컬 함수) - 대소문자 구분 없이 비교
     const getReservationStatusColor = (status: string) => {
@@ -258,6 +260,31 @@ const ReservationCalendar = memo(function ReservationCalendar({
             // 고유한 key 생성
             const uniqueKey = `${reservation.id}-${reservationIndex}-${date.getTime()}`
             
+            // 날짜 포맷 함수 (MM/DD/YYYY)
+            const formatDateFull = (dateStr: string) => {
+              const d = new Date(dateStr)
+              const month = d.getMonth() + 1
+              const day = d.getDate()
+              const year = d.getFullYear()
+              return `${month}/${day}/${year}`
+            }
+            
+            // 등록일 (created_at)을 라스베가스 시간으로 변환
+            const getCreatedDateFormatted = () => {
+              const utcDate = new Date(reservation.created_at)
+              const lasVegasDate = new Date(utcDate.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+              const month = lasVegasDate.getMonth() + 1
+              const day = lasVegasDate.getDate()
+              const year = lasVegasDate.getFullYear()
+              return `${month}/${day}/${year}`
+            }
+            
+            // 등록일 기준: "투어일 상품명 | 상태"
+            // 투어일 기준: "상품명 | 상태 (등록일)"
+            const secondLineContent = dateFilter === 'created_at' 
+              ? `${formatDateFull(reservation.tour_date)} ${productName} | ${statusLabel}`
+              : `${productName} | ${statusLabel} (${getCreatedDateFormatted()})`
+            
             return (
               <div
                 key={uniqueKey}
@@ -266,9 +293,9 @@ const ReservationCalendar = memo(function ReservationCalendar({
                 title={tooltipText}
               >
                 <div className="truncate">
-                  <div className="font-medium">{customerName}</div>
+                  <div className="font-medium">{customerName} {totalPeople}인</div>
                   <div className="opacity-90 text-xs">
-                    {productName} | {totalPeople}명 | {statusLabel}
+                    {secondLineContent}
                   </div>
                 </div>
               </div>
@@ -347,6 +374,7 @@ const ReservationCalendar = memo(function ReservationCalendar({
               dayReservations={dayReservations}
               isCurrentMonthDay={isCurrentMonthDay}
               isTodayDate={isTodayDate}
+              dateFilter={dateFilter}
             />
           )
         })}

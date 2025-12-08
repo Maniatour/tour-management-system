@@ -973,10 +973,15 @@ export default function ReservationForm({
         .from('products')
         .select('choices')
         .eq('id', productId)
-        .single();
+        .maybeSingle();
 
       if (error) {
         console.error('ReservationForm: 기존 products.choices 로드 오류:', error);
+        return;
+      }
+
+      if (!product) {
+        console.log('ReservationForm: 해당 상품을 찾을 수 없습니다:', productId);
         return;
       }
 

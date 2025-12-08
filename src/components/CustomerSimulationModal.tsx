@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { X, User, Search } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
 
 interface Customer {
@@ -24,6 +24,7 @@ interface CustomerSimulationModalProps {
 export default function CustomerSimulationModal({ isOpen, onClose }: CustomerSimulationModalProps) {
   const { startSimulation } = useAuth()
   const router = useRouter()
+  const locale = useLocale()
   const t = useTranslations('common')
   const [customers, setCustomers] = useState<Customer[]>([])
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([])
@@ -105,8 +106,8 @@ export default function CustomerSimulationModal({ isOpen, onClose }: CustomerSim
       onClose()
       
       // Next.js 라우터를 사용하여 페이지 이동 (상태 유지)
-      console.log('CustomerSimulationModal: 고객 대시보드로 이동')
-      router.push('/ko/dashboard')
+      console.log('CustomerSimulationModal: 고객 페이지로 이동')
+      router.push(`/${locale}`)
     } catch (error) {
       console.error('고객 시뮬레이션 시작 중 오류:', error)
       setError('시뮬레이션을 시작하는데 실패했습니다.')
