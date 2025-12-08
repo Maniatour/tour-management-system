@@ -669,8 +669,9 @@ export const flexibleSync = async (
       errorDetails: [] as string[]
     }
     let processed = 0
-    // 최적화된 배치 크기 설정 (데이터 크기에 따라 동적 조정)
-    const baseBatchSize = totalRows > 10000 ? 200 : totalRows > 5000 ? 150 : 100
+    // 최적화된 배치 크기 설정 (대용량 데이터에 맞게 조정)
+    // 9500개 이상의 rows 처리를 위해 배치 크기 대폭 증가
+    const baseBatchSize = totalRows > 20000 ? 1000 : totalRows > 10000 ? 500 : totalRows > 5000 ? 300 : 150
     const batchSize = Math.min(baseBatchSize, totalRows)
     const rowsBuffer: Record<string, unknown>[] = []
 
@@ -690,8 +691,9 @@ export const flexibleSync = async (
           return row
         })
         
-        // 최적화된 지연 시간 (배치 크기에 비례하여 조정)
-        const delayMs = Math.min(50, Math.max(10, Math.floor(rowsBuffer.length / 10)))
+        // 최적화된 지연 시간 (대용량 데이터의 경우 지연 최소화)
+        // 9500개 이상 처리 시 지연을 최소화하여 속도 개선
+        const delayMs = totalRows > 5000 ? 5 : Math.min(30, Math.max(5, Math.floor(rowsBuffer.length / 20)))
         await new Promise(resolve => setTimeout(resolve, delayMs))
         
         // RLS 정책 우회를 위한 upsert 실행
@@ -813,8 +815,9 @@ export const flexibleSync = async (
       onProgress?.({ type: 'progress', processed, total: totalRows, inserted: results.inserted, updated: results.updated, errors: results.errors })
       if (rowsBuffer.length >= batchSize) {
         await flush()
-        // 최적화된 배치 간 지연 시간 (배치 크기에 비례하여 조정)
-        const batchDelayMs = Math.min(100, Math.max(20, Math.floor(batchSize / 5)))
+        // 최적화된 배치 간 지연 시간 (대용량 데이터의 경우 지연 최소화)
+        // 9500개 이상 처리 시 배치 간 지연을 최소화
+        const batchDelayMs = totalRows > 5000 ? 10 : Math.min(50, Math.max(10, Math.floor(batchSize / 10)))
         await new Promise(resolve => setTimeout(resolve, batchDelayMs))
       }
     }
@@ -1011,7 +1014,7 @@ const executeUpsertWithRLSBypass = async (
   }
 }
 
-// RLS 오류 시 개별 처리 폴백
+// RLS 오류 시 미니 배치 처리 폴백 (개별 처리 대신 작은 배치로 재시도)
 const fallbackIndividualUpsert = async (
   db: any,
   targetTable: string,
@@ -1019,66 +1022,74 @@ const fallbackIndividualUpsert = async (
   conflictColumn: string
 ): Promise<{ error: any }> => {
   try {
-    console.log(`🔄 개별 처리 폴백: ${targetTable} 테이블에 ${payload.length}개 행`)
+    // 대용량 데이터의 경우 미니 배치로 처리 (개별 처리 대신)
+    // 재시도 횟수를 대폭 줄이기 위해 작은 배치 단위로 처리
+    const miniBatchSize = payload.length > 100 ? 20 : 10
+    console.log(`🔄 미니 배치 폴백: ${targetTable} 테이블에 ${payload.length}개 행 (배치 크기: ${miniBatchSize})`)
     
     let successCount = 0
     let errorCount = 0
     const errorDetails: string[] = []
     
-    // 개별 행 처리
-    for (let index = 0; index < payload.length; index++) {
-      const row = payload[index]
+    // 미니 배치로 분할하여 처리 (개별 처리 대신)
+    for (let i = 0; i < payload.length; i += miniBatchSize) {
+      const miniBatch = payload.slice(i, i + miniBatchSize)
+      
       try {
         const { error } = await db
           .from(targetTable)
-          .upsert([row], { onConflict: conflictColumn })
+          .upsert(miniBatch, { onConflict: conflictColumn })
         
         if (error) {
-          // 상세 에러 정보 추출
-          const rowId = row.id || row[conflictColumn] || `행 #${index + 1}`
-          const reservationId = targetTable === 'reservation_pricing' ? row.reservation_id : null
-          
-          let errorMsg = `개별 upsert 오류 (${targetTable})`
-          if (reservationId) {
-            errorMsg += ` - reservation_id: "${reservationId}"`
+          // 미니 배치 실패 시 해당 배치만 개별 처리로 폴백
+          if (error.code === '42501' || error.message?.includes('duplicate key')) {
+            // RLS 또는 중복 키 오류: 개별 처리 시도
+            for (const row of miniBatch) {
+              try {
+                const { error: singleError } = await db
+                  .from(targetTable)
+                  .upsert([row], { onConflict: conflictColumn })
+                
+                if (singleError) {
+                  errorCount++
+                  // 오류 로깅 (처음 5개만)
+                  if (errorDetails.length < 5) {
+                    const rowId = row.id || row[conflictColumn] || 'unknown'
+                    errorDetails.push(`행 ${rowId}: ${singleError.message}`)
+                  }
+                } else {
+                  successCount++
+                }
+              } catch {
+                errorCount++
+              }
+            }
+          } else {
+            // 기타 오류: 배치 전체 실패로 처리
+            errorCount += miniBatch.length
+            if (errorDetails.length < 5) {
+              errorDetails.push(`배치 ${Math.floor(i / miniBatchSize) + 1}: ${error.message}`)
+            }
           }
-          errorMsg += ` - ${conflictColumn}: "${rowId}"`
-          
-          if (error.message) {
-            errorMsg += ` - 오류: ${error.message}`
-          }
-          
-          console.warn(errorMsg)
-          errorDetails.push(errorMsg)
-          errorCount++
         } else {
-          successCount++
+          successCount += miniBatch.length
         }
-      } catch (rowError) {
-        const rowId = row.id || row[conflictColumn] || `행 #${index + 1}`
-        const reservationId = targetTable === 'reservation_pricing' ? row.reservation_id : null
-        
-        let errorMsg = `개별 upsert 예외 (${targetTable})`
-        if (reservationId) {
-          errorMsg += ` - reservation_id: "${reservationId}"`
+      } catch (batchError) {
+        errorCount += miniBatch.length
+        if (errorDetails.length < 5) {
+          errorDetails.push(`배치 ${Math.floor(i / miniBatchSize) + 1} 예외: ${String(batchError)}`)
         }
-        errorMsg += ` - ${conflictColumn}: "${rowId}"`
-        
-        if (rowError instanceof Error) {
-          errorMsg += ` - 예외: ${rowError.message}`
-        } else {
-          errorMsg += ` - 예외: ${String(rowError)}`
-        }
-        
-        console.warn(errorMsg)
-        errorDetails.push(errorMsg)
-        errorCount++
+      }
+      
+      // 미니 배치 간 최소 지연 (서버 부하 방지)
+      if (i + miniBatchSize < payload.length) {
+        await new Promise(resolve => setTimeout(resolve, 5))
       }
     }
     
-    console.log(`✅ 개별 처리 완료: ${successCount}개 성공, ${errorCount}개 실패`)
+    console.log(`✅ 미니 배치 폴백 완료: ${successCount}개 성공, ${errorCount}개 실패`)
     if (errorDetails.length > 0) {
-      console.error('❌ 실패한 행 상세 정보:')
+      console.error('❌ 실패 요약 (최대 5개):')
       errorDetails.forEach((detail, idx) => {
         console.error(`   ${idx + 1}. ${detail}`)
       })
@@ -1088,10 +1099,10 @@ const fallbackIndividualUpsert = async (
     if (successCount > 0) {
       return { error: null }
     } else {
-      return { error: new Error(`모든 개별 upsert 실패: ${errorCount}개 오류\n${errorDetails.join('\n')}`) }
+      return { error: new Error(`모든 미니 배치 upsert 실패: ${errorCount}개 오류`) }
     }
   } catch (error) {
-    console.error('개별 처리 폴백 예외:', error)
+    console.error('미니 배치 폴백 예외:', error)
     return { error }
   }
 }

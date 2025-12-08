@@ -252,12 +252,12 @@ export class OptimizedSyncService {
       const batches = this.chunkArray(valid, batchSize)
       console.log(`📊 배치 분할 완료: ${batches.length}개 배치`)
       
-      // 병렬 배치 처리
+      // 병렬 배치 처리 (대용량 데이터의 경우 동시성 증가)
+      const maxConcurrency = data.length > 5000 ? 5 : 3
       await this.processBatchesInParallel(
         batches,
         async (batch) => {
           try {
-            console.log(`🔄 배치 처리 시작: ${batch.length}개 행`)
             const nowIso = new Date().toISOString()
             
             // ID가 없는 행들에 대해 UUID 생성
@@ -275,8 +275,6 @@ export class OptimizedSyncService {
               return prepared
             })
             
-            console.log(`💾 RLS 우회 upsert 실행: ${targetTable} 테이블에 ${preparedBatch.length}개 행`)
-            
             // RLS 정책 우회를 위한 직접 SQL 실행
             const { error } = await this.executeDirectUpsert(targetTable, preparedBatch, tableColumns)
             
@@ -284,7 +282,6 @@ export class OptimizedSyncService {
               console.error('❌ 배치 upsert 오류:', error)
               results.errors += batch.length
             } else {
-              console.log(`✅ 배치 upsert 성공: ${batch.length}개 행`)
               results.updated += batch.length
             }
           } catch (error) {
@@ -292,7 +289,7 @@ export class OptimizedSyncService {
             results.errors += batch.length
           }
         },
-        3 // 최대 3개 배치 동시 처리
+        maxConcurrency // 대용량 데이터의 경우 5개, 그 외 3개 배치 동시 처리
       )
       
       console.log(`✅ 벌크 upsert 완료: ${results.updated}개 업데이트, ${results.errors}개 오류`)
@@ -423,13 +420,14 @@ export class OptimizedSyncService {
     }
   }
 
-  // 최적 배치 크기 계산
+  // 최적 배치 크기 계산 (대용량 데이터에 맞게 조정)
+  // 9500개 이상의 rows 처리를 위해 배치 크기 대폭 증가
   private calculateOptimalBatchSize(totalRows: number): number {
-    if (totalRows > 50000) return 500
-    if (totalRows > 20000) return 300
-    if (totalRows > 10000) return 200
-    if (totalRows > 5000) return 150
-    return 100
+    if (totalRows > 50000) return 1000
+    if (totalRows > 20000) return 800
+    if (totalRows > 10000) return 500
+    if (totalRows > 5000) return 400
+    return 200
   }
 
   // 캐시 관리 (고성능 캐시 시스템 사용)
@@ -498,52 +496,63 @@ export class OptimizedSyncService {
     }
   }
 
-  // RLS 오류 시 개별 처리 폴백
+  // RLS 오류 시 미니 배치 처리 폴백 (개별 처리 대신 작은 배치로 재시도)
   private async fallbackIndividualUpsert(
     tableName: string,
     batch: Record<string, unknown>[],
     tableColumns: Set<string>
   ): Promise<{ error: any }> {
     try {
-      console.log(`🔄 개별 처리 폴백: ${tableName} 테이블에 ${batch.length}개 행`)
+      // 대용량 데이터의 경우 미니 배치로 처리 (개별 처리 대신)
+      // 재시도 횟수를 대폭 줄이기 위해 작은 배치 단위로 처리
+      const miniBatchSize = batch.length > 100 ? 25 : 10
+      console.log(`🔄 미니 배치 폴백: ${tableName} 테이블에 ${batch.length}개 행 (배치 크기: ${miniBatchSize})`)
       
       const conflictColumn = tableName === 'team' ? 'email' : 'id'
       let successCount = 0
       let errorCount = 0
+      const client = supabaseAdmin ?? supabase
       
-      // 개별 행 처리
-      for (const row of batch) {
+      // 미니 배치로 분할하여 처리
+      for (let i = 0; i < batch.length; i += miniBatchSize) {
+        const miniBatch = batch.slice(i, i + miniBatchSize)
+        
         try {
-          const client = supabaseAdmin ?? supabase
           const { error } = await client
             .from(tableName)
-            .upsert([row], { 
+            .upsert(miniBatch, { 
               onConflict: conflictColumn,
               ignoreDuplicates: false
             })
           
           if (error) {
-            console.warn(`개별 upsert 오류 (${tableName}):`, error)
-            errorCount++
+            // 미니 배치 실패 시 해당 배치만 오류로 카운트 (더 이상 개별 처리하지 않음)
+            console.warn(`미니 배치 upsert 오류 (${tableName}): ${error.message}`)
+            errorCount += miniBatch.length
           } else {
-            successCount++
+            successCount += miniBatch.length
           }
-        } catch (rowError) {
-          console.warn(`개별 upsert 예외 (${tableName}):`, rowError)
-          errorCount++
+        } catch (batchError) {
+          console.warn(`미니 배치 upsert 예외 (${tableName}):`, batchError)
+          errorCount += miniBatch.length
+        }
+        
+        // 미니 배치 간 최소 지연 (서버 부하 방지)
+        if (i + miniBatchSize < batch.length) {
+          await new Promise(resolve => setTimeout(resolve, 5))
         }
       }
       
-      console.log(`✅ 개별 처리 완료: ${successCount}개 성공, ${errorCount}개 실패`)
+      console.log(`✅ 미니 배치 폴백 완료: ${successCount}개 성공, ${errorCount}개 실패`)
       
       // 일부라도 성공했으면 성공으로 간주
       if (successCount > 0) {
         return { error: null }
       } else {
-        return { error: new Error(`모든 개별 upsert 실패: ${errorCount}개 오류`) }
+        return { error: new Error(`모든 미니 배치 upsert 실패: ${errorCount}개 오류`) }
       }
     } catch (error) {
-      console.error('개별 처리 폴백 예외:', error)
+      console.error('미니 배치 폴백 예외:', error)
       return { error }
     }
   }

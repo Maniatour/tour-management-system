@@ -40,8 +40,10 @@ class RequestThrottle {
       return await fn()
     } catch (error) {
       if (retries < this.options.maxRetries) {
-        console.warn(`Request failed, retrying (${retries + 1}/${this.options.maxRetries}):`, error)
-        await this.delay(this.options.delayMs * Math.pow(2, retries)) // Exponential backoff
+        // 재시도 지연 시간 최적화: 최대 200ms로 제한 (대용량 데이터 처리 시 속도 유지)
+        const retryDelay = Math.min(200, this.options.delayMs * Math.pow(1.5, retries))
+        console.warn(`Request failed, retrying (${retries + 1}/${this.options.maxRetries}) after ${retryDelay}ms`)
+        await this.delay(retryDelay)
         return this.executeWithRetry(fn, retries + 1)
       }
       throw error
@@ -70,11 +72,11 @@ class RequestThrottle {
   }
 }
 
-// 전역 인스턴스 생성
+// 전역 인스턴스 생성 (대용량 데이터 동기화에 최적화)
 export const requestThrottle = new RequestThrottle({
-  maxConcurrent: 3, // 동시 요청 수 제한
-  delayMs: 200,     // 요청 간 지연 시간
-  maxRetries: 2     // 최대 재시도 횟수
+  maxConcurrent: 5, // 동시 요청 수 증가 (3 → 5)
+  delayMs: 50,      // 요청 간 지연 시간 감소 (200ms → 50ms)
+  maxRetries: 1     // 최대 재시도 횟수 감소 (2 → 1) - 대용량 데이터 시 재시도 최소화
 })
 
 /**
