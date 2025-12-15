@@ -236,7 +236,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
             ) : (
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 <span className="font-medium text-sm truncate">
-                  {tour.tour_date ? new Date(tour.tour_date + 'T00:00:00').toLocaleDateString(dateLocale, {timeZone: 'America/Los_Angeles'}) : ''}
+                  {tour.tour_date || ''}
                 </span>
                 {onTourDateChange && (
                   <button

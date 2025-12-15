@@ -1327,7 +1327,7 @@ export default function TicketBookingList() {
                             }}
                             title="투어 상세 보기"
                           >
-                            {getProductName(booking.tours.products)} {booking.tours.tour_date ? new Date(booking.tours.tour_date).toISOString().split('T')[0] : ''}
+                            {getProductName(booking.tours.products)} {booking.tours.tour_date || ''}
                           </div>
                         ) : (
                           <span className="text-red-500 text-xs">미연결</span>

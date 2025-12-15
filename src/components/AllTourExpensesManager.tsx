@@ -365,7 +365,7 @@ export default function AllTourExpensesManager() {
               {filteredExpenses.map((expense) => (
                 <tr key={expense.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                    {new Date(expense.tour_date).toLocaleDateString('ko-KR')}
+                    {expense.tour_date}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <div className="text-sm">

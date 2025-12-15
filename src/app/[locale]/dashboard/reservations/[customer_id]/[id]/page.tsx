@@ -2396,7 +2396,7 @@ export default function CustomerReservations() {
                   <div className="flex items-center text-gray-600">
                     <Calendar className="w-4 h-4 mr-2" />
                     <span className="text-sm">
-                      {reservation.tour_date} ({new Date(reservation.tour_date).toLocaleDateString('en-US', { weekday: 'long' })})
+                      {reservation.tour_date}
                     </span>
                   </div>
 

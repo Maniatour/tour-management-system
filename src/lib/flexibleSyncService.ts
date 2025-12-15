@@ -113,8 +113,8 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
     }
   })
 
-  // 날짜 필드 변환
-  let dateFields: string[] = ['tour_date']
+  // 날짜 필드 변환 (tour_date는 제외하고 그대로 저장)
+  let dateFields: string[] = []
   if (tableName === 'tour_hotel_bookings') {
     dateFields = ['event_date', 'check_in_date', 'check_out_date']
   }
@@ -142,6 +142,17 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
       }
     }
   })
+  
+  // tour_date는 그대로 저장 (변환하지 않음)
+  if (converted.tour_date !== undefined && converted.tour_date !== null && converted.tour_date !== '') {
+    // Google Sheets 에러 값 체크만 수행
+    if (isGoogleSheetsError(converted.tour_date)) {
+      console.warn(`Google Sheets 에러 값 감지 (tour_date):`, converted.tour_date, '→ null로 변환')
+      converted.tour_date = null
+    } else {
+      converted.tour_date = String(converted.tour_date).trim()
+    }
+  }
 
   // tour_id 정리: 공백 트리밍만 수행 (TEXT PK 허용). 빈 문자열은 null 처리
   if (converted.tour_id !== undefined && converted.tour_id !== null) {

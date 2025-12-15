@@ -1122,9 +1122,7 @@ export default function AdminCustomers() {
                                       >
                                         <div className="flex items-center space-x-2 flex-1 min-w-0">
                                           <span className="text-green-600 font-mono font-semibold">
-                                            {new Date(reservation.tour_date).toLocaleDateString('en-US', { 
-                                              month: '2-digit', 
-                                              day: '2-digit', 
+                                            {reservation.tour_date} 
                                               year: 'numeric' 
                                             })}
                                           </span>

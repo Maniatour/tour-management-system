@@ -163,7 +163,7 @@ export default function AdminTourReports({ params }: AdminTourReportsProps) {
                           {tour.products?.name_ko} ({tour.products?.name_en})
                         </span>
                         <span className="text-gray-500">
-                          - {new Date(tour.tour_date).toLocaleDateString('ko-KR')}
+                          - {tour.tour_date}
                         </span>
                       </div>
                     </SelectItem>

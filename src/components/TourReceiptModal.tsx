@@ -489,7 +489,7 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
                         <div className="flex items-center space-x-4 text-sm text-gray-600">
                           <div className="flex items-center">
                             <Calendar className="w-4 h-4 mr-1" />
-                            {new Date(tour.tour_date).toLocaleDateString(currentLocale === 'en' ? 'en-US' : 'ko-KR')}
+                            {tour.tour_date}
                           </div>
                           <div className="flex items-center">
                             <Users className="w-4 h-4 mr-1" />
@@ -540,7 +540,7 @@ export default function TourReceiptModal({ isOpen, onClose, locale }: TourReceip
               {currentEditingTour && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <h4 className="font-semibold text-green-800 mb-2">
-                    {getText('리포트 작성', 'Report Creation')} : {currentLocale === 'en' ? (currentEditingTour.product_name_en || currentEditingTour.product_name || currentEditingTour.product_id) : (currentEditingTour.product_name || currentEditingTour.product_id)} {currentEditingTour.tour_date} ({new Date(currentEditingTour.tour_date).toLocaleDateString(currentLocale === 'en' ? 'en-US' : 'ko-KR', { weekday: 'short' })}) {currentEditingTour.assigned_people}
+                    {getText('리포트 작성', 'Report Creation')} : {currentLocale === 'en' ? (currentEditingTour.product_name_en || currentEditingTour.product_name || currentEditingTour.product_id) : (currentEditingTour.product_name || currentEditingTour.product_id)} {currentEditingTour.tour_date} {currentEditingTour.assigned_people}
                   </h4>
                 </div>
               )}

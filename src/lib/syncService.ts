@@ -84,9 +84,7 @@ const transformReservationData = (sheetData: any[]) => {
     if (transformed.is_private_tour) {
       transformed.is_private_tour = transformed.is_private_tour === 'TRUE' || transformed.is_private_tour === 'true' || transformed.is_private_tour === '1'
     }
-    if (transformed.tour_date) {
-      transformed.tour_date = new Date(transformed.tour_date).toISOString().split('T')[0]
-    }
+    // tour_date는 그대로 저장 (변환하지 않음)
 
     // 기본값 설정
     transformed.status = transformed.status || 'pending'
@@ -113,9 +111,7 @@ const transformTourData = (sheetData: any[]) => {
     if (transformed.is_private_tour) {
       transformed.is_private_tour = transformed.is_private_tour === 'TRUE' || transformed.is_private_tour === 'true' || transformed.is_private_tour === '1'
     }
-    if (transformed.tour_date) {
-      transformed.tour_date = new Date(transformed.tour_date).toISOString().split('T')[0]
-    }
+    // tour_date는 그대로 저장 (변환하지 않음)
 
     // 기본값 설정
     transformed.tour_status = transformed.tour_status || 'Recruiting'

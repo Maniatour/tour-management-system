@@ -1375,7 +1375,9 @@ export default function ScheduleView() {
     unassignedTours.forEach(tour => {
       const product = products.find(p => p.id === tour.product_id)
       const productName = product?.name || 'N/A'
-      const tourDate = dayjs(tour.tour_date).format('MM월 DD일')
+      // tour_date를 그대로 사용 (변환하지 않음)
+      const [year, month, day] = tour.tour_date.split('-')
+      const tourDate = `${month}월 ${day}일`
       const baseTitle = `${tourDate} ${productName}`
       
       // 가이드가 배정되지 않은 경우 가이드 카드 추가
@@ -2120,6 +2122,7 @@ export default function ScheduleView() {
                 tours.filter(t => t.tour_guide_id === teamMemberId || t.assistant_id === teamMemberId).forEach(tour => {
                   const mdays = getMultiDayTourDays(tour.product_id)
                   if (mdays <= 1) return
+                  // tour_date를 그대로 사용 (변환하지 않음)
                   const start = dayjs(tour.tour_date)
                   if (start.isBefore(firstDayOfMonth, 'day') && !start.isBefore(windowStart, 'day')) {
                     const end = start.add(mdays - 1, 'day')
@@ -2127,7 +2130,7 @@ export default function ScheduleView() {
                     if (!end.isBefore(firstDayOfMonth, 'day')) {
                       // 역할/인원/색상 계산 (Recruiting/Confirmed 상태만)
                       const dayReservations = reservations.filter(res => 
-                        res.tour_date === start.format('YYYY-MM-DD') &&
+                        res.tour_date === tour.tour_date &&
                         (res.status?.toLowerCase() === 'confirmed' || res.status?.toLowerCase() === 'recruiting')
                       )
                       const assignedPeople = (() => {

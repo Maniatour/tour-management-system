@@ -222,7 +222,7 @@ export default function PhotoDownloadPage({ params }: { params: { token: string 
                   <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
                     <div className="flex items-center">
                       <Calendar size={16} className="mr-1" />
-                      {new Date(tourInfo.tour_date).toLocaleDateString()}
+                      {tourInfo.tour_date}
                     </div>
                     <div className="flex items-center">
                       <User size={16} className="mr-1" />

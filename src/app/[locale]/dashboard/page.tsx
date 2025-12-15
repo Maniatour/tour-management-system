@@ -790,7 +790,7 @@ export default function CustomerDashboard() {
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-600">
                             <div className="flex items-center">
                               <Calendar className="w-4 h-4 mr-2" />
-                              <span>투어 날짜: {new Date(reservation.tour_date).toLocaleDateString()}</span>
+                              <span>투어 날짜: {reservation.tour_date}</span>
                             </div>
                             {reservation.tour_time && (
                               <div className="flex items-center">

@@ -569,7 +569,7 @@ const OptionManagementModal: React.FC<OptionManagementModalProps> = ({
                         <div>제출자: {expense.submitted_by || 'N/A'}</div>
                         <div>제출일: {expense.submit_on ? new Date(expense.submit_on).toLocaleDateString('ko-KR') : 'N/A'}</div>
                         {expense.tour_date && (
-                          <div>투어 날짜: {new Date(expense.tour_date).toLocaleDateString('ko-KR')}</div>
+                          <div>투어 날짜: {expense.tour_date}</div>
                         )}
                         {expense.product_id && (
                           <div>상품 ID: {expense.product_id}</div>

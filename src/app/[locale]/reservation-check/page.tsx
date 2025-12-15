@@ -259,12 +259,7 @@ export default function ReservationCheckPage() {
                       <div>
                         <span className="text-sm text-gray-600">투어 날짜</span>
                         <p className="font-medium">
-                          {new Date(reservation.tour_date).toLocaleDateString('ko-KR', {
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric',
-                            weekday: 'long'
-                          })}
+                          {reservation.tour_date}
                         </p>
                       </div>
                     </div>

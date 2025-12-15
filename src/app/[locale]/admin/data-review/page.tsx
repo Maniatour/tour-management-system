@@ -1349,7 +1349,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                           <div>
                             <span className="font-medium text-gray-700">투어날짜:</span>
                             <div className="text-gray-900">
-                              {issue.data.tour_date ? new Date(issue.data.tour_date).toLocaleDateString('ko-KR') : '-'}
+                              {issue.data.tour_date || '-'}
                             </div>
                           </div>
                           <div>

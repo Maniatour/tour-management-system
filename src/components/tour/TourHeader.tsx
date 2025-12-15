@@ -74,7 +74,7 @@ export default function TourHeader({
               <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-600 mt-1">
                 <span>{params.locale === 'ko' ? '투어 ID' : 'Tour ID'}: {tour.id}</span>
                 <span className="hidden sm:inline">|</span>
-                <span>{params.locale === 'ko' ? '날짜' : 'Date'}: {tour.tour_date ? new Date(tour.tour_date + 'T00:00:00').toLocaleDateString(dateLocale, {timeZone: 'America/Los_Angeles'}) : ''}</span>
+                <span>{params.locale === 'ko' ? '날짜' : 'Date'}: {tour.tour_date || ''}</span>
                 <span className="hidden sm:inline">|</span>
                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(tour.tour_status)}`}>
                   {getStatusText(tour.tour_status)}

@@ -121,8 +121,8 @@ export class OptimizedSyncService {
       }
     })
 
-    // 날짜 필드 변환
-    let dateFields: string[] = ['tour_date']
+    // 날짜 필드 변환 (tour_date는 제외하고 그대로 저장)
+    let dateFields: string[] = []
     if (tableName === 'tour_hotel_bookings') {
       dateFields = ['event_date', 'check_in_date', 'check_out_date']
     }
@@ -136,6 +136,11 @@ export class OptimizedSyncService {
         }
       }
     })
+    
+    // tour_date는 그대로 저장 (변환하지 않음)
+    if (converted.tour_date !== undefined && converted.tour_date !== null && converted.tour_date !== '') {
+      converted.tour_date = String(converted.tour_date).trim()
+    }
 
     // tour_id 정리
     if (converted.tour_id !== undefined && converted.tour_id !== null) {
