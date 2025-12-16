@@ -1122,9 +1122,7 @@ export default function AdminCustomers() {
                                       >
                                         <div className="flex items-center space-x-2 flex-1 min-w-0">
                                           <span className="text-green-600 font-mono font-semibold">
-                                            {reservation.tour_date} 
-                                              year: 'numeric' 
-                                            })}
+                                            {reservation.tour_date}
                                           </span>
                                           <span className="truncate font-semibold text-green-800">{productName}</span>
                                         </div>
