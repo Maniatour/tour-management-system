@@ -74,13 +74,17 @@ export default function DateGroupHeader({
         <div className="flex items-center space-x-3">
           <Calendar className="h-5 w-5 text-blue-600" />
           <h3 className="text-lg font-semibold text-gray-900">
-            {new Date(date + 'T00:00:00').toLocaleDateString('ko-KR', { 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric',
-              weekday: 'long',
-              timeZone: 'America/Los_Angeles'
-            })} 등록 (라스베가스 시간)
+            {(() => {
+              // 날짜 문자열(YYYY-MM-DD)을 로컬 시간대 기준으로 파싱
+              const [year, month, day] = date.split('-').map(Number)
+              const dateObj = new Date(year, month - 1, day)
+              return dateObj.toLocaleDateString('ko-KR', { 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric',
+                weekday: 'long'
+              })
+            })()} 등록
           </h3>
           <div className="flex items-center space-x-2">
             <span className="px-2 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">

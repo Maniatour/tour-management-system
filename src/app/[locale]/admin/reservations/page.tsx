@@ -850,44 +850,42 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     
     const groups: { [key: string]: typeof filteredReservations } = {}
     
-    // 현재 주의 날짜 범위 계산
-    const weekRange = formatWeekRange(currentWeek)
-    const weekStart = new Date(weekRange.start)
-    const weekEnd = new Date(weekRange.end)
+    // 현재 주의 날짜 범위 계산 (로컬 시간대 기준)
+    const weekStart = getWeekStartDate(currentWeek)
+    const weekEnd = getWeekEndDate(currentWeek)
     
+    // 주간 범위를 YYYY-MM-DD 형식으로 변환 (로컬 시간대 기준)
+    const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`
+    const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`
     
     filteredReservations.forEach((reservation) => {
-      // addedTime 날짜를 라스베가스 시간대로 변환하여 YYYY-MM-DD 형식으로 변환
+      // created_at 날짜를 변환 없이 그대로 사용하여 YYYY-MM-DD 형식으로 추출
       if (!reservation.addedTime) {
         return // addedTime이 없으면 건너뛰기
       }
       
-      const utcDate = new Date(reservation.addedTime)
+      const date = new Date(reservation.addedTime)
       
       // 유효한 날짜인지 확인
-      if (isNaN(utcDate.getTime())) {
+      if (isNaN(date.getTime())) {
         return // 유효하지 않은 날짜면 건너뛰기
       }
       
-      const lasVegasDate = new Date(utcDate.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+      // 로컬 시간대 기준으로 날짜 부분만 추출 (YYYY-MM-DD)
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      const createdDate = `${year}-${month}-${day}`
       
-      // 변환된 날짜가 유효한지 확인
-      if (isNaN(lasVegasDate.getTime())) {
-        return // 유효하지 않은 날짜면 건너뛰기
-      }
-      
-      const addedDate = lasVegasDate.toISOString().split('T')[0]
-      
-      // 현재 주 범위에 포함되는지 확인
-      const reservationDate = new Date(addedDate)
-      const isInRange = reservationDate >= weekStart && reservationDate <= weekEnd
+      // 현재 주 범위에 포함되는지 확인 (문자열 비교)
+      const isInRange = createdDate >= weekStartStr && createdDate <= weekEndStr
       
       
       if (isInRange) {
-        if (!groups[addedDate]) {
-          groups[addedDate] = []
+        if (!groups[createdDate]) {
+          groups[createdDate] = []
         }
-        groups[addedDate].push(reservation)
+        groups[createdDate].push(reservation)
       }
     })
     
@@ -901,7 +899,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       })
     
     return sortedGroups
-  }, [filteredReservations, groupByDate, currentWeek, formatWeekRange])
+  }, [filteredReservations, groupByDate, currentWeek, getWeekStartDate, getWeekEndDate])
 
   // 날짜별 그룹을 기본적으로 접힌 상태로 설정
   useEffect(() => {
@@ -2203,13 +2201,17 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                     <div className="flex items-center space-x-3">
                       <Calendar className="h-5 w-5 text-blue-600" />
                       <h3 className="text-lg font-semibold text-gray-900">
-                        {new Date(date + 'T00:00:00').toLocaleDateString('ko-KR', { 
-                          year: 'numeric', 
-                          month: 'long', 
-                          day: 'numeric',
-                          weekday: 'long',
-                          timeZone: 'America/Los_Angeles'
-                        })} {t('groupingLabels.registeredOn')} {t('groupingLabels.lasVegasTime')}
+                        {(() => {
+                          // 날짜 문자열(YYYY-MM-DD)을 로컬 시간대 기준으로 파싱
+                          const [year, month, day] = date.split('-').map(Number)
+                          const dateObj = new Date(year, month - 1, day)
+                          return dateObj.toLocaleDateString('ko-KR', { 
+                            year: 'numeric', 
+                            month: 'long', 
+                            day: 'numeric',
+                            weekday: 'long'
+                          })
+                        })()} {t('groupingLabels.registeredOn')}
                       </h3>
                       <div className="flex items-center space-x-2">
                         <span className="px-2 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
@@ -2488,17 +2490,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                     </a>
                     {reservation.addedTime ? (
                       <span className="text-xs text-gray-500">
-                        {(() => {
-                          const utcDate = new Date(reservation.addedTime)
-                          // UTC 시간을 로스앤젤레스 시간대로 변환하여 날짜만 표시
-                          const formatter = new Intl.DateTimeFormat('ko-KR', {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                            timeZone: 'America/Los_Angeles'
-                          })
-                          return formatter.format(utcDate)
-                        })()}
+                        {new Date(reservation.addedTime).toLocaleDateString('ko-KR', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric'
+                        })}
                       </span>
                     ) : null}
                   </div>
@@ -3031,8 +3027,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                           {new Date(reservation.addedTime).toLocaleDateString('ko-KR', { 
                             year: 'numeric',
                             month: 'short', 
-                            day: 'numeric',
-                            timeZone: 'America/Los_Angeles'
+                            day: 'numeric'
                           })}
                         </span>
                       ) : null}

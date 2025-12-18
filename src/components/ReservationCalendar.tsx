@@ -71,10 +71,12 @@ const ReservationCalendar = memo(function ReservationCalendar({
       let dateString: string
       
       if (dateFilter === 'created_at') {
-        // 등록일 기준 필터링
-        const utcDate = new Date(reservation.created_at)
-        const lasVegasCreatedDate = new Date(utcDate.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
-        dateString = lasVegasCreatedDate.toISOString().split('T')[0]
+        // 등록일 기준 필터링 - 로컬 시간대 기준으로 날짜 추출
+        const date = new Date(reservation.created_at)
+        const year = date.getFullYear()
+        const month = String(date.getMonth() + 1).padStart(2, '0')
+        const day = String(date.getDate()).padStart(2, '0')
+        dateString = `${year}-${month}-${day}`
       } else {
         // 투어일 기준 필터링
         dateString = reservation.tour_date
@@ -91,19 +93,27 @@ const ReservationCalendar = memo(function ReservationCalendar({
 
   // 특정 날짜의 예약들 가져오기 (최적화된 버전)
   const getReservationsForDate = useCallback((date: Date) => {
-    // 라스베가스 시간대 (Pacific Time) 기준으로 날짜 문자열 생성
-    const formatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'America/Los_Angeles',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    })
-    
-    const lasVegasDate = formatter.format(date)
-    const dateString = lasVegasDate // YYYY-MM-DD 형식
+    // created_at 필터일 때는 로컬 시간대 기준으로 날짜 추출, tour_date 필터일 때는 라스베가스 시간대 기준
+    let dateString: string
+    if (dateFilter === 'created_at') {
+      // 로컬 시간대 기준으로 날짜 추출
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      dateString = `${year}-${month}-${day}`
+    } else {
+      // 라스베가스 시간대 (Pacific Time) 기준으로 날짜 문자열 생성
+      const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Los_Angeles',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      })
+      dateString = formatter.format(date)
+    }
     
     return reservationsByDate[dateString] || []
-  }, [reservationsByDate])
+  }, [reservationsByDate, dateFilter])
 
   // 이전/다음 월로 이동 (메모이제이션)
   const goToPreviousMonth = useCallback(() => {
@@ -269,13 +279,12 @@ const ReservationCalendar = memo(function ReservationCalendar({
               return `${month}/${day}/${year}`
             }
             
-            // 등록일 (created_at)을 라스베가스 시간으로 변환
+            // 등록일 (created_at)을 변환 없이 그대로 사용
             const getCreatedDateFormatted = () => {
-              const utcDate = new Date(reservation.created_at)
-              const lasVegasDate = new Date(utcDate.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
-              const month = lasVegasDate.getMonth() + 1
-              const day = lasVegasDate.getDate()
-              const year = lasVegasDate.getFullYear()
+              const date = new Date(reservation.created_at)
+              const month = date.getMonth() + 1
+              const day = date.getDate()
+              const year = date.getFullYear()
               return `${month}/${day}/${year}`
             }
             
