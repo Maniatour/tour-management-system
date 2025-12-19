@@ -29,8 +29,12 @@ interface TourFee {
   tour_id: string
   tour_name: string
   date: string
+  team_type: string
+  tour_guide_id: string | null
+  assistant_id: string | null
   guide_fee: number
   driver_fee: number
+  prepaid_tips: number
   total_fee: number
 }
 
@@ -356,6 +360,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
           guide_fee,
           assistant_fee,
           team_type,
+          reservation_ids,
           products!inner(name_ko)
         `)
         .gte('tour_date', startDate)
@@ -369,22 +374,70 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         return
       }
 
-      const fees = data?.map(tour => {
-        // 선택된 직원이 가이드인지 어시스턴트인지 확인
-        const isGuide = tour.tour_guide_id === selectedEmployee
-        const isAssistant = tour.assistant_id === selectedEmployee
-        
-        return {
-          id: tour.id,
-          tour_id: tour.id,
-          tour_name: (tour.products as any)?.name_ko || '투어명 없음',
-          date: tour.tour_date,
-          team_type: tour.team_type || '',
-          guide_fee: isGuide ? (tour.guide_fee || 0) : 0,
-          driver_fee: isAssistant ? (tour.assistant_fee || 0) : 0,
-          total_fee: isGuide ? (tour.guide_fee || 0) : (tour.assistant_fee || 0)
-        }
-      }) || []
+      // 각 투어의 prepaid tips 계산
+      const fees = await Promise.all(
+        (data || []).map(async (tour) => {
+          // 선택된 직원이 가이드인지 어시스턴트인지 확인
+          const isGuide = tour.tour_guide_id === selectedEmployee
+          const isAssistant = tour.assistant_id === selectedEmployee
+          
+          // prepaid tips 계산
+          let prepaidTips = 0
+          
+          // 먼저 tour_tip_shares 테이블에서 확인
+          try {
+            const { data: tipShareData, error: tipShareError } = await supabase
+              .from('tour_tip_shares')
+              .select('total_tip, guide_amount, assistant_amount')
+              .eq('tour_id', tour.id)
+              .single()
+
+            if (!tipShareError && tipShareData) {
+              // tour_tip_shares에 값이 있으면 그것을 사용
+              if (isGuide) {
+                prepaidTips = tipShareData.guide_amount || 0
+              } else if (isAssistant) {
+                prepaidTips = tipShareData.assistant_amount || 0
+              }
+            } else if (tour.reservation_ids && tour.reservation_ids.length > 0) {
+              // tour_tip_shares에 값이 없으면 reservation_pricing에서 계산
+              const { data: pricingData, error: pricingError } = await supabase
+                .from('reservation_pricing')
+                .select('prepayment_tip')
+                .in('reservation_id', tour.reservation_ids)
+
+              if (!pricingError && pricingData) {
+                const totalTip = pricingData.reduce((sum, pricing) => sum + (pricing.prepayment_tip || 0), 0)
+                
+                // 팀 타입에 따른 팁 분배
+                if (tour.team_type === '1guide' && isGuide) {
+                  prepaidTips = totalTip
+                } else if (tour.team_type === '2guide' && (isGuide || isAssistant)) {
+                  prepaidTips = totalTip / 2
+                } else if ((tour.team_type === 'guide+driver' || tour.team_type === 'guide + driver') && isGuide) {
+                  prepaidTips = totalTip
+                }
+              }
+            }
+          } catch (err) {
+            console.error('Prepaid tips 계산 오류:', err)
+          }
+          
+          return {
+            id: tour.id,
+            tour_id: tour.id,
+            tour_name: (tour.products as any)?.name_ko || '투어명 없음',
+            date: tour.tour_date,
+            team_type: tour.team_type || '',
+            tour_guide_id: tour.tour_guide_id,
+            assistant_id: tour.assistant_id,
+            guide_fee: tour.guide_fee || 0,
+            driver_fee: tour.assistant_fee || 0,
+            prepaid_tips: prepaidTips,
+            total_fee: isGuide ? (tour.guide_fee || 0) : (tour.assistant_fee || 0)
+          }
+        })
+      )
 
       setTourFees(fees)
       
@@ -608,6 +661,146 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         // 다른 position의 경우 기본값 없음
         setHourlyRate('')
       }
+    }
+  }
+
+  // 투어 필드 업데이트 핸들러
+  const handleTourFieldUpdate = async (tourId: string, field: 'team_type' | 'guide_fee' | 'driver_fee' | 'prepaid_tips', value: string | number) => {
+    try {
+      // 로컬 state 먼저 업데이트
+      setTourFees(prevFees => {
+        const updatedFees = prevFees.map(tour => {
+          if (tour.tour_id === tourId) {
+            const updated = { ...tour }
+            if (field === 'team_type') {
+              updated.team_type = value as string
+            } else if (field === 'guide_fee') {
+              updated.guide_fee = value as number
+              // 선택된 직원이 가이드인 경우 total_fee도 업데이트
+              if (tour.tour_guide_id === selectedEmployee) {
+                updated.total_fee = value as number
+              }
+            } else if (field === 'driver_fee') {
+              updated.driver_fee = value as number
+              // 선택된 직원이 어시스턴트인 경우 total_fee도 업데이트
+              if (tour.assistant_id === selectedEmployee) {
+                updated.total_fee = value as number
+              }
+            } else if (field === 'prepaid_tips') {
+              updated.prepaid_tips = value as number
+            }
+            return updated
+          }
+          return tour
+        })
+        
+        // 투어 급여 재계산
+        const tourSalary = updatedFees.reduce((sum, tour) => sum + tour.total_fee, 0)
+        setTourPay(tourSalary)
+        
+        return updatedFees
+      })
+
+      // Supabase에 업데이트
+      const updateData: any = {}
+      if (field === 'team_type') {
+        updateData.team_type = value
+      } else if (field === 'guide_fee') {
+        updateData.guide_fee = value
+      } else if (field === 'driver_fee') {
+        updateData.assistant_fee = value
+      } else if (field === 'prepaid_tips') {
+        // prepaid_tips는 tour_tip_shares 테이블의 total_tip을 업데이트
+        // 먼저 기존 tip_share가 있는지 확인
+        const { data: existingTipShare, error: tipShareError } = await supabase
+          .from('tour_tip_shares')
+          .select('id, total_tip, guide_amount, assistant_amount')
+          .eq('tour_id', tourId)
+          .single()
+
+        if (tipShareError && tipShareError.code !== 'PGRST116') {
+          console.error('팁 쉐어 조회 오류:', tipShareError)
+          fetchTourFees()
+          return
+        }
+
+        const newTotalTip = value as number
+        const oldTotalTip = existingTipShare?.total_tip || 0
+
+        if (existingTipShare) {
+          // 기존 tip_share가 있으면 total_tip과 비율에 따라 guide_amount, assistant_amount 업데이트
+          const guidePercent = oldTotalTip > 0 ? (existingTipShare.guide_amount || 0) / oldTotalTip : 0
+          const assistantPercent = oldTotalTip > 0 ? (existingTipShare.assistant_amount || 0) / oldTotalTip : 0
+
+          const { error: updateError } = await supabase
+            .from('tour_tip_shares')
+            .update({
+              total_tip: newTotalTip,
+              guide_amount: newTotalTip * guidePercent,
+              assistant_amount: newTotalTip * assistantPercent
+            })
+            .eq('tour_id', tourId)
+
+          if (updateError) {
+            console.error('팁 쉐어 업데이트 오류:', updateError)
+            fetchTourFees()
+            return
+          }
+        } else {
+          // 기존 tip_share가 없으면 새로 생성
+          const tour = tourFees.find(t => t.tour_id === tourId)
+          if (tour) {
+            // 팀 타입에 따라 기본 분배
+            let guideAmount = 0
+            let assistantAmount = 0
+
+            if (tour.team_type === '1guide' && tour.tour_guide_id === selectedEmployee) {
+              guideAmount = newTotalTip
+            } else if (tour.team_type === '2guide' && (tour.tour_guide_id === selectedEmployee || tour.assistant_id === selectedEmployee)) {
+              guideAmount = tour.tour_guide_id === selectedEmployee ? newTotalTip / 2 : 0
+              assistantAmount = tour.assistant_id === selectedEmployee ? newTotalTip / 2 : 0
+            } else if ((tour.team_type === 'guide+driver' || tour.team_type === 'guide + driver') && tour.tour_guide_id === selectedEmployee) {
+              guideAmount = newTotalTip
+            }
+
+            const { error: insertError } = await supabase
+              .from('tour_tip_shares')
+              .insert({
+                tour_id: tourId,
+                guide_email: tour.tour_guide_id,
+                assistant_email: tour.assistant_id,
+                total_tip: newTotalTip,
+                guide_amount: guideAmount,
+                assistant_amount: assistantAmount,
+                guide_percent: newTotalTip > 0 ? (guideAmount / newTotalTip) * 100 : 0,
+                assistant_percent: newTotalTip > 0 ? (assistantAmount / newTotalTip) * 100 : 0
+              })
+
+            if (insertError) {
+              console.error('팁 쉐어 생성 오류:', insertError)
+              fetchTourFees()
+              return
+            }
+          }
+        }
+        return // prepaid_tips는 별도로 처리하므로 여기서 종료
+      }
+
+      // tours 테이블 업데이트
+      const { error } = await supabase
+        .from('tours')
+        .update(updateData)
+        .eq('id', tourId)
+
+      if (error) {
+        console.error('투어 업데이트 오류:', error)
+        // 에러 발생 시 원래 값으로 복구
+        fetchTourFees()
+      }
+    } catch (error) {
+      console.error('투어 필드 업데이트 오류:', error)
+      // 에러 발생 시 원래 값으로 복구
+      fetchTourFees()
     }
   }
 
@@ -839,6 +1032,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   <th>팀 타입</th>
                   <th>가이드 Fee</th>
                   <th>드라이버 Fee</th>
+                  <th>Prepaid Tips</th>
                   <th>총 Fee</th>
                 </tr>
               </thead>
@@ -850,11 +1044,12 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                     <td>${tour.team_type}</td>
                     <td>$${formatCurrency(tour.guide_fee)}</td>
                     <td>$${formatCurrency(tour.driver_fee)}</td>
+                    <td>$${formatCurrency(tour.prepaid_tips || 0)}</td>
                     <td>$${formatCurrency(tour.total_fee)}</td>
                   </tr>
                 `).join('')}
                 <tr style="font-weight: bold; background: #f3f4f6;">
-                  <td colspan="5">총합</td>
+                  <td colspan="6">총합</td>
                   <td>$${formatCurrency(tourFees.reduce((sum, tour) => sum + tour.total_fee, 0))}</td>
                 </tr>
               </tbody>
@@ -1217,6 +1412,9 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                         드라이버 Fee
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Prepaid Tips
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         총 Fee
                       </th>
                     </tr>
@@ -1236,13 +1434,42 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                           </Link>
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
-                          {tour.team_type || '-'}
+                          <select
+                            value={tour.team_type || ''}
+                            onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'team_type', e.target.value)}
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          >
+                            <option value="1guide">1guide</option>
+                            <option value="2guide">2guide</option>
+                            <option value="guide+driver">guide+driver</option>
+                          </select>
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
-                          ${formatCurrency(tour.guide_fee)}
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={tour.guide_fee || 0}
+                            onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'guide_fee', parseFloat(e.target.value) || 0)}
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
-                          ${formatCurrency(tour.driver_fee)}
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={tour.driver_fee || 0}
+                            onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'driver_fee', parseFloat(e.target.value) || 0)}
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={tour.prepaid_tips || 0}
+                            onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'prepaid_tips', parseFloat(e.target.value) || 0)}
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-green-600">
                           ${formatCurrency(tour.total_fee)}
@@ -1252,7 +1479,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   </tbody>
                   <tfoot className="bg-gray-50">
                     <tr>
-                      <td colSpan={5} className="px-3 py-2 text-right text-sm font-medium text-gray-900">
+                      <td colSpan={6} className="px-3 py-2 text-right text-sm font-medium text-gray-900">
                         총합:
                       </td>
                       <td className="px-3 py-2 text-sm font-bold text-green-600">
