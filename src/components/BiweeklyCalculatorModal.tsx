@@ -434,7 +434,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
             guide_fee: tour.guide_fee || 0,
             driver_fee: tour.assistant_fee || 0,
             prepaid_tips: prepaidTips,
-            total_fee: isGuide ? (tour.guide_fee || 0) : (tour.assistant_fee || 0)
+            total_fee: (isGuide ? (tour.guide_fee || 0) : (tour.assistant_fee || 0)) + prepaidTips
           }
         })
       )
@@ -676,18 +676,26 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               updated.team_type = value as string
             } else if (field === 'guide_fee') {
               updated.guide_fee = value as number
-              // 선택된 직원이 가이드인 경우 total_fee도 업데이트
+              // 선택된 직원이 가이드인 경우 total_fee도 업데이트 (prepaid_tips 포함)
               if (tour.tour_guide_id === selectedEmployee) {
-                updated.total_fee = value as number
+                updated.total_fee = value as number + (updated.prepaid_tips || 0)
               }
             } else if (field === 'driver_fee') {
               updated.driver_fee = value as number
-              // 선택된 직원이 어시스턴트인 경우 total_fee도 업데이트
+              // 선택된 직원이 어시스턴트인 경우 total_fee도 업데이트 (prepaid_tips 포함)
               if (tour.assistant_id === selectedEmployee) {
-                updated.total_fee = value as number
+                updated.total_fee = value as number + (updated.prepaid_tips || 0)
               }
             } else if (field === 'prepaid_tips') {
               updated.prepaid_tips = value as number
+              // prepaid_tips 업데이트 시 total_fee도 재계산
+              const isGuide = tour.tour_guide_id === selectedEmployee
+              const isAssistant = tour.assistant_id === selectedEmployee
+              if (isGuide) {
+                updated.total_fee = (updated.guide_fee || 0) + value as number
+              } else if (isAssistant) {
+                updated.total_fee = (updated.driver_fee || 0) + value as number
+              }
             }
             return updated
           }

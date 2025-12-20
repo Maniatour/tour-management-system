@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Check, X, Users, Clock, Building, DollarSign } from 'lucide-react'
+import { Check, X, Users, Clock, Building, DollarSign, Wallet } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
@@ -521,6 +521,125 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     })
   }
 
+  // Balance 수령 핸들러
+  const handleReceiveBalance = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    
+    if (!reservationPricing || !isStaff) return
+    
+    // balance_amount 계산
+    const hasNotIncludedPrice = channelInfo?.has_not_included_price || false
+    const commissionBasePriceOnly = channelInfo?.commission_base_price_only || false
+    const shouldShowBalanceAmount = hasNotIncludedPrice || commissionBasePriceOnly
+    
+    let balanceAmount = 0
+    
+    if (shouldShowBalanceAmount && reservationPricing.balance_amount) {
+      // 불포함 있음 채널인 경우 balance_amount 사용
+      balanceAmount = typeof reservationPricing.balance_amount === 'string'
+        ? parseFloat(reservationPricing.balance_amount) || 0
+        : (reservationPricing.balance_amount || 0)
+    } else {
+      // 일반 채널인 경우 계산된 잔금 사용
+      const totalPrice = reservationPricing 
+        ? (typeof reservationPricing.total_price === 'string'
+            ? parseFloat(reservationPricing.total_price) || 0
+            : (reservationPricing.total_price || 0))
+        : 0
+      
+      const totalPaid = paymentRecords
+        .reduce((sum, record) => {
+          const amount = typeof record.amount === 'string'
+            ? parseFloat(record.amount) || 0
+            : (record.amount || 0)
+          return sum + amount
+        }, 0)
+      
+      balanceAmount = totalPrice - totalPaid
+    }
+    
+    if (balanceAmount <= 0) {
+      alert('수령할 잔액이 없습니다.')
+      return
+    }
+    
+    // 확인 다이얼로그
+    if (!confirm(`잔액 ${formatCurrency(balanceAmount, reservationPricing?.currency || 'USD')}을 현금으로 수령하시겠습니까?`)) {
+      return
+    }
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('인증이 필요합니다.')
+      }
+
+      // 1. 입금 내역 생성 (현금)
+      const paymentResponse = await fetch('/api/payment-records', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          reservation_id: reservation.id,
+          payment_status: 'confirmed',
+          amount: balanceAmount,
+          payment_method: 'cash',
+          note: 'Balance 수령 (관리자)'
+        })
+      })
+
+      if (!paymentResponse.ok) {
+        const errorData = await paymentResponse.json()
+        throw new Error(errorData.error || '입금 내역 생성에 실패했습니다.')
+      }
+
+      // 2. reservation_pricing의 balance_amount 업데이트 (불포함 있음 채널인 경우만)
+      if (shouldShowBalanceAmount) {
+        // 먼저 reservation_pricing 레코드 찾기
+        const { data: existingPricing, error: pricingFetchError } = await supabase
+          .from('reservation_pricing')
+          .select('id')
+          .eq('reservation_id', reservation.id)
+          .single()
+
+        if (pricingFetchError && pricingFetchError.code !== 'PGRST116') {
+          console.error('reservation_pricing 조회 오류:', pricingFetchError)
+          // 에러가 발생해도 계속 진행 (레코드가 없을 수도 있음)
+        }
+
+        if (existingPricing) {
+          // balance_amount를 0으로 업데이트
+          const { error: updateError } = await supabase
+            .from('reservation_pricing')
+            .update({ 
+              balance_amount: 0,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', existingPricing.id)
+
+          if (updateError) {
+            console.error('balance_amount 업데이트 오류:', updateError)
+            // 업데이트 실패해도 입금 내역은 생성되었으므로 경고만 표시
+            alert('입금 내역은 생성되었지만 잔액 업데이트에 실패했습니다. 페이지를 새로고침해주세요.')
+          }
+        }
+      }
+      // 일반 채널의 경우 balance_amount를 업데이트할 필요가 없음
+      // (잔금은 total_price - totalPaid로 자동 계산되므로 입금 내역 추가 시 자동으로 조정됨)
+
+      // 3. 입금 내역 및 가격 정보 새로고침
+      await fetchPaymentRecords()
+      await fetchReservationPricing()
+
+      alert('잔액 수령이 완료되었습니다.')
+    } catch (error) {
+      console.error('Balance 수령 오류:', error)
+      alert(error instanceof Error ? error.message : '잔액 수령 중 오류가 발생했습니다.')
+    }
+  }
+
   return (
      <div 
        className={`p-3 rounded-lg border transition-colors ${
@@ -785,7 +904,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               {getPickupLocation() || ''}
             </div>
             
-            {/* 잔액 뱃지 - 잔금이 있을 때만 표시 */}
+            {/* 잔액 뱃지 및 수령 버튼 - 잔금이 있을 때만 표시 */}
             {isStaff && (() => {
               // 불포함 있음 채널 확인
               const hasNotIncludedPrice = channelInfo?.has_not_included_price || false
@@ -800,8 +919,18 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                 
                 if (balanceAmount > 0) {
                   return (
-                    <div className="px-2 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700 border border-purple-200">
-                      {formatCurrency(balanceAmount, reservationPricing?.currency || 'USD')}
+                    <div className="flex items-center space-x-2">
+                      <div className="px-2 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700 border border-purple-200">
+                        {formatCurrency(balanceAmount, reservationPricing?.currency || 'USD')}
+                      </div>
+                      <button
+                        onClick={handleReceiveBalance}
+                        className="px-2 py-1 text-xs font-medium bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors flex items-center space-x-1"
+                        title="Balance 수령"
+                      >
+                        <Wallet size={12} />
+                        <span>수령</span>
+                      </button>
                     </div>
                   )
                 }
@@ -830,8 +959,18 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               // 잔금이 0보다 크면 표시
               if (calculatedBalance > 0) {
                 return (
-                  <div className="px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">
-                    {formatCurrency(calculatedBalance, reservationPricing?.currency || 'USD')}
+                  <div className="flex items-center space-x-2">
+                    <div className="px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">
+                      {formatCurrency(calculatedBalance, reservationPricing?.currency || 'USD')}
+                    </div>
+                    <button
+                      onClick={handleReceiveBalance}
+                      className="px-2 py-1 text-xs font-medium bg-red-600 text-white rounded hover:bg-red-700 transition-colors flex items-center space-x-1"
+                      title="Balance 수령"
+                    >
+                      <Wallet size={12} />
+                      <span>수령</span>
+                    </button>
                   </div>
                 )
               }
