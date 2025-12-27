@@ -80,15 +80,31 @@ export default function SimpleChoiceSelector({
     if (prevIds !== newIds) {
       console.log('SimpleChoiceSelector: initialSelections 변경됨, 상태 업데이트', { 
         prev: prevInitialSelectionsRef.current, 
-        new: initialSelections
+        new: initialSelections,
+        prevIds,
+        newIds
       });
       
       // 항상 새로운 값으로 업데이트 (사용자가 직접 변경한 경우는 onSelectionChange로 처리됨)
-      setSelections(initialSelections);
-      prevInitialSelectionsRef.current = initialSelections;
-      prevSelectionsRef.current = initialSelections;
+      setSelections([...initialSelections]); // 복사본으로 설정
+      prevInitialSelectionsRef.current = [...initialSelections]; // 복사본 저장
+      prevSelectionsRef.current = [...initialSelections]; // 복사본 저장
+      
+      console.log('SimpleChoiceSelector: selections 상태 업데이트 완료', {
+        updatedSelections: initialSelections,
+        selectionsCount: initialSelections.length
+      });
     }
   }, [initialSelections]);
+  
+  // selections 상태 변경 추적 (디버깅용)
+  useEffect(() => {
+    console.log('SimpleChoiceSelector: selections 상태 변경됨', {
+      selections,
+      selectionsCount: selections.length,
+      selectionsDetails: selections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id }))
+    });
+  }, [selections]);
 
   // 선택사항 변경 핸들러
   const handleSelectionChange = useCallback((
@@ -228,6 +244,20 @@ export default function SimpleChoiceSelector({
                 );
                 const currentQuantity = currentSelection?.quantity || 0;
                 const totalPrice = calculatePrice(option, currentQuantity, adults, children, infants);
+                
+                // 디버깅: 첫 번째 옵션만 로그 출력
+                if (option === (choice.options || []).filter(o => o.is_active).sort((a, b) => a.sort_order - b.sort_order)[0]) {
+                  console.log(`SimpleChoiceSelector: 옵션 렌더링 체크 (${choice.choice_group_ko})`, {
+                    choiceId: choice.id,
+                    optionId: option.id,
+                    optionName: option.option_name_ko,
+                    selectionsCount: selections.length,
+                    selections: selections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id })),
+                    currentSelection,
+                    currentQuantity,
+                    isSelected: currentQuantity > 0
+                  });
+                }
                 
                 return (
                   <div 
