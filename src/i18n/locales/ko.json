@@ -892,6 +892,16 @@
     "sevenDayForecast": "7일 예보",
     "today": "오늘",
     "tomorrow": "내일",
+    "maxTemp": "최고",
+    "minTemp": "최저",
+    "sunrise": "일출",
+    "sunset": "일몰",
+    "visibilityLevels": {
+      "excellent": "매우 좋음",
+      "good": "좋음",
+      "fair": "보통",
+      "poor": "나쁨"
+    },
     "tourNotes": {
       "title": "투어 노트",
       "sunriseTime": "일출 시간",

@@ -121,6 +121,16 @@ const getVisibilityLevel = (visibility: number, t: (key: string) => string) => {
   return t('visibilityLevels.poor')
 }
 
+// 위치별 타임존 정의
+const LOCATION_TIMEZONES: { [key: string]: string } = {
+  'Grand Canyon South Rim': 'America/Phoenix',
+  'Grand Canyon': 'America/Phoenix',
+  'Zion Canyon': 'America/Denver',
+  'Zion': 'America/Denver',
+  'Page City': 'America/Phoenix',
+  'Page': 'America/Phoenix'
+}
+
 export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
   const t = useTranslations('weather')
   const [weatherData, setWeatherData] = useState<{
@@ -134,49 +144,87 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null)
   const [hasData, setHasData] = useState(false)
 
-  // Convert time to 12-hour format (all times are already in Las Vegas local time)
-  const convertToLocalTime = (timeString: string, location: string, isSunrise: boolean = false): string => {
+  // 시간을 현지 시간과 라스베가스 시간으로 변환
+  const convertTimeWithTimezones = (
+    timeString: string, 
+    location: string
+  ): { localTime: string; vegasTime: string } => {
     try {
-      // Check if timeString is valid
       if (!timeString || timeString === 'N/A' || timeString === '') {
-        return 'N/A'
+        return { localTime: 'N/A', vegasTime: 'N/A' }
       }
 
-      console.log('Processing time:', { timeString, location, isSunrise })
+      // 24시간 형식 파싱 (HH:MM 또는 HH:MM:SS)
+      let hours: number
+      let minutes: number
 
-      // If the time is already in 12-hour format, return as-is
       if (timeString.includes('AM') || timeString.includes('PM')) {
-        return timeString
+        // 12시간 형식인 경우 24시간으로 변환
+        const isPM = timeString.includes('PM')
+        const timePart = timeString.replace(/\s*(AM|PM)/i, '')
+        const parts = timePart.split(':')
+        hours = parseInt(parts[0], 10)
+        minutes = parseInt(parts[1], 10)
+        
+        if (isPM && hours !== 12) hours += 12
+        if (!isPM && hours === 12) hours = 0
+      } else {
+        const timeParts = timeString.split(':')
+        if (timeParts.length < 2) {
+          return { localTime: timeString, vegasTime: timeString }
+        }
+        hours = parseInt(timeParts[0], 10)
+        minutes = parseInt(timeParts[1], 10)
       }
-
-      // Parse the time string (format: "HH:MM:SS" or "HH:MM")
-      const timeParts = timeString.split(':')
-      if (timeParts.length < 2) {
-        return timeString
-      }
-
-      const hours = parseInt(timeParts[0], 10)
-      const minutes = parseInt(timeParts[1], 10)
 
       if (isNaN(hours) || isNaN(minutes)) {
-        return timeString
+        return { localTime: timeString, vegasTime: timeString }
       }
 
-      console.log('Parsed hours/minutes:', { hours, minutes })
+      // 투어 날짜 또는 오늘 날짜 사용
+      const dateStr = tourDate || new Date().toISOString().split('T')[0]
+      const [year, month, day] = dateStr.split('-').map(Number)
 
-      // Convert to 12-hour format
-      const period = hours >= 12 ? 'PM' : 'AM'
-      const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
-      const displayMinutes = minutes.toString().padStart(2, '0')
+      // DB에 저장된 시간은 Arizona 시간(MST, UTC-7)
+      // UTC = Arizona 시간 + 7시간
+      const utcDate = new Date(Date.UTC(year, month - 1, day, hours + 7, minutes))
 
-      const result = `${displayHours}:${displayMinutes} ${period}`
-      console.log('Final result:', result)
-      
-      return result
+      // 위치별 타임존 결정
+      let timezone = 'America/Phoenix'
+      for (const [key, tz] of Object.entries(LOCATION_TIMEZONES)) {
+        if (location.includes(key)) {
+          timezone = tz
+          break
+        }
+      }
+
+      // 현지 시간 변환
+      const localTimeStr = utcDate.toLocaleTimeString('en-US', {
+        timeZone: timezone,
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      })
+
+      // 라스베가스 시간 변환
+      const vegasTimeStr = utcDate.toLocaleTimeString('en-US', {
+        timeZone: 'America/Los_Angeles',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      })
+
+      return { localTime: localTimeStr, vegasTime: vegasTimeStr }
     } catch (error) {
-      console.error('Error processing time:', error, { timeString, location })
-      return timeString
+      console.error('Error converting time:', error)
+      return { localTime: timeString, vegasTime: timeString }
     }
+  }
+
+  // 기존 함수 유지 (호환성)
+  const convertToLocalTime = (timeString: string, location: string, isSunrise: boolean = false): string => {
+    const { localTime } = convertTimeWithTimezones(timeString, location)
+    return localTime
   }
 
   const loadWeatherData = useCallback(async () => {
@@ -351,25 +399,31 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
               {getTempRange()}
             </span>
             
-            {/* 일출/일몰 시간 (아이콘과 함께) */}
+            {/* 일출/일몰 시간 (아이콘과 함께) - 현지시간 (LV 시간) */}
             {showSunriseSunset && (
               <div className="flex items-center space-x-1">
-                     {locationData.location.includes('Grand Canyon') && locationData.sunrise && (
-                       <>
-                         <Sun className="w-3 h-3 text-yellow-500" />
-                         <span className="text-xs text-gray-600 font-mono">
-                           {convertToLocalTime(locationData.sunrise, locationData.location, true)}
-                         </span>
-                       </>
-                     )}
-                     {locationData.location.includes('Zion') && locationData.sunset && (
-                       <>
-                         <Sunset className="w-3 h-3 text-orange-500" />
-                         <span className="text-xs text-gray-600 font-mono">
-                           {convertToLocalTime(locationData.sunset, locationData.location, false)}
-                         </span>
-                       </>
-                     )}
+                     {locationData.location.includes('Grand Canyon') && locationData.sunrise && (() => {
+                       const times = convertTimeWithTimezones(locationData.sunrise, locationData.location)
+                       return (
+                         <>
+                           <Sun className="w-3 h-3 text-yellow-500" />
+                           <span className="text-xs text-gray-600 font-mono">
+                             {times.localTime} <span className="text-gray-400">(LV {times.vegasTime})</span>
+                           </span>
+                         </>
+                       )
+                     })()}
+                     {locationData.location.includes('Zion') && locationData.sunset && (() => {
+                       const times = convertTimeWithTimezones(locationData.sunset, locationData.location)
+                       return (
+                         <>
+                           <Sunset className="w-3 h-3 text-orange-500" />
+                           <span className="text-xs text-gray-600 font-mono">
+                             {times.localTime} <span className="text-gray-400">(LV {times.vegasTime})</span>
+                           </span>
+                         </>
+                       )
+                     })()}
               </div>
             )}
           </div>
@@ -420,47 +474,63 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
 
             {/* 최고/최저 기온 상세 표시 */}
             {(locationData.weather.temp_max !== null || locationData.weather.temp_min !== null) && (
-              <div className="flex items-center justify-between text-xs text-gray-600 border-t border-gray-100 pt-2 mt-2">
-                <span>
-                  {t('maxTemp')}: {locationData.weather.temp_max ? 
-                    `${Math.round(locationData.weather.temp_max)}°C (${Math.round(locationData.weather.temp_max * 9/5 + 32)}°F)` : 
-                    'N/A'
-                  }
-                </span>
-                <span>
-                  {t('minTemp')}: {locationData.weather.temp_min ? 
-                    `${Math.round(locationData.weather.temp_min)}°C (${Math.round(locationData.weather.temp_min * 9/5 + 32)}°F)` : 
-                    'N/A'
-                  }
-                </span>
-              </div>
-            )}
-
-            {/* 일출/일몰 시간 상세 표시 */}
-            {showSunriseSunset && (
-              <div className="border-t border-gray-100 pt-2 mt-2">
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="flex items-center">
-                    <Sun className="h-3 w-3 text-yellow-500 mr-1" />
-                    <div>
-                      <div className="text-xs text-gray-500">{t('sunrise')}</div>
-                           <div className="text-xs font-medium text-gray-800">
-                             {convertToLocalTime(locationData.sunrise, locationData.location, true)}
-                           </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center">
-                    <Sunset className="h-3 w-3 text-orange-500 mr-1" />
-                    <div>
-                      <div className="text-xs text-gray-500">{t('sunset')}</div>
-                           <div className="text-xs font-medium text-gray-800">
-                             {convertToLocalTime(locationData.sunset, locationData.location, false)}
-                           </div>
-                    </div>
-                  </div>
+              <div className="grid grid-cols-2 gap-2 border-t border-gray-100 pt-2 mt-2">
+                <div className="flex items-center">
+                  <Thermometer className="h-3 w-3 text-red-400 mr-1" />
+                  <span className="text-xs text-gray-600">
+                    {t('maxTemp')}: {locationData.weather.temp_max ? 
+                      `${Math.round(locationData.weather.temp_max)}°C (${Math.round(locationData.weather.temp_max * 9/5 + 32)}°F)` : 
+                      'N/A'
+                    }
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  <Thermometer className="h-3 w-3 text-blue-400 mr-1" />
+                  <span className="text-xs text-gray-600">
+                    {t('minTemp')}: {locationData.weather.temp_min ? 
+                      `${Math.round(locationData.weather.temp_min)}°C (${Math.round(locationData.weather.temp_min * 9/5 + 32)}°F)` : 
+                      'N/A'
+                    }
+                  </span>
                 </div>
               </div>
             )}
+
+            {/* 일출/일몰 시간 상세 표시 - 현지시간 (LV 시간) */}
+            {showSunriseSunset && (() => {
+              const sunriseTimes = convertTimeWithTimezones(locationData.sunrise, locationData.location)
+              const sunsetTimes = convertTimeWithTimezones(locationData.sunset, locationData.location)
+              return (
+                <div className="border-t border-gray-100 pt-2 mt-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex items-center">
+                      <Sun className="h-3 w-3 text-yellow-500 mr-1" />
+                      <div>
+                        <div className="text-xs text-gray-500">{t('sunrise')}</div>
+                        <div className="text-xs font-medium text-gray-800">
+                          {sunriseTimes.localTime}
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          (LV {sunriseTimes.vegasTime})
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center">
+                      <Sunset className="h-3 w-3 text-orange-500 mr-1" />
+                      <div>
+                        <div className="text-xs text-gray-500">{t('sunset')}</div>
+                        <div className="text-xs font-medium text-gray-800">
+                          {sunsetTimes.localTime}
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          (LV {sunsetTimes.vegasTime})
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         )}
       </div>
@@ -509,12 +579,18 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
           <Clock className="h-3 w-3 text-purple-600 mr-1 mt-0.5" />
           <div className="text-xs text-purple-700">
             <p className="font-medium mb-1">{t('tourNotes.title')}</p>
-            <ul className="text-xs space-y-0.5">
-                   <li>• {t('tourNotes.sunriseTime')} {convertToLocalTime(weatherData.grandCanyon.sunrise, weatherData.grandCanyon.location, true)}</li>
-              <li>• {t('tourNotes.sunsetTime')} {convertToLocalTime(weatherData.zionCanyon.sunset, weatherData.zionCanyon.location, false)}</li>
-              <li>• {t('tourNotes.clothing')}</li>
-              <li>• {t('tourNotes.seasonal')}</li>
-            </ul>
+            {(() => {
+              const sunriseTimes = convertTimeWithTimezones(weatherData.grandCanyon.sunrise, weatherData.grandCanyon.location)
+              const sunsetTimes = convertTimeWithTimezones(weatherData.zionCanyon.sunset, weatherData.zionCanyon.location)
+              return (
+                <ul className="text-xs space-y-0.5">
+                  <li>• {t('tourNotes.sunriseTime')} {sunriseTimes.localTime} <span className="text-purple-500">(LV {sunriseTimes.vegasTime})</span></li>
+                  <li>• {t('tourNotes.sunsetTime')} {sunsetTimes.localTime} <span className="text-purple-500">(LV {sunsetTimes.vegasTime})</span></li>
+                  <li>• {t('tourNotes.clothing')}</li>
+                  <li>• {t('tourNotes.seasonal')}</li>
+                </ul>
+              )
+            })()}
           </div>
         </div>
       </div>

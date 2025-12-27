@@ -107,6 +107,29 @@ export default function DataSyncPage() {
     }
   } | null>(null)
 
+  // selected_options 마이그레이션 상태
+  const [migrationLoading, setMigrationLoading] = useState(false)
+  const [migrationResult, setMigrationResult] = useState<{
+    success: boolean
+    message: string
+    details?: {
+      totalProcessed: number
+      totalUpdated: number
+      totalSkipped: number
+      totalErrors: number
+      uuidMapping: Record<string, string>
+    }
+  } | null>(null)
+  const [migrationStatus, setMigrationStatus] = useState<{
+    totalReservations: number
+    noSelectedOptions: number
+    sampleSize: number
+    needsMigration: number
+    alreadyMigrated: number
+    uuidMapping: Record<string, string>
+    note: string
+  } | null>(null)
+
   // 컬럼 매핑을 localStorage에 저장
   const saveColumnMapping = (tableName: string, mapping: ColumnMapping) => {
     try {
@@ -713,6 +736,72 @@ export default function DataSyncPage() {
       setCleanupLoading(false)
     }
   }
+
+  // selected_options UUID 마이그레이션 상태 확인
+  const checkMigrationStatus = async () => {
+    try {
+      const response = await fetch('/api/sync/selected-options-migration')
+      const result = await response.json()
+      
+      if (result.success) {
+        setMigrationStatus(result.data)
+      } else {
+        console.error('Failed to check migration status:', result.message)
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('마이그레이션 상태 확인 요청이 취소되었습니다.')
+        return
+      }
+      
+      console.error('Error checking migration status:', error)
+    }
+  }
+
+  // selected_options → reservation_choices 마이그레이션 실행
+  const handleSelectedOptionsMigration = async () => {
+    if (!confirm('selected_options를 reservation_choices 테이블로 마이그레이션하시겠습니까?\n\n이 작업은 5000개 이상의 예약 데이터를 한꺼번에 처리합니다.\n기존 reservation_choices 데이터가 있는 예약은 스킵됩니다.\n\n진행하시겠습니까?')) {
+      return
+    }
+
+    setMigrationLoading(true)
+    setMigrationResult(null)
+
+    try {
+      const response = await fetch('/api/sync/selected-options-migration', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      const result = await response.json()
+      setMigrationResult(result)
+      
+      if (result.success) {
+        // 마이그레이션 후 상태 다시 확인
+        await checkMigrationStatus()
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('마이그레이션 요청이 취소되었습니다.')
+        return
+      }
+      
+      console.error('Error during migration:', error)
+      setMigrationResult({
+        success: false,
+        message: 'selected_options 마이그레이션 중 오류가 발생했습니다.'
+      })
+    } finally {
+      setMigrationLoading(false)
+    }
+  }
+
+  // 페이지 로드 시 마이그레이션 상태도 확인
+  useEffect(() => {
+    checkMigrationStatus()
+  }, [])
 
   // 요청 취소 함수
   const cancelRequest = () => {
@@ -1386,6 +1475,136 @@ export default function DataSyncPage() {
                     </div>
                   </div>
                 </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* selected_options → reservation_choices 마이그레이션 섹션 */}
+      <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+          <Zap className="h-5 w-5 mr-2" />
+          선택사항 마이그레이션 (reservation_choices)
+        </h2>
+        
+        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <h3 className="text-sm font-medium text-blue-800 mb-2">마이그레이션 설명:</h3>
+          <ul className="text-sm text-blue-700 space-y-1">
+            <li>• <code className="bg-blue-100 px-1 rounded">reservations.selected_options</code> 컬럼의 데이터를 <code className="bg-blue-100 px-1 rounded">reservation_choices</code> 테이블로 변환합니다.</li>
+            <li>• 이미 <code className="bg-blue-100 px-1 rounded">reservation_choices</code>에 데이터가 있는 예약은 스킵됩니다.</li>
+            <li>• 예약 관리 페이지에서 초이스가 표시되도록 합니다.</li>
+          </ul>
+          <p className="text-xs text-blue-600 mt-2">
+            ※ 이 작업은 5000개 이상의 예약 데이터를 한꺼번에 처리합니다.
+          </p>
+        </div>
+
+        {/* 마이그레이션 현재 상태 */}
+        {migrationStatus && (
+          <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+            <h4 className="text-sm font-medium text-gray-700 mb-2">현재 상태:</h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+              <div className="bg-white p-2 rounded text-center">
+                <div className="font-bold text-blue-600">{migrationStatus.totalReservations || 0}</div>
+                <div className="text-blue-800">총 예약</div>
+              </div>
+              <div className="bg-white p-2 rounded text-center">
+                <div className="font-bold text-orange-600">{migrationStatus.needsMigration || 0}</div>
+                <div className="text-orange-800">마이그레이션 필요 (샘플)</div>
+              </div>
+              <div className="bg-white p-2 rounded text-center">
+                <div className="font-bold text-green-600">{migrationStatus.alreadyMigrated || 0}</div>
+                <div className="text-green-800">reservation_choices 있음</div>
+              </div>
+              <div className="bg-white p-2 rounded text-center">
+                <div className="font-bold text-gray-600">{migrationStatus.noSelectedOptions || 0}</div>
+                <div className="text-gray-800">선택사항 없음</div>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">{migrationStatus.note}</p>
+          </div>
+        )}
+
+        <div className="flex space-x-3">
+          <button
+            onClick={handleSelectedOptionsMigration}
+            disabled={migrationLoading}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+          >
+            <Zap className="h-4 w-4 mr-2" />
+            {migrationLoading ? '마이그레이션 중...' : 'reservation_choices 마이그레이션'}
+          </button>
+          <button
+            onClick={checkMigrationStatus}
+            disabled={migrationLoading}
+            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            상태 새로고침
+          </button>
+        </div>
+
+        {/* 마이그레이션 결과 표시 */}
+        {migrationResult && (
+          <div className="mt-4 p-4 rounded-lg border">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-medium text-gray-900 flex items-center">
+                {migrationResult.success ? (
+                  <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-red-500 mr-2" />
+                )}
+                마이그레이션 결과
+              </h4>
+              <button
+                onClick={() => setMigrationResult(null)}
+                className="text-gray-400 hover:text-gray-600 text-sm"
+              >
+                ✕ 닫기
+              </button>
+            </div>
+            
+            <div className={`p-3 rounded-lg ${
+              migrationResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
+            }`}>
+              <p className={`text-sm font-medium ${
+                migrationResult.success ? 'text-green-800' : 'text-red-800'
+              }`}>
+                {migrationResult.message}
+              </p>
+              
+              {migrationResult.details && (
+                <>
+                  <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                    <div className="bg-blue-50 p-2 rounded text-center">
+                      <div className="font-bold text-blue-600">{migrationResult.details.totalProcessed}</div>
+                      <div className="text-blue-800">처리된 예약</div>
+                    </div>
+                    <div className="bg-green-50 p-2 rounded text-center">
+                      <div className="font-bold text-green-600">{migrationResult.details.totalCreated || migrationResult.details.totalUpdated || 0}</div>
+                      <div className="text-green-800">생성된 초이스</div>
+                    </div>
+                    <div className="bg-gray-50 p-2 rounded text-center">
+                      <div className="font-bold text-gray-600">{migrationResult.details.totalSkipped}</div>
+                      <div className="text-gray-800">스킵됨</div>
+                    </div>
+                    <div className="bg-red-50 p-2 rounded text-center">
+                      <div className="font-bold text-red-600">{migrationResult.details.totalErrors}</div>
+                      <div className="text-red-800">오류</div>
+                    </div>
+                  </div>
+                  {migrationResult.details.errorMessages && migrationResult.details.errorMessages.length > 0 && (
+                    <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded text-xs">
+                      <div className="font-medium text-red-800 mb-1">오류 상세 (최대 10개):</div>
+                      <ul className="text-red-700 space-y-0.5">
+                        {migrationResult.details.errorMessages.map((msg: string, idx: number) => (
+                          <li key={idx}>• {msg}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>

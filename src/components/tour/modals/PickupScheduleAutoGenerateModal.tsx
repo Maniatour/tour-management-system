@@ -65,6 +65,7 @@ export default function PickupScheduleAutoGenerateModal({
   const [linkCopied, setLinkCopied] = useState(false) // 링크 복사 상태
   const [markers, setMarkers] = useState<google.maps.Marker[]>([]) // 커스텀 마커 배열
   const [customFirstPickupTime, setCustomFirstPickupTime] = useState<string>('') // 사용자 정의 첫 번째 픽업 시간
+  const [customLastPickupTime, setCustomLastPickupTime] = useState<string>('') // 사용자 정의 마지막 픽업 시간
 
   // 일출 투어 여부 확인
   const isSunriseTour = productId === 'MDGCSUNRISE'
@@ -97,11 +98,10 @@ export default function PickupScheduleAutoGenerateModal({
               // Grand Canyon은 아리조나 시간대를 사용 (UTC-7, 썸머타임 없음)
               const [year, month, day] = tourDate.split('-').map(Number)
               
-              // 아리조나 시간을 UTC로 변환
-              // 아리조나 시간 = UTC - 7시간이므로, UTC = 아리조나 시간 + 7시간
-              const arizonaTimeString = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
-              // 아리조나 시간을 UTC로 변환 (UTC-7이므로 +7시간)
-              const utcDate = new Date(new Date(arizonaTimeString).getTime() + 7 * 60 * 60 * 1000)
+              // 아리조나 시간(MST, UTC-7)을 UTC로 변환
+              // Date.UTC를 사용하여 로컬 타임존에 영향받지 않고 UTC 시간 생성
+              // UTC = 아리조나 시간 + 7시간
+              const utcDate = new Date(Date.UTC(year, month - 1, day, hours + 7, minutes, 0))
               
               // UTC를 라스베가스 시간으로 변환 (America/Los_Angeles)
               const lasVegasFormatter = new Intl.DateTimeFormat('en-US', {
@@ -504,9 +504,12 @@ export default function PickupScheduleAutoGenerateModal({
     // 최적화된 경로를 사용
     const finalHotels = optimizedRoute
 
-    // 일출 투어인 경우 마지막 픽업 시간 계산
+    // 마지막 픽업 시간 계산 (사용자 정의 시간 우선)
     let lastPickupTime: string = '08:00' // 기본값
-    if (isSunriseTour && sunriseTime) {
+    if (customLastPickupTime) {
+      // 사용자가 마지막 픽업 시간을 직접 입력한 경우
+      lastPickupTime = customLastPickupTime
+    } else if (isSunriseTour && sunriseTime) {
       const [sunriseHours, sunriseMinutes] = sunriseTime.split(':').map(Number)
       // 일출 시간에서 6시간 30분 전
       let totalMinutes = sunriseHours * 60 + sunriseMinutes - (6 * 60 + 30)
@@ -534,8 +537,8 @@ export default function PickupScheduleAutoGenerateModal({
     finalHotels.forEach((item, index) => {
       let pickupTime: string
       
-      if (isSunriseTour && sunriseTime) {
-        // 일출 투어: 마지막 픽업부터 역순으로 시간 배치
+      if (customLastPickupTime || (isSunriseTour && sunriseTime)) {
+        // 마지막 픽업 시간이 설정된 경우: 역순으로 시간 배치
         const timeInterval = 10 // 10분 간격
         const minutesFromLast = (totalHotels - index - 1) * timeInterval
         
@@ -551,7 +554,7 @@ export default function PickupScheduleAutoGenerateModal({
         const mins = totalMinutes % 60
         pickupTime = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
       } else {
-        // 일반 투어: 08:00부터 10분 간격
+        // 일반 투어 (마지막 픽업 시간 미설정): 08:00부터 10분 간격
         const timeInterval = 10
         const startHours = 8
         const startMinutes = 0
@@ -570,7 +573,7 @@ export default function PickupScheduleAutoGenerateModal({
     })
 
     setPickupSchedule(schedule)
-  }, [assignedReservations, pickupHotels, isSunriseTour, sunriseTime, mapLoaded])
+  }, [assignedReservations, pickupHotels, isSunriseTour, sunriseTime, mapLoaded, customLastPickupTime])
 
   // 실제 이동 시간을 기반으로 픽업 시간 업데이트
   const updatePickupTimesWithTravelTimes = useCallback((travelTimes: number[]) => {
@@ -579,9 +582,12 @@ export default function PickupScheduleAutoGenerateModal({
     setPickupSchedule(prevSchedule => {
       if (prevSchedule.length === 0) return prevSchedule
 
-      // 일출 투어인 경우 마지막 픽업 시간 계산
+      // 마지막 픽업 시간 계산 (사용자 정의 시간 우선)
       let lastPickupTime: string = '08:00' // 기본값
-      if (isSunriseTour && sunriseTime) {
+      if (customLastPickupTime) {
+        // 사용자가 마지막 픽업 시간을 직접 입력한 경우
+        lastPickupTime = customLastPickupTime
+      } else if (isSunriseTour && sunriseTime) {
         const [sunriseHours, sunriseMinutes] = sunriseTime.split(':').map(Number)
         // 일출 시간에서 6시간 30분 전
         let totalMinutes = sunriseHours * 60 + sunriseMinutes - (6 * 60 + 30)
@@ -644,7 +650,7 @@ export default function PickupScheduleAutoGenerateModal({
 
       return updatedSchedule
     })
-  }, [isSunriseTour, sunriseTime])
+  }, [isSunriseTour, sunriseTime, customLastPickupTime])
 
   // 사용자 정의 첫 번째 픽업 시간을 기준으로 픽업 시간 재계산
   const updatePickupTimesFromFirstPickup = useCallback((firstPickupTime: string) => {
@@ -711,6 +717,13 @@ export default function PickupScheduleAutoGenerateModal({
     }
   }, [customFirstPickupTime, updatePickupTimesFromFirstPickup, travelTimes])
 
+  // 사용자 정의 마지막 픽업 시간이 변경되면 재계산
+  useEffect(() => {
+    if (customLastPickupTime && travelTimes.length > 0) {
+      updatePickupTimesWithTravelTimes(travelTimes)
+    }
+  }, [customLastPickupTime, updatePickupTimesWithTravelTimes, travelTimes])
+
   // 스케줄 생성 시 자동 실행
   useEffect(() => {
     if (isOpen && assignedReservations.length > 0 && pickupHotels.length > 0) {
@@ -718,10 +731,12 @@ export default function PickupScheduleAutoGenerateModal({
     }
   }, [isOpen, generatePickupSchedule])
 
-  // 모달이 열릴 때 routeCalculated 초기화
+  // 모달이 열릴 때 routeCalculated 및 customLastPickupTime 초기화
   useEffect(() => {
     if (isOpen) {
       setRouteCalculated(false)
+      setCustomLastPickupTime('')
+      setCustomFirstPickupTime('')
     }
   }, [isOpen])
 
@@ -1108,57 +1123,57 @@ export default function PickupScheduleAutoGenerateModal({
           </button>
         </div>
 
-        {/* 첫 번째 픽업 시간 입력 영역 */}
-        <div className="px-4 py-3 bg-gray-50 border-b flex items-center gap-4">
+        {/* 마지막 픽업 시간 입력 영역 */}
+        <div className="px-4 py-3 bg-gray-50 border-b flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
-            <Clock size={16} className="text-gray-500" />
-            <label className="text-sm font-medium text-gray-700">첫 번째 픽업 시간:</label>
+            <Clock size={16} className="text-orange-500" />
+            <label className="text-sm font-medium text-gray-700">마지막 픽업 시간:</label>
             <div className="flex items-center">
               {/* 5분 감소 버튼 */}
               <button
                 onClick={() => {
-                  const currentTime = customFirstPickupTime || pickupSchedule[0]?.pickupTime || '08:00'
+                  const currentTime = customLastPickupTime || pickupSchedule[pickupSchedule.length - 1]?.pickupTime || '08:00'
                   const [hours, minutes] = currentTime.split(':').map(Number)
                   let totalMinutes = hours * 60 + minutes - 5
                   if (totalMinutes < 0) totalMinutes += 24 * 60
                   const newHours = Math.floor(totalMinutes / 60) % 24
                   const newMins = totalMinutes % 60
-                  setCustomFirstPickupTime(`${String(newHours).padStart(2, '0')}:${String(newMins).padStart(2, '0')}`)
+                  setCustomLastPickupTime(`${String(newHours).padStart(2, '0')}:${String(newMins).padStart(2, '0')}`)
                 }}
-                className="px-2 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-l-md border border-r-0 border-gray-300 text-gray-700"
+                className="px-2 py-1.5 bg-orange-100 hover:bg-orange-200 rounded-l-md border border-r-0 border-orange-300 text-orange-700"
                 title="-5분"
               >
                 <ChevronDown size={16} />
               </button>
               <input
                 type="time"
-                value={customFirstPickupTime || pickupSchedule[0]?.pickupTime || ''}
-                onChange={(e) => setCustomFirstPickupTime(e.target.value)}
-                className="px-3 py-1.5 border-y border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-center w-32"
+                value={customLastPickupTime || pickupSchedule[pickupSchedule.length - 1]?.pickupTime || ''}
+                onChange={(e) => setCustomLastPickupTime(e.target.value)}
+                className="px-3 py-1.5 border-y border-orange-300 text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-center w-32"
                 step="300"
               />
               {/* 5분 증가 버튼 */}
               <button
                 onClick={() => {
-                  const currentTime = customFirstPickupTime || pickupSchedule[0]?.pickupTime || '08:00'
+                  const currentTime = customLastPickupTime || pickupSchedule[pickupSchedule.length - 1]?.pickupTime || '08:00'
                   const [hours, minutes] = currentTime.split(':').map(Number)
                   let totalMinutes = hours * 60 + minutes + 5
                   if (totalMinutes >= 24 * 60) totalMinutes -= 24 * 60
                   const newHours = Math.floor(totalMinutes / 60) % 24
                   const newMins = totalMinutes % 60
-                  setCustomFirstPickupTime(`${String(newHours).padStart(2, '0')}:${String(newMins).padStart(2, '0')}`)
+                  setCustomLastPickupTime(`${String(newHours).padStart(2, '0')}:${String(newMins).padStart(2, '0')}`)
                 }}
-                className="px-2 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-r-md border border-l-0 border-gray-300 text-gray-700"
+                className="px-2 py-1.5 bg-orange-100 hover:bg-orange-200 rounded-r-md border border-l-0 border-orange-300 text-orange-700"
                 title="+5분"
               >
                 <ChevronUp size={16} />
               </button>
             </div>
           </div>
-          {customFirstPickupTime && (
+          {customLastPickupTime && (
             <button
               onClick={() => {
-                setCustomFirstPickupTime('')
+                setCustomLastPickupTime('')
                 // 자동 계산으로 복원
                 if (travelTimes.length > 0) {
                   updatePickupTimesWithTravelTimes(travelTimes)
@@ -1169,9 +1184,14 @@ export default function PickupScheduleAutoGenerateModal({
               초기화 (자동 계산으로 복원)
             </button>
           )}
-          {customFirstPickupTime && (
+          {customLastPickupTime && (
             <span className="text-xs text-green-600 font-medium">
-              ✓ 수동 조정됨
+              ✓ 수동 설정됨
+            </span>
+          )}
+          {isSunriseTour && !customLastPickupTime && sunriseTime && (
+            <span className="text-xs text-gray-500">
+              (일출 {sunriseTimeArizona || sunriseTime} AZ 기준 자동 계산)
             </span>
           )}
         </div>

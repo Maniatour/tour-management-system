@@ -77,19 +77,11 @@ export async function getCachedSunriseSunsetData(locationName: string, date: str
     
     const record = data[0]
     
-    // Convert time based on location
-    if (locationName === 'Grand Canyon South Rim') {
-      // Grand Canyon times are in UTC, need conversion
-      return {
-        sunrise: convertToArizonaTime(record.sunrise_time),
-        sunset: convertToArizonaTime(record.sunset_time)
-      }
-    } else {
-      // Other locations (Zion, Page City) are already in Las Vegas local time
-      return {
-        sunrise: record.sunrise_time,
-        sunset: record.sunset_time
-      }
+    // DB에 저장된 시간은 이미 weather-collector에서 Arizona 시간(MST)으로 변환되어 있음
+    // 따라서 추가 변환 없이 그대로 반환
+    return {
+      sunrise: record.sunrise_time,
+      sunset: record.sunset_time
     }
   } catch (error) {
     console.warn(`Error fetching sunrise/sunset data for ${locationName}:`, error)

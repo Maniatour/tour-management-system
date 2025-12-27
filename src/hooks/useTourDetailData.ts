@@ -717,13 +717,8 @@ export function useTourDetailData() {
     fetchTourData()
   }, [params.id])
 
-  // 권한이 없을 때 리다이렉트
-  useEffect(() => {
-    if (!loading && !isStaff) {
-      console.log('권한 없음, 리다이렉트:', { loading, isStaff, userRole, user: user?.email })
-      router.push(`/${params.locale}/admin`)
-    }
-  }, [loading, isStaff, router, params.locale, userRole, user])
+  // 권한 체크는 AdminAuthGuard에서 처리하므로 여기서는 리다이렉트하지 않음
+  // AdminAuthGuard가 이미 권한 없는 사용자를 홈으로 리다이렉트함
 
   // 계산된 값들
   const getTotalAssignedPeople = useMemo(() => {

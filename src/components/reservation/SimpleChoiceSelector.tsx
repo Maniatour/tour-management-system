@@ -60,6 +60,23 @@ export default function SimpleChoiceSelector({
   const prevInitialSelectionsRef = useRef<SelectedChoice[]>(initialSelections);
   const prevSelectionsRef = useRef<SelectedChoice[]>(initialSelections);
 
+  // initialSelections prop이 변경될 때 selections 상태 업데이트
+  useEffect(() => {
+    // initialSelections가 실제로 변경되었는지 확인 (참조 비교가 아닌 내용 비교)
+    const prevIds = prevInitialSelectionsRef.current.map(s => s.option_id).sort().join(',');
+    const newIds = initialSelections.map(s => s.option_id).sort().join(',');
+    
+    if (prevIds !== newIds && initialSelections.length > 0) {
+      console.log('SimpleChoiceSelector: initialSelections 변경됨', { 
+        prev: prevInitialSelectionsRef.current, 
+        new: initialSelections 
+      });
+      setSelections(initialSelections);
+      prevInitialSelectionsRef.current = initialSelections;
+      prevSelectionsRef.current = initialSelections;
+    }
+  }, [initialSelections]);
+
   // 선택사항 변경 핸들러
   const handleSelectionChange = useCallback((
     choiceId: string,

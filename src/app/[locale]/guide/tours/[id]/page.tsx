@@ -60,6 +60,14 @@ export default function GuideTourDetailPage() {
     reservation_id: string
     balance_amount: number
   }>>([])
+  const [reservationChoicesMap, setReservationChoicesMap] = useState<Map<string, Array<{
+    choice_id: string
+    option_id: string
+    quantity: number
+    option_name: string
+    option_name_ko: string
+    choice_group_ko: string
+  }>>>(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   
@@ -176,7 +184,7 @@ export default function GuideTourDetailPage() {
         // 연결된 예약을 투어 상태, 배정 상태와 상관없이 모두 가져옴
         const { data: reservationsData } = await supabase
           .from('reservations')
-          .select('*, choices')
+          .select('*, selected_options')
           .in('id', allReservationIds)
           // 상태 필터링 없음 - 모든 상태의 예약 표시
 
@@ -189,6 +197,49 @@ export default function GuideTourDetailPage() {
           .in('reservation_id', allReservationIds)
         
         setReservationPricing(pricingData || [])
+
+        // reservation_choices 테이블에서 초이스 정보 가져오기 (예약 페이지와 동일한 방식)
+        const choicesMap = new Map<string, Array<{
+          choice_id: string
+          option_id: string
+          quantity: number
+          option_name: string
+          option_name_ko: string
+          choice_group_ko: string
+        }>>()
+
+        for (const reservationId of allReservationIds) {
+          const { data: choicesData, error: choicesError } = await supabase
+            .from('reservation_choices')
+            .select(`
+              choice_id,
+              option_id,
+              quantity,
+              choice_options!inner (
+                option_key,
+                option_name,
+                option_name_ko,
+                product_choices!inner (
+                  choice_group_ko
+                )
+              )
+            `)
+            .eq('reservation_id', reservationId)
+
+          if (!choicesError && choicesData && choicesData.length > 0) {
+            const formattedChoices = choicesData.map((choice: any) => ({
+              choice_id: choice.choice_id,
+              option_id: choice.option_id,
+              quantity: choice.quantity,
+              option_name: choice.choice_options?.option_name || '',
+              option_name_ko: choice.choice_options?.option_name_ko || choice.choice_options?.option_name || '',
+              choice_group_ko: choice.choice_options?.product_choices?.choice_group_ko || ''
+            }))
+            choicesMap.set(reservationId, formattedChoices)
+          }
+        }
+
+        setReservationChoicesMap(choicesMap)
         
         // 픽업 시간으로 정렬
         const sortedReservations = reservationsList.sort((a, b) => {
@@ -979,42 +1030,30 @@ export default function GuideTourDetailPage() {
                                   </span>
                                 </div>
 
-                                {/* 중단: choices와 연락처 아이콘 */}
+                                {/* 중단: 초이스와 연락처 아이콘 */}
                                 <div className="flex items-center justify-between mb-2">
                                   <div className="text-sm text-gray-600">
                                     {(() => {
-                                      const choices = (reservation as ReservationRow & { choices?: unknown }).choices;
-                                      if (!choices) return t('noOptions');
-                                      if (typeof choices === 'string') return choices;
-                                      if (typeof choices === 'object' && choices !== null) {
-                                        // choices.required 배열에서 선택된 옵션들 추출
-                                        const choicesObj = choices as { required?: Array<{ options?: Array<{ is_default?: boolean; name?: string; name_ko?: string }> }>; name?: string; name_ko?: string };
-                                        if (choicesObj.required && Array.isArray(choicesObj.required)) {
-                                          const selectedOptions = choicesObj.required
-                                            .map((item) => {
-                                              if (item.options && Array.isArray(item.options)) {
-                                                // 기본 선택된 옵션 또는 첫 번째 옵션 선택
-                                                const selectedOption = item.options.find((opt) => opt.is_default) || item.options[0];
-                                                if (selectedOption) {
-                                                  // 로케일에 따라 한국어 또는 영어 표시
-                                                  if (locale === 'ko') {
-                                                    return selectedOption.name_ko || selectedOption.name;
-                                                  } else {
-                                                    return selectedOption.name || selectedOption.name_ko;
-                                                  }
-                                                }
-                                                return null;
-                                              }
-                                              return null;
-                                            })
-                                            .filter(Boolean)
-                                            .join(', ');
-                                          return selectedOptions || t('noOptionsSelected');
-                                        }
-                                        // 기타 객체인 경우
-                                        return choicesObj.name || choicesObj.name_ko || t('noOptions');
+                                      // reservation_choices 테이블에서 가져온 초이스 데이터 사용 (예약 페이지와 동일)
+                                      const choices = reservationChoicesMap.get(reservation.id)
+                                      
+                                      if (!choices || choices.length === 0) {
+                                        return t('noOptions')
                                       }
-                                      return String(choices);
+                                      
+                                      // 선택된 옵션 이름들을 표시
+                                      const optionNames = choices.map((choice) => {
+                                        // 로케일에 따라 한국어 또는 영어 이름 표시
+                                        return locale === 'ko' 
+                                          ? (choice.option_name_ko || choice.option_name)
+                                          : (choice.option_name || choice.option_name_ko)
+                                      }).filter(Boolean)
+                                      
+                                      if (optionNames.length === 0) {
+                                        return t('noOptions')
+                                      }
+                                      
+                                      return optionNames.join(', ')
                                     })()}
                                   </div>
                                   <div className="flex items-center space-x-3">

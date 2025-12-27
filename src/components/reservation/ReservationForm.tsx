@@ -735,6 +735,8 @@ export default function ReservationForm({
         const selectedChoices: Array<{
           choice_id: string
           option_id: string
+          option_key: string
+          option_name_ko: string
           quantity: number
           total_price: number
         }> = []
@@ -747,6 +749,8 @@ export default function ReservationForm({
           selectedChoices.push({
             choice_id: item.choice_id,
             option_id: item.option_id,
+            option_key: item.choice_options?.option_key || '',
+            option_name_ko: item.choice_options?.option_name_ko || '',
             quantity: item.quantity,
             total_price: item.total_price
           })

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Clock, Calendar, MapPin, Car, Camera, ChevronDown, ChevronUp } from 'lucide-react'
+import { Clock, Calendar, MapPin, Car, Camera, ChevronDown, ChevronUp, Navigation } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface ScheduleItem {
@@ -30,6 +30,7 @@ interface ScheduleItem {
   order_index: number | null
   two_guide_schedule: string | null
   guide_driver_schedule: string | null
+  google_maps_link: string | null
   created_at: string | null
   updated_at: string | null
 }
@@ -388,6 +389,19 @@ export default function TourScheduleSection({
                                 {getLocalizedText(schedule.title_ko, schedule.title_en, '')}
                               </h5>
                               <div className="flex items-center space-x-2 flex-shrink-0">
+                                {/* 구글맵 버튼 */}
+                                {schedule.google_maps_link && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      window.open(schedule.google_maps_link!, '_blank')
+                                    }}
+                                    className="p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-md transition-colors flex items-center"
+                                    title={getText('구글맵으로 열기', 'Open in Google Maps')}
+                                  >
+                                    <Navigation className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
                                 {getResponsibleLabels(schedule).map((label, index) => (
                                   <span key={index} className={`px-2 py-1 text-xs rounded ${label.color}`}>
                                     {label.text}
