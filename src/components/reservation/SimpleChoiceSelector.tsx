@@ -66,22 +66,27 @@ export default function SimpleChoiceSelector({
     const prevIds = prevInitialSelectionsRef.current.map(s => `${s.choice_id}:${s.option_id}`).sort().join(',');
     const newIds = initialSelections.map(s => `${s.choice_id}:${s.option_id}`).sort().join(',');
     
-    // 이전에 빈 배열이었고 새로운 값이 있으면 업데이트
-    // 또는 이전 값과 새로운 값이 다르면 업데이트
+    console.log('SimpleChoiceSelector: initialSelections 체크', {
+      prevLength: prevInitialSelectionsRef.current.length,
+      newLength: initialSelections.length,
+      prevIds,
+      newIds,
+      isDifferent: prevIds !== newIds,
+      prev: prevInitialSelectionsRef.current,
+      new: initialSelections
+    });
+    
+    // 이전 값과 새로운 값이 다르면 항상 업데이트
     if (prevIds !== newIds) {
-      console.log('SimpleChoiceSelector: initialSelections 변경됨', { 
+      console.log('SimpleChoiceSelector: initialSelections 변경됨, 상태 업데이트', { 
         prev: prevInitialSelectionsRef.current, 
-        new: initialSelections,
-        prevIds,
-        newIds
+        new: initialSelections
       });
       
-      // 새로운 값이 있으면 업데이트, 없으면 이전 값 유지 (사용자가 선택을 해제한 경우)
-      if (initialSelections.length > 0 || prevInitialSelectionsRef.current.length === 0) {
-        setSelections(initialSelections);
-        prevInitialSelectionsRef.current = initialSelections;
-        prevSelectionsRef.current = initialSelections;
-      }
+      // 항상 새로운 값으로 업데이트 (사용자가 직접 변경한 경우는 onSelectionChange로 처리됨)
+      setSelections(initialSelections);
+      prevInitialSelectionsRef.current = initialSelections;
+      prevSelectionsRef.current = initialSelections;
     }
   }, [initialSelections]);
 

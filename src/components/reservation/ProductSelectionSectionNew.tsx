@@ -390,13 +390,19 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
             </div>
           ) : formData.productChoices.length > 0 ? (
             <>
+              {console.log('ProductSelectionSectionNew: SimpleChoiceSelector 렌더링', {
+                productChoicesCount: formData.productChoices.length,
+                selectedChoicesCount: formData.selectedChoices?.length || 0,
+                selectedChoices: formData.selectedChoices,
+                isEditMode
+              })}
               <SimpleChoiceSelector
                 choices={formData.productChoices}
                 adults={0}
                 children={0}
                 infants={0}
                 onSelectionChange={handleSelectionChange}
-                initialSelections={formData.selectedChoices}
+                initialSelections={formData.selectedChoices || []}
               />
               <div className="mt-4 text-right">
                 <span className="text-lg font-semibold text-gray-900">

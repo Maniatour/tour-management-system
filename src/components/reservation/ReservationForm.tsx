@@ -842,15 +842,23 @@ export default function ReservationForm({
               console.error('ReservationForm: 모든 초이스 옵션 로드 오류:', allChoicesError)
             } else {
               console.log('ReservationForm: 로드된 모든 초이스 옵션:', allChoicesData)
-              setFormData(prev => ({
-                ...prev,
-                selectedChoices,
-                productChoices: allChoicesData || [],
-                choices: choicesData,
-                choicesTotal,
-                quantityBasedChoices: {},
-                quantityBasedChoiceTotal: 0
-              }))
+              console.log('ReservationForm: selectedChoices 설정:', selectedChoices)
+              setFormData(prev => {
+                const updated = {
+                  ...prev,
+                  selectedChoices,
+                  productChoices: allChoicesData || [],
+                  choices: choicesData,
+                  choicesTotal,
+                  quantityBasedChoices: {},
+                  quantityBasedChoiceTotal: 0
+                }
+                console.log('ReservationForm: formData 업데이트 완료:', {
+                  selectedChoices: updated.selectedChoices,
+                  productChoicesCount: updated.productChoices.length
+                })
+                return updated
+              })
               return
             }
           } catch (error) {
@@ -858,15 +866,23 @@ export default function ReservationForm({
           }
         }
 
-        setFormData(prev => ({
-          ...prev,
-          selectedChoices,
-          productChoices,
-          choices: choicesData,
-          choicesTotal,
-          quantityBasedChoices: {},
-          quantityBasedChoiceTotal: 0
-        }))
+        console.log('ReservationForm: productId 없음, selectedChoices 설정:', selectedChoices)
+        setFormData(prev => {
+          const updated = {
+            ...prev,
+            selectedChoices,
+            productChoices,
+            choices: choicesData,
+            choicesTotal,
+            quantityBasedChoices: {},
+            quantityBasedChoiceTotal: 0
+          }
+          console.log('ReservationForm: formData 업데이트 완료 (productId 없음):', {
+            selectedChoices: updated.selectedChoices,
+            productChoicesCount: updated.productChoices.length
+          })
+          return updated
+        })
       } else {
         console.log('ReservationForm: 새로운 테이블에 초이스 데이터가 없음')
         // 새로운 테이블에 데이터가 없으면 기존 choices 데이터 사용
