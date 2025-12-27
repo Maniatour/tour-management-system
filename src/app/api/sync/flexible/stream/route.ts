@@ -1,8 +1,86 @@
 import { NextRequest } from 'next/server'
 import { flexibleSync } from '@/lib/flexibleSyncService'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 export const runtime = 'nodejs'
+
+// 청크 단위 삭제 함수 (대용량 테이블 지원)
+const deleteTableInChunks = async (
+  client: SupabaseClient,
+  tableName: string,
+  chunkSize: number = 500,
+  write: (obj: unknown) => void
+): Promise<{ success: boolean; deletedCount: number; error?: string }> => {
+  let totalDeleted = 0
+  let hasMore = true
+  let attempts = 0
+  const maxAttempts = 100 // 최대 100번 반복 (50,000개 레코드)
+  
+  // team 테이블은 PK가 email
+  const pkColumn = tableName === 'team' ? 'email' : 'id'
+  
+  while (hasMore && attempts < maxAttempts) {
+    attempts++
+    
+    try {
+      // 삭제할 레코드의 ID 목록 조회
+      const { data: records, error: selectError } = await client
+        .from(tableName)
+        .select(pkColumn)
+        .limit(chunkSize)
+      
+      if (selectError) {
+        return { success: false, deletedCount: totalDeleted, error: selectError.message }
+      }
+      
+      if (!records || records.length === 0) {
+        hasMore = false
+        break
+      }
+      
+      // ID 목록으로 삭제
+      const ids = records.map((r: Record<string, unknown>) => r[pkColumn])
+      const { error: deleteError } = await client
+        .from(tableName)
+        .delete()
+        .in(pkColumn, ids)
+      
+      if (deleteError) {
+        // 타임아웃 에러인 경우 청크 크기를 줄여서 재시도
+        if (deleteError.message.includes('timeout') || deleteError.message.includes('statement')) {
+          write({ type: 'warn', message: `청크 크기 ${chunkSize}에서 타임아웃 발생, 더 작은 청크로 재시도...` })
+          // 청크 크기를 절반으로 줄이고 계속
+          return deleteTableInChunks(client, tableName, Math.max(100, Math.floor(chunkSize / 2)), write)
+        }
+        return { success: false, deletedCount: totalDeleted, error: deleteError.message }
+      }
+      
+      totalDeleted += records.length
+      
+      // 진행 상황 보고 (매 1000개마다)
+      if (totalDeleted % 1000 === 0 || records.length < chunkSize) {
+        write({ type: 'info', message: `${tableName}: ${totalDeleted}개 레코드 삭제됨...` })
+      }
+      
+      // 모든 레코드를 삭제했는지 확인
+      if (records.length < chunkSize) {
+        hasMore = false
+      }
+      
+      // DB 부하 분산을 위한 짧은 대기
+      await new Promise(resolve => setTimeout(resolve, 50))
+      
+    } catch (error) {
+      return { 
+        success: false, 
+        deletedCount: totalDeleted, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      }
+    }
+  }
+  
+  return { success: true, deletedCount: totalDeleted }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,9 +119,9 @@ export async function POST(request: NextRequest) {
           try {
             write({ type: 'info', message: '동기화 시작' })
             
-            // 테이블 삭제 옵션이 활성화된 경우
+            // 테이블 삭제 옵션이 활성화된 경우 (청크 단위 삭제)
             if (truncateTable) {
-              write({ type: 'info', message: `${targetTable} 테이블 초기화 시작` })
+              write({ type: 'info', message: `${targetTable} 테이블 초기화 시작 (청크 단위 삭제)` })
               
               try {
                 // 먼저 테이블의 레코드 수 확인
@@ -57,16 +135,13 @@ export async function POST(request: NextRequest) {
                   write({ type: 'info', message: `${targetTable} 테이블에 ${count || 0}개 레코드가 있습니다.` })
                 }
                 
-                // Supabase 클라이언트를 사용하여 테이블 삭제
-                const { error: deleteError } = await client
-                  .from(targetTable)
-                  .delete()
-                  .neq('id', '') // 모든 레코드 삭제 (id가 빈 문자열이 아닌 모든 레코드)
+                // 청크 단위로 삭제 (타임아웃 방지)
+                const deleteResult = await deleteTableInChunks(client, targetTable, 500, write)
                 
-                if (deleteError) {
-                  write({ type: 'warn', message: `${targetTable} 테이블 초기화 실패: ${deleteError.message}` })
+                if (deleteResult.success) {
+                  write({ type: 'info', message: `${targetTable} 테이블 초기화 완료: ${deleteResult.deletedCount}개 레코드 삭제됨` })
                 } else {
-                  write({ type: 'info', message: `${targetTable} 테이블 초기화 완료` })
+                  write({ type: 'warn', message: `${targetTable} 테이블 초기화 부분 완료: ${deleteResult.deletedCount}개 삭제됨, 오류: ${deleteResult.error}` })
                 }
               } catch (error) {
                 write({ type: 'warn', message: `${targetTable} 테이블 초기화 중 오류: ${error instanceof Error ? error.message : 'Unknown error'}` })

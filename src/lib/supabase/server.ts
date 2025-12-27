@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '../database.types'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -11,7 +11,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 // 서버용 Supabase 클라이언트 생성
 export const createClient = () => {
-  return createClient<Database>(supabaseUrl, supabaseAnonKey)
+  return createSupabaseClient<Database>(supabaseUrl, supabaseAnonKey)
 }
 
 export type { Database }

@@ -14,48 +14,8 @@ const isGoogleSheetsError = (value: unknown): boolean => {
          str.includes('No matches are found')
 }
 
-// 12시간 형식 시간을 24시간 형식으로 변환하는 함수
-// 예: "11:55:00 PM" → "23:55:00", "12:00:00 AM" → "00:00:00"
-const convert12HourTo24Hour = (timeStr: string): string | null => {
-  if (!timeStr || typeof timeStr !== 'string') return null
-  
-  const trimmed = timeStr.trim()
-  
-  // 이미 24시간 형식인지 확인 (HH:MM 또는 HH:MM:SS)
-  const time24Match = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/)
-  if (time24Match) {
-    const hours = parseInt(time24Match[1], 10)
-    const minutes = time24Match[2]
-    const seconds = time24Match[3] || '00'
-    if (hours >= 0 && hours < 24) {
-      return `${String(hours).padStart(2, '0')}:${minutes}:${seconds}`
-    }
-  }
-  
-  // 12시간 형식 파싱: "11:55:00 PM", "7:00 AM", "12:30:45 PM" 등
-  const time12Match = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i)
-  if (time12Match) {
-    let hours = parseInt(time12Match[1], 10)
-    const minutes = time12Match[2]
-    const seconds = time12Match[3] || '00'
-    const period = time12Match[4].toUpperCase()
-    
-    // 12시간 → 24시간 변환
-    if (period === 'PM' && hours !== 12) {
-      hours += 12
-    } else if (period === 'AM' && hours === 12) {
-      hours = 0
-    }
-    
-    return `${String(hours).padStart(2, '0')}:${minutes}:${seconds}`
-  }
-  
-  // 파싱 실패시 null 반환
-  return null
-}
-
-// 순수 시간 필드 목록 (TIME 타입, 날짜 없이 시간만 저장)
-const TIME_ONLY_FIELDS = ['pickup_time', 'tour_time']
+// 시간 형식 변환 비활성화 - PostgreSQL이 자동으로 처리함
+// 12시간/24시간 형식 변환은 PostgreSQL TIME 타입이 자동으로 처리하므로 불필요
 
 // 안전한 문자열→문자열 배열 변환 (PostgreSQL 배열 리터럴 형식)
 const coerceStringToStringArray = (raw: unknown): string[] => {
@@ -549,6 +509,39 @@ export const flexibleSync = async (
       tableColumns = new Set()
     }
 
+    // tours 테이블 동기화 시 reservation_ids 초기화
+    // 동기화 전에 기존 reservation_ids를 모두 빈 배열로 초기화하여
+    // 중복 추가 문제를 방지합니다.
+    if (targetTable === 'tours') {
+      onProgress?.({ type: 'info', message: 'tours 테이블 동기화 - reservation_ids 컬럼 초기화 중...' })
+      
+      try {
+        // 동기화할 투어 ID 목록 추출
+        const tourIdsToSync = transformedData
+          .map(row => row.id)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0)
+        
+        if (tourIdsToSync.length > 0) {
+          // 해당 투어들의 reservation_ids를 빈 배열로 초기화
+          const { error: resetError } = await db
+            .from('tours')
+            .update({ reservation_ids: [] })
+            .in('id', tourIdsToSync)
+          
+          if (resetError) {
+            console.warn('reservation_ids 초기화 중 오류 (계속 진행):', resetError.message)
+            onProgress?.({ type: 'warn', message: `reservation_ids 초기화 중 경고: ${resetError.message}` })
+          } else {
+            console.log(`✅ ${tourIdsToSync.length}개 투어의 reservation_ids 초기화 완료`)
+            onProgress?.({ type: 'info', message: `${tourIdsToSync.length}개 투어의 reservation_ids 초기화 완료` })
+          }
+        }
+      } catch (resetException) {
+        console.warn('reservation_ids 초기화 예외 (계속 진행):', resetException)
+        onProgress?.({ type: 'warn', message: `reservation_ids 초기화 중 예외 발생 (계속 진행)` })
+      }
+    }
+
     // tour_expenses 테이블에 대한 특별한 처리
     if (targetTable === 'tour_expenses') {
       onProgress?.({ type: 'info', message: 'tour_expenses 테이블 동기화 - 외래 키 검증을 건너뜁니다...' })
@@ -867,54 +860,40 @@ export const flexibleSync = async (
   }
 }
 
-// 타임스탬프 필드 검증 및 정리 함수
+// 타임스탬프 필드 검증 및 정리 함수 (간소화 버전)
 const sanitizeTimestampFields = (row: Record<string, unknown>): Record<string, unknown> => {
   const sanitized = { ...row }
   
-  // 모든 필드를 순회하며 타임스탬프 필드 검증
+  // 타임스탬프 필드만 검증 (_at, _on으로 끝나는 필드)
+  // 시간 필드 (pickup_time, tour_time 등)는 PostgreSQL이 자동 처리하므로 건너뜀
   Object.keys(sanitized).forEach(key => {
     const value = sanitized[key]
     
-    // 순수 시간 필드 (TIME 타입) 별도 처리
-    if (TIME_ONLY_FIELDS.includes(key) && value !== undefined && value !== null && value !== '') {
+    // 타임스탬프 필드 검증 (_at, _on 등으로 끝나는 필드)
+    if (key.match(/_at$|_on$/i) && value !== undefined && value !== null && value !== '') {
       // Google Sheets 에러 값 체크
       if (isGoogleSheetsError(value)) {
-        console.warn(`Google Sheets 에러 값 감지 (${key}):`, value, '→ null로 변환')
         sanitized[key] = null
       } else if (typeof value === 'string') {
-        // 12시간 형식 → 24시간 형식 변환 시도
-        const converted = convert12HourTo24Hour(value)
-        if (converted) {
-          console.log(`시간 형식 변환 성공 (${key}): "${value}" → "${converted}"`)
-          sanitized[key] = converted
-        } else {
-          // 변환 실패시 원본 값 유지 (이미 올바른 형식일 수 있음)
-          console.warn(`시간 형식 변환 실패 (${key}): "${value}" - 원본 유지`)
-        }
-      }
-    }
-    // 필드명이 타임스탬프 관련인지 확인 (_at, _on 등으로 끝나는 필드, 순수 시간 필드 제외)
-    else if (key.match(/_at$|_on$/i) && value !== undefined && value !== null && value !== '') {
-      // Google Sheets 에러 값 체크
-      if (isGoogleSheetsError(value)) {
-        console.warn(`Google Sheets 에러 값 감지 (${key}):`, value, '→ null로 변환')
-        sanitized[key] = null
-      } else if (typeof value === 'string') {
-        // 문자열인 경우 유효한 타임스탬프인지 확인
+        // 문자열인 경우 유효한 타임스탬프인지만 확인
         try {
           const dateValue = new Date(value)
           if (isNaN(dateValue.getTime())) {
-            console.warn(`Invalid timestamp format for ${key}:`, value, '→ null로 변환')
             sanitized[key] = null
           } else {
-            // 유효한 날짜면 ISO 형식으로 변환
             sanitized[key] = dateValue.toISOString()
           }
-        } catch (error) {
-          console.warn(`Error parsing timestamp for ${key}:`, value, '→ null로 변환', error)
+        } catch {
           sanitized[key] = null
         }
       }
+    }
+    // 시간 필드 (pickup_time, tour_time 등)에서 에러 값만 제거
+    else if ((key === 'pickup_time' || key === 'tour_time') && value !== undefined && value !== null) {
+      if (isGoogleSheetsError(value)) {
+        sanitized[key] = null
+      }
+      // 그 외의 경우 원본 값 유지 - PostgreSQL이 자동 변환
     }
   })
   

@@ -295,14 +295,26 @@ export function useTourDetailData() {
             .from('team')
             .select('*')
             .eq('email', tourData.tour_guide_id)
-            .single()
+            .maybeSingle()
           
           if (guideError) {
-            console.error('가이드 정보 가져오기 오류:', guideError)
-          } else {
+            // PGRST116 에러는 결과가 없을 때 발생하는 정상적인 경우
+            if (guideError.code !== 'PGRST116') {
+              console.error('가이드 정보 가져오기 오류:', {
+                message: guideError.message,
+                code: guideError.code,
+                details: guideError.details
+              })
+            }
+            // 가이드 정보를 찾을 수 없더라도 tour_guide_id 값은 유지
+            setSelectedGuide(tourData.tour_guide_id)
+          } else if (guideData) {
             console.log('가이드 정보 가져오기 성공:', guideData)
             // email을 그대로 사용
             setSelectedGuide(guideData.email)
+          } else {
+            // 데이터가 없는 경우에도 tour_guide_id 값은 유지
+            setSelectedGuide(tourData.tour_guide_id)
           }
         }
         
@@ -312,14 +324,26 @@ export function useTourDetailData() {
             .from('team')
             .select('*')
             .eq('email', tourData.assistant_id)
-            .single()
+            .maybeSingle()
           
           if (assistantError) {
-            console.error('어시스턴트 정보 가져오기 오류:', assistantError)
-          } else {
+            // PGRST116 에러는 결과가 없을 때 발생하는 정상적인 경우
+            if (assistantError.code !== 'PGRST116') {
+              console.error('어시스턴트 정보 가져오기 오류:', {
+                message: assistantError.message,
+                code: assistantError.code,
+                details: assistantError.details
+              })
+            }
+            // 어시스턴트 정보를 찾을 수 없더라도 assistant_id 값은 유지
+            setSelectedAssistant(tourData.assistant_id)
+          } else if (assistantData) {
             console.log('어시스턴트 정보 가져오기 성공:', assistantData)
             // email을 그대로 사용
             setSelectedAssistant(assistantData.email)
+          } else {
+            // 데이터가 없는 경우에도 assistant_id 값은 유지
+            setSelectedAssistant(tourData.assistant_id)
           }
         }
         
@@ -459,8 +483,15 @@ export function useTourDetailData() {
         if (reservationsData && tourData && allCustomersData.length > 0) {
           const assignedReservationIds = tourData.reservation_ids || []
           
+          console.log('📊 투어 배정 정보 확인:', {
+            tourId: tourData.id,
+            reservation_ids: assignedReservationIds,
+            reservation_ids_count: assignedReservationIds.length,
+            allReservationsCount: reservationsData.length
+          })
+          
           // 1. 이 투어에 배정된 예약 (reservation_ids 컬럼의 예약)
-          // reservation_ids에 있는 예약들을 직접 조회
+          // reservation_ids에 있는 예약만 직접 조회
           let assignedReservations: ReservationRow[] = []
           if (assignedReservationIds.length > 0) {
             const { data: assignedReservationsData, error: assignedError } = await supabase

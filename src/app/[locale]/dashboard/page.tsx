@@ -162,7 +162,7 @@ export default function CustomerDashboard() {
         } else if (reservationsData && reservationsData.length > 0) {
           // 각 예약에 대해 상품 정보를 별도로 조회
           const reservationsWithProducts = await Promise.all(
-            reservationsData.map(async (reservation) => {
+            reservationsData.map(async (reservation: Reservation) => {
               try {
                 const { data: productData } = await supabase
                   .from('products')
@@ -171,13 +171,13 @@ export default function CustomerDashboard() {
                   .maybeSingle()
 
                 return {
-                  ...(reservation as Record<string, unknown>),
+                  ...reservation,
                   products: productData || { name: '상품명 없음', description: null }
                 }
               } catch (error) {
                 console.error('상품 정보 조회 오류:', error)
                 return {
-                  ...(reservation as Record<string, unknown>),
+                  ...reservation,
                   products: { name: '상품명 없음', description: null }
                 }
               }
@@ -296,8 +296,8 @@ export default function CustomerDashboard() {
 
         if (!emailError && emailReservations) {
           // 중복 제거 (customer_id와 customer_email 둘 다 매칭되는 경우)
-          const existingIds = new Set(reservationsData.map(r => r.id))
-          const newReservations = emailReservations.filter(r => !existingIds.has(r.id))
+          const existingIds = new Set(reservationsData.map((r: Reservation) => r.id))
+          const newReservations = emailReservations.filter((r: Reservation) => !existingIds.has(r.id))
           reservationsData = [...reservationsData, ...newReservations]
         }
       }
@@ -629,7 +629,7 @@ export default function CustomerDashboard() {
                 <input
                   type="text"
                   value={searchForm.phone}
-                  onChange={(e) => setSearchForm(prev => ({ ...prev, phone: e.target.value }))}
+                  onChange={(e) => setSearchForm((prev: typeof searchForm) => ({ ...prev, phone: e.target.value }))}
                   placeholder="010-1234-5678"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -641,7 +641,7 @@ export default function CustomerDashboard() {
                 <input
                   type="email"
                   value={searchForm.email}
-                  onChange={(e) => setSearchForm(prev => ({ ...prev, email: e.target.value }))}
+                  onChange={(e) => setSearchForm((prev: typeof searchForm) => ({ ...prev, email: e.target.value }))}
                   placeholder="customer@example.com"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -653,7 +653,7 @@ export default function CustomerDashboard() {
                 <input
                   type="date"
                   value={searchForm.tourDate}
-                  onChange={(e) => setSearchForm(prev => ({ ...prev, tourDate: e.target.value }))}
+                  onChange={(e) => setSearchForm((prev: typeof searchForm) => ({ ...prev, tourDate: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -664,7 +664,7 @@ export default function CustomerDashboard() {
                 <input
                   type="text"
                   value={searchForm.productName}
-                  onChange={(e) => setSearchForm(prev => ({ ...prev, productName: e.target.value }))}
+                  onChange={(e) => setSearchForm((prev: typeof searchForm) => ({ ...prev, productName: e.target.value }))}
                   placeholder="투어 상품명"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -694,7 +694,7 @@ export default function CustomerDashboard() {
               <div className="mt-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">검색 결과</h3>
                 <div className="space-y-3">
-                  {searchResults.map((result) => (
+                  {searchResults.map((result: Customer) => (
                     <div key={result.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
                       <div className="flex items-center justify-between">
                         <div>
@@ -772,7 +772,7 @@ export default function CustomerDashboard() {
               
               {reservations.length > 0 ? (
                 <div className="space-y-4">
-                  {reservations.map((reservation) => (
+                  {reservations.map((reservation: Reservation) => (
                     <div 
                       key={reservation.id} 
                       className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"

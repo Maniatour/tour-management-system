@@ -2556,7 +2556,7 @@ export default function DynamicPricingManager({
                     const basePrice = productBasePrice.adult || 0;
                     
                     // 초이스 가격 찾기 (M00001 채널의 고정값 우선, 유연한 매칭 사용)
-                    const foundChoiceData = homepagePricingConfig 
+                    let foundChoiceData = homepagePricingConfig 
                       ? findHomepageChoiceData(combination, homepagePricingConfig)
                       : {};
                     
@@ -3032,7 +3032,7 @@ export default function DynamicPricingManager({
                     const basePrice = productBasePrice.adult || 0;
                     
                     // 초이스 가격 찾기 (유연한 매칭 사용)
-                    const foundChoiceData = homepagePricingConfig 
+                    let foundChoiceData = homepagePricingConfig 
                       ? findHomepageChoiceData(combination, homepagePricingConfig)
                       : {};
                     
