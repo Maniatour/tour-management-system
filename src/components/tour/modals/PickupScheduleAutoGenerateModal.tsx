@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { X, MapPin, Clock, Users, Navigation } from 'lucide-react'
+import { X, MapPin, Clock, Navigation, ChevronUp, ChevronDown } from 'lucide-react'
 import { getCachedSunriseSunsetData } from '@/lib/weatherApi'
 
 interface PickupHotel {
@@ -49,7 +49,8 @@ export default function PickupScheduleAutoGenerateModal({
   const [map, setMap] = useState<google.maps.Map | null>(null)
   const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService | null>(null)
   const [directionsRenderer, setDirectionsRenderer] = useState<google.maps.DirectionsRenderer | null>(null)
-  const [sunriseTime, setSunriseTime] = useState<string | null>(null)
+  const [sunriseTime, setSunriseTime] = useState<string | null>(null) // 라스베가스 시간
+  const [sunriseTimeArizona, setSunriseTimeArizona] = useState<string | null>(null) // 그랜드캐년(아리조나) 시간
   const [loading, setLoading] = useState(false)
   const [pickupSchedule, setPickupSchedule] = useState<Array<{
     hotel: PickupHotel
@@ -63,11 +64,18 @@ export default function PickupScheduleAutoGenerateModal({
   const [routeCalculated, setRouteCalculated] = useState(false) // 경로 계산 완료 플래그
   const [linkCopied, setLinkCopied] = useState(false) // 링크 복사 상태
   const [markers, setMarkers] = useState<google.maps.Marker[]>([]) // 커스텀 마커 배열
+  const [customFirstPickupTime, setCustomFirstPickupTime] = useState<string>('') // 사용자 정의 첫 번째 픽업 시간
 
   // 일출 투어 여부 확인
   const isSunriseTour = productId === 'MDGCSUNRISE'
 
-  // 일출 시간 가져오기 (라스베가스 시간으로 변환하고 10분 단위로 내림)
+  // 시작점 정보 정의
+  const startPointInfo = {
+    name: 'Las Vegas Mania Office',
+    address: '3351 Highland Drive #202, Las Vegas, NV, 89109'
+  }
+
+  // 일출 시간 가져오기 (그랜드캐년 아리조나 시간 + 라스베가스 시간)
   useEffect(() => {
     if (isSunriseTour && isOpen) {
       const loadSunriseTime = async () => {
@@ -80,6 +88,10 @@ export default function PickupScheduleAutoGenerateModal({
               const parts = timeStr.split(':')
               const hours = parseInt(parts[0], 10)
               const minutes = parseInt(parts[1], 10)
+              
+              // 아리조나 원본 시간 저장
+              const arizonaTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+              setSunriseTimeArizona(arizonaTime)
               
               // 투어 날짜와 시간을 조합하여 Date 객체 생성 (아리조나 시간대)
               // Grand Canyon은 아리조나 시간대를 사용 (UTC-7, 썸머타임 없음)
@@ -113,6 +125,7 @@ export default function PickupScheduleAutoGenerateModal({
               setSunriseTime(finalTime)
             } else {
               setSunriseTime(timeStr)
+              setSunriseTimeArizona(timeStr)
             }
           }
         } catch (error) {
@@ -302,7 +315,7 @@ export default function PickupScheduleAutoGenerateModal({
     // 동선 최적화: 그리디 알고리즘으로 최적 경로 구성
     const optimizedRoute: typeof validHotels = []
     const remainingHotels = [...validHotels]
-    const startAddress = '4525 W Spring Mountain Rd, Las Vegas, NV 89102'
+    const startAddress = startPointInfo.address
     
     // 시작점 좌표 가져오기
     let currentPosition: google.maps.LatLng | null = null
@@ -599,41 +612,32 @@ export default function PickupScheduleAutoGenerateModal({
         const mins = currentTotalMinutes % 60
         updatedSchedule[i].pickupTime = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
 
-        // 이전 호텔로 이동 (현재 호텔에서 이전 호텔까지의 이동 시간 추가)
+        // 이전 호텔에서의 이동 시간 저장
+        // travelTimes 배열 구조:
+        // - travelTimes[0]: 시작점 → 호텔0 (첫 번째 호텔)
+        // - travelTimes[1]: 호텔0 → 호텔1 (두 번째 호텔)
+        // - travelTimes[i]: 호텔(i-1) → 호텔i
+        // 따라서 호텔 i의 travelTimeFromPrevious = travelTimes[i]
+        const travelTimeSeconds = travelTimes[i] || 0
+        const travelTimeMinutes = Math.ceil(travelTimeSeconds / 60) // 초를 분으로 변환 (올림)
+        
+        // 원본 이동 시간 저장 (대기시간 제외)
+        updatedSchedule[i].rawTravelTime = travelTimeMinutes
+        
+        // 이동 시간 + 대기 시간(5분)을 합쳐서 5분 단위로 반올림
+        const totalTimeWithWait = travelTimeMinutes + 5 // 이동 시간 + 대기 시간
+        const roundedTime = Math.round(totalTimeWithWait / 5) * 5 // 5분 단위로 반올림
+        
+        // 이동 시간을 스케줄에 저장 (분 단위)
+        updatedSchedule[i].travelTimeFromPrevious = roundedTime
+        
+        // 이전 호텔의 픽업 시간 계산 (역순)
         if (i > 0) {
-          // travelTimes 배열 구조:
-          // - travelTimes[0]: 시작점(4525 W Spring Mountain) → 첫 번째 호텔
-          // - travelTimes[1]: 첫 번째 호텔 → 두 번째 호텔
-          // - travelTimes[i-1]: i-1번째 호텔 → i번째 호텔
-          // 역순 계산이므로 i번째 호텔에서 i-1번째 호텔로 가는 시간은 travelTimes[i-1]
-          const travelTimeSeconds = travelTimes[i - 1] || 0
-          const travelTimeMinutes = Math.ceil(travelTimeSeconds / 60) // 초를 분으로 변환 (올림)
-          
-          // 원본 이동 시간 저장 (대기시간 제외)
-          updatedSchedule[i].rawTravelTime = travelTimeMinutes
-          
-          // 이동 시간 + 대기 시간(5분)을 합쳐서 5분 단위로 반올림
-          const totalTimeWithWait = travelTimeMinutes + 5 // 이동 시간 + 대기 시간
-          const roundedTime = Math.round(totalTimeWithWait / 5) * 5 // 5분 단위로 반올림
-          
-          // 이동 시간을 스케줄에 저장 (분 단위) - i번째 호텔에 이전 호텔에서의 이동 시간 저장
-          updatedSchedule[i].travelTimeFromPrevious = roundedTime
-          
           currentTotalMinutes -= roundedTime
           
           // 음수 처리
           if (currentTotalMinutes < 0) {
             currentTotalMinutes += 24 * 60
-          }
-        } else {
-          // 첫 번째 호텔은 시작점에서의 이동 시간 저장
-          if (travelTimes.length > 0 && travelTimes[0] > 0) {
-            const travelTimeMinutes = Math.ceil(travelTimes[0] / 60)
-            // 원본 이동 시간 저장 (대기시간 제외)
-            updatedSchedule[0].rawTravelTime = travelTimeMinutes
-            const totalTimeWithWait = travelTimeMinutes + 5 // 이동 시간 + 대기 시간
-            const roundedTime = Math.round(totalTimeWithWait / 5) * 5 // 5분 단위로 반올림
-            updatedSchedule[0].travelTimeFromPrevious = roundedTime
           }
         }
       }
@@ -641,6 +645,71 @@ export default function PickupScheduleAutoGenerateModal({
       return updatedSchedule
     })
   }, [isSunriseTour, sunriseTime])
+
+  // 사용자 정의 첫 번째 픽업 시간을 기준으로 픽업 시간 재계산
+  const updatePickupTimesFromFirstPickup = useCallback((firstPickupTime: string) => {
+    if (!firstPickupTime || pickupSchedule.length === 0) return
+
+    const [firstHours, firstMinutes] = firstPickupTime.split(':').map(Number)
+    if (isNaN(firstHours) || isNaN(firstMinutes)) return
+
+    setPickupSchedule(prevSchedule => {
+      if (prevSchedule.length === 0) return prevSchedule
+
+      const updatedSchedule = [...prevSchedule]
+      let currentTotalMinutes = firstHours * 60 + firstMinutes
+
+      // 순차적으로 각 호텔의 픽업 시간 계산 (첫 번째부터)
+      for (let i = 0; i < updatedSchedule.length; i++) {
+        // 현재 호텔의 픽업 시간 설정
+        const hours = Math.floor(currentTotalMinutes / 60) % 24
+        const mins = currentTotalMinutes % 60
+        updatedSchedule[i].pickupTime = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`
+
+        // 다음 호텔로 이동 (이동 시간 추가)
+        if (i < updatedSchedule.length - 1) {
+          // 기존 스케줄의 travelTimeFromPrevious 사용 (이미 계산된 값 유지)
+          // travelTimes가 있으면 새로 계산, 없으면 기존 값 사용
+          let roundedTime = prevSchedule[i + 1]?.travelTimeFromPrevious || 10 // 기본값 10분
+          
+          if (travelTimes.length > i + 1 && travelTimes[i + 1] > 0) {
+            const nextTravelTimeSeconds = travelTimes[i + 1]
+            const nextTravelTimeMinutes = Math.ceil(nextTravelTimeSeconds / 60)
+            updatedSchedule[i + 1].rawTravelTime = nextTravelTimeMinutes
+            const totalTimeWithWait = nextTravelTimeMinutes + 5
+            roundedTime = Math.round(totalTimeWithWait / 5) * 5
+            updatedSchedule[i + 1].travelTimeFromPrevious = roundedTime
+          }
+          
+          currentTotalMinutes += roundedTime
+          
+          // 24시간 넘어가는 경우 처리
+          if (currentTotalMinutes >= 24 * 60) {
+            currentTotalMinutes -= 24 * 60
+          }
+        }
+      }
+
+      // 첫 번째 호텔의 이동 시간 (시작점에서) - 기존 값 유지 또는 새로 계산
+      if (travelTimes.length > 0 && travelTimes[0] > 0) {
+        const firstTravelTimeMinutes = Math.ceil(travelTimes[0] / 60)
+        updatedSchedule[0].rawTravelTime = firstTravelTimeMinutes
+        const totalTimeWithWait = firstTravelTimeMinutes + 5
+        const roundedTime = Math.round(totalTimeWithWait / 5) * 5
+        updatedSchedule[0].travelTimeFromPrevious = roundedTime
+      }
+      // travelTimes가 없으면 기존 값 유지 (이미 prevSchedule에서 복사됨)
+
+      return updatedSchedule
+    })
+  }, [pickupSchedule.length, travelTimes])
+
+  // 사용자 정의 첫 번째 픽업 시간이 변경되면 재계산
+  useEffect(() => {
+    if (customFirstPickupTime && travelTimes.length > 0) {
+      updatePickupTimesFromFirstPickup(customFirstPickupTime)
+    }
+  }, [customFirstPickupTime, updatePickupTimesFromFirstPickup, travelTimes])
 
   // 스케줄 생성 시 자동 실행
   useEffect(() => {
@@ -709,7 +778,7 @@ export default function PickupScheduleAutoGenerateModal({
     if (waypoints.length === 0) return
 
     // 시작 위치를 지정된 주소로 설정
-    const origin = '4525 W Spring Mountain Rd, Las Vegas, NV 89102'
+    const origin = startPointInfo.address
     const destination = waypoints[waypoints.length - 1].location
     const intermediateWaypoints = waypoints // 모든 호텔을 경유지로 설정
 
@@ -893,8 +962,8 @@ export default function PickupScheduleAutoGenerateModal({
   const generateGoogleMapsLink = (): string => {
     if (pickupSchedule.length === 0) return ''
 
-    // 시작점 주소 (4525 W Spring Mountain Rd, Las Vegas, NV 89102)
-    const startAddress = '4525 W Spring Mountain Rd, Las Vegas, NV 89102'
+    // 시작점 주소
+    const startAddress = startPointInfo.address
 
     // 각 호텔의 좌표 수집
     const waypoints: string[] = []
@@ -972,8 +1041,48 @@ export default function PickupScheduleAutoGenerateModal({
     sum + (res.adults || 0) + (res.children || 0) + (res.infants || 0), 0
   )
 
-  // 시작점 호텔 찾기 (Hotel52)
-  const startPointHotel = pickupHotels.find(hotel => hotel.id === 'Hotel52')
+  // 시작점 정보 (직접 정의)
+  const startPointHotel = {
+    id: 'start-point',
+    hotel: startPointInfo.name,
+    address: startPointInfo.address,
+    pick_up_location: undefined as string | undefined,
+    group_number: null as number | null,
+    pin: null as string | null
+  }
+
+  // 시작점 출발 시간 계산 (첫 번째 픽업 시간에서 이동 시간을 뺀 값)
+  const getStartPointDepartureTime = (): string | null => {
+    if (pickupSchedule.length === 0) return null
+    
+    const firstPickup = pickupSchedule[0]
+    if (!firstPickup.pickupTime) return null
+    
+    // travelTimeFromPrevious가 없으면 travelTimes에서 직접 계산
+    let travelTime = firstPickup.travelTimeFromPrevious
+    if (!travelTime && travelTimes.length > 0 && travelTimes[0] > 0) {
+      const travelTimeMinutes = Math.ceil(travelTimes[0] / 60)
+      const totalTimeWithWait = travelTimeMinutes + 5
+      travelTime = Math.round(totalTimeWithWait / 5) * 5
+    }
+    
+    if (!travelTime) return null
+    
+    const [hours, minutes] = firstPickup.pickupTime.split(':').map(Number)
+    let totalMinutes = hours * 60 + minutes - travelTime
+    
+    // 음수 처리
+    if (totalMinutes < 0) {
+      totalMinutes += 24 * 60
+    }
+    
+    const departureHours = Math.floor(totalMinutes / 60) % 24
+    const departureMins = totalMinutes % 60
+    
+    return `${String(departureHours).padStart(2, '0')}:${String(departureMins).padStart(2, '0')}`
+  }
+
+  const startPointDepartureTime = getStartPointDepartureTime()
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -986,7 +1095,7 @@ export default function PickupScheduleAutoGenerateModal({
               {pickupSchedule.length}개 호텔, {totalPeople}명
               {isSunriseTour && sunriseTime && (
                 <span className="ml-2 text-orange-600">
-                  일출 시간: {sunriseTime} (마지막 픽업: {pickupSchedule[pickupSchedule.length - 1]?.pickupTime || 'N/A'})
+                  🌅 그랜드캐년 일출: {sunriseTimeArizona || sunriseTime} (AZ) → 라스베가스: {sunriseTime} (마지막 픽업: {pickupSchedule[pickupSchedule.length - 1]?.pickupTime || 'N/A'})
                 </span>
               )}
             </p>
@@ -999,42 +1108,119 @@ export default function PickupScheduleAutoGenerateModal({
           </button>
         </div>
 
+        {/* 첫 번째 픽업 시간 입력 영역 */}
+        <div className="px-4 py-3 bg-gray-50 border-b flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Clock size={16} className="text-gray-500" />
+            <label className="text-sm font-medium text-gray-700">첫 번째 픽업 시간:</label>
+            <div className="flex items-center">
+              {/* 5분 감소 버튼 */}
+              <button
+                onClick={() => {
+                  const currentTime = customFirstPickupTime || pickupSchedule[0]?.pickupTime || '08:00'
+                  const [hours, minutes] = currentTime.split(':').map(Number)
+                  let totalMinutes = hours * 60 + minutes - 5
+                  if (totalMinutes < 0) totalMinutes += 24 * 60
+                  const newHours = Math.floor(totalMinutes / 60) % 24
+                  const newMins = totalMinutes % 60
+                  setCustomFirstPickupTime(`${String(newHours).padStart(2, '0')}:${String(newMins).padStart(2, '0')}`)
+                }}
+                className="px-2 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-l-md border border-r-0 border-gray-300 text-gray-700"
+                title="-5분"
+              >
+                <ChevronDown size={16} />
+              </button>
+              <input
+                type="time"
+                value={customFirstPickupTime || pickupSchedule[0]?.pickupTime || ''}
+                onChange={(e) => setCustomFirstPickupTime(e.target.value)}
+                className="px-3 py-1.5 border-y border-gray-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-center w-32"
+                step="300"
+              />
+              {/* 5분 증가 버튼 */}
+              <button
+                onClick={() => {
+                  const currentTime = customFirstPickupTime || pickupSchedule[0]?.pickupTime || '08:00'
+                  const [hours, minutes] = currentTime.split(':').map(Number)
+                  let totalMinutes = hours * 60 + minutes + 5
+                  if (totalMinutes >= 24 * 60) totalMinutes -= 24 * 60
+                  const newHours = Math.floor(totalMinutes / 60) % 24
+                  const newMins = totalMinutes % 60
+                  setCustomFirstPickupTime(`${String(newHours).padStart(2, '0')}:${String(newMins).padStart(2, '0')}`)
+                }}
+                className="px-2 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-r-md border border-l-0 border-gray-300 text-gray-700"
+                title="+5분"
+              >
+                <ChevronUp size={16} />
+              </button>
+            </div>
+          </div>
+          {customFirstPickupTime && (
+            <button
+              onClick={() => {
+                setCustomFirstPickupTime('')
+                // 자동 계산으로 복원
+                if (travelTimes.length > 0) {
+                  updatePickupTimesWithTravelTimes(travelTimes)
+                }
+              }}
+              className="text-xs text-gray-500 hover:text-gray-700 underline"
+            >
+              초기화 (자동 계산으로 복원)
+            </button>
+          )}
+          {customFirstPickupTime && (
+            <span className="text-xs text-green-600 font-medium">
+              ✓ 수동 조정됨
+            </span>
+          )}
+        </div>
+
         {/* 본문 */}
         <div className="flex-1 flex overflow-hidden">
           {/* 왼쪽: 스케줄 리스트 */}
           <div className="w-1/3 border-r overflow-y-auto p-4">
             <div className="space-y-3">
               {/* 시작점 카드 */}
-              {startPointHotel && (
-                <div className="border rounded-lg p-3 bg-gradient-to-r from-blue-50 to-blue-100 hover:bg-gradient-to-r hover:from-blue-100 hover:to-blue-200 transition-colors border-blue-300">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center space-x-2">
-                      <span className="flex items-center justify-center w-6 h-6 bg-blue-700 text-white rounded-full text-xs font-bold">
-                        S
+              <div className="border rounded-lg p-3 bg-gradient-to-r from-blue-50 to-blue-100 hover:bg-gradient-to-r hover:from-blue-100 hover:to-blue-200 transition-colors border-blue-300">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="flex items-center justify-center w-6 h-6 bg-blue-700 text-white rounded-full text-xs font-bold">
+                      S
+                    </span>
+                    {startPointDepartureTime ? (
+                      <span className="text-sm font-medium text-gray-900">
+                        {startPointDepartureTime} 출발
                       </span>
+                    ) : (
                       <span className="text-sm font-medium text-gray-900">
                         시작점
                       </span>
-                    </div>
-                    <span className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded font-semibold">
-                      START
-                    </span>
+                    )}
                   </div>
-                  <div className="text-sm font-semibold text-blue-700 mb-1">
-                    {startPointHotel.hotel}
-                  </div>
-                  {startPointHotel.pick_up_location && (
-                    <div className="text-xs text-gray-600 mb-2">
-                      {startPointHotel.pick_up_location}
-                    </div>
-                  )}
-                  {startPointHotel.address && (
-                    <div className="text-xs text-gray-500 mb-2">
-                      {startPointHotel.address}
-                    </div>
-                  )}
+                  <span className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded font-semibold">
+                    START
+                  </span>
                 </div>
-              )}
+                <div className="text-sm font-semibold text-blue-700 mb-1">
+                  {startPointHotel.hotel}
+                </div>
+                <div className="text-xs text-gray-500 mb-2">
+                  {startPointHotel.address}
+                </div>
+                {/* 첫 번째 픽업까지의 이동 시간 표시 */}
+                {pickupSchedule.length > 0 && (pickupSchedule[0].travelTimeFromPrevious || (travelTimes.length > 0 && travelTimes[0] > 0)) && (
+                  <div className="text-xs text-orange-600 font-medium">
+                    → 첫 번째 픽업까지: 이동 {
+                      pickupSchedule[0].rawTravelTime || 
+                      (travelTimes.length > 0 ? Math.ceil(travelTimes[0] / 60) : 0)
+                    }분 + 대기 5분 = {
+                      pickupSchedule[0].travelTimeFromPrevious || 
+                      (travelTimes.length > 0 ? Math.round((Math.ceil(travelTimes[0] / 60) + 5) / 5) * 5 : 0)
+                    }분
+                  </div>
+                )}
+              </div>
               
               {/* 호텔 스케줄 카드 */}
               {pickupSchedule.map((item, index) => (
@@ -1049,6 +1235,11 @@ export default function PickupScheduleAutoGenerateModal({
                       </span>
                       <span className="text-sm font-medium text-gray-900">
                         {item.pickupTime}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {item.reservations.reduce((sum, res) => 
+                          sum + (res.adults || 0) + (res.children || 0) + (res.infants || 0), 0
+                        )}명 | {item.reservations.length}건
                       </span>
                     </div>
                     {item.hotel.group_number !== null && (
@@ -1079,22 +1270,16 @@ export default function PickupScheduleAutoGenerateModal({
                       )}
                     </div>
                   )}
-                  <div className="flex items-center space-x-1 text-xs text-gray-600">
-                    <Users size={12} />
-                    <span>
-                      {item.reservations.reduce((sum, res) => 
-                        sum + (res.adults || 0) + (res.children || 0) + (res.infants || 0), 0
-                      )}명
-                    </span>
-                    <span className="text-gray-300">|</span>
-                    <span>{item.reservations.length}건</span>
-                  </div>
                   <div className="mt-2 space-y-1">
-                    {item.reservations.map(reservation => (
-                      <div key={reservation.id} className="text-xs text-gray-600 bg-gray-50 p-1 rounded">
-                        {getCustomerName(reservation.customer_id || '')}
-                      </div>
-                    ))}
+                    {item.reservations.map(reservation => {
+                      const totalPeople = (reservation.adults || 0) + (reservation.children || 0) + (reservation.infants || 0)
+                      return (
+                        <div key={reservation.id} className="text-xs text-gray-600 bg-gray-50 p-1 rounded flex items-center justify-between">
+                          <span>{getCustomerName(reservation.customer_id || '')}</span>
+                          <span className="text-gray-500">{totalPeople}명</span>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               ))}
