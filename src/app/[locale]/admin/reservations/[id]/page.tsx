@@ -140,7 +140,14 @@ export default function ReservationDetailsPage() {
   })
 
   // 인증 로딩 중이거나 권한이 없는 경우 로딩 표시
-  const isStaff = isInitialized && (hasPermission('canManageReservations') || hasPermission('canManageTours') || (userRole === 'admin' || userRole === 'manager'))
+  // useMemo로 안정적으로 계산하여 불필요한 재계산 방지
+  const isStaff = useMemo(() => {
+    // 초기화가 완료되지 않았으면 false 반환 (리다이렉트 방지)
+    if (!isInitialized) {
+      return false
+    }
+    return hasPermission('canManageReservations') || hasPermission('canManageTours') || (userRole === 'admin' || userRole === 'manager')
+  }, [isInitialized, hasPermission, userRole])
   
   // 디버깅을 위한 상세 로그
   useEffect(() => {
@@ -159,6 +166,7 @@ export default function ReservationDetailsPage() {
   useEffect(() => {
     // 인증 로딩 중이거나 초기화가 완료되지 않았으면 대기
     if (authLoading || !isInitialized) {
+      console.log('ReservationDetailsPage: 인증 로딩 중 또는 초기화 미완료, 리다이렉트 대기', { authLoading, isInitialized })
       return
     }
     
