@@ -157,12 +157,17 @@ export default function ReservationDetailsPage() {
   
   // 권한이 없을 때만 리다이렉트 (useEffect로 처리)
   useEffect(() => {
+    // 인증 로딩 중이거나 초기화가 완료되지 않았으면 대기
+    if (authLoading || !isInitialized) {
+      return
+    }
+    
     // 초기화가 완료되고 권한이 없을 때만 리다이렉트
-    if (isInitialized && !isStaff) {
-      console.log('권한 없음, 리다이렉트:', { isInitialized, isStaff, userRole, user: user?.email })
+    if (!isStaff) {
+      console.log('권한 없음, 리다이렉트:', { isInitialized, isStaff, userRole, user: user?.email, authLoading })
       router.push(`/${params.locale}/admin`)
     }
-  }, [isInitialized, isStaff, router, params.locale, userRole, user])
+  }, [isInitialized, isStaff, router, params.locale, userRole, user, authLoading])
 
   // Try to use already-loaded list; if not found, fetch just this reservation
   useEffect(() => {
