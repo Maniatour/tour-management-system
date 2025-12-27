@@ -162,44 +162,9 @@ export default function ReservationDetailsPage() {
     })
   }, [isInitialized, userRole, user?.email, isStaff, authLoading, hasPermission])
   
-  // 권한이 없을 때만 리다이렉트 (useEffect로 처리)
-  useEffect(() => {
-    // 인증 로딩 중이거나 초기화가 완료되지 않았으면 대기
-    if (authLoading || !isInitialized) {
-      console.log('ReservationDetailsPage: 인증 로딩 중 또는 초기화 미완료, 리다이렉트 대기', { authLoading, isInitialized })
-      return
-    }
-    
-    // user가 아직 로드되지 않았으면 대기 (로그인하지 않은 상태일 수 있음)
-    if (!user) {
-      console.log('ReservationDetailsPage: user가 없음, 리다이렉트 대기', { user, userRole })
-      return
-    }
-    
-    // userRole이 아직 설정되지 않았으면 대기
-    if (!userRole) {
-      console.log('ReservationDetailsPage: userRole이 없음, 리다이렉트 대기', { userRole, user: user?.email })
-      return
-    }
-    
-    // 모든 조건이 준비되었는지 확인 후, 짧은 딜레이를 두고 권한 체크
-    // 이렇게 하면 권한 체크가 완전히 완료될 시간을 줍니다
-    const timeoutId = setTimeout(() => {
-      // 다시 한 번 모든 조건 확인
-      if (authLoading || !isInitialized || !user || !userRole) {
-        console.log('ReservationDetailsPage: 딜레이 후에도 조건 미충족, 리다이렉트 취소', { authLoading, isInitialized, user: !!user, userRole })
-        return
-      }
-      
-      // 권한이 없을 때만 리다이렉트
-      if (!isStaff) {
-        console.log('권한 없음, 리다이렉트:', { isInitialized, isStaff, userRole, user: user?.email, authLoading })
-        router.push(`/${params.locale}/admin`)
-      }
-    }, 100) // 100ms 딜레이
-    
-    return () => clearTimeout(timeoutId)
-  }, [isInitialized, isStaff, router, params.locale, userRole, user, authLoading])
+  // AdminAuthGuard가 이미 권한 체크를 하고 있으므로, 페이지 레벨에서의 리다이렉트는 제거
+  // 이렇게 하면 새로고침 시에도 같은 페이지에서 유지됩니다
+  // 권한이 없는 경우 AdminAuthGuard가 처리합니다
 
   // Try to use already-loaded list; if not found, fetch just this reservation
   useEffect(() => {
