@@ -290,17 +290,29 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
       productId: formData.productId,
       prevProductId: prevProductIdRef.current,
       hasSelectedChoices: formData.selectedChoices?.length > 0,
-      isEditMode: formData.selectedChoices?.length > 0
+      isEditMode,
+      productChoicesCount: formData.productChoices?.length
     });
+    
+    // 편집 모드이고 이미 productChoices가 로드되어 있으면 로드하지 않음
+    if (isEditMode && formData.productChoices && formData.productChoices.length > 0) {
+      console.log('ProductSelectionSection: 편집 모드이고 이미 초이스가 로드됨, 스킵');
+      return;
+    }
     
     // 상품 ID가 실제로 변경된 경우에만 실행
     if (formData.productId && formData.productId !== prevProductIdRef.current) {
       prevProductIdRef.current = formData.productId;
       
-      // 상품이 변경되면 항상 초이스 로드 (편집 모드에서도 모든 옵션을 보여주기 위해)
-      loadProductChoicesNew(formData.productId);
+      // 편집 모드가 아닐 때만 초이스 로드
+      if (!isEditMode) {
+        console.log('ProductSelectionSection: 새 예약 모드, 초이스 로드');
+        loadProductChoicesNew(formData.productId);
+      } else {
+        console.log('ProductSelectionSection: 편집 모드, ReservationForm에서 로드한 초이스 사용');
+      }
     }
-  }, [formData.productId]);
+  }, [formData.productId, formData.productChoices, formData.selectedChoices, isEditMode]);
   
   return (
     <div>

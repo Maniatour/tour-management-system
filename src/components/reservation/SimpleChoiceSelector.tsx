@@ -63,17 +63,25 @@ export default function SimpleChoiceSelector({
   // initialSelections prop이 변경될 때 selections 상태 업데이트
   useEffect(() => {
     // initialSelections가 실제로 변경되었는지 확인 (참조 비교가 아닌 내용 비교)
-    const prevIds = prevInitialSelectionsRef.current.map(s => s.option_id).sort().join(',');
-    const newIds = initialSelections.map(s => s.option_id).sort().join(',');
+    const prevIds = prevInitialSelectionsRef.current.map(s => `${s.choice_id}:${s.option_id}`).sort().join(',');
+    const newIds = initialSelections.map(s => `${s.choice_id}:${s.option_id}`).sort().join(',');
     
-    if (prevIds !== newIds && initialSelections.length > 0) {
+    // 이전에 빈 배열이었고 새로운 값이 있으면 업데이트
+    // 또는 이전 값과 새로운 값이 다르면 업데이트
+    if (prevIds !== newIds) {
       console.log('SimpleChoiceSelector: initialSelections 변경됨', { 
         prev: prevInitialSelectionsRef.current, 
-        new: initialSelections 
+        new: initialSelections,
+        prevIds,
+        newIds
       });
-      setSelections(initialSelections);
-      prevInitialSelectionsRef.current = initialSelections;
-      prevSelectionsRef.current = initialSelections;
+      
+      // 새로운 값이 있으면 업데이트, 없으면 이전 값 유지 (사용자가 선택을 해제한 경우)
+      if (initialSelections.length > 0 || prevInitialSelectionsRef.current.length === 0) {
+        setSelections(initialSelections);
+        prevInitialSelectionsRef.current = initialSelections;
+        prevSelectionsRef.current = initialSelections;
+      }
     }
   }, [initialSelections]);
 
