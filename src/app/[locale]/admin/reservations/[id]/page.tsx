@@ -142,12 +142,12 @@ export default function ReservationDetailsPage() {
   // 인증 로딩 중이거나 권한이 없는 경우 로딩 표시
   // useMemo로 안정적으로 계산하여 불필요한 재계산 방지
   const isStaff = useMemo(() => {
-    // 초기화가 완료되지 않았으면 false 반환 (리다이렉트 방지)
-    if (!isInitialized) {
+    // 초기화가 완료되지 않았거나 user/userRole이 없으면 false 반환 (리다이렉트 방지)
+    if (!isInitialized || !user || !userRole) {
       return false
     }
     return hasPermission('canManageReservations') || hasPermission('canManageTours') || (userRole === 'admin' || userRole === 'manager')
-  }, [isInitialized, hasPermission, userRole])
+  }, [isInitialized, hasPermission, userRole, user])
   
   // 디버깅을 위한 상세 로그
   useEffect(() => {
@@ -170,11 +170,35 @@ export default function ReservationDetailsPage() {
       return
     }
     
-    // 초기화가 완료되고 권한이 없을 때만 리다이렉트
-    if (!isStaff) {
-      console.log('권한 없음, 리다이렉트:', { isInitialized, isStaff, userRole, user: user?.email, authLoading })
-      router.push(`/${params.locale}/admin`)
+    // user가 아직 로드되지 않았으면 대기 (로그인하지 않은 상태일 수 있음)
+    if (!user) {
+      console.log('ReservationDetailsPage: user가 없음, 리다이렉트 대기', { user, userRole })
+      return
     }
+    
+    // userRole이 아직 설정되지 않았으면 대기
+    if (!userRole) {
+      console.log('ReservationDetailsPage: userRole이 없음, 리다이렉트 대기', { userRole, user: user?.email })
+      return
+    }
+    
+    // 모든 조건이 준비되었는지 확인 후, 짧은 딜레이를 두고 권한 체크
+    // 이렇게 하면 권한 체크가 완전히 완료될 시간을 줍니다
+    const timeoutId = setTimeout(() => {
+      // 다시 한 번 모든 조건 확인
+      if (authLoading || !isInitialized || !user || !userRole) {
+        console.log('ReservationDetailsPage: 딜레이 후에도 조건 미충족, 리다이렉트 취소', { authLoading, isInitialized, user: !!user, userRole })
+        return
+      }
+      
+      // 권한이 없을 때만 리다이렉트
+      if (!isStaff) {
+        console.log('권한 없음, 리다이렉트:', { isInitialized, isStaff, userRole, user: user?.email, authLoading })
+        router.push(`/${params.locale}/admin`)
+      }
+    }, 100) // 100ms 딜레이
+    
+    return () => clearTimeout(timeoutId)
   }, [isInitialized, isStaff, router, params.locale, userRole, user, authLoading])
 
   // Try to use already-loaded list; if not found, fetch just this reservation
