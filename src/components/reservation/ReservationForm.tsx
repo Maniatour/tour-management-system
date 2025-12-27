@@ -2807,6 +2807,7 @@ export default function ReservationForm({
                 t={t}
                 layout={layout}
                 onAccordionToggle={setProductAccordionExpanded}
+                isEditMode={!!reservation?.id}
               />
 
               {/* 새로운 간결한 초이스 시스템이 ProductSelectionSection에서 처리됨 */}

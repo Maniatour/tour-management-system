@@ -73,6 +73,7 @@ interface ProductSelectionSectionProps {
   t: (key: string) => string
   layout?: 'modal' | 'page'
   onAccordionToggle?: (isExpanded: boolean) => void
+  isEditMode?: boolean // 편집 모드 여부
 }
 
 const ProductSelectionSection = memo(function ProductSelectionSection({
@@ -82,7 +83,8 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
   loadProductChoices,
   t,
   layout = 'modal',
-  onAccordionToggle
+  onAccordionToggle,
+  isEditMode = false
 }: ProductSelectionSectionProps) {
   
   // 이전 상품 ID를 추적하여 무한 루프 방지
@@ -149,34 +151,41 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
         throw error
       }
 
-      console.log('ProductSelectionSection에서 로드된 초이스:', data);
+      console.log('ProductSelectionSection에서 로드된 초이스:', data, '편집모드:', isEditMode);
       
-      // 편집 모드가 아닌 경우에만 기본값으로 설정
-      const defaultChoices: ReservationChoice[] = [];
-      
-      // 기존 선택이 없는 경우에만 기본값 설정
+      // 편집 모드일 때는 기존 선택을 유지하고, productChoices만 업데이트
       setFormData(prev => {
         const hasExistingChoices = prev.selectedChoices && prev.selectedChoices.length > 0;
         
-        if (!hasExistingChoices) {
-          data?.forEach(choice => {
-            const defaultOption = choice.options?.find(opt => opt.is_default);
-            if (defaultOption) {
-              defaultChoices.push({
-                choice_id: choice.id,
-                option_id: defaultOption.id,
-                quantity: 1,
-                total_price: defaultOption.adult_price
-              });
-            }
-          });
+        // 편집 모드이거나 기존 선택이 있으면 선택값 유지
+        if (isEditMode || hasExistingChoices) {
+          console.log('ProductSelectionSection: 기존 선택 유지:', prev.selectedChoices);
+          return {
+            ...prev,
+            productChoices: data || []
+            // selectedChoices와 choicesTotal은 유지
+          };
         }
+        
+        // 새 예약 모드: 기본값 설정
+        const defaultChoices: ReservationChoice[] = [];
+        data?.forEach(choice => {
+          const defaultOption = choice.options?.find(opt => opt.is_default);
+          if (defaultOption) {
+            defaultChoices.push({
+              choice_id: choice.id,
+              option_id: defaultOption.id,
+              quantity: 1,
+              total_price: defaultOption.adult_price
+            });
+          }
+        });
 
         return {
           ...prev,
           productChoices: data || [],
-          selectedChoices: hasExistingChoices ? prev.selectedChoices : defaultChoices,
-          choicesTotal: hasExistingChoices ? prev.choicesTotal : defaultChoices.reduce((sum, choice) => sum + choice.total_price, 0)
+          selectedChoices: defaultChoices,
+          choicesTotal: defaultChoices.reduce((sum, choice) => sum + choice.total_price, 0)
         };
       });
     } catch (error) {
