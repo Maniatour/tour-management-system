@@ -852,11 +852,38 @@ export default function ReservationForm({
               console.error('ReservationForm: 모든 초이스 옵션 로드 오류:', allChoicesError)
             } else {
               console.log('ReservationForm: 로드된 모든 초이스 옵션:', allChoicesData)
-              console.log('ReservationForm: selectedChoices 설정:', selectedChoices)
+              
+              // selectedChoices의 choice_id를 실제 product_choices.id와 매칭
+              // option_id를 기준으로 매칭하여 올바른 choice_id 찾기
+              const updatedSelectedChoices = selectedChoices.map(selectedChoice => {
+                // 모든 choice에서 해당 option_id를 가진 choice 찾기
+                for (const choice of allChoicesData || []) {
+                  const option = choice.options?.find((opt: any) => opt.id === selectedChoice.option_id)
+                  if (option) {
+                    console.log('ReservationForm: choice_id 매칭', {
+                      oldChoiceId: selectedChoice.choice_id,
+                      newChoiceId: choice.id,
+                      optionId: selectedChoice.option_id
+                    })
+                    return {
+                      ...selectedChoice,
+                      choice_id: choice.id // 실제 product_choices.id로 업데이트
+                    }
+                  }
+                }
+                // 매칭되지 않으면 원래 값 유지
+                console.warn('ReservationForm: choice_id 매칭 실패', {
+                  selectedChoice,
+                  allChoicesData: allChoicesData?.map(c => ({ id: c.id, options: c.options?.map((o: any) => o.id) }))
+                })
+                return selectedChoice
+              })
+              
+              console.log('ReservationForm: selectedChoices 설정 (매칭 후):', updatedSelectedChoices)
               setFormData(prev => {
                 const updated = {
                   ...prev,
-                  selectedChoices,
+                  selectedChoices: updatedSelectedChoices,
                   productChoices: allChoicesData || [],
                   choices: choicesData,
                   choicesTotal,
