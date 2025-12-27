@@ -63,14 +63,27 @@ export default function AdminTeam() {
   // 새 팀원 추가
   const handleAddMember = async (memberData: TeamMemberInsert) => {
     try {
+      // 이메일을 소문자로 정규화
+      const normalizedData = {
+        ...memberData,
+        email: memberData.email.toLowerCase().trim()
+      }
+      
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error } = await (supabase as any)
         .from('team')
-        .insert(memberData)
+        .insert(normalizedData)
 
       if (error) {
         console.error('Error adding team member:', error)
-        alert('팀원 추가 중 오류가 발생했습니다.')
+        // 중복 이메일 에러 처리
+        if (error.code === '23505' || error.message?.includes('duplicate key')) {
+          alert(`이메일 "${normalizedData.email}"이(가) 이미 등록되어 있습니다.`)
+        } else if (error.code === '42501') {
+          alert('팀원을 추가할 권한이 없습니다. 관리자에게 문의하세요.')
+        } else {
+          alert(`팀원 추가 중 오류가 발생했습니다: ${error.message || error.code}`)
+        }
         return
       }
 
@@ -866,7 +879,7 @@ function TeamMemberForm({
               <input
                 type="email"
                 value={formData.email}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
+                onChange={(e) => setFormData({...formData, email: e.target.value.toLowerCase()})}
                 className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
                 required
               />

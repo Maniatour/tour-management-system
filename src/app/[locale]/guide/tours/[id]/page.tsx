@@ -153,14 +153,14 @@ export default function GuideTourDetailPage() {
       }
 
       // 예약 정보 가져오기 (투어에 배정된 예약만)
-      // 1. tours.reservation_ids에 있는 예약 ID들을 가져오고, 실제 reservations 테이블에 존재하는지 확인
-      const reservationIdsFromTours: string[] = []
+      // tours.reservation_ids에 있는 예약 ID들만 가져옴 (tour_id 기반 조회 제거)
+      const allReservationIds: string[] = []
       if ((tourData as TourRow & { reservation_ids?: string[] | string }).reservation_ids) {
         const ids = Array.isArray((tourData as TourRow & { reservation_ids: string[] | string }).reservation_ids) 
           ? (tourData as TourRow & { reservation_ids: string[] }).reservation_ids 
           : String((tourData as TourRow & { reservation_ids: string }).reservation_ids).split(',').map(id => id.trim()).filter(id => id)
         
-        // reservation_ids에 있는 ID들이 실제 reservations 테이블에 존재하는지 확인
+        // reservation_ids에 있는 ID들이 실제 reservations 테이블에 존재하는지만 확인
         if (ids.length > 0) {
           const { data: existingReservations } = await supabase
             .from('reservations')
@@ -168,36 +168,9 @@ export default function GuideTourDetailPage() {
             .in('id', ids)
           
           // 실제로 존재하는 예약 ID만 추가
-          reservationIdsFromTours.push(...((existingReservations || []).map(r => r.id)))
+          allReservationIds.push(...((existingReservations || []).map(r => r.id)))
         }
       }
-
-      // 2. reservations.tour_id가 현재 투어 ID와 일치하는 예약들 조회
-      // reservations.tour_id가 실제로 tours 테이블에 존재하는 투어 ID인지 확인
-      // 먼저 현재 투어가 실제로 tours 테이블에 존재하는지 확인
-      const { data: tourExists } = await supabase
-        .from('tours')
-        .select('id')
-        .eq('id', tourId)
-        .single()
-
-      // 현재 투어가 존재하는 경우에만 tour_id로 예약 조회
-      let reservationIdsFromTourId: string[] = []
-      if (tourExists) {
-        const { data: reservationsByTourId } = await supabase
-          .from('reservations')
-          .select('id, tour_id')
-          .eq('tour_id', tourId)
-          .not('tour_id', 'is', null)
-
-        // tour_id가 현재 투어 ID와 일치하고, 실제로 tours 테이블에 존재하는 투어 ID인지 확인
-        reservationIdsFromTourId = (reservationsByTourId || [])
-          .filter(r => r.tour_id === tourId)
-          .map(r => r.id)
-      }
-      
-      // 두 목록을 합치고 중복 제거
-      const allReservationIds = [...new Set([...reservationIdsFromTours, ...reservationIdsFromTourId])]
 
       if (allReservationIds.length > 0) {
         // 연결된 예약을 투어 상태, 배정 상태와 상관없이 모두 가져옴
@@ -858,12 +831,31 @@ export default function GuideTourDetailPage() {
                     return acc
                   }, {} as Record<string, typeof reservations>)
 
-                return Object.entries(groupedByHotel).map(([hotelId, hotelReservations]) => {
+                // 호텔 그룹을 실제 픽업 날짜+시간으로 정렬 (21시 이후는 전날로 계산)
+                const getActualPickupDateTime = (pickupTime: string | null) => {
+                  if (!pickupTime) return new Date(tour.tour_date + 'T00:00:00').getTime()
+                  const time = pickupTime.substring(0, 5)
+                  const timeHour = parseInt(time.split(':')[0])
+                  let displayDate = tour.tour_date
+                  // 21시 이후면 전날
+                  if (timeHour >= 21) {
+                    const date = new Date(tour.tour_date)
+                    date.setDate(date.getDate() - 1)
+                    displayDate = date.toISOString().split('T')[0]
+                  }
+                  return new Date(displayDate + 'T' + time + ':00').getTime()
+                }
+
+                const sortedHotelEntries = Object.entries(groupedByHotel).sort(([, reservationsA], [, reservationsB]) => {
+                  const firstPickupA = reservationsA[0]?.pickup_time || '00:00'
+                  const firstPickupB = reservationsB[0]?.pickup_time || '00:00'
+                  return getActualPickupDateTime(firstPickupA) - getActualPickupDateTime(firstPickupB)
+                })
+
+                return sortedHotelEntries.map(([hotelId, hotelReservations]) => {
                   const hotel = pickupHotels.find(h => h.id === hotelId)
                   const sortedReservations = hotelReservations.sort((a, b) => {
-                    const timeA = a.pickup_time || '00:00'
-                    const timeB = b.pickup_time || '00:00'
-                    return timeA.localeCompare(timeB)
+                    return getActualPickupDateTime(a.pickup_time) - getActualPickupDateTime(b.pickup_time)
                   })
 
                   return (
