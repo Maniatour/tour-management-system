@@ -746,8 +746,18 @@ export default function ReservationForm({
 
         // 선택된 초이스들을 배열로 변환
         data.forEach((item: any) => {
+          // choice_id는 product_choices.id를 사용해야 함 (reservation_choices.choice_id가 아닌)
+          const productChoiceId = item.choice_options?.product_choices?.id || item.choice_id
+          
+          console.log('ReservationForm: 선택된 초이스 변환', {
+            reservationChoiceId: item.choice_id,
+            productChoiceId,
+            optionId: item.option_id,
+            productChoicesId: item.choice_options?.product_choices?.id
+          })
+          
           selectedChoices.push({
-            choice_id: item.choice_id,
+            choice_id: productChoiceId, // product_choices.id 사용
             option_id: item.option_id,
             option_key: item.choice_options?.option_key || '',
             option_name_ko: item.choice_options?.option_name_ko || '',
