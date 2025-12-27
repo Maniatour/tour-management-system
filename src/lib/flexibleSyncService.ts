@@ -509,11 +509,11 @@ export const flexibleSync = async (
       tableColumns = new Set()
     }
 
-    // tours 테이블 동기화 시 reservation_ids 초기화
-    // 동기화 전에 기존 reservation_ids를 모두 빈 배열로 초기화하여
-    // 중복 추가 문제를 방지합니다.
+    // tours 테이블 동기화 시 특정 컬럼들 초기화
+    // 동기화 전에 tour_guide_id, assistant_id, tour_car_id, reservation_ids를 초기화하여
+    // 기존 데이터를 삭제하고 새로 입력되도록 합니다.
     if (targetTable === 'tours') {
-      onProgress?.({ type: 'info', message: 'tours 테이블 동기화 - reservation_ids 컬럼 초기화 중...' })
+      onProgress?.({ type: 'info', message: 'tours 테이블 동기화 - 배정 관련 컬럼 초기화 중...' })
       
       try {
         // 동기화할 투어 ID 목록 추출
@@ -522,23 +522,29 @@ export const flexibleSync = async (
           .filter((id): id is string => typeof id === 'string' && id.length > 0)
         
         if (tourIdsToSync.length > 0) {
-          // 해당 투어들의 reservation_ids를 빈 배열로 초기화
+          // 해당 투어들의 배정 관련 컬럼들을 초기화
+          // tour_guide_id, assistant_id, tour_car_id는 null로, reservation_ids는 빈 배열로
           const { error: resetError } = await db
             .from('tours')
-            .update({ reservation_ids: [] })
+            .update({ 
+              tour_guide_id: null,
+              assistant_id: null,
+              tour_car_id: null,
+              reservation_ids: [] 
+            })
             .in('id', tourIdsToSync)
           
           if (resetError) {
-            console.warn('reservation_ids 초기화 중 오류 (계속 진행):', resetError.message)
-            onProgress?.({ type: 'warn', message: `reservation_ids 초기화 중 경고: ${resetError.message}` })
+            console.warn('배정 컬럼 초기화 중 오류 (계속 진행):', resetError.message)
+            onProgress?.({ type: 'warn', message: `배정 컬럼 초기화 중 경고: ${resetError.message}` })
           } else {
-            console.log(`✅ ${tourIdsToSync.length}개 투어의 reservation_ids 초기화 완료`)
-            onProgress?.({ type: 'info', message: `${tourIdsToSync.length}개 투어의 reservation_ids 초기화 완료` })
+            console.log(`✅ ${tourIdsToSync.length}개 투어의 배정 컬럼 초기화 완료 (tour_guide_id, assistant_id, tour_car_id, reservation_ids)`)
+            onProgress?.({ type: 'info', message: `${tourIdsToSync.length}개 투어의 배정 컬럼 초기화 완료` })
           }
         }
       } catch (resetException) {
-        console.warn('reservation_ids 초기화 예외 (계속 진행):', resetException)
-        onProgress?.({ type: 'warn', message: `reservation_ids 초기화 중 예외 발생 (계속 진행)` })
+        console.warn('배정 컬럼 초기화 예외 (계속 진행):', resetException)
+        onProgress?.({ type: 'warn', message: `배정 컬럼 초기화 중 예외 발생 (계속 진행)` })
       }
     }
 
