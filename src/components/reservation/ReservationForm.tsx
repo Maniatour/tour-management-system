@@ -855,11 +855,47 @@ export default function ReservationForm({
               
               // 카드뷰와 동일하게 reservation_choices에서 가져온 데이터를 그대로 사용
               // allChoicesData에서 option_id로 매칭하여 choice_id만 업데이트
+              console.log('ReservationForm: 매칭 시작', {
+                selectedChoices: selectedChoices.map(sc => ({
+                  choice_id: sc.choice_id,
+                  option_id: sc.option_id,
+                  option_key: sc.option_key,
+                  option_name_ko: sc.option_name_ko
+                })),
+                allChoicesData: allChoicesData?.map(c => ({
+                  id: c.id,
+                  choice_group_ko: c.choice_group_ko,
+                  options: c.options?.map((o: any) => ({
+                    id: o.id,
+                    option_key: o.option_key,
+                    option_name_ko: o.option_name_ko
+                  }))
+                }))
+              })
+              
               const updatedSelectedChoices = selectedChoices.map(selectedChoice => {
-                // allChoicesData에서 해당 option_id를 가진 choice 찾기
+                console.log('ReservationForm: 매칭 시도', {
+                  selectedChoice: {
+                    choice_id: selectedChoice.choice_id,
+                    option_id: selectedChoice.option_id,
+                    option_key: selectedChoice.option_key,
+                    option_name_ko: selectedChoice.option_name_ko
+                  }
+                })
+                
+                // 1차: allChoicesData에서 해당 option_id를 가진 choice 찾기
                 for (const choice of allChoicesData || []) {
                   const option = choice.options?.find((opt: any) => opt.id === selectedChoice.option_id)
                   if (option) {
+                    console.log('ReservationForm: option_id로 매칭 성공', {
+                      selectedOptionId: selectedChoice.option_id,
+                      matchedChoiceId: choice.id,
+                      matchedOption: {
+                        id: option.id,
+                        option_key: option.option_key,
+                        option_name_ko: option.option_name_ko
+                      }
+                    })
                     // option_id가 일치하면 choice_id만 업데이트
                     return {
                       ...selectedChoice,
@@ -868,15 +904,29 @@ export default function ReservationForm({
                   }
                 }
                 
-                // option_id로 매칭 실패 시 option_key로 시도
+                // 2차: option_id로 매칭 실패 시 option_key로 시도
                 if (selectedChoice.option_key) {
+                  console.log('ReservationForm: option_key로 매칭 시도', {
+                    selectedKey: selectedChoice.option_key,
+                    allChoicesDataOptions: allChoicesData?.flatMap(c => c.options?.map((o: any) => ({
+                      id: o.id,
+                      option_key: o.option_key,
+                      option_name_ko: o.option_name_ko
+                    })) || [])
+                  })
+                  
                   for (const choice of allChoicesData || []) {
                     const option = choice.options?.find((opt: any) => opt.option_key === selectedChoice.option_key)
                     if (option) {
                       console.log('ReservationForm: option_key로 매칭 성공', {
                         selectedKey: selectedChoice.option_key,
                         matchedOptionId: option.id,
-                        matchedChoiceId: choice.id
+                        matchedChoiceId: choice.id,
+                        matchedOption: {
+                          id: option.id,
+                          option_key: option.option_key,
+                          option_name_ko: option.option_name_ko
+                        }
                       })
                       return {
                         ...selectedChoice,
@@ -885,11 +935,21 @@ export default function ReservationForm({
                       }
                     }
                   }
+                  
+                  console.warn('ReservationForm: option_key로도 매칭 실패', {
+                    selectedKey: selectedChoice.option_key,
+                    availableKeys: allChoicesData?.flatMap(c => c.options?.map((o: any) => o.option_key) || [])
+                  })
                 }
                 
                 // 매칭 실패 시 원래 값 유지 (카드뷰와 동일하게 표시되도록)
-                console.warn('ReservationForm: 매칭 실패, 원래 값 유지', {
-                  selectedChoice,
+                console.warn('ReservationForm: 모든 매칭 방법 실패, 원래 값 유지', {
+                  selectedChoice: {
+                    choice_id: selectedChoice.choice_id,
+                    option_id: selectedChoice.option_id,
+                    option_key: selectedChoice.option_key,
+                    option_name_ko: selectedChoice.option_name_ko
+                  },
                   allChoicesDataOptions: allChoicesData?.flatMap(c => c.options?.map((o: any) => ({
                     id: o.id,
                     option_key: o.option_key,
