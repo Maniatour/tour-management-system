@@ -72,27 +72,28 @@ export default function SimpleChoiceSelector({
       prevIds,
       newIds,
       isDifferent: prevIds !== newIds,
-      prev: prevInitialSelectionsRef.current,
-      new: initialSelections
+      prev: prevInitialSelectionsRef.current.map(s => ({ choice_id: s.choice_id, option_id: s.option_id })),
+      new: initialSelections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id }))
     });
     
     // 이전 값과 새로운 값이 다르면 항상 업데이트
     if (prevIds !== newIds) {
       console.log('SimpleChoiceSelector: initialSelections 변경됨, 상태 업데이트', { 
-        prev: prevInitialSelectionsRef.current, 
-        new: initialSelections,
+        prev: prevInitialSelectionsRef.current.map(s => ({ choice_id: s.choice_id, option_id: s.option_id })), 
+        new: initialSelections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id })),
         prevIds,
         newIds
       });
       
       // 항상 새로운 값으로 업데이트 (사용자가 직접 변경한 경우는 onSelectionChange로 처리됨)
-      setSelections([...initialSelections]); // 복사본으로 설정
+      const newSelections = [...initialSelections]; // 복사본으로 설정
+      setSelections(newSelections);
       prevInitialSelectionsRef.current = [...initialSelections]; // 복사본 저장
       prevSelectionsRef.current = [...initialSelections]; // 복사본 저장
       
       console.log('SimpleChoiceSelector: selections 상태 업데이트 완료', {
-        updatedSelections: initialSelections,
-        selectionsCount: initialSelections.length
+        updatedSelections: newSelections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id })),
+        selectionsCount: newSelections.length
       });
     }
   }, [initialSelections]);

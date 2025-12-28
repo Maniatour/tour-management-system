@@ -855,15 +855,31 @@ export default function ReservationForm({
               
               // selectedChoices의 choice_id를 실제 product_choices.id와 매칭
               // option_id를 기준으로 매칭하여 올바른 choice_id 찾기
+              console.log('ReservationForm: choice_id 매칭 시작', {
+                selectedChoices,
+                allChoicesData: allChoicesData?.map(c => ({
+                  id: c.id,
+                  choice_group_ko: c.choice_group_ko,
+                  options: c.options?.map((o: any) => ({ id: o.id, option_name_ko: o.option_name_ko }))
+                }))
+              })
+              
               const updatedSelectedChoices = selectedChoices.map(selectedChoice => {
+                console.log('ReservationForm: 매칭 시도', {
+                  selectedChoice,
+                  optionId: selectedChoice.option_id
+                })
+                
                 // 모든 choice에서 해당 option_id를 가진 choice 찾기
                 for (const choice of allChoicesData || []) {
                   const option = choice.options?.find((opt: any) => opt.id === selectedChoice.option_id)
                   if (option) {
-                    console.log('ReservationForm: choice_id 매칭', {
+                    console.log('ReservationForm: choice_id 매칭 성공', {
                       oldChoiceId: selectedChoice.choice_id,
                       newChoiceId: choice.id,
-                      optionId: selectedChoice.option_id
+                      optionId: selectedChoice.option_id,
+                      choiceGroup: choice.choice_group_ko,
+                      optionName: option.option_name_ko
                     })
                     return {
                       ...selectedChoice,
@@ -874,7 +890,11 @@ export default function ReservationForm({
                 // 매칭되지 않으면 원래 값 유지
                 console.warn('ReservationForm: choice_id 매칭 실패', {
                   selectedChoice,
-                  allChoicesData: allChoicesData?.map(c => ({ id: c.id, options: c.options?.map((o: any) => o.id) }))
+                  allChoicesData: allChoicesData?.map(c => ({
+                    id: c.id,
+                    choice_group_ko: c.choice_group_ko,
+                    options: c.options?.map((o: any) => ({ id: o.id, option_name_ko: o.option_name_ko }))
+                  }))
                 })
                 return selectedChoice
               })
