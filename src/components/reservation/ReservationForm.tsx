@@ -982,26 +982,49 @@ export default function ReservationForm({
                     })
                     
                     for (const choice of allChoicesData || []) {
-                      const option = choice.options?.find((opt: any) => {
+                      for (const opt of choice.options || []) {
                         const normalizedOptName = normalize(opt.option_name_ko || '')
-                        return normalizedOptName === normalizedSelectedName || 
-                               normalizedOptName.includes(normalizedSelectedName) ||
-                               normalizedSelectedName.includes(normalizedOptName)
-                      })
-                      if (option) {
-                        matchedOption = option
-                        matchedChoice = choice
-                        console.log('ReservationForm: option_name_ko로 매칭 성공', {
-                          selectedName: selectedChoice.option_name_ko,
-                          matchedOption: {
-                            id: option.id,
-                            option_key: option.option_key,
-                            option_name_ko: option.option_name_ko
-                          },
-                          matchedChoiceId: choice.id
-                        })
-                        break
+                        const isExactMatch = normalizedOptName === normalizedSelectedName
+                        const isPartialMatch = normalizedOptName.includes(normalizedSelectedName) ||
+                                             normalizedSelectedName.includes(normalizedOptName)
+                        
+                        if (isExactMatch || isPartialMatch) {
+                          console.log('ReservationForm: option_name_ko 매칭 발견', {
+                            selectedName: selectedChoice.option_name_ko,
+                            normalizedSelectedName,
+                            optionName: opt.option_name_ko,
+                            normalizedOptName,
+                            isExactMatch,
+                            isPartialMatch
+                          })
+                          
+                          matchedOption = opt
+                          matchedChoice = choice
+                          console.log('ReservationForm: option_name_ko로 매칭 성공', {
+                            selectedName: selectedChoice.option_name_ko,
+                            matchedOption: {
+                              id: opt.id,
+                              option_key: opt.option_key,
+                              option_name_ko: opt.option_name_ko
+                            },
+                            matchedChoiceId: choice.id
+                          })
+                          break
+                        }
                       }
+                      if (matchedOption && matchedChoice) break
+                    }
+                    
+                    if (!matchedOption) {
+                      console.warn('ReservationForm: option_name_ko로도 매칭 실패', {
+                        selectedName: selectedChoice.option_name_ko,
+                        normalizedSelectedName,
+                        allOptionNames: allChoicesData?.flatMap(c => c.options?.map((o: any) => ({
+                          id: o.id,
+                          option_name_ko: o.option_name_ko,
+                          normalized: normalize(o.option_name_ko || '')
+                        })) || [])
+                      })
                     }
                     
                     if (matchedOption && matchedChoice) {
