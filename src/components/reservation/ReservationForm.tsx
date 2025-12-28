@@ -686,12 +686,52 @@ export default function ReservationForm({
     }
   }, [customers, reservation?.id]) // formData.customerSearch 제거하여 무한 루프 방지
 
-  // 새로운 reservation_choices 테이블에서 초이스 데이터 로드
+  // 새로운 reservation_choices 테이블에서 초이스 데이터 로드 (카드뷰와 동일한 로직)
   const loadReservationChoicesFromNewTable = useCallback(async (reservationId: string, productId?: string) => {
     try {
-      console.log('ReservationForm: 새로운 테이블에서 초이스 데이터 로드 시작:', reservationId)
+      console.log('ReservationForm: 초이스 데이터 로드 시작:', { reservationId, productId })
       
-      const { data, error } = await supabase
+      // 1. productId가 있으면 모든 product_choices 먼저 로드
+      let allProductChoices: any[] = []
+      if (productId) {
+        const { data: productChoicesData, error: productChoicesError } = await supabase
+          .from('product_choices')
+          .select(`
+            id,
+            choice_group,
+            choice_group_ko,
+            choice_type,
+            is_required,
+            min_selections,
+            max_selections,
+            sort_order,
+            options:choice_options (
+              id,
+              option_key,
+              option_name,
+              option_name_ko,
+              adult_price,
+              child_price,
+              infant_price,
+              capacity,
+              is_default,
+              is_active,
+              sort_order
+            )
+          `)
+          .eq('product_id', productId)
+          .order('sort_order')
+
+        if (productChoicesError) {
+          console.error('ReservationForm: 상품 초이스 로드 오류:', productChoicesError)
+        } else {
+          allProductChoices = productChoicesData || []
+          console.log('ReservationForm: 상품 초이스 로드 완료:', allProductChoices.length, '개')
+        }
+      }
+
+      // 2. reservation_choices에서 선택된 초이스 가져오기 (카드뷰와 동일한 쿼리)
+      const { data: reservationChoicesData, error: reservationChoicesError } = await supabase
         .from('reservation_choices')
         .select(`
           choice_id,
@@ -706,303 +746,112 @@ export default function ReservationForm({
             adult_price,
             child_price,
             infant_price,
-            capacity,
-            is_default,
-            is_active,
-            sort_order,
             product_choices!inner (
               id,
-              choice_group,
-              choice_group_ko,
-              choice_type,
-              is_required,
-              min_selections,
-              max_selections,
-              sort_order
+              choice_group_ko
             )
           )
         `)
         .eq('reservation_id', reservationId)
 
-      if (error) {
-        console.error('ReservationForm: 새로운 테이블에서 초이스 데이터 로드 오류:', error)
-        return
+      if (reservationChoicesError) {
+        console.error('ReservationForm: 예약 초이스 로드 오류:', reservationChoicesError)
       }
 
-      console.log('ReservationForm: 새로운 테이블에서 로드된 초이스 데이터:', data)
+      console.log('ReservationForm: 예약 초이스 로드 완료:', reservationChoicesData?.length || 0, '개')
 
-      // 편집 모드에서는 먼저 모든 초이스 옵션을 로드하여 매칭에 사용
-      let allChoicesData: any[] = []
-      if (productId) {
-        console.log('ReservationForm: 편집 모드 - 상품의 모든 초이스 옵션 먼저 로드:', productId)
-        try {
-          const { data: loadedChoicesData, error: allChoicesError } = await supabase
-            .from('product_choices')
-            .select(`
-              id,
-              choice_group,
-              choice_group_ko,
-              choice_type,
-              is_required,
-              min_selections,
-              max_selections,
-              sort_order,
-              options:choice_options (
-                id,
-                option_key,
-                option_name,
-                option_name_ko,
-                adult_price,
-                child_price,
-                infant_price,
-                capacity,
-                is_default,
-                is_active,
-                sort_order
-              )
-            `)
-            .eq('product_id', productId)
-            .order('sort_order')
+      // 3. 선택된 초이스를 allProductChoices와 매칭하여 selectedChoices 생성
+      const selectedChoices: Array<{
+        choice_id: string
+        option_id: string
+        option_key: string
+        option_name_ko: string
+        quantity: number
+        total_price: number
+      }> = []
 
-          if (allChoicesError) {
-            console.error('ReservationForm: 모든 초이스 옵션 로드 오류:', allChoicesError)
-          } else {
-            allChoicesData = loadedChoicesData || []
-            console.log('ReservationForm: 로드된 모든 초이스 옵션:', allChoicesData)
-          }
-        } catch (error) {
-          console.error('ReservationForm: 모든 초이스 옵션 로드 중 예외:', error)
-        }
-      }
+      const choicesData: Record<string, any> = {}
 
-      if (data && data.length > 0) {
-        const selectedChoices: Array<{
-          choice_id: string
-          option_id: string
-          option_key: string
-          option_name_ko: string
-          quantity: number
-          total_price: number
-        }> = []
-
-        const productChoices: any[] = []
-        const choicesData: Record<string, any> = {}
-
-        // 선택된 초이스들을 배열로 변환 (allChoicesData와 매칭)
-        data.forEach((item: any) => {
-          // reservation_choices에서 가져온 option_id로 allChoicesData에서 매칭 시도
-          let matchedOption: any = null
+      if (reservationChoicesData && reservationChoicesData.length > 0) {
+        reservationChoicesData.forEach((rc: any) => {
+          // allProductChoices에서 매칭된 옵션 찾기
           let matchedChoice: any = null
-          
-          // 1차: option_id로 매칭
-          if (allChoicesData.length > 0) {
-            for (const choice of allChoicesData) {
-              const option = choice.options?.find((opt: any) => opt.id === item.option_id)
+          let matchedOption: any = null
+
+          // option_id로 직접 매칭 시도
+          if (allProductChoices.length > 0) {
+            for (const choice of allProductChoices) {
+              const option = choice.options?.find((opt: any) => opt.id === rc.option_id)
               if (option) {
-                matchedOption = option
                 matchedChoice = choice
+                matchedOption = option
                 break
               }
             }
           }
-          
-          // 2차: option_id 매칭 실패 시 option_key로 매칭
-          if (!matchedOption && item.choice_options?.option_key) {
-            for (const choice of allChoicesData) {
-              const option = choice.options?.find((opt: any) => opt.option_key === item.choice_options.option_key)
+
+          // 매칭 실패 시 option_key로 시도
+          if (!matchedOption && rc.choice_options?.option_key && allProductChoices.length > 0) {
+            for (const choice of allProductChoices) {
+              const option = choice.options?.find((opt: any) => 
+                opt.option_key?.toLowerCase().trim() === rc.choice_options.option_key?.toLowerCase().trim()
+              )
               if (option) {
-                matchedOption = option
                 matchedChoice = choice
+                matchedOption = option
                 break
               }
             }
           }
-          
-          // 3차: option_key 매칭 실패 시 option_name_ko로 매칭
-          if (!matchedOption && item.choice_options?.option_name_ko) {
-            const normalize = (str: string) => (str || '').trim().toLowerCase().replace(/\s+/g, ' ')
-            const normalizedSelectedName = normalize(item.choice_options.option_name_ko)
-            
-            for (const choice of allChoicesData) {
-              const option = choice.options?.find((opt: any) => {
-                const normalizedOptName = normalize(opt.option_name_ko || '')
-                return normalizedOptName === normalizedSelectedName || 
-                       normalizedOptName.includes(normalizedSelectedName) ||
-                       normalizedSelectedName.includes(normalizedOptName)
-              })
-              if (option) {
-                matchedOption = option
-                matchedChoice = choice
-                break
-              }
-            }
-          }
-          
-          // 매칭 성공 시 매칭된 값 사용, 실패 시 원래 값 사용
-          const finalChoiceId = matchedChoice?.id || item.choice_options?.product_choices?.id || item.choice_id
-          const finalOptionId = matchedOption?.id || item.option_id
-          const finalOptionKey = matchedOption?.option_key || item.choice_options?.option_key || ''
-          const finalOptionNameKo = matchedOption?.option_name_ko || item.choice_options?.option_name_ko || ''
-          
-          console.log('ReservationForm: 선택된 초이스 변환', {
-            reservationChoiceId: item.choice_id,
-            reservationOptionId: item.option_id,
-            matchedChoiceId: matchedChoice?.id,
-            matchedOptionId: matchedOption?.id,
-            finalChoiceId,
-            finalOptionId,
-            matched: !!matchedOption
-          })
-          
+
+          // 최종적으로 매칭된 값 사용 (없으면 reservation_choices의 값 사용)
+          const finalChoiceId = matchedChoice?.id || rc.choice_options?.product_choices?.id || rc.choice_id
+          const finalOptionId = matchedOption?.id || rc.option_id
+          const finalOptionKey = matchedOption?.option_key || rc.choice_options?.option_key || ''
+          const finalOptionNameKo = matchedOption?.option_name_ko || rc.choice_options?.option_name_ko || ''
+
           selectedChoices.push({
             choice_id: finalChoiceId,
             option_id: finalOptionId,
             option_key: finalOptionKey,
             option_name_ko: finalOptionNameKo,
-            quantity: item.quantity,
-            total_price: item.total_price
+            quantity: rc.quantity,
+            total_price: rc.total_price
           })
 
-          // choices 데이터 추가 (매칭된 옵션의 가격 정보 사용)
-          if (matchedOption) {
-            choicesData[matchedOption.id] = {
-              adult_price: matchedOption.adult_price,
-              child_price: matchedOption.child_price,
-              infant_price: matchedOption.infant_price
-            }
-          } else if (item.choice_options) {
-            choicesData[item.choice_options.id] = {
-              adult_price: item.choice_options.adult_price,
-              child_price: item.choice_options.child_price,
-              infant_price: item.choice_options.infant_price
+          // 가격 정보 저장
+          const priceOption = matchedOption || rc.choice_options
+          if (priceOption) {
+            choicesData[finalOptionId] = {
+              adult_price: priceOption.adult_price,
+              child_price: priceOption.child_price,
+              infant_price: priceOption.infant_price
             }
           }
         })
-
-        const choicesTotal = selectedChoices.reduce((sum, choice) => sum + choice.total_price, 0)
-
-        console.log('ReservationForm: 새로운 테이블에서 복원된 데이터:', {
-          selectedChoices,
-          productChoices,
-          choicesData,
-          choicesTotal
-        })
-
-        // 편집 모드에서는 allChoicesData를 사용하여 모든 옵션 표시
-        if (productId && allChoicesData.length > 0) {
-          console.log('ReservationForm: 이미 매칭된 selectedChoices 사용:', selectedChoices)
-          
-          setFormData(prev => {
-            const updated = {
-              ...prev,
-              selectedChoices: selectedChoices, // 이미 매칭된 selectedChoices 사용
-              productChoices: allChoicesData, // 모든 옵션을 표시하기 위해 allChoicesData 사용
-              choices: choicesData,
-              choicesTotal,
-              quantityBasedChoices: {},
-              quantityBasedChoiceTotal: 0
-            }
-            console.log('ReservationForm: formData 업데이트 완료:', {
-              selectedChoices: updated.selectedChoices,
-              productChoicesCount: updated.productChoices.length
-            })
-            return updated
-          })
-          return
-        }
-
-        // productId가 없거나 allChoicesData가 없는 경우 (새 예약 모드)
-        console.log('ReservationForm: productId 없음, selectedChoices 설정:', selectedChoices)
-        setFormData(prev => {
-          const updated = {
-            ...prev,
-            selectedChoices: selectedChoices,
-            productChoices: productChoices,
-            choices: choicesData,
-            choicesTotal,
-            quantityBasedChoices: {},
-            quantityBasedChoiceTotal: 0
-          }
-          console.log('ReservationForm: formData 업데이트 완료 (productId 없음):', {
-            selectedChoices: updated.selectedChoices,
-            productChoicesCount: updated.productChoices.length
-          })
-          return updated
-        })
-      } else {
-        console.log('ReservationForm: 새로운 테이블에 초이스 데이터가 없음')
-        // 새로운 테이블에 데이터가 없으면 기존 choices 데이터 사용
-        if (reservation && reservation.choices && typeof reservation.choices === 'object' && 'required' in reservation.choices && Array.isArray(reservation.choices.required) && reservation.choices.required.length > 0) {
-          console.log('ReservationForm: 기존 choices 데이터로 fallback:', reservation.choices)
-          // 기존 choices 데이터 처리 로직 실행
-          processExistingChoicesData(reservation.choices)
-        } else {
-          // 예약에 선택된 초이스가 없어도 상품의 사용 가능한 초이스는 로드해야 함
-          console.log('ReservationForm: 예약에 선택된 초이스가 없음 - 상품 초이스 로드 시도')
-          if (productId) {
-            // 직접 상품 초이스 로드
-            try {
-              const { data: productChoicesData, error: productChoicesError } = await supabase
-                .from('product_choices')
-                .select(`
-                  id,
-                  choice_group,
-                  choice_group_ko,
-                  choice_type,
-                  is_required,
-                  min_selections,
-                  max_selections,
-                  sort_order,
-                  options:choice_options (
-                    id,
-                    option_key,
-                    option_name,
-                    option_name_ko,
-                    adult_price,
-                    child_price,
-                    infant_price,
-                    capacity,
-                    is_default,
-                    is_active,
-                    sort_order
-                  )
-                `)
-                .eq('product_id', productId)
-                .order('sort_order');
-
-              if (productChoicesError) {
-                console.error('ReservationForm: 상품 초이스 로드 오류:', productChoicesError);
-              } else {
-                console.log('ReservationForm: 상품 초이스 로드 성공:', productChoicesData);
-                setFormData(prev => ({
-                  ...prev,
-                  selectedChoices: [],
-                  productChoices: productChoicesData || [],
-                  choices: {},
-                  choicesTotal: 0,
-                  quantityBasedChoices: {},
-                  quantityBasedChoiceTotal: 0
-                }));
-              }
-            } catch (error) {
-              console.error('ReservationForm: 상품 초이스 로드 중 예외:', error);
-            }
-          } else {
-            // productId가 없으면 빈 상태로 설정
-            setFormData(prev => ({
-              ...prev,
-              selectedChoices: [],
-              productChoices: [],
-              choices: {},
-              choicesTotal: 0,
-              quantityBasedChoices: {},
-              quantityBasedChoiceTotal: 0
-            }))
-          }
-        }
       }
+
+      const choicesTotal = selectedChoices.reduce((sum, choice) => sum + choice.total_price, 0)
+
+      console.log('ReservationForm: 초이스 데이터 준비 완료:', {
+        selectedChoicesCount: selectedChoices.length,
+        productChoicesCount: allProductChoices.length,
+        choicesTotal
+      })
+
+      // 4. formData 업데이트
+      setFormData(prev => ({
+        ...prev,
+        selectedChoices,
+        productChoices: allProductChoices, // 모든 옵션 표시를 위해 allProductChoices 사용
+        choices: choicesData,
+        choicesTotal,
+        quantityBasedChoices: {},
+        quantityBasedChoiceTotal: 0
+      }))
+
     } catch (error) {
-      console.error('ReservationForm: 새로운 테이블에서 초이스 데이터 로드 중 예외:', error)
+      console.error('ReservationForm: 초이스 데이터 로드 중 예외:', error)
     }
   }, [supabase, setFormData])
 
