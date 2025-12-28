@@ -916,7 +916,23 @@ export default function ReservationForm({
                   })
                   
                   for (const choice of allChoicesData || []) {
-                    const option = choice.options?.find((opt: any) => opt.option_key === selectedChoice.option_key)
+                    // 정확한 매칭 시도
+                    let option = choice.options?.find((opt: any) => opt.option_key === selectedChoice.option_key)
+                    
+                    // 정확한 매칭 실패 시 대소문자 무시하고 비교
+                    if (!option) {
+                      option = choice.options?.find((opt: any) => 
+                        opt.option_key?.toLowerCase() === selectedChoice.option_key?.toLowerCase()
+                      )
+                    }
+                    
+                    // 공백 제거 후 비교
+                    if (!option) {
+                      option = choice.options?.find((opt: any) => 
+                        opt.option_key?.trim().toLowerCase() === selectedChoice.option_key?.trim().toLowerCase()
+                      )
+                    }
+                    
                     if (option) {
                       console.log('ReservationForm: option_key로 매칭 성공', {
                         selectedKey: selectedChoice.option_key,
@@ -936,9 +952,19 @@ export default function ReservationForm({
                     }
                   }
                   
+                  // 모든 choice를 순회했지만 매칭 실패
+                  const allOptions = allChoicesData?.flatMap(c => c.options?.map((o: any) => ({
+                    id: o.id,
+                    option_key: o.option_key,
+                    option_name_ko: o.option_name_ko
+                  })) || []) || []
+                  
                   console.warn('ReservationForm: option_key로도 매칭 실패', {
                     selectedKey: selectedChoice.option_key,
-                    availableKeys: allChoicesData?.flatMap(c => c.options?.map((o: any) => o.option_key) || [])
+                    selectedKeyLower: selectedChoice.option_key?.toLowerCase(),
+                    availableKeys: allOptions.map(o => o.option_key),
+                    availableKeysLower: allOptions.map(o => o.option_key?.toLowerCase()),
+                    allOptions: allOptions
                   })
                 }
                 
