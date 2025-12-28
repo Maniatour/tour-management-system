@@ -905,6 +905,9 @@ export default function ReservationForm({
                 }
                 
                 // 2차: option_id로 매칭 실패 시 option_key로 시도
+                let matchedOption: any = null
+                let matchedChoice: any = null
+                
                 if (selectedChoice.option_key) {
                   const allOptionsForLog = allChoicesData?.flatMap(c => c.options?.map((o: any) => ({
                     id: o.id,
@@ -938,6 +941,8 @@ export default function ReservationForm({
                     }
                     
                     if (option) {
+                      matchedOption = option
+                      matchedChoice = choice
                       console.log('ReservationForm: option_key로 매칭 성공', {
                         selectedKey: selectedChoice.option_key,
                         matchedOptionId: option.id,
@@ -948,16 +953,20 @@ export default function ReservationForm({
                           option_name_ko: option.option_name_ko
                         }
                       })
-                      return {
-                        ...selectedChoice,
-                        choice_id: choice.id,
-                        option_id: option.id // 새로운 option_id로 업데이트
-                      }
+                      break
+                    }
+                  }
+                  
+                  if (matchedOption && matchedChoice) {
+                    return {
+                      ...selectedChoice,
+                      choice_id: matchedChoice.id,
+                      option_id: matchedOption.id // 새로운 option_id로 업데이트
                     }
                   }
                   
                   // 3차: option_key 매칭 실패 시 option_name_ko로 매칭 시도
-                  if (!option && selectedChoice.option_name_ko) {
+                  if (!matchedOption && selectedChoice.option_name_ko) {
                     const normalize = (str: string) => (str || '').trim().toLowerCase().replace(/\s+/g, ' ')
                     const normalizedSelectedName = normalize(selectedChoice.option_name_ko)
                     
@@ -973,13 +982,15 @@ export default function ReservationForm({
                     })
                     
                     for (const choice of allChoicesData || []) {
-                      option = choice.options?.find((opt: any) => {
+                      const option = choice.options?.find((opt: any) => {
                         const normalizedOptName = normalize(opt.option_name_ko || '')
                         return normalizedOptName === normalizedSelectedName || 
                                normalizedOptName.includes(normalizedSelectedName) ||
                                normalizedSelectedName.includes(normalizedOptName)
                       })
                       if (option) {
+                        matchedOption = option
+                        matchedChoice = choice
                         console.log('ReservationForm: option_name_ko로 매칭 성공', {
                           selectedName: selectedChoice.option_name_ko,
                           matchedOption: {
@@ -989,13 +1000,17 @@ export default function ReservationForm({
                           },
                           matchedChoiceId: choice.id
                         })
-                        return {
-                          ...selectedChoice,
-                          choice_id: choice.id,
-                          option_id: option.id,
-                          option_key: option.option_key || selectedChoice.option_key,
-                          option_name_ko: option.option_name_ko || selectedChoice.option_name_ko
-                        }
+                        break
+                      }
+                    }
+                    
+                    if (matchedOption && matchedChoice) {
+                      return {
+                        ...selectedChoice,
+                        choice_id: matchedChoice.id,
+                        option_id: matchedOption.id,
+                        option_key: matchedOption.option_key || selectedChoice.option_key,
+                        option_name_ko: matchedOption.option_name_ko || selectedChoice.option_name_ko
                       }
                     }
                   }
