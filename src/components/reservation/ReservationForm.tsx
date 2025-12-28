@@ -959,12 +959,21 @@ export default function ReservationForm({
                     option_name_ko: o.option_name_ko
                   })) || []) || []
                   
+                  const availableKeys = allOptions.map(o => o.option_key).filter(Boolean)
+                  const availableKeysLower = allOptions.map(o => o.option_key?.toLowerCase()).filter(Boolean)
+                  
                   console.warn('ReservationForm: option_key로도 매칭 실패', {
                     selectedKey: selectedChoice.option_key,
                     selectedKeyLower: selectedChoice.option_key?.toLowerCase(),
-                    availableKeys: allOptions.map(o => o.option_key),
-                    availableKeysLower: allOptions.map(o => o.option_key?.toLowerCase()),
-                    allOptions: allOptions
+                    availableKeys: availableKeys,
+                    availableKeysLower: availableKeysLower,
+                    hasAntelopeX: availableKeys.includes('antelope_x'),
+                    hasAntelopeXLower: availableKeysLower.includes('antelope_x'),
+                    allOptions: allOptions.map(o => ({
+                      id: o.id,
+                      option_key: o.option_key,
+                      option_name_ko: o.option_name_ko
+                    }))
                   })
                 }
                 
