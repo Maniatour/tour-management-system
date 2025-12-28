@@ -876,15 +876,47 @@ export default function ReservationForm({
                 for (const choice of allChoicesData || []) {
                   // 1차: option_id로 매칭
                   let option = choice.options?.find((opt: any) => opt.id === selectedChoice.option_id)
+                  let matchMethod = 'option_id'
                   
-                  // 2차: option_id 매칭 실패 시 option_name_ko로 매칭
+                  // 2차: option_id 매칭 실패 시 option_name_ko로 매칭 (정규화 후 비교)
                   if (!option && selectedChoice.option_name_ko) {
-                    option = choice.options?.find((opt: any) => opt.option_name_ko === selectedChoice.option_name_ko)
+                    const normalize = (str: string) => (str || '').trim().toLowerCase().replace(/\s+/g, ' ')
+                    const normalizedSelectedName = normalize(selectedChoice.option_name_ko)
+                    
+                    console.log('ReservationForm: option_name_ko 매칭 시도', {
+                      selectedName: selectedChoice.option_name_ko,
+                      normalizedSelectedName,
+                      choiceOptions: choice.options?.map((o: any) => ({
+                        id: o.id,
+                        option_name_ko: o.option_name_ko,
+                        normalized: normalize(o.option_name_ko || '')
+                      }))
+                    })
+                    
+                    option = choice.options?.find((opt: any) => {
+                      const normalizedOptName = normalize(opt.option_name_ko || '')
+                      const isExactMatch = normalizedOptName === normalizedSelectedName
+                      const isPartialMatch = normalizedOptName.includes(normalizedSelectedName) || 
+                                           normalizedSelectedName.includes(normalizedOptName)
+                      
+                      if (isExactMatch || isPartialMatch) {
+                        console.log('ReservationForm: option_name_ko 매칭 발견', {
+                          selectedName: selectedChoice.option_name_ko,
+                          optionName: opt.option_name_ko,
+                          isExactMatch,
+                          isPartialMatch
+                        })
+                      }
+                      
+                      return isExactMatch || isPartialMatch
+                    })
+                    if (option) matchMethod = 'option_name_ko'
                   }
                   
                   // 3차: option_name_ko 매칭 실패 시 option_key로 매칭
                   if (!option && selectedChoice.option_key) {
                     option = choice.options?.find((opt: any) => opt.option_key === selectedChoice.option_key)
+                    if (option) matchMethod = 'option_key'
                   }
                   
                   if (option) {
@@ -895,19 +927,25 @@ export default function ReservationForm({
                       newOptionId: option.id,
                       choiceGroup: choice.choice_group_ko,
                       optionName: option.option_name_ko,
-                      matchMethod: option.id === selectedChoice.option_id ? 'option_id' : 
-                                   option.option_name_ko === selectedChoice.option_name_ko ? 'option_name_ko' : 'option_key'
+                      matchMethod
                     })
                     return {
                       ...selectedChoice,
                       choice_id: choice.id, // 실제 product_choices.id로 업데이트
-                      option_id: option.id // 실제 choice_options.id로 업데이트 (변경된 경우)
+                      option_id: option.id, // 실제 choice_options.id로 업데이트 (변경된 경우)
+                      option_key: option.option_key || selectedChoice.option_key,
+                      option_name_ko: option.option_name_ko || selectedChoice.option_name_ko
                     }
                   }
                 }
                 // 매칭되지 않으면 원래 값 유지
-                console.warn('ReservationForm: choice_id 매칭 실패', {
-                  selectedChoice,
+                console.warn('ReservationForm: choice_id 매칭 실패 - 모든 방법 시도했지만 매칭되지 않음', {
+                  selectedChoice: {
+                    choice_id: selectedChoice.choice_id,
+                    option_id: selectedChoice.option_id,
+                    option_name_ko: selectedChoice.option_name_ko,
+                    option_key: selectedChoice.option_key
+                  },
                   allChoicesData: allChoicesData?.map(c => ({
                     id: c.id,
                     choice_group_ko: c.choice_group_ko,
