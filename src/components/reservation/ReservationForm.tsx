@@ -929,12 +929,6 @@ export default function ReservationForm({
           })
           return updated
         })
-      }
-    } catch (error) {
-      console.error('ReservationForm: 새로운 테이블에서 초이스 데이터 로드 오류:', error)
-    }
-  }, [supabase, setFormData])
-
       } else {
         console.log('ReservationForm: 새로운 테이블에 초이스 데이터가 없음')
         // 새로운 테이블에 데이터가 없으면 기존 choices 데이터 사용
@@ -1010,7 +1004,7 @@ export default function ReservationForm({
     } catch (error) {
       console.error('ReservationForm: 새로운 테이블에서 초이스 데이터 로드 중 예외:', error)
     }
-  }, [])
+  }, [supabase, setFormData])
 
   // 기존 products.choices에서 초이스 데이터 로드
   const loadProductChoicesFromOldTable = useCallback(async (productId: string) => {
