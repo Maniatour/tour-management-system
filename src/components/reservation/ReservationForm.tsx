@@ -853,106 +853,48 @@ export default function ReservationForm({
             } else {
               console.log('ReservationForm: 로드된 모든 초이스 옵션:', allChoicesData)
               
-              // selectedChoices의 choice_id를 실제 product_choices.id와 매칭
-              // option_id를 기준으로 매칭하여 올바른 choice_id 찾기
-              console.log('ReservationForm: choice_id 매칭 시작', {
-                selectedChoices,
-                allChoicesData: allChoicesData?.map(c => ({
-                  id: c.id,
-                  choice_group_ko: c.choice_group_ko,
-                  options: c.options?.map((o: any) => ({ id: o.id, option_name_ko: o.option_name_ko }))
-                }))
-              })
-              
+              // 카드뷰와 동일하게 reservation_choices에서 가져온 데이터를 그대로 사용
+              // allChoicesData에서 option_id로 매칭하여 choice_id만 업데이트
               const updatedSelectedChoices = selectedChoices.map(selectedChoice => {
-                console.log('ReservationForm: 매칭 시도', {
-                  selectedChoice,
-                  optionId: selectedChoice.option_id,
-                  optionNameKo: selectedChoice.option_name_ko,
-                  optionKey: selectedChoice.option_key
-                })
-                
-                // 모든 choice에서 해당 option을 찾기
-                let matchedOption: any = null
-                let matchedChoice: any = null
-                let matchMethod = ''
-                
+                // allChoicesData에서 해당 option_id를 가진 choice 찾기
                 for (const choice of allChoicesData || []) {
-                  // 1차: option_id로 매칭
-                  let option = choice.options?.find((opt: any) => opt.id === selectedChoice.option_id)
+                  const option = choice.options?.find((opt: any) => opt.id === selectedChoice.option_id)
                   if (option) {
-                    matchedOption = option
-                    matchedChoice = choice
-                    matchMethod = 'option_id'
-                    break
-                  }
-                  
-                  // 2차: option_key로 매칭 (option_name_ko보다 더 안정적)
-                  if (!option && selectedChoice.option_key) {
-                    option = choice.options?.find((opt: any) => opt.option_key === selectedChoice.option_key)
-                    if (option) {
-                      matchedOption = option
-                      matchedChoice = choice
-                      matchMethod = 'option_key'
-                      break
-                    }
-                  }
-                  
-                  // 3차: option_name_ko로 매칭 (정규화 후 비교)
-                  if (!option && selectedChoice.option_name_ko) {
-                    const normalize = (str: string) => (str || '').trim().toLowerCase().replace(/\s+/g, ' ')
-                    const normalizedSelectedName = normalize(selectedChoice.option_name_ko)
-                    
-                    option = choice.options?.find((opt: any) => {
-                      const normalizedOptName = normalize(opt.option_name_ko || '')
-                      return normalizedOptName === normalizedSelectedName || 
-                             normalizedOptName.includes(normalizedSelectedName) ||
-                             normalizedSelectedName.includes(normalizedOptName)
-                    })
-                    if (option) {
-                      matchedOption = option
-                      matchedChoice = choice
-                      matchMethod = 'option_name_ko'
-                      break
+                    // option_id가 일치하면 choice_id만 업데이트
+                    return {
+                      ...selectedChoice,
+                      choice_id: choice.id // 실제 product_choices.id로 업데이트
                     }
                   }
                 }
                 
-                if (matchedOption && matchedChoice) {
-                  console.log('ReservationForm: choice_id 매칭 성공', {
-                    oldChoiceId: selectedChoice.choice_id,
-                    newChoiceId: matchedChoice.id,
-                    oldOptionId: selectedChoice.option_id,
-                    newOptionId: matchedOption.id,
-                    choiceGroup: matchedChoice.choice_group_ko,
-                    optionName: matchedOption.option_name_ko,
-                    matchMethod
-                  })
-                  return {
-                    ...selectedChoice,
-                    choice_id: matchedChoice.id, // 실제 product_choices.id로 업데이트
-                    option_id: matchedOption.id, // 실제 choice_options.id로 업데이트 (변경된 경우)
-                    option_key: matchedOption.option_key || selectedChoice.option_key,
-                    option_name_ko: matchedOption.option_name_ko || selectedChoice.option_name_ko
+                // option_id로 매칭 실패 시 option_key로 시도
+                if (selectedChoice.option_key) {
+                  for (const choice of allChoicesData || []) {
+                    const option = choice.options?.find((opt: any) => opt.option_key === selectedChoice.option_key)
+                    if (option) {
+                      console.log('ReservationForm: option_key로 매칭 성공', {
+                        selectedKey: selectedChoice.option_key,
+                        matchedOptionId: option.id,
+                        matchedChoiceId: choice.id
+                      })
+                      return {
+                        ...selectedChoice,
+                        choice_id: choice.id,
+                        option_id: option.id // 새로운 option_id로 업데이트
+                      }
+                    }
                   }
                 }
-                // 매칭되지 않으면 원래 값 유지
-                console.warn('ReservationForm: choice_id 매칭 실패 - 모든 방법 시도했지만 매칭되지 않음', {
-                  selectedChoice: {
-                    choice_id: selectedChoice.choice_id,
-                    option_id: selectedChoice.option_id,
-                    option_name_ko: selectedChoice.option_name_ko,
-                    option_key: selectedChoice.option_key
-                  },
-                  allChoicesData: allChoicesData?.map(c => ({
-                    id: c.id,
-                    choice_group_ko: c.choice_group_ko,
-                    options: c.options?.map((o: any) => ({ 
-                      id: o.id, 
-                      option_name_ko: o.option_name_ko,
-                      option_key: o.option_key
-                    }))
-                  }))
+                
+                // 매칭 실패 시 원래 값 유지 (카드뷰와 동일하게 표시되도록)
+                console.warn('ReservationForm: 매칭 실패, 원래 값 유지', {
+                  selectedChoice,
+                  allChoicesDataOptions: allChoicesData?.flatMap(c => c.options?.map((o: any) => ({
+                    id: o.id,
+                    option_key: o.option_key,
+                    option_name_ko: o.option_name_ko
+                  })) || [])
                 })
                 return selectedChoice
               })
@@ -962,7 +904,7 @@ export default function ReservationForm({
                 const updated = {
                   ...prev,
                   selectedChoices: updatedSelectedChoices,
-                  productChoices: allChoicesData || [],
+                  productChoices: allChoicesData || [], // 모든 옵션을 표시하기 위해 allChoicesData 사용
                   choices: choicesData,
                   choicesTotal,
                   quantityBasedChoices: {},
