@@ -83,12 +83,15 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         .select(`
           choice_id,
           option_id,
+          choice_group,
+          option_key,
           quantity,
-          choice_options!inner (
+          choice_options (
             option_key,
             option_name,
             option_name_ko,
-            product_choices!inner (
+            product_choices (
+              choice_group_key,
               choice_group_ko
             )
           )

@@ -209,33 +209,46 @@ export default function GuideTourDetailPage() {
         }>>()
 
         for (const reservationId of allReservationIds) {
-          const { data: choicesData, error: choicesError } = await supabase
-            .from('reservation_choices')
-            .select(`
-              choice_id,
-              option_id,
-              quantity,
-              choice_options!inner (
+          try {
+            const { data: choicesData, error: choicesError } = await supabase
+              .from('reservation_choices')
+              .select(`
+                choice_id,
+                option_id,
+                choice_group,
                 option_key,
-                option_name,
-                option_name_ko,
-                product_choices!inner (
-                  choice_group_ko
+                quantity,
+                choice_options (
+                  option_key,
+                  option_name,
+                  option_name_ko,
+                  product_choices (
+                    choice_group_key,
+                    choice_group_ko
+                  )
                 )
-              )
-            `)
-            .eq('reservation_id', reservationId)
+              `)
+              .eq('reservation_id', reservationId)
 
-          if (!choicesError && choicesData && choicesData.length > 0) {
-            const formattedChoices = choicesData.map((choice: any) => ({
-              choice_id: choice.choice_id,
-              option_id: choice.option_id,
-              quantity: choice.quantity,
-              option_name: choice.choice_options?.option_name || '',
-              option_name_ko: choice.choice_options?.option_name_ko || choice.choice_options?.option_name || '',
-              choice_group_ko: choice.choice_options?.product_choices?.choice_group_ko || ''
-            }))
-            choicesMap.set(reservationId, formattedChoices)
+            if (choicesError) {
+              console.error(`가이드 페이지: 예약 ${reservationId} 초이스 로드 오류:`, choicesError)
+              continue
+            }
+
+            if (choicesData && choicesData.length > 0) {
+              const formattedChoices = choicesData.map((choice: any) => ({
+                choice_id: choice.choice_id,
+                option_id: choice.option_id,
+                quantity: choice.quantity,
+                option_name: choice.choice_options?.option_name || '',
+                option_name_ko: choice.choice_options?.option_name_ko || choice.choice_options?.option_name || '',
+                choice_group_ko: choice.choice_options?.product_choices?.choice_group_ko || choice.choice_group || ''
+              }))
+              choicesMap.set(reservationId, formattedChoices)
+            }
+          } catch (err) {
+            console.error(`가이드 페이지: 예약 ${reservationId} 초이스 처리 중 예외:`, err)
+            continue
           }
         }
 
