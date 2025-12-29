@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
+import { useTranslations } from 'next-intl'
 import LoginForm from '@/components/auth/LoginForm'
 import SignUpForm from '@/components/auth/SignUpForm'
 import ResetPasswordForm from '@/components/auth/ResetPasswordForm'
@@ -10,6 +11,7 @@ import ResetPasswordForm from '@/components/auth/ResetPasswordForm'
 type AuthMode = 'login' | 'signup' | 'reset'
 
 export default function AuthPage() {
+  const t = useTranslations()
   const [mode, setMode] = useState<AuthMode>('login')
   const { user, userRole, loading } = useAuth()
   const router = useRouter()
@@ -95,7 +97,7 @@ export default function AuthPage() {
               onClick={() => setMode('reset')}
               className="text-sm text-blue-600 hover:text-blue-500"
             >
-              비밀번호를 잊으셨나요?
+              {t('auth.forgotPassword')}
             </button>
           </div>
         )}

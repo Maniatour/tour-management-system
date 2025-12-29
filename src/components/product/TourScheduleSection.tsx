@@ -44,17 +44,26 @@ interface TourScheduleSectionProps {
   productId: string
   teamType: 'guide+driver' | '2guide' | null
   locale?: string
+  showAllSchedules?: boolean // 가이드 페이지에서는 모든 일정 표시
+  currentUserEmail?: string | null // 현재 사용자 이메일 (필터링용)
+  tourGuideId?: string | null // 투어 가이드 ID
+  assistantId?: string | null // 어시스턴트/드라이버 ID
 }
 
 export default function TourScheduleSection({ 
   productId, 
   teamType, 
-  locale = 'ko' 
+  locale = 'ko',
+  showAllSchedules = false,
+  currentUserEmail,
+  tourGuideId,
+  assistantId
 }: TourScheduleSectionProps) {
   const [schedules, setSchedules] = useState<ScheduleItem[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedSchedules, setExpandedSchedules] = useState<Set<string>>(new Set())
   const [isExpanded, setIsExpanded] = useState(true)
+  const [showOnlyMySchedules, setShowOnlyMySchedules] = useState(false) // 자신의 일정만 보기 필터
 
   // 아코디언 토글 함수
   const toggleScheduleExpansion = (scheduleId: string) => {
@@ -78,8 +87,8 @@ export default function TourScheduleSection({
     try {
       setLoading(true)
       
-      // 고객 페이지에서는 show_to_customers가 true인 일정만 가져오기
-      const { data, error } = await supabase
+      // 가이드 페이지에서는 모든 일정 가져오기, 고객 페이지에서는 show_to_customers가 true인 일정만
+      let query = supabase
         .from('product_schedules')
         .select(`
           *,
@@ -87,7 +96,13 @@ export default function TourScheduleSection({
           guide_driver_schedule
         `)
         .eq('product_id', productId)
-        .eq('show_to_customers', true)
+      
+      // showAllSchedules가 false일 때만 고객 표시 필터 적용
+      if (!showAllSchedules) {
+        query = query.eq('show_to_customers', true)
+      }
+      
+      const { data, error } = await query
         .order('day_number', { ascending: true })
         .order('order_index', { ascending: true })
         .order('start_time', { ascending: true })
@@ -99,7 +114,7 @@ export default function TourScheduleSection({
     } finally {
       setLoading(false)
     }
-  }, [productId])
+  }, [productId, showAllSchedules])
 
   useEffect(() => {
     fetchSchedules()
@@ -116,11 +131,6 @@ export default function TourScheduleSection({
     if (ko) return ko
     return fallback || ''
   }
-
-  // 모든 개별 아코디언이 열려있는지 확인
-  const schedulesWithDescription = schedules.filter(s => getLocalizedText(s.description_ko, s.description_en, ''))
-  const allSchedulesExpanded = schedulesWithDescription.length > 0 && 
-    schedulesWithDescription.every(s => expandedSchedules.has(s.id))
 
   // 구글맵 네비게이션 함수
   const openGoogleMapsNavigation = (schedule: ScheduleItem) => {
@@ -187,9 +197,9 @@ export default function TourScheduleSection({
     
     if (teamType === 'guide+driver' && schedule.guide_driver_schedule) {
       const label = schedule.guide_driver_schedule === 'guide' ? getText('가이드', 'Guide') : 
-                   schedule.guide_driver_schedule === 'assistant' ? getText('어시스턴트', 'Assistant') : 
+                   schedule.guide_driver_schedule === 'assistant' ? getText('드라이버', 'Driver') : 
                    schedule.guide_driver_schedule
-      // guide = 빨간색, assistant = 파란색
+      // guide = 빨간색, assistant (드라이버) = 파란색
       const color = schedule.guide_driver_schedule === 'guide' ? 'bg-red-100 text-red-800' : 
                    schedule.guide_driver_schedule === 'assistant' ? 'bg-blue-100 text-blue-800' : 
                    'bg-gray-100 text-gray-800'
@@ -249,8 +259,68 @@ export default function TourScheduleSection({
     return url
   }
 
-  // 일차별로 그룹화
-  const schedulesByDay = schedules.reduce((acc, schedule) => {
+  // 자신의 일정인지 확인하는 함수
+  const isMySchedule = (schedule: ScheduleItem): boolean => {
+    if (!currentUserEmail || !showOnlyMySchedules) return true
+    
+    // 가이드+드라이버 팀 타입
+    if (teamType === 'guide+driver') {
+      if (currentUserEmail === tourGuideId && schedule.guide_driver_schedule === 'guide') {
+        return true
+      }
+      if (currentUserEmail === assistantId && schedule.guide_driver_schedule === 'assistant') {
+        return true
+      }
+      return false
+    }
+    
+    // 2가이드 팀 타입
+    if (teamType === '2guide') {
+      if (currentUserEmail === tourGuideId && schedule.two_guide_schedule === 'guide') {
+        return true
+      }
+      if (currentUserEmail === assistantId && schedule.two_guide_schedule === 'assistant') {
+        return true
+      }
+      return false
+    }
+    
+    // 팀 타입이 없으면 모든 일정 표시
+    return true
+  }
+
+  // 필터링된 일정
+  const filteredSchedules = showOnlyMySchedules 
+    ? schedules.filter(isMySchedule)
+    : schedules
+
+  // 전체 일정을 일차별로 그룹화 (다음 목적지 찾기용)
+  const allSchedulesByDay = schedules.reduce((acc, schedule) => {
+    if (!acc[schedule.day_number]) {
+      acc[schedule.day_number] = []
+    }
+    acc[schedule.day_number].push(schedule)
+    return acc
+  }, {} as Record<number, ScheduleItem[]>)
+
+  // 다음 목적지 찾기 함수 (전체 일정에서 찾기)
+  const getNextDestination = (currentSchedule: ScheduleItem): ScheduleItem | null => {
+    // 같은 일차의 전체 일정 가져오기
+    const daySchedules = allSchedulesByDay[currentSchedule.day_number] || []
+    
+    // 현재 일정의 인덱스 찾기
+    const currentIndex = daySchedules.findIndex(s => s.id === currentSchedule.id)
+    if (currentIndex === -1 || currentIndex === daySchedules.length - 1) {
+      return null
+    }
+    
+    // 다음 일정 찾기
+    const nextSchedule = daySchedules[currentIndex + 1]
+    return nextSchedule || null
+  }
+
+  // 일차별로 그룹화 (필터링된 일정 사용)
+  const schedulesByDay = filteredSchedules.reduce((acc, schedule) => {
     if (!acc[schedule.day_number]) {
       acc[schedule.day_number] = []
     }
@@ -271,7 +341,7 @@ export default function TourScheduleSection({
     )
   }
 
-  if (schedules.length === 0) {
+  if (filteredSchedules.length === 0) {
     return (
       <div>
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
@@ -281,52 +351,96 @@ export default function TourScheduleSection({
         </h3>
         <div className="text-center py-8">
           <Calendar className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-          <p className="text-gray-500">{getText('등록된 일정이 없습니다.', 'No schedules registered.')}</p>
+          <p className="text-gray-500">
+            {showOnlyMySchedules 
+              ? getText('담당 일정이 없습니다.', 'No assigned schedules.')
+              : getText('등록된 일정이 없습니다.', 'No schedules registered.')}
+          </p>
         </div>
       </div>
     )
   }
 
+  // 필터링된 일정으로 allSchedulesExpanded 계산
+  const filteredSchedulesWithDescription = filteredSchedules.filter(s => getLocalizedText(s.description_ko, s.description_en, ''))
+  const allSchedulesExpanded = filteredSchedulesWithDescription.length > 0 && 
+    filteredSchedulesWithDescription.every(s => expandedSchedules.has(s.id))
+
   return (
     <div>
+      {/* 필터 버튼 (가이드 페이지에서만 표시) */}
+      {showAllSchedules && currentUserEmail && (
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900 flex-shrink-0">
+            {teamType === '2guide' ? getText('2가이드 담당 일정', '2-Guide Assigned Schedules') : 
+             teamType === 'guide+driver' ? getText('가이드+드라이버 담당 일정', 'Guide+Driver Assigned Schedules') : 
+             getText('투어 일정', 'Tour Schedules')}
+          </h3>
+          <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
+            <button
+              onClick={() => setShowOnlyMySchedules(false)}
+              className={`px-2 sm:px-3 py-1 sm:py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap ${
+                !showOnlyMySchedules
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              {getText('전체', 'All')}
+            </button>
+            <button
+              onClick={() => setShowOnlyMySchedules(true)}
+              className={`px-2 sm:px-3 py-1 sm:py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap ${
+                showOnlyMySchedules
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              {getText('내 일정', 'My')}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 아코디언 헤더 */}
-      <div 
-        className="flex items-center justify-between cursor-pointer mb-4 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-        onClick={() => {
-          // 모든 개별 아코디언이 열려있으면 닫기, 아니면 열기
-          if (allSchedulesExpanded) {
-            // 제목만 보기: 모든 개별 아코디언 닫기
-            setExpandedSchedules(new Set())
-          } else {
-            // 상세보기: 모든 개별 아코디언 열기 (설명이 있는 것만)
-            const allScheduleIds = schedules
-              .filter(s => getLocalizedText(s.description_ko, s.description_en, ''))
-              .map(s => s.id)
-            setExpandedSchedules(new Set(allScheduleIds))
-          }
-        }}
-      >
-        <h3 className="text-lg font-semibold text-gray-900">
-          {teamType === '2guide' ? (
-            allSchedulesExpanded 
-              ? getText('2가이드 담당 일정 (상세보기)', '2-Guide Assigned Schedules (Detail View)')
-              : getText('2가이드 담당 일정 (제목만 보기)', '2-Guide Assigned Schedules (Title Only)')
-          ) : teamType === 'guide+driver' ? (
-            allSchedulesExpanded 
-              ? getText('가이드+드라이버 담당 일정 (상세보기)', 'Guide+Driver Assigned Schedules (Detail View)')
-              : getText('가이드+드라이버 담당 일정 (제목만 보기)', 'Guide+Driver Assigned Schedules (Title Only)')
+      {(!showAllSchedules || !currentUserEmail) && (
+        <div 
+          className="flex items-center justify-between cursor-pointer mb-4 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+          onClick={() => {
+            // 모든 개별 아코디언이 열려있으면 닫기, 아니면 열기
+            if (allSchedulesExpanded) {
+              // 제목만 보기: 모든 개별 아코디언 닫기
+              setExpandedSchedules(new Set())
+            } else {
+              // 상세보기: 모든 개별 아코디언 열기 (설명이 있는 것만)
+              const allScheduleIds = filteredSchedules
+                .filter(s => getLocalizedText(s.description_ko, s.description_en, ''))
+                .map(s => s.id)
+              setExpandedSchedules(new Set(allScheduleIds))
+            }
+          }}
+        >
+          <h3 className="text-lg font-semibold text-gray-900">
+            {teamType === '2guide' ? (
+              allSchedulesExpanded 
+                ? getText('2가이드 담당 일정 (상세보기)', '2-Guide Assigned Schedules (Detail View)')
+                : getText('2가이드 담당 일정 (제목만 보기)', '2-Guide Assigned Schedules (Title Only)')
+            ) : teamType === 'guide+driver' ? (
+              allSchedulesExpanded 
+                ? getText('가이드+드라이버 담당 일정 (상세보기)', 'Guide+Driver Assigned Schedules (Detail View)')
+                : getText('가이드+드라이버 담당 일정 (제목만 보기)', 'Guide+Driver Assigned Schedules (Title Only)')
+            ) : (
+              allSchedulesExpanded 
+                ? getText('투어 일정 (상세보기)', 'Tour Schedules (Detail View)')
+                : getText('투어 일정 (제목만 보기)', 'Tour Schedules (Title Only)')
+            )}
+          </h3>
+          {allSchedulesExpanded ? (
+            <ChevronUp className="w-5 h-5 text-gray-500" />
           ) : (
-            allSchedulesExpanded 
-              ? getText('투어 일정 (상세보기)', 'Tour Schedules (Detail View)')
-              : getText('투어 일정 (제목만 보기)', 'Tour Schedules (Title Only)')
+            <ChevronDown className="w-5 h-5 text-gray-500" />
           )}
-        </h3>
-        {allSchedulesExpanded ? (
-          <ChevronUp className="w-5 h-5 text-gray-500" />
-        ) : (
-          <ChevronDown className="w-5 h-5 text-gray-500" />
-        )}
-      </div>
+        </div>
+      )}
       
       {isExpanded && (
         <div className="space-y-4">
@@ -338,15 +452,15 @@ export default function TourScheduleSection({
             return (
               <div key={dayNum} className="space-y-3">
                 {/* 일차 헤더 */}
-                <div className="flex items-center space-x-3">
-                  <div className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full text-sm font-medium">
+                <div className="flex items-center space-x-2 sm:space-x-3">
+                  <div className="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 bg-blue-100 text-blue-600 rounded-full text-xs sm:text-sm font-medium flex-shrink-0">
                     {dayNum}
                   </div>
                   <div>
-                    <h4 className="font-medium text-gray-900">
+                    <h4 className="font-medium text-gray-900 text-sm sm:text-base">
                       {getText(`${dayNum}일차`, `Day ${dayNum}`)}
                     </h4>
-                    <p className="text-sm text-gray-500">
+                    <p className="text-xs sm:text-sm text-gray-500">
                       {getText(`${daySchedules.length}개 일정`, `${daySchedules.length} schedules`)}
                     </p>
                   </div>
@@ -354,74 +468,125 @@ export default function TourScheduleSection({
                 
                 {/* 일정 목록 - 항상 표시 */}
                 <div className="space-y-3">
-                  {daySchedules.map((schedule) => {
+                  {daySchedules.map((schedule, scheduleIndex) => {
                     const isExpanded = expandedSchedules.has(schedule.id)
                     const hasDescription = getLocalizedText(schedule.description_ko, schedule.description_en, '')
+                    // 다음 목적지 찾기 (전체 일정에서 찾기)
+                    const nextDestination = showOnlyMySchedules ? getNextDestination(schedule) : null
                     
                     return (
-                      <div key={schedule.id} className={`p-2 rounded-lg border ${getScheduleBackgroundColor(schedule)}`}>
+                      <div key={schedule.id} className={`p-2 sm:p-3 rounded-lg border ${getScheduleBackgroundColor(schedule)}`}>
                         {/* 클릭 가능한 헤더 영역 */}
                         <div 
                           className={`${hasDescription ? 'cursor-pointer' : ''}`}
                           onClick={() => hasDescription && toggleScheduleExpansion(schedule.id)}
                         >
-                          {/* 첫 번째 줄: 시작 종료시간, 소요시간, 제목, 담당자 라벨 */}
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center space-x-3 flex-1 min-w-0">
-                              {/* 시간 영역 - 고정 너비 */}
-                              <div className="flex items-center space-x-2 text-sm text-gray-700 flex-shrink-0 w-28">
+                          {/* 첫 번째 줄: 시간, 소요시간, 드라이버 뱃지, 구글맵 버튼 */}
+                          <div className="flex items-center justify-between mb-2 space-x-2">
+                            <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
+                              {/* 시간 영역 */}
+                              <div className="flex items-center space-x-1 sm:space-x-2 text-xs sm:text-sm text-gray-700 flex-shrink-0">
                                 {getTimeIcon(schedule)}
                                 <span className="font-medium whitespace-nowrap">
                                   {schedule.start_time ? formatTime(schedule.start_time) : ''}
                                   {schedule.end_time ? `-${formatTime(schedule.end_time)}` : ''}
                                 </span>
                               </div>
-                              {/* 소요시간 영역 - 고정 너비 */}
-                              <div className="flex-shrink-0 w-16">
-                                {schedule.duration_minutes && (
-                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                                    <Clock className="w-3 h-3 mr-1" />
-                                    {schedule.duration_minutes}
+                              {/* 소요시간 영역 */}
+                              {schedule.duration_minutes && (
+                                <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                  <Clock className="w-3 h-3 mr-0.5 sm:mr-1" />
+                                  {schedule.duration_minutes}
+                                </span>
+                              )}
+                              {/* 드라이버/가이드 뱃지 - 소요시간 오른쪽 */}
+                              {getResponsibleLabels(schedule).map((label, index) => (
+                                <span key={index} className={`px-1.5 sm:px-2 py-0.5 sm:py-1 text-xs rounded ${label.color} whitespace-nowrap`}>
+                                  {label.text}
+                                </span>
+                              ))}
+                            </div>
+                            {/* 오른쪽 버튼들 */}
+                            <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
+                              {hasDescription && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    toggleScheduleExpansion(schedule.id)
+                                  }}
+                                  className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded transition-colors flex-shrink-0"
+                                  title={isExpanded ? '접기' : '펼치기'}
+                                >
+                                  {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                </button>
+                              )}
+                              {/* 구글맵 버튼 - 가장 오른쪽 끝 */}
+                              {schedule.google_maps_link && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    window.open(schedule.google_maps_link!, '_blank')
+                                  }}
+                                  className="p-1 sm:p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-md transition-colors flex items-center"
+                                  title={getText('구글맵으로 열기', 'Open in Google Maps')}
+                                >
+                                  <Navigation className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {/* 제목 - 별도 줄 */}
+                          <h5 className="font-medium text-gray-900 text-sm sm:text-base mb-2 break-words">
+                            {getLocalizedText(schedule.title_ko, schedule.title_en, '')}
+                          </h5>
+                          
+                          {/* 다음 목적지 표시 (자신의 일정 보기 모드일 때만) */}
+                          {showOnlyMySchedules && nextDestination && (
+                            <div className="mt-2 pt-2 border-t border-gray-200">
+                              {/* 첫 번째 줄: 다음 목적지 라벨과 구글맵 버튼 */}
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center space-x-2">
+                                  <MapPin className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                                  <span className="text-gray-600 font-medium text-xs sm:text-sm flex-shrink-0">
+                                    {getText('다음 목적지:', 'Next Destination:')}
                                   </span>
-                                )}
-                              </div>
-                              <h5 className="font-medium text-gray-900 text-sm flex-1 min-w-0">
-                                {getLocalizedText(schedule.title_ko, schedule.title_en, '')}
-                              </h5>
-                              <div className="flex items-center space-x-2 flex-shrink-0">
-                                {/* 구글맵 버튼 */}
-                                {schedule.google_maps_link && (
+                                </div>
+                                {/* 구글맵 버튼 - 오른쪽 끝 */}
+                                {(nextDestination.google_maps_link || (nextDestination.latitude && nextDestination.longitude)) && (
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      window.open(schedule.google_maps_link!, '_blank')
+                                      if (nextDestination.google_maps_link) {
+                                        window.open(nextDestination.google_maps_link, '_blank')
+                                      } else if (nextDestination.latitude && nextDestination.longitude) {
+                                        const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${nextDestination.latitude},${nextDestination.longitude}`
+                                        window.open(googleMapsUrl, '_blank')
+                                      }
                                     }}
-                                    className="p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-md transition-colors flex items-center"
-                                    title={getText('구글맵으로 열기', 'Open in Google Maps')}
+                                    className="p-1 sm:p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-md transition-colors flex items-center"
+                                    title={getText('구글맵으로 보기', 'View in Google Maps')}
                                   >
-                                    <Navigation className="w-3.5 h-3.5" />
+                                    <Navigation className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                                   </button>
                                 )}
-                                {getResponsibleLabels(schedule).map((label, index) => (
-                                  <span key={index} className={`px-2 py-1 text-xs rounded ${label.color}`}>
-                                    {label.text}
-                                  </span>
-                                ))}
                               </div>
+                              {/* 제목 - 별도 줄 */}
+                              <div className="mb-1">
+                                <span className="text-blue-700 font-semibold text-xs sm:text-sm break-words">
+                                  {getLocalizedText(nextDestination.title_ko, nextDestination.title_en, '')}
+                                </span>
+                              </div>
+                              {/* 주소 - 별도 줄 */}
+                              {nextDestination.location_ko || nextDestination.location_en ? (
+                                <div>
+                                  <span className="text-blue-600 text-xs sm:text-sm break-words">
+                                    {getLocalizedText(nextDestination.location_ko, nextDestination.location_en, '')}
+                                  </span>
+                                </div>
+                              ) : null}
                             </div>
-                            {hasDescription && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  toggleScheduleExpansion(schedule.id)
-                                }}
-                                className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded transition-colors flex-shrink-0 ml-2"
-                                title={isExpanded ? '접기' : '펼치기'}
-                              >
-                                {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                              </button>
-                            )}
-                          </div>
+                          )}
                         </div>
                         
                         {/* 설명 영역 (아코디언) */}

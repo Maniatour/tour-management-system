@@ -87,11 +87,27 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Get sheets error:', error)
     
+    // 에러 객체의 전체 구조 로깅 (디버깅용)
+    if (error && typeof error === 'object') {
+      console.error('Error object structure:', {
+        name: 'name' in error ? error.name : undefined,
+        message: 'message' in error ? error.message : undefined,
+        code: 'code' in error ? error.code : undefined,
+        status: 'status' in error ? error.status : undefined,
+        stack: 'stack' in error ? error.stack : undefined,
+        response: 'response' in error ? {
+          status: error.response && typeof error.response === 'object' && 'status' in error.response ? error.response.status : undefined,
+          statusText: error.response && typeof error.response === 'object' && 'statusText' in error.response ? error.response.statusText : undefined,
+          data: error.response && typeof error.response === 'object' && 'data' in error.response ? error.response.data : undefined
+        } : undefined
+      })
+    }
+    
     // 구체적인 에러 메시지 제공
     let errorMessage = 'Failed to get sheet information'
     if (error instanceof Error) {
       const errorMsg = error.message.toLowerCase()
-      const errorString = JSON.stringify(error)
+      const errorString = JSON.stringify(error, null, 2)
       
       console.error('Error details:', {
         message: error.message,
@@ -109,8 +125,13 @@ export async function POST(request: NextRequest) {
           `1. Google Cloud Console에서 "Google Sheets API"가 활성화되어 있는지 확인\n` +
           `2. 구글 시트에 서비스 계정 이메일(${clientEmail})을 공유했는지 확인\n` +
           `3. 서비스 계정 권한이 "편집자" 또는 "뷰어"로 설정되어 있는지 확인`
-      } else if (errorMsg.includes('404') || errorMsg.includes('not found')) {
-        errorMessage = '구글 시트를 찾을 수 없습니다. 스프레드시트 ID를 확인해주세요'
+      } else if (errorMsg.includes('404') || errorMsg.includes('not found') || errorMsg.includes('찾을 수 없습니다')) {
+        // getSheetNames에서 이미 상세한 메시지를 제공했을 수 있으므로 그대로 사용
+        if (errorMsg.includes('스프레드시트') || errorMsg.includes('구글 시트')) {
+          errorMessage = error.message // 원본 메시지 사용
+        } else {
+          errorMessage = '구글 시트를 찾을 수 없습니다. 스프레드시트 ID를 확인해주세요'
+        }
       } else if (errorMsg.includes('quota') || errorMsg.includes('quota exceeded')) {
         errorMessage = 'Google Sheets API 할당량을 초과했습니다. 1-2분 후에 다시 시도해주세요. 할당량이 복구되면 자동으로 재시도됩니다.'
       } else if (errorMsg.includes('rate limit')) {

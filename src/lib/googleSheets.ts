@@ -192,7 +192,7 @@ const readGoogleSheetInChunks = async (
     
     const [, sheetName, startCol, endCol] = rangeMatch
     
-    // 먼저 전체 행 수 확인 (타임아웃 10초, 재시도 1회로 축소)
+    // 먼저 전체 행 수 확인 (타임아웃 20초로 증가)
     let totalRows = 10000 // 기본값 설정
     try {
       const sheetInfoPromise = sheets.spreadsheets.get({
@@ -200,14 +200,23 @@ const readGoogleSheetInChunks = async (
         includeGridData: false
       })
       
-      // 10초 타임아웃 적용
-      const timeoutPromise = new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('Sheet info timeout')), 10000)
-      )
+      // 20초 타임아웃 적용 (대용량 시트 지원)
+      let timeoutId: NodeJS.Timeout | null = null
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Sheet info timeout after 20 seconds')), 20000)
+      })
       
-      const { data: sheetInfo } = await Promise.race([sheetInfoPromise, timeoutPromise]) as GoogleSheetsResponse
-      const sheet = sheetInfo.sheets?.find(s => s.properties?.title === sheetName)
-      totalRows = sheet?.properties?.gridProperties?.rowCount || 10000
+      try {
+        const result = await Promise.race([sheetInfoPromise, timeoutPromise]) as GoogleSheetsResponse
+        // 성공 시 타임아웃 정리
+        if (timeoutId) clearTimeout(timeoutId)
+        const sheet = result.data.sheets?.find(s => s.properties?.title === sheetName)
+        totalRows = sheet?.properties?.gridProperties?.rowCount || 10000
+      } catch (raceError) {
+        // 타임아웃 정리
+        if (timeoutId) clearTimeout(timeoutId)
+        throw raceError
+      }
     } catch (infoError) {
       console.warn(`⚠️ 시트 정보 조회 실패, 기본값 사용 (10000행):`, infoError instanceof Error ? infoError.message : infoError)
       // 실패해도 계속 진행 - 기본값 사용
@@ -218,7 +227,7 @@ const readGoogleSheetInChunks = async (
     const allData: Record<string, unknown>[] = []
     let headers: string[] = []
     
-    // 첫 번째 청크로 헤더와 데이터 읽기 (타임아웃 45초)
+    // 첫 번째 청크로 헤더와 데이터 읽기 (타임아웃 60초로 증가)
     // 컬럼 범위를 AZ(52개)로 제한하여 API 응답 속도 향상
     const optimizedEndCol = endCol === 'ZZ' ? 'AZ' : endCol
     const firstChunkRange = `${sheetName}!${startCol}1:${optimizedEndCol}${Math.min(chunkSize, totalRows)}`
@@ -231,12 +240,26 @@ const readGoogleSheetInChunks = async (
       dateTimeRenderOption: 'FORMATTED_STRING'
     })
     
-    // 45초 타임아웃으로 첫 번째 청크 읽기 (대용량 시트 지원)
-    const firstChunkTimeout = new Promise<never>((_, reject) => 
-      setTimeout(() => reject(new Error('First chunk timeout after 45 seconds')), 45000)
-    )
+    // 60초 타임아웃으로 첫 번째 청크 읽기 (대용량 시트 지원)
+    let firstChunkTimeoutId: NodeJS.Timeout | null = null
+    const firstChunkTimeout = new Promise<never>((_, reject) => {
+      firstChunkTimeoutId = setTimeout(() => reject(new Error('First chunk timeout after 60 seconds')), 60000)
+    })
     
-    const firstResponse = await Promise.race([firstChunkPromise, firstChunkTimeout]) as GoogleSheetsResponse
+    let firstResponse: GoogleSheetsResponse
+    try {
+      firstResponse = await Promise.race([firstChunkPromise, firstChunkTimeout]) as GoogleSheetsResponse
+      // 성공 시 타임아웃 정리
+      if (firstChunkTimeoutId) clearTimeout(firstChunkTimeoutId)
+    } catch (raceError) {
+      // 타임아웃 정리
+      if (firstChunkTimeoutId) clearTimeout(firstChunkTimeoutId)
+      // 타임아웃 에러를 명확하게 처리
+      if (raceError instanceof Error && raceError.message.includes('timeout')) {
+        throw new Error(`첫 번째 청크 읽기 타임아웃: ${raceError.message}`)
+      }
+      throw raceError
+    }
     
     if (!firstResponse.data.values || firstResponse.data.values.length === 0) {
       console.log(`❌ 첫 번째 청크에서 데이터 없음`)
@@ -284,7 +307,7 @@ const readGoogleSheetInChunks = async (
         // 병렬로 청크 요청
         const batchPromises = batchRanges.map(async ({ range: chunkRange, index }) => {
           try {
-            // 30초 타임아웃으로 각 청크 읽기
+            // 45초 타임아웃으로 각 청크 읽기 (30초에서 증가)
             const chunkPromise = sheets.spreadsheets.values.get({
               spreadsheetId,
               range: chunkRange,
@@ -292,11 +315,21 @@ const readGoogleSheetInChunks = async (
               dateTimeRenderOption: 'FORMATTED_STRING'
             })
             
-            const chunkTimeout = new Promise<never>((_, reject) => 
-              setTimeout(() => reject(new Error(`Chunk ${index} timeout`)), 30000)
-            )
+            let chunkTimeoutId: NodeJS.Timeout | null = null
+            const chunkTimeout = new Promise<never>((_, reject) => {
+              chunkTimeoutId = setTimeout(() => reject(new Error(`Chunk ${index} timeout after 45 seconds`)), 45000)
+            })
             
-            const chunkResponse = await Promise.race([chunkPromise, chunkTimeout]) as GoogleSheetsResponse
+            let chunkResponse: GoogleSheetsResponse
+            try {
+              chunkResponse = await Promise.race([chunkPromise, chunkTimeout]) as GoogleSheetsResponse
+              // 성공 시 타임아웃 정리
+              if (chunkTimeoutId) clearTimeout(chunkTimeoutId)
+            } catch (raceError) {
+              // 타임아웃 정리
+              if (chunkTimeoutId) clearTimeout(chunkTimeoutId)
+              throw raceError
+            }
             
             if (chunkResponse.data.values && chunkResponse.data.values.length > 0) {
               return chunkResponse.data.values.map((row: string[]) => {
@@ -346,7 +379,7 @@ export const readGoogleSheet = async (spreadsheetId: string, range: string, chun
     const sheets = google.sheets({ 
       version: 'v4', 
       auth,
-      timeout: 30000, // 30초로 축소 (청크 단위 처리로 대용량도 처리 가능)
+      timeout: 60000, // 60초로 증가 (대용량 시트 지원)
     })
 
     // 청크 단위 처리 여부 확인
@@ -539,16 +572,64 @@ export const getSheetNames = async (spreadsheetId: string, retryCount: number = 
   } catch (error) {
     console.error('Error getting sheet names:', error)
     
+    // 에러 객체의 전체 구조 로깅 (디버깅용)
+    if (error && typeof error === 'object') {
+      console.error('Error object structure:', {
+        name: 'name' in error ? error.name : undefined,
+        message: 'message' in error ? error.message : undefined,
+        code: 'code' in error ? error.code : undefined,
+        status: 'status' in error ? error.status : undefined,
+        response: 'response' in error ? {
+          status: error.response && typeof error.response === 'object' && 'status' in error.response ? error.response.status : undefined,
+          statusText: error.response && typeof error.response === 'object' && 'statusText' in error.response ? error.response.statusText : undefined,
+          data: error.response && typeof error.response === 'object' && 'data' in error.response ? error.response.data : undefined
+        } : undefined
+      })
+    }
+    
+    // Google API 에러 구조 파싱
+    let statusCode: number | null = null
+    let errorCode: number | null = null
+    let errorMessage = error instanceof Error ? error.message : String(error)
+    
+    // Google API 에러는 보통 error.response.status 또는 error.code를 가짐
+    if (error && typeof error === 'object') {
+      // error.response.status 체크
+      if ('response' in error && error.response && typeof error.response === 'object') {
+        const response = error.response as { status?: number; statusText?: string; data?: unknown }
+        statusCode = response.status || null
+        if (response.data && typeof response.data === 'object' && 'error' in response.data) {
+          const apiError = (response.data as { error?: { message?: string; code?: number } }).error
+          if (apiError) {
+            errorMessage = apiError.message || errorMessage
+            errorCode = apiError.code || null
+          }
+        }
+      }
+      // error.code 체크
+      if ('code' in error && typeof error.code === 'number') {
+        errorCode = error.code
+      }
+      // error.status 체크 (일부 경우)
+      if ('status' in error && typeof error.status === 'number') {
+        statusCode = error.status
+      }
+    }
+    
+    // HTTP 상태 코드가 있으면 우선 사용
+    const finalStatusCode = statusCode || errorCode
+    
     // TimeoutError 또는 타임아웃 관련 에러 체크
     const isTimeoutError = error instanceof Error && (
       error.name === 'TimeoutError' ||
       error.message.includes('timeout') ||
       error.message.includes('TIMEOUT_ERR') ||
+      finalStatusCode === 408 ||
       (error && typeof error === 'object' && 'code' in error && (error as { code: unknown }).code === 23)
     )
     
-    // 재시도 로직 (최대 1번으로 축소)
-    if (retryCount < 1 && error instanceof Error && (
+    // 재시도 로직 (최대 1번으로 축소) - 404, 403, 400은 재시도하지 않음
+    if (retryCount < 1 && error instanceof Error && !finalStatusCode && (
       isTimeoutError ||
       error.message.includes('ECONNRESET') ||
       error.message.includes('ETIMEDOUT')
@@ -559,34 +640,43 @@ export const getSheetNames = async (spreadsheetId: string, retryCount: number = 
     }
     
     // 구체적인 에러 메시지 제공
-    if (error instanceof Error) {
-      const errorMessage = error.message.toLowerCase()
-      
-      if (isTimeoutError || errorMessage.includes('timeout')) {
-        throw new Error('구글 시트 API 응답 시간 초과 (20초). 네트워크 연결을 확인하고 다시 시도해주세요.')
-      } else if (errorMessage.includes('403') || errorMessage.includes('permission') || errorMessage.includes('caller does not have permission')) {
-        throw new Error(
-          '구글 시트 접근 권한이 없습니다.\n\n' +
-          '다음 사항을 확인해주세요:\n' +
-          '1. Google Cloud Console에서 "Google Sheets API"가 활성화되어 있는지 확인\n' +
-          '2. 구글 시트에 서비스 계정 이메일(' + process.env.GOOGLE_CLIENT_EMAIL + ')을 공유했는지 확인\n' +
-          '3. 서비스 계정 권한이 "편집자" 또는 "뷰어"로 설정되어 있는지 확인'
-        )
-      } else if (errorMessage.includes('404') || errorMessage.includes('not found')) {
-        throw new Error('구글 시트를 찾을 수 없습니다. 스프레드시트 ID를 확인해주세요')
-      } else if (errorMessage.includes('credentials') || errorMessage.includes('authentication')) {
-        throw new Error('구글 시트 API 인증 정보가 설정되지 않았습니다. .env.local 파일의 환경 변수를 확인해주세요.')
-      } else if (errorMessage.includes('quota') || errorMessage.includes('quota exceeded')) {
-        throw new Error('Google Sheets API 할당량을 초과했습니다. 1-2분 후에 다시 시도해주세요.')
-      } else if (errorMessage.includes('api not enabled')) {
-        throw new Error(
-          'Google Sheets API가 활성화되지 않았습니다.\n\n' +
-          'Google Cloud Console에서 다음을 확인해주세요:\n' +
-          '1. 프로젝트 선택\n' +
-          '2. "API 및 서비스" > "라이브러리"로 이동\n' +
-          '3. "Google Sheets API" 검색 및 활성화'
-        )
-      }
+    const lowerErrorMessage = errorMessage.toLowerCase()
+    
+    if (finalStatusCode === 404 || lowerErrorMessage.includes('404') || lowerErrorMessage.includes('not found')) {
+      const serviceAccountEmail = process.env.GOOGLE_CLIENT_EMAIL || '서비스 계정 이메일'
+      throw new Error(
+        `구글 시트를 찾을 수 없습니다 (404).\n\n` +
+        `가능한 원인:\n` +
+        `1. 스프레드시트 ID가 잘못되었습니다: ${spreadsheetId}\n` +
+        `2. 서비스 계정(${serviceAccountEmail})에 스프레드시트 접근 권한이 없습니다.\n` +
+        `   → Google Sheets에서 "공유" 버튼을 클릭하고 서비스 계정 이메일을 추가해주세요.\n` +
+        `3. 스프레드시트가 삭제되었거나 이동되었습니다.`
+      )
+    } else if (finalStatusCode === 403 || lowerErrorMessage.includes('403') || lowerErrorMessage.includes('permission') || lowerErrorMessage.includes('caller does not have permission')) {
+      const serviceAccountEmail = process.env.GOOGLE_CLIENT_EMAIL || '서비스 계정 이메일'
+      throw new Error(
+        `구글 시트 접근 권한이 없습니다 (403).\n\n` +
+        `다음 사항을 확인해주세요:\n` +
+        `1. Google Cloud Console에서 "Google Sheets API"가 활성화되어 있는지 확인\n` +
+        `2. 구글 시트에 서비스 계정 이메일(${serviceAccountEmail})을 공유했는지 확인\n` +
+        `3. 서비스 계정 권한이 "편집자" 또는 "뷰어"로 설정되어 있는지 확인`
+      )
+    } else if (finalStatusCode === 400 || lowerErrorMessage.includes('400')) {
+      throw new Error(`잘못된 요청입니다 (400): ${errorMessage}`)
+    } else if (isTimeoutError || lowerErrorMessage.includes('timeout')) {
+      throw new Error('구글 시트 API 응답 시간 초과 (20초). 네트워크 연결을 확인하고 다시 시도해주세요.')
+    } else if (lowerErrorMessage.includes('credentials') || lowerErrorMessage.includes('authentication')) {
+      throw new Error('구글 시트 API 인증 정보가 설정되지 않았습니다. .env.local 파일의 환경 변수를 확인해주세요.')
+    } else if (lowerErrorMessage.includes('quota') || lowerErrorMessage.includes('quota exceeded')) {
+      throw new Error('Google Sheets API 할당량을 초과했습니다. 1-2분 후에 다시 시도해주세요.')
+    } else if (lowerErrorMessage.includes('api not enabled')) {
+      throw new Error(
+        'Google Sheets API가 활성화되지 않았습니다.\n\n' +
+        'Google Cloud Console에서 다음을 확인해주세요:\n' +
+        '1. 프로젝트 선택\n' +
+        '2. "API 및 서비스" > "라이브러리"로 이동\n' +
+        '3. "Google Sheets API" 검색 및 활성화'
+      )
     }
     
     throw error
@@ -763,21 +853,31 @@ export const getSheetSampleData = async (spreadsheetId: string, sheetName: strin
     const sheets = google.sheets({ 
       version: 'v4', 
       auth,
-      timeout: 15000 // 15초 타임아웃
+      timeout: 30000 // 30초 타임아웃으로 증가
     })
     
-    // 10초 타임아웃으로 빠르게 실패
+    // 20초 타임아웃으로 샘플 데이터 가져오기
     const samplePromise = sheets.spreadsheets.values.get({
       spreadsheetId,
       range: sampleRange,
       valueRenderOption: 'UNFORMATTED_VALUE'
     })
     
-    const timeoutPromise = new Promise<never>((_, reject) => 
-      setTimeout(() => reject(new Error('Sample data timeout after 10 seconds')), 10000)
-    )
+    let timeoutId: NodeJS.Timeout | null = null
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error('Sample data timeout after 20 seconds')), 20000)
+    })
     
-    const response = await Promise.race([samplePromise, timeoutPromise]) as { data: { values?: string[][] } }
+    let response: { data: { values?: string[][] } }
+    try {
+      response = await Promise.race([samplePromise, timeoutPromise]) as { data: { values?: string[][] } }
+      // 성공 시 타임아웃 정리
+      if (timeoutId) clearTimeout(timeoutId)
+    } catch (raceError) {
+      // 타임아웃 정리
+      if (timeoutId) clearTimeout(timeoutId)
+      throw raceError
+    }
     
     if (!response.data.values || response.data.values.length === 0) {
       console.log(`❌ No data found in ${sheetName}`)

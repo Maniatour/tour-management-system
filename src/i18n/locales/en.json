@@ -1987,5 +1987,26 @@
       "expiringSoon": "Expiring Soon",
       "noWarranty": "No Warranty"
     }
+  },
+  "auth": {
+    "login": "Login",
+    "signIn": "Sign In",
+    "signUp": "Sign Up",
+    "email": "Email",
+    "password": "Password",
+    "emailPlaceholder": "Enter your email",
+    "passwordPlaceholder": "Enter your password",
+    "loginTitle": "Login",
+    "loginSubtitle": "Sign in to your account",
+    "loginButton": "Sign In",
+    "loggingIn": "Signing in...",
+    "or": "Or",
+    "signInWithGoogle": "Sign in with Google",
+    "noAccount": "Don't have an account?",
+    "forgotPassword": "Forgot password?",
+    "emailError": "Please enter a valid email address",
+    "passwordError": "Password must be at least 6 characters",
+    "loginError": "An error occurred during login.",
+    "googleLoginError": "An error occurred during Google sign in."
   }
 }

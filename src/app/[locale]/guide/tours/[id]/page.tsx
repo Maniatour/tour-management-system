@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
-import { ArrowLeft, Hotel, MapPin, Clock, Users, Camera, MessageSquare, FileText, Calculator, ChevronDown, ChevronUp, Calendar, Phone, Mail } from 'lucide-react'
+import { ArrowLeft, Hotel, MapPin, Clock, Users, Camera, MessageSquare, FileText, Calculator, ChevronDown, ChevronUp, Calendar, Phone, Mail, Car } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -530,31 +530,41 @@ export default function GuideTourDetailPage() {
     id, 
     title, 
     icon: Icon, 
-    children, 
+    children,
+    headerButton,
   }: { 
     id: string
     title: string
     icon: React.ComponentType<{ className?: string }>
     children: React.ReactNode
+    headerButton?: React.ReactNode
   }) => {
     const isExpanded = expandedSections.has(id)
     
     return (
       <div className="bg-white rounded-lg shadow mb-3 sm:mb-4">
-        <button
-          onClick={() => toggleSection(id)}
-          className="w-full flex items-center justify-between p-3 sm:p-4 text-left hover:bg-gray-50 transition-colors"
-        >
-          <div className="flex items-center">
+        <div className="flex items-center justify-between p-3 sm:p-4">
+          <button
+            onClick={() => toggleSection(id)}
+            className="flex items-center flex-1 text-left hover:bg-gray-50 transition-colors rounded -ml-3 sm:-ml-4 px-3 sm:px-4 py-2 -my-2"
+          >
             <Icon className="w-5 h-5 text-gray-400 mr-3" />
             <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+          </button>
+          <div className="flex items-center space-x-2">
+            {headerButton}
+            <button
+              onClick={() => toggleSection(id)}
+              className="p-1 hover:bg-gray-50 rounded transition-colors"
+            >
+              {isExpanded ? (
+                <ChevronUp className="w-5 h-5 text-gray-400" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-gray-400" />
+              )}
+            </button>
           </div>
-          {isExpanded ? (
-            <ChevronUp className="w-5 h-5 text-gray-400" />
-          ) : (
-            <ChevronDown className="w-5 h-5 text-gray-400" />
-          )}
-        </button>
+        </div>
         {isExpanded && (
           <div className="px-3 sm:px-4 pb-3 sm:pb-4">
             {children}
@@ -875,7 +885,83 @@ export default function GuideTourDetailPage() {
 
         {/* 픽업 스케줄 - 오버뷰 탭에 표시 */}
         <div className={`${activeTab === 'overview' ? 'block' : 'hidden'} lg:block`}>
-          <AccordionSection id="pickup-schedule" title={t('pickupSchedule')} icon={Clock}>
+          <AccordionSection 
+            id="pickup-schedule" 
+            title={t('pickupSchedule')} 
+            icon={Clock}
+            headerButton={(() => {
+              // 픽업 호텔별로 그룹화 및 정렬
+              const groupedByHotel = reservations
+                .filter(reservation => reservation.pickup_hotel)
+                .reduce((acc, reservation) => {
+                  const hotelId = reservation.pickup_hotel
+                  if (hotelId && !acc[hotelId]) {
+                    acc[hotelId] = []
+                  }
+                  if (hotelId) {
+                    acc[hotelId].push(reservation)
+                  }
+                  return acc
+                }, {} as Record<string, typeof reservations>)
+
+              const getActualPickupDateTime = (pickupTime: string | null) => {
+                if (!pickupTime) return new Date(tour.tour_date + 'T00:00:00').getTime()
+                const time = pickupTime.substring(0, 5)
+                const timeHour = parseInt(time.split(':')[0])
+                let displayDate = tour.tour_date
+                if (timeHour >= 21) {
+                  const date = new Date(tour.tour_date)
+                  date.setDate(date.getDate() - 1)
+                  displayDate = date.toISOString().split('T')[0]
+                }
+                return new Date(displayDate + 'T' + time + ':00').getTime()
+              }
+
+              const sortedHotelEntries = Object.entries(groupedByHotel).sort(([, reservationsA], [, reservationsB]) => {
+                const firstPickupA = reservationsA[0]?.pickup_time || '00:00'
+                const firstPickupB = reservationsB[0]?.pickup_time || '00:00'
+                return getActualPickupDateTime(firstPickupA) - getActualPickupDateTime(firstPickupB)
+              })
+
+              const hotelLocations: string[] = []
+              sortedHotelEntries.forEach(([hotelId]) => {
+                const hotel = pickupHotels.find(h => h.id === hotelId)
+                if (hotel) {
+                  if (hotel.pin) {
+                    hotelLocations.push(hotel.pin)
+                  } else if (hotel.address) {
+                    hotelLocations.push(hotel.address)
+                  }
+                }
+              })
+
+              if (hotelLocations.length > 0) {
+                let url = `https://www.google.com/maps/dir/?api=1`
+                url += `&origin=${encodeURIComponent(hotelLocations[0])}`
+                if (hotelLocations.length > 1) {
+                  url += `&destination=${encodeURIComponent(hotelLocations[hotelLocations.length - 1])}`
+                }
+                if (hotelLocations.length > 2) {
+                  const waypoints = hotelLocations.slice(1, -1)
+                  url += `&waypoints=${waypoints.map(wp => encodeURIComponent(wp)).join('|')}`
+                }
+
+                return (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      window.open(url, '_blank')
+                    }}
+                    className="p-2 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg transition-colors flex items-center"
+                    title={locale === 'ko' ? '전체 픽업 경로 구글맵 보기' : 'View All Pickup Route on Google Maps'}
+                  >
+                    <Car className="w-4 h-4" />
+                  </button>
+                )
+              }
+              return null
+            })()}
+          >
             <div className="space-y-4">
               {(() => {
                 // 픽업 호텔별로 그룹화
@@ -911,6 +997,20 @@ export default function GuideTourDetailPage() {
                   const firstPickupA = reservationsA[0]?.pickup_time || '00:00'
                   const firstPickupB = reservationsB[0]?.pickup_time || '00:00'
                   return getActualPickupDateTime(firstPickupA) - getActualPickupDateTime(firstPickupB)
+                })
+
+                // 모든 픽업 호텔을 경유지로 하는 구글맵 URL 생성
+                const hotelLocations: string[] = []
+                sortedHotelEntries.forEach(([hotelId]) => {
+                  const hotel = pickupHotels.find(h => h.id === hotelId)
+                  if (hotel) {
+                    // pin(좌표)이 있으면 우선 사용, 없으면 address 사용
+                    if (hotel.pin) {
+                      hotelLocations.push(hotel.pin)
+                    } else if (hotel.address) {
+                      hotelLocations.push(hotel.address)
+                    }
+                  }
                 })
 
                 return sortedHotelEntries.map(([hotelId, hotelReservations]) => {
@@ -1126,6 +1226,10 @@ export default function GuideTourDetailPage() {
                 productId={tour.product_id} 
                 teamType={tour.team_type as 'guide+driver' | '2guide' | null}
                 locale={locale}
+                showAllSchedules={true}
+                currentUserEmail={currentUserEmail}
+                tourGuideId={tour.tour_guide_id}
+                assistantId={tour.assistant_id}
               />
             </div>
           </div>
