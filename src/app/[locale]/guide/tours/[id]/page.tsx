@@ -215,15 +215,12 @@ export default function GuideTourDetailPage() {
               .select(`
                 choice_id,
                 option_id,
-                choice_group,
-                option_key,
                 quantity,
-                choice_options (
+                choice_options!inner (
                   option_key,
                   option_name,
                   option_name_ko,
-                  product_choices (
-                    choice_group_key,
+                  product_choices!inner (
                     choice_group_ko
                   )
                 )
@@ -242,7 +239,7 @@ export default function GuideTourDetailPage() {
                 quantity: choice.quantity,
                 option_name: choice.choice_options?.option_name || '',
                 option_name_ko: choice.choice_options?.option_name_ko || choice.choice_options?.option_name || '',
-                choice_group_ko: choice.choice_options?.product_choices?.choice_group_ko || choice.choice_group || ''
+                choice_group_ko: choice.choice_options?.product_choices?.choice_group_ko || ''
               }))
               choicesMap.set(reservationId, formattedChoices)
             }

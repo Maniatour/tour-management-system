@@ -699,7 +699,6 @@ export default function ReservationForm({
           .select(`
             id,
             choice_group,
-            choice_group_key,
             choice_group_ko,
             choice_type,
             is_required,
@@ -731,14 +730,12 @@ export default function ReservationForm({
         }
       }
 
-      // 2. reservation_choices에서 선택된 초이스 가져오기 (안정적인 식별자 포함)
+      // 2. reservation_choices에서 선택된 초이스 가져오기 (마이그레이션 전/후 모두 지원)
       const { data: reservationChoicesData, error: reservationChoicesError } = await supabase
         .from('reservation_choices')
         .select(`
           choice_id,
           option_id,
-          choice_group,
-          option_key,
           quantity,
           total_price,
           choice_options!inner (
@@ -751,7 +748,6 @@ export default function ReservationForm({
             infant_price,
             product_choices!inner (
               id,
-              choice_group_key,
               choice_group_ko
             )
           )
@@ -794,23 +790,7 @@ export default function ReservationForm({
             }
           }
 
-          // 2차: 안정적인 식별자로 매칭 (choice_group_key + option_key)
-          if (!matchedOption && rc.choice_group && rc.option_key && allProductChoices.length > 0) {
-            for (const choice of allProductChoices) {
-              if (choice.choice_group_key === rc.choice_group) {
-                const option = choice.options?.find((opt: any) => 
-                  opt.option_key?.toLowerCase().trim() === rc.option_key?.toLowerCase().trim()
-                )
-                if (option) {
-                  matchedChoice = choice
-                  matchedOption = option
-                  break
-                }
-              }
-            }
-          }
-
-          // 3차: choice_options에서 가져온 option_key로 시도 (fallback)
+          // 2차: choice_options에서 가져온 option_key로 시도 (fallback)
           if (!matchedOption && rc.choice_options?.option_key && allProductChoices.length > 0) {
             for (const choice of allProductChoices) {
               const option = choice.options?.find((opt: any) => 

@@ -78,20 +78,18 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   // 새로운 초이스 시스템에서 선택된 옵션을 가져오는 함수
   const getSelectedChoicesFromNewSystem = useCallback(async (reservationId: string) => {
     try {
+      // 마이그레이션 전/후 모두 지원: choice_group, option_key는 선택적
       const { data, error } = await supabase
         .from('reservation_choices')
         .select(`
           choice_id,
           option_id,
-          choice_group,
-          option_key,
           quantity,
-          choice_options (
+          choice_options!inner (
             option_key,
             option_name,
             option_name_ko,
-            product_choices (
-              choice_group_key,
+            product_choices!inner (
               choice_group_ko
             )
           )
