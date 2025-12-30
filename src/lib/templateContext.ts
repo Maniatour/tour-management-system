@@ -52,7 +52,7 @@ export interface PickupScheduleItem {
 }
 
 export interface PickupHotel {
-  hotel_name: string
+  hotel: string
   pick_up_location: string
   description_ko: string
   description_en: string
@@ -349,12 +349,14 @@ export async function getChannelInclusionsExclusionsData(reservationId: string, 
 
     // 채널별 포함/불포함 사항 가져오기 (dynamic_pricing 테이블에서)
     // 먼저 테이블 존재 여부 확인
-    const { data: channelData, error: channelError } = await supabase
+    const { data: channelDataArray, error: channelError } = await supabase
       .from('dynamic_pricing')
       .select('inclusions_ko, exclusions_ko, inclusions_en, exclusions_en')
       .eq('product_id', reservation.product_id)
       .eq('channel_id', reservation.channel_id)
-      .maybeSingle() // single() 대신 maybeSingle() 사용
+      .limit(1) // 여러 행이 반환될 수 있으므로 첫 번째 행만 가져오기
+    
+    const channelData = channelDataArray && channelDataArray.length > 0 ? channelDataArray[0] : null
 
     if (channelError) {
       console.error('채널별 포함/불포함 사항 조회 실패:', {
@@ -591,7 +593,7 @@ export async function getPickupScheduleData(reservationId: string) {
         .from('pickup_hotels')
         .select('*')
         .eq('is_active', true)
-        .order('hotel_name', { ascending: true })
+        .order('hotel', { ascending: true })
 
       if (pickupError) {
         console.warn('픽업 호텔 데이터 조회 실패:', pickupError)
@@ -599,7 +601,7 @@ export async function getPickupScheduleData(reservationId: string) {
         // 기본 픽업 호텔 데이터 제공
         pickupHotels = [
           {
-            hotel_name: '기본 픽업 호텔',
+            hotel: '기본 픽업 호텔',
             pick_up_location: '호텔 로비',
             description_ko: '호텔 로비에서 픽업',
             description_en: 'Pickup at hotel lobby',
@@ -618,7 +620,7 @@ export async function getPickupScheduleData(reservationId: string) {
       // 기본 픽업 호텔 데이터 제공
       pickupHotels = [
         {
-          hotel_name: '기본 픽업 호텔',
+          hotel: '기본 픽업 호텔',
           pick_up_location: '호텔 로비',
           description_ko: '호텔 로비에서 픽업',
           description_en: 'Pickup at hotel lobby',
@@ -634,7 +636,7 @@ export async function getPickupScheduleData(reservationId: string) {
 
     // 픽업 위치 목록
     const pickupLocations = pickupHotels.map((hotel: PickupHotel) => ({
-      hotel: hotel.hotel_name,
+      hotel: hotel.hotel,
       location: hotel.pick_up_location,
       time: defaultPickupTime,
       description: hotel.description_ko || hotel.description_en || ''
@@ -644,11 +646,11 @@ export async function getPickupScheduleData(reservationId: string) {
     const pickupTimes = [...new Set(pickupHotels.map(() => defaultPickupTime))]
 
     // 호텔 목록
-    const hotelList = pickupHotels.map((hotel: PickupHotel) => hotel.hotel_name)
+    const hotelList = pickupHotels.map((hotel: PickupHotel) => hotel.hotel)
 
     // 픽업 상세 정보
     const pickupDetails = pickupHotels.reduce((acc: Record<string, PickupDetails>, hotel: PickupHotel) => {
-      acc[hotel.hotel_name] = {
+      acc[hotel.hotel] = {
         location: hotel.pick_up_location,
         time: defaultPickupTime,
         description: hotel.description_ko || hotel.description_en || '',
@@ -890,20 +892,37 @@ export async function generateTemplateContext(reservationId: string, language: '
     let pickup = null
     if (reservation.pickup_hotel) {
       try {
-        const { data: pickupData, error: pickupError } = await supabase
+        // 먼저 id로 조회 시도 (일반적인 경우)
+        let { data: pickupData, error: pickupError } = await supabase
           .from('pickup_hotels')
-          .select('hotel_name, pick_up_location, address, link, pin, description_ko, description_en')
-          .eq('hotel_name', reservation.pickup_hotel)
-          .single()
+          .select('hotel, pick_up_location, address, link, pin, description_ko, description_en')
+          .eq('id', reservation.pickup_hotel)
+          .maybeSingle()
+        
+        // id로 조회 실패 시 hotel 컬럼으로 조회 시도
+        if (pickupError || !pickupData) {
+          const { data: hotelData, error: hotelError } = await supabase
+            .from('pickup_hotels')
+            .select('hotel, pick_up_location, address, link, pin, description_ko, description_en')
+            .eq('hotel', reservation.pickup_hotel)
+            .maybeSingle()
+          
+          if (!hotelError && hotelData) {
+            pickupData = hotelData
+            pickupError = null
+          } else {
+            pickupError = hotelError || pickupError
+          }
+        }
         
         if (!pickupError && pickupData) {
           pickup = pickupData
-          console.log('픽업 호텔 정보 조회 성공:', pickup.hotel_name)
+          console.log('픽업 호텔 정보 조회 성공:', pickup.hotel)
         } else {
           console.warn('픽업 호텔 정보 조회 실패:', pickupError)
           // 기본 픽업 호텔 데이터 제공
           pickup = {
-            hotel_name: '기본 픽업 호텔',
+            hotel: reservation.pickup_hotel || '기본 픽업 호텔',
             pick_up_location: '호텔 로비',
             address: '서울시 강남구',
             link: '',
@@ -916,7 +935,7 @@ export async function generateTemplateContext(reservationId: string, language: '
         console.warn('픽업 호텔 정보 조회 중 예외 발생:', error)
         // 기본 픽업 호텔 데이터 제공
         pickup = {
-          hotel_name: '기본 픽업 호텔',
+          hotel: reservation.pickup_hotel || '기본 픽업 호텔',
           pick_up_location: '호텔 로비',
           address: '서울시 강남구',
           link: '',
@@ -928,7 +947,7 @@ export async function generateTemplateContext(reservationId: string, language: '
     } else {
       // 기본 픽업 호텔 데이터 제공
       pickup = {
-        hotel_name: '기본 픽업 호텔',
+        hotel: '기본 픽업 호텔',
         pick_up_location: '호텔 로비',
         address: '서울시 강남구',
         link: '',
@@ -1014,8 +1033,8 @@ export async function generateTemplateContext(reservationId: string, language: '
         type: channel?.type || ''
       },
       pickup: {
-        display: pickup ? `${pickup.hotel_name} - ${pickup.pick_up_location}` : '',
-        hotel: pickup?.hotel_name || '',
+        display: pickup ? `${pickup.hotel} - ${pickup.pick_up_location}` : '',
+        hotel: pickup?.hotel || '',
         pick_up_location: pickup?.pick_up_location || '',
         address: pickup?.address || '',
         link: pickup?.link || '',

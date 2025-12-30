@@ -479,7 +479,7 @@ export default function SimpleDocumentGenerator({
             </tr>
             <tr>
               <td style="padding: 8px 0; font-weight: bold; color: #374151;">픽업 호텔:</td>
-              <td style="padding: 8px 0; color: #111827;">{{pickup.hotel_name}}</td>
+              <td style="padding: 8px 0; color: #111827;">{{pickup.hotel}}</td>
             </tr>
             <tr>
               <td style="padding: 8px 0; font-weight: bold; color: #374151;">픽업 위치:</td>
@@ -616,7 +616,7 @@ export default function SimpleDocumentGenerator({
             </tr>
             <tr>
               <td style="padding: 8px 0; font-weight: bold; color: #374151;">Pickup Hotel:</td>
-              <td style="padding: 8px 0; color: #111827;">{{pickup.hotel_name}}</td>
+              <td style="padding: 8px 0; color: #111827;">{{pickup.hotel}}</td>
             </tr>
             <tr>
               <td style="padding: 8px 0; font-weight: bold; color: #374151;">Pickup Point:</td>
@@ -765,7 +765,7 @@ export default function SimpleDocumentGenerator({
           },
           pickup: {
             display: pickupLocation || '기본 픽업 호텔',
-            hotel_name: pickupLocation || '기본 픽업 호텔',
+            hotel: pickupLocation || '기본 픽업 호텔',
             pick_up_location: '호텔 로비',
             address: '서울시 강남구',
             description_ko: '호텔 로비에서 픽업',

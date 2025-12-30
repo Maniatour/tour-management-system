@@ -576,7 +576,32 @@
       "channelNotFound": "채널 없음",
       "languageNotSelected": "언어가 선택되지 않음",
       "invalidLanguage": "유효하지 않은 언어 설정",
-      "languageError": "언어 설정 오류"
+      "languageError": "언어 설정 오류",
+      "createInvoice": "인보이스 생성"
+    },
+    "invoice": {
+      "title": "인보이스",
+      "createInvoice": "인보이스 생성",
+      "invoiceNumber": "인보이스 번호",
+      "date": "발행일",
+      "selectProduct": "상품 선택",
+      "selectParticipants": "인원 선택",
+      "adults": "성인",
+      "children": "아동",
+      "infants": "유아",
+      "selectOptions": "옵션 선택",
+      "invoiceItems": "인보이스 항목",
+      "item": "항목",
+      "quantity": "수량",
+      "unitPrice": "단가",
+      "total": "합계",
+      "subtotal": "소계",
+      "tax": "세금 (10%)",
+      "totalAmount": "총액",
+      "notes": "비고",
+      "sendEmail": "이메일 발송",
+      "sending": "발송 중...",
+      "cancel": "취소"
     },
     "pagination": {
       "first": "처음",
@@ -1222,6 +1247,7 @@
     "tourPhoto": {
         "title": "투어 사진",
         "upload": "사진 업로드",
+        "uploading": "업로드 중...",
         "manage": "사진 관리",
         "delete": "사진 삭제",
         "view": "사진 보기",
@@ -1230,10 +1256,15 @@
         "uploadError": "사진 업로드에 실패했습니다",
         "deleteSuccess": "사진이 성공적으로 삭제되었습니다",
         "deleteError": "사진 삭제에 실패했습니다",
+        "deleteConfirm": "이 사진을 삭제하시겠습니까?",
         "dragOrClick": "여기에 사진을 드래그하거나 클릭하여 업로드하세요",
         "fileFormats": "지원 형식: JPG, PNG, GIF",
         "selectFromGallery": "갤러리에서 선택",
-        "takePhoto": "사진 찍기"
+        "takePhoto": "사진 찍기",
+        "copyShareLink": "공유 링크 복사",
+        "viewInNewWindow": "새 창에서 보기",
+        "imageOnlyError": "이미지 파일만 업로드할 수 있습니다",
+        "shareLinkCopied": "공유 링크가 클립보드에 복사되었습니다"
     },
     "tourInfo": {
         "title": "기본 정보",

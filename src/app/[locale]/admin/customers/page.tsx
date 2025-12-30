@@ -17,11 +17,14 @@ import {
   Calendar,
   Filter,
   AlertTriangle,
-  BookOpen
+  BookOpen,
+  Receipt,
+  X
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import ReservationForm from '@/components/reservation/ReservationForm'
+import InvoiceModal from '@/components/customer/InvoiceModal'
 import type { 
   Customer as ReservationCustomer, 
   Product, 
@@ -168,7 +171,7 @@ export default function AdminCustomers() {
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('products')
-        .select('id, name_ko, name_en')
+        .select('id, name_ko, name_en, base_price, adult_base_price, child_base_price, infant_base_price')
         .order('name_ko', { ascending: true })
 
       if (error) {
@@ -271,6 +274,13 @@ export default function AdminCustomers() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [showReservationForm, setShowReservationForm] = useState(false)
   const [selectedCustomerForReservation, setSelectedCustomerForReservation] = useState<Customer | null>(null)
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false)
+  const [selectedCustomerForInvoice, setSelectedCustomerForInvoice] = useState<Customer | null>(null)
+  const [showInvoiceListModal, setShowInvoiceListModal] = useState(false)
+  const [selectedCustomerForInvoiceList, setSelectedCustomerForInvoiceList] = useState<Customer | null>(null)
+  const [customerInvoices, setCustomerInvoices] = useState<any[]>([])
+  const [loadingInvoices, setLoadingInvoices] = useState(false)
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null)
 
   // 폼 열기 함수
   const openForm = () => {
@@ -281,6 +291,12 @@ export default function AdminCustomers() {
   const handleAddReservation = (customer: Customer) => {
     setSelectedCustomerForReservation(customer)
     setShowReservationForm(true)
+  }
+
+  // 인보이스 생성 함수
+  const handleCreateInvoice = (customer: Customer) => {
+    setSelectedCustomerForInvoice(customer)
+    setShowInvoiceModal(true)
   }
 
 
@@ -1175,8 +1191,8 @@ export default function AdminCustomers() {
                           </div>
                         )}
 
-                        {/* 예약 추가 버튼 */}
-                        <div className="mt-2">
+                        {/* 예약 추가 및 인보이스 버튼 */}
+                        <div className="mt-2 space-y-2">
                           <button
                             onClick={(e) => {
                               e.stopPropagation() // 카드 클릭 이벤트 방지
@@ -1188,6 +1204,30 @@ export default function AdminCustomers() {
                             <BookOpen className="h-3 w-3" />
                             <span>{t('customerCard.addReservation')}</span>
                           </button>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation() // 카드 클릭 이벤트 방지
+                                handleCreateInvoice(customer)
+                              }}
+                              className="flex items-center justify-center space-x-1 py-2 px-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors duration-200"
+                              title={t('customerCard.createInvoice')}
+                            >
+                              <Receipt className="h-3 w-3" />
+                              <span>{t('customerCard.createInvoice')}</span>
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation() // 카드 클릭 이벤트 방지
+                                handleViewInvoices(customer)
+                              }}
+                              className="flex items-center justify-center space-x-1 py-2 px-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-lg transition-colors duration-200"
+                              title={locale === 'ko' ? '인보이스 목록' : 'Invoice List'}
+                            >
+                              <FileText className="h-3 w-3" />
+                              <span>{locale === 'ko' ? '인보이스' : 'Invoices'}</span>
+                            </button>
+                          </div>
                         </div>
 
                       </div>
@@ -1328,6 +1368,108 @@ export default function AdminCustomers() {
           pickupHotels={pickupHotels || []}
           coupons={coupons || []}
         />
+      )}
+
+      {/* 인보이스 생성 모달 */}
+      {showInvoiceModal && selectedCustomerForInvoice && (
+        <InvoiceModal
+          customer={{
+            id: selectedCustomerForInvoice.id,
+            name: selectedCustomerForInvoice.name,
+            email: selectedCustomerForInvoice.email,
+            phone: selectedCustomerForInvoice.phone,
+            channel_id: selectedCustomerForInvoice.channel_id
+          }}
+          products={(products || []).map(p => ({
+            id: p.id,
+            name_ko: p.name_ko,
+            name_en: p.name_en,
+            base_price: (p as any).base_price || null,
+            adult_base_price: (p as any).adult_base_price || null,
+            child_base_price: (p as any).child_base_price || null,
+            infant_base_price: (p as any).infant_base_price || null
+          }))}
+          onClose={() => {
+            setShowInvoiceModal(false)
+            setSelectedCustomerForInvoice(null)
+            setSelectedInvoiceId(null)
+            // 인보이스 목록 새로고침
+            if (selectedCustomerForInvoiceList) {
+              handleViewInvoices(selectedCustomerForInvoiceList)
+            }
+          }}
+          locale={locale}
+          savedInvoiceId={selectedInvoiceId}
+        />
+      )}
+
+      {/* 인보이스 목록 모달 */}
+      {showInvoiceListModal && selectedCustomerForInvoiceList && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-2xl font-bold text-gray-900">
+                {locale === 'ko' ? `${selectedCustomerForInvoiceList.name}님의 인보이스` : `${selectedCustomerForInvoiceList.name}'s Invoices`}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowInvoiceListModal(false)
+                  setSelectedCustomerForInvoiceList(null)
+                  setCustomerInvoices([])
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="p-6">
+              {loadingInvoices ? (
+                <div className="text-center py-8">
+                  <p className="text-gray-500">{locale === 'ko' ? '로딩 중...' : 'Loading...'}</p>
+                </div>
+              ) : customerInvoices.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-gray-500">{locale === 'ko' ? '저장된 인보이스가 없습니다.' : 'No saved invoices.'}</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {customerInvoices.map((invoice) => (
+                    <div
+                      key={invoice.id}
+                      className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors cursor-pointer"
+                      onClick={() => {
+                        // 인보이스 상세 보기 모달 열기
+                        setSelectedCustomerForInvoice(selectedCustomerForInvoiceList)
+                        setSelectedInvoiceId(invoice.id)
+                        setShowInvoiceModal(true)
+                        setShowInvoiceListModal(false)
+                      }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="font-semibold text-gray-900">{invoice.invoice_number}</h3>
+                          <p className="text-sm text-gray-600">
+                            {new Date(invoice.invoice_date).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-lg text-blue-600">${parseFloat(invoice.total).toFixed(2)}</p>
+                          <p className="text-xs text-gray-500">
+                            {invoice.status === 'sent' ? (locale === 'ko' ? '발송됨' : 'Sent') :
+                             invoice.status === 'paid' ? (locale === 'ko' ? '결제완료' : 'Paid') :
+                             invoice.status === 'draft' ? (locale === 'ko' ? '초안' : 'Draft') :
+                             invoice.status || (locale === 'ko' ? '초안' : 'Draft')}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

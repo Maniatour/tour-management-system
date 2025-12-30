@@ -173,7 +173,7 @@ interface PickupInfo {
   reservation_id: string
   pickup_time: string
   pickup_hotel: string
-  hotel_name: string
+  hotel: string
   pick_up_location: string
   address?: string
   link?: string
@@ -1873,7 +1873,7 @@ export default function CustomerReservations() {
                 reservation_id: res.id,
                 pickup_time: res.pickup_time || '',
                 pickup_hotel: res.pickup_hotel || '',
-                hotel_name: (hotelInfo as { hotel?: string } | null)?.hotel || 'Unknown Hotel',
+                hotel: (hotelInfo as { hotel?: string } | null)?.hotel || 'Unknown Hotel',
                 pick_up_location: (hotelInfo as { pick_up_location?: string } | null)?.pick_up_location || '',
                 address: (hotelInfo as { address?: string } | null)?.address || '',
                 link: (hotelInfo as { link?: string } | null)?.link || '',
@@ -3148,7 +3148,7 @@ export default function CustomerReservations() {
                                     {/* 두 번째 줄: 호텔 이름 */}
                                     <div>
                                         <span className="text-sm font-semibold text-gray-900">
-                                          {pickup.hotel_name}
+                                          {pickup.hotel}
                                         </span>
                                       </div>
                                     
@@ -3167,7 +3167,7 @@ export default function CustomerReservations() {
                                     {/* 다섯 번째 줄: VIEW ON MAP과 MY RESERVATION */}
                                     <div className="flex items-center justify-between">
                                         <a 
-                                          href={pickup.link || `https://maps.google.com/maps?q=${encodeURIComponent(pickup.hotel_name + (pickup.address ? ', ' + pickup.address : ''))}`}
+                                          href={pickup.link || `https://maps.google.com/maps?q=${encodeURIComponent(pickup.hotel + (pickup.address ? ', ' + pickup.address : ''))}`}
                                           target="_blank"
                                           rel="noopener noreferrer"
                                         className="inline-flex items-center text-blue-600 hover:text-blue-800 text-xs"

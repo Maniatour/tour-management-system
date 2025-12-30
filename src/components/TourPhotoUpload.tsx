@@ -44,6 +44,7 @@ export default function TourPhotoUpload({
   const [selectedPhoto, setSelectedPhoto] = useState<TourPhoto | null>(null)
   const [showModal, setShowModal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
   
   // Hook으로 폴더 자동 관리
   const { folderStatus, isReady, retry } = useTourPhotoFolder(tourId)
@@ -260,10 +261,37 @@ export default function TourPhotoUpload({
   }, [isReady, folderStatus, tourId, loadPhotos])
 
   // 사진 업로드
-  const handleFileUpload = async (files: FileList) => {
-    if (!files.length) return
+  const handleFileUpload = async (files: FileList | null) => {
+    console.log('handleFileUpload called with:', files)
+    console.log('Files type:', typeof files)
+    console.log('Files is null?', files === null)
+    console.log('Files length:', files?.length)
+    
+    // 파일이 없거나 길이가 0이면 종료
+    if (!files || !files.length || files.length === 0) {
+      console.warn('No files selected or files array is empty')
+      console.warn('Files object:', files)
+      alert('파일이 선택되지 않았습니다. 다시 시도해주세요.')
+      return
+    }
 
-    console.log('Starting file upload for files:', Array.from(files).map(f => f.name))
+    // FileList를 즉시 배열로 변환 (FileList는 라이브 객체이므로 조기에 변환 필요)
+    // input의 value가 초기화되면 FileList도 비어질 수 있음
+    const fileArray = Array.from(files)
+    console.log('FileList를 배열로 변환:', fileArray.length, '개 파일')
+    console.log('Starting file upload for files:', fileArray.map(f => ({
+      name: f.name,
+      size: f.size,
+      type: f.type
+    })))
+    console.log('Files count:', fileArray.length)
+    
+    // 파일이 실제로 없는 경우 체크
+    if (fileArray.length === 0) {
+      console.warn('FileArray is empty after conversion')
+      alert('파일이 선택되지 않았습니다. 다시 시도해주세요.')
+      return
+    }
     
     // Storage 버킷 확인 (디버깅용)
     await ensureStorageBucket()
@@ -271,16 +299,16 @@ export default function TourPhotoUpload({
     setUploading(true)
     
     // 파일 개수 제한 체크 (최대 500개)
-    if (files.length > 500) {
+    if (fileArray.length > 500) {
       alert('한번에 최대 500개의 파일만 업로드할 수 있습니다.')
+      setUploading(false)
       return
     }
 
-    console.log(`총 ${files.length}개 파일 업로드 시작`)
+    console.log(`총 ${fileArray.length}개 파일 업로드 시작`)
 
     // 대량 파일 처리를 위한 배치 업로드 (한번에 10개씩으로 조정)
     const batchSize = 10
-    const fileArray = Array.from(files)
     const batches = []
     
     for (let i = 0; i < fileArray.length; i += batchSize) {
@@ -290,7 +318,7 @@ export default function TourPhotoUpload({
     console.log(`${batches.length}개 배치로 나누어 업로드 (배치당 ${batchSize}개)`)
     
     // 업로드 진행 상황 초기화
-    setUploadProgress({ current: 0, total: files.length, batch: 0, totalBatches: batches.length })
+    setUploadProgress({ current: 0, total: fileArray.length, batch: 0, totalBatches: batches.length })
 
 
     try {
@@ -360,7 +388,7 @@ export default function TourPhotoUpload({
                 file_path: uploadData.path,
                 file_name: file.name,
                 file_size: file.size,
-                file_type: file.type,
+                mime_type: file.type,
                 uploaded_by: user?.id,
                 share_token: shareToken
               })
@@ -395,7 +423,7 @@ export default function TourPhotoUpload({
         // 진행 상황 업데이트
         setUploadProgress((prev: { current: number; total: number; batch: number; totalBatches: number }) => ({ 
           ...prev, 
-          current: Math.min((batchIndex + 1) * batchSize, files.length)
+          current: Math.min((batchIndex + 1) * batchSize, fileArray.length)
         }))
         
         // 배치 간 잠시 대기 (서버 부하 방지)
@@ -519,8 +547,11 @@ export default function TourPhotoUpload({
     e.preventDefault()
     setDragOver(false)
     const files = e.dataTransfer.files
-    if (files.length) {
+    if (files && files.length > 0) {
+      console.log('Files dropped:', files.length)
       handleFileUpload(files)
+    } else {
+      console.log('No files in drop event')
     }
   }
 
@@ -581,6 +612,22 @@ export default function TourPhotoUpload({
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-900">{t('title')}</h3>
         <div className="flex space-x-2">
+          {/* 투어 전체 사진 공유 링크 */}
+          {photos.length > 0 && (
+            <button
+              onClick={() => {
+                const shareUrl = `${window.location.origin}/photos/${tourId}`
+                navigator.clipboard.writeText(shareUrl)
+                alert('투어 전체 사진 공유 링크가 클립보드에 복사되었습니다.')
+              }}
+              className="flex items-center justify-center px-3 h-10 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
+              title="투어 전체 사진 공유 링크 복사"
+            >
+              <Share2 size={16} className="mr-1" />
+              전체 공유
+            </button>
+          )}
+          
           {/* 갤러리에서 선택 */}
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -598,18 +645,14 @@ export default function TourPhotoUpload({
           {/* 카메라로 직접 촬영 */}
           <button
             onClick={() => {
-              const cameraInput = document.createElement('input')
-              cameraInput.type = 'file'
-              cameraInput.accept = 'image/*'
-              cameraInput.capture = 'environment'
-              cameraInput.multiple = false
-              cameraInput.onchange = (e) => {
-                const target = e.target as HTMLInputElement
-                if (target.files && target.files.length > 0) {
-                  handleFileUpload(target.files)
-                }
+              console.log('Camera button clicked')
+              console.log('Camera input ref:', cameraInputRef.current)
+              if (cameraInputRef.current) {
+                console.log('Triggering camera input click')
+                cameraInputRef.current.click()
+              } else {
+                console.error('Camera input ref is null')
               }
-              cameraInput.click()
             }}
             disabled={uploading || bucketStatus !== 'exists'}
             className="flex items-center justify-center w-10 h-10 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
@@ -656,7 +699,56 @@ export default function TourPhotoUpload({
           type="file"
           multiple
           accept="image/*,image/jpeg,image/jpg,image/png,image/webp"
-          onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
+          onChange={(e) => {
+            const target = e.target as HTMLInputElement
+            if (target.files && target.files.length > 0) {
+              console.log('File input files selected:', target.files.length)
+              handleFileUpload(target.files)
+            } else {
+              console.log('No files selected from file input')
+            }
+            // input 값 초기화 (같은 파일 다시 선택 가능하도록)
+            target.value = ''
+          }}
+          className="hidden"
+        />
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture={typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'environment' : undefined}
+          onChange={(e) => {
+            const target = e.target as HTMLInputElement
+            console.log('Camera input onChange triggered')
+            console.log('Files:', target.files)
+            console.log('Files length:', target.files?.length)
+            
+            if (target.files && target.files.length > 0) {
+              console.log('Camera input files selected:', target.files.length)
+              console.log('File details:', {
+                name: target.files[0].name,
+                size: target.files[0].size,
+                type: target.files[0].type
+              })
+              
+              // FileList를 그대로 전달
+              const fileList = target.files
+              handleFileUpload(fileList)
+            } else {
+              console.log('No files selected from camera input - user may have cancelled')
+            }
+            
+            // input 값 초기화는 약간의 지연 후에 (업로드가 시작된 후)
+            setTimeout(() => {
+              if (target) {
+                target.value = ''
+              }
+            }, 100)
+          }}
+          onClick={(e) => {
+            console.log('Camera input clicked')
+            // 클릭 이벤트도 로깅
+          }}
           className="hidden"
         />
       </div>
@@ -824,7 +916,7 @@ export default function TourPhotoUpload({
                 <div>
                   <h3 className="text-lg font-semibold">{selectedPhoto.file_name}</h3>
                   <p className="text-sm text-gray-300">
-                    {formatFileSize(selectedPhoto.file_size)} • {selectedPhoto.file_type}
+                    {formatFileSize(selectedPhoto.file_size)} • {selectedPhoto.file_type || selectedPhoto.mime_type}
                   </p>
                 </div>
                 <div className="flex space-x-2">

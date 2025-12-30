@@ -72,7 +72,7 @@ export function renderFullSchedule(schedules: ScheduleItem[], locale: 'ko' | 'en
     return `<p style="color: #6b7280; font-style: italic;">${locale === 'ko' ? '등록된 일정이 없습니다.' : 'No schedules registered.'}</p>`
   }
 
-  // const dayLabel = locale === 'ko' ? '일차' : 'Day'
+  const dayLabel = locale === 'ko' ? '일차' : 'Day'
   // const scheduleLabel = locale === 'ko' ? '일정' : 'Schedule'
   
   // 일차별로 그룹화

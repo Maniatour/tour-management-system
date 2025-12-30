@@ -44,8 +44,12 @@ export default function PhotoDownloadPage({ params }: { params: { token: string 
       setLoading(true)
       setError(null)
 
-      // 공유 토큰으로 사진 조회
-      const { data: photosData, error: photosError } = await supabase
+      // 먼저 share_token으로 조회 시도
+      let photosData = null
+      let photosError = null
+
+      // share_token으로 조회
+      const { data: tokenData, error: tokenError } = await supabase
         .from('tour_photos')
         .select(`
           *,
@@ -60,7 +64,31 @@ export default function PhotoDownloadPage({ params }: { params: { token: string 
         .eq('is_public', true)
         .order('created_at', { ascending: false })
 
-      if (photosError) throw photosError
+      if (tokenError) throw tokenError
+
+      // share_token으로 사진을 찾았으면 사용
+      if (tokenData && tokenData.length > 0) {
+        photosData = tokenData
+      } else {
+        // share_token으로 찾지 못했으면 tour_id로 조회 시도
+        const { data: tourData, error: tourError } = await supabase
+          .from('tour_photos')
+          .select(`
+            *,
+            tours!inner(
+              id,
+              product_id,
+              tour_date,
+              tour_status
+            )
+          `)
+          .eq('tour_id', token)
+          .eq('is_public', true)
+          .order('created_at', { ascending: false })
+
+        if (tourError) throw tourError
+        photosData = tourData
+      }
 
       if (!photosData || photosData.length === 0) {
         setError('사진을 찾을 수 없습니다. 링크가 만료되었거나 잘못된 링크입니다.')
