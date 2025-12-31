@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { ArrowLeft, ChevronDown, SquarePen } from 'lucide-react'
+import { ArrowLeft, ChevronDown, SquarePen, Menu } from 'lucide-react'
+import ReactCountryFlag from 'react-country-flag'
 import Link from 'next/link'
 import TourChatRoom from '@/components/TourChatRoom'
 import { SUPPORTED_LANGUAGES, SupportedLanguage } from '@/lib/translation'
@@ -43,6 +44,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false)
   const [showNameEdit, setShowNameEdit] = useState(false)
   const [productNames, setProductNames] = useState<ProductNames | null>(null)
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(true)
 
   const paramsObj = useParams()
   const code = paramsObj.code as string
@@ -278,39 +280,79 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
       {/* 헤더 */}
       <div className="bg-white shadow-sm border-b flex-shrink-0">
         <div className="px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div>
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
-                  {selectedLanguage === 'en'
-                    ? (productNames?.name_en || productNames?.name || room.room_name)
-                    : (productNames?.name_ko || productNames?.name || room.room_name)}
-                </h1>
-                <div className="flex items-center text-sm text-gray-600 mt-1">
-                  <div className="flex items-center">
-                    {(() => {
-                      // YYYY-MM-DD 형식을 안전하게 파싱
-                      const [year, month, day] = tourInfo.tour_date.split('-').map(Number)
-                      const date = new Date(year, month - 1, day)
-                      return date.toLocaleDateString()
-                    })()}
-                  </div>
-                  {customerName && (
-                    <div className="ml-auto flex items-center space-x-2">
-                      <span className="text-gray-700">Hi! {customerName}</span>
-                      <button
-                        onClick={() => setShowNameEdit(true)}
-                        className="p-1 rounded hover:bg-gray-100"
-                        aria-label="Change Name"
-                        title="Change Name"
-                      >
-                        <SquarePen size={14} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
+          {/* 첫 번째 줄: 제목과 컨트롤 버튼 */}
+          <div className="flex items-center justify-between mb-1">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex-1 min-w-0">
+              {selectedLanguage === 'en'
+                ? (productNames?.name_en || productNames?.name || room.room_name)
+                : (productNames?.name_ko || productNames?.name || room.room_name)}
+            </h1>
+            <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+              {/* 언어 전환 버튼 */}
+              <button
+                onClick={() => {
+                  const newLanguage = selectedLanguage === 'ko' ? 'en' : 'ko'
+                  setSelectedLanguage(newLanguage)
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('tour_chat_language', newLanguage)
+                  }
+                }}
+                className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors"
+                title={selectedLanguage === 'ko' ? 'Switch to English' : '한국어로 전환'}
+              >
+                {(() => {
+                  const flagCountry = selectedLanguage === 'ko' ? 'KR' : 'US'
+                  return (
+                    <ReactCountryFlag
+                      countryCode={flagCountry}
+                      svg
+                      style={{
+                        width: '16px',
+                        height: '12px',
+                        borderRadius: '2px'
+                      }}
+                    />
+                  )
+                })()}
+              </button>
+              {/* 모바일 메뉴 토글 버튼 */}
+              <button
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors lg:hidden"
+                title={selectedLanguage === 'ko' ? '메뉴' : 'Menu'}
+              >
+                <Menu size={16} />
+              </button>
             </div>
+          </div>
+          
+          {/* 두 번째 줄: 날짜와 손님 이름 */}
+          <div className="flex items-center justify-between text-sm text-gray-600">
+            <div className="flex items-center">
+              {tourInfo && (() => {
+                // YYYY-MM-DD 형식을 안전하게 파싱
+                try {
+                  const [year, month, day] = tourInfo.tour_date.split('-').map(Number)
+                  const date = new Date(year, month - 1, day)
+                  return date.toLocaleDateString(selectedLanguage === 'ko' ? 'ko-KR' : 'en-US')
+                } catch {
+                  return tourInfo.tour_date
+                }
+              })()}
+            </div>
+            {customerName && (
+              <div className="flex items-center space-x-2 ml-2">
+                <span className="text-gray-700">Hi! {customerName}</span>
+                <button
+                  onClick={() => setShowNameEdit(true)}
+                  className="p-1 rounded hover:bg-gray-100"
+                  aria-label="Change Name"
+                  title="Change Name"
+                >
+                  <SquarePen size={14} />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -403,6 +445,8 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
                 tourDate={tourInfo.tour_date}
                 customerName={customerName}
                 customerLanguage={selectedLanguage}
+                externalMobileMenuOpen={isMobileMenuOpen}
+                onExternalMobileMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               />
             </div>
           </div>

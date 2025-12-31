@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Image from 'next/image'
-import { X, ChevronLeft, ChevronRight, Download, Calendar, ImageIcon, Grid3X3, List, Check, CheckCircle } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, Download, Calendar, ImageIcon, Grid3X3, List, Check, CheckCircle, Plus, Upload } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface SupabaseFile {
@@ -15,6 +15,7 @@ interface SupabaseFile {
 interface TourPhoto {
   id: string
   file_url: string
+  thumbnail_url?: string // 썸네일 URL (선택적)
   file_name: string
   uploaded_at: string
   uploaded_by: string
@@ -26,9 +27,11 @@ interface TourPhotoGalleryProps {
   onClose: () => void
   tourId: string
   language?: 'ko' | 'en'
+  allowUpload?: boolean // 고객용 업로드 허용 여부
+  uploadedBy?: string // 업로드한 사용자 정보
 }
 
-export default function TourPhotoGallery({ isOpen, onClose, tourId, language = 'ko' }: TourPhotoGalleryProps) {
+export default function TourPhotoGallery({ isOpen, onClose, tourId, language = 'ko', allowUpload = false, uploadedBy }: TourPhotoGalleryProps) {
   const [photos, setPhotos] = useState<TourPhoto[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedPhoto, setSelectedPhoto] = useState<TourPhoto | null>(null)
@@ -38,6 +41,9 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
   const [selectedPhotos, setSelectedPhotos] = useState<Set<string>>(new Set())
   const [bulkDownloadMode, setBulkDownloadMode] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 })
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 다국어 텍스트
   const texts = {
@@ -56,7 +62,18 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       gridView: '그리드 보기',
       listView: '리스트 보기',
       previous: '이전',
-      next: '다음'
+      next: '다음',
+      upload: '사진 업로드',
+      uploadingPhotos: '업로드 중...',
+      uploadSuccess: '업로드 완료',
+      uploadError: '업로드 실패',
+      selectFiles: '파일 선택',
+      loading: '사진을 불러오는 중...',
+      select: '선택',
+      done: '완료',
+      none: '해제',
+      all: '전체',
+      selected: '개 선택됨'
     },
     en: {
       title: 'Tour Photos',
@@ -73,7 +90,23 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       gridView: 'Grid View',
       listView: 'List View',
       previous: 'Previous',
-      next: 'Next'
+      next: 'Next',
+      upload: 'Upload Photos',
+      uploadingPhotos: 'Uploading...',
+      uploadSuccess: 'Upload Complete',
+      uploadError: 'Upload Failed',
+      selectFiles: 'Select Files',
+      loading: 'Loading photos...',
+      select: 'Select',
+      done: 'Done',
+      none: 'None',
+      all: 'All',
+      selected: 'selected',
+      upload: 'Upload Photos',
+      uploadingPhotos: 'Uploading...',
+      uploadSuccess: 'Upload Complete',
+      uploadError: 'Upload Failed',
+      selectFiles: 'Select Files'
     }
   }
   
@@ -91,48 +124,84 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       const folderPath = tourId
       console.log('폴더 경로:', folderPath)
       
-      // Storage에서 파일 목록 가져오기
-      const { data: files, error } = await supabase.storage
-        .from('tour-photos')
-        .list(folderPath)
+      // Storage에서 파일 목록 가져오기 (페이지네이션으로 모든 파일 가져오기)
+      let allFiles: SupabaseFile[] = []
+      let hasMore = true
+      let offset = 0
+      const limit = 1000 // 한 번에 가져올 최대 파일 수
+      
+      while (hasMore) {
+        const { data: files, error } = await supabase.storage
+          .from('tour-photos')
+          .list(folderPath, {
+            limit: limit,
+            offset: offset,
+            sort: { column: 'created_at', order: 'desc' }
+          })
         
-      console.log('Storage 응답:', { files, error })
+        console.log(`Storage 응답 (offset: ${offset}):`, { files, error })
 
-      if (error) {
-        console.error('Storage listing error:', error)
+        if (error) {
+          console.error('Storage listing error:', error)
+          break
+        }
+
+        if (!files || files.length === 0) {
+          hasMore = false
+          break
+        }
+
+        // 실제 사진 파일만 필터링
+        const photoFiles = files.filter((file: SupabaseFile) => 
+          !file.name.includes('.folder_info.json') && 
+          !file.name.includes('folder.info') &&
+          !file.name.includes('.info') &&
+          !file.name.includes('.README') &&
+          !file.name.startsWith('.') &&
+          file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+        )
+
+        allFiles = [...allFiles, ...photoFiles]
+
+        // 더 가져올 파일이 있는지 확인
+        if (files.length < limit) {
+          hasMore = false
+        } else {
+          offset += limit
+        }
+      }
+
+      console.log(`총 ${allFiles.length}개의 사진 파일 발견`)
+
+      if (allFiles.length === 0) {
         setPhotos([])
         return
       }
 
-      if (!files || files.length === 0) {
-        setPhotos([])
-        return
-      }
+      // Public URL 사용 (bucket이 public이므로 signed URL 불필요 - 훨씬 빠름)
+      // Public URL 형식: https://{project-ref}.supabase.co/storage/v1/object/public/{bucket}/{path}
+      // 파일 정보를 Photo 객체로 변환 (Public URL 직접 생성 - API 호출 없음)
+      // 썸네일: 작은 크기로 표시 (브라우저가 자동으로 리사이즈)
+      // 원본: 모달과 다운로드 시에만 사용
+      const photosWithUrls: TourPhoto[] = allFiles.map((file: SupabaseFile) => {
+        const filePath = `${tourId}/${file.name}`
+        const { data: { publicUrl } } = supabase.storage
+          .from('tour-photos')
+          .getPublicUrl(filePath)
+        
+        // 썸네일 URL 생성 (원본과 동일하지만, 표시 시 작은 크기로 제한)
+        // 실제로는 같은 URL을 사용하되, Image 컴포넌트의 width/height로 크기 제한
+        return {
+          id: file.id || file.name,
+          file_url: publicUrl, // 원본 URL (모달, 다운로드용)
+          thumbnail_url: publicUrl, // 썸네일 URL (같은 URL이지만 작은 크기로 표시)
+          file_name: file.name,
+          uploaded_at: file.updated_at || file.created_at || new Date().toISOString(),
+          uploaded_by: 'Unknown'
+        }
+      })
 
-      // 파일 정보를 Photo 객체로 변환
-      const photoData: TourPhoto[] = files.map((file: SupabaseFile) => ({
-        id: file.id || file.name,
-        file_url: '', // URL은 개별적으로 생성
-        file_name: file.name,
-        uploaded_at: file.updated_at || file.created_at || new Date().toISOString(),
-        uploaded_by: 'Unknown'
-      }))
-
-      // 각 사진의 URL 생성
-      const photosWithUrls: TourPhoto[] = await Promise.all(
-        photoData.map(async (photo) => {
-          const { data: urlData } = await supabase.storage
-            .from('tour-photos')
-            .createSignedUrl(`${tourId}/${photo.file_name}`, 3600) // 1시간 유효
-
-          return {
-            ...photo,
-            file_url: urlData?.signedUrl || ''
-          }
-        })
-      )
-
-      setPhotos(photosWithUrls.filter(photo => photo.file_url))
+      setPhotos(photosWithUrls)
     } catch (error) {
       console.error('Error loading photos:', error)
       setPhotos([])
@@ -276,6 +345,104 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
     })
   }
 
+  // 파일 업로드 핸들러
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) {
+      alert(language === 'ko' ? '파일이 선택되지 않았습니다.' : 'No files selected.')
+      return
+    }
+
+    const fileArray = Array.from(files)
+    
+    // 파일 개수 제한
+    if (fileArray.length > 100) {
+      alert(language === 'ko' ? '한번에 최대 100개의 파일만 업로드할 수 있습니다.' : 'Maximum 100 files can be uploaded at once.')
+      return
+    }
+
+    setUploading(true)
+    setUploadProgress({ current: 0, total: fileArray.length })
+
+    try {
+      let successCount = 0
+      let failCount = 0
+
+      // 배치 업로드 (한번에 5개씩)
+      const batchSize = 5
+      for (let i = 0; i < fileArray.length; i += batchSize) {
+        const batch = fileArray.slice(i, i + batchSize)
+        
+        await Promise.all(
+          batch.map(async (file) => {
+            try {
+              // 파일 크기 체크 (50MB)
+              if (file.size > 50 * 1024 * 1024) {
+                throw new Error(`File too large: ${file.name} (max 50MB)`)
+              }
+
+              // 이미지 파일만 허용
+              if (!file.type.startsWith('image/')) {
+                throw new Error(`Not an image: ${file.name}`)
+              }
+
+              // 고유한 파일명 생성
+              const fileExt = file.name.split('.').pop()
+              const timestamp = Date.now() + Math.random().toString(36).substring(2)
+              const fileName = `${timestamp}.${fileExt}`
+              const filePath = `${tourId}/${fileName}`
+
+              // Supabase Storage에 업로드
+              const { error: uploadError } = await supabase.storage
+                .from('tour-photos')
+                .upload(filePath, file, {
+                  cacheControl: '3600',
+                  upsert: false
+                })
+
+              if (uploadError) {
+                throw uploadError
+              }
+
+              successCount++
+            } catch (error) {
+              console.error(`Failed to upload ${file.name}:`, error)
+              failCount++
+            } finally {
+              setUploadProgress((prev) => ({ ...prev, current: prev.current + 1 }))
+            }
+          })
+        )
+      }
+
+      // 업로드 완료 후 사진 목록 새로고침
+      if (successCount > 0) {
+        await loadPhotos()
+        alert(
+          language === 'ko' 
+            ? `${successCount}개 파일 업로드 완료${failCount > 0 ? `, ${failCount}개 실패` : ''}`
+            : `${successCount} files uploaded${failCount > 0 ? `, ${failCount} failed` : ''}`
+        )
+      } else {
+        alert(language === 'ko' ? '업로드에 실패했습니다.' : 'Upload failed.')
+      }
+    } catch (error) {
+      console.error('Upload error:', error)
+      alert(language === 'ko' ? '업로드 중 오류가 발생했습니다.' : 'An error occurred during upload.')
+    } finally {
+      setUploading(false)
+      setUploadProgress({ current: 0, total: 0 })
+      // 파일 input 초기화
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
+  // 파일 선택 버튼 클릭
+  const handleUploadClick = () => {
+    fileInputRef.current?.click()
+  }
+
   if (!isOpen) return null
 
   return (
@@ -322,6 +489,42 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
 
             {/* 두 번째줄: 기능 버튼들 */}
             <div className="flex items-center space-x-2">
+              {/* 업로드 버튼 (고객용) */}
+              {allowUpload && (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(e) => handleFileUpload(e.target.files)}
+                    className="hidden"
+                  />
+                  <button
+                    onClick={handleUploadClick}
+                    disabled={uploading}
+                    className={`px-2 py-1 rounded text-xs transition-colors flex items-center gap-1 ${
+                      uploading
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-green-500 text-white hover:bg-green-600'
+                    }`}
+                    title={t.upload}
+                  >
+                    {uploading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                        <span>{t.uploadingPhotos} ({uploadProgress.current}/{uploadProgress.total})</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus size={14} />
+                        <span>{t.upload}</span>
+                      </>
+                    )}
+                  </button>
+                </>
+              )}
+              
               {/* 일괄 다운로드 모드 토글 */}
               <button
                 onClick={() => {
@@ -336,7 +539,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
                 >
-                  {bulkDownloadMode ? 'Done' : 'Select'}
+                  {bulkDownloadMode ? t.done : t.select}
                 </button>
 
               {/* 선택 관리 (일괄 다운로드 모드에서만 표시) */}
@@ -347,12 +550,12 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                     onClick={handleSelectAll}
                     className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200 transition-colors"
                     >
-                      {selectedPhotos.size === photos.length ? 'None' : 'All'}
+                      {selectedPhotos.size === photos.length ? t.none : t.all}
                     </button>
 
                   {/* 선택된 사진 수 */}
                   <span className="text-xs text-gray-600 px-2">
-                    {selectedPhotos.size} selected
+                    {selectedPhotos.size} {t.selected}
                   </span>
 
                   {/* 다운로드 실행 버튼 */}
@@ -362,7 +565,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                       disabled={downloading}
                       className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600 transition-colors disabled:opacity-50"
                       >
-                        {downloading ? 'Downloading...' : `Download(${selectedPhotos.size})`}
+                        {downloading ? t.downloading : `${t.download}(${selectedPhotos.size})`}
                       </button>
                   )}
                 </>
@@ -376,7 +579,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
               <div className="flex items-center justify-center h-64">
                 <div className="flex items-center space-x-2">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                  <span className="text-gray-600">사진을 불러오는 중...</span>
+                  <span className="text-gray-600">{t.loading}</span>
                 </div>
               </div>
             ) : photos.length > 0 ? (
@@ -417,13 +620,17 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
 
                     {viewMode === 'grid' ? (
                       <>
+                        {/* 썸네일: 작은 크기로 표시 */}
                         <Image
-                          src={photo.file_url}
+                          src={photo.thumbnail_url || photo.file_url}
                           alt={photo.file_name}
                           width={200}
                           height={128}
                           className="w-full h-24 sm:h-28 md:h-32 object-cover rounded-lg hover:opacity-90 transition-opacity"
                           style={{ width: 'auto', height: 'auto' }}
+                          loading="lazy"
+                          quality={75}
+                          unoptimized
                         />
                         <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center">
                           <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-white bg-opacity-20 rounded-full p-2">
@@ -436,13 +643,17 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                       </>
                     ) : (
                       <>
+                        {/* 리스트 뷰 썸네일: 작은 크기로 표시 */}
                         <Image
-                          src={photo.file_url}
+                          src={photo.thumbnail_url || photo.file_url}
                           alt={photo.file_name}
                           width={64}
                           height={64}
                           className="w-16 h-16 object-cover rounded-lg flex-shrink-0"
                           style={{ width: 'auto', height: 'auto' }}
+                          loading="lazy"
+                          quality={75}
+                          unoptimized
                         />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">{photo.file_name}</p>
@@ -508,7 +719,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
               </button>
             )}
 
-            {/* 메인 이미지 */}
+            {/* 메인 이미지 - 원본 사용 */}
             <Image
               src={selectedPhoto.file_url}
               alt={selectedPhoto.file_name}
@@ -516,6 +727,9 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
               height={800}
               className="max-w-full max-h-full object-contain"
               style={{ width: 'auto', height: 'auto' }}
+              quality={100}
+              priority
+              unoptimized
             />
 
             {/* 사진 정보 */}

@@ -59,11 +59,52 @@ export default function ChatRoomShareModal({
 
   const shareText = (() => {
     const isEn = language === 'en'
-    if (isPublicView && isEn) {
-      return `Join the tour chat\n\nChat room: ${roomName}\n${chatUrl}`
+    if (isEn) {
+      return `Join the tour chat\n\nChat room: ${roomName}\n${tourDate ? `Tour date: ${new Date(tourDate).toLocaleDateString('en-US')}\n` : ''}${chatUrl}`
     }
-    return `🗺️ 투어 채팅방에 참여하세요!\n\n📅 투어 날짜: ${tourDate || '확인 필요'}\n💬 채팅방: ${roomName}\n\n아래 링크를 클릭하여 가이드와 실시간으로 소통하세요:\n${chatUrl}`
+    return `🗺️ 투어 채팅방에 참여하세요!\n\n📅 투어 날짜: ${tourDate ? new Date(tourDate).toLocaleDateString('ko-KR') : '확인 필요'}\n💬 채팅방: ${roomName}\n\n아래 링크를 클릭하여 가이드와 실시간으로 소통하세요:\n${chatUrl}`
   })()
+  
+  const texts = {
+    ko: {
+      title: '채팅',
+      chatRoomLink: '채팅방 링크',
+      copy: '복사',
+      copied: '복사됨!',
+      shareMethods: '공유 방법',
+      share: '공유하기',
+      copyShareText: '공유 텍스트 복사',
+      qrScan: 'QR 코드를 스캔하여 채팅방에 접속하세요',
+      customerGuide: '고객 안내사항',
+      guideItems: [
+        '링크를 클릭하면 채팅방에 접속할 수 있습니다',
+        '픽업 시간, 장소 등에 대해 실시간으로 문의하세요',
+        '투어 중 특별한 요청사항이 있으면 언제든지 말씀해주세요',
+        '가이드가 답변을 드릴 때까지 잠시 기다려주세요'
+      ],
+      close: '닫기'
+    },
+    en: {
+      title: 'Chat',
+      chatRoomLink: 'Chat Room Link',
+      copy: 'Copy',
+      copied: 'Copied!',
+      shareMethods: 'Share Methods',
+      share: 'Share',
+      copyShareText: 'Copy Share Text',
+      qrScan: 'Scan the QR code to access the chat room',
+      customerGuide: 'Customer Guide',
+      guideItems: [
+        'Click the link to access the chat room',
+        'Ask questions about pickup times, locations, etc. in real-time',
+        'Feel free to share any special requests during the tour',
+        'Please wait a moment for your guide to respond'
+      ],
+      close: 'Close'
+    }
+  }
+  
+  const t = texts[language]
 
   const copyShareText = async () => {
     try {
@@ -82,7 +123,7 @@ export default function ChatRoomShareModal({
         <div className="flex items-center justify-between p-6 border-b">
           <div className="flex items-center space-x-3">
             <MessageCircle size={24} className="text-blue-600" />
-            <h2 className="text-xl font-semibold text-gray-900">채팅</h2>
+            <h2 className="text-xl font-semibold text-gray-900">{t.title}</h2>
           </div>
           <button
             onClick={onClose}
@@ -111,7 +152,7 @@ export default function ChatRoomShareModal({
           {/* 링크 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              채팅방 링크
+              {t.chatRoomLink}
             </label>
             <div className="flex items-center space-x-2">
               <input
@@ -128,14 +169,14 @@ export default function ChatRoomShareModal({
                     : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
                 }`}
               >
-                {copied ? '복사됨!' : '복사'}
+                {copied ? t.copied : t.copy}
               </button>
             </div>
           </div>
 
           {/* 공유 방법 */}
           <div className="space-y-3">
-            <h3 className="font-medium text-gray-900">공유 방법</h3>
+            <h3 className="font-medium text-gray-900">{t.shareMethods}</h3>
             
             {/* 직접 공유 */}
             <div className="flex space-x-2">
@@ -144,7 +185,7 @@ export default function ChatRoomShareModal({
                 className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
                 <Share2 size={16} />
-                <span>공유하기</span>
+                <span>{t.share}</span>
               </button>
               <button
                 onClick={() => setShowQR(!showQR)}
@@ -165,7 +206,7 @@ export default function ChatRoomShareModal({
                   />
                 </div>
                 <p className="text-sm text-gray-500 mt-2">
-                  QR 코드를 스캔하여 채팅방에 접속하세요
+                  {t.qrScan}
                 </p>
               </div>
             )}
@@ -177,19 +218,18 @@ export default function ChatRoomShareModal({
                 className="w-full flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
               >
                 <Copy size={16} />
-                <span>공유 텍스트 복사</span>
+                <span>{t.copyShareText}</span>
               </button>
             </div>
           </div>
 
           {/* 사용 안내 */}
           <div className="bg-gray-50 rounded-lg p-4">
-            <h4 className="font-medium text-gray-900 mb-2">고객 안내사항</h4>
+            <h4 className="font-medium text-gray-900 mb-2">{t.customerGuide}</h4>
             <ul className="text-sm text-gray-600 space-y-1">
-              <li>• 링크를 클릭하면 채팅방에 접속할 수 있습니다</li>
-              <li>• 픽업 시간, 장소 등에 대해 실시간으로 문의하세요</li>
-              <li>• 투어 중 특별한 요청사항이 있으면 언제든지 말씀해주세요</li>
-              <li>• 가이드가 답변을 드릴 때까지 잠시 기다려주세요</li>
+              {t.guideItems.map((item, index) => (
+                <li key={index}>• {item}</li>
+              ))}
             </ul>
           </div>
         </div>
@@ -200,7 +240,7 @@ export default function ChatRoomShareModal({
             onClick={onClose}
             className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
           >
-            닫기
+            {t.close}
           </button>
         </div>
       </div>

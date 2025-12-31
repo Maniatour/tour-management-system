@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Send, Image as ImageIcon, Copy, Share2, Calendar, Megaphone, Trash2, ChevronDown, ChevronUp, MapPin, Camera, ExternalLink, Users, Play } from 'lucide-react'
+import { Send, Image as ImageIcon, Copy, Share2, Calendar, Megaphone, Trash2, ChevronDown, ChevronUp, MapPin, Camera, ExternalLink, Users, Play, Phone, User, X, Menu } from 'lucide-react'
 import PickupHotelPhotoGallery from './PickupHotelPhotoGallery'
 import ReactCountryFlag from 'react-country-flag'
 import { useRouter } from 'next/navigation'
@@ -114,6 +114,8 @@ interface TourChatRoomProps {
   tourDate?: string
   customerName?: string
   customerLanguage?: SupportedLanguage
+  externalMobileMenuOpen?: boolean
+  onExternalMobileMenuToggle?: () => void
   // isModalView?: boolean // 사용되지 않음
 }
 
@@ -124,7 +126,9 @@ export default function TourChatRoom({
   roomCode,
   tourDate,
   customerName,
-  customerLanguage = 'en'
+  customerLanguage = 'en',
+  externalMobileMenuOpen,
+  onExternalMobileMenuToggle
   // isModalView = false // 사용되지 않음
 }: TourChatRoomProps) {
   const router = useRouter()
@@ -147,6 +151,12 @@ export default function TourChatRoom({
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>(customerLanguage)
+  
+  // customerLanguage prop이 변경되면 selectedLanguage도 업데이트
+  useEffect(() => {
+    setSelectedLanguage(customerLanguage)
+  }, [customerLanguage])
+  
   // const [participantCount, setParticipantCount] = useState(0) // 사용되지 않음
   const [showShareModal, setShowShareModal] = useState(false)
   const [showPickupScheduleModal, setShowPickupScheduleModal] = useState(false)
@@ -161,6 +171,22 @@ export default function TourChatRoom({
     location: string
     people: number
   }>>([])
+  const [showTeamInfo, setShowTeamInfo] = useState(false)
+  const [teamInfo, setTeamInfo] = useState<{
+    guide?: { name_ko?: string; name_en?: string; phone?: string }
+    assistant?: { name_ko?: string; name_en?: string; phone?: string }
+    driver?: { name?: string; phone?: string }
+  }>({})
+  const [internalMobileMenuOpen, setInternalMobileMenuOpen] = useState(true)
+  // 외부에서 제어하는 경우 externalMobileMenuOpen 사용, 아니면 내부 상태 사용
+  const isMobileMenuOpen = externalMobileMenuOpen !== undefined ? externalMobileMenuOpen : internalMobileMenuOpen
+  const handleMobileMenuToggle = () => {
+    if (onExternalMobileMenuToggle) {
+      onExternalMobileMenuToggle()
+    } else {
+      setInternalMobileMenuOpen(!internalMobileMenuOpen)
+    }
+  }
   
   // Generate or read client_id for soft-ban
   const getClientId = () => {
@@ -488,6 +514,85 @@ export default function TourChatRoom({
     }
   }
 
+  // 팀 정보 로드 (가이드, 어시스턴트, 드라이버)
+  const loadTeamInfo = useCallback(async () => {
+    try {
+      if (!tourId) return
+
+      // 투어 정보 가져오기
+      const { data: tour, error: tourError } = await supabase
+        .from('tours')
+        .select('tour_guide_id, assistant_id, tour_car_id')
+        .eq('id', tourId)
+        .single()
+
+      if (tourError || !tour) {
+        console.error('Error loading tour for team info:', tourError)
+        return
+      }
+
+      const teamData: {
+        guide?: { name_ko?: string; name_en?: string; phone?: string }
+        assistant?: { name_ko?: string; name_en?: string; phone?: string }
+        driver?: { name?: string; phone?: string }
+      } = {}
+
+      // 가이드 정보 가져오기
+      if (tour.tour_guide_id) {
+        const { data: guideData } = await supabase
+          .from('team')
+          .select('name_ko, name_en, phone')
+          .eq('email', tour.tour_guide_id)
+          .maybeSingle()
+
+        if (guideData) {
+          teamData.guide = {
+            name_ko: guideData.name_ko || undefined,
+            name_en: guideData.name_en || undefined,
+            phone: guideData.phone || undefined
+          }
+        }
+      }
+
+      // 어시스턴트 정보 가져오기
+      if (tour.assistant_id) {
+        const { data: assistantData } = await supabase
+          .from('team')
+          .select('name_ko, name_en, phone')
+          .eq('email', tour.assistant_id)
+          .maybeSingle()
+
+        if (assistantData) {
+          teamData.assistant = {
+            name_ko: assistantData.name_ko || undefined,
+            name_en: assistantData.name_en || undefined,
+            phone: assistantData.phone || undefined
+          }
+        }
+      }
+
+      // 드라이버 정보 가져오기 (차량 정보에서)
+      if (tour.tour_car_id) {
+        const { data: vehicleData } = await supabase
+          .from('vehicles')
+          .select('driver_name, driver_phone')
+          .eq('id', tour.tour_car_id)
+          .maybeSingle()
+
+        if (vehicleData) {
+          teamData.driver = {
+            name: vehicleData.driver_name || undefined,
+            phone: vehicleData.driver_phone || undefined
+          }
+        }
+      }
+
+      setTeamInfo(teamData)
+    } catch (error) {
+      console.error('Error loading team info:', error)
+    }
+  }, [tourId])
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -572,10 +677,11 @@ export default function TourChatRoom({
         await loadMessages(room.id)
         console.log('Messages loaded successfully')
         
-        // 고객용 채팅에서 픽업 스케줄 로드
+        // 고객용 채팅에서 픽업 스케줄 및 팀 정보 로드
         if (isPublicView && room.tour_id) {
           console.log('Loading pickup schedule for public view, tourId:', room.tour_id)
           loadPickupSchedule()
+          loadTeamInfo()
         }
       } else {
         console.log('No room found for code:', code)
@@ -922,7 +1028,7 @@ export default function TourChatRoom({
   return (
     <div className="flex flex-col h-full overflow-hidden bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       {/* 채팅방 헤더 */}
-        <div className="px-2 lg:px-3 border-b bg-white bg-opacity-90 backdrop-blur-sm shadow-sm">
+        <div className="px-2 lg:px-3 border-b bg-white bg-opacity-90 backdrop-blur-sm shadow-sm relative">
           {!isPublicView && (
           <div className="mb-1">
             <div className="flex items-center justify-between">
@@ -932,172 +1038,238 @@ export default function TourChatRoom({
           </div>
         )}
         
-        {/* Customer Language Selection */}
-        {isPublicView && (
-          <div className="mb-1">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-              </div>
-            </div>
-          </div>
-        )}
-        
-          <div className="mt-1 flex items-center gap-1 lg:gap-2 justify-between">
-            <div className="flex items-center gap-1 lg:gap-2 flex-wrap">
-              {/* 방 활성/비활성 스위치 - 가장 왼쪽, 관리자 전용 */}
-              {!isPublicView && (
-                <button
-                  onClick={toggleRoomActive}
-                  disabled={togglingActive}
-                  className="flex items-center focus:outline-none"
-                  title={room.is_active ? '비활성화' : '활성화'}
-                  aria-label={room.is_active ? '비활성화' : '활성화'}
+
+        {/* 버튼 영역 */}
+        <div className="mt-1 flex items-center gap-1 lg:gap-2 justify-between">
+          {/* 데스크톱: 왼쪽 버튼 그룹 */}
+          <div className="hidden lg:flex items-center gap-1 lg:gap-2 flex-wrap">
+            {/* 방 활성/비활성 스위치 - 가장 왼쪽, 관리자 전용 */}
+            {!isPublicView && (
+              <button
+                onClick={toggleRoomActive}
+                disabled={togglingActive}
+                className="flex items-center focus:outline-none"
+                title={room.is_active ? '비활성화' : '활성화'}
+                aria-label={room.is_active ? '비활성화' : '활성화'}
+              >
+                <span
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${room.is_active ? 'bg-green-500' : 'bg-gray-300'} ${togglingActive ? 'opacity-60' : ''}`}
                 >
                   <span
-                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${room.is_active ? 'bg-green-500' : 'bg-gray-300'} ${togglingActive ? 'opacity-60' : ''}`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${room.is_active ? 'translate-x-4' : 'translate-x-1'}`}
-                    />
-                  </span>
-                </button>
-              )}
-              <button
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${room.is_active ? 'translate-x-4' : 'translate-x-1'}`}
+                  />
+                </span>
+              </button>
+            )}
+            <button
               onClick={() => setIsAnnouncementsOpen(true)}
               className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-amber-100 text-amber-800 rounded border border-amber-200 hover:bg-amber-200 flex items-center justify-center"
-              title="공지사항"
-              aria-label="공지사항"
+              title={selectedLanguage === 'ko' ? '공지사항' : 'Announcements'}
+              aria-label={selectedLanguage === 'ko' ? '공지사항' : 'Announcements'}
             >
               <Megaphone size={12} className="lg:w-3.5 lg:h-3.5" />
             </button>
-            <button
-              onClick={() => setShowPickupScheduleInline(!showPickupScheduleInline)}
-              className={`px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs rounded border flex items-center justify-center ${
-                showPickupScheduleInline 
-                  ? 'bg-blue-600 text-white border-blue-600' 
-                  : 'bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200'
-              }`}
-              title="픽업 스케쥴"
-              aria-label="픽업 스케쥴"
-            >
-              <Calendar size={12} className="lg:w-3.5 lg:h-3.5" />
-            </button>
+              <button
+                onClick={() => setShowPickupScheduleModal(true)}
+                className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-blue-100 text-blue-800 rounded border border-blue-200 hover:bg-blue-200 flex items-center justify-center"
+                title={selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}
+                aria-label={selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}
+              >
+                <Calendar size={12} className="lg:w-3.5 lg:h-3.5" />
+              </button>
             {/* 투어 상세 페이지 이동 버튼 - 팀원 전용 */}
             {!isPublicView && (
               <button
                 onClick={goToTourDetail}
                 className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-purple-100 text-purple-800 rounded border border-purple-200 hover:bg-purple-200 flex items-center justify-center"
-                title="투어 상세 페이지"
-                aria-label="투어 상세 페이지"
+                title={selectedLanguage === 'ko' ? '투어 상세 페이지' : 'Tour Details'}
+                aria-label={selectedLanguage === 'ko' ? '투어 상세 페이지' : 'Tour Details'}
               >
                 <ExternalLink size={12} className="lg:w-3.5 lg:h-3.5" />
               </button>
             )}
-            {/* 옵션 상품 버튼 숨김 */}
-            {/* <a
-              href="#options"
-              className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-emerald-100 text-emerald-800 rounded border border-emerald-200 hover:bg-emerald-200 flex items-center justify-center"
-              title="옵션 상품"
-              aria-label="옵션 상품"
-            >
-              <Gift size={12} className="lg:w-3.5 lg:h-3.5" />
-            </a> */}
             {isPublicView && (
-              <button
-                onClick={() => setShowPhotoGallery(true)}
-                className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-violet-100 text-violet-800 rounded border border-violet-200 hover:bg-violet-200 flex items-center justify-center"
-                title="투어 사진"
-                aria-label="투어 사진"
-              >
-                <ImageIcon size={12} className="lg:w-3.5 lg:h-3.5" />
-              </button>
+              <>
+                <button
+                  onClick={() => setShowPhotoGallery(true)}
+                  className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-violet-100 text-violet-800 rounded border border-violet-200 hover:bg-violet-200 flex items-center justify-center"
+                  title={selectedLanguage === 'ko' ? '투어 사진' : 'Tour Photos'}
+                  aria-label={selectedLanguage === 'ko' ? '투어 사진' : 'Tour Photos'}
+                >
+                  <ImageIcon size={12} className="lg:w-3.5 lg:h-3.5" />
+                </button>
+                <button
+                  onClick={() => setShowTeamInfo(true)}
+                  className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-indigo-100 text-indigo-800 rounded border border-indigo-200 hover:bg-indigo-200 flex items-center justify-center"
+                  title={selectedLanguage === 'ko' ? '가이드 정보' : 'Guide Info'}
+                  aria-label={selectedLanguage === 'ko' ? '가이드 정보' : 'Guide Info'}
+                >
+                  <Users size={12} className="lg:w-3.5 lg:h-3.5" />
+                </button>
+              </>
             )}
+          </div>
+
+          {/* 모바일: 접었다 폈다 할 수 있는 메뉴 */}
+          <div className={`lg:hidden ${isMobileMenuOpen ? 'block' : 'hidden'} absolute top-full left-0 right-0 bg-white border-b shadow-md z-10 p-3 space-y-2`}>
+            {/* 활성화 버튼 (관리자용) */}
+            {!isPublicView && (
+              <div>
+                <button
+                  onClick={toggleRoomActive}
+                  disabled={togglingActive}
+                  className="flex items-center gap-2 px-3 py-2 focus:outline-none w-full"
+                  title={room.is_active ? (selectedLanguage === 'ko' ? '비활성화' : 'Deactivate') : (selectedLanguage === 'ko' ? '활성화' : 'Activate')}
+                >
+                  <span
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ${room.is_active ? 'bg-green-500' : 'bg-gray-300'}`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${room.is_active ? 'translate-x-4' : 'translate-x-1'}`}
+                    />
+                  </span>
+                  <span className="text-[10px] text-gray-600">{selectedLanguage === 'ko' ? '활성화' : 'Active'}</span>
+                </button>
+              </div>
+            )}
+            
+            {/* 공지사항, 픽업스케줄: 2열 그리드 */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setIsAnnouncementsOpen(true)}
+                className="flex items-center gap-2 px-3 py-2 bg-amber-100 text-amber-800 rounded-lg border border-amber-200 hover:bg-amber-200 transition-colors"
+                title={selectedLanguage === 'ko' ? '공지사항' : 'Announcements'}
+              >
+                <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+                  <Megaphone size={20} />
+                </div>
+                <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '공지사항' : 'Announcements'}</span>
+              </button>
+              <button
+                onClick={() => setShowPickupScheduleModal(true)}
+                className="flex items-center gap-2 px-3 py-2 bg-blue-100 text-blue-800 rounded-lg border border-blue-200 hover:bg-blue-200 transition-colors"
+                title={selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}
+              >
+                <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+                  <Calendar size={20} />
+                </div>
+                <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}</span>
+              </button>
             </div>
-            <div className="flex items-center space-x-1 lg:space-x-2">
+            
+            {/* 투어 사진, 가이드 정보: 2열 그리드 (고객용) */}
+            {isPublicView && (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setShowPhotoGallery(true)}
+                  className="flex items-center gap-2 px-3 py-2 bg-violet-100 text-violet-800 rounded-lg border border-violet-200 hover:bg-violet-200 transition-colors"
+                  title={selectedLanguage === 'ko' ? '투어 사진' : 'Tour Photos'}
+                >
+                  <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+                    <ImageIcon size={20} />
+                  </div>
+                  <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '투어 사진' : 'Tour Photos'}</span>
+                </button>
+                <button
+                  onClick={() => setShowTeamInfo(true)}
+                  className="flex items-center gap-2 px-3 py-2 bg-indigo-100 text-indigo-800 rounded-lg border border-indigo-200 hover:bg-indigo-200 transition-colors"
+                  title={selectedLanguage === 'ko' ? '가이드 정보' : 'Guide Info'}
+                >
+                  <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+                    <Users size={20} />
+                  </div>
+                  <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '가이드 정보' : 'Guide Info'}</span>
+                </button>
+              </div>
+            )}
+            
+            {/* 복사, 공유, 접기: 3열 그리드 */}
+            <div className="grid grid-cols-3 gap-2">
               <button
                 onClick={copyRoomLink}
-                className="p-1.5 lg:p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
-                title="링크 복사"
-                aria-label="링크 복사"
+                className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
+                title={selectedLanguage === 'ko' ? '링크 복사' : 'Copy Link'}
               >
-                <Copy size={14} className="lg:w-4 lg:h-4" />
+                <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+                  <Copy size={20} />
+                </div>
+                <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '복사' : 'Copy'}</span>
               </button>
               <button
                 onClick={shareRoomLink}
-                className="p-1.5 lg:p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
-                title="공유"
-                aria-label="공유"
+                className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
+                title={selectedLanguage === 'ko' ? '공유' : 'Share'}
               >
-                <Share2 size={14} className="lg:w-4 lg:h-4" />
+                <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+                  <Share2 size={20} />
+                </div>
+                <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '공유' : 'Share'}</span>
               </button>
-              {/* 언어 전환 버튼 */}
+              {/* 접기 버튼 */}
               <button
-                onClick={handleLanguageToggle}
-                className="p-1.5 lg:p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors"
-                title={selectedLanguage === 'ko' ? 'Switch to English' : '한국어로 전환'}
+                onClick={handleMobileMenuToggle}
+                className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
+                title={selectedLanguage === 'ko' ? '접기' : 'Collapse'}
               >
-{(() => {
-                  try {
-                    const flagCountry = getLanguageFlag()
-                    if (flagCountry) {
-                      return (
-                        <ReactCountryFlag
-                          countryCode={flagCountry}
-                          svg
-                          style={{
-                            width: '16px',
-                            height: '12px',
-                            borderRadius: '2px'
-                          }}
-                        />
-                      )
-                    }
-                    return null
-                  } catch (error) {
-                    console.error('Country flag rendering error:', error)
-                    return null
-                  }
-                })()}
+                <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+                  <ChevronUp size={20} />
+                </div>
+                <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '접기' : 'Collapse'}</span>
               </button>
             </div>
           </div>
-        </div>
 
-      {/* 픽업 스케줄 영역 */}
-      {showPickupScheduleInline && (
-        <div className="bg-blue-50 border-t border-blue-200 p-2 lg:p-3">
-          <div className="flex items-center justify-between mb-2">
-            <h4 className="text-sm font-semibold text-blue-900">
-              📅 Pickup Schedule {pickupSchedule.length > 0 && `(${pickupSchedule.length})`}
-            </h4>
+          {/* 데스크톱: 오른쪽 버튼 그룹 */}
+          <div className="hidden lg:flex items-center space-x-1 lg:space-x-2">
             <button
-              onClick={() => setShowPickupScheduleInline(false)}
-              className="p-1 hover:bg-blue-200 rounded text-blue-700 text-xs"
-              title="Close"
+              onClick={copyRoomLink}
+              className="p-1.5 lg:p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
+              title={selectedLanguage === 'ko' ? '링크 복사' : 'Copy Link'}
+              aria-label={selectedLanguage === 'ko' ? '링크 복사' : 'Copy Link'}
             >
-              ✕
+              <Copy size={14} className="lg:w-4 lg:h-4" />
+            </button>
+            <button
+              onClick={shareRoomLink}
+              className="p-1.5 lg:p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
+              title={selectedLanguage === 'ko' ? '공유' : 'Share'}
+              aria-label={selectedLanguage === 'ko' ? '공유' : 'Share'}
+            >
+              <Share2 size={14} className="lg:w-4 lg:h-4" />
+            </button>
+            {/* 언어 전환 버튼 */}
+            <button
+              onClick={handleLanguageToggle}
+              className="p-1.5 lg:p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors"
+              title={selectedLanguage === 'ko' ? 'Switch to English' : '한국어로 전환'}
+            >
+              {(() => {
+                try {
+                  const flagCountry = getLanguageFlag()
+                  if (flagCountry) {
+                    return (
+                      <ReactCountryFlag
+                        countryCode={flagCountry}
+                        svg
+                        style={{
+                          width: '16px',
+                          height: '12px',
+                          borderRadius: '2px'
+                        }}
+                      />
+                    )
+                  }
+                  return null
+                } catch (error) {
+                  console.error('Country flag rendering error:', error)
+                  return null
+                }
+              })()}
             </button>
           </div>
-          {pickupSchedule.length > 0 ? (
-            <div className="space-y-1 text-xs lg:text-sm">
-              {pickupSchedule.map((schedule, index) => (
-                <PickupScheduleAccordion
-                  key={index}
-                  schedule={schedule}
-                  onPhotoClick={(hotelName, mediaUrls) => {
-                    setSelectedPickupHotel({name: hotelName, mediaUrls})
-                    setShowPickupHotelPhotoGallery(true)
-                  }}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="text-center text-blue-600 py-2">
-              No pickup schedule available.
-            </div>
-          )}
         </div>
-      )}
+        </div>
+
 
       {/* 메시지 목록 */}
       <div className="flex-1 overflow-y-auto p-2 lg:p-4 space-y-2 lg:space-y-3 min-h-0 bg-gradient-to-b from-transparent to-blue-50 bg-opacity-20">
@@ -1221,7 +1393,7 @@ export default function TourChatRoom({
           roomName={room.room_name}
           tourDate={tourDate}
           isPublicView={isPublicView}
-          language={customerLanguage as 'en' | 'ko' | undefined}
+          language={selectedLanguage as 'en' | 'ko'}
         />
       )}
 
@@ -1230,12 +1402,12 @@ export default function TourChatRoom({
         <div className={`${isAnnouncementsOpen ? 'fixed' : 'hidden'} inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4`}>
           <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between p-4 border-b">
-              <h4 className="text-lg font-semibold text-gray-900">공지사항</h4>
-              <button onClick={() => setIsAnnouncementsOpen(false)} className="px-2 py-1 rounded hover:bg-gray-100">닫기</button>
+              <h4 className="text-lg font-semibold text-gray-900">{selectedLanguage === 'ko' ? '공지사항' : 'Announcements'}</h4>
+              <button onClick={() => setIsAnnouncementsOpen(false)} className="px-2 py-1 rounded hover:bg-gray-100">{selectedLanguage === 'ko' ? '닫기' : 'Close'}</button>
             </div>
             <div className="p-4 space-y-3">
               {announcements.length === 0 ? (
-                <div className="text-sm text-gray-500">등록된 공지사항이 없습니다.</div>
+                <div className="text-sm text-gray-500">{selectedLanguage === 'ko' ? '등록된 공지사항이 없습니다.' : 'No announcements available.'}</div>
               ) : (
                 announcements.map((a) => (
                   <div key={a.id} className="border rounded-lg p-3">
@@ -1246,7 +1418,7 @@ export default function TourChatRoom({
               )}
             </div>
             <div className="p-3 border-t text-right">
-              <button onClick={() => setIsAnnouncementsOpen(false)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">닫기</button>
+              <button onClick={() => setIsAnnouncementsOpen(false)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">{selectedLanguage === 'ko' ? '닫기' : 'Close'}</button>
             </div>
           </div>
         </div>
@@ -1258,6 +1430,10 @@ export default function TourChatRoom({
         onClose={() => setShowPickupScheduleModal(false)}
         pickupSchedule={pickupSchedule}
         language={convertToSupportedLanguage(locale)}
+        onPhotoClick={(hotelName, mediaUrls) => {
+          setSelectedPickupHotel({name: hotelName, mediaUrls})
+          setShowPickupHotelPhotoGallery(true)
+        }}
       />
 
       {/* 투어 사진 갤러리 */}
@@ -1266,7 +1442,127 @@ export default function TourChatRoom({
         onClose={() => setShowPhotoGallery(false)}
         tourId={tourId || ''}
         language={convertToSupportedLanguage(locale)}
+        allowUpload={isPublicView} // 고객용일 때만 업로드 허용
+        uploadedBy={isPublicView ? customerName : undefined}
       />
+
+      {/* 팀 정보 모달 (고객용) */}
+      {isPublicView && (
+        <div className={`${showTeamInfo ? 'fixed' : 'hidden'} inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4`}>
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h4 className="text-lg font-semibold text-gray-900">
+                {selectedLanguage === 'ko' ? '가이드 정보' : 'Guide Information'}
+              </h4>
+              <button 
+                onClick={() => setShowTeamInfo(false)} 
+                className="p-1 hover:bg-gray-100 rounded transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              {/* 가이드 정보 */}
+              {teamInfo.guide && (
+                <div className="border rounded-lg p-3 bg-orange-50">
+                  <div className="flex items-center mb-2">
+                    <User className="w-4 h-4 mr-2 text-orange-600" />
+                    <h5 className="font-medium text-gray-900">
+                      {selectedLanguage === 'ko' ? '가이드' : 'Guide'}
+                    </h5>
+                  </div>
+                  <p className="text-sm font-medium text-gray-900 mb-1">
+                    {selectedLanguage === 'ko' 
+                      ? (teamInfo.guide.name_ko || teamInfo.guide.name_en || 'N/A')
+                      : (teamInfo.guide.name_en || teamInfo.guide.name_ko || 'N/A')
+                    }
+                  </p>
+                  {teamInfo.guide.phone && (
+                    <a 
+                      href={`tel:${teamInfo.guide.phone}`}
+                      className="text-sm text-gray-600 flex items-center hover:text-blue-600 transition-colors"
+                    >
+                      <Phone className="w-3 h-3 mr-1" />
+                      {teamInfo.guide.phone}
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* 어시스턴트 정보 */}
+              {teamInfo.assistant && (
+                <div className="border rounded-lg p-3 bg-teal-50">
+                  <div className="flex items-center mb-2">
+                    <User className="w-4 h-4 mr-2 text-teal-600" />
+                    <h5 className="font-medium text-gray-900">
+                      {selectedLanguage === 'ko' ? '어시스턴트' : 'Assistant'}
+                    </h5>
+                  </div>
+                  <p className="text-sm font-medium text-gray-900 mb-1">
+                    {selectedLanguage === 'ko' 
+                      ? (teamInfo.assistant.name_ko || teamInfo.assistant.name_en || 'N/A')
+                      : (teamInfo.assistant.name_en || teamInfo.assistant.name_ko || 'N/A')
+                    }
+                  </p>
+                  {teamInfo.assistant.phone && (
+                    <a 
+                      href={`tel:${teamInfo.assistant.phone}`}
+                      className="text-sm text-gray-600 flex items-center hover:text-blue-600 transition-colors"
+                    >
+                      <Phone className="w-3 h-3 mr-1" />
+                      {teamInfo.assistant.phone}
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* 드라이버 정보 */}
+              {teamInfo.driver && (
+                <div className="border rounded-lg p-3 bg-green-50">
+                  <div className="flex items-center mb-2">
+                    <User className="w-4 h-4 mr-2 text-green-600" />
+                    <h5 className="font-medium text-gray-900">
+                      {selectedLanguage === 'ko' ? '드라이버' : 'Driver'}
+                    </h5>
+                  </div>
+                  {teamInfo.driver.name && (
+                    <p className="text-sm font-medium text-gray-900 mb-1">
+                      {teamInfo.driver.name}
+                    </p>
+                  )}
+                  {teamInfo.driver.phone && (
+                    <a 
+                      href={`tel:${teamInfo.driver.phone}`}
+                      className="text-sm text-gray-600 flex items-center hover:text-blue-600 transition-colors"
+                    >
+                      <Phone className="w-3 h-3 mr-1" />
+                      {teamInfo.driver.phone}
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* 정보가 없을 때 */}
+              {!teamInfo.guide && !teamInfo.assistant && !teamInfo.driver && (
+                <div className="text-center py-8 text-gray-500">
+                  {selectedLanguage === 'ko' 
+                    ? '팀 정보가 아직 등록되지 않았습니다.' 
+                    : 'Team information is not yet available.'
+                  }
+                </div>
+              )}
+            </div>
+            <div className="p-3 border-t text-right">
+              <button 
+                onClick={() => setShowTeamInfo(false)} 
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                {selectedLanguage === 'ko' ? '닫기' : 'Close'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 픽업 호텔 사진 갤러리 */}
       {selectedPickupHotel && (
