@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, Search, Edit, Trash2, Settings, Copy, Upload, ChevronUp, ChevronDown } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, Settings, Copy, Upload, ChevronUp, ChevronDown, BookOpen, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import ImageUpload from '@/components/common/ImageUpload'
@@ -41,7 +41,7 @@ interface GlobalChoicesManagerProps {
   onTemplateSelect?: (template: ChoiceTemplate) => void
 }
 
-export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoicesManagerProps) {
+export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
   const t = useTranslations('common')
   const [templates, setTemplates] = useState<ChoiceTemplate[]>([])
   const [loading, setLoading] = useState(true)
@@ -49,9 +49,30 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<ChoiceTemplate | null>(null)
+  const [selectedGroupForNewTemplate, setSelectedGroupForNewTemplate] = useState<{
+    template_group: string,
+    template_group_ko: string,
+    choice_type: 'single' | 'multiple' | 'quantity',
+    is_required: boolean,
+    min_selections: number,
+    max_selections: number,
+    max_sort_order: number
+  } | null>(null)
   const [showImportChoicesModal, setShowImportChoicesModal] = useState(false)
-  const [editingGroup, setEditingGroup] = useState<{template_group: string, template_group_ko: string, template_group_description_ko?: string, template_group_description_en?: string} | null>(null)
+  const [editingGroup, setEditingGroup] = useState<{
+    template_group: string, 
+    template_group_ko: string, 
+    template_group_description_ko?: string, 
+    template_group_description_en?: string,
+    choice_type?: 'single' | 'multiple' | 'quantity',
+    is_required?: boolean,
+    min_selections?: number,
+    max_selections?: number
+  } | null>(null)
+  const [showAddGroupModal, setShowAddGroupModal] = useState(false)
+  const [deletingGroup, setDeletingGroup] = useState<string | null>(null)
   const [allCardsCollapsed, setAllCardsCollapsed] = useState(false)
+  const [showWorkflowGuide, setShowWorkflowGuide] = useState(false)
 
   useEffect(() => {
     fetchTemplates()
@@ -322,8 +343,119 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
     }
   }
 
+  // 템플릿 그룹 추가 함수
+  const handleAddGroup = async (groupData: {
+    template_group: string,
+    template_group_ko: string,
+    template_group_description_ko?: string,
+    template_group_description_en?: string,
+    choice_type: 'single' | 'multiple' | 'quantity',
+    is_required: boolean,
+    min_selections: number,
+    max_selections: number
+  }) => {
+    try {
+      // 빈 템플릿 하나 생성 (그룹 메타데이터만 저장)
+      const newTemplate = {
+        id: crypto.randomUUID(),
+        name: `${groupData.template_group}_placeholder`,
+        name_ko: '템플릿 옵션을 추가하세요',
+        description: '이 템플릿은 그룹 메타데이터를 저장하기 위한 플레이스홀더입니다. 실제 옵션을 추가해주세요.',
+        category: 'activity',
+        adult_price: 0,
+        child_price: 0,
+        infant_price: 0,
+        price_type: 'per_person',
+        status: 'active',
+        tags: [],
+        is_choice_template: true,
+        choice_type: groupData.choice_type,
+        min_selections: groupData.min_selections,
+        max_selections: groupData.max_selections,
+        template_group: groupData.template_group,
+        template_group_ko: groupData.template_group_ko,
+        template_group_description_ko: groupData.template_group_description_ko || null,
+        template_group_description_en: groupData.template_group_description_en || null,
+        is_required: groupData.is_required,
+        sort_order: 0
+      }
+
+      const { data, error } = await supabase
+        .from('options')
+        .insert([newTemplate])
+        .select()
+
+      if (error) {
+        console.error('Error adding group:', error)
+        alert('초이스 그룹 추가 중 오류가 발생했습니다.')
+        return
+      }
+
+      if (data && data[0]) {
+        await fetchTemplates()
+        setShowAddGroupModal(false)
+        alert('초이스 그룹이 성공적으로 추가되었습니다. 이제 옵션을 추가해주세요.')
+      }
+    } catch (error) {
+      console.error('Error adding group:', error)
+      alert('초이스 그룹 추가 중 오류가 발생했습니다.')
+    }
+  }
+
+  // 템플릿 그룹 삭제 함수
+  const handleDeleteGroup = async (templateGroup: string) => {
+    if (!confirm('이 초이스 그룹과 그룹 내 모든 템플릿을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+      return
+    }
+
+    try {
+      setDeletingGroup(templateGroup)
+      
+      const { error } = await supabase
+        .from('options')
+        .delete()
+        .eq('is_choice_template', true)
+        .eq('template_group', templateGroup)
+
+      if (error) {
+        console.error('Error deleting group:', error)
+        alert('초이스 그룹 삭제 중 오류가 발생했습니다.')
+        return
+      }
+
+      setTemplates(templates.filter(t => t.template_group !== templateGroup))
+      setDeletingGroup(null)
+      alert('초이스 그룹이 성공적으로 삭제되었습니다.')
+    } catch (error) {
+      console.error('Error deleting group:', error)
+      alert('초이스 그룹 삭제 중 오류가 발생했습니다.')
+      setDeletingGroup(null)
+    }
+  }
+
   // 템플릿 그룹 수정 함수
-  const handleEditGroup = async (oldGroup: {template_group: string, template_group_ko: string, template_group_description_ko?: string, template_group_description_en?: string}, newGroup: {template_group: string, template_group_ko: string, template_group_description_ko?: string, template_group_description_en?: string}) => {
+  const handleEditGroup = async (
+    oldGroup: {
+      template_group: string, 
+      template_group_ko: string, 
+      template_group_description_ko?: string, 
+      template_group_description_en?: string,
+      choice_type?: 'single' | 'multiple' | 'quantity',
+      is_required?: boolean,
+      min_selections?: number,
+      max_selections?: number
+    }, 
+    newGroup: {
+      template_group: string, 
+      template_group_ko: string, 
+      template_group_description_ko?: string, 
+      template_group_description_en?: string,
+      choice_type?: 'single' | 'multiple' | 'quantity',
+      is_required?: boolean,
+      min_selections?: number,
+      max_selections?: number
+    }
+  ) => {
     try {
       // 해당 그룹에 속한 모든 템플릿 찾기
       const groupTemplates = templates.filter(t => 
@@ -349,6 +481,20 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
         updateData.template_group_description_en = newGroup.template_group_description_en || null
       }
 
+      // 그룹 메타데이터 업데이트 (choice_type, is_required, min_selections, max_selections)
+      if (newGroup.choice_type !== undefined) {
+        updateData.choice_type = newGroup.choice_type
+      }
+      if (newGroup.is_required !== undefined) {
+        updateData.is_required = newGroup.is_required
+      }
+      if (newGroup.min_selections !== undefined) {
+        updateData.min_selections = newGroup.min_selections
+      }
+      if (newGroup.max_selections !== undefined) {
+        updateData.max_selections = newGroup.max_selections
+      }
+
       const { error } = await supabase
         .from('options')
         .update(updateData)
@@ -369,12 +515,17 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
               template_group: newGroup.template_group, 
               template_group_ko: newGroup.template_group_ko,
               ...(newGroup.template_group_description_ko !== undefined && { template_group_description_ko: newGroup.template_group_description_ko }),
-              ...(newGroup.template_group_description_en !== undefined && { template_group_description_en: newGroup.template_group_description_en })
+              ...(newGroup.template_group_description_en !== undefined && { template_group_description_en: newGroup.template_group_description_en }),
+              ...(newGroup.choice_type !== undefined && { choice_type: newGroup.choice_type }),
+              ...(newGroup.is_required !== undefined && { is_required: newGroup.is_required }),
+              ...(newGroup.min_selections !== undefined && { min_selections: newGroup.min_selections }),
+              ...(newGroup.max_selections !== undefined && { max_selections: newGroup.max_selections })
             } as ChoiceTemplate
           : t
       ))
 
       setEditingGroup(null)
+      await fetchTemplates() // 최신 데이터 다시 불러오기
       alert('템플릿 그룹이 성공적으로 수정되었습니다.')
     } catch (error) {
       console.error('Error updating template group:', error)
@@ -583,6 +734,13 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
           ))}
         </select>
         <button
+          onClick={() => setShowWorkflowGuide(true)}
+          className="px-3 py-2 text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 flex items-center space-x-2"
+        >
+          <BookOpen size={16} />
+          <span>워크플로우 가이드</span>
+        </button>
+        <button
           onClick={() => setAllCardsCollapsed(!allCardsCollapsed)}
           className="px-3 py-2 text-sm text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2"
         >
@@ -606,11 +764,11 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
           <span>기존 초이스 가져오기</span>
         </button>
         <button
-          onClick={() => setShowAddForm(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+          onClick={() => setShowAddGroupModal(true)}
+          className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center space-x-2"
         >
           <Plus size={20} />
-          <span>템플릿 추가</span>
+          <span>그룹 추가</span>
         </button>
       </div>
 
@@ -652,13 +810,50 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
                   </div>
                 )}
               </div>
-              <button
-                onClick={() => setEditingGroup(groupInfo)}
-                className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded ml-4"
-                title="그룹 수정"
-              >
-                <Edit size={16} />
-              </button>
+              <div className="flex items-center space-x-2 ml-4">
+                <button
+                  onClick={() => {
+                    const maxSortOrder = groupTemplates.length > 0 
+                      ? Math.max(...groupTemplates.map(t => t.sort_order)) 
+                      : -1
+                    setSelectedGroupForNewTemplate({
+                      template_group: groupInfo.template_group,
+                      template_group_ko: groupInfo.template_group_ko,
+                      choice_type: firstTemplate.choice_type,
+                      is_required: firstTemplate.is_required,
+                      min_selections: firstTemplate.min_selections,
+                      max_selections: firstTemplate.max_selections,
+                      max_sort_order: maxSortOrder
+                    })
+                    setShowAddForm(true)
+                  }}
+                  className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded"
+                  title="템플릿 추가"
+                >
+                  <Plus size={16} />
+                </button>
+                <button
+                  onClick={() => setEditingGroup({
+                    ...groupInfo,
+                    choice_type: firstTemplate.choice_type,
+                    is_required: firstTemplate.is_required,
+                    min_selections: firstTemplate.min_selections,
+                    max_selections: firstTemplate.max_selections
+                  })}
+                  className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded"
+                  title="그룹 수정"
+                >
+                  <Edit size={16} />
+                </button>
+                <button
+                  onClick={() => handleDeleteGroup(firstTemplate.template_group || '')}
+                  disabled={deletingGroup === firstTemplate.template_group}
+                  className="p-1 text-red-600 hover:text-red-900 hover:bg-red-50 rounded disabled:opacity-50"
+                  title="그룹 삭제"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
             </div>
           </div>
           <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(360px, 100%), 1fr))' }}>
@@ -825,7 +1020,7 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
 
                         {/* 정렬순서 표시 */}
                         <div className="text-xs text-gray-400 text-center pt-1">
-                          순서: {template.sort_order + 1}
+                          순서: {index + 1}
                         </div>
                       </div>
                     )}
@@ -840,11 +1035,39 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
       {/* 템플릿 추가/편집 모달 */}
       {(showAddForm || editingTemplate) && (
         <TemplateForm
-          template={editingTemplate}
+          template={editingTemplate || (selectedGroupForNewTemplate ? {
+            id: '',
+            name: '',
+            name_ko: '',
+            description: '',
+            description_ko: '',
+            description_en: '',
+            category: 'activity',
+            adult_price: 0,
+            child_price: 0,
+            infant_price: 0,
+            price_type: 'per_person',
+            status: 'active',
+            tags: [],
+            is_choice_template: true,
+            choice_type: selectedGroupForNewTemplate.choice_type,
+            min_selections: selectedGroupForNewTemplate.min_selections,
+            max_selections: selectedGroupForNewTemplate.max_selections,
+            template_group: selectedGroupForNewTemplate.template_group,
+            template_group_ko: selectedGroupForNewTemplate.template_group_ko,
+            is_required: selectedGroupForNewTemplate.is_required,
+            sort_order: selectedGroupForNewTemplate.max_sort_order + 1,
+            image_url: '',
+            image_alt: '',
+            thumbnail_url: '',
+            image_order: 0,
+            created_at: ''
+          } : null)}
           onSubmit={editingTemplate ? handleEditTemplate : handleAddTemplate}
           onCancel={() => {
             setShowAddForm(false)
             setEditingTemplate(null)
+            setSelectedGroupForNewTemplate(null)
           }}
         />
       )}
@@ -857,6 +1080,14 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
         />
       )}
 
+      {/* 템플릿 그룹 추가 모달 */}
+      {showAddGroupModal && (
+        <GroupAddModal
+          onSubmit={handleAddGroup}
+          onClose={() => setShowAddGroupModal(false)}
+        />
+      )}
+
       {/* 템플릿 그룹 편집 모달 */}
       {editingGroup && (
         <GroupEditModal
@@ -865,6 +1096,258 @@ export default function GlobalChoicesManager({ onTemplateSelect }: GlobalChoices
           onClose={() => setEditingGroup(null)}
         />
       )}
+
+      {/* 워크플로우 가이드 모달 */}
+      {showWorkflowGuide && (
+        <WorkflowGuideModal
+          onClose={() => setShowWorkflowGuide(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// 워크플로우 가이드 모달 컴포넌트
+interface WorkflowGuideModalProps {
+  onClose: () => void
+}
+
+function WorkflowGuideModal({ onClose }: WorkflowGuideModalProps) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold text-gray-900 flex items-center">
+            <BookOpen className="mr-2 text-blue-600" size={24} />
+            초이스 템플릿 워크플로우 가이드
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="space-y-6">
+          {/* 개요 */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-blue-900 mb-2">📋 개요</h3>
+            <p className="text-sm text-blue-800">
+              통합 옵션 - 초이스 관리에서는 <strong>템플릿</strong>을 생성하고 관리합니다. 
+              이 템플릿은 상품 편집 - 초이스 관리에서 불러와서 사용할 수 있으며, 
+              각 상품에서 필요한 옵션만 선택하거나 수정할 수 있습니다.
+            </p>
+          </div>
+
+          {/* Step 1 */}
+          <div className="border border-gray-200 rounded-lg p-5">
+            <div className="flex items-start mb-3">
+              <div className="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold mr-3">
+                1
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">템플릿 그룹 생성</h3>
+                <div className="space-y-2 text-sm text-gray-700">
+                  <p>1. <strong>"그룹 추가"</strong> 버튼 클릭</p>
+                  <p>2. 그룹 정보 입력:</p>
+                  <ul className="list-disc list-inside ml-4 space-y-1">
+                    <li>그룹 이름 (영문): 예) <code className="bg-gray-100 px-1 rounded">national_park_fee</code></li>
+                    <li>그룹 이름 (한글): 예) <code className="bg-gray-100 px-1 rounded">국립공원 입장료</code></li>
+                    <li>초이스 타입: 단일 선택, 다중 선택, 수량 선택</li>
+                    <li>필수 여부: 체크박스로 설정</li>
+                    <li>최소/최대 선택 수: 숫자 입력</li>
+                  </ul>
+                  <p>3. <strong>"그룹 추가"</strong> 버튼으로 저장</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Step 2 */}
+          <div className="border border-gray-200 rounded-lg p-5">
+            <div className="flex items-start mb-3">
+              <div className="flex-shrink-0 w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center font-bold mr-3">
+                2
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">템플릿 옵션 추가</h3>
+                <div className="space-y-2 text-sm text-gray-700">
+                  <p>1. 생성된 그룹 아래에 <strong>"템플릿 추가"</strong> 버튼 클릭</p>
+                  <p>2. 모든 가능한 옵션을 등록:</p>
+                  <div className="bg-gray-50 border border-gray-200 rounded p-3 ml-4">
+                    <p className="font-medium mb-2">예시: 국립공원 입장료 템플릿</p>
+                    <ul className="list-disc list-inside space-y-1 text-xs">
+                      <li>미국 거주자 ($8)</li>
+                      <li>비 거주자 ($100)</li>
+                      <li>애뉴얼 패스 구매자 ($250)</li>
+                      <li>애뉴얼 패스 동행자 ($0)</li>
+                      <li>그랜드캐년 입장료</li>
+                      <li>자이언캐년 입장료</li>
+                      <li>브라이스 캐년 입장료</li>
+                      <li>요세미티 입장료</li>
+                      <li>세쿼이아 입장료</li>
+                      <li>... (모든 가능한 국립공원)</li>
+                    </ul>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-2">
+                    💡 <strong>팁:</strong> 템플릿에는 모든 가능한 옵션을 등록해두면, 
+                    상품별로 필요한 옵션만 선택할 수 있습니다.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Step 3 */}
+          <div className="border border-gray-200 rounded-lg p-5">
+            <div className="flex items-start mb-3">
+              <div className="flex-shrink-0 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold mr-3">
+                3
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">상품 편집에서 템플릿 사용</h3>
+                <div className="space-y-2 text-sm text-gray-700">
+                  <p>1. <strong>상품 편집</strong> &gt; <strong>초이스 관리</strong> 탭으로 이동</p>
+                  <p>2. <strong>"템플릿에서 불러오기"</strong> 버튼 클릭</p>
+                  <p>3. 생성한 템플릿 선택 (예: "국립공원 입장료")</p>
+                  <p>4. 템플릿의 모든 옵션이 포함된 초이스 그룹이 생성됩니다.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Step 4 */}
+          <div className="border border-gray-200 rounded-lg p-5">
+            <div className="flex items-start mb-3">
+              <div className="flex-shrink-0 w-8 h-8 bg-orange-600 text-white rounded-full flex items-center justify-center font-bold mr-3">
+                4
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">상품별 커스터마이징</h3>
+                <div className="space-y-2 text-sm text-gray-700">
+                  <p>템플릿을 불러온 후, 각 상품에서 필요한 옵션만 선택/수정할 수 있습니다:</p>
+                  <ul className="list-disc list-inside ml-4 space-y-1">
+                    <li><strong>옵션 삭제:</strong> 각 옵션 옆의 삭제 버튼 (🗑️) 클릭</li>
+                    <li><strong>옵션 추가:</strong> "옵션 추가" 버튼으로 새로운 옵션 추가</li>
+                    <li><strong>옵션 수정:</strong> 옵션 이름, 가격, 설명 등 수정</li>
+                    <li><strong>동적 가격 설정:</strong> 동적 가격 관리에서 상품별, 날짜별 가격 설정</li>
+                  </ul>
+                  
+                  <div className="bg-yellow-50 border border-yellow-200 rounded p-3 mt-3">
+                    <p className="font-medium text-yellow-900 mb-2">📌 예시: 밤도깨비 투어</p>
+                    <p className="text-xs text-yellow-800">
+                      템플릿 불러오기 → 그랜드캐년만 남기고 나머지 공원 옵션 삭제
+                    </p>
+                  </div>
+
+                  <div className="bg-yellow-50 border border-yellow-200 rounded p-3 mt-2">
+                    <p className="font-medium text-yellow-900 mb-2">📌 예시: 그랜드서클 투어</p>
+                    <p className="text-xs text-yellow-800">
+                      템플릿을 3번 불러오기 → 각 그룹 이름을 "그랜드캐년 입장료", "자이언캐년 입장료", "브라이스 캐년 입장료"로 수정 → 각 그룹에서 불필요한 공원 옵션 삭제
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 중요 사항 */}
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-red-900 mb-2">⚠️ 중요 사항</h3>
+            <ul className="space-y-2 text-sm text-red-800">
+              <li className="flex items-start">
+                <span className="mr-2">•</span>
+                <span><strong>템플릿과 상품 초이스는 독립적입니다.</strong> 템플릿을 수정해도 이미 불러온 상품 초이스에는 영향이 없습니다.</span>
+              </li>
+              <li className="flex items-start">
+                <span className="mr-2">•</span>
+                <span><strong>상품 초이스를 수정해도 템플릿에는 영향이 없습니다.</strong> 각각 독립적으로 관리됩니다.</span>
+              </li>
+              <li className="flex items-start">
+                <span className="mr-2">•</span>
+                <span><strong>동적 가격은 상품별로 설정해야 합니다.</strong> 템플릿의 기본 가격은 참고용입니다.</span>
+              </li>
+            </ul>
+          </div>
+
+          {/* 워크플로우 다이어그램 */}
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">🔄 워크플로우 다이어그램</h3>
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center">
+                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">1</div>
+                <div className="flex-1">
+                  <p className="font-medium">통합 옵션 - 초이스 관리</p>
+                  <p className="text-xs text-gray-600">"국립공원 입장료" 템플릿 그룹 생성 + 모든 옵션 등록</p>
+                </div>
+              </div>
+              <div className="flex justify-center">
+                <ChevronDown className="text-gray-400" size={20} />
+              </div>
+              <div className="flex items-center">
+                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center mr-3">2</div>
+                <div className="flex-1">
+                  <p className="font-medium">상품 편집 - 초이스 관리</p>
+                  <p className="text-xs text-gray-600">템플릿에서 "국립공원 입장료" 불러오기</p>
+                </div>
+              </div>
+              <div className="flex justify-center">
+                <ChevronDown className="text-gray-400" size={20} />
+              </div>
+              <div className="flex items-center">
+                <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center mr-3">3</div>
+                <div className="flex-1">
+                  <p className="font-medium">상품별 커스터마이징</p>
+                  <p className="text-xs text-gray-600">불필요한 옵션 삭제, 필요한 옵션만 남기기, 가격 수정</p>
+                </div>
+              </div>
+              <div className="flex justify-center">
+                <ChevronDown className="text-gray-400" size={20} />
+              </div>
+              <div className="flex items-center">
+                <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center mr-3">4</div>
+                <div className="flex-1">
+                  <p className="font-medium">동적 가격 설정</p>
+                  <p className="text-xs text-gray-600">상품별, 날짜별로 다른 가격 적용</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* FAQ */}
+          <div className="border border-gray-200 rounded-lg p-5">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">❓ 자주 묻는 질문</h3>
+            <div className="space-y-4 text-sm">
+              <div>
+                <p className="font-medium text-gray-900 mb-1">Q: 템플릿에서 옵션을 삭제하면 이미 불러온 상품 초이스에도 영향이 있나요?</p>
+                <p className="text-gray-700">A: 아니요. 템플릿을 불러온 후에는 상품별 초이스로 독립적으로 관리되므로 영향이 없습니다.</p>
+              </div>
+              <div>
+                <p className="font-medium text-gray-900 mb-1">Q: 상품에서 옵션을 삭제하면 템플릿에도 영향이 있나요?</p>
+                <p className="text-gray-700">A: 아니요. 상품 초이스와 템플릿은 완전히 독립적입니다.</p>
+              </div>
+              <div>
+                <p className="font-medium text-gray-900 mb-1">Q: 여러 상품에서 같은 템플릿을 사용할 수 있나요?</p>
+                <p className="text-gray-700">A: 네, 가능합니다. 각 상품에서 템플릿을 불러온 후 개별적으로 수정할 수 있습니다.</p>
+              </div>
+              <div>
+                <p className="font-medium text-gray-900 mb-1">Q: 템플릿에 새로운 옵션을 추가하면 어떻게 되나요?</p>
+                <p className="text-gray-700">A: 템플릿에만 추가되고, 이미 불러온 상품 초이스에는 자동으로 추가되지 않습니다. 필요하면 각 상품에서 수동으로 추가하거나 템플릿을 다시 불러와야 합니다.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            닫기
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -924,7 +1407,7 @@ function TemplateForm({ template, onSubmit, onCancel }: TemplateFormProps) {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <h2 className="text-xl font-bold mb-4">
-          {template ? '초이스 템플릿 편집' : '초이스 템플릿 추가'}
+          {template && template.id ? '초이스 템플릿 편집' : '초이스 템플릿 추가'}
         </h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -1279,10 +1762,210 @@ function ImportChoicesModal({ onImport, onClose }: ImportChoicesModalProps) {
   )
 }
 
+// 템플릿 그룹 추가 모달 컴포넌트
+interface GroupAddModalProps {
+  onSubmit: (groupData: {
+    template_group: string,
+    template_group_ko: string,
+    template_group_description_ko?: string,
+    template_group_description_en?: string,
+    choice_type: 'single' | 'multiple' | 'quantity',
+    is_required: boolean,
+    min_selections: number,
+    max_selections: number
+  }) => void
+  onClose: () => void
+}
+
+function GroupAddModal({ onSubmit, onClose }: GroupAddModalProps) {
+  const [formData, setFormData] = useState({
+    template_group: '',
+    template_group_ko: '',
+    template_group_description_ko: '',
+    template_group_description_en: '',
+    choice_type: 'single' as 'single' | 'multiple' | 'quantity',
+    is_required: true,
+    min_selections: 1,
+    max_selections: 1
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!formData.template_group.trim()) {
+      alert('초이스 그룹 이름(영문)을 입력해주세요.')
+      return
+    }
+    if (!formData.template_group_ko.trim()) {
+      alert('초이스 그룹 이름(한글)을 입력해주세요.')
+      return
+    }
+    onSubmit(formData)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">초이스 그룹 추가</h3>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                초이스 그룹 이름 (영문) <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.template_group}
+                onChange={(e) => setFormData({ ...formData, template_group: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="예: national_park_fee"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                초이스 그룹 이름 (한글) <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.template_group_ko}
+                onChange={(e) => setFormData({ ...formData, template_group_ko: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="예: 국립공원 입장료"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                설명 (한국어)
+              </label>
+              <textarea
+                value={formData.template_group_description_ko}
+                onChange={(e) => setFormData({ ...formData, template_group_description_ko: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                placeholder="초이스 그룹에 대한 설명을 입력하세요 (한국어)"
+                rows={3}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                설명 (영어)
+              </label>
+              <textarea
+                value={formData.template_group_description_en}
+                onChange={(e) => setFormData({ ...formData, template_group_description_en: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                placeholder="Enter description for this choice group (English)"
+                rows={3}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                초이스 타입
+              </label>
+              <select
+                value={formData.choice_type}
+                onChange={(e) => setFormData({ ...formData, choice_type: e.target.value as 'single' | 'multiple' | 'quantity' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="single">단일 선택</option>
+                <option value="multiple">다중 선택</option>
+                <option value="quantity">수량 선택</option>
+              </select>
+            </div>
+            <div>
+              <label className="flex items-center mt-6">
+                <input
+                  type="checkbox"
+                  checked={formData.is_required}
+                  onChange={(e) => setFormData({ ...formData, is_required: e.target.checked })}
+                  className="mr-2"
+                />
+                필수 선택
+              </label>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                최소 선택 수
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={formData.min_selections}
+                onChange={(e) => setFormData({ ...formData, min_selections: parseInt(e.target.value) || 0 })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                최대 선택 수
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={formData.max_selections}
+                onChange={(e) => setFormData({ ...formData, max_selections: parseInt(e.target.value) || 1 })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
+            <p className="font-medium mb-1">💡 안내</p>
+            <p>그룹을 추가한 후, 템플릿 추가 버튼을 사용하여 이 그룹에 옵션을 추가할 수 있습니다.</p>
+          </div>
+
+          <div className="flex justify-end space-x-3 mt-6">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200"
+            >
+              취소
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 text-sm font-medium text-white bg-purple-600 border border-transparent rounded-md hover:bg-purple-700"
+            >
+              그룹 추가
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // 템플릿 그룹 편집 모달 컴포넌트
 interface GroupEditModalProps {
-  group: {template_group: string, template_group_ko: string, template_group_description_ko?: string, template_group_description_en?: string}
-  onSubmit: (newGroup: {template_group: string, template_group_ko: string, template_group_description_ko?: string, template_group_description_en?: string}) => void
+  group: {
+    template_group: string, 
+    template_group_ko: string, 
+    template_group_description_ko?: string, 
+    template_group_description_en?: string,
+    choice_type?: 'single' | 'multiple' | 'quantity',
+    is_required?: boolean,
+    min_selections?: number,
+    max_selections?: number
+  }
+  onSubmit: (newGroup: {
+    template_group: string, 
+    template_group_ko: string, 
+    template_group_description_ko?: string, 
+    template_group_description_en?: string,
+    choice_type?: 'single' | 'multiple' | 'quantity',
+    is_required?: boolean,
+    min_selections?: number,
+    max_selections?: number
+  }) => void
   onClose: () => void
 }
 
@@ -1291,7 +1974,11 @@ function GroupEditModal({ group, onSubmit, onClose }: GroupEditModalProps) {
     template_group: group.template_group || '',
     template_group_ko: group.template_group_ko || '',
     template_group_description_ko: group.template_group_description_ko || '',
-    template_group_description_en: group.template_group_description_en || ''
+    template_group_description_en: group.template_group_description_en || '',
+    choice_type: group.choice_type || 'single' as 'single' | 'multiple' | 'quantity',
+    is_required: group.is_required ?? true,
+    min_selections: group.min_selections || 1,
+    max_selections: group.max_selections || 1
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -1361,9 +2048,64 @@ function GroupEditModal({ group, onSubmit, onClose }: GroupEditModalProps) {
               />
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                초이스 타입
+              </label>
+              <select
+                value={formData.choice_type}
+                onChange={(e) => setFormData({ ...formData, choice_type: e.target.value as 'single' | 'multiple' | 'quantity' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="single">단일 선택</option>
+                <option value="multiple">다중 선택</option>
+                <option value="quantity">수량 선택</option>
+              </select>
+            </div>
+            <div>
+              <label className="flex items-center mt-6">
+                <input
+                  type="checkbox"
+                  checked={formData.is_required}
+                  onChange={(e) => setFormData({ ...formData, is_required: e.target.checked })}
+                  className="mr-2"
+                />
+                필수 선택
+              </label>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                최소 선택 수
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={formData.min_selections}
+                onChange={(e) => setFormData({ ...formData, min_selections: parseInt(e.target.value) || 0 })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                최대 선택 수
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={formData.max_selections}
+                onChange={(e) => setFormData({ ...formData, max_selections: parseInt(e.target.value) || 1 })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+
           <div className="text-sm text-gray-600 bg-yellow-50 p-3 rounded-lg">
             <p className="font-medium mb-1">⚠️ 주의사항</p>
-            <p>이 그룹에 속한 모든 템플릿의 그룹 이름과 설명이 변경됩니다.</p>
+            <p>이 그룹에 속한 모든 템플릿의 그룹 정보(이름, 설명, 타입, 필수 여부, 선택 수)가 변경됩니다.</p>
           </div>
           <div className="flex justify-end space-x-3 mt-6">
             <button

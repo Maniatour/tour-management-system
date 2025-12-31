@@ -24,12 +24,13 @@ const Sidebar = () => {
   const t = useTranslations('common')
   const [isCollapsed, setIsCollapsed] = useState(false)
   
-  // Admin, Guide, Customer 페이지에서는 사이드바를 숨김
+  // Admin, Guide, Customer, Photos 페이지에서는 사이드바를 숨김
   if (pathname.startsWith(`/${locale}/admin`) || 
       pathname.startsWith(`/${locale}/guide`) ||
       pathname.startsWith(`/${locale}/dashboard`) ||
       pathname.startsWith(`/${locale}/products`) ||
       pathname.startsWith(`/${locale}/off-schedule`) ||
+      pathname.startsWith(`/${locale}/photos/`) ||
       pathname === `/${locale}` ||
       pathname === `/${locale}/`) {
     return null

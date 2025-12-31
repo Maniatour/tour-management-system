@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
@@ -944,9 +944,49 @@ export default function TourDetailPage() {
   }
 
   // 필터링된 입장권 부킹 계산
-  const filteredTicketBookings = showTicketBookingDetails 
-    ? ticketBookings 
-    : ticketBookings.filter(booking => booking.status?.toLowerCase() === 'confirmed')
+  // showTicketBookingDetails가 false일 때는 company별로 ea를 합산한 결과만 보여줌
+  const filteredTicketBookings = useMemo(() => {
+    if (showTicketBookingDetails) {
+      // 상세 보기: 모든 부킹을 그대로 표시
+      return ticketBookings
+    } else {
+      // 간단 보기: company별로 ea를 합산
+      const companyMap = new Map<string, {
+        company: string
+        totalEa: number
+        bookings: LocalTicketBooking[]
+      }>()
+      
+      ticketBookings.forEach(booking => {
+        const company = booking.company || 'Unknown'
+        const ea = booking.ea || 0
+        
+        if (!companyMap.has(company)) {
+          companyMap.set(company, {
+            company,
+            totalEa: 0,
+            bookings: []
+          })
+        }
+        
+        const companyData = companyMap.get(company)!
+        companyData.totalEa += ea
+        companyData.bookings.push(booking)
+      })
+      
+      // 합산된 결과를 booking 형태로 변환 (표시용)
+      return Array.from(companyMap.values()).map((companyData, index) => ({
+        id: `aggregated-${companyData.company}-${index}`,
+        company: companyData.company,
+        ea: companyData.totalEa,
+        status: null,
+        reservation_id: null,
+        category: null,
+        time: null,
+        rn_number: null
+      } as LocalTicketBooking))
+    }
+  }, [ticketBookings, showTicketBookingDetails])
 
   // 로딩 중이거나 권한이 없을 때 로딩 화면 표시
   if (loading) {

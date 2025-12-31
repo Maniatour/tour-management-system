@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Plus, Edit, Trash2, Calendar, DollarSign, Save, X, History } from 'lucide-react'
+import { Plus, Edit, Trash2, Calendar, DollarSign, Save, X, History, FileText } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -75,6 +75,8 @@ export default function GuideCostManagementPage() {
   }>>({})
   const [showHistoryModal, setShowHistoryModal] = useState(false)
   const [selectedProductForHistory, setSelectedProductForHistory] = useState<{id: string, name: string} | null>(null)
+  const [note, setNote] = useState('')
+  const [noteSaving, setNoteSaving] = useState(false)
 
   // 권한 체크
   const checkAdminPermission = async () => {
@@ -126,6 +128,58 @@ export default function GuideCostManagementPage() {
       alert(`상품 목록을 불러오는 중 오류가 발생했습니다.\n\n오류 내용: ${errorMessage}`)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // 노트 로드
+  const loadNote = async () => {
+    try {
+      const response = await fetch('/api/guide-costs/notes')
+      const data = await response.json()
+      
+      if (!response.ok) {
+        console.error('노트 로드 오류:', response.status, data)
+        return
+      }
+      
+      if (data.error) {
+        console.error('노트 로드 오류:', data.error)
+        return
+      }
+      
+      setNote(data.note || '')
+    } catch (error) {
+      console.error('노트 로드 오류:', error)
+    }
+  }
+
+  // 노트 저장
+  const saveNote = async () => {
+    try {
+      setNoteSaving(true)
+      const response = await fetch('/api/guide-costs/notes', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ note })
+      })
+
+      const data = await response.json()
+      
+      if (!response.ok || data.error) {
+        const errorMessage = data.error || '노트 저장 중 오류가 발생했습니다.'
+        const errorDetails = data.details ? `\n\n상세: ${data.details}` : ''
+        throw new Error(errorMessage + errorDetails)
+      }
+
+      alert('노트가 저장되었습니다.')
+    } catch (error) {
+      console.error('노트 저장 오류:', error)
+      const errorMessage = error instanceof Error ? error.message : '노트 저장 중 오류가 발생했습니다.'
+      alert(`노트 저장 실패\n\n${errorMessage}\n\n데이터베이스 마이그레이션이 실행되었는지 확인해주세요.`)
+    } finally {
+      setNoteSaving(false)
     }
   }
 
@@ -751,6 +805,7 @@ export default function GuideCostManagementPage() {
   useEffect(() => {
     checkAdminPermission()
     loadProducts()
+    loadNote()
   }, [])
 
   if (loading) {
@@ -827,6 +882,34 @@ export default function GuideCostManagementPage() {
             <p className="text-blue-800">전체 편집 모드입니다. 모든 상품의 가이드비를 한 번에 수정할 수 있습니다.</p>
           </div>
         )}
+      </div>
+
+      {/* 노트 섹션 */}
+      <div className="mb-6 bg-white rounded-lg shadow-sm border p-4">
+        <div className="flex items-center space-x-2 mb-3">
+          <FileText size={20} className="text-gray-600" />
+          <h2 className="text-lg font-semibold text-gray-900">가이드비 관리 노트</h2>
+        </div>
+        <p className="text-sm text-gray-600 mb-3">
+          가이드비 변경 사항이나 특이사항을 기록해두세요.
+        </p>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="가이드비 변경 사항이나 특이사항을 입력하세요..."
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y min-h-[100px]"
+          rows={4}
+        />
+        <div className="mt-3 flex justify-end">
+          <button
+            onClick={saveNote}
+            disabled={noteSaving}
+            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            <Save size={16} />
+            <span>{noteSaving ? '저장 중...' : '노트 저장'}</span>
+          </button>
+        </div>
       </div>
 
       {/* 테이블 뷰 */}

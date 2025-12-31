@@ -490,10 +490,28 @@ export default function TourPhotoUpload({
   }
 
   // 공유 링크 복사
-  const copyShareLink = (shareToken: string) => {
-    const shareUrl = `${window.location.origin}/photos/${shareToken}`
+  const copyShareLink = (shareToken?: string) => {
+    // share_token이 없으면 tour_id 사용
+    const token = shareToken || tourId
+    // 환경 변수가 있으면 사용하고, 없으면 현재 origin 사용 (배포 환경에서는 자동으로 올바른 도메인 사용)
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : '')
+    // locale을 포함한 경로 사용 (기본값: ko)
+    const locale = typeof window !== 'undefined' ? window.location.pathname.split('/')[1] || 'ko' : 'ko'
+    const shareUrl = `${baseUrl}/${locale}/photos/${token}`
     navigator.clipboard.writeText(shareUrl)
     alert(t('shareLinkCopied'))
+  }
+
+  // 새창에서 미리보기 열기
+  const openPhotoInNewWindow = (photo: TourPhoto) => {
+    // share_token이 없으면 tour_id 사용
+    const token = photo.share_token || tourId
+    // 환경 변수가 있으면 사용하고, 없으면 현재 origin 사용
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : '')
+    // locale을 포함한 경로 사용 (기본값: ko)
+    const locale = typeof window !== 'undefined' ? window.location.pathname.split('/')[1] || 'ko' : 'ko'
+    const shareUrl = `${baseUrl}/${locale}/photos/${token}`
+    window.open(shareUrl, '_blank')
   }
 
   // 사진 모달 열기
@@ -616,7 +634,11 @@ export default function TourPhotoUpload({
           {photos.length > 0 && (
             <button
               onClick={() => {
-                const shareUrl = `${window.location.origin}/photos/${tourId}`
+                // 환경 변수가 있으면 사용하고, 없으면 현재 origin 사용 (배포 환경에서는 자동으로 올바른 도메인 사용)
+                const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : '')
+                // locale을 포함한 경로 사용 (기본값: ko)
+                const locale = typeof window !== 'undefined' ? window.location.pathname.split('/')[1] || 'ko' : 'ko'
+                const shareUrl = `${baseUrl}/${locale}/photos/${tourId}`
                 navigator.clipboard.writeText(shareUrl)
                 alert('투어 전체 사진 공유 링크가 클립보드에 복사되었습니다.')
               }}
@@ -773,24 +795,36 @@ export default function TourPhotoUpload({
               </div>
               
               {/* 오버레이 */}
-              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded-lg flex items-center justify-center">
-                <div className="opacity-0 group-hover:opacity-100 flex space-x-2">
+              <div 
+                className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded-lg flex items-center justify-center pointer-events-none"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="opacity-0 group-hover:opacity-100 flex space-x-2 pointer-events-auto">
                   <button
-                    onClick={() => copyShareLink(photo.share_token!)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      copyShareLink(photo.share_token)
+                    }}
                     className="p-2 bg-white rounded-full hover:bg-gray-100"
                     title={t('copyShareLink')}
                   >
                     <Share2 size={16} />
                   </button>
                   <button
-                    onClick={() => window.open(`/photos/${photo.share_token}`, '_blank')}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      openPhotoInNewWindow(photo)
+                    }}
                     className="p-2 bg-white rounded-full hover:bg-gray-100"
                     title={t('viewInNewWindow')}
                   >
                     <Eye size={16} />
                   </button>
                   <button
-                    onClick={() => handleDeletePhoto(photo.id, photo.file_path)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleDeletePhoto(photo.id, photo.file_path)
+                    }}
                     className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600"
                     title={t('delete')}
                   >
@@ -921,10 +955,16 @@ export default function TourPhotoUpload({
                 </div>
                 <div className="flex space-x-2">
                   <button
-                    onClick={() => copyShareLink(selectedPhoto.share_token!)}
+                    onClick={() => copyShareLink(selectedPhoto.share_token)}
                     className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
                   >
                     공유 링크 복사
+                  </button>
+                  <button
+                    onClick={() => openPhotoInNewWindow(selectedPhoto)}
+                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                  >
+                    새창에서 보기
                   </button>
                   <button
                     onClick={() => handleDeletePhoto(selectedPhoto.id, selectedPhoto.file_path)}

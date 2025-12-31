@@ -71,14 +71,15 @@ export default async function LocaleLayout({
   const isAdminPage = pathname.includes('/admin');
   const isEmbedPage = pathname.includes('/embed');
   const isGuidePage = pathname.includes('/guide');
+  const isPhotosPage = pathname.includes('/photos/'); // 사진 공유 링크 페이지
   const isCustomerPage = pathname.includes('/dashboard') || 
                          pathname.includes('/products') || 
                          pathname.includes('/off-schedule') ||
                          pathname === `/${locale}` ||
                          pathname === `/${locale}/`;
 
-  // Admin, Embed, Guide 페이지인 경우 기본 레이아웃만 제공 (푸터 없음)
-  if (isAdminPage || isEmbedPage || isGuidePage) {
+  // Admin, Embed, Guide, Photos 페이지인 경우 기본 레이아웃만 제공 (사이드바, 네비게이션, 푸터 없음)
+  if (isAdminPage || isEmbedPage || isGuidePage || isPhotosPage) {
     return (
       <NextIntlClientProvider messages={messages} locale={locale}>
         <AuthProvider>

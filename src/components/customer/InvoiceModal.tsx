@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { X, Send, DollarSign, Users, Package, Plus, Trash2, Calendar } from 'lucide-react'
+import { X, Send, DollarSign, Users, Package, Plus, Trash2, Calendar, Eye } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import ProductSelector, { Product as ProductSelectorProduct } from '@/components/common/ProductSelector'
@@ -45,7 +45,7 @@ interface InvoiceItem {
   editable: boolean
   choiceInfo?: string
   selectedProductId?: string
-  participantType?: 'adult' | 'child' | 'infant'
+  participantType?: 'adult' | 'child' | 'infant' | 'none'
   choiceId?: string
   choiceOptionId?: string
   selectedOptions?: string[]
@@ -127,15 +127,19 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
   const [savedInvoiceId, setSavedInvoiceId] = useState<string | null>(null)
   const [allProductOptions, setAllProductOptions] = useState<ProductOption[]>([])
   const [defaultChannelId, setDefaultChannelId] = useState<string>('')
-  const [applyTax, setApplyTax] = useState(true)
+  const [applyTax, setApplyTax] = useState(false)
   const [taxPercent, setTaxPercent] = useState(10)
   const [applyDiscount, setApplyDiscount] = useState(false)
   const [discountPercent, setDiscountPercent] = useState(0)
+  const [discountAmount, setDiscountAmount] = useState(0)
+  const [discountReason, setDiscountReason] = useState('')
   const [applyProcessingFee, setApplyProcessingFee] = useState(false)
   const [showKRW, setShowKRW] = useState(false)
   const [exchangeRate, setExchangeRate] = useState(1300)
   const [productChoicesMap, setProductChoicesMap] = useState<Record<string, ProductChoice[]>>({})
   const [showProductSelector, setShowProductSelector] = useState<string | null>(null)
+  const [showPreview, setShowPreview] = useState(false)
+  const [showAddMenu, setShowAddMenu] = useState<string | null>(null)
 
   // 실시간 환율 가져오기
   useEffect(() => {
@@ -255,6 +259,8 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         setTaxPercent(parseFloat(data.tax_percent) || 10)
         setApplyDiscount(data.apply_discount || false)
         setDiscountPercent(parseFloat(data.discount_percent) || 0)
+        setDiscountAmount(parseFloat(data.discount) || 0)
+        setDiscountReason(data.discount_reason || '')
         setApplyProcessingFee(data.apply_processing_fee || false)
         setExchangeRate(parseFloat(data.exchange_rate) || 1300)
         setNotes(data.notes || '')
@@ -278,7 +284,9 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
   useEffect(() => {
     const calculatedSubtotal = invoiceItems.reduce((sum, item) => sum + item.total, 0)
     const calculatedTax = applyTax ? calculatedSubtotal * (taxPercent / 100) : 0
-    const calculatedDiscount = applyDiscount ? (calculatedSubtotal + calculatedTax) * (discountPercent / 100) : 0
+    const calculatedDiscount = applyDiscount 
+      ? (discountAmount > 0 ? discountAmount : (calculatedSubtotal + calculatedTax) * (discountPercent / 100))
+      : 0
     const amountAfterDiscount = calculatedSubtotal + calculatedTax - calculatedDiscount
     const calculatedProcessingFee = applyProcessingFee ? amountAfterDiscount * 0.05 : 0
     const calculatedTotal = amountAfterDiscount + calculatedProcessingFee
@@ -286,7 +294,25 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
     setSubtotal(calculatedSubtotal)
     setTax(calculatedTax)
     setTotal(calculatedTotal)
-  }, [invoiceItems, applyTax, taxPercent, applyDiscount, discountPercent, applyProcessingFee])
+  }, [invoiceItems, applyTax, taxPercent, applyDiscount, discountPercent, discountAmount, applyProcessingFee])
+
+
+  // 외부 클릭 시 드롭다운 메뉴 닫기
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (!target.closest('.add-menu-container')) {
+        setShowAddMenu(null)
+      }
+    }
+
+    if (showAddMenu) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [showAddMenu])
 
   // 상품 초이스 로드
   const loadProductChoices = async (productId: string) => {
@@ -324,6 +350,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         description: choice.choice_type,
         options: (choice.options || []).filter((opt: any) => opt.is_active !== false).map((opt: any) => ({
           id: opt.id,
+          option_key: opt.option_key, // option_key 추가
           name: opt.option_name_ko || opt.option_name,
           name_ko: opt.option_name_ko || opt.option_name,
           name_en: opt.option_name,
@@ -350,10 +377,68 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
     if (!item) return
 
     const channelId = defaultChannelId || customer.channel_id || ''
+    const participantType = updates.participantType || item.participantType || 'adult'
+    const date = updates.date || item.date
+    
+    // 참가자 유형이 변경된 경우 가격 다시 계산
+    if (updates.participantType && updates.participantType !== item.participantType && item.productId && channelId && date) {
+      const adults = participantType === 'adult' ? 1 : 0
+      const children = participantType === 'child' ? 1 : 0
+      const infants = participantType === 'infant' ? 1 : 0
+
+      try {
+        // dynamic_pricing에서 기본 가격과 choices_pricing 직접 조회
+        const { data: dynamicPricingData, error: pricingError } = await supabase
+          .from('dynamic_pricing')
+          .select('choices_pricing, adult_price, child_price, infant_price')
+          .eq('product_id', item.productId)
+          .eq('channel_id', channelId)
+          .eq('date', date)
+          .limit(1)
+          .single()
+
+        if (!pricingError && dynamicPricingData) {
+          let basePrice = 0
+          let choicePrice = 0
+
+          // 참가자 유형에 맞는 기본 가격 가져오기
+          if (participantType === 'adult') {
+            basePrice = parseFloat(dynamicPricingData.adult_price || 0)
+          } else if (participantType === 'child') {
+            basePrice = parseFloat(dynamicPricingData.child_price || 0)
+          } else {
+            basePrice = parseFloat(dynamicPricingData.infant_price || 0)
+          }
+
+          // choices_pricing에서 해당 초이스 옵션의 가격 직접 조회
+          if (item.choiceOptionId && dynamicPricingData.choices_pricing) {
+            const choicesPricing = typeof dynamicPricingData.choices_pricing === 'string'
+              ? JSON.parse(dynamicPricingData.choices_pricing)
+              : dynamicPricingData.choices_pricing
+
+            const choicePricing = choicesPricing[item.choiceOptionId]
+            if (choicePricing) {
+              if (participantType === 'adult') {
+                choicePrice = parseFloat(choicePricing.adult || choicePricing.adult_price || 0)
+              } else if (participantType === 'child') {
+                choicePrice = parseFloat(choicePricing.child || choicePricing.child_price || 0)
+              } else {
+                choicePrice = parseFloat(choicePricing.infant || choicePricing.infant_price || 0)
+              }
+            }
+          }
+
+          // 기본 가격 + 초이스 가격
+          updates.unitPrice = basePrice + choicePrice
+          updates.total = updates.unitPrice * item.quantity
+        }
+      } catch (error) {
+        console.error('참가자 유형 변경 시 동적 가격 조회 실패:', error)
+      }
+    }
     
     // 날짜가 변경된 경우 동적 가격 다시 계산
     if (updates.date && updates.date !== item.date && item.productId && channelId) {
-      const participantType = item.participantType || 'adult'
       const adults = participantType === 'adult' ? 1 : 0
       const children = participantType === 'child' ? 1 : 0
       const infants = participantType === 'infant' ? 1 : 0
@@ -459,7 +544,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       description: `${productName} (${participantLabel})`,
       unitPrice: basePrice,
       total: basePrice * quantity,
-      participantType: participantType as 'adult' | 'child' | 'infant',
+      participantType: participantType as 'adult' | 'child' | 'infant' | 'none',
       choiceId: undefined,
       choiceOptionId: undefined,
       choiceInfo: undefined,
@@ -483,33 +568,311 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
     const selectedOptions = item.selectedOptions || []
 
     let totalPrice = 0
+    let basePrice = 0
+    let choicePrice = 0
+
     if (channelId && item.date) {
       try {
-        const pricing = await NewDynamicPricingService.calculateDynamicPrice(
-          item.productId,
-          channelId,
-          item.date,
-          adults,
-          children,
-          infants,
-          selectedChoices,
-          selectedOptions
-        )
-        totalPrice = pricing.totalPrice
+        // dynamic_pricing에서 기본 가격과 choices_pricing 직접 조회
+        const { data: dynamicPricingData, error: pricingError } = await supabase
+          .from('dynamic_pricing')
+          .select('choices_pricing, adult_price, child_price, infant_price')
+          .eq('product_id', item.productId)
+          .eq('channel_id', channelId)
+          .eq('date', item.date)
+          .limit(1)
+          .single()
+
+        if (!pricingError && dynamicPricingData) {
+          // 참가자 유형에 맞는 기본 가격 가져오기
+          if (participantType === 'adult') {
+            basePrice = parseFloat(dynamicPricingData.adult_price || 0)
+          } else if (participantType === 'child') {
+            basePrice = parseFloat(dynamicPricingData.child_price || 0)
+          } else {
+            basePrice = parseFloat(dynamicPricingData.infant_price || 0)
+          }
+
+          // choices_pricing에서 해당 초이스 옵션의 가격 직접 조회
+          // 키 형식: {choice_id}+{option_key} (예: ec42a0fe-8747-4cfc-92b4-acaa51b75e5f+option_1)
+          if (dynamicPricingData.choices_pricing) {
+            const choicesPricing = typeof dynamicPricingData.choices_pricing === 'string'
+              ? JSON.parse(dynamicPricingData.choices_pricing)
+              : dynamicPricingData.choices_pricing
+
+            console.log('choices_pricing 데이터:', choicesPricing)
+            console.log('찾는 optionId:', optionId)
+            console.log('choices_pricing 키들:', Object.keys(choicesPricing || {}))
+
+            // 선택된 optionId에 해당하는 choice_id와 option_key 찾기
+            const choices = productChoicesMap[item.productId] || []
+            let choicePricing = null
+            let foundKey = null
+
+            // choices_pricing의 모든 키를 순회하면서 optionId와 매칭되는 키 찾기
+            const pricingKeys = Object.keys(choicesPricing || {})
+            
+            // 먼저 현재 로드된 choices에서 optionId로 옵션 찾기
+            let targetOption = null
+            let targetChoice = null
+            
+            for (const choice of choices) {
+              const option = optionId ? choice.options?.find((o: any) => o.id === optionId) : null
+              if (option) {
+                targetOption = option
+                targetChoice = choice
+                break
+              }
+            }
+
+            console.log('찾은 옵션:', targetOption, 'choice:', targetChoice)
+            console.log('choices_pricing 키들:', pricingKeys)
+            console.log('같은 상품의 모든 choice들:', choices.map(c => ({ id: c.id, name: c.name_ko || c.name, options: c.options?.map((o: any) => ({ id: o.id, option_key: o.option_key, name: o.name_ko || o.name })) })))
+
+            if (targetOption && targetChoice) {
+              // 방법 1: choice_id + option_key로 정확히 매칭 (가장 정확한 방법)
+              if (targetOption.option_key) {
+                const exactKey = `${targetChoice.id}+${targetOption.option_key}`
+                if (choicesPricing[exactKey]) {
+                  choicePricing = choicesPricing[exactKey]
+                  foundKey = exactKey
+                  console.log('정확한 매칭 (choice_id + option_key):', foundKey)
+                }
+              }
+
+              // 방법 2: choice_id로 시작하는 키들 중에서 option_key 매칭
+              if (!choicePricing && targetOption.option_key) {
+                const matchingKeys = pricingKeys.filter(key => key.startsWith(`${targetChoice.id}+`))
+                console.log('choice.id:', targetChoice.id, '일치하는 키들:', matchingKeys, '찾는 option_key:', targetOption.option_key)
+                
+                for (const key of matchingKeys) {
+                  const keyParts = key.split('+')
+                  if (keyParts.length === 2 && keyParts[1] === targetOption.option_key) {
+                    choicePricing = choicesPricing[key]
+                    foundKey = key
+                    console.log('choice_id + option_key로 찾음:', foundKey)
+                    break
+                  }
+                }
+              }
+
+              // 방법 3: 같은 상품의 모든 choice를 확인하여 option_key로 매칭
+              // choice_id가 변경되었을 수 있으므로, 같은 상품의 모든 choice를 확인
+              if (!choicePricing && targetOption.option_key) {
+                const allChoices = productChoicesMap[item.productId] || []
+                for (const choice of allChoices) {
+                  const matchingKeys = pricingKeys.filter(key => key.startsWith(`${choice.id}+`))
+                  if (matchingKeys.length > 0) {
+                    // 같은 choice의 옵션들 확인
+                    const sameChoiceOptions = choice.options || []
+                    const optionIndex = sameChoiceOptions.findIndex((o: any) => o.option_key === targetOption.option_key || o.id === optionId)
+                    
+                    if (optionIndex >= 0) {
+                      // option_1, option_2 형식의 키를 정렬하여 순서로 매칭
+                      const sortedKeys = matchingKeys.sort((a, b) => {
+                        const aNum = parseInt(a.split('+')[1]?.replace('option_', '') || '0')
+                        const bNum = parseInt(b.split('+')[1]?.replace('option_', '') || '0')
+                        return aNum - bNum
+                      })
+                      
+                      if (optionIndex < sortedKeys.length) {
+                        choicePricing = choicesPricing[sortedKeys[optionIndex]]
+                        foundKey = sortedKeys[optionIndex]
+                        console.log('다른 choice에서 옵션 순서로 매칭 성공:', foundKey, 'choice.id:', choice.id, 'optionIndex:', optionIndex, 'sortedKeys:', sortedKeys)
+                        break
+                      }
+                    }
+                  }
+                }
+              }
+
+              // 방법 4: option_key만으로 매칭 (choice_id가 변경되었을 수 있으므로)
+              // 하지만 같은 choice 내의 다른 옵션과 혼동될 수 있으므로 주의
+              if (!choicePricing && targetOption.option_key) {
+                // option_key로 직접 매칭 시도
+                for (const key of pricingKeys) {
+                  const keyParts = key.split('+')
+                  if (keyParts.length === 2 && keyParts[1] === targetOption.option_key) {
+                    choicePricing = choicesPricing[key]
+                    foundKey = key
+                    console.log('option_key만으로 찾음 (choice_id 무시):', foundKey)
+                    break
+                  }
+                }
+              }
+
+              // 방법 5: 같은 choice 내에서 옵션 순서로 매칭
+              // choices_pricing 키가 {choice_id}+option_1, {choice_id}+option_2 형식일 수 있음
+              if (!choicePricing) {
+                const sameChoiceOptions = targetChoice.options || []
+                const optionIndex = sameChoiceOptions.findIndex((o: any) => o.id === optionId)
+                
+                // choices_pricing에서 같은 choice_id로 시작하는 키들을 찾고, 순서로 매칭
+                const matchingKeys = pricingKeys.filter(key => key.startsWith(`${targetChoice.id}+`))
+                console.log('옵션 순서 매칭 시도 - optionIndex:', optionIndex, 'matchingKeys:', matchingKeys, 'sameChoiceOptions.length:', sameChoiceOptions.length)
+                
+                if (matchingKeys.length > 0 && optionIndex >= 0) {
+                  // option_1, option_2 형식의 키를 정렬하여 순서로 매칭
+                  const sortedKeys = matchingKeys.sort((a, b) => {
+                    const aNum = parseInt(a.split('+')[1]?.replace('option_', '') || '0')
+                    const bNum = parseInt(b.split('+')[1]?.replace('option_', '') || '0')
+                    return aNum - bNum
+                  })
+                  
+                  if (optionIndex < sortedKeys.length) {
+                    choicePricing = choicesPricing[sortedKeys[optionIndex]]
+                    foundKey = sortedKeys[optionIndex]
+                    console.log('옵션 순서로 매칭 성공:', foundKey, 'optionIndex:', optionIndex, 'sortedKeys:', sortedKeys)
+                  }
+                }
+              }
+
+              // 방법 6: 같은 choice에 옵션이 하나만 있고, choices_pricing에도 하나만 있으면 매칭
+              if (!choicePricing) {
+                const matchingKeys = pricingKeys.filter(key => key.startsWith(`${targetChoice.id}+`))
+                if (matchingKeys.length === 1 && targetChoice.options?.length === 1) {
+                  choicePricing = choicesPricing[matchingKeys[0]]
+                  foundKey = matchingKeys[0]
+                  console.log('단일 옵션 매칭으로 찾음:', foundKey)
+                }
+              }
+            }
+
+            console.log('찾은 choicePricing:', choicePricing, '키:', foundKey)
+
+            // choicePricing을 찾지 못했으면 calculateDynamicPrice 사용
+            if (!choicePricing) {
+              try {
+                console.log('calculateDynamicPrice로 초이스 가격 계산 시도')
+                // 먼저 기본 가격만 계산 (초이스 없이)
+                const pricingWithoutChoice = await NewDynamicPricingService.calculateDynamicPrice(
+                  item.productId,
+                  channelId,
+                  item.date,
+                  adults,
+                  children,
+                  infants,
+                  [], // 초이스 없이
+                  []
+                )
+                
+                // 초이스 포함 가격 계산
+                const pricingWithChoice = await NewDynamicPricingService.calculateDynamicPrice(
+                  item.productId,
+                  channelId,
+                  item.date,
+                  adults,
+                  children,
+                  infants,
+                  [optionId], // 선택된 초이스 옵션 ID
+                  []
+                )
+                
+                console.log('pricingWithoutChoice:', pricingWithoutChoice)
+                console.log('pricingWithChoice:', pricingWithChoice)
+                
+                // choicesPrice가 있으면 초이스 가격 사용
+                // choicesPrice는 참가자 수에 따라 계산된 총 가격이므로, 단일 참가자 기준으로 나누기
+                if (pricingWithChoice.choicesPrice > 0) {
+                  // 참가자 수에 따라 나누기
+                  const totalParticipants = adults + children + infants
+                  if (totalParticipants > 0) {
+                    choicePrice = pricingWithChoice.choicesPrice / totalParticipants
+                  } else {
+                    choicePrice = pricingWithChoice.choicesPrice
+                  }
+                  console.log('calculateDynamicPrice로 계산된 choicePrice:', choicePrice, 'choicesPrice:', pricingWithChoice.choicesPrice, 'totalParticipants:', totalParticipants)
+                } else {
+                  // choicesPrice가 0이면 totalPrice에서 basePrice를 빼서 초이스 가격 계산
+                  const diff = pricingWithChoice.totalPrice - pricingWithoutChoice.totalPrice
+                  if (diff > 0) {
+                    const totalParticipants = adults + children + infants
+                    if (totalParticipants > 0) {
+                      choicePrice = diff / totalParticipants
+                    } else {
+                      choicePrice = diff
+                    }
+                    console.log('totalPrice 차이로 계산된 choicePrice:', choicePrice, 'diff:', diff)
+                  }
+                }
+              } catch (error) {
+                console.error('calculateDynamicPrice 실패:', error)
+              }
+            } else {
+              // adult, child, infant 필드 또는 adult_price, child_price, infant_price 필드 사용
+              if (participantType === 'adult') {
+                choicePrice = parseFloat(choicePricing.adult || choicePricing.adult_price || 0)
+              } else if (participantType === 'child') {
+                choicePrice = parseFloat(choicePricing.child || choicePricing.child_price || 0)
+              } else {
+                choicePrice = parseFloat(choicePricing.infant || choicePricing.infant_price || 0)
+              }
+              console.log('계산된 choicePrice:', choicePrice, 'participantType:', participantType, 'choicePricing:', choicePricing)
+            }
+
+            if (!choicePricing && choicePrice === 0) {
+              console.warn('choicePricing을 찾을 수 없고 calculateDynamicPrice도 실패했습니다. optionId:', optionId, 'available keys:', Object.keys(choicesPricing || {}))
+            }
+          }
+        } else {
+          // dynamic_pricing이 없으면 calculateDynamicPrice 사용
+          const pricing = await NewDynamicPricingService.calculateDynamicPrice(
+            item.productId,
+            channelId,
+            item.date,
+            adults,
+            children,
+            infants,
+            [],
+            []
+          )
+          basePrice = pricing.basePrice
+        }
+
+        // 기본 가격 + 초이스 가격
+        totalPrice = basePrice + choicePrice
+        console.log('최종 가격 계산 - basePrice:', basePrice, 'choicePrice:', choicePrice, 'totalPrice:', totalPrice)
       } catch (error) {
         console.error('동적 가격 조회 실패:', error)
-        let basePrice = 0
-        const product = products.find(p => p.id === item.productId)
-        if (participantType === 'adult' && product?.adult_base_price) {
-          basePrice = product.adult_base_price
-        } else if (participantType === 'child' && product?.child_base_price) {
-          basePrice = product.child_base_price
-        } else if (participantType === 'infant' && product?.infant_base_price) {
-          basePrice = product.infant_base_price
-        } else {
-          basePrice = product?.adult_base_price || product?.base_price || 0
+        // Fallback: 전체 가격 계산
+        try {
+          const pricing = await NewDynamicPricingService.calculateDynamicPrice(
+            item.productId,
+            channelId,
+            item.date,
+            adults,
+            children,
+            infants,
+            selectedChoices,
+            selectedOptions
+          )
+          totalPrice = pricing.totalPrice
+          console.log('Fallback 가격 계산 결과:', totalPrice)
+        } catch (fallbackError) {
+          console.error('Fallback 가격 계산 실패:', fallbackError)
+          const product = products.find(p => p.id === item.productId)
+          if (participantType === 'adult' && product?.adult_base_price) {
+            totalPrice = product.adult_base_price
+          } else if (participantType === 'child' && product?.child_base_price) {
+            totalPrice = product.child_base_price
+          } else if (participantType === 'infant' && product?.infant_base_price) {
+            totalPrice = product.infant_base_price
+          } else {
+            totalPrice = product?.adult_base_price || product?.base_price || 0
+          }
         }
-        totalPrice = basePrice
+      }
+    } else {
+      // 채널 ID나 날짜가 없으면 기본 가격 사용
+      const product = products.find(p => p.id === item.productId)
+      if (participantType === 'adult' && product?.adult_base_price) {
+        totalPrice = product.adult_base_price
+      } else if (participantType === 'child' && product?.child_base_price) {
+        totalPrice = product.child_base_price
+      } else if (participantType === 'infant' && product?.infant_base_price) {
+        totalPrice = product.infant_base_price
+      } else {
+        totalPrice = product?.adult_base_price || product?.base_price || 0
       }
     }
 
@@ -518,6 +881,8 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
     const option = choice?.options.find(o => o.id === optionId)
     const choiceName = locale === 'ko' ? (choice?.name_ko || choice?.name) : (choice?.name_en || choice?.name)
     const optionName = locale === 'ko' ? (option?.name_ko || option?.name) : (option?.name_en || option?.name)
+
+    console.log('초이스 선택 완료 - optionId:', optionId, 'choicePrice:', choicePrice, 'totalPrice:', totalPrice, 'quantity:', item.quantity)
 
     handleUpdateInvoiceItem(itemId, {
       choiceId,
@@ -713,10 +1078,10 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
               <td class="text-right">${formatUSD(tax)}</td>
             </tr>
             ` : ''}
-            ${applyDiscount && discountPercent > 0 ? `
+            ${applyDiscount && (discountPercent > 0 || discountAmount > 0) ? `
             <tr>
-              <td colspan="5" class="text-right">${locale === 'ko' ? '할인' : 'Discount'} (${discountPercent}%):</td>
-              <td class="text-right" style="color: #dc2626;">-${formatUSD((subtotal + tax) * (discountPercent / 100))}</td>
+              <td colspan="5" class="text-right">${locale === 'ko' ? '할인' : 'Discount'}${discountPercent > 0 ? ` (${discountPercent}%)` : ''}${discountReason ? ` - ${discountReason}` : ''}:</td>
+              <td class="text-right" style="color: #dc2626;">-${formatUSD(discountAmount > 0 ? discountAmount : (subtotal + tax) * (discountPercent / 100))}</td>
             </tr>
             ` : ''}
             ${applyProcessingFee ? `
@@ -761,10 +1126,11 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         tax,
         tax_percent: applyTax ? taxPercent : 0,
         apply_tax: applyTax,
-        discount: applyDiscount ? (subtotal + tax) * (discountPercent / 100) : 0,
+        discount: applyDiscount ? (discountAmount > 0 ? discountAmount : (subtotal + tax) * (discountPercent / 100)) : 0,
         discount_percent: applyDiscount ? discountPercent : 0,
+        discount_reason: applyDiscount ? discountReason : '',
         apply_discount: applyDiscount,
-        processing_fee: applyProcessingFee ? (subtotal + tax - (applyDiscount ? (subtotal + tax) * (discountPercent / 100) : 0)) * 0.05 : 0,
+        processing_fee: applyProcessingFee ? (subtotal + tax - (applyDiscount ? (discountAmount > 0 ? discountAmount : (subtotal + tax) * (discountPercent / 100)) : 0)) * 0.05 : 0,
         apply_processing_fee: applyProcessingFee,
         total,
         exchange_rate: exchangeRate,
@@ -853,10 +1219,11 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
           tax,
           tax_percent: applyTax ? taxPercent : 0,
           apply_tax: applyTax,
-          discount: applyDiscount ? (subtotal + tax) * (discountPercent / 100) : 0,
+          discount: applyDiscount ? (discountAmount > 0 ? discountAmount : (subtotal + tax) * (discountPercent / 100)) : 0,
           discount_percent: applyDiscount ? discountPercent : 0,
+          discount_reason: applyDiscount ? discountReason : '',
           apply_discount: applyDiscount,
-          processing_fee: applyProcessingFee ? (subtotal + tax - (applyDiscount ? (subtotal + tax) * (discountPercent / 100) : 0)) * 0.05 : 0,
+          processing_fee: applyProcessingFee ? (subtotal + tax - (applyDiscount ? (discountAmount > 0 ? discountAmount : (subtotal + tax) * (discountPercent / 100)) : 0)) * 0.05 : 0,
           apply_processing_fee: applyProcessingFee,
           total,
           exchange_rate: exchangeRate,
@@ -966,26 +1333,29 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
 
           {/* 인보이스 항목 테이블 */}
           <div className="mb-6">
-            <table className="w-full border-collapse">
+            <table className="w-full border-collapse table-fixed">
               <thead>
                 <tr className="bg-gray-50">
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase w-24">
+                  <th className="px-2 py-3 text-center text-xs font-medium text-gray-700 uppercase" style={{ width: '6%' }}>
+                    {/* 추가/삭제 버튼 */}
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase" style={{ width: '12%' }}>
                     {locale === 'ko' ? '날짜' : 'Date'}
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase" style={{ width: '30%' }}>
                     {locale === 'ko' ? '항목' : 'Item'}
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase w-20">
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase" style={{ width: '11%' }}>
+                    {locale === 'ko' ? '참가자 유형' : 'Participant'}
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase" style={{ width: '9%' }}>
                     {locale === 'ko' ? '수량' : 'Quantity'}
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase w-32">
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase" style={{ width: '13%' }}>
                     {locale === 'ko' ? '단가' : 'Unit Price'}
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase w-32">
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase" style={{ width: '19%' }}>
                     {locale === 'ko' ? '합계' : 'Total'}
-                  </th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase w-16">
-                    {/* 삭제 버튼 */}
                   </th>
                 </tr>
               </thead>
@@ -997,6 +1367,53 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
 
                   return (
                     <tr key={item.id} className="border-b">
+                      {/* 추가/삭제 버튼 */}
+                      <td className="px-1 py-3 text-center">
+                        <div className="flex items-center justify-center space-x-1">
+                          <div className="relative add-menu-container">
+                            <button
+                              onClick={() => setShowAddMenu(showAddMenu === item.id ? null : item.id)}
+                              className="p-1.5 text-gray-400 hover:text-blue-600 transition-colors rounded hover:bg-blue-50"
+                              title={locale === 'ko' ? '항목 추가' : 'Add Item'}
+                            >
+                              <Plus size={14} />
+                            </button>
+                            {showAddMenu === item.id && (
+                              <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[160px]">
+                                <button
+                                  onClick={() => {
+                                    handleAddInvoiceItem()
+                                    setShowAddMenu(null)
+                                  }}
+                                  className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-green-50 hover:text-green-600 transition-colors flex items-center space-x-2"
+                                >
+                                  <Plus size={14} className="text-green-600" />
+                                  <span>{locale === 'ko' ? '상품 추가' : 'Add Product'}</span>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    handleAddStandaloneOptionItem()
+                                    setShowAddMenu(null)
+                                  }}
+                                  className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-purple-50 hover:text-purple-600 transition-colors flex items-center space-x-2 border-t border-gray-100"
+                                >
+                                  <Package size={14} className="text-purple-600" />
+                                  <span>{locale === 'ko' ? '통합 옵션 추가' : 'Add Integrated Option'}</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          {invoiceItems.length > 1 && (
+                            <button
+                              onClick={() => handleRemoveInvoiceItem(item.id)}
+                              className="p-1.5 text-gray-400 hover:text-red-600 transition-colors rounded hover:bg-red-50"
+                              title={locale === 'ko' ? '삭제' : 'Remove'}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
                       {/* 날짜 */}
                       <td className="px-4 py-3 text-sm">
                         <input
@@ -1143,6 +1560,32 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                         </div>
                       </td>
 
+                      {/* 참가자 유형 */}
+                      <td className="px-4 py-3 text-sm text-center">
+                        {item.itemType === 'product' ? (
+                          <select
+                            value={item.participantType || 'adult'}
+                            onChange={async (e) => {
+                              const newParticipantType = e.target.value as 'adult' | 'child' | 'infant' | 'none'
+                              await handleUpdateInvoiceItem(item.id, { participantType: newParticipantType })
+                            }}
+                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                          >
+                            <option value="adult">{locale === 'ko' ? '성인' : 'Adult'}</option>
+                            <option value="child">{locale === 'ko' ? '아동' : 'Child'}</option>
+                            <option value="infant">{locale === 'ko' ? '유아' : 'Infant'}</option>
+                            <option value="none">{locale === 'ko' ? '없음' : 'None'}</option>
+                          </select>
+                        ) : (
+                          <span className="text-gray-400 text-xs">
+                            {item.participantType === 'adult' ? (locale === 'ko' ? '성인' : 'Adult') :
+                             item.participantType === 'child' ? (locale === 'ko' ? '아동' : 'Child') :
+                             item.participantType === 'infant' ? (locale === 'ko' ? '유아' : 'Infant') :
+                             (locale === 'ko' ? '없음' : 'None')}
+                          </span>
+                        )}
+                      </td>
+
                       {/* 수량 */}
                       <td className="px-4 py-3 text-sm text-right">
                         <input
@@ -1181,65 +1624,22 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                       <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
                         {formatUSD(item.total)}
                       </td>
-
-                      {/* 액션 버튼 */}
-                      <td className="px-4 py-3 text-center">
-                        <div className="flex items-center justify-center space-x-1">
-                          {item.itemType === 'product' && hasOptions && (
-                            <button
-                              onClick={() => handleAddOptionItem(item)}
-                              className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                              title={locale === 'ko' ? '통합 옵션 추가' : 'Add Integrated Option'}
-                            >
-                              <Package size={14} className="text-gray-400" />
-                            </button>
-                          )}
-                          {index === invoiceItems.length - 1 && (
-                            <>
-                              <button
-                                onClick={handleAddInvoiceItem}
-                                className="p-1 text-gray-400 hover:text-green-600 transition-colors"
-                                title={locale === 'ko' ? '상품 항목 추가' : 'Add Product Item'}
-                              >
-                                <Plus size={14} />
-                              </button>
-                              <button
-                                onClick={handleAddStandaloneOptionItem}
-                                className="p-1 text-gray-400 hover:text-purple-600 transition-colors"
-                                title={locale === 'ko' ? '통합 옵션만 추가' : 'Add Option Only'}
-                              >
-                                <Plus size={14} className="text-purple-600" />
-                              </button>
-                            </>
-                          )}
-                          {invoiceItems.length > 1 && (
-                            <button
-                              onClick={() => handleRemoveInvoiceItem(item.id)}
-                              className="p-1 text-gray-400 hover:text-red-600 transition-colors"
-                              title={locale === 'ko' ? '삭제' : 'Remove'}
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </div>
-                      </td>
                     </tr>
                   )
                 })}
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={5} className="px-4 py-3 text-sm font-medium text-gray-700 text-right">
+                  <td colSpan={6} className="px-4 py-3 text-sm font-medium text-gray-700 text-right">
                     {locale === 'ko' ? '소계' : 'Subtotal'}
                   </td>
                   <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
                     {formatUSD(subtotal)}
                   </td>
-                  <td className="px-4 py-3"></td>
                 </tr>
                 {/* 세금 */}
                 <tr>
-                  <td colSpan={2} className="px-4 py-3 text-sm text-gray-700">
+                  <td colSpan={3} className="px-4 py-3 text-sm text-gray-700">
                     <div className="flex items-center space-x-2">
                       <input
                         type="checkbox"
@@ -1275,17 +1675,15 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                       </div>
                     )}
                   </td>
-                  <td colSpan={1} className="px-4 py-3"></td>
                   <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
                     {applyTax && taxPercent > 0 && (
                       <span>{formatUSD(tax)}</span>
                     )}
                   </td>
-                  <td className="px-4 py-3"></td>
                 </tr>
                 {/* 할인 */}
                 <tr>
-                  <td colSpan={2} className="px-4 py-3 text-sm text-gray-700">
+                  <td colSpan={3} className="px-4 py-3 text-sm text-gray-700">
                     <div className="flex items-center space-x-2">
                       <input
                         type="checkbox"
@@ -1294,6 +1692,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                           setApplyDiscount(e.target.checked)
                           if (!e.target.checked) {
                             setDiscountPercent(0)
+                            setDiscountAmount(0)
                           }
                         }}
                         className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
@@ -1305,13 +1704,36 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                   </td>
                   <td colSpan={2} className="px-4 py-3">
                     {applyDiscount && (
-                      <div className="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        value={discountReason}
+                        onChange={(e) => setDiscountReason(e.target.value)}
+                        placeholder={locale === 'ko' ? '할인 이유 (선택사항)' : 'Discount reason (optional)'}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                      />
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {applyDiscount && (
+                      <div className="flex items-center justify-end space-x-2">
                         <input
                           type="number"
                           min="0"
                           max="100"
                           value={discountPercent}
-                          onChange={(e) => setDiscountPercent(parseFloat(e.target.value) || 0)}
+                          onChange={(e) => {
+                            const newPercent = parseFloat(e.target.value) || 0
+                            setDiscountPercent(newPercent)
+                            // 퍼센테이지 입력 시 할인 금액 자동 계산
+                            if (newPercent > 0) {
+                              const calculatedSubtotal = invoiceItems.reduce((sum, item) => sum + item.total, 0)
+                              const calculatedTax = applyTax ? calculatedSubtotal * (taxPercent / 100) : 0
+                              const calculatedDiscount = (calculatedSubtotal + calculatedTax) * (newPercent / 100)
+                              setDiscountAmount(calculatedDiscount)
+                            } else {
+                              setDiscountAmount(0)
+                            }
+                          }}
                           className="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-right"
                           placeholder="0"
                         />
@@ -1319,17 +1741,43 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                       </div>
                     )}
                   </td>
-                  <td colSpan={1} className="px-4 py-3"></td>
-                  <td className="px-4 py-3 text-sm font-medium text-red-600 text-right">
-                    {applyDiscount && discountPercent > 0 && (
-                      <span>-{formatUSD((subtotal + tax) * (discountPercent / 100))}</span>
+                  <td className="px-4 py-3">
+                    {applyDiscount && (
+                      <div className="flex items-center justify-end">
+                        <div className="relative">
+                          <span className="absolute left-2 top-1/2 transform -translate-y-1/2 text-red-600 text-sm font-medium">-$</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={(() => {
+                              if (discountAmount > 0) {
+                                return discountAmount.toFixed(2)
+                              } else if (discountPercent > 0) {
+                                const calculatedSubtotal = invoiceItems.reduce((sum, item) => sum + item.total, 0)
+                                const calculatedTax = applyTax ? calculatedSubtotal * (taxPercent / 100) : 0
+                                const calculatedDiscount = (calculatedSubtotal + calculatedTax) * (discountPercent / 100)
+                                return calculatedDiscount.toFixed(2)
+                              }
+                              return ''
+                            })()}
+                            onChange={(e) => {
+                              const newAmount = parseFloat(e.target.value) || 0
+                              setDiscountAmount(newAmount)
+                              setDiscountPercent(0) // 금액 입력 시 퍼센테이지는 0으로
+                            }}
+                            className="w-24 pl-8 pr-2 py-1 border border-gray-300 rounded text-right text-sm text-red-600 focus:ring-2 focus:ring-red-500"
+                            placeholder="0.00"
+                          />
+                        </div>
+                      </div>
                     )}
                   </td>
                   <td className="px-4 py-3"></td>
                 </tr>
                 {/* 신용카드 처리 수수료 */}
                 <tr>
-                  <td colSpan={2} className="px-4 py-3 text-sm text-gray-700">
+                  <td colSpan={3} className="px-4 py-3 text-sm text-gray-700">
                     <div className="flex items-center space-x-2">
                       <input
                         type="checkbox"
@@ -1342,16 +1790,15 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                       </label>
                     </div>
                   </td>
-                  <td colSpan={3} className="px-4 py-3"></td>
+                  <td colSpan={2} className="px-4 py-3"></td>
                   <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
                     {applyProcessingFee && (
                       <span>{formatUSD(total - (subtotal + tax - (applyDiscount ? (subtotal + tax) * (discountPercent / 100) : 0)))}</span>
                     )}
                   </td>
-                  <td></td>
                 </tr>
                 <tr className="bg-blue-50">
-                  <td colSpan={5} className="px-4 py-3 text-lg font-bold text-gray-900 text-right">
+                  <td colSpan={6} className="px-4 py-3 text-lg font-bold text-gray-900 text-right">
                     {locale === 'ko' ? '총액' : 'Total'}
                   </td>
                   <td className="px-4 py-3 text-lg font-bold text-blue-600 text-right">
@@ -1364,54 +1811,59 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                       )}
                     </div>
                   </td>
-                  <td></td>
                 </tr>
                 {/* 환율 추가 버튼 */}
                 <tr>
-                  <td colSpan={3} className="px-4 py-2">
-                    <div className="flex items-center space-x-2">
-                      <label className="text-sm text-gray-700 whitespace-nowrap">
-                        {locale === 'ko' ? '송금보낼때 환율 (1 USD =' : 'Transfer Exchange Rate (1 USD ='}
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={exchangeRate}
-                        onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 1300)}
-                        className="w-24 px-2 py-1 border border-gray-300 rounded text-sm text-right"
-                        placeholder="1300"
-                        title={locale === 'ko' ? '실시간 환율이 자동으로 로드됩니다. 수동으로 수정할 수 있습니다.' : 'Real-time exchange rate is loaded automatically. You can manually adjust it.'}
-                      />
-                      <span className="text-sm text-gray-700 whitespace-nowrap">KRW)</span>
-                      <button
-                        onClick={async () => {
-                          try {
-                            const response = await fetch('/api/exchange-rate')
-                            const data = await response.json()
-                            if (data.rate) {
-                              setExchangeRate(Math.round(data.rate * 100) / 100)
-                            }
-                          } catch (error) {
-                            console.error('환율 새로고침 실패:', error)
-                          }
-                        }}
-                        className="ml-2 px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
-                        title={locale === 'ko' ? '환율 새로고침' : 'Refresh exchange rate'}
-                      >
-                        🔄
-                      </button>
-                    </div>
-                  </td>
-                  <td colSpan={4} className="px-4 py-2">
+                  <td colSpan={7} className="px-4 py-2 text-center">
                     <button
                       onClick={() => setShowKRW(!showKRW)}
-                      className="w-full flex items-center justify-center space-x-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm transition-colors"
+                      className="flex items-center justify-center space-x-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm transition-colors"
                     >
                       <span>{showKRW ? (locale === 'ko' ? '환율 숨기기' : 'Hide Exchange Rate') : (locale === 'ko' ? '환율 추가' : 'Show Exchange Rate')}</span>
                     </button>
                   </td>
                 </tr>
+                {/* 환율 정보 (showKRW가 true일 때만 표시) */}
+                {showKRW && (
+                  <tr>
+                    <td colSpan={3} className="px-4 py-2">
+                      <div className="flex items-center space-x-2">
+                        <label className="text-sm text-gray-700 whitespace-nowrap">
+                          {locale === 'ko' ? '송금보낼때 환율 (1 USD =' : 'Transfer Exchange Rate (1 USD ='}
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={exchangeRate}
+                          onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 1300)}
+                          className="w-24 px-2 py-1 border border-gray-300 rounded text-sm text-right"
+                          placeholder="1300"
+                          title={locale === 'ko' ? '실시간 환율이 자동으로 로드됩니다. 수동으로 수정할 수 있습니다.' : 'Real-time exchange rate is loaded automatically. You can manually adjust it.'}
+                        />
+                        <span className="text-sm text-gray-700 whitespace-nowrap">KRW)</span>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const response = await fetch('/api/exchange-rate')
+                              const data = await response.json()
+                              if (data.rate) {
+                                setExchangeRate(Math.round(data.rate * 100) / 100)
+                              }
+                            } catch (error) {
+                              console.error('환율 새로고침 실패:', error)
+                            }
+                          }}
+                          className="ml-2 px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
+                          title={locale === 'ko' ? '환율 새로고침' : 'Refresh exchange rate'}
+                        >
+                          🔄
+                        </button>
+                      </div>
+                    </td>
+                    <td colSpan={3} className="px-4 py-2"></td>
+                  </tr>
+                )}
               </tfoot>
             </table>
           </div>
@@ -1442,6 +1894,17 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
           </div>
           <div className="flex items-center space-x-3">
             <button
+              onClick={() => setShowPreview(true)}
+              disabled={!invoiceItems.some(item => 
+                (item.itemType === 'product' && item.productId) || 
+                (item.itemType === 'option' && item.optionId)
+              )}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+            >
+              <Eye className="h-4 w-4" />
+              <span>{locale === 'ko' ? '미리보기' : 'Preview'}</span>
+            </button>
+            <button
               onClick={onClose}
               className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
             >
@@ -1471,6 +1934,41 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
           </div>
         </div>
       </div>
+
+      {/* 인보이스 미리보기 모달 */}
+      {showPreview && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-2xl font-bold text-gray-900">
+                {locale === 'ko' ? '인보이스 미리보기' : 'Invoice Preview'}
+              </h2>
+              <button
+                onClick={() => setShowPreview(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+              <iframe
+                srcDoc={generateInvoiceHTML()}
+                className="w-full h-full min-h-[600px] border border-gray-300 rounded bg-white"
+                title={locale === 'ko' ? '인보이스 미리보기' : 'Invoice Preview'}
+                style={{ height: 'calc(90vh - 200px)' }}
+              />
+            </div>
+            <div className="flex items-center justify-end p-6 border-t bg-white">
+              <button
+                onClick={() => setShowPreview(false)}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+              >
+                {locale === 'ko' ? '닫기' : 'Close'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 상품 선택 모달 */}
       {showProductSelector && (

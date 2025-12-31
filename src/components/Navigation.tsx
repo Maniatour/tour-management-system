@@ -29,8 +29,8 @@ const NavigationContent = () => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   const [showCart, setShowCart] = useState(false)
   
-  // Admin 페이지에서는 네비게이션을 숨김
-  if (pathname.startsWith(`/${locale}/admin`)) {
+  // Admin, Photos 페이지에서는 네비게이션을 숨김
+  if (pathname.startsWith(`/${locale}/admin`) || pathname.startsWith(`/${locale}/photos/`)) {
     return null
   }
 

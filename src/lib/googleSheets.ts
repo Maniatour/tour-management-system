@@ -227,38 +227,66 @@ const readGoogleSheetInChunks = async (
     const allData: Record<string, unknown>[] = []
     let headers: string[] = []
     
-    // 첫 번째 청크로 헤더와 데이터 읽기 (타임아웃 60초로 증가)
+    // 첫 번째 청크로 헤더와 데이터 읽기 (최적화: 작은 청크로 시작)
     // 컬럼 범위를 AZ(52개)로 제한하여 API 응답 속도 향상
     const optimizedEndCol = endCol === 'ZZ' ? 'AZ' : endCol
-    const firstChunkRange = `${sheetName}!${startCol}1:${optimizedEndCol}${Math.min(chunkSize, totalRows)}`
-    console.log(`🎯 첫 번째 청크 읽기: ${firstChunkRange}`)
+    // 첫 번째 청크는 헤더 + 처음 500행만 읽어서 타임아웃 방지
+    const firstChunkRows = Math.min(500, chunkSize, totalRows)
+    const firstChunkRange = `${sheetName}!${startCol}1:${optimizedEndCol}${firstChunkRows}`
+    console.log(`🎯 첫 번째 청크 읽기: ${firstChunkRange} (최적화: ${firstChunkRows}행)`)
     
-    const firstChunkPromise = sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: firstChunkRange,
-      valueRenderOption: 'UNFORMATTED_VALUE',
-      dateTimeRenderOption: 'FORMATTED_STRING'
-    })
-    
-    // 60초 타임아웃으로 첫 번째 청크 읽기 (대용량 시트 지원)
-    let firstChunkTimeoutId: NodeJS.Timeout | null = null
-    const firstChunkTimeout = new Promise<never>((_, reject) => {
-      firstChunkTimeoutId = setTimeout(() => reject(new Error('First chunk timeout after 60 seconds')), 60000)
-    })
-    
+    // 재시도 로직이 포함된 첫 번째 청크 읽기
     let firstResponse: GoogleSheetsResponse
-    try {
-      firstResponse = await Promise.race([firstChunkPromise, firstChunkTimeout]) as GoogleSheetsResponse
-      // 성공 시 타임아웃 정리
-      if (firstChunkTimeoutId) clearTimeout(firstChunkTimeoutId)
-    } catch (raceError) {
-      // 타임아웃 정리
-      if (firstChunkTimeoutId) clearTimeout(firstChunkTimeoutId)
-      // 타임아웃 에러를 명확하게 처리
-      if (raceError instanceof Error && raceError.message.includes('timeout')) {
-        throw new Error(`첫 번째 청크 읽기 타임아웃: ${raceError.message}`)
+    let retryCount = 0
+    const maxRetries = 2
+    
+    while (retryCount <= maxRetries) {
+      try {
+        const firstChunkPromise = sheets.spreadsheets.values.get({
+          spreadsheetId,
+          range: firstChunkRange,
+          valueRenderOption: 'UNFORMATTED_VALUE',
+          dateTimeRenderOption: 'FORMATTED_STRING'
+        })
+        
+        // 120초 타임아웃으로 첫 번째 청크 읽기 (대용량 시트 지원)
+        let firstChunkTimeoutId: NodeJS.Timeout | null = null
+        const firstChunkTimeout = new Promise<never>((_, reject) => {
+          firstChunkTimeoutId = setTimeout(() => reject(new Error('First chunk timeout after 120 seconds')), 120000)
+        })
+        
+        try {
+          firstResponse = await Promise.race([firstChunkPromise, firstChunkTimeout]) as GoogleSheetsResponse
+          // 성공 시 타임아웃 정리
+          if (firstChunkTimeoutId) clearTimeout(firstChunkTimeoutId)
+          break // 성공하면 루프 탈출
+        } catch (raceError) {
+          // 타임아웃 정리
+          if (firstChunkTimeoutId) clearTimeout(firstChunkTimeoutId)
+          
+          // 마지막 재시도인 경우 에러 던지기
+          if (retryCount >= maxRetries) {
+            if (raceError instanceof Error && raceError.message.includes('timeout')) {
+              throw new Error(`첫 번째 청크 읽기 타임아웃: ${raceError.message}`)
+            }
+            throw raceError
+          }
+          
+          // 재시도 전 대기
+          retryCount++
+          const waitTime = retryCount * 2000 // 2초, 4초 대기
+          console.log(`⏳ 타임아웃 발생, ${waitTime}ms 후 재시도 (${retryCount}/${maxRetries})...`)
+          await new Promise(resolve => setTimeout(resolve, waitTime))
+        }
+      } catch (error) {
+        if (retryCount >= maxRetries) {
+          throw error
+        }
+        retryCount++
+        const waitTime = retryCount * 2000
+        console.log(`⏳ 에러 발생, ${waitTime}ms 후 재시도 (${retryCount}/${maxRetries})...`)
+        await new Promise(resolve => setTimeout(resolve, waitTime))
       }
-      throw raceError
     }
     
     if (!firstResponse.data.values || firstResponse.data.values.length === 0) {
@@ -283,7 +311,8 @@ const readGoogleSheetInChunks = async (
     console.log(`✅ 첫 번째 청크 완료: ${firstChunkData.length}개 행`)
     
     // 나머지 청크들 처리 (병렬 처리로 최적화)
-    const remainingRows = totalRows - Math.min(chunkSize, totalRows)
+    // 첫 번째 청크에서 이미 읽은 행 수를 제외
+    const remainingRows = totalRows - firstChunkRows
     if (remainingRows > 0) {
       const totalChunks = Math.ceil(remainingRows / chunkSize)
       console.log(`📊 남은 청크 수: ${totalChunks}개`)
@@ -291,7 +320,7 @@ const readGoogleSheetInChunks = async (
       // 병렬 처리를 위한 청크 범위 생성 (최적화된 컬럼 범위 사용)
       const chunkRanges: { range: string; index: number }[] = []
       for (let i = 0; i < totalChunks; i++) {
-        const startRow = chunkSize + (i * chunkSize) + 1
+        const startRow = firstChunkRows + (i * chunkSize) + 1
         const endRow = Math.min(startRow + chunkSize - 1, totalRows)
         chunkRanges.push({
           range: `${sheetName}!${startCol}${startRow}:${optimizedEndCol}${endRow}`,
@@ -379,7 +408,7 @@ export const readGoogleSheet = async (spreadsheetId: string, range: string, chun
     const sheets = google.sheets({ 
       version: 'v4', 
       auth,
-      timeout: 60000, // 60초로 증가 (대용량 시트 지원)
+      timeout: 120000, // 120초로 증가 (대용량 시트 및 느린 네트워크 지원)
     })
 
     // 청크 단위 처리 여부 확인

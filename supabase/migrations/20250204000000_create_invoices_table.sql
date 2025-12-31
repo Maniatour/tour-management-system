@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS invoices (
   apply_tax BOOLEAN DEFAULT false,
   discount DECIMAL(10,2) NOT NULL DEFAULT 0,
   discount_percent DECIMAL(5,2) DEFAULT 0,
+  discount_reason TEXT,
   apply_discount BOOLEAN DEFAULT false,
   processing_fee DECIMAL(10,2) NOT NULL DEFAULT 0,
   apply_processing_fee BOOLEAN DEFAULT false,
@@ -42,17 +43,18 @@ CREATE TABLE IF NOT EXISTS invoices (
   created_by TEXT
 );
 
--- Create indexes
-CREATE INDEX idx_invoices_customer_id ON invoices(customer_id);
-CREATE INDEX idx_invoices_invoice_number ON invoices(invoice_number);
-CREATE INDEX idx_invoices_invoice_date ON invoices(invoice_date);
-CREATE INDEX idx_invoices_status ON invoices(status);
-CREATE INDEX idx_invoices_created_at ON invoices(created_at DESC);
+-- Create indexes (if not exists)
+CREATE INDEX IF NOT EXISTS idx_invoices_customer_id ON invoices(customer_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_invoice_number ON invoices(invoice_number);
+CREATE INDEX IF NOT EXISTS idx_invoices_invoice_date ON invoices(invoice_date);
+CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
+CREATE INDEX IF NOT EXISTS idx_invoices_created_at ON invoices(created_at DESC);
 
 -- Enable RLS
 ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies (allow all for now, can be restricted later)
+DROP POLICY IF EXISTS "Allow all access to invoices" ON invoices;
 CREATE POLICY "Allow all access to invoices" ON invoices
   FOR ALL
   USING (true)
@@ -67,6 +69,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS update_invoices_updated_at ON invoices;
 CREATE TRIGGER update_invoices_updated_at
   BEFORE UPDATE ON invoices
   FOR EACH ROW

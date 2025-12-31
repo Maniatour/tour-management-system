@@ -59,6 +59,13 @@ export default function TourScheduleSection({
   tourGuideId,
   assistantId
 }: TourScheduleSectionProps) {
+  // 디버깅: locale 값 확인
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.log('TourScheduleSection locale:', locale)
+    }
+  }, [locale])
+  
   const [schedules, setSchedules] = useState<ScheduleItem[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedSchedules, setExpandedSchedules] = useState<Set<string>>(new Set())
@@ -80,7 +87,14 @@ export default function TourScheduleSection({
 
   // 언어별 텍스트 가져오기 함수
   const getText = (koText: string, enText?: string) => {
-    return locale === 'ko' ? koText : (enText || koText)
+    // locale 값을 정규화 (공백 제거, 소문자 변환)
+    const normalizedLocale = locale?.trim().toLowerCase()
+    
+    if (normalizedLocale === 'ko') {
+      return koText
+    }
+    // locale이 'en'이거나 다른 값일 때는 영문 반환 (없으면 한글 fallback)
+    return enText || koText
   }
 
   const fetchSchedules = useCallback(async () => {
@@ -91,9 +105,34 @@ export default function TourScheduleSection({
       let query = supabase
         .from('product_schedules')
         .select(`
-          *,
+          id,
+          product_id,
+          day_number,
+          start_time,
+          end_time,
+          duration_minutes,
+          is_break,
+          is_meal,
+          is_transport,
+          is_tour,
+          latitude,
+          longitude,
+          show_to_customers,
+          title_ko,
+          title_en,
+          description_ko,
+          description_en,
+          location_ko,
+          location_en,
+          guide_notes_ko,
+          guide_notes_en,
+          thumbnail_url,
+          order_index,
           two_guide_schedule,
-          guide_driver_schedule
+          guide_driver_schedule,
+          google_maps_link,
+          created_at,
+          updated_at
         `)
         .eq('product_id', productId)
       
@@ -108,6 +147,33 @@ export default function TourScheduleSection({
         .order('start_time', { ascending: true })
       
       if (error) throw error
+      
+      // 디버깅: 개발 환경에서만 로그 출력
+      if (process.env.NODE_ENV === 'development' && data && data.length > 0) {
+        // title이 있는 첫 번째 일정 찾기
+        const scheduleWithTitle = data.find(s => s.title_ko || s.title_en) || data[0]
+        console.log('TourScheduleSection - Fetched schedules:', {
+          count: data.length,
+          locale: locale,
+          sampleSchedule: {
+            id: scheduleWithTitle.id,
+            title_ko: scheduleWithTitle.title_ko,
+            title_en: scheduleWithTitle.title_en,
+            title_ko_length: scheduleWithTitle.title_ko?.length || 0,
+            title_en_length: scheduleWithTitle.title_en?.length || 0,
+            title_ko_exists: !!scheduleWithTitle.title_ko,
+            title_en_exists: !!scheduleWithTitle.title_en,
+            description_ko: scheduleWithTitle.description_ko?.substring(0, 30),
+            description_en: scheduleWithTitle.description_en?.substring(0, 30),
+          },
+          allTitles: data.slice(0, 5).map(s => ({
+            id: s.id,
+            title_ko: s.title_ko,
+            title_en: s.title_en
+          }))
+        })
+      }
+      
       setSchedules(data || [])
     } catch (error) {
       console.error('스케줄 로드 오류:', error)
@@ -126,9 +192,38 @@ export default function TourScheduleSection({
     return time.substring(0, 5) // HH:MM 형식으로 변환
   }
 
-  const getLocalizedText = (ko: string | null, en: string | null, fallback: string | null) => {
-    if (locale === 'en' && en) return en
-    if (ko) return ko
+  const getLocalizedText = (ko: string | null, en: string | null, fallback: string | null, fieldName?: string) => {
+    // locale 값을 정규화 (공백 제거, 소문자 변환)
+    const normalizedLocale = locale?.trim().toLowerCase()
+    
+    // 디버깅: 개발 환경에서만 로그 출력 (title 필드에 대해서만)
+    if (process.env.NODE_ENV === 'development' && normalizedLocale === 'en' && fieldName === 'title') {
+      console.log('getLocalizedText [title]:', { 
+        fieldName,
+        locale: normalizedLocale, 
+        ko: ko || '(null)',
+        en: en || '(null)',
+        koExists: !!ko,
+        enExists: !!en,
+        koLength: ko?.length || 0,
+        enLength: en?.length || 0,
+        koTrimmed: ko?.trim() || '',
+        enTrimmed: en?.trim() || ''
+      })
+    }
+    
+    // locale이 'en'일 때는 영문 우선
+    if (normalizedLocale === 'en') {
+      // 영문이 있고 빈 문자열이 아닐 때
+      if (en && en.trim() !== '') return en.trim()
+      // 영문이 없으면 한글 fallback
+      if (ko && ko.trim() !== '') return ko.trim()
+      return fallback || ''
+    }
+    // locale이 'ko'이거나 다른 값일 때는 한글 우선
+    if (ko && ko.trim() !== '') return ko.trim()
+    // 한글이 없으면 영문 fallback
+    if (en && en.trim() !== '') return en.trim()
     return fallback || ''
   }
 
@@ -538,7 +633,7 @@ export default function TourScheduleSection({
                           
                           {/* 제목 - 별도 줄 */}
                           <h5 className="font-medium text-gray-900 text-sm sm:text-base mb-2 break-words">
-                            {getLocalizedText(schedule.title_ko, schedule.title_en, '')}
+                            {getLocalizedText(schedule.title_ko, schedule.title_en, '', 'title')}
                           </h5>
                           
                           {/* 다음 목적지 표시 (자신의 일정 보기 모드일 때만) */}

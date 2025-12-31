@@ -298,12 +298,11 @@ export default function GuideTourDetailPage() {
         .not('status', 'ilike', 'cancelled');
       setTourHotelBookings(hotelBookingsData || [])
 
-      // 티켓 부킹 정보 가져오기 (confirmed 상태만)
+      // 티켓 부킹 정보 가져오기 (모든 status 포함)
       const { data: ticketBookingsData } = await supabase
         .from('ticket_bookings')
         .select('*')
-        .eq('tour_id', tourId)
-        .eq('status', 'confirmed');
+        .eq('tour_id', tourId);
       setTicketBookings(ticketBookingsData || [])
 
       // 팀 멤버 정보 가져오기 (가이드와 어시스턴트 이름 표시용)
@@ -818,42 +817,56 @@ export default function GuideTourDetailPage() {
               </span>
             </div>
             
-            {/* 티켓 부킹 정보 */}
-            {ticketBookings.length > 0 && (
-              <div className="space-y-1">
-                <hr className="border-gray-200" />
-                {ticketBookings
-                  .sort((a, b) => {
-                    // 체크인 시간순으로 정렬 (초단위 제거)
-                    const timeA = a.time?.substring(0, 5) || '00:00'
-                    const timeB = b.time?.substring(0, 5) || '00:00'
-                    return timeA.localeCompare(timeB)
-                  })
-                  .map((booking) => {
-                    // 회사명 변환 로직
-                    const getCompanyName = (company: string) => {
-                      const companyLower = company?.toLowerCase() || ''
-                      if (companyLower === 'see canyon') return 'Dixies'
-                      if (companyLower === 'mei tour' || companyLower === 'ken\'s tour') return 'Ken\'s'
-                      return company
-                    }
-                    
-                    return (
-                      <div key={booking.id} className="flex items-center space-x-2 text-sm">
+            {/* 티켓 부킹 정보 - company별 ea 합산 */}
+            {ticketBookings.length > 0 && (() => {
+              // 회사명 변환 로직
+              const getCompanyName = (company: string) => {
+                const companyLower = company?.toLowerCase() || ''
+                if (companyLower === 'see canyon') return 'Dixies'
+                if (companyLower === 'mei tour' || companyLower === 'ken\'s tour') return 'Ken\'s'
+                return company
+              }
+              
+              // company별로 ea 합산 및 rn_number 수집
+              const companyMap = new Map<string, { totalEa: number; rnNumbers: string[] }>()
+              ticketBookings.forEach(booking => {
+                const company = getCompanyName(booking.company || 'Unknown')
+                const ea = booking.ea || 0
+                
+                if (!companyMap.has(company)) {
+                  companyMap.set(company, { totalEa: 0, rnNumbers: [] })
+                }
+                
+                const companyData = companyMap.get(company)!
+                companyData.totalEa += ea
+                if (booking.rn_number) {
+                  companyData.rnNumbers.push(booking.rn_number)
+                }
+              })
+              
+              return (
+                <div className="space-y-1">
+                  <hr className="border-gray-200" />
+                  {Array.from(companyMap.entries())
+                    .sort(([companyA], [companyB]) => companyA.localeCompare(companyB))
+                    .map(([company, { totalEa, rnNumbers }]) => (
+                      <div key={company} className="flex items-center space-x-2 text-sm">
                         <span className="text-gray-700">
-                          {booking.time?.substring(0, 5) || t('timeTbd')} {getCompanyName(booking.company || '')}
+                          {company}
                         </span>
                         <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-green-100 text-green-800">
-                          👥 {booking.ea || 0}
+                          👥 {totalEa}
                         </span>
-                        <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
-# {booking.rn_number || (locale === 'ko' ? '번호 없음' : 'No number')}
-                        </span>
+                        {rnNumbers.length > 0 && (
+                          <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800">
+                            # {rnNumbers.join(', ')}
+                          </span>
+                        )}
+                      </div>
+                    ))}
                 </div>
-                    )
-                  })}
-              </div>
-            )}
+              )
+            })()}
             
                   {/* 출발 - 종료 시간 */}
                   <div className="text-gray-700">
@@ -1280,47 +1293,58 @@ export default function GuideTourDetailPage() {
             </div>
           )}
 
-          {/* 티켓 부킹 */}
-          {ticketBookings.length > 0 && (
-            <div>
-              <h3 className="text-lg font-medium text-gray-800 mb-3">{t('ticketBooking')}</h3>
-              <div className="space-y-3">
-                {ticketBookings.map((booking) => {
-                  // 회사명 결정 로직
-                  const getCompanyName = (company: string) => {
-                    const companyLower = company?.toLowerCase() || ''
-                    if (companyLower === 'see canyon') return 'Dixies'
-                    if (companyLower === 'mei tour' || companyLower === 'ken\'s tour') return 'Ken\'s'
-                    return company
-                  }
-                  
-                  return (
-                  <div key={booking.id} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-2">
-                        <h4 className="font-medium text-gray-900 text-sm sm:text-base">
-                          {getCompanyName(booking.company || '')}
-                        </h4>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          booking.status?.toLowerCase() === 'confirmed' ? 'bg-green-100 text-green-800' :
-                          booking.status?.toLowerCase() === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {booking.status}
-                      </span>
-                    </div>
-                      <div className="text-sm text-gray-600 space-y-1">
-                        <p>{t('rnNumber')}: {booking.rn_number || t('noInfo')}</p>
-                        <p>{t('ea')}: {booking.ea || t('noInfo')}</p>
-                        <p>{t('checkInDate')}: {(booking as unknown as { check_in_date?: string }).check_in_date || t('noInfo')}</p>
-                        <p>{t('checkInTime')}: {booking.time || t('noInfo')}</p>
-                      {(booking as { notes?: string }).notes && <p className="mt-2">{t('memo')}: {(booking as unknown as { notes: string }).notes}</p>}
-                    </div>
-                  </div>
-                  )
-                })}
+          {/* 티켓 부킹 - company별 ea 합산 */}
+          {ticketBookings.length > 0 && (() => {
+            // 회사명 결정 로직
+            const getCompanyName = (company: string) => {
+              const companyLower = company?.toLowerCase() || ''
+              if (companyLower === 'see canyon') return 'Dixies'
+              if (companyLower === 'mei tour' || companyLower === 'ken\'s tour') return 'Ken\'s'
+              return company
+            }
+            
+            // company별로 ea 합산 및 rn_number 수집
+            const companyMap = new Map<string, { totalEa: number; rnNumbers: string[] }>()
+            ticketBookings.forEach(booking => {
+              const company = getCompanyName(booking.company || 'Unknown')
+              const ea = booking.ea || 0
+              
+              if (!companyMap.has(company)) {
+                companyMap.set(company, { totalEa: 0, rnNumbers: [] })
+              }
+              
+              const companyData = companyMap.get(company)!
+              companyData.totalEa += ea
+              if (booking.rn_number) {
+                companyData.rnNumbers.push(booking.rn_number)
+              }
+            })
+            
+            return (
+              <div>
+                <h3 className="text-lg font-medium text-gray-800 mb-3">{t('ticketBooking')}</h3>
+                <div className="space-y-3">
+                  {Array.from(companyMap.entries())
+                    .sort(([companyA], [companyB]) => companyA.localeCompare(companyB))
+                    .map(([company, { totalEa, rnNumbers }]) => (
+                      <div key={company} className="border border-gray-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-medium text-gray-900 text-sm sm:text-base">
+                            {company}
+                          </h4>
+                        </div>
+                        <div className="text-sm text-gray-600 space-y-1">
+                          <p>{t('ea')}: {totalEa}</p>
+                          {rnNumbers.length > 0 && (
+                            <p>{t('rnNumber')}: {rnNumbers.join(', ')}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {tourHotelBookings.length === 0 && ticketBookings.length === 0 && (
             <p className="text-gray-500">{t('noBookingInfo')}</p>

@@ -1252,34 +1252,162 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
     }
   }
 
-  // 초이스 가격 계산
+  // 초이스 가격 계산 (애뉴얼 패스 로직 포함)
   const calculateChoicesPrice = () => {
     let choicesTotal = 0
     const allChoices = [...requiredChoices, ...optionalChoices]
     
+    // 애뉴얼 패스 관련 초이스 그룹 찾기
+    const nationalParkFeeGroups: ChoiceGroup[] = []
+    const otherGroups: ChoiceGroup[] = []
+    
     allChoices.forEach((group: ChoiceGroup) => {
+      const groupName = (group.choice_name || group.choice_name_ko || '').toLowerCase()
+      if (groupName.includes('입장료') || groupName.includes('fee') || 
+          groupName.includes('grand') || groupName.includes('zion') || 
+          groupName.includes('bryce') || groupName.includes('canyon')) {
+        nationalParkFeeGroups.push(group)
+      } else {
+        otherGroups.push(group)
+      }
+    })
+    
+    // 애뉴얼 패스 모드인지 확인
+    let hasAnnualPassBuyer = false
+    nationalParkFeeGroups.forEach((group: ChoiceGroup) => {
       const selectedOptionId = bookingData.selectedOptions[group.choice_id]
       if (selectedOptionId) {
         const option = group.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionId)
-        if (option && option.option_price) {
-          if (bookingData.tourDate && datePrices[bookingData.tourDate]) {
-            // 동적 가격이 있는 경우 인원수에 따라 곱하기
-            const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
-            choicesTotal += option.option_price * totalParticipants
-          } else {
-            // 동적 가격이 없는 경우
-            const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
-            choicesTotal += option.option_price * totalParticipants
+        if (option) {
+          const optionKey = (option.option_name || '').toLowerCase()
+          if (optionKey.includes('annual') && optionKey.includes('pass') && optionKey.includes('buyer')) {
+            hasAnnualPassBuyer = true
           }
         }
       }
     })
+    
+    if (hasAnnualPassBuyer && nationalParkFeeGroups.length > 0) {
+      // 애뉴얼 패스 모드: 애뉴얼 패스 가격만 계산
+      let annualPassCount = 0
+      let companionCount = 0
+      
+      nationalParkFeeGroups.forEach((group: ChoiceGroup) => {
+        const selectedOptionId = bookingData.selectedOptions[group.choice_id]
+        if (selectedOptionId) {
+          const option = group.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionId)
+          if (option) {
+            const optionKey = (option.option_name || '').toLowerCase()
+            if (optionKey.includes('annual') && optionKey.includes('pass')) {
+              if (optionKey.includes('buyer')) {
+                annualPassCount++
+              } else if (optionKey.includes('companion')) {
+                companionCount++
+              }
+            }
+          }
+        }
+      })
+      
+      // 애뉴얼 패스 가격: $250 per pass
+      // 동행자: $0 (최대 3명 per pass)
+      const maxCompanions = annualPassCount * 3
+      const validCompanions = Math.min(companionCount, maxCompanions)
+      choicesTotal = annualPassCount * 250 + (validCompanions * 0)
+    } else {
+      // 일반 모드: 각 초이스 그룹별로 개별 계산
+      allChoices.forEach((group: ChoiceGroup) => {
+        const selectedOptionId = bookingData.selectedOptions[group.choice_id]
+        if (selectedOptionId) {
+          const option = group.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionId)
+          if (option && option.option_price) {
+            if (bookingData.tourDate && datePrices[bookingData.tourDate]) {
+              // 동적 가격이 있는 경우 인원수에 따라 곱하기
+              const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
+              choicesTotal += option.option_price * totalParticipants
+            } else {
+              // 동적 가격이 없는 경우
+              const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
+              choicesTotal += option.option_price * totalParticipants
+            }
+          }
+        }
+      })
+    }
     
     return choicesTotal
   }
 
   const calculateTotalPrice = () => {
     return calculateBasePrice() + calculateChoicesPrice()
+  }
+
+  // 애뉴얼 패스 선택 검증
+  const validateAnnualPassSelection = (): { valid: boolean; error?: string } => {
+    const allChoices = [...requiredChoices, ...optionalChoices]
+    const totalPeople = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
+    
+    let annualPassBuyerCount = 0
+    let companionCount = 0
+    let individualFeeCount = 0
+    
+    allChoices.forEach((group: ChoiceGroup) => {
+      const selectedOptionId = bookingData.selectedOptions[group.choice_id]
+      if (selectedOptionId) {
+        const option = group.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionId)
+        if (option) {
+          const optionName = (option.option_name || option.option_name_ko || '').toLowerCase()
+          if (optionName.includes('annual') && optionName.includes('pass')) {
+            if (optionName.includes('buyer')) {
+              annualPassBuyerCount++
+            } else if (optionName.includes('companion')) {
+              companionCount++
+            }
+          } else if (optionName.includes('resident') || optionName.includes('거주자') || optionName.includes('비 거주자')) {
+            individualFeeCount++
+          }
+        }
+      }
+    })
+    
+    // 애뉴얼 패스 모드인지 확인
+    if (annualPassBuyerCount > 0) {
+      // 애뉴얼 패스 구매자가 있으면 일반 입장료는 선택 불가
+      if (individualFeeCount > 0) {
+        return {
+          valid: false,
+          error: translate('애뉴얼 패스 구매자와 일반 입장료를 동시에 선택할 수 없습니다.', 'Cannot select annual pass buyer and individual fees at the same time.')
+        }
+      }
+      
+      // 동행자 수량 검증
+      const maxCompanions = annualPassBuyerCount * 3
+      if (companionCount > maxCompanions) {
+        return {
+          valid: false,
+          error: translate(`애뉴얼 패스 구매자 ${annualPassBuyerCount}명당 최대 ${maxCompanions}명의 동행자가 가능합니다.`, `Maximum ${maxCompanions} companions allowed per ${annualPassBuyerCount} annual pass buyer(s).`)
+        }
+      }
+      
+      // 총 인원 수 검증 (구매자 + 동행자)
+      const totalCovered = annualPassBuyerCount + companionCount
+      if (totalCovered > totalPeople) {
+        return {
+          valid: false,
+          error: translate(`선택한 인원 수(${totalCovered}명)가 총 인원 수(${totalPeople}명)를 초과합니다.`, `Selected number of people (${totalCovered}) exceeds total number of people (${totalPeople}).`)
+        }
+      }
+    } else {
+      // 일반 입장료 모드: 애뉴얼 패스 동행자는 선택 불가
+      if (companionCount > 0) {
+        return {
+          valid: false,
+          error: translate('애뉴얼 패스 구매자 없이는 동행자 옵션을 선택할 수 없습니다.', 'Cannot select companion option without annual pass buyer.')
+        }
+      }
+    }
+    
+    return { valid: true }
   }
 
   // 쿠폰 할인 계산 함수 (base price에만 적용)
@@ -1367,6 +1495,15 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
   }
 
   const handleNext = () => {
+    // 초이스 선택 단계에서 애뉴얼 패스 검증
+    if (currentStep === 1) {
+      const validation = validateAnnualPassSelection()
+      if (!validation.valid) {
+        alert(validation.error)
+        return
+      }
+    }
+    
     if (currentStep < steps.length - 1) {
       setCurrentStep(currentStep + 1)
     }
@@ -1398,6 +1535,13 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         alert(isEnglish 
           ? 'Please select a tour date and at least one adult participant.' 
           : '투어 날짜와 최소 1명의 성인을 선택해주세요.')
+        return
+      }
+
+      // 애뉴얼 패스 선택 검증
+      const validation = validateAnnualPassSelection()
+      if (!validation.valid) {
+        alert(validation.error)
         return
       }
 
@@ -2315,10 +2459,113 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                           </p>
                         </div>
                       )}
+                      
+                      {/* 애뉴얼 패스 안내 */}
+                      {(() => {
+                        const groupName = (group.choice_name || group.choice_name_ko || '').toLowerCase()
+                        const isNationalParkFee = groupName.includes('입장료') || groupName.includes('fee') || 
+                                                  groupName.includes('grand') || groupName.includes('zion') || 
+                                                  groupName.includes('bryce') || groupName.includes('canyon')
+                        
+                        if (isNationalParkFee) {
+                          return (
+                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                              <div className="flex items-start">
+                                <div className="flex-shrink-0">
+                                  <svg className="h-5 w-5 text-yellow-600 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                  </svg>
+                                </div>
+                                <div className="ml-3">
+                                  <p className="text-sm text-yellow-800 font-medium mb-1">
+                                    {translate('💡 애뉴얼 패스 안내', '💡 Annual Pass Information')}
+                                  </p>
+                                  <ul className="text-xs text-yellow-700 space-y-1 list-disc list-inside">
+                                    <li>{translate('애뉴얼 패스 구매 시: 구매자 포함 최대 4인까지 입장료 커버', 'With Annual Pass: Covers up to 4 people including the buyer')}</li>
+                                    <li>{translate('동행자는 최대 3명까지 선택 가능 (구매자 1명당)', 'Up to 3 companions allowed per buyer')}</li>
+                                    <li>{translate('애뉴얼 패스와 일반 입장료는 동시에 선택할 수 없습니다', 'Cannot select Annual Pass and individual fees at the same time')}</li>
+                                  </ul>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        }
+                        return null
+                      })()}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {group.options.map((option: ChoiceOption, optionIndex: number) => {
                           const isAvailable = isChoiceCombinationAvailable(group.choice_id, option.option_id)
-                          const isDisabled = !isAvailable
+                          
+                          // 애뉴얼 패스 조건부 로직
+                          const optionName = (option.option_name || option.option_name_ko || '').toLowerCase()
+                          const isAnnualPassBuyer = optionName.includes('annual') && optionName.includes('pass') && optionName.includes('buyer')
+                          const isAnnualPassCompanion = optionName.includes('annual') && optionName.includes('pass') && optionName.includes('companion')
+                          const isIndividualFee = optionName.includes('resident') || optionName.includes('거주자') || optionName.includes('비 거주자')
+                          
+                          // 다른 그룹에서 애뉴얼 패스 구매자가 선택되었는지 확인
+                          let hasAnnualPassInOtherGroups = false
+                          requiredChoices.forEach((otherGroup: ChoiceGroup) => {
+                            if (otherGroup.choice_id !== group.choice_id) {
+                              const selectedOptionId = bookingData.selectedOptions[otherGroup.choice_id]
+                              if (selectedOptionId) {
+                                const selectedOption = otherGroup.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionId)
+                                if (selectedOption) {
+                                  const selectedOptionName = (selectedOption.option_name || selectedOption.option_name_ko || '').toLowerCase()
+                                  if (selectedOptionName.includes('annual') && selectedOptionName.includes('pass') && selectedOptionName.includes('buyer')) {
+                                    hasAnnualPassInOtherGroups = true
+                                  }
+                                }
+                              }
+                            }
+                          })
+                          
+                          // 현재 그룹에서 애뉴얼 패스 구매자가 선택되었는지 확인
+                          const selectedOptionIdInThisGroup = bookingData.selectedOptions[group.choice_id]
+                          const selectedOptionInThisGroup = group.options.find((opt: ChoiceOption) => opt.option_id === selectedOptionIdInThisGroup)
+                          const hasAnnualPassInThisGroup = selectedOptionInThisGroup && 
+                            (selectedOptionInThisGroup.option_name || selectedOptionInThisGroup.option_name_ko || '').toLowerCase().includes('annual') &&
+                            (selectedOptionInThisGroup.option_name || selectedOptionInThisGroup.option_name_ko || '').toLowerCase().includes('pass') &&
+                            (selectedOptionInThisGroup.option_name || selectedOptionInThisGroup.option_name_ko || '').toLowerCase().includes('buyer')
+                          
+                          // 동행자 수량 계산
+                          let companionCount = 0
+                          requiredChoices.forEach((cg: ChoiceGroup) => {
+                            const selectedOptId = bookingData.selectedOptions[cg.choice_id]
+                            if (selectedOptId) {
+                              const selectedOpt = cg.options.find((opt: ChoiceOption) => opt.option_id === selectedOptId)
+                              if (selectedOpt) {
+                                const selectedOptName = (selectedOpt.option_name || selectedOpt.option_name_ko || '').toLowerCase()
+                                if (selectedOptName.includes('annual') && selectedOptName.includes('pass') && selectedOptName.includes('companion')) {
+                                  companionCount++
+                                }
+                              }
+                            }
+                          })
+                          
+                          const annualPassBuyerCount = (hasAnnualPassInThisGroup ? 1 : 0) + (hasAnnualPassInOtherGroups ? 1 : 0)
+                          const maxCompanions = annualPassBuyerCount * 3
+                          
+                          // 조건부 비활성화 로직
+                          let isDisabled = !isAvailable
+                          if (hasAnnualPassInOtherGroups || hasAnnualPassInThisGroup) {
+                            // 애뉴얼 패스가 선택된 경우
+                            if (isIndividualFee) {
+                              // 일반 입장료는 비활성화
+                              isDisabled = true
+                            } else if (isAnnualPassCompanion) {
+                              // 동행자는 최대 수량 제한
+                              if (companionCount >= maxCompanions) {
+                                isDisabled = true
+                              }
+                            }
+                          } else {
+                            // 애뉴얼 패스가 선택되지 않은 경우
+                            if (isAnnualPassCompanion) {
+                              // 동행자는 비활성화
+                              isDisabled = true
+                            }
+                          }
+                          
                           const adultPrice = option.option_price || 0
                           const childPrice = option.option_child_price || 0
                           const infantPrice = option.option_infant_price || 0
@@ -2424,6 +2671,41 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                   ) : null
                                 })()}
                                 
+                                {/* 애뉴얼 패스 옵션별 설명 */}
+                                {(() => {
+                                  const optionName = (option.option_name || option.option_name_ko || '').toLowerCase()
+                                  const isAnnualPassBuyer = optionName.includes('annual') && optionName.includes('pass') && optionName.includes('buyer')
+                                  const isAnnualPassCompanion = optionName.includes('annual') && optionName.includes('pass') && optionName.includes('companion')
+                                  
+                                  if (isAnnualPassBuyer) {
+                                    return (
+                                      <div className="mb-3 bg-green-50 border border-green-200 rounded-lg p-2">
+                                        <p className="text-xs text-green-800 font-medium mb-1">
+                                          {translate('✅ 구매자 포함 최대 4인까지 커버', '✅ Covers up to 4 people including buyer')}
+                                        </p>
+                                        <p className="text-xs text-green-700">
+                                          {translate('이 패스를 구매하시면 본인 포함 최대 4명까지 입장료가 커버됩니다. 동행자 옵션을 추가로 선택하실 수 있습니다.', 'This pass covers entry fees for up to 4 people including yourself. You can add companion options.')}
+                                        </p>
+                                      </div>
+                                    )
+                                  }
+                                  
+                                  if (isAnnualPassCompanion) {
+                                    return (
+                                      <div className="mb-3 bg-blue-50 border border-blue-200 rounded-lg p-2">
+                                        <p className="text-xs text-blue-800 font-medium mb-1">
+                                          {translate('👥 동행자 옵션', '👥 Companion Option')}
+                                        </p>
+                                        <p className="text-xs text-blue-700">
+                                          {translate('애뉴얼 패스 구매자와 함께 입장하는 동행자입니다. 입장료는 무료입니다. (구매자 1명당 최대 3명)', 'Companion traveling with Annual Pass buyer. Entry fee is free. (Max 3 per buyer)')}
+                                        </p>
+                                      </div>
+                                    )
+                                  }
+                                  
+                                  return null
+                                })()}
+                                
                                 {/* 가격 정보 */}
                                 {hasPrice && (
                                   <div className="mt-auto pt-3 border-t border-gray-200">
@@ -2453,15 +2735,83 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                                         </div>
                                       )}
                                     </div>
+                                    {/* 애뉴얼 패스 가격 안내 */}
+                                    {(() => {
+                                      const optionName = (option.option_name || option.option_name_ko || '').toLowerCase()
+                                      const isAnnualPassBuyer = optionName.includes('annual') && optionName.includes('pass') && optionName.includes('buyer')
+                                      
+                                      if (isAnnualPassBuyer && adultPrice === 250) {
+                                        return (
+                                          <div className="mt-2 pt-2 border-t border-gray-200">
+                                            <p className="text-xs text-green-700 font-medium">
+                                              {translate('💡 구매자 포함 최대 4인까지 커버', '💡 Covers up to 4 people including buyer')}
+                                            </p>
+                                          </div>
+                                        )
+                                      }
+                                      
+                                      const isAnnualPassCompanion = optionName.includes('annual') && optionName.includes('pass') && optionName.includes('companion')
+                                      if (isAnnualPassCompanion && adultPrice === 0) {
+                                        return (
+                                          <div className="mt-2 pt-2 border-t border-gray-200">
+                                            <p className="text-xs text-blue-700 font-medium">
+                                              {translate('✅ 입장료 무료 (애뉴얼 패스 구매자와 함께)', '✅ Free entry (with Annual Pass buyer)')}
+                                            </p>
+                                          </div>
+                                        )
+                                      }
+                                      
+                                      return null
+                                    })()}
                                   </div>
                                 )}
                                 
                                 {/* 마감 배지 */}
-                                {isDisabled && (
+                                {isDisabled && !isAvailable && (
                                   <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded mt-3 inline-block self-start">
                                     {translate('마감', 'Closed')}
                                   </span>
                                 )}
+                                
+                                {/* 비활성화 이유 설명 */}
+                                {isDisabled && isAvailable && (() => {
+                                  const optionName = (option.option_name || option.option_name_ko || '').toLowerCase()
+                                  const isAnnualPassCompanion = optionName.includes('annual') && optionName.includes('pass') && optionName.includes('companion')
+                                  const isIndividualFee = optionName.includes('resident') || optionName.includes('거주자') || optionName.includes('비 거주자')
+                                  
+                                  if (isAnnualPassCompanion && !hasAnnualPassInOtherGroups && !hasAnnualPassInThisGroup) {
+                                    return (
+                                      <div className="mt-2 bg-yellow-50 border border-yellow-200 rounded p-2">
+                                        <p className="text-xs text-yellow-800">
+                                          {translate('⚠️ 애뉴얼 패스 구매자를 먼저 선택해주세요', '⚠️ Please select Annual Pass buyer first')}
+                                        </p>
+                                      </div>
+                                    )
+                                  }
+                                  
+                                  if (isIndividualFee && (hasAnnualPassInOtherGroups || hasAnnualPassInThisGroup)) {
+                                    return (
+                                      <div className="mt-2 bg-yellow-50 border border-yellow-200 rounded p-2">
+                                        <p className="text-xs text-yellow-800">
+                                          {translate('⚠️ 애뉴얼 패스와 일반 입장료는 동시에 선택할 수 없습니다', '⚠️ Cannot select Annual Pass and individual fees at the same time')}
+                                        </p>
+                                      </div>
+                                    )
+                                  }
+                                  
+                                  // 동행자 수량 제한 안내
+                                  if (isAnnualPassCompanion && companionCount >= maxCompanions && maxCompanions > 0) {
+                                    return (
+                                      <div className="mt-2 bg-yellow-50 border border-yellow-200 rounded p-2">
+                                        <p className="text-xs text-yellow-800">
+                                          {translate(`⚠️ 동행자는 구매자 ${annualPassBuyerCount}명당 최대 ${maxCompanions}명까지 선택 가능합니다`, `⚠️ Maximum ${maxCompanions} companions allowed per ${annualPassBuyerCount} buyer(s)`)}
+                                        </p>
+                                      </div>
+                                    )
+                                  }
+                                  
+                                  return null
+                                })()}
                               </div>
                             </label>
                           )

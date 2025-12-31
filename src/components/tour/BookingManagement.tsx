@@ -151,52 +151,63 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
                 </button>
               </div>
               <div className="space-y-1">
-                {filteredTicketBookings.map((booking: LocalTicketBooking) => (
-                  <div 
-                    key={booking.id} 
-                    className={`p-2 border rounded cursor-pointer hover:bg-gray-50 transition-colors ${isStaff ? '' : 'cursor-not-allowed'}`}
-                    onClick={() => onEditTicketBooking(booking)}
-                  >
-                    {/* 첫 번째 줄: company와 status */}
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-lg">🎫</span>
-                        <span className="font-medium text-sm text-gray-900 truncate">
-                          {booking.company || 'N/A'}
-                        </span>
-                      </div>
-                      <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(booking.status)}`}>
-                        {getStatusText(booking.status)}
-                      </span>
-                    </div>
-                    
-                    {/* 두 번째 줄: 카테고리, 시간, 인원, RN# */}
-                    <div className="flex items-center justify-between text-xs text-gray-500">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-medium text-gray-700">
-                          {booking.category || 'N/A'}
-                        </span>
-                        <span>
-                          {booking.time ? booking.time.substring(0, 5) : 'N/A'}
-                        </span>
-                        <span>
-                          {booking.ea || 0} {t('people')}
-                        </span>
-                        {booking.rn_number && (
-                          <span>
-                            #{booking.rn_number}
+                {filteredTicketBookings.map((booking: LocalTicketBooking) => {
+                  // 간단 보기일 때는 합산된 결과이므로 클릭 불가
+                  const isAggregated = booking.id?.startsWith('aggregated-')
+                  
+                  return (
+                    <div 
+                      key={booking.id} 
+                      className={`p-2 border rounded ${isAggregated ? '' : 'cursor-pointer hover:bg-gray-50'} transition-colors ${isStaff && !isAggregated ? '' : 'cursor-not-allowed'}`}
+                      onClick={() => !isAggregated && onEditTicketBooking(booking)}
+                    >
+                      {/* 첫 번째 줄: company와 status */}
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-lg">🎫</span>
+                          <span className="font-medium text-sm text-gray-900 truncate">
+                            {booking.company || 'N/A'}
+                          </span>
+                        </div>
+                        {!isAggregated && booking.status && (
+                          <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(booking.status)}`}>
+                            {getStatusText(booking.status)}
                           </span>
                         )}
                       </div>
-                      {/* 오른쪽 아래: 금액 */}
-                      {booking.expense && booking.expense > 0 && (
-                        <span className="font-semibold text-green-600">
-                          ${booking.expense.toFixed(2)}
-                        </span>
-                      )}
+                      
+                      {/* 두 번째 줄: 카테고리, 시간, 인원, RN# */}
+                      <div className="flex items-center justify-between text-xs text-gray-500">
+                        <div className="flex items-center space-x-2">
+                          {!isAggregated && (
+                            <>
+                              <span className="font-medium text-gray-700">
+                                {booking.category || 'N/A'}
+                              </span>
+                              <span>
+                                {booking.time ? booking.time.substring(0, 5) : 'N/A'}
+                              </span>
+                            </>
+                          )}
+                          <span>
+                            {booking.ea || 0} {t('people')}
+                          </span>
+                          {!isAggregated && booking.rn_number && (
+                            <span>
+                              #{booking.rn_number}
+                            </span>
+                          )}
+                        </div>
+                        {/* 오른쪽 아래: 금액 */}
+                        {!isAggregated && booking.expense && booking.expense > 0 && (
+                          <span className="font-semibold text-green-600">
+                            ${booking.expense.toFixed(2)}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
