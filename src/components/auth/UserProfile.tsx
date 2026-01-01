@@ -4,7 +4,7 @@ import React, { useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { signOut } from '@/lib/auth'
 import { getRoleDisplayName } from '@/lib/roles'
-import { User, LogOut, Settings, ChevronDown, Shield, Home, UserCheck } from 'lucide-react'
+import { User, LogOut, Settings, ChevronDown, Shield, Home, UserCheck, FileText } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
@@ -109,6 +109,34 @@ export default function UserProfile({ className = '' }: UserProfileProps) {
                   </Link>
                   
                   <div className="border-t border-gray-100 my-1"></div>
+                </>
+              )}
+              
+              {/* 고객인 경우 My Info 섹션 */}
+              {userRole === 'customer' && (
+                <>
+                  <div className="border-t border-gray-100 my-1"></div>
+                  <div className="px-4 py-2">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                      {t('myInfo')}
+                    </p>
+                    <Link
+                      href={`/${locale}/dashboard/profile`}
+                      onClick={handleMenuClick}
+                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                    >
+                      <User className="w-4 h-4 mr-2" />
+                      {t('myInfo')}
+                    </Link>
+                    <Link
+                      href={`/${locale}/dashboard/pass-upload`}
+                      onClick={handleMenuClick}
+                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                    >
+                      <FileText className="w-4 h-4 mr-2" />
+                      {t('passUpload')}
+                    </Link>
+                  </div>
                 </>
               )}
               

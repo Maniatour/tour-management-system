@@ -423,6 +423,49 @@ export default function GuideTourDetailPage() {
     }
   }
 
+  // 배정 상태 업데이트 함수 (가이드가 확인/거절)
+  const handleAssignmentResponse = useCallback(async (status: 'confirmed' | 'rejected') => {
+    if (!tour || !currentUserEmail) return
+
+    // 가이드가 자신에게 배정된 투어인지 확인
+    const isAssignedGuide = tour.tour_guide_id === currentUserEmail || tour.assistant_id === currentUserEmail
+    if (!isAssignedGuide) {
+      alert(locale === 'ko' ? '배정된 가이드만 확인/거절할 수 있습니다.' : 'Only assigned guides can confirm or reject.')
+      return
+    }
+
+    // assignment_status가 'assigned'인 경우에만 확인/거절 가능
+    const currentStatus = (tour as TourRow & { assignment_status?: string }).assignment_status
+    if (currentStatus !== 'assigned') {
+      alert(locale === 'ko' ? '배정 대기 중인 투어만 확인/거절할 수 있습니다.' : 'Only tours with assigned status can be confirmed or rejected.')
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('tours')
+        .update({ assignment_status: status } as Database['public']['Tables']['tours']['Update'])
+        .eq('id', tour.id)
+
+      if (error) {
+        console.error('Error updating assignment status:', error)
+        alert(locale === 'ko' ? '배정 상태 업데이트 중 오류가 발생했습니다.' : 'Error updating assignment status.')
+        return
+      }
+
+      // 로컬 상태 업데이트
+      setTour(prev => prev ? { ...prev, assignment_status: status } as TourRow : null)
+      
+      alert(locale === 'ko' 
+        ? (status === 'confirmed' ? '배정을 확인했습니다.' : '배정을 거절했습니다.')
+        : (status === 'confirmed' ? 'Assignment confirmed.' : 'Assignment rejected.')
+      )
+    } catch (error) {
+      console.error('Error updating assignment status:', error)
+      alert(locale === 'ko' ? '배정 상태 업데이트 중 오류가 발생했습니다.' : 'Error updating assignment status.')
+    }
+  }, [tour, currentUserEmail, locale])
+
   // 날짜 시간 형식 변환 함수
   const formatDateTime = (dateTimeString: string | null) => {
     if (!dateTimeString) return t('tbd')
@@ -737,13 +780,49 @@ export default function GuideTourDetailPage() {
               <div className="flex items-center space-x-2">
                 <span className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${
                   (tour as TourRow & { assignment_status?: string }).assignment_status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                  (tour as TourRow & { assignment_status?: string }).assignment_status === 'assigned' ? 'bg-blue-100 text-blue-800' :
+                  (tour as TourRow & { assignment_status?: string }).assignment_status === 'rejected' ? 'bg-red-100 text-red-800' :
                   (tour as TourRow & { assignment_status?: string }).assignment_status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                   (tour as TourRow & { assignment_status?: string }).assignment_status === 'cancelled' ? 'bg-red-100 text-red-800' :
                   (tour as TourRow & { assignment_status?: string }).assignment_status === 'recruiting' ? 'bg-blue-100 text-blue-800' :
                   'bg-gray-100 text-gray-800'
                 }`}>
-                  {(tour as TourRow & { assignment_status?: string }).assignment_status || t('assignmentStatus')}
+                  {(() => {
+                    const status = (tour as TourRow & { assignment_status?: string }).assignment_status
+                    if (status === 'assigned') return locale === 'ko' ? '배정됨' : 'Assigned'
+                    if (status === 'confirmed') return locale === 'ko' ? '확인됨' : 'Confirmed'
+                    if (status === 'rejected') return locale === 'ko' ? '거절됨' : 'Rejected'
+                    return status || t('assignmentStatus')
+                  })()}
                 </span>
+                {/* 배정 확인/거절 버튼 (assignment_status가 'assigned'이고 현재 사용자가 가이드로 배정된 경우에만 표시) */}
+                {(tour as TourRow & { assignment_status?: string }).assignment_status === 'assigned' && 
+                 (tour.tour_guide_id === currentUserEmail || tour.assistant_id === currentUserEmail) && (
+                  <div className="flex items-center space-x-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (confirm(locale === 'ko' ? '배정을 확인하시겠습니까?' : 'Confirm assignment?')) {
+                          handleAssignmentResponse('confirmed')
+                        }
+                      }}
+                      className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
+                    >
+                      {locale === 'ko' ? '확인' : 'Confirm'}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (confirm(locale === 'ko' ? '배정을 거절하시겠습니까?' : 'Reject assignment?')) {
+                          handleAssignmentResponse('rejected')
+                        }
+                      }}
+                      className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors"
+                    >
+                      {locale === 'ko' ? '거절' : 'Reject'}
+                    </button>
+                  </div>
+                )}
                 {expandedSections.has('tour-info') ? (
                   <ChevronUp className="w-5 h-5 text-gray-400" />
                 ) : (

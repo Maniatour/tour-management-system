@@ -36,6 +36,8 @@ export default function PickupScheduleEmailPreviewModal({
   } | null>(null)
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
+  const [sendingReservationId, setSendingReservationId] = useState<string | null>(null)
+  const [sentReservations, setSentReservations] = useState<Set<string>>(new Set())
   const [reservationDetails, setReservationDetails] = useState<Record<string, {
     customerName: string
     adults: number | null
@@ -293,6 +295,50 @@ export default function PickupScheduleEmailPreviewModal({
     }
   }
 
+  const handleSendIndividual = async (reservationId: string) => {
+    const reservation = reservations.find(r => r.id === reservationId)
+    if (!reservation || !reservation.pickup_time) {
+      alert('픽업 시간이 설정되지 않은 예약입니다.')
+      return
+    }
+
+    setSendingReservationId(reservationId)
+    try {
+      const reservationTourDate = reservation.tour_date || tourDate
+      if (!reservationTourDate) {
+        alert('투어 날짜를 찾을 수 없습니다.')
+        return
+      }
+
+      const response = await fetch('/api/send-pickup-schedule-notification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          reservationId: reservation.id,
+          pickupTime: reservation.pickup_time.includes(':') 
+            ? reservation.pickup_time 
+            : `${reservation.pickup_time}:00`,
+          tourDate: reservationTourDate
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || '이메일 발송에 실패했습니다.')
+      }
+
+      setSentReservations(prev => new Set(prev).add(reservationId))
+      alert('이메일이 성공적으로 발송되었습니다.')
+    } catch (error) {
+      console.error('개별 발송 오류:', error)
+      alert(error instanceof Error ? error.message : '이메일 발송 중 오류가 발생했습니다.')
+    } finally {
+      setSendingReservationId(null)
+    }
+  }
+
   if (!isOpen) return null
 
   return (
@@ -328,69 +374,116 @@ export default function PickupScheduleEmailPreviewModal({
                   ? reservation.pickup_time.substring(0, 5)
                   : reservation.pickup_time
 
+                const isSending = sendingReservationId === reservation.id
+                const isSent = sentReservations.has(reservation.id)
+
                 return (
-                  <button
+                  <div
                     key={reservation.id}
-                    onClick={() => setSelectedReservationId(reservation.id)}
-                    className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
+                    className={`w-full rounded-lg border-2 transition-all ${
                       selectedReservationId === reservation.id
                         ? 'bg-blue-50 border-blue-500 shadow-md'
                         : 'bg-white border-gray-200 hover:border-gray-400 hover:shadow-sm'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-xs font-semibold text-gray-500">
-                        예약 #{index + 1}
-                      </div>
-                      {selectedReservationId === reservation.id && (
-                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                      )}
-                    </div>
-                    
-                    {/* 고객명 */}
-                    <div className="font-semibold text-gray-900 mb-2 truncate">
-                      {details?.customerName || 'Loading...'}
-                    </div>
-
-                    {/* 인원 정보 */}
-                    {totalPeople > 0 && (
-                      <div className="flex items-center gap-1 text-xs text-gray-600 mb-2">
-                        <Users size={12} />
-                        <span>{totalPeople}명</span>
-                        {details?.adults && details.adults > 0 && (
-                          <span className="text-gray-500">(성인 {details.adults}</span>
-                        )}
-                        {details?.children && details.children > 0 && (
-                          <span className="text-gray-500">, 아동 {details.children}</span>
-                        )}
-                        {details?.infants && details.infants > 0 && (
-                          <span className="text-gray-500">, 유아 {details.infants}</span>
-                        )}
-                        {totalPeople > 0 && <span className="text-gray-500">)</span>}
-                      </div>
-                    )}
-
-                    {/* 픽업 시간 */}
-                    {pickupTime && (
-                      <div className="flex items-center gap-1 text-xs text-gray-600 mb-2">
-                        <Clock size={12} />
-                        <span className="font-medium">{pickupTime}</span>
-                      </div>
-                    )}
-
-                    {/* 픽업 호텔 */}
-                    {details?.pickupHotel && (
-                      <div className="flex items-start gap-1 text-xs text-gray-600">
-                        <Building size={12} className="mt-0.5 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium truncate">{details.pickupHotel}</div>
-                          {details.pickupLocation && (
-                            <div className="text-gray-500 truncate mt-0.5">{details.pickupLocation}</div>
+                    <button
+                      onClick={() => setSelectedReservationId(reservation.id)}
+                      className="w-full text-left p-4"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-xs font-semibold text-gray-500">
+                          예약 #{index + 1}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {isSent && (
+                            <span className="text-xs text-green-600 font-medium">✓ 발송됨</span>
+                          )}
+                          {selectedReservationId === reservation.id && (
+                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                           )}
                         </div>
                       </div>
-                    )}
-                  </button>
+                      
+                      {/* 고객명 */}
+                      <div className="font-semibold text-gray-900 mb-2 truncate">
+                        {details?.customerName || 'Loading...'}
+                      </div>
+
+                      {/* 인원 정보 */}
+                      {totalPeople > 0 && (
+                        <div className="flex items-center gap-1 text-xs text-gray-600 mb-2">
+                          <Users size={12} />
+                          <span>{totalPeople}명</span>
+                          {details?.adults && details.adults > 0 && (
+                            <span className="text-gray-500">(성인 {details.adults}</span>
+                          )}
+                          {details?.children && details.children > 0 && (
+                            <span className="text-gray-500">, 아동 {details.children}</span>
+                          )}
+                          {details?.infants && details.infants > 0 && (
+                            <span className="text-gray-500">, 유아 {details.infants}</span>
+                          )}
+                          {totalPeople > 0 && <span className="text-gray-500">)</span>}
+                        </div>
+                      )}
+
+                      {/* 픽업 시간 */}
+                      {pickupTime && (
+                        <div className="flex items-center gap-1 text-xs text-gray-600 mb-2">
+                          <Clock size={12} />
+                          <span className="font-medium">{pickupTime}</span>
+                        </div>
+                      )}
+
+                      {/* 픽업 호텔 */}
+                      {details?.pickupHotel && (
+                        <div className="flex items-start gap-1 text-xs text-gray-600">
+                          <Building size={12} className="mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium truncate">{details.pickupHotel}</div>
+                            {details.pickupLocation && (
+                              <div className="text-gray-500 truncate mt-0.5">{details.pickupLocation}</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </button>
+                    
+                    {/* 개별 발송 버튼 */}
+                    <div className="px-4 pb-4">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleSendIndividual(reservation.id)
+                        }}
+                        disabled={isSending || isSent}
+                        className={`w-full px-3 py-2 text-xs rounded transition-all flex items-center justify-center gap-2 ${
+                          isSent
+                            ? 'bg-green-100 text-green-700 cursor-not-allowed'
+                            : isSending
+                            ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
+                      >
+                        {isSending ? (
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <span>발송 중...</span>
+                          </>
+                        ) : isSent ? (
+                          <>
+                            <Mail className="w-3 h-3" />
+                            <span>발송 완료</span>
+                          </>
+                        ) : (
+                          <>
+                            <Mail className="w-3 h-3" />
+                            <span>개별 발송</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
                 )
               })}
             </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
@@ -14,6 +14,7 @@ interface Customer {
   email: string
   phone: string | null
   language: string | null
+  resident_status: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
   created_at: string
 }
 
@@ -101,54 +102,131 @@ export default function CustomerDashboard() {
       return
     }
 
-    if (!authUser?.email) {
+    if (!authUser?.id || !authUser?.email) {
       setLoading(false)
       return
     }
 
     try {
       setLoading(true)
-      console.log('Dashboard: 일반 모드 - 고객 정보 조회:', authUser.email)
+      console.log('Dashboard: 일반 모드 - 고객 정보 조회:', { userId: authUser.id, email: authUser.email })
       
-      // 이메일로 고객 정보 조회 (maybeSingle 사용: 결과가 없어도 에러가 아님)
-      const { data: customerData, error: customerError } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('email', authUser.email)
+      // 1. user_customer_links를 통해 고객 정보 조회
+      const { data: linkData, error: linkError } = await supabase
+        .from('user_customer_links')
+        .select('customer_id, matched_at, matched_by')
+        .eq('user_id', authUser.id)
+        .order('matched_at', { ascending: false })
+        .limit(1)
         .maybeSingle()
 
-      if (customerError) {
-        console.error('고객 정보 조회 오류:', {
-          message: customerError?.message || 'Unknown error',
-          code: customerError?.code || 'No code',
-          details: customerError?.details || 'No details',
-          hint: customerError?.hint || 'No hint',
-          status: (customerError as { status?: number })?.status || 'No status',
-          email: authUser.email
-        })
-        console.error('전체 오류 객체:', customerError)
-        // 406 오류나 다른 권한 오류의 경우 빈 상태로 설정
-        if (customerError.code === 'PGRST116' || customerError.code === 'PGRST301' || (customerError as { status?: number }).status === 406) {
-          setCustomer(null)
-          setReservations([])
-          setLoading(false)
-          return
+      let customerData: Customer | null = null
+
+      if (linkData && !linkError) {
+        // user_customer_links를 통해 고객 정보 조회
+        const linkDataTyped = linkData as unknown as { customer_id: string; matched_at: string; matched_by: string }
+        console.log('Dashboard: user_customer_links를 통해 고객 정보 조회:', linkDataTyped.customer_id)
+        const { data: linkedCustomer, error: customerError } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('id', linkDataTyped.customer_id)
+          .maybeSingle()
+
+        if (customerError) {
+          console.error('연결된 고객 정보 조회 오류:', customerError)
+        } else if (linkedCustomer) {
+          customerData = linkedCustomer as Customer
+          console.log('Dashboard: user_customer_links를 통해 고객 정보 발견:', customerData.name)
         }
-        // 다른 오류의 경우에도 빈 상태로 설정
-        setCustomer(null)
-        setReservations([])
-        setLoading(false)
-        return
+      }
+
+      // 2. user_customer_links에 연결이 없는 경우, 이메일로 직접 조회 시도 (기존 방식)
+      if (!customerData) {
+        console.log('Dashboard: user_customer_links 연결 없음, 이메일로 직접 조회 시도')
+        const { data: emailCustomer, error: emailError } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('email', authUser.email)
+          .maybeSingle()
+
+        if (emailError) {
+          console.error('이메일로 고객 정보 조회 오류:', {
+            message: emailError?.message || 'Unknown error',
+            code: emailError?.code || 'No code',
+            details: emailError?.details || 'No details',
+            hint: emailError?.hint || 'No hint',
+            status: (emailError as { status?: number })?.status || 'No status',
+            email: authUser.email
+          })
+          // 406 오류나 다른 권한 오류의 경우 빈 상태로 설정
+          if (emailError.code === 'PGRST116' || emailError.code === 'PGRST301' || (emailError as { status?: number }).status === 406) {
+            setCustomer(null)
+            setReservations([])
+            setLoading(false)
+            return
+          }
+        } else if (emailCustomer) {
+          customerData = emailCustomer as Customer
+          console.log('Dashboard: 이메일로 고객 정보 발견:', customerData.name)
+          
+          // 이메일로 찾은 경우 자동으로 user_customer_links에 연결 생성
+          const { error: autoLinkError } = await supabase
+            .from('user_customer_links')
+            .insert({
+              user_id: authUser.id,
+              customer_id: customerData.id,
+              auth_email: authUser.email,
+              matched_by: 'auto'
+            } as never)
+
+          if (autoLinkError) {
+            console.warn('자동 연결 생성 오류 (무시 가능):', autoLinkError)
+          } else {
+            console.log('Dashboard: 이메일 매칭으로 자동 연결 생성 완료')
+          }
+        } else {
+          // 3. 이메일로도 찾지 못한 경우, 이름 기반 자동 매칭 시도
+          // 구글 프로필 이름과 일치하는 고객이 있는지 확인
+          if (authUser.name) {
+            console.log('Dashboard: 이름 기반 자동 매칭 시도:', authUser.name)
+            const { data: nameCustomers, error: nameError } = await supabase
+              .from('customers')
+              .select('*')
+              .ilike('name', `%${authUser.name}%`)
+              .limit(5)
+
+            if (!nameError && nameCustomers && nameCustomers.length === 1) {
+              // 이름이 정확히 하나만 일치하는 경우 자동 매칭 제안
+              const matchedCustomer = nameCustomers[0] as Customer
+              console.log('Dashboard: 이름 기반 단일 고객 발견:', matchedCustomer.name)
+              
+              // 사용자에게 자동 매칭 제안 (비동기로 처리하여 UI 블로킹 방지)
+              setTimeout(() => {
+                const shouldAutoMatch = confirm(
+                  `고객 "${matchedCustomer.name}" (${matchedCustomer.email || matchedCustomer.phone || '정보 없음'})을(를) 자동으로 매칭하시겠습니까?\n\n이제 이 계정으로 예약 정보를 확인할 수 있습니다.`
+                )
+                
+                if (shouldAutoMatch) {
+                  handleMatchCustomer(matchedCustomer.id)
+                }
+              }, 1000)
+            } else if (!nameError && nameCustomers && nameCustomers.length > 1) {
+              // 여러 고객이 일치하는 경우 검색 결과에 표시
+              console.log('Dashboard: 이름 기반 여러 고객 발견:', nameCustomers.length)
+              setSearchResults(nameCustomers as Customer[])
+            }
+          }
+        }
       }
 
       if (customerData) {
         setCustomer(customerData)
         
-        // 고객의 예약 정보 조회 (외래 키가 없으므로 별도로 조회)
+        // 고객의 예약 정보 조회
         const { data: reservationsData, error: reservationsError } = await supabase
           .from('reservations')
           .select('*')
-          .eq('customer_id', (customerData as { id: string }).id)
+          .eq('customer_id', customerData.id)
           .order('tour_date', { ascending: false })
 
         if (reservationsError) {
@@ -157,7 +235,6 @@ export default function CustomerDashboard() {
             code: reservationsError?.code || 'No code',
             details: reservationsError?.details || 'No details'
           })
-          console.error('전체 예약 오류 객체:', reservationsError)
           setReservations([])
         } else if (reservationsData && reservationsData.length > 0) {
           // 각 예약에 대해 상품 정보를 별도로 조회
@@ -198,7 +275,7 @@ export default function CustomerDashboard() {
     } finally {
       setLoading(false)
     }
-  }, [authUser?.email, isSimulating])
+  }, [authUser?.id, authUser?.email, isSimulating])
 
   // 시뮬레이션된 고객 데이터 로드
   const loadSimulatedCustomerData = useCallback(async () => {
@@ -231,8 +308,9 @@ export default function CustomerDashboard() {
         if (error) {
           console.warn('Dashboard: customer_id로 조회 실패:', error)
         } else if (data) {
-          console.log('Dashboard: customer_id로 고객 정보 발견:', data.name, data.email)
-          customerData = data as Customer
+          const typedData = data as unknown as Customer
+          console.log('Dashboard: customer_id로 고객 정보 발견:', typedData.name, typedData.email)
+          customerData = typedData
         }
       }
 
@@ -248,8 +326,9 @@ export default function CustomerDashboard() {
         if (error) {
           console.warn('Dashboard: 이메일로 조회 실패:', error)
         } else if (data) {
-          console.log('Dashboard: 이메일로 고객 정보 발견:', data.name, data.email)
-          customerData = data as Customer
+          const typedData = data as unknown as Customer
+          console.log('Dashboard: 이메일로 고객 정보 발견:', typedData.name, typedData.email)
+          customerData = typedData
         }
       }
 
@@ -498,11 +577,11 @@ export default function CustomerDashboard() {
 
       setSearchResults(filteredResults)
 
-      // 자동 매칭 시도
-      if (filteredResults.length === 1 && authUser?.email) {
+      // 자동 매칭 시도 (단일 결과이고 정확히 일치하는 경우)
+      if (filteredResults.length === 1 && authUser?.id && authUser?.email) {
         const exactMatch = filteredResults[0] as { name: string; email: string; phone?: string; id: string }
         
-        // 전화번호나 이메일이 정확히 일치하는 경우 자동 매칭
+        // 전화번호나 이메일이 정확히 일치하는 경우 자동 매칭 제안
         const phoneMatch = searchForm.phone && exactMatch.phone && 
           exactMatch.phone.replace(/[-\s]/g, '') === searchForm.phone.replace(/[-\s]/g, '')
         const emailMatch = searchForm.email && exactMatch.email && 
@@ -510,7 +589,7 @@ export default function CustomerDashboard() {
 
         if (phoneMatch || emailMatch) {
           const shouldAutoMatch = confirm(
-            `고객 "${exactMatch.name}" (${exactMatch.email})을 자동으로 매칭하시겠습니까?`
+            `고객 "${exactMatch.name}" (${exactMatch.email || exactMatch.phone})을(를) 자동으로 매칭하시겠습니까?\n\n이제 이 계정으로 예약 정보를 확인할 수 있습니다.`
           )
           
           if (shouldAutoMatch) {
@@ -529,22 +608,55 @@ export default function CustomerDashboard() {
 
   // 고객 ID 매칭
   const handleMatchCustomer = async (customerId: string) => {
-    if (!authUser?.email) return
+    if (!authUser?.id || !authUser?.email) {
+      alert('로그인이 필요합니다.')
+      return
+    }
 
     try {
-      const { error } = await supabase
-        .from('customers')
-        .update({ email: authUser.email } as never)
-        .eq('id', customerId)
+      // 기존 연결 확인
+      const { data: existingLink } = await supabase
+        .from('user_customer_links')
+        .select('id')
+        .eq('user_id', authUser.id)
+        .eq('customer_id', customerId)
+        .maybeSingle()
 
-      if (error) {
+      if (existingLink) {
+        alert('이미 매칭된 고객입니다.')
+        loadCustomerData()
+        setSearchResults([])
+        setSearchForm({ phone: '', email: '', tourDate: '', productName: '' })
+        return
+      }
+
+      // 기존 연결이 있으면 삭제 (한 사용자는 한 고객과만 연결)
+      const { error: deleteError } = await supabase
+        .from('user_customer_links')
+        .delete()
+        .eq('user_id', authUser.id)
+
+      if (deleteError) {
+        console.warn('기존 연결 삭제 오류 (무시 가능):', deleteError)
+      }
+
+      // 새로운 연결 생성
+      const { error: insertError } = await supabase
+        .from('user_customer_links')
+        .insert({
+          user_id: authUser.id,
+          customer_id: customerId,
+          auth_email: authUser.email,
+          matched_by: 'user'
+        } as never)
+
+      if (insertError) {
         console.error('고객 ID 매칭 오류:', {
-          message: error?.message || 'Unknown error',
-          code: error?.code || 'No code',
-          details: error?.details || 'No details'
+          message: insertError?.message || 'Unknown error',
+          code: insertError?.code || 'No code',
+          details: insertError?.details || 'No details'
         })
-        console.error('전체 고객 ID 매칭 오류 객체:', error)
-        alert('고객 ID 매칭 중 오류가 발생했습니다.')
+        alert('고객 ID 매칭 중 오류가 발생했습니다: ' + insertError.message)
         return
       }
 
@@ -617,9 +729,15 @@ export default function CustomerDashboard() {
               <Search className="w-5 h-5 mr-2" />
               고객 ID 검색 및 매칭
             </h2>
-            <p className="text-gray-600 mb-6">
-              전화번호, 이메일, 투어 날짜, 상품명을 입력하여 고객 ID를 찾고 매칭하세요.
-            </p>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+              <p className="text-blue-800 text-sm font-medium mb-2">
+                💡 OTA 채널을 통해 예약하신 고객님께서는 아래 정보로 고객 ID를 검색하여 매칭해주세요.
+              </p>
+              <p className="text-blue-700 text-sm">
+                전화번호, 이메일(OTA에서 제공된 임시 이메일), 투어 날짜, 상품명 중 하나 이상을 입력하여 고객 ID를 찾고 매칭하세요.
+                매칭 후에는 이 계정으로 예약 정보를 확인하고 채팅할 수 있습니다.
+              </p>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               <div>

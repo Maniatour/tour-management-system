@@ -229,6 +229,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Chat Room 정보 조회
+    let chatRoomCode: string | null = null
+    if (reservation.tour_id) {
+      const { data: chatRoomData } = await supabase
+        .from('chat_rooms')
+        .select('room_code')
+        .eq('tour_id', reservation.tour_id)
+        .eq('is_active', true)
+        .maybeSingle()
+
+      if (chatRoomData) {
+        chatRoomCode = chatRoomData.room_code
+      }
+    }
+
     // 이메일 내용 생성
     console.log('[preview-pickup-schedule-notification] 이메일 내용 생성 중...')
     const emailContent = generatePickupScheduleEmailContent(
@@ -240,7 +255,8 @@ export async function POST(request: NextRequest) {
       tourDate,
       isEnglish,
       allPickups,
-      tourDetails
+      tourDetails,
+      chatRoomCode
     )
 
     console.log('[preview-pickup-schedule-notification] 이메일 내용 생성 완료')

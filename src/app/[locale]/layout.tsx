@@ -63,7 +63,13 @@ export default async function LocaleLayout({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  const messages = await getMessages({ locale });
+  let messages;
+  try {
+    messages = await getMessages({ locale });
+  } catch (error) {
+    console.error('Failed to load messages:', error);
+    messages = {};
+  }
   
   // Admin 페이지인지 확인
   const headersList = await headers();

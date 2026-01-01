@@ -19,7 +19,14 @@ import {
   AlertTriangle,
   BookOpen,
   Receipt,
-  X
+  X,
+  Home,
+  Plane,
+  PlaneTakeoff,
+  HelpCircle,
+  Upload,
+  Image as ImageIcon,
+  XCircle
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
@@ -48,6 +55,9 @@ type Customer = {
   booking_count: number | null
   channel_id: string | null
   status: string | null
+  resident_status: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
+  pass_photo_url: string | null
+  id_photo_url: string | null
   created_at: string | null
   updated_at: string | null
 }
@@ -64,6 +74,9 @@ type CustomerInsert = {
   booking_count?: number | null
   channel_id?: string | null
   status?: string | null
+  resident_status?: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
+  pass_photo_url?: string | null
+  id_photo_url?: string | null
   created_at?: string | null
   updated_at?: string | null
 }
@@ -80,6 +93,9 @@ type CustomerUpdate = {
   booking_count?: number | null
   channel_id?: string | null
   status?: string | null
+  resident_status?: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
+  pass_photo_url?: string | null
+  id_photo_url?: string | null
   created_at?: string | null
   updated_at?: string | null
 }
@@ -281,6 +297,9 @@ export default function AdminCustomers() {
   const [customerInvoices, setCustomerInvoices] = useState<any[]>([])
   const [loadingInvoices, setLoadingInvoices] = useState(false)
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null)
+  const [residentStatusDropdownOpen, setResidentStatusDropdownOpen] = useState<string | null>(null)
+  const [showPassUploadModal, setShowPassUploadModal] = useState(false)
+  const [selectedCustomerForPassUpload, setSelectedCustomerForPassUpload] = useState<Customer | null>(null)
 
   // 폼 열기 함수
   const openForm = () => {
@@ -481,6 +500,88 @@ export default function AdminCustomers() {
       alert(t('messages.errorUpdatingCustomer'))
     }
   }
+
+  // 거주 상태 빠른 변경 함수
+  const handleUpdateResidentStatus = async (customerId: string, newStatus: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null) => {
+    // "비거주자 (패스 보유)" 선택 시 모달 열기
+    if (newStatus === 'non_resident_with_pass') {
+      const customer = customers.find(c => c.id === customerId)
+      if (customer) {
+        setSelectedCustomerForPassUpload(customer)
+        setShowPassUploadModal(true)
+        setResidentStatusDropdownOpen(null)
+      }
+      return
+    }
+
+    // 다른 상태는 바로 업데이트
+    try {
+      const { error } = await supabase
+        .from('customers')
+        .update({ resident_status: newStatus })
+        .eq('id', customerId)
+
+      if (error) {
+        console.error('Error updating resident status:', error)
+        alert('거주 상태 업데이트에 실패했습니다.')
+        return
+      }
+
+      // 성공 시 드롭다운 닫기 및 목록 새로고침
+      setResidentStatusDropdownOpen(null)
+      refetchCustomers()
+    } catch (error) {
+      console.error('Error updating resident status:', error)
+      alert('거주 상태 업데이트에 실패했습니다.')
+    }
+  }
+
+  // 패스 및 ID 사진 업로드 완료 후 상태 업데이트
+  const handlePassUploadComplete = async (passPhotoUrl: string | null, idPhotoUrl: string | null) => {
+    if (!selectedCustomerForPassUpload) return
+
+    try {
+      const { error } = await supabase
+        .from('customers')
+        .update({ 
+          resident_status: 'non_resident_with_pass',
+          pass_photo_url: passPhotoUrl,
+          id_photo_url: idPhotoUrl
+        })
+        .eq('id', selectedCustomerForPassUpload.id)
+
+      if (error) {
+        console.error('Error updating customer with pass photos:', error)
+        alert('고객 정보 업데이트에 실패했습니다.')
+        return
+      }
+
+      // 성공 시 모달 닫기 및 목록 새로고침
+      setShowPassUploadModal(false)
+      setSelectedCustomerForPassUpload(null)
+      refetchCustomers()
+    } catch (error) {
+      console.error('Error updating customer with pass photos:', error)
+      alert('고객 정보 업데이트에 실패했습니다.')
+    }
+  }
+
+  // 외부 클릭 시 거주 상태 드롭다운 닫기
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (residentStatusDropdownOpen) {
+        const target = event.target as HTMLElement
+        if (!target.closest('.resident-status-dropdown')) {
+          setResidentStatusDropdownOpen(null)
+        }
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [residentStatusDropdownOpen])
 
   // 고객 삭제
   const handleDeleteCustomer = async (id: string) => {
@@ -993,6 +1094,112 @@ export default function AdminCustomers() {
                                   )
                                 })()}
                               </span>
+                              {/* 거주 상태 아이콘 */}
+                              <span className="mr-2 flex-shrink-0 relative resident-status-dropdown">
+                                {(() => {
+                                  const residentStatus = customer.resident_status
+                                  const isDropdownOpen = residentStatusDropdownOpen === customer.id
+                                  
+                                  const getStatusIcon = () => {
+                                    if (residentStatus === 'us_resident') {
+                                      return <Home className="h-4 w-4 text-green-600 cursor-pointer hover:scale-110 transition-transform" />
+                                    } else if (residentStatus === 'non_resident') {
+                                      return <Plane className="h-4 w-4 text-blue-600 cursor-pointer hover:scale-110 transition-transform" />
+                                    } else if (residentStatus === 'non_resident_with_pass') {
+                                      return <PlaneTakeoff className="h-4 w-4 text-purple-600 cursor-pointer hover:scale-110 transition-transform" />
+                                    } else {
+                                      return <HelpCircle className="h-4 w-4 text-gray-400 cursor-pointer hover:scale-110 transition-transform" />
+                                    }
+                                  }
+
+                                  const getStatusLabel = () => {
+                                    if (residentStatus === 'us_resident') return '미국 거주자'
+                                    if (residentStatus === 'non_resident') return '비거주자'
+                                    if (residentStatus === 'non_resident_with_pass') return '비거주자 (패스 보유)'
+                                    return '거주 상태 정보 없음'
+                                  }
+                                  
+                                  return (
+                                    <div className="relative">
+                                      <div 
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          setResidentStatusDropdownOpen(isDropdownOpen ? null : customer.id)
+                                        }}
+                                        className="relative group"
+                                      >
+                                        {getStatusIcon()}
+                                        {!isDropdownOpen && (
+                                          <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                                            {getStatusLabel()} (클릭하여 변경)
+                                            <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                                          </div>
+                                        )}
+                                      </div>
+                                      
+                                      {/* 드롭다운 메뉴 */}
+                                      {isDropdownOpen && (
+                                        <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[180px]">
+                                          <div className="py-1">
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                handleUpdateResidentStatus(customer.id, 'us_resident')
+                                              }}
+                                              className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 flex items-center space-x-2 ${
+                                                residentStatus === 'us_resident' ? 'bg-green-50 text-green-700' : 'text-gray-700'
+                                              }`}
+                                            >
+                                              <Home className="h-4 w-4 text-green-600" />
+                                              <span>미국 거주자</span>
+                                              {residentStatus === 'us_resident' && <span className="ml-auto text-xs">✓</span>}
+                                            </button>
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                handleUpdateResidentStatus(customer.id, 'non_resident')
+                                              }}
+                                              className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 flex items-center space-x-2 ${
+                                                residentStatus === 'non_resident' ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                                              }`}
+                                            >
+                                              <Plane className="h-4 w-4 text-blue-600" />
+                                              <span>비거주자</span>
+                                              {residentStatus === 'non_resident' && <span className="ml-auto text-xs">✓</span>}
+                                            </button>
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                handleUpdateResidentStatus(customer.id, 'non_resident_with_pass')
+                                              }}
+                                              className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 flex items-center space-x-2 ${
+                                                residentStatus === 'non_resident_with_pass' ? 'bg-purple-50 text-purple-700' : 'text-gray-700'
+                                              }`}
+                                            >
+                                              <PlaneTakeoff className="h-4 w-4 text-purple-600" />
+                                              <span>비거주자 (패스 보유)</span>
+                                              {residentStatus === 'non_resident_with_pass' && <span className="ml-auto text-xs">✓</span>}
+                                            </button>
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                handleUpdateResidentStatus(customer.id, null)
+                                              }}
+                                              className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 flex items-center space-x-2 ${
+                                                !residentStatus ? 'bg-gray-50 text-gray-700' : 'text-gray-700'
+                                              }`}
+                                            >
+                                              <HelpCircle className="h-4 w-4 text-gray-400" />
+                                              <span>정보 없음</span>
+                                              {!residentStatus && <span className="ml-auto text-xs">✓</span>}
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
+                                })()}
+                              </span>
                               <h3 className="text-base font-medium text-gray-900 truncate">
                                 {customer.name}
                               </h3>
@@ -1471,6 +1678,239 @@ export default function AdminCustomers() {
           </div>
         </div>
       )}
+
+      {/* 패스 및 ID 사진 업로드 모달 */}
+      {showPassUploadModal && selectedCustomerForPassUpload && (
+        <PassUploadModal
+          customer={selectedCustomerForPassUpload}
+          onClose={() => {
+            setShowPassUploadModal(false)
+            setSelectedCustomerForPassUpload(null)
+          }}
+          onComplete={handlePassUploadComplete}
+        />
+      )}
+    </div>
+  )
+}
+
+// 패스 및 ID 사진 업로드 모달 컴포넌트
+function PassUploadModal({
+  customer,
+  onClose,
+  onComplete
+}: {
+  customer: Customer
+  onClose: () => void
+  onComplete: (passPhotoUrl: string | null, idPhotoUrl: string | null) => void
+}) {
+  const [passPhotoUrl, setPassPhotoUrl] = useState<string | null>(customer.pass_photo_url || null)
+  const [idPhotoUrl, setIdPhotoUrl] = useState<string | null>(customer.id_photo_url || null)
+
+  const handleSave = () => {
+    onComplete(passPhotoUrl, idPhotoUrl)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            <h2 className="text-xl font-bold">
+              {customer.name}님의 패스 및 ID 사진 업로드
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              비거주자 (패스 보유) 상태로 설정하려면 패스 사진과 ID 사진을 업로드해주세요.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <X className="h-6 w-6" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* 패스 사진 업로드 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              패스 사진 *
+            </label>
+            <div className="space-y-2">
+              {passPhotoUrl ? (
+                <div className="relative">
+                  <img 
+                    src={passPhotoUrl} 
+                    alt="패스 사진" 
+                    className="w-full h-64 object-cover rounded-lg border border-gray-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setPassPhotoUrl(null)}
+                    className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                  >
+                    <XCircle className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <FileUploadInput
+                  label="패스 사진 업로드"
+                  onUpload={(url) => setPassPhotoUrl(url)}
+                  folder="customer-documents"
+                />
+              )}
+            </div>
+          </div>
+          
+          {/* ID 사진 업로드 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              ID 사진 (이름 대조용) *
+            </label>
+            <div className="space-y-2">
+              {idPhotoUrl ? (
+                <div className="relative">
+                  <img 
+                    src={idPhotoUrl} 
+                    alt="ID 사진" 
+                    className="w-full h-64 object-cover rounded-lg border border-gray-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setIdPhotoUrl(null)}
+                    className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                  >
+                    <XCircle className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <FileUploadInput
+                  label="ID 사진 업로드"
+                  onUpload={(url) => setIdPhotoUrl(url)}
+                  folder="customer-documents"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end space-x-3 mt-6 pt-4 border-t border-gray-200">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            취소
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={!passPhotoUrl || !idPhotoUrl}
+            className={`px-4 py-2 text-white rounded-lg transition-colors ${
+              passPhotoUrl && idPhotoUrl
+                ? 'bg-blue-600 hover:bg-blue-700'
+                : 'bg-gray-300 cursor-not-allowed'
+            }`}
+          >
+            저장
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 파일 업로드 입력 컴포넌트
+function FileUploadInput({ 
+  label, 
+  onUpload, 
+  folder = 'customer-documents' 
+}: { 
+  label: string
+  onUpload: (url: string) => void
+  folder?: string
+}) {
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // 파일 타입 검증
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+    if (!allowedTypes.includes(file.type)) {
+      alert('이미지 파일만 업로드 가능합니다. (JPEG, PNG, GIF, WebP)')
+      return
+    }
+
+    // 파일 크기 검증 (5MB 제한)
+    const maxSize = 5 * 1024 * 1024 // 5MB
+    if (file.size > maxSize) {
+      alert('파일 크기가 너무 큽니다. (최대 5MB)')
+      return
+    }
+
+    setUploading(true)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('folder', folder)
+
+      const response = await fetch('/api/upload/image', {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || '업로드 실패')
+      }
+
+      const data = await response.json()
+      onUpload(data.imageUrl)
+    } catch (error) {
+      console.error('Upload error:', error)
+      alert(error instanceof Error ? error.message : '파일 업로드에 실패했습니다.')
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
+  return (
+    <div>
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileSelect}
+        accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+        className="hidden"
+        id={`file-upload-${label}`}
+      />
+      <label
+        htmlFor={`file-upload-${label}`}
+        className={`flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+          uploading 
+            ? 'border-blue-400 bg-blue-50' 
+            : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
+        }`}
+      >
+        {uploading ? (
+          <div className="flex flex-col items-center space-y-2">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <span className="text-sm text-gray-600">업로드 중...</span>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center space-y-2">
+            <Upload className="h-8 w-8 text-gray-400" />
+            <span className="text-sm text-gray-600">{label}</span>
+            <span className="text-xs text-gray-400">클릭하여 파일 선택</span>
+          </div>
+        )}
+      </label>
     </div>
   )
 }
@@ -1540,7 +1980,10 @@ function CustomerForm({
         special_requests: customer.special_requests,
         booking_count: customer.booking_count || 0,
         channel_id: customer.channel_id,
-        status: customer.status || 'active'
+        status: customer.status || 'active',
+        resident_status: customer.resident_status || null,
+        pass_photo_url: customer.pass_photo_url || null,
+        id_photo_url: customer.id_photo_url || null
       }
       console.log('새로운 formData 계산:', newFormData)
       console.log('언어 필드 상세:', {
@@ -1562,7 +2005,10 @@ function CustomerForm({
         special_requests: '',
         booking_count: 0,
         channel_id: '',
-        status: 'active'
+        status: 'active',
+        resident_status: null,
+        pass_photo_url: null,
+        id_photo_url: null
       }
       console.log('기본 formData 계산:', defaultFormData)
       return defaultFormData
@@ -1625,7 +2071,10 @@ function CustomerForm({
       special_requests: selectedCustomer.special_requests || '',
       booking_count: selectedCustomer.booking_count || 0,
       channel_id: selectedCustomer.channel_id || '',
-      status: selectedCustomer.status || 'active'
+      status: selectedCustomer.status || 'active',
+      resident_status: selectedCustomer.resident_status || null,
+      pass_photo_url: selectedCustomer.pass_photo_url || null,
+      id_photo_url: selectedCustomer.id_photo_url || null
     })
     setCustomerSearch(selectedCustomer.name)
     setShowCustomerDropdown(false)
@@ -1926,6 +2375,25 @@ function CustomerForm({
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
+                  거주 상태
+                </label>
+                <select
+                  value={formData.resident_status || ''}
+                  onChange={(e) => setFormData({
+                    ...formData, 
+                    resident_status: e.target.value === '' ? null : e.target.value as 'us_resident' | 'non_resident' | 'non_resident_with_pass'
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">정보 없음</option>
+                  <option value="us_resident">미국 거주자</option>
+                  <option value="non_resident">비거주자</option>
+                  <option value="non_resident_with_pass">비거주자 (패스 보유)</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   {t('form.fields.emergencyContact')}
                 </label>
                 <input
@@ -1937,6 +2405,73 @@ function CustomerForm({
                 />
               </div>
             </div>
+            
+            {/* 비거주자 패스 보유자일 때만 표시되는 파일 업로드 섹션 */}
+            {formData.resident_status === 'non_resident_with_pass' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-200">
+                {/* 패스 사진 업로드 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  패스 사진
+                </label>
+                  <div className="space-y-2">
+                    {formData.pass_photo_url ? (
+                      <div className="relative">
+                        <img 
+                          src={formData.pass_photo_url} 
+                          alt="패스 사진" 
+                          className="w-full h-48 object-cover rounded-lg border border-gray-300"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setFormData({...formData, pass_photo_url: null})}
+                          className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <FileUploadInput
+                        label="패스 사진 업로드"
+                        onUpload={(url) => setFormData({...formData, pass_photo_url: url})}
+                        folder="customer-documents"
+                      />
+                    )}
+                  </div>
+                </div>
+                
+                {/* ID 사진 업로드 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  ID 사진 (이름 대조용)
+                </label>
+                  <div className="space-y-2">
+                    {formData.id_photo_url ? (
+                      <div className="relative">
+                        <img 
+                          src={formData.id_photo_url} 
+                          alt="ID 사진" 
+                          className="w-full h-48 object-cover rounded-lg border border-gray-300"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setFormData({...formData, id_photo_url: null})}
+                          className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <FileUploadInput
+                        label="ID 사진 업로드"
+                        onUpload={(url) => setFormData({...formData, id_photo_url: url})}
+                        folder="customer-documents"
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
             
             {/* 오른쪽 열: 채널 (2줄 차지) */}
             <div className="row-span-2">

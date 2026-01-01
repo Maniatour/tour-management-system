@@ -32,6 +32,13 @@ export async function POST(request: NextRequest) {
           departure_country,
           arrival_country
         ),
+        customer:customers(
+          id,
+          name,
+          email,
+          phone,
+          resident_status
+        ),
         reservation_options:reservation_options(
           choice_id,
           option_id,

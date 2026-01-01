@@ -60,6 +60,7 @@ interface Customer {
   email: string
   phone: string | null
   language: string | null
+  resident_status: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
   created_at: string
 }
 
@@ -69,6 +70,7 @@ interface SupabaseCustomer {
   email: string
   phone: string | null
   language: string | null
+  resident_status: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
   created_at: string
 }
 

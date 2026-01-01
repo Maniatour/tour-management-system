@@ -40,12 +40,22 @@ interface TourCalendarProps {
   allReservations?: Database['public']['Tables']['reservations']['Row'][]
   offSchedules?: OffSchedule[]
   onOffScheduleChange?: () => void
+  onTourStatusUpdate?: (tourId: string, newStatus: string) => Promise<void>
+  userRole?: string
+  userPosition?: string | null
 }
 
-const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReservations = [], offSchedules = [], onOffScheduleChange }: TourCalendarProps) {
+const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReservations = [], offSchedules = [], onOffScheduleChange, onTourStatusUpdate, userRole, userPosition }: TourCalendarProps) {
   const { user, simulatedUser, isSimulating } = useAuth()
   const t = useTranslations('tours.calendar')
   const locale = useLocale()
+  
+  // 투어 상태 변경 메뉴 상태
+  const [contextMenu, setContextMenu] = useState<{
+    tour: ExtendedTour
+    x: number
+    y: number
+  } | null>(null)
   
   // 투어 이름 매핑 함수 (상품명 사용)
   const getTourDisplayName = (tour: ExtendedTour) => {
@@ -92,6 +102,78 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
     is_multi_day: false,
     end_date: ''
   })
+  const [updatingTourStatus, setUpdatingTourStatus] = useState<string | null>(null)
+  
+  // 투어 상태 옵션
+  const tourStatusOptions = [
+    { value: 'Recruiting', label: locale === 'ko' ? '모집중' : 'Recruiting', icon: '📢' },
+    { value: 'Confirmed', label: locale === 'ko' ? '확정' : 'Confirmed', icon: '✓' },
+    { value: 'Canceled - No Minimum', label: locale === 'ko' ? '취소 - 최소인원 미달' : 'Canceled - No Minimum', icon: '🚫' },
+    { value: 'Canceled - by customer', label: locale === 'ko' ? '취소 - 고객 요청' : 'Canceled - by customer', icon: '🚫' },
+    { value: 'Canceled - No Answer', label: locale === 'ko' ? '취소 - 응답 없음' : 'Canceled - No Answer', icon: '🚫' },
+    { value: 'Canceled - Event Closed', label: locale === 'ko' ? '취소 - 이벤트 종료' : 'Canceled - Event Closed', icon: '🚫' },
+    { value: 'Deleted', label: locale === 'ko' ? '삭제됨' : 'Deleted', icon: '🗑️' },
+    { value: 'Approved', label: locale === 'ko' ? '승인됨' : 'Approved', icon: '✅' },
+    { value: 'Requested', label: locale === 'ko' ? '요청됨' : 'Requested', icon: '📝' }
+  ]
+  
+  // 우클릭 핸들러
+  const handleContextMenu = useCallback((e: React.MouseEvent, tour: ExtendedTour) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    // 관리자/매니저/OP만 상태 변경 가능
+    // OP는 roles.ts에서 'admin' 역할로 반환되므로 userRole === 'admin'이면 OP도 포함됨
+    // 추가로 position을 직접 확인하여 OP도 명시적으로 허용
+    const normalizedPosition = userPosition?.toLowerCase() || ''
+    const isOP = normalizedPosition === 'op'
+    const canChangeStatus = userRole === 'admin' || userRole === 'manager' || isOP
+    
+    if (!canChangeStatus) {
+      return
+    }
+    
+    setContextMenu({
+      tour,
+      x: e.clientX,
+      y: e.clientY
+    })
+  }, [userRole, userPosition])
+  
+  // 컨텍스트 메뉴 닫기
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null)
+  }, [])
+  
+  // 투어 상태 변경 핸들러
+  const handleTourStatusChange = useCallback(async (tourId: string, newStatus: string) => {
+    if (!onTourStatusUpdate) return
+    
+    setUpdatingTourStatus(tourId)
+    try {
+      await onTourStatusUpdate(tourId, newStatus)
+      closeContextMenu()
+    } catch (error) {
+      console.error('Error updating tour status:', error)
+      alert(locale === 'ko' ? '투어 상태 업데이트에 실패했습니다.' : 'Failed to update tour status.')
+    } finally {
+      setUpdatingTourStatus(null)
+    }
+  }, [onTourStatusUpdate, closeContextMenu, locale])
+  
+  // 외부 클릭 시 컨텍스트 메뉴 닫기
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (contextMenu) {
+        closeContextMenu()
+      }
+    }
+    
+    document.addEventListener('click', handleClickOutside)
+    return () => {
+      document.removeEventListener('click', handleClickOutside)
+    }
+  }, [contextMenu, closeContextMenu])
 
   // 현재 사용자 이메일 가져오기
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
@@ -576,6 +658,76 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                     ? tour.is_private_tour === 'TRUE'
                     : !!tour.is_private_tour)
                   
+                  // 배정 상태 아이콘 가져오기
+                  const getAssignmentStatusIcon = (status?: string | null) => {
+                    if (!status) return '⏸️' // 상태 없음
+                    const normalizedStatus = String(status).toLowerCase().trim()
+                    switch (normalizedStatus) {
+                      case 'assigned':
+                        return '⏳' // 배정됨 (오피스에서 배정)
+                      case 'confirmed':
+                        return '✅' // 확인됨 (가이드가 확인)
+                      case 'rejected':
+                        return '❌' // 거절됨 (가이드가 거절)
+                      case 'pending':
+                        return '⏸️' // 대기 중
+                      default:
+                        return '⏸️' // 기타 상태
+                    }
+                  }
+                  
+                  // 투어 상태 아이콘 가져오기
+                  const getTourStatusIcon = (status?: string | null) => {
+                    if (!status) return ''
+                    const normalizedStatus = String(status).toLowerCase().trim()
+                    // Canceled 변형들 처리
+                    if (normalizedStatus.includes('canceled') || normalizedStatus.includes('cancel')) {
+                      return '🚫' // 취소
+                    }
+                    switch (normalizedStatus) {
+                      case 'recruiting':
+                        return '📢' // 모집중
+                      case 'confirmed':
+                      case 'confirm':
+                        return '✓' // 확정
+                      case 'deleted':
+                        return '🗑️' // 삭제됨
+                      case 'approved':
+                        return '✅' // 승인됨
+                      case 'requested':
+                        return '📝' // 요청됨
+                      default:
+                        return ''
+                    }
+                  }
+                  
+                  // assignment_status 확인 - 여러 방법으로 시도
+                  const assignmentStatus = tour.assignment_status 
+                    || (tour as any).assignment_status 
+                    || (tour as Database['public']['Tables']['tours']['Row']).assignment_status
+                    || null
+                  
+                  // tour_status 확인
+                  const tourStatus = tour.tour_status 
+                    || (tour as any).tour_status 
+                    || (tour as Database['public']['Tables']['tours']['Row']).tour_status
+                    || null
+                  
+                  const assignmentIcon = getAssignmentStatusIcon(assignmentStatus)
+                  const tourStatusIcon = getTourStatusIcon(tourStatus)
+                  
+                  // 디버깅: 모든 투어의 assignment_status 확인 (개발 환경에서만)
+                  if (process.env.NODE_ENV === 'development' && tourIndex === 0) {
+                    console.log('Tour assignment status check:', {
+                      tourId: tour.id,
+                      productName: getTourDisplayName(tour),
+                      assignmentStatus: assignmentStatus,
+                      hasAssignmentStatus: 'assignment_status' in tour,
+                      tourKeys: Object.keys(tour),
+                      icon: assignmentIcon
+                    })
+                  }
+                  
                   // 고유한 key 생성: tour.id + tourIndex + date 정보를 조합
                   const uniqueKey = `${tour.id}-${tourIndex}-${date.getTime()}`
                   
@@ -586,6 +738,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                         e.stopPropagation() // 부모 요소의 클릭 이벤트 방지
                         onTourClick(tour)
                       }}
+                      onContextMenu={(e) => handleContextMenu(e, tour)}
                       onMouseEnter={(e) => handleMouseEnter(tour, e)}
                       onMouseLeave={handleMouseLeave}
                       className={`text-[8px] sm:text-[10px] px-px py-0.5 rounded cursor-pointer text-white hover:opacity-80 transition-opacity ${
@@ -596,6 +749,8 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                     >
                       <div className="whitespace-normal break-words leading-tight sm:whitespace-nowrap sm:truncate">
                         <span className={`font-medium ${isPrivateTour ? 'text-purple-100' : ''}`}>
+                          {tourStatusIcon && <span className="inline-block mr-0.5">{tourStatusIcon}</span>}
+                          {assignmentIcon && <span className="inline-block mr-0.5">{assignmentIcon}</span>}
                           {isPrivateTour ? '🔒 ' : ''}{getTourDisplayName(tour)}
                         </span>
                         <span className="mx-0.5 sm:mx-1">{assignedPeople}/{totalPeopleFiltered} ({othersPeople})</span>
@@ -685,65 +840,209 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
             </div>
           </div>
         </div>
+        
+        {/* 투어 상태 아이콘 범례 */}
+        <div className="mt-3">
+          <h3 className="text-sm font-medium text-gray-700 mb-2">{locale === 'ko' ? '투어 상태 아이콘' : 'Tour Status Icons'}</h3>
+          <div className="flex flex-wrap gap-3">
+            <div className="flex items-center space-x-2">
+              <span className="text-lg">📢</span>
+              <span className="text-sm text-gray-600">{locale === 'ko' ? '모집중 (Recruiting)' : 'Recruiting'}</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-lg">✓</span>
+              <span className="text-sm text-gray-600">{locale === 'ko' ? '확정 (Confirmed)' : 'Confirmed'}</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-lg">🚫</span>
+              <span className="text-sm text-gray-600">{locale === 'ko' ? '취소 (Canceled)' : 'Canceled'}</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-lg">🗑️</span>
+              <span className="text-sm text-gray-600">{locale === 'ko' ? '삭제됨 (Deleted)' : 'Deleted'}</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-lg">✅</span>
+              <span className="text-sm text-gray-600">{locale === 'ko' ? '승인됨 (Approved)' : 'Approved'}</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-lg">📝</span>
+              <span className="text-sm text-gray-600">{locale === 'ko' ? '요청됨 (Requested)' : 'Requested'}</span>
+            </div>
+          </div>
+        </div>
+        
+        {/* 배정 상태 아이콘 범례 */}
+        <div className="mt-3">
+          <h3 className="text-sm font-medium text-gray-700 mb-2">{locale === 'ko' ? '배정 상태 아이콘' : 'Assignment Status Icons'}</h3>
+          <div className="flex flex-wrap gap-3">
+            <div className="flex items-center space-x-2">
+              <span className="text-lg">⏳</span>
+              <span className="text-sm text-gray-600">{locale === 'ko' ? '배정됨 (Assigned)' : 'Assigned'}</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-lg">✅</span>
+              <span className="text-sm text-gray-600">{locale === 'ko' ? '확인됨 (Confirmed)' : 'Confirmed'}</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-lg">❌</span>
+              <span className="text-sm text-gray-600">{locale === 'ko' ? '거절됨 (Rejected)' : 'Rejected'}</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-lg">⏸️</span>
+              <span className="text-sm text-gray-600">{locale === 'ko' ? '대기 (Pending)' : 'Pending'}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* 호버 툴팁 */}
-      {hoveredTour && (
-        <div
-          className="fixed z-50 bg-white border border-gray-300 rounded-lg shadow-xl p-3 max-w-xs pointer-events-none"
-          style={{
-            left: `${tooltipPosition.x}px`,
-            top: `${tooltipPosition.y}px`,
-            transform: 'translateX(-50%) translateY(-100%)'
-          }}
-        >
-          <div className="text-sm">
-            <div className="font-semibold text-gray-900 mb-2 border-b border-gray-200 pb-1">
-              {getTourDisplayName(hoveredTour)}
+      {hoveredTour && (() => {
+        // 툴팁에서도 상태 아이콘 가져오기
+        const getAssignmentStatusIcon = (status?: string | null) => {
+          if (!status) return '⏸️'
+          const normalizedStatus = String(status).toLowerCase().trim()
+          switch (normalizedStatus) {
+            case 'assigned': return '⏳'
+            case 'confirmed': return '✅'
+            case 'rejected': return '❌'
+            case 'pending': return '⏸️'
+            default: return '⏸️'
+          }
+        }
+        
+        const getTourStatusIcon = (status?: string | null) => {
+          if (!status) return ''
+          const normalizedStatus = String(status).toLowerCase().trim()
+          // Canceled 변형들 처리
+          if (normalizedStatus.includes('canceled') || normalizedStatus.includes('cancel')) {
+            return '🚫'
+          }
+          switch (normalizedStatus) {
+            case 'recruiting': return '📢'
+            case 'confirmed':
+            case 'confirm': return '✓'
+            case 'deleted': return '🗑️'
+            case 'approved': return '✅'
+            case 'requested': return '📝'
+            default: return ''
+          }
+        }
+        
+        const hoveredTourStatus = hoveredTour.tour_status 
+          || (hoveredTour as any).tour_status 
+          || null
+        const hoveredAssignmentStatus = hoveredTour.assignment_status 
+          || (hoveredTour as any).assignment_status 
+          || null
+        
+        const tourStatusIcon = getTourStatusIcon(hoveredTourStatus)
+        const assignmentIcon = getAssignmentStatusIcon(hoveredAssignmentStatus)
+        
+        // 상태 텍스트 가져오기
+        const getStatusText = (status: string | null, type: 'tour' | 'assignment') => {
+          if (!status) return type === 'tour' ? (locale === 'ko' ? '미정' : 'Undefined') : (locale === 'ko' ? '대기' : 'Pending')
+          const normalized = String(status).toLowerCase().trim()
+          if (type === 'tour') {
+            // Canceled 변형들 처리
+            if (normalized.includes('canceled') || normalized.includes('cancel')) {
+              return locale === 'ko' ? '취소' : 'Canceled'
+            }
+            switch (normalized) {
+              case 'recruiting': return locale === 'ko' ? '모집중' : 'Recruiting'
+              case 'confirmed':
+              case 'confirm': return locale === 'ko' ? '확정' : 'Confirmed'
+              case 'deleted': return locale === 'ko' ? '삭제됨' : 'Deleted'
+              case 'approved': return locale === 'ko' ? '승인됨' : 'Approved'
+              case 'requested': return locale === 'ko' ? '요청됨' : 'Requested'
+              default: return status
+            }
+          } else {
+            switch (normalized) {
+              case 'assigned': return locale === 'ko' ? '배정됨' : 'Assigned'
+              case 'confirmed': return locale === 'ko' ? '확인됨' : 'Confirmed'
+              case 'rejected': return locale === 'ko' ? '거절됨' : 'Rejected'
+              case 'pending': return locale === 'ko' ? '대기' : 'Pending'
+              default: return status
+            }
+          }
+        }
+        
+        return (
+          <div
+            className="fixed z-50 bg-white border border-gray-300 rounded-lg shadow-xl p-3 max-w-xs pointer-events-none"
+            style={{
+              left: `${tooltipPosition.x}px`,
+              top: `${tooltipPosition.y}px`,
+              transform: 'translateX(-50%) translateY(-100%)'
+            }}
+          >
+            <div className="text-sm">
+              <div className="font-semibold text-gray-900 mb-2 border-b border-gray-200 pb-1 flex items-center gap-1">
+                {tourStatusIcon && <span>{tourStatusIcon}</span>}
+                {assignmentIcon && <span>{assignmentIcon}</span>}
+                <span>{getTourDisplayName(hoveredTour)}</span>
+              </div>
+              
+              {/* 상태 정보 */}
+              <div className="mb-2 space-y-1">
+                {hoveredTourStatus && (
+                  <div className="flex items-center text-xs">
+                    <span className="text-gray-600 w-16">{locale === 'ko' ? '투어 상태' : 'Tour Status'}:</span>
+                    <span className="text-gray-900 font-medium">{tourStatusIcon} {getStatusText(hoveredTourStatus, 'tour')}</span>
+                  </div>
+                )}
+                {hoveredAssignmentStatus && (
+                  <div className="flex items-center text-xs">
+                    <span className="text-gray-600 w-16">{locale === 'ko' ? '배정 상태' : 'Assignment'}:</span>
+                    <span className="text-gray-900 font-medium">{assignmentIcon} {getStatusText(hoveredAssignmentStatus, 'assignment')}</span>
+                  </div>
+                )}
+              </div>
+              
+              {/* 인원 정보 */}
+              <div className="mb-2 text-xs text-gray-600">
+                {t('assignedPeople')}: {hoveredTour.assigned_people || 0}{t('peopleUnit')} / {t('totalPeople')}: {hoveredTour.total_people || 0}{t('peopleUnit')}
+                {hoveredTour.is_private_tour && <span className="ml-1 text-purple-600">({t('privateTour')})</span>}
+              </div>
+              
+              <div className="space-y-1.5">
+                {hoveredTour.guide_name && (
+                  <div className="flex items-center">
+                    <span className="text-gray-600 w-20 text-xs">{t('guide')}</span>
+                    <span className="text-gray-900 font-medium text-sm">{hoveredTour.guide_name}</span>
+                  </div>
+                )}
+                
+                {hoveredTour.assistant_name && (
+                  <div className="flex items-center">
+                    <span className="text-gray-600 w-20 text-xs">{t('assistant')}</span>
+                    <span className="text-gray-900 font-medium text-sm">{hoveredTour.assistant_name}</span>
+                  </div>
+                )}
+                
+                {hoveredTour.vehicle_number && (
+                  <div className="flex items-center">
+                    <span className="text-gray-600 w-20 text-xs">{t('vehicle')}</span>
+                    <span className="text-gray-900 font-medium text-sm">{hoveredTour.vehicle_number}</span>
+                  </div>
+                )}
+                
+                {!hoveredTour.guide_name && !hoveredTour.assistant_name && !hoveredTour.vehicle_number && (
+                  <div className="text-gray-500 text-xs italic">
+                    {t('noStaffInfo')}
+                  </div>
+                )}
+              </div>
             </div>
             
-            {/* 인원 정보 */}
-            <div className="mb-2 text-xs text-gray-600">
-              {t('assignedPeople')}: {hoveredTour.assigned_people || 0}{t('peopleUnit')} / {t('totalPeople')}: {hoveredTour.total_people || 0}{t('peopleUnit')}
-              {hoveredTour.is_private_tour && <span className="ml-1 text-purple-600">({t('privateTour')})</span>}
-            </div>
-            
-            <div className="space-y-1.5">
-              {hoveredTour.guide_name && (
-                <div className="flex items-center">
-                  <span className="text-gray-600 w-20 text-xs">{t('guide')}</span>
-                  <span className="text-gray-900 font-medium text-sm">{hoveredTour.guide_name}</span>
-                </div>
-              )}
-              
-              {hoveredTour.assistant_name && (
-                <div className="flex items-center">
-                  <span className="text-gray-600 w-20 text-xs">{t('assistant')}</span>
-                  <span className="text-gray-900 font-medium text-sm">{hoveredTour.assistant_name}</span>
-                </div>
-              )}
-              
-              {hoveredTour.vehicle_number && (
-                <div className="flex items-center">
-                  <span className="text-gray-600 w-20 text-xs">{t('vehicle')}</span>
-                  <span className="text-gray-900 font-medium text-sm">{hoveredTour.vehicle_number}</span>
-                </div>
-              )}
-              
-              {!hoveredTour.guide_name && !hoveredTour.assistant_name && !hoveredTour.vehicle_number && (
-                <div className="text-gray-500 text-xs italic">
-                  {t('noStaffInfo')}
-                </div>
-              )}
+            {/* 툴팁 화살표 */}
+            <div className="absolute top-full left-1/2 transform -translate-x-1/2">
+              <div className="w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-300"></div>
             </div>
           </div>
-          
-          {/* 툴팁 화살표 */}
-          <div className="absolute top-full left-1/2 transform -translate-x-1/2">
-            <div className="w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-300"></div>
-          </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* 오프 스케줄 모달 */}
       {showOffScheduleModal && (
@@ -871,6 +1170,47 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 투어 상태 변경 컨텍스트 메뉴 */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-white border border-gray-300 rounded-lg shadow-xl py-1 min-w-[200px]"
+          style={{
+            left: `${contextMenu.x}px`,
+            top: `${contextMenu.y}px`,
+            pointerEvents: 'auto'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="px-2 py-1 text-xs font-semibold text-gray-500 border-b border-gray-200">
+            {locale === 'ko' ? '투어 상태 변경' : 'Change Tour Status'}
+          </div>
+          <div className="max-h-64 overflow-y-auto">
+            {tourStatusOptions.map((option) => {
+              const isCurrentStatus = (contextMenu.tour.tour_status || '').toLowerCase() === option.value.toLowerCase()
+              const isUpdating = updatingTourStatus === contextMenu.tour.id
+              
+              return (
+                <button
+                  key={option.value}
+                  onClick={() => handleTourStatusChange(contextMenu.tour.id, option.value)}
+                  disabled={isUpdating || isCurrentStatus}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition-colors flex items-center gap-2 ${
+                    isCurrentStatus ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                  } ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <span>{option.icon}</span>
+                  <span className="flex-1">{option.label}</span>
+                  {isCurrentStatus && <span className="text-xs">✓</span>}
+                  {isUpdating && (
+                    <div className="animate-spin rounded-full h-3 w-3 border-b border-gray-600"></div>
+                  )}
+                </button>
+              )
+            })}
           </div>
         </div>
       )}

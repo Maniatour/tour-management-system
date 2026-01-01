@@ -155,6 +155,13 @@ export async function GET(request: NextRequest) {
           duration,
           max_participants
         ),
+        customer:customers(
+          id,
+          name,
+          email,
+          phone,
+          resident_status
+        ),
         reservation_options:reservation_options(
           choice_id,
           option_id,

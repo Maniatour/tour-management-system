@@ -24,23 +24,55 @@ export default function ReservationsRedirect() {
         return
       }
 
-      try {
-        // 고객 정보 조회 (이메일 기반)
-        const { data: customerData, error: customerError } = await supabase
-          .from('customers')
-          .select('id')
-          .eq('email', currentUser.email)
-          .single()
+      // 이메일이 없는 경우 홈으로 리다이렉트
+      if (!currentUser.email) {
+        console.log('No email found, redirecting to home')
+        router.push(`/${locale}/`)
+        return
+      }
 
-        if (customerError) {
-          console.error('Customer lookup error:', customerError)
-          router.push(`/${locale}/`)
-          return
+      try {
+        // 1. user_customer_links를 통해 고객 정보 조회
+        let customerId: string | null = null
+
+        if (currentUser.id) {
+          const { data: linkData } = await supabase
+            .from('user_customer_links')
+            .select('customer_id')
+            .eq('user_id', currentUser.id)
+            .order('matched_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+
+          if (linkData) {
+            const linkDataTyped = linkData as unknown as { customer_id: string }
+            customerId = linkDataTyped.customer_id
+            console.log('ReservationsRedirect: user_customer_links를 통해 고객 ID 발견:', customerId)
+          }
         }
 
-        if (customerData && typeof customerData === 'object' && 'id' in customerData) {
+        // 2. user_customer_links에 연결이 없는 경우, 이메일로 직접 조회 시도
+        if (!customerId) {
+          const { data: customerData, error: customerError } = await supabase
+            .from('customers')
+            .select('id')
+            .eq('email', currentUser.email)
+            .maybeSingle()
+
+          if (customerError && customerError.code !== 'PGRST116') {
+            console.error('Customer lookup error:', customerError)
+            router.push(`/${locale}/`)
+            return
+          }
+
+          if (customerData && typeof customerData === 'object' && 'id' in customerData) {
+            customerId = (customerData as { id: string }).id
+            console.log('ReservationsRedirect: 이메일로 고객 ID 발견:', customerId)
+          }
+        }
+
+        if (customerId) {
           // 고객별 예약 목록 페이지로 리다이렉트
-          const customerId = (customerData as { id: string }).id
           router.push(`/${locale}/dashboard/reservations/${customerId}`)
         } else {
           // 고객 정보가 없으면 홈으로 리다이렉트

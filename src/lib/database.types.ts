@@ -105,6 +105,9 @@ export interface Database {
           email: string
           phone: string | null
           language: string | null
+          resident_status: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
+          pass_photo_url: string | null
+          id_photo_url: string | null
           created_at: string | null
           updated_at: string | null
         }
@@ -114,6 +117,9 @@ export interface Database {
           email: string
           phone?: string | null
           language?: string | null
+          resident_status?: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
+          pass_photo_url?: string | null
+          id_photo_url?: string | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -123,6 +129,41 @@ export interface Database {
           email?: string
           phone?: string | null
           language?: string | null
+          resident_status?: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
+          pass_photo_url?: string | null
+          id_photo_url?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      user_customer_links: {
+        Row: {
+          id: string
+          user_id: string
+          customer_id: string
+          auth_email: string
+          matched_at: string
+          matched_by: string
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          customer_id: string
+          auth_email: string
+          matched_at?: string
+          matched_by?: string
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          customer_id?: string
+          auth_email?: string
+          matched_at?: string
+          matched_by?: string
           created_at?: string | null
           updated_at?: string | null
         }

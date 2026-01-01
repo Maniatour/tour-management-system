@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Plus, Upload, X, Check, Eye, DollarSign, ChevronDown, ChevronRight, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder } from 'lucide-react'
+import { Plus, Upload, X, Check, Eye, DollarSign, ChevronDown, ChevronRight, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Ticket, Fuel, MoreHorizontal, UtensilsCrossed, Building2, Wrench, Car, Coins, MapPin, Bed, Package } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 import OptionManagementModal from './expense/OptionManagementModal'
@@ -95,6 +95,7 @@ export default function TourExpenseManager({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; expenseId: string; paidFor: string } | null>(null)
   const [showDriveImporter, setShowDriveImporter] = useState(false)
+  const [showMoreCategories, setShowMoreCategories] = useState(false)
   
   // 투어 데이터 및 수수료 관련 상태
   const [tourData, setTourData] = useState<any>(null)
@@ -500,6 +501,7 @@ export default function TourExpenseManager({
       })
       setShowCustomPaidFor(false)
       setShowCustomPaidTo(false)
+      setShowMoreCategories(false)
       onExpenseUpdated?.()
       alert(t('expenseRegistered'))
     } catch (error) {
@@ -615,6 +617,7 @@ export default function TourExpenseManager({
   const handleCancelEdit = () => {
     setEditingExpense(null)
     setShowAddForm(false)
+    setShowMoreCategories(false)
     setFormData({
       paid_to: '',
       paid_for: '',
@@ -1394,6 +1397,147 @@ export default function TourExpenseManager({
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {t('paidFor')} <span className="text-red-500">*</span>
                   </label>
+                  
+                  {/* 지급 항목 아이콘 그리드 */}
+                  <div className="mb-3">
+                    <div className="grid grid-cols-4 gap-2">
+                      {/* Entrance Fee */}
+                      {categories.find(c => c.name === 'Entrance Fee') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (formData.paid_for === 'Entrance Fee') {
+                              setFormData(prev => ({ ...prev, paid_for: '' }))
+                            } else {
+                              setFormData(prev => ({ ...prev, paid_for: 'Entrance Fee' }))
+                            }
+                            setShowCustomPaidFor(false)
+                          }}
+                          className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
+                            formData.paid_for === 'Entrance Fee'
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <Ticket className={`w-6 h-6 mb-1 ${formData.paid_for === 'Entrance Fee' ? 'text-blue-600' : 'text-gray-600'}`} />
+                          <span className="text-xs text-center text-gray-700">Entrance Fee</span>
+                        </button>
+                      )}
+                      
+                      {/* Gas */}
+                      {categories.find(c => c.name === 'Gas') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (formData.paid_for === 'Gas') {
+                              setFormData(prev => ({ ...prev, paid_for: '' }))
+                            } else {
+                              setFormData(prev => ({ ...prev, paid_for: 'Gas' }))
+                            }
+                            setShowCustomPaidFor(false)
+                          }}
+                          className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
+                            formData.paid_for === 'Gas'
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <Fuel className={`w-6 h-6 mb-1 ${formData.paid_for === 'Gas' ? 'text-blue-600' : 'text-gray-600'}`} />
+                          <span className="text-xs text-center text-gray-700">Gas</span>
+                        </button>
+                      )}
+                      
+                      {/* Misc */}
+                      {categories.find(c => c.name === 'Misc') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (formData.paid_for === 'Misc') {
+                              setFormData(prev => ({ ...prev, paid_for: '' }))
+                            } else {
+                              setFormData(prev => ({ ...prev, paid_for: 'Misc' }))
+                            }
+                            setShowCustomPaidFor(false)
+                          }}
+                          className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
+                            formData.paid_for === 'Misc'
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <MoreHorizontal className={`w-6 h-6 mb-1 ${formData.paid_for === 'Misc' ? 'text-blue-600' : 'text-gray-600'}`} />
+                          <span className="text-xs text-center text-gray-700">Misc</span>
+                        </button>
+                      )}
+                      
+                      {/* More */}
+                      <button
+                        type="button"
+                        onClick={() => setShowMoreCategories(!showMoreCategories)}
+                        className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
+                          showMoreCategories
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        <MoreHorizontal className={`w-6 h-6 mb-1 ${showMoreCategories ? 'text-blue-600' : 'text-gray-600'}`} />
+                        <span className="text-xs text-center text-gray-700">more</span>
+                      </button>
+                    </div>
+                    
+                    {/* 나머지 카테고리 아이콘 그리드 */}
+                    {showMoreCategories && (
+                      <div className="mt-2 grid grid-cols-4 gap-2">
+                        {categories
+                          .filter(c => !['Entrance Fee', 'Gas', 'Misc'].includes(c.name))
+                          .map((category) => {
+                            // 카테고리별 아이콘 매핑
+                            const getCategoryIcon = (name: string) => {
+                              const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+                                'Meals': UtensilsCrossed,
+                                'Bento': Package,
+                                'Guide Bento': Package,
+                                'Hotel': Building2,
+                                'Maintenance': Wrench,
+                                'Rent': Car,
+                                'Rent (Personal Vehicle)': Car,
+                                'Parking': MapPin,
+                                'Antelope': MapPin,
+                                'Lotto': Coins,
+                              }
+                              return iconMap[name] || MoreHorizontal
+                            }
+                            
+                            const IconComponent = getCategoryIcon(category.name)
+                            const isSelected = formData.paid_for === category.name
+                            
+                            return (
+                              <button
+                                key={category.id}
+                                type="button"
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setFormData(prev => ({ ...prev, paid_for: '' }))
+                                  } else {
+                                    setFormData(prev => ({ ...prev, paid_for: category.name }))
+                                  }
+                                  setShowCustomPaidFor(false)
+                                }}
+                                className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-colors ${
+                                  isSelected
+                                    ? 'border-blue-500 bg-blue-50'
+                                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                }`}
+                              >
+                                <IconComponent className={`w-6 h-6 mb-1 ${isSelected ? 'text-blue-600' : 'text-gray-600'}`} />
+                                <span className="text-xs text-center text-gray-700 break-words">{category.name}</span>
+                              </button>
+                            )
+                          })}
+                      </div>
+                    )}
+                  </div>
+                  
                   <div className="space-y-2">
                     <select
                       value={formData.paid_for}
@@ -1450,7 +1594,7 @@ export default function TourExpenseManager({
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    결제 방법
+                    {t('paymentMethod')}
                   </label>
                   <select
                     value={formData.payment_method}
@@ -1533,7 +1677,10 @@ export default function TourExpenseManager({
               <div className="flex space-x-3 pt-4">
                 <button
                   type="button"
-                  onClick={editingExpense ? handleCancelEdit : () => setShowAddForm(false)}
+                  onClick={editingExpense ? handleCancelEdit : () => {
+                    setShowAddForm(false)
+                    setShowMoreCategories(false)
+                  }}
                   className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
                 >
                   {t('cancel')}

@@ -204,6 +204,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Chat Room 정보 조회
+    let chatRoomCode: string | null = null
+    if (reservation.tour_id) {
+      const { data: chatRoomData } = await supabase
+        .from('chat_rooms')
+        .select('room_code')
+        .eq('tour_id', reservation.tour_id)
+        .eq('is_active', true)
+        .maybeSingle()
+
+      if (chatRoomData) {
+        chatRoomCode = chatRoomData.room_code
+      }
+    }
+
     // 이메일 내용 생성
     const emailContent = generatePickupScheduleEmailContent(
       reservation,
@@ -214,7 +229,8 @@ export async function POST(request: NextRequest) {
       tourDate,
       isEnglish,
       allPickups,
-      tourDetails
+      tourDetails,
+      chatRoomCode
     )
 
     // Resend를 사용한 이메일 발송
@@ -327,13 +343,22 @@ export function generatePickupScheduleEmailContent(
   tourDate: string,
   isEnglish: boolean,
   allPickups?: any[],
-  tourDetails?: any
+  tourDetails?: any,
+  chatRoomCode?: string | null
 ) {
   const productName = isEnglish 
     ? (product?.customer_name_en || product?.name_en || product?.name) 
     : (product?.customer_name_ko || product?.name_ko || product?.name)
   
-  const formattedTourDate = new Date(tourDate).toLocaleDateString(isEnglish ? 'en-US' : 'ko-KR', {
+  // tourDate를 직접 파싱하여 시간대 문제 방지
+  const parseTourDate = (dateStr: string) => {
+    // YYYY-MM-DD 형식의 날짜 문자열을 파싱
+    const [year, month, day] = dateStr.split('-').map(Number)
+    const date = new Date(year, month - 1, day) // 월은 0부터 시작하므로 -1
+    return date
+  }
+  
+  const formattedTourDate = parseTourDate(tourDate).toLocaleDateString(isEnglish ? 'en-US' : 'ko-KR', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -411,6 +436,12 @@ export function generatePickupScheduleEmailContent(
               <span class="label">${isEnglish ? 'Pickup Hotel:' : '픽업 호텔:'}</span>
               <span class="value">${pickupHotel.hotel}</span>
             </div>
+            ${pickupHotel.pick_up_location ? `
+            <div class="info-row">
+              <span class="label">${isEnglish ? 'Pickup Location:' : '픽업 장소:'}</span>
+              <span class="value" style="color: #1e40af; font-weight: bold;">${pickupHotel.pick_up_location}</span>
+            </div>
+            ` : ''}
             ${pickupHotel.address ? `
             <div class="info-row">
               <span class="label">${isEnglish ? 'Address:' : '주소:'}</span>
@@ -422,17 +453,18 @@ export function generatePickupScheduleEmailContent(
               <a href="${pickupHotel.link}" target="_blank" class="button">${isEnglish ? 'View on Map' : '지도에서 보기'}</a>
             </div>
             ` : ''}
-            ` : ''}
-          </div>
-
-          ${pickupHotel && pickupHotel.pick_up_location ? `
-          <div class="pickup-location-box">
+            ` : `
             <div class="info-row">
-              <span class="label" style="font-size: 16px;">${isEnglish ? '📍 Pickup Location:' : '📍 픽업 장소:'}</span>
-              <span class="value" style="font-size: 18px; color: #1e40af; font-weight: bold;">${pickupHotel.pick_up_location}</span>
+              <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px; border-radius: 4px; margin-top: 10px;">
+                <p style="margin: 0; color: #92400e; font-weight: 600; font-size: 14px;">
+                  ${isEnglish 
+                    ? '⚠️ Your pickup hotel has not been confirmed yet. Please select one from the "All Pickup Schedule" below and inform us of your choice in advance.'
+                    : '⚠️ 픽업 호텔이 아직 확정되지 않았습니다. 아래 "모든 픽업 스케줄" 중 하나를 선택하여 미리 알려주시기 바랍니다.'}
+                </p>
+              </div>
             </div>
+            `}
           </div>
-          ` : ''}
 
           ${pickupHotel && pickupHotel.media && Array.isArray(pickupHotel.media) && pickupHotel.media.length > 0 ? `
           <div class="info-box">
@@ -457,6 +489,15 @@ export function generatePickupScheduleEmailContent(
             <h2 style="font-size: 20px; font-weight: bold; color: #1e40af; margin-bottom: 15px; border-bottom: 2px solid #3b82f6; padding-bottom: 10px;">
               ${isEnglish ? '🚌 All Pickup Schedule' : '🚌 모든 픽업 스케줄'}
             </h2>
+            ${!pickupHotel ? `
+            <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px; border-radius: 4px; margin-bottom: 15px;">
+              <p style="margin: 0; color: #92400e; font-weight: 600; font-size: 14px; line-height: 1.6;">
+                ${isEnglish 
+                  ? '⚠️ Your pickup hotel has not been confirmed yet. Please select one of the hotels from the schedule below and inform us of your choice in advance so we can arrange your pickup accordingly.'
+                  : '⚠️ 픽업 호텔이 아직 확정되지 않았습니다. 아래 스케줄 중 하나의 호텔을 선택하여 미리 알려주시기 바랍니다. 선택하신 호텔에 맞춰 픽업을 준비하겠습니다.'}
+              </p>
+            </div>
+            ` : ''}
             <div style="space-y: 10px;">
               ${allPickups.map((pickup: any) => {
                 const isMyReservation = pickup.reservation_id === reservation.id
@@ -586,6 +627,25 @@ export function generatePickupScheduleEmailContent(
                   <strong>${isEnglish ? 'Type:' : '타입:'}</strong> ${tourDetails.vehicle.vehicle_type || 'N/A'}
                 </div>
                 `}
+                ${tourDetails.vehicle.vehicle_type_photos && Array.isArray(tourDetails.vehicle.vehicle_type_photos) && tourDetails.vehicle.vehicle_type_photos.length > 0 ? `
+                <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #d1d5db;">
+                  <div style="font-weight: bold; color: #92400e; margin-bottom: 10px; font-size: 14px;">
+                    ${isEnglish ? '📸 Vehicle Photos:' : '📸 차량 사진:'}
+                  </div>
+                  <p style="font-size: 12px; color: #6b7280; margin-top: 5px; margin-bottom: 10px;">
+                    ${isEnglish ? '(Click on images to view in full size)' : '(이미지를 클릭하면 크게 볼 수 있습니다)'}
+                  </p>
+                  <div class="media-gallery" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 15px 0;">
+                    ${tourDetails.vehicle.vehicle_type_photos.map((photo: any) => `
+                      <div class="media-item" style="width: 100%; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: transform 0.2s, box-shadow 0.2s;">
+                        <a href="${photo.photo_url}" target="_blank" style="display: block; text-decoration: none; cursor: pointer;">
+                          <img src="${photo.photo_url}" alt="${photo.photo_name || (isEnglish ? 'Vehicle photo' : '차량 사진')}" style="width: 100%; height: auto; display: block; transition: transform 0.2s;" />
+                        </a>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+                ` : ''}
               </div>
             </div>
             ` : ''}
@@ -597,6 +657,31 @@ export function generatePickupScheduleEmailContent(
               ? '⚠️ Important: Please arrive at the pickup location 5 minutes before the scheduled time.'
               : '⚠️ 중요: 픽업 시간보다 5분 전에 픽업 장소에 도착해주세요.'}</p>
           </div>
+
+          ${chatRoomCode ? `
+          <div class="info-box" style="background: #f0fdf4; border-left: 4px solid #10b981; margin-top: 30px;">
+            <h2 style="font-size: 20px; font-weight: bold; color: #065f46; margin-bottom: 15px; border-bottom: 2px solid #10b981; padding-bottom: 10px;">
+              ${isEnglish ? '💬 Tour Chat Room' : '💬 투어 채팅방'}
+            </h2>
+            <div style="margin-bottom: 15px;">
+              <p style="color: #1e293b; line-height: 1.8; margin-bottom: 15px;">
+                ${isEnglish 
+                  ? 'Join the tour chat room to communicate with your guide during pickup and view tour photos after the tour ends.'
+                  : '투어 채팅방에 참여하시면 픽업 시 가이드와 연락할 수 있으며, 투어가 끝난 후 투어 사진을 이곳에서 볼 수 있습니다.'}
+              </p>
+              <a href="https://www.kovegas.com/chat/${chatRoomCode}" target="_blank" class="button" style="background: #10b981; display: inline-block; padding: 12px 24px; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">
+                ${isEnglish ? 'Open Tour Chat Room' : '투어 채팅방 열기'}
+              </a>
+            </div>
+            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #d1d5db;">
+              <p style="font-size: 13px; color: #6b7280; margin: 0;">
+                ${isEnglish 
+                  ? '📱 You can access the chat room anytime using the link above. The guide will be available to assist you during pickup, and tour photos will be shared here after the tour.'
+                  : '📱 위 링크를 통해 언제든지 채팅방에 접속할 수 있습니다. 픽업 시 가이드가 도움을 드리며, 투어가 끝난 후 투어 사진이 이곳에 공유됩니다.'}
+              </p>
+            </div>
+          </div>
+          ` : ''}
 
           <p>${isEnglish 
             ? `If you have any questions or need to make changes, please contact us as soon as possible.`

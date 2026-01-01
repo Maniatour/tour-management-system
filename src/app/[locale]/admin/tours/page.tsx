@@ -9,6 +9,7 @@ import type { Database } from '@/lib/supabase'
 import TourCalendar from '@/components/TourCalendar'
 import ScheduleView from '@/components/ScheduleView'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
+import { useAuth } from '@/contexts/AuthContext'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 // type ProductNameRow = Pick<Database['public']['Tables']['products']['Row'], 'id' | 'name_ko' | 'name_en'> & { name?: string | null }
@@ -37,6 +38,34 @@ export default function AdminTours() {
   const locale = useLocale()
   const router = useRouter()
   const supabase = createClientSupabase()
+  const { userRole, authUser, simulatedUser, isSimulating } = useAuth()
+  
+  // 사용자 position 가져오기
+  const [userPosition, setUserPosition] = useState<string | null>(null)
+  
+  useEffect(() => {
+    const fetchUserPosition = async () => {
+      const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : authUser?.email
+      if (!currentUserEmail) return
+      
+      try {
+        const { data } = await supabase
+          .from('team')
+          .select('position')
+          .eq('email', currentUserEmail)
+          .eq('is_active', true)
+          .maybeSingle()
+        
+        if (data) {
+          setUserPosition((data as any).position || null)
+        }
+      } catch (error) {
+        console.error('Error fetching user position:', error)
+      }
+    }
+    
+    fetchUserPosition()
+  }, [authUser, simulatedUser, isSimulating, supabase])
   
   // 직원 데이터 (Supabase에서 가져옴)
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -341,8 +370,13 @@ export default function AdminTours() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const product = tour.product_id && productsData ? productsData.find((p: any) => p.id === tour.product_id) : null
         
+        // assignment_status 명시적으로 추출
+        const tourRow = tour as Database['public']['Tables']['tours']['Row']
+        const assignmentStatus = tourRow.assignment_status || (tour as any).assignment_status || null
+        
         return {
           ...tour,
+          assignment_status: assignmentStatus,
           product_name: tour.product_id ? productMap.get(tour.product_id) : null,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           name_ko: (product as any)?.name_ko || null,
@@ -457,6 +491,35 @@ export default function AdminTours() {
       alert('배정 현황 업데이트에 실패했습니다.')
     } finally {
       setUpdatingAssignment(null)
+    }
+  }
+
+  // 투어 상태 업데이트 함수
+  const handleTourStatusUpdate = async (tourId: string, newStatus: string) => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        .from('tours')
+        .update({ tour_status: newStatus })
+        .eq('id', tourId)
+
+      if (error) {
+        console.error('Error updating tour status:', error)
+        alert(locale === 'ko' ? '투어 상태 업데이트에 실패했습니다.' : 'Failed to update tour status.')
+        throw error
+      }
+
+      // 로컬 상태 업데이트
+      setTours(prevTours => 
+        prevTours.map(tour => 
+          tour.id === tourId 
+            ? { ...tour, tour_status: newStatus }
+            : tour
+        )
+      )
+    } catch (error) {
+      console.error('Error updating tour status:', error)
+      throw error
     }
   }
 
@@ -599,7 +662,14 @@ export default function AdminTours() {
               </div>
             </div>
           )}
-          <TourCalendar tours={filteredTours} onTourClick={handleTourClick} allReservations={allReservations} />
+          <TourCalendar 
+            tours={filteredTours} 
+            onTourClick={handleTourClick} 
+            allReservations={allReservations}
+            onTourStatusUpdate={handleTourStatusUpdate}
+            userRole={userRole || undefined}
+            userPosition={userPosition}
+          />
         </div>
       )}
 

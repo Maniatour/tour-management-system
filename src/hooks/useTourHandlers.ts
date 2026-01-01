@@ -139,7 +139,11 @@ export function useTourHandlers() {
 
     try {
       // tour_guide_id는 team 테이블의 email 값을 직접 저장
-      const updateData: { tour_guide_id: string; assistant_id?: string | null } = { tour_guide_id: guideEmail }
+      // 가이드 배정 시 assignment_status를 'assigned'로 설정
+      const updateData: { tour_guide_id: string; assistant_id?: string | null; assignment_status?: string } = { 
+        tour_guide_id: guideEmail,
+        assignment_status: 'assigned'
+      }
       if (teamType === '1guide') {
         updateData.assistant_id = null
       }

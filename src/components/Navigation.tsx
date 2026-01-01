@@ -238,6 +238,14 @@ const NavigationContent = () => {
                                   <Calendar className="w-4 h-4 mr-2" />
                                   {t('myReservations')}
                                 </Link>
+                                <Link
+                                  href={`/${locale}/dashboard/pass-upload`}
+                                  onClick={handleUserMenuClick}
+                                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                                >
+                                  <FileText className="w-4 h-4 mr-2" />
+                                  {t('passUpload')}
+                                </Link>
                               </div>
                             </>
                           )}
