@@ -24,6 +24,7 @@ interface DatabaseOptions {
   thumbnail_url?: string
   template_group?: string
   template_group_ko?: string
+  template_group_en?: string
   template_group_description_ko?: string
   template_group_description_en?: string
   choice_type?: string
@@ -207,6 +208,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
       const firstItem = validData[0] as DatabaseOptions
       // 템플릿을 초이스 그룹으로 변환
       const templateGroupName = firstItem.template_group_ko || firstItem.template_group || '템플릿'
+      const templateGroupNameEn = firstItem.template_group_en || firstItem.template_group || ''
       const choiceType = firstItem.choice_type || 'single'
       const isRequired = firstItem.is_required || false
       const minSelections = firstItem.min_selections || 1
@@ -219,6 +221,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         id: crypto.randomUUID(),
         choice_group: templateGroup,
         choice_group_ko: templateGroupName,
+        choice_group_en: templateGroupNameEn,
         description_ko: descriptionKo,
         description_en: descriptionEn,
         choice_type: choiceType as 'single' | 'multiple' | 'quantity',
@@ -399,12 +402,19 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
 
     try {
       // choice_group_ko를 기반으로 choice_group 자동 생성
+      // 단, 기존 choice_group이 유효하면 유지 (템플릿에서 불러온 경우 등)
       const processedChoices = productChoices.map(choice => {
         const trimmedKo = choice.choice_group_ko?.trim() || ''
         let generatedGroup = choice.choice_group?.trim() || ''
         
+        // choice_group이 이미 유효한 값이면 유지 (임시값이 아니고 비어있지 않으면)
+        // 템플릿에서 불러온 choice_group을 보존하기 위함
+        const isValidGroup = generatedGroup && 
+                            !generatedGroup.startsWith('choice_group_') && 
+                            generatedGroup.length >= 2
+        
         // choice_group_ko가 있고 choice_group가 임시값이거나 비어있으면 자동 생성
-        if (trimmedKo && (!generatedGroup || generatedGroup.startsWith('choice_group_'))) {
+        if (trimmedKo && !isValidGroup) {
           // 한국어 이름을 URL-friendly ID로 변환
           // 영문, 숫자만 추출하고 나머지는 언더스코어로 변환
           generatedGroup = trimmedKo
@@ -452,22 +462,15 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         return
       }
 
-      // 기존 choices 삭제 - 유효한 UUID만 필터링
-      const validIds = productChoices
-        .map(pc => pc.id)
-        .filter(id => !id.startsWith('temp_') && id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i))
-      
-      if (validIds.length > 0) {
-        await supabase
-          .from('choice_options')
-          .delete()
-          .in('choice_id', validIds)
-      }
-
-      await supabase
+      // 기존 choices 조회 (ID 유지 및 업데이트를 위해)
+      const { data: existingChoices } = await supabase
         .from('product_choices')
-        .delete()
+        .select('id, choice_group')
         .eq('product_id', productId)
+      
+      const existingChoicesMap = new Map(
+        (existingChoices || []).map(ec => [ec.choice_group, ec.id])
+      )
 
       // 새로운 choices 저장 (processedChoices 사용)
       for (let index = 0; index < processedChoices.length; index++) {
@@ -480,31 +483,91 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           throw new Error('초이스 그룹명은 필수입니다.')
         }
 
-        const { data: choiceData, error: choiceError } = await (supabase as unknown as {
-          from: (table: string) => {
-            insert: (data: Record<string, unknown>) => {
-              select: () => { single: () => Promise<{ data: ProductChoiceData, error: SupabaseError | null }> }
-            }
-          }
-        })
-          .from('product_choices')
-          .insert({
-            product_id: productId,
-            choice_group: trimmedChoiceGroup,
-            choice_group_ko: trimmedChoiceGroupKo,
-            choice_group_en: choice.choice_group_en?.trim() || null,
-            description_ko: choice.description_ko?.trim() || null,
-            description_en: choice.description_en?.trim() || null,
-            choice_type: choice.choice_type,
-            is_required: choice.is_required,
-            min_selections: choice.min_selections,
-            max_selections: choice.max_selections,
-            sort_order: choice.sort_order !== undefined ? choice.sort_order : index
-          })
-          .select()
-          .single() as { data: ProductChoiceData, error: SupabaseError | null }
+        // 기존 choice_id 확인 (choice_group으로 매칭)
+        const existingChoiceId = existingChoicesMap.get(trimmedChoiceGroup)
+        const isValidId = choice.id && 
+                         !choice.id.startsWith('temp_') && 
+                         choice.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+        
+        let choiceData: ProductChoiceData
 
-        if (choiceError) throw choiceError
+        if (existingChoiceId || isValidId) {
+          // 기존 레코드 업데이트 시도 (ID 유지)
+          const updateId = existingChoiceId || choice.id
+          
+          const { data: updatedChoices, error: updateError } = await supabase
+            .from('product_choices')
+            .update({
+              choice_group: trimmedChoiceGroup,
+              choice_group_ko: trimmedChoiceGroupKo,
+              choice_group_en: choice.choice_group_en?.trim() || null,
+              description_ko: choice.description_ko?.trim() || null,
+              description_en: choice.description_en?.trim() || null,
+              choice_type: choice.choice_type,
+              is_required: choice.is_required,
+              min_selections: choice.min_selections,
+              max_selections: choice.max_selections,
+              sort_order: choice.sort_order !== undefined ? choice.sort_order : index
+            })
+            .eq('id', updateId)
+            .select() as { data: ProductChoiceData[] | null, error: SupabaseError | null }
+
+          // UPDATE가 성공하고 결과가 있으면 사용
+          if (!updateError && updatedChoices && updatedChoices.length > 0) {
+            choiceData = updatedChoices[0]
+
+            // 기존 옵션 삭제
+            await supabase
+              .from('choice_options')
+              .delete()
+              .eq('choice_id', updateId)
+          } else {
+            // UPDATE 실패 또는 레코드가 없으면 INSERT
+            console.log(`Update failed or no record found for id ${updateId}, inserting new record`)
+            const { data: insertedChoice, error: insertError } = await supabase
+              .from('product_choices')
+              .insert({
+                product_id: productId,
+                choice_group: trimmedChoiceGroup,
+                choice_group_ko: trimmedChoiceGroupKo,
+                choice_group_en: choice.choice_group_en?.trim() || null,
+                description_ko: choice.description_ko?.trim() || null,
+                description_en: choice.description_en?.trim() || null,
+                choice_type: choice.choice_type,
+                is_required: choice.is_required,
+                min_selections: choice.min_selections,
+                max_selections: choice.max_selections,
+                sort_order: choice.sort_order !== undefined ? choice.sort_order : index
+              })
+              .select()
+              .single() as { data: ProductChoiceData, error: SupabaseError | null }
+
+            if (insertError) throw insertError
+            choiceData = insertedChoice
+          }
+        } else {
+          // 새 레코드 삽입
+          const { data: insertedChoice, error: insertError } = await supabase
+            .from('product_choices')
+            .insert({
+              product_id: productId,
+              choice_group: trimmedChoiceGroup,
+              choice_group_ko: trimmedChoiceGroupKo,
+              choice_group_en: choice.choice_group_en?.trim() || null,
+              description_ko: choice.description_ko?.trim() || null,
+              description_en: choice.description_en?.trim() || null,
+              choice_type: choice.choice_type,
+              is_required: choice.is_required,
+              min_selections: choice.min_selections,
+              max_selections: choice.max_selections,
+              sort_order: choice.sort_order !== undefined ? choice.sort_order : index
+            })
+            .select()
+            .single() as { data: ProductChoiceData, error: SupabaseError | null }
+
+          if (insertError) throw insertError
+          choiceData = insertedChoice
+        }
 
         // 초이스들 저장
         if (choice.options && choice.options.length > 0) {
@@ -527,16 +590,31 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
             thumbnail_url: option.thumbnail_url
           }))
 
-          const { error: optionsError } = await (supabase as unknown as {
-            from: (table: string) => {
-              insert: (data: Record<string, unknown>[]) => Promise<{ error: SupabaseError | null }>
-            }
-          })
+          const { error: optionsError } = await supabase
             .from('choice_options')
             .insert(optionsToInsert)
 
           if (optionsError) throw optionsError
         }
+      }
+
+      // 삭제된 choices 제거 (더 이상 존재하지 않는 choice_group)
+      const currentChoiceGroups = processedChoices.map(c => c.choice_group.trim())
+      const choicesToDelete = (existingChoices || []).filter(
+        ec => !currentChoiceGroups.includes(ec.choice_group)
+      )
+      
+      if (choicesToDelete.length > 0) {
+        const idsToDelete = choicesToDelete.map(c => c.id)
+        await supabase
+          .from('choice_options')
+          .delete()
+          .in('choice_id', idsToDelete)
+        
+        await supabase
+          .from('product_choices')
+          .delete()
+          .in('id', idsToDelete)
       }
 
       setSaveMessage('초이스가 성공적으로 저장되었습니다.')
@@ -1251,6 +1329,9 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         초이스 그룹명 (한국어)
+                        <span className="ml-2 text-xs text-gray-500 font-normal">
+                          (ID: {choice.id}, Group: {choice.choice_group})
+                        </span>
                       </label>
                       <input
                         type="text"
@@ -1615,7 +1696,12 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                          <>
                            {/* 초이스명 */}
                            <div className="space-y-2 mb-3">
-                             <label className="block text-xs font-medium text-gray-600">한국어</label>
+                             <label className="block text-xs font-medium text-gray-600">
+                               한국어
+                               <span className="ml-2 text-xs text-gray-500 font-normal">
+                                 (ID: {option.id}, Key: {option.option_key})
+                               </span>
+                             </label>
                              <input
                                type="text"
                                value={option.option_name_ko}
