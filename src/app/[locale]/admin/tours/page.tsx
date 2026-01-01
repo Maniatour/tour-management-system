@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { Plus, Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { Plus, Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
 import { useTranslations, useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { createClientSupabase } from '@/lib/supabase'
@@ -418,8 +418,57 @@ export default function AdminTours() {
   }, [toursData, processToursData])
 
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedStatus, setSelectedStatus] = useState<string>('all')
+  
+  // 로컬 스토리지에서 선택된 상태 불러오기
+  const loadSelectedStatusesFromStorage = (): string[] => {
+    if (typeof window === 'undefined') return []
+    try {
+      const saved = localStorage.getItem('tourStatusFilter')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return Array.isArray(parsed) ? parsed : []
+      }
+    } catch (error) {
+      console.error('Error loading status filter from localStorage:', error)
+    }
+    return []
+  }
+  
+  // 선택된 상태를 로컬 스토리지에 저장
+  const saveSelectedStatusesToStorage = (statuses: string[]) => {
+    if (typeof window === 'undefined') return
+    try {
+      localStorage.setItem('tourStatusFilter', JSON.stringify(statuses))
+    } catch (error) {
+      console.error('Error saving status filter to localStorage:', error)
+    }
+  }
+  
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(() => {
+    const saved = loadSelectedStatusesFromStorage()
+    return saved.length > 0 ? saved : ['all']
+  })
   const [asGuideEmail, setAsGuideEmail] = useState<string>('')
+  const [showStatusFilter, setShowStatusFilter] = useState(false)
+  const statusFilterRef = useRef<HTMLDivElement>(null)
+  
+  // 드롭다운 외부 클릭 시 닫기
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (statusFilterRef.current && !statusFilterRef.current.contains(event.target as Node)) {
+        setShowStatusFilter(false)
+      }
+    }
+    
+    if (showStatusFilter) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showStatusFilter])
+  
   // 전체 보기(리스트) 기능 제거
 
   // 가이드/어시스턴트 드롭다운 옵션 (활성 팀원 중 position에 guide/assistant 포함)
@@ -433,22 +482,43 @@ export default function AdminTours() {
   }, [employees])
 
   // 필터링된 투어 목록
-  const filteredTours = tours.filter(tour => {
-    const matchesSearch = !searchTerm || 
-      (tour.id || '').toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (tour.product_id || '').toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (tour.guide_name || '').toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (tour.assistant_name || '').toString().toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredTours = useMemo(() => {
+    return tours.filter(tour => {
+      const matchesSearch = !searchTerm || 
+        (tour.id || '').toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (tour.product_id || '').toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (tour.guide_name || '').toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (tour.assistant_name || '').toString().toLowerCase().includes(searchTerm.toLowerCase())
 
-    const matchesStatus = selectedStatus === 'all' || tour.status === selectedStatus
+      // 다중 상태 필터링: 'all'이 선택되어 있으면 모든 투어 표시
+      if (selectedStatuses.includes('all')) {
+        // 검색과 가이드 필터만 적용
+        const email = asGuideEmail.trim().toLowerCase()
+        const matchesAsGuide = !email ||
+          (tour.tour_guide_id && tour.tour_guide_id.toLowerCase() === email) ||
+          (tour.assistant_id && tour.assistant_id.toLowerCase() === email)
+        return matchesSearch && matchesAsGuide
+      }
 
-    const email = asGuideEmail.trim().toLowerCase()
-    const matchesAsGuide = !email ||
-      (tour.tour_guide_id && tour.tour_guide_id.toLowerCase() === email) ||
-      (tour.assistant_id && tour.assistant_id.toLowerCase() === email)
+      // 선택된 상태가 없으면 아무것도 표시하지 않음
+      if (selectedStatuses.length === 0) {
+        return false
+      }
 
-    return matchesSearch && matchesStatus && matchesAsGuide
-  })
+      // tour.tour_status를 우선적으로 확인하고, 없으면 tour.status 확인
+      const tourStatus = (tour.tour_status || tour.status || '').toString().trim()
+      const matchesStatus = selectedStatuses.some(selectedStatus => 
+        selectedStatus.toString().trim() === tourStatus
+      )
+
+      const email = asGuideEmail.trim().toLowerCase()
+      const matchesAsGuide = !email ||
+        (tour.tour_guide_id && tour.tour_guide_id.toLowerCase() === email) ||
+        (tour.assistant_id && tour.assistant_id.toLowerCase() === email)
+
+      return matchesSearch && matchesStatus && matchesAsGuide
+    })
+  }, [tours, searchTerm, selectedStatuses, asGuideEmail])
 
   // 리스트(카드) 뷰 전용: 선택된 gridMonth로 월 필터링
   const listMonthPrefix = `${gridMonth.getFullYear()}-${String(gridMonth.getMonth() + 1).padStart(2, '0')}-`
@@ -600,16 +670,78 @@ export default function AdminTours() {
             />
           </div>
           
-          <select
-            value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
-            className="w-full sm:w-auto col-span-1 px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm shrink-0"
-          >
-            <option value="all">{t('calendar.allStatus')}</option>
-            {statusOptions.sort().map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
+          {/* 상태 필터 (다중 선택) */}
+          <div className="relative col-span-1" ref={statusFilterRef}>
+            <button
+              type="button"
+              onClick={() => setShowStatusFilter(!showStatusFilter)}
+              className="w-full sm:w-auto px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm shrink-0 bg-white hover:bg-gray-50 flex items-center justify-between min-w-[120px]"
+            >
+              <span>
+                {selectedStatuses.includes('all') 
+                  ? t('calendar.allStatus')
+                  : selectedStatuses.length === 0
+                  ? t('calendar.allStatus')
+                  : selectedStatuses.length === 1
+                  ? selectedStatuses[0]
+                  : `${selectedStatuses.length}개 선택됨`}
+              </span>
+              <ChevronDown className={`w-4 h-4 ml-2 transition-transform ${showStatusFilter ? 'rotate-180' : ''}`} />
+            </button>
+            
+            {showStatusFilter && (
+              <div className="absolute z-50 mt-1 w-full sm:w-56 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                <div className="p-2 space-y-1">
+                  <label className="flex items-center px-2 py-1.5 hover:bg-gray-100 rounded cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedStatuses.includes('all')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          const newStatuses = ['all']
+                          setSelectedStatuses(newStatuses)
+                          saveSelectedStatusesToStorage(newStatuses)
+                        } else {
+                          const newStatuses: string[] = []
+                          setSelectedStatuses(newStatuses)
+                          saveSelectedStatusesToStorage(newStatuses)
+                        }
+                      }}
+                      className="mr-2"
+                    />
+                    <span className="text-sm">{t('calendar.allStatus')}</span>
+                  </label>
+                  {statusOptions.map((s) => (
+                    <label key={s} className="flex items-center px-2 py-1.5 hover:bg-gray-100 rounded cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedStatuses.includes(s)}
+                        onChange={(e) => {
+                          let newStatuses: string[]
+                          if (e.target.checked) {
+                            // 'all'이 선택되어 있으면 제거하고 현재 상태만 선택
+                            newStatuses = selectedStatuses.includes('all')
+                              ? [s]
+                              : [...selectedStatuses.filter(st => st !== 'all'), s]
+                          } else {
+                            newStatuses = selectedStatuses.filter(st => st !== s)
+                            // 모든 상태가 해제되면 'all' 선택
+                            if (newStatuses.length === 0) {
+                              newStatuses = ['all']
+                            }
+                          }
+                          setSelectedStatuses(newStatuses)
+                          saveSelectedStatusesToStorage(newStatuses)
+                        }}
+                        className="mr-2"
+                      />
+                      <span className="text-sm">{s}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* 관리자용: 특정 가이드로 보기 (드롭다운) */}
           <div className="flex items-center gap-2 col-span-1">
@@ -640,7 +772,13 @@ export default function AdminTours() {
           <div className="flex items-center gap-2 col-span-1">
             <button
               type="button"
-              onClick={() => { setSearchTerm(''); setSelectedStatus('all'); setAsGuideEmail('') }}
+              onClick={() => { 
+                setSearchTerm('')
+                setSelectedStatuses(['all'])
+                saveSelectedStatusesToStorage(['all'])
+                setAsGuideEmail('')
+                setShowStatusFilter(false)
+              }}
               className="w-full sm:w-auto px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded"
             >
 {t('calendar.resetFilter')}
