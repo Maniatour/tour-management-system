@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Check, X, Users, Clock, Building, DollarSign, Wallet } from 'lucide-react'
+import { Check, X, Users, Clock, Building, DollarSign, Wallet, Home, Plane, PlaneTakeoff, HelpCircle } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
@@ -93,7 +93,31 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   const [reservationPricing, setReservationPricing] = useState<ReservationPricing | null>(null)
   const [showSimplePickupModal, setShowSimplePickupModal] = useState(false)
   const [channelInfo, setChannelInfo] = useState<{ name: string; favicon?: string; has_not_included_price?: boolean; commission_base_price_only?: boolean } | null>(null)
+  const [customerData, setCustomerData] = useState<{ id: string; resident_status: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null } | null>(null)
+  const [residentStatusDropdownOpen, setResidentStatusDropdownOpen] = useState<string | null>(null)
   
+  // 고객 정보 가져오기 (resident_status 포함)
+  const fetchCustomerData = useCallback(async () => {
+    if (!reservation.customer_id) return
+    
+    try {
+      const { data: customer, error } = await supabase
+        .from('customers')
+        .select('id, resident_status')
+        .eq('id', reservation.customer_id)
+        .maybeSingle()
+      
+      if (!error && customer) {
+        setCustomerData({
+          id: customer.id,
+          resident_status: customer.resident_status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
+        })
+      }
+    } catch (error) {
+      console.error('고객 정보 조회 오류:', error)
+    }
+  }, [reservation.customer_id])
+
   // 채널 정보 가져오기
   const fetchChannelInfo = useCallback(async () => {
     if (!reservation.channel_id) return
@@ -219,14 +243,38 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }
   }, [isStaff, reservation.id])
 
-  // 컴포넌트 마운트 시 가격 정보, 입금 내역, 채널 정보 가져오기
+  // 거주 상태 업데이트 핸들러
+  const handleUpdateResidentStatus = async (customerId: string, newStatus: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null) => {
+    try {
+      const { error } = await supabase
+        .from('customers')
+        .update({ resident_status: newStatus })
+        .eq('id', customerId)
+
+      if (error) {
+        console.error('Error updating resident status:', error)
+        alert('거주 상태 업데이트에 실패했습니다.')
+        return
+      }
+
+      // 성공 시 드롭다운 닫기 및 고객 정보 새로고침
+      setResidentStatusDropdownOpen(null)
+      await fetchCustomerData()
+    } catch (error) {
+      console.error('Error updating resident status:', error)
+      alert('거주 상태 업데이트에 실패했습니다.')
+    }
+  }
+
+  // 컴포넌트 마운트 시 가격 정보, 입금 내역, 채널 정보, 고객 정보 가져오기
   useEffect(() => {
     if (isStaff) {
       fetchReservationPricing()
       fetchPaymentRecords()
     }
     fetchChannelInfo()
-  }, [isStaff, reservation.id, fetchReservationPricing, fetchPaymentRecords, fetchChannelInfo])
+    fetchCustomerData()
+  }, [isStaff, reservation.id, reservation.customer_id, fetchReservationPricing, fetchPaymentRecords, fetchChannelInfo, fetchCustomerData])
 
   // 입금 내역 표시 토글
   const togglePaymentRecords = () => {
@@ -662,6 +710,115 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             }}
           />
           
+          {/* 거주 상태 아이콘 */}
+          {isStaff && customerData && (
+            <span className="flex-shrink-0 relative resident-status-dropdown">
+              {(() => {
+                const residentStatus = customerData.resident_status
+                const isDropdownOpen = residentStatusDropdownOpen === customerData.id
+                
+                const getStatusIcon = () => {
+                  if (residentStatus === 'us_resident') {
+                    return <Home className="h-4 w-4 text-green-600 cursor-pointer hover:scale-110 transition-transform" />
+                  } else if (residentStatus === 'non_resident') {
+                    return <Plane className="h-4 w-4 text-blue-600 cursor-pointer hover:scale-110 transition-transform" />
+                  } else if (residentStatus === 'non_resident_with_pass') {
+                    return <PlaneTakeoff className="h-4 w-4 text-purple-600 cursor-pointer hover:scale-110 transition-transform" />
+                  } else {
+                    return <HelpCircle className="h-4 w-4 text-gray-400 cursor-pointer hover:scale-110 transition-transform" />
+                  }
+                }
+
+                const getStatusLabel = () => {
+                  if (residentStatus === 'us_resident') return '미국 거주자'
+                  if (residentStatus === 'non_resident') return '비거주자'
+                  if (residentStatus === 'non_resident_with_pass') return '비거주자 (패스 보유)'
+                  return '거주 상태 정보 없음'
+                }
+                
+                return (
+                  <div className="relative">
+                    <div 
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setResidentStatusDropdownOpen(isDropdownOpen ? null : customerData.id)
+                      }}
+                      className="relative group"
+                    >
+                      {getStatusIcon()}
+                      {!isDropdownOpen && (
+                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                          {getStatusLabel()} (클릭하여 변경)
+                          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* 드롭다운 메뉴 */}
+                    {isDropdownOpen && (
+                      <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[180px]">
+                        <div className="py-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleUpdateResidentStatus(customerData.id, 'us_resident')
+                            }}
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 flex items-center space-x-2 ${
+                              residentStatus === 'us_resident' ? 'bg-green-50 text-green-700' : 'text-gray-700'
+                            }`}
+                          >
+                            <Home className="h-4 w-4 text-green-600" />
+                            <span>미국 거주자</span>
+                            {residentStatus === 'us_resident' && <span className="ml-auto text-xs">✓</span>}
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleUpdateResidentStatus(customerData.id, 'non_resident')
+                            }}
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 flex items-center space-x-2 ${
+                              residentStatus === 'non_resident' ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                            }`}
+                          >
+                            <Plane className="h-4 w-4 text-blue-600" />
+                            <span>비거주자</span>
+                            {residentStatus === 'non_resident' && <span className="ml-auto text-xs">✓</span>}
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleUpdateResidentStatus(customerData.id, 'non_resident_with_pass')
+                            }}
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 flex items-center space-x-2 ${
+                              residentStatus === 'non_resident_with_pass' ? 'bg-purple-50 text-purple-700' : 'text-gray-700'
+                            }`}
+                          >
+                            <PlaneTakeoff className="h-4 w-4 text-purple-600" />
+                            <span>비거주자 (패스 보유)</span>
+                            {residentStatus === 'non_resident_with_pass' && <span className="ml-auto text-xs">✓</span>}
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleUpdateResidentStatus(customerData.id, null)
+                            }}
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 flex items-center space-x-2 ${
+                              !residentStatus ? 'bg-gray-50 text-gray-700' : 'text-gray-700'
+                            }`}
+                          >
+                            <HelpCircle className="h-4 w-4 text-gray-400" />
+                            <span>정보 없음</span>
+                            {!residentStatus && <span className="ml-auto text-xs">✓</span>}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+            </span>
+          )}
+          
           {/* 고객 이름 */}
           <p className="font-medium text-sm text-gray-900">{customerName}</p>
           
@@ -780,15 +937,31 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           const adjustmentTotal = additionalCost - discountTotal
           
           // 커미션 계산
-          let calculatedCommission = 0
-          if (commissionAmount > 0) {
-            calculatedCommission = commissionAmount
-          } else if (commissionPercent > 0 && grandTotal > 0) {
-            calculatedCommission = grandTotal * (commissionPercent / 100)
-          }
+          // total_price는 판매가격(Grand Total)이고, Net Price는 total_price - commission
+          const commissionBasePriceOnly = channelInfo?.commission_base_price_only || false
           
-          // Net Price 계산
-          const netPrice = grandTotal > 0 ? (grandTotal - calculatedCommission) : 0
+          let calculatedCommission = 0
+          let netPrice = grandTotal
+          
+          if (commissionAmount > 0) {
+            // 커미션 금액이 있는 경우
+            calculatedCommission = commissionAmount
+            netPrice = grandTotal > 0 ? (grandTotal - calculatedCommission) : 0
+          } else if (commissionPercent > 0 && grandTotal > 0) {
+            if (commissionBasePriceOnly) {
+              // commission_base_price_only: 판매가격에만 커미션 적용
+              const basePriceForCommission = productPriceTotal - couponDiscount - additionalDiscount + additionalCost
+              calculatedCommission = basePriceForCommission * (commissionPercent / 100)
+              netPrice = grandTotal > 0 ? (grandTotal - calculatedCommission) : 0
+            } else {
+              // 일반 채널: 전체 가격에 커미션 적용
+              calculatedCommission = grandTotal * (commissionPercent / 100)
+              netPrice = grandTotal > 0 ? (grandTotal - calculatedCommission) : 0
+            }
+          } else {
+            // 커미션이 없으면 total_price가 Net Price
+            netPrice = grandTotal
+          }
           
           // 통화
           const currency = reservationPricing.currency || 'USD'

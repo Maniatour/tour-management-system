@@ -269,6 +269,20 @@ export async function POST(request: NextRequest) {
         emailId: emailResult?.id
       })
 
+      // reservations 테이블에 pickup_notification_sent 업데이트
+      try {
+        const { error: updateError } = await supabase
+          .from('reservations')
+          .update({ pickup_notification_sent: true })
+          .eq('id', reservationId)
+
+        if (updateError) {
+          console.error('pickup_notification_sent 업데이트 오류:', updateError)
+        }
+      } catch (error) {
+        console.error('pickup_notification_sent 업데이트 중 오류:', error)
+      }
+
       // 이메일 발송 기록 저장
       try {
         const { error: logError } = await supabase

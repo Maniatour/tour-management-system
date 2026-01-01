@@ -728,6 +728,22 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                     })
                   }
                   
+                  // 픽업 안내 미발송 예약 확인
+                  const hasUnsentPickupNotification = (() => {
+                    if (!tour.reservation_ids || !Array.isArray(tour.reservation_ids) || tour.reservation_ids.length === 0) {
+                      return false
+                    }
+                    const tourReservations = allReservations.filter((r: any) => 
+                      tour.reservation_ids?.includes(r.id)
+                    )
+                    // 픽업 시간이 있고, 픽업 안내를 보내지 않은 예약이 있는지 확인
+                    return tourReservations.some((r: any) => 
+                      r.pickup_time && 
+                      r.pickup_time.trim() !== '' && 
+                      (!r.pickup_notification_sent || r.pickup_notification_sent === false)
+                    )
+                  })()
+                  
                   // 고유한 key 생성: tour.id + tourIndex + date 정보를 조합
                   const uniqueKey = `${tour.id}-${tourIndex}-${date.getTime()}`
                   
@@ -745,10 +761,14 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                         getProductColor(tour.product_id, tour.product_name)
                       } ${
                         isPrivateTour ? 'ring-2 ring-purple-400 ring-opacity-100' : ''
+                      } ${
+                        hasUnsentPickupNotification ? 'ring-2 ring-red-500 ring-opacity-100' : ''
                       }`}
+                      title={hasUnsentPickupNotification ? '픽업 안내 미발송 예약이 있습니다' : ''}
                     >
                       <div className="whitespace-normal break-words leading-tight sm:whitespace-nowrap sm:truncate">
                         <span className={`font-medium ${isPrivateTour ? 'text-purple-100' : ''}`}>
+                          {hasUnsentPickupNotification && <span className="inline-block mr-0.5" title="픽업 안내 미발송">📧</span>}
                           {tourStatusIcon && <span className="inline-block mr-0.5">{tourStatusIcon}</span>}
                           {assignmentIcon && <span className="inline-block mr-0.5">{assignmentIcon}</span>}
                           {isPrivateTour ? '🔒 ' : ''}{getTourDisplayName(tour)}

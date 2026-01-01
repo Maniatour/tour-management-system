@@ -273,7 +273,7 @@ export default function AdminTours() {
       if (productIdsActive.length > 0) {
         const { data, error } = await supabase
           .from('reservations')
-          .select('*')
+          .select('*, pickup_notification_sent')
           .in('product_id', productIdsActive)
           .gte('tour_date', fmt(gridStart))
           .lte('tour_date', fmt(gridEnd))
@@ -288,7 +288,7 @@ export default function AdminTours() {
         if (missingIds.length > 0) {
           const { data: extraReservations, error: extraErr } = await supabase
             .from('reservations')
-            .select('*')
+            .select('*, pickup_notification_sent')
             .in('id', missingIds)
           if (!extraErr && extraReservations && extraReservations.length > 0) {
             reservationsData = [...(reservationsData || []), ...extraReservations]

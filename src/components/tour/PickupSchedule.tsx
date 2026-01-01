@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ChevronDown, ChevronUp, MapPin, Map, Users, Mail, Eye } from 'lucide-react'
+import { ChevronDown, ChevronUp, MapPin, Map, Users, Mail, Eye, CheckCircle2 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { ConnectionStatusLabel } from './TourUIComponents'
 
@@ -13,6 +13,7 @@ interface PickupScheduleProps {
     children?: number | null
     infants?: number | null
     tour_date?: string | null
+    pickup_notification_sent?: boolean | null
   }>
   pickupHotels: Array<{
     id: string
@@ -135,8 +136,21 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
           <div className="space-y-1">
             {reservations.map((reservation) => (
               <div key={reservation.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                <div className="text-xs text-gray-600">
-                  {getCustomerName(reservation.customer_id || '')}
+                <div className="flex items-center space-x-1 text-xs text-gray-600">
+                  {reservation.pickup_notification_sent ? (
+                    <CheckCircle2 
+                      size={14} 
+                      className="text-green-600 flex-shrink-0" 
+                      title="픽업 안내 발송됨"
+                    />
+                  ) : (
+                    <Mail 
+                      size={14} 
+                      className="text-gray-400 flex-shrink-0" 
+                      title="픽업 안내 미발송"
+                    />
+                  )}
+                  <span>{getCustomerName(reservation.customer_id || '')}</span>
                 </div>
                 <div className="text-xs text-gray-500">
                   {reservation.total_people || 0}인

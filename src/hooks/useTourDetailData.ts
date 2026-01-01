@@ -496,7 +496,7 @@ export function useTourDetailData() {
           if (assignedReservationIds.length > 0) {
             const { data: assignedReservationsData, error: assignedError } = await supabase
               .from('reservations')
-              .select('*')
+              .select('*, pickup_notification_sent')
               .in('id', assignedReservationIds)
             
             if (assignedError) {

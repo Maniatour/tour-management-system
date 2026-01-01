@@ -811,6 +811,10 @@ export default function TourDetailPage() {
 
       if (successCount > 0) {
         alert(`픽업 스케줄 알림이 ${successCount}건 발송되었습니다.${failCount > 0 ? ` (${failCount}건 실패)` : ''}`)
+        // 데이터 새로고침
+        if (tourData.refetchTourData) {
+          await tourData.refetchTourData()
+        }
       } else {
         alert('알림 발송에 실패했습니다.')
       }
