@@ -1139,6 +1139,7 @@ export default function TourDetailPage() {
               onProductChange={handleTourProductUpdate}
               getStatusColor={getStatusColor}
               getStatusText={getStatusText}
+              assignedReservations={tourData.assignedReservations}
             />
 
         {/* 날씨 정보 섹션 */}

@@ -70,6 +70,12 @@ export default function GuideTourDetailPage() {
   }>>>(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [residentStatusSummary, setResidentStatusSummary] = useState({
+    usResident: 0,
+    nonResident: 0,
+    nonResidentWithPass: 0,
+    passCoveredCount: 0
+  })
   
   // 모바일 최적화를 위한 상태
   const [activeTab, setActiveTab] = useState<'overview' | 'schedule' | 'bookings' | 'photos' | 'chat' | 'expenses' | 'report'>('overview')
@@ -316,6 +322,41 @@ export default function GuideTourDetailPage() {
         .from('channels')
         .select('id, name, favicon_url');
       setChannels(channelsData || [])
+
+      // 거주 상태별 인원 수 합산 가져오기
+      if (allReservationIds.length > 0) {
+        const { data: reservationCustomers, error: rcError } = await supabase
+          .from('reservation_customers')
+          .select('resident_status, pass_covered_count')
+          .in('reservation_id', allReservationIds)
+        
+        if (!rcError && reservationCustomers) {
+          let usResidentCount = 0
+          let nonResidentCount = 0
+          let nonResidentWithPassCount = 0
+          let passCoveredCount = 0
+          
+          reservationCustomers.forEach((rc: any) => {
+            if (rc.resident_status === 'us_resident') {
+              usResidentCount++
+            } else if (rc.resident_status === 'non_resident') {
+              nonResidentCount++
+            } else if (rc.resident_status === 'non_resident_with_pass') {
+              nonResidentWithPassCount++
+              if (rc.pass_covered_count) {
+                passCoveredCount += rc.pass_covered_count
+              }
+            }
+          })
+          
+          setResidentStatusSummary({
+            usResident: usResidentCount,
+            nonResident: nonResidentCount,
+            nonResidentWithPass: nonResidentWithPassCount,
+            passCoveredCount: passCoveredCount
+          })
+        }
+      }
 
     } catch (err) {
       console.error('Error loading tour data:', err)
@@ -947,6 +988,56 @@ export default function GuideTourDetailPage() {
               )
             })()}
             
+                  {/* 거주 상태별 인원 수 합산 */}
+                  {reservations.length > 0 && (
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        {tCommon('residentStatusByCount')}
+                      </label>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <span className="w-3 h-3 rounded-full bg-green-600"></span>
+                            <span className="text-xs font-medium text-green-900">{tCommon('statusUsResident')}</span>
+                          </div>
+                          <div className="text-lg font-semibold text-green-900">
+                            {residentStatusSummary.usResident}{locale === 'ko' ? '명' : ''}
+                          </div>
+                        </div>
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <span className="w-3 h-3 rounded-full bg-blue-600"></span>
+                            <span className="text-xs font-medium text-blue-900">{tCommon('statusNonResident')}</span>
+                          </div>
+                          <div className="text-lg font-semibold text-blue-900">
+                            {residentStatusSummary.nonResident}{locale === 'ko' ? '명' : ''}
+                          </div>
+                        </div>
+                        <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <span className="w-3 h-3 rounded-full bg-purple-600"></span>
+                            <span className="text-xs font-medium text-purple-900">{locale === 'ko' ? '패스 커버' : 'Pass Covered'}</span>
+                          </div>
+                          <div className="text-lg font-semibold text-purple-900">
+                            {residentStatusSummary.passCoveredCount}{locale === 'ko' ? '명' : ''}
+                          </div>
+                        </div>
+                        <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <span className="w-3 h-3 rounded-full bg-purple-600"></span>
+                            <span className="text-xs font-medium text-purple-900">{locale === 'ko' ? '패스 장수' : 'Pass Count'}</span>
+                          </div>
+                          <div className="text-lg font-semibold text-purple-900">
+                            {residentStatusSummary.nonResidentWithPass}{locale === 'ko' ? '장' : ''}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-2 text-xs text-gray-600">
+                        {tCommon('total')}: {residentStatusSummary.usResident + residentStatusSummary.nonResident + residentStatusSummary.passCoveredCount}{locale === 'ko' ? '명' : ` ${tCommon('people')}`}
+                      </div>
+                    </div>
+                  )}
+                  
                   {/* 출발 - 종료 시간 */}
                   <div className="text-gray-700">
                     {calculatedTourTimes ? (

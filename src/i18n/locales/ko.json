@@ -443,7 +443,24 @@
     "couponDiscount": "쿠폰 할인",
     "additionalDiscount": "추가 할인",
     "optionalOptions": "선택 옵션",
-    "requiredOptions": "필수 옵션"
+    "requiredOptions": "필수 옵션",
+    "statusUsResident": "미국 거주자",
+    "statusNonResident": "비거주자",
+    "statusNonResidentWithPass": "비거주자 (패스 보유)",
+    "statusNone": "정보 없음",
+    "customer": "고객",
+    "residentStatusByCount": "거주 상태별 인원 수",
+    "passCovered": "패스 커버",
+    "total": "총",
+    "people": "명",
+    "residentStatusSetup": "거주 상태별 인원 수 설정",
+    "passCoveredCount": "패스로 커버되는 인원 수",
+    "passCoveredExample": "예: 패스 1장으로 4인 커버 시 4 입력",
+    "residentStatusTotal": "거주 상태별 합계",
+    "peopleCountMismatch": "총 인원과 일치하지 않습니다",
+    "residentStatusUpdateSuccess": "거주 상태가 성공적으로 업데이트되었습니다.",
+    "residentStatusUpdateFailed": "거주 상태 업데이트에 실패했습니다.",
+    "peopleCountMismatchAlert": "총 인원({total}명)과 거주 상태별 합계({statusTotal}명)가 일치하지 않습니다."
   },
   "products": {
     "title": "상품 관리",
@@ -2203,11 +2220,6 @@
     "loading": "로딩 중...",
     "loginRequired": "로그인이 필요합니다.",
     "goToDashboard": "대시보드로 이동",
-    "currentStatus": "현재 상태:",
-    "statusUsResident": "미국 거주자",
-    "statusNonResident": "비거주자",
-    "statusNonResidentWithPass": "비거주자 (패스 보유)",
-    "statusNone": "정보 없음",
-    "customer": "고객"
+    "currentStatus": "현재 상태:"
   }
 }

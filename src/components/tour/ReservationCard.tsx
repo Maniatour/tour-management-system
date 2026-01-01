@@ -95,28 +95,128 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   const [channelInfo, setChannelInfo] = useState<{ name: string; favicon?: string; has_not_included_price?: boolean; commission_base_price_only?: boolean } | null>(null)
   const [customerData, setCustomerData] = useState<{ id: string; resident_status: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null } | null>(null)
   const [residentStatusDropdownOpen, setResidentStatusDropdownOpen] = useState<string | null>(null)
+  const [showResidentStatusModal, setShowResidentStatusModal] = useState(false)
+  const [residentStatusCounts, setResidentStatusCounts] = useState({
+    usResident: 0,
+    nonResident: 0,
+    nonResidentWithPass: 0,
+    passCoveredCount: 0
+  })
+
+  // 패스 장수에 따라 실제 커버되는 인원 수 계산 (패스 1장 = 4인)
+  // 실제 예약 인원을 초과할 수 없음
+  const calculateActualPassCovered = (passCount: number, usResident: number, nonResident: number) => {
+    const totalPeople = (reservation.adults || 0) + (reservation.children || 0) + (reservation.infants || 0)
+    const maxCoverable = passCount * 4 // 패스로 최대 커버 가능한 인원 수
+    const remainingPeople = totalPeople - usResident - nonResident // 패스로 커버해야 할 인원 수
+    return Math.min(maxCoverable, remainingPeople) // 둘 중 작은 값
+  }
   
-  // 고객 정보 가져오기 (resident_status 포함)
+  // 예약별 거주 상태 정보 가져오기 (reservation_customers 테이블에서)
   const fetchCustomerData = useCallback(async () => {
-    if (!reservation.customer_id) return
+    if (!reservation.id) return
     
     try {
-      const { data: customer, error } = await supabase
-        .from('customers')
-        .select('id, resident_status')
-        .eq('id', reservation.customer_id)
-        .maybeSingle()
+      // reservation_customers 테이블에서 예약의 거주 상태 정보 가져오기
+      const { data: reservationCustomers, error } = await supabase
+        .from('reservation_customers')
+        .select('resident_status, pass_covered_count')
+        .eq('reservation_id', reservation.id)
       
-      if (!error && customer) {
-        setCustomerData({
-          id: customer.id,
-          resident_status: customer.resident_status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
+      if (error) {
+        console.error('예약 고객 정보 조회 오류:', error)
+        // fallback: customers 테이블에서 가져오기
+        if (reservation.customer_id) {
+          const { data: customer, error: customerError } = await supabase
+            .from('customers')
+            .select('id, resident_status')
+            .eq('id', reservation.customer_id)
+            .maybeSingle()
+          
+          if (!customerError && customer) {
+            setCustomerData({
+              id: customer.id,
+              resident_status: customer.resident_status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
+            })
+          }
+        }
+        return
+      }
+      
+      // 상태별 개수 계산 및 인원 수 저장
+      let usResidentCount = 0
+      let nonResidentCount = 0
+      let nonResidentWithPassCount = 0
+      let passCoveredCount = 0
+      
+      if (reservationCustomers && reservationCustomers.length > 0) {
+        // 상태별 개수 계산
+        const statusCounts: Record<string, number> = {}
+        reservationCustomers.forEach((rc: any) => {
+          const status = rc.resident_status || 'unknown'
+          statusCounts[status] = (statusCounts[status] || 0) + 1
+          
+          if (status === 'us_resident') {
+            usResidentCount++
+          } else if (status === 'non_resident') {
+            nonResidentCount++
+          } else if (status === 'non_resident_with_pass') {
+            nonResidentWithPassCount++
+            // 패스 커버 수는 첫 번째 레코드에서만 가져오기
+            if (passCoveredCount === 0 && rc.pass_covered_count) {
+              passCoveredCount = rc.pass_covered_count
+            }
+          }
         })
+        
+        // 거주 상태별 인원 수 저장
+        setResidentStatusCounts({
+          usResident: usResidentCount,
+          nonResident: nonResidentCount,
+          nonResidentWithPass: nonResidentWithPassCount,
+          passCoveredCount: passCoveredCount
+        })
+        
+        // 가장 많은 상태 찾기
+        let mostCommonStatus: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null = null
+        let maxCount = 0
+        Object.entries(statusCounts).forEach(([status, count]) => {
+          if (count > maxCount && status !== 'unknown') {
+            maxCount = count
+            mostCommonStatus = status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
+          }
+        })
+        
+        // 가장 많은 상태가 없으면 첫 번째 상태 사용
+        if (!mostCommonStatus && reservationCustomers[0]) {
+          mostCommonStatus = reservationCustomers[0].resident_status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
+        }
+        
+        setCustomerData({
+          id: reservation.id, // reservation_id를 id로 사용
+          resident_status: mostCommonStatus
+        })
+      } else {
+        // reservation_customers에 데이터가 없으면 customers 테이블에서 가져오기 (fallback)
+        if (reservation.customer_id) {
+          const { data: customer, error: customerError } = await supabase
+            .from('customers')
+            .select('id, resident_status')
+            .eq('id', reservation.customer_id)
+            .maybeSingle()
+          
+          if (!customerError && customer) {
+            setCustomerData({
+              id: customer.id,
+              resident_status: customer.resident_status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
+            })
+          }
+        }
       }
     } catch (error) {
       console.error('고객 정보 조회 오류:', error)
     }
-  }, [reservation.customer_id])
+  }, [reservation.id, reservation.customer_id])
 
   // 채널 정보 가져오기
   const fetchChannelInfo = useCallback(async () => {
@@ -243,18 +343,216 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }
   }, [isStaff, reservation.id])
 
-  // 거주 상태 업데이트 핸들러
-  const handleUpdateResidentStatus = async (customerId: string, newStatus: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null) => {
+  // 거주 상태 모달 열기
+  const handleOpenResidentStatusModal = useCallback(async () => {
+    // 현재 거주 상태별 인원 수 로드
+    if (!reservation.id) return
+    
     try {
-      const { error } = await supabase
-        .from('customers')
-        .update({ resident_status: newStatus })
-        .eq('id', customerId)
+      const { data: reservationCustomers, error } = await supabase
+        .from('reservation_customers')
+        .select('resident_status, pass_covered_count')
+        .eq('reservation_id', reservation.id)
+      
+      if (!error && reservationCustomers && reservationCustomers.length > 0) {
+        let usResidentCount = 0
+        let nonResidentCount = 0
+        let nonResidentWithPassCount = 0
+        let passCoveredCount = 0
+        
+        reservationCustomers.forEach((rc: any) => {
+          if (rc.resident_status === 'us_resident') {
+            usResidentCount++
+          } else if (rc.resident_status === 'non_resident') {
+            nonResidentCount++
+          } else if (rc.resident_status === 'non_resident_with_pass') {
+            nonResidentWithPassCount++
+            // 각 패스는 4인을 커버하므로 합산
+            if (rc.pass_covered_count) {
+              passCoveredCount += rc.pass_covered_count
+            }
+          }
+        })
+        
+        setResidentStatusCounts({
+          usResident: usResidentCount,
+          nonResident: nonResidentCount,
+          nonResidentWithPass: nonResidentWithPassCount,
+          passCoveredCount: passCoveredCount
+        })
+      } else {
+        // 데이터가 없으면 0으로 초기화
+        setResidentStatusCounts({
+          usResident: 0,
+          nonResident: 0,
+          nonResidentWithPass: 0,
+          passCoveredCount: 0
+        })
+      }
+    } catch (error) {
+      console.error('거주 상태 정보 로드 오류:', error)
+    }
+    
+    setShowResidentStatusModal(true)
+  }, [reservation.id])
 
-      if (error) {
-        console.error('Error updating resident status:', error)
-        alert('거주 상태 업데이트에 실패했습니다.')
+  // 거주 상태별 인원 수 저장
+  const handleSaveResidentStatusCounts = async () => {
+    try {
+      const totalPeople = (reservation.adults || 0) + (reservation.children || 0) + (reservation.infants || 0)
+      
+      // 패스 장수는 비거주자 (패스 보유) 인원 수와 같음
+      const passCount = residentStatusCounts.nonResidentWithPass
+      // 패스로 커버되는 인원 수는 패스 장수 × 4와 실제 예약 인원 중 작은 값
+      const actualPassCovered = calculateActualPassCovered(
+        passCount,
+        residentStatusCounts.usResident,
+        residentStatusCounts.nonResident
+      )
+      
+      // 총 인원 수 확인
+      const statusTotal = residentStatusCounts.usResident + residentStatusCounts.nonResident + actualPassCovered
+      
+      if (statusTotal !== totalPeople) {
+        alert(`총 인원(${totalPeople}명)과 거주 상태별 합계(${statusTotal}명)가 일치하지 않습니다.`)
         return
+      }
+
+      // 기존 reservation_customers 데이터 삭제
+      await supabase
+        .from('reservation_customers')
+        .delete()
+        .eq('reservation_id', reservation.id)
+
+      // 상태별 인원 수에 따라 reservation_customers 레코드 생성
+      const reservationCustomers: any[] = []
+      let orderIndex = 0
+
+      // 미국 거주자
+      for (let i = 0; i < residentStatusCounts.usResident; i++) {
+        reservationCustomers.push({
+          reservation_id: reservation.id,
+          customer_id: reservation.customer_id,
+          resident_status: 'us_resident',
+          pass_covered_count: 0,
+          order_index: orderIndex++
+        })
+      }
+
+      // 비거주자
+      for (let i = 0; i < residentStatusCounts.nonResident; i++) {
+        reservationCustomers.push({
+          reservation_id: reservation.id,
+          customer_id: reservation.customer_id,
+          resident_status: 'non_resident',
+          pass_covered_count: 0,
+          order_index: orderIndex++
+        })
+      }
+
+      // 비거주자 (패스 보유) - 패스 장수만큼 생성, 각 패스는 4인을 커버
+      for (let i = 0; i < passCount; i++) {
+        reservationCustomers.push({
+          reservation_id: reservation.id,
+          customer_id: reservation.customer_id,
+          resident_status: 'non_resident_with_pass',
+          pass_covered_count: 4, // 패스 1장당 4인 커버
+          order_index: orderIndex++
+        })
+      }
+
+      // reservation_customers 데이터 삽입
+      if (reservationCustomers.length > 0) {
+        const { error: rcError } = await supabase
+          .from('reservation_customers')
+          .insert(reservationCustomers)
+
+        if (rcError) {
+          console.error('Error saving reservation_customers:', rcError)
+          alert('거주 상태 업데이트에 실패했습니다.')
+          return
+        }
+      }
+
+      // 성공 시 모달 닫기 및 고객 정보 새로고침
+      setShowResidentStatusModal(false)
+      await fetchCustomerData()
+      alert('거주 상태가 성공적으로 업데이트되었습니다.')
+    } catch (error) {
+      console.error('Error updating resident status:', error)
+      alert('거주 상태 업데이트에 실패했습니다.')
+    }
+  }
+
+  // 거주 상태 업데이트 핸들러 (reservation_customers 테이블 업데이트) - 기존 함수는 유지 (하위 호환성)
+  const handleUpdateResidentStatus = async (reservationId: string, newStatus: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null) => {
+    try {
+      // reservation_customers 테이블에서 해당 예약의 모든 레코드 가져오기
+      const { data: existingRecords, error: fetchError } = await supabase
+        .from('reservation_customers')
+        .select('id, customer_id, pass_covered_count')
+        .eq('reservation_id', reservationId)
+      
+      if (fetchError) {
+        console.error('Error fetching reservation_customers:', fetchError)
+        // reservation_customers에 데이터가 없으면 새로 생성
+        if (reservation.customer_id) {
+          const { error: insertError } = await supabase
+            .from('reservation_customers')
+            .insert({
+              reservation_id: reservationId,
+              customer_id: reservation.customer_id,
+              resident_status: newStatus,
+              pass_covered_count: 0,
+              order_index: 0
+            })
+          
+          if (insertError) {
+            console.error('Error creating reservation_customer:', insertError)
+            alert('거주 상태 업데이트에 실패했습니다.')
+            return
+          }
+        }
+      } else if (existingRecords && existingRecords.length > 0) {
+        // 기존 레코드가 있으면 모든 레코드의 상태를 업데이트
+        const updatePromises = existingRecords.map((record: any) => 
+          supabase
+            .from('reservation_customers')
+            .update({ 
+              resident_status: newStatus,
+              // 패스 보유 상태가 아니면 pass_covered_count를 0으로 설정
+              pass_covered_count: newStatus === 'non_resident_with_pass' ? (record.pass_covered_count || 0) : 0
+            })
+            .eq('id', record.id)
+        )
+        
+        const results = await Promise.all(updatePromises)
+        const hasError = results.some(result => result.error)
+        
+        if (hasError) {
+          console.error('Error updating reservation_customers:', results.find(r => r.error)?.error)
+          alert('거주 상태 업데이트에 실패했습니다.')
+          return
+        }
+      } else {
+        // reservation_customers에 데이터가 없으면 새로 생성
+        if (reservation.customer_id) {
+          const { error: insertError } = await supabase
+            .from('reservation_customers')
+            .insert({
+              reservation_id: reservationId,
+              customer_id: reservation.customer_id,
+              resident_status: newStatus,
+              pass_covered_count: 0,
+              order_index: 0
+            })
+          
+          if (insertError) {
+            console.error('Error creating reservation_customer:', insertError)
+            alert('거주 상태 업데이트에 실패했습니다.')
+            return
+          }
+        }
       }
 
       // 성공 시 드롭다운 닫기 및 고객 정보 새로고침
@@ -715,7 +1013,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             <span className="flex-shrink-0 relative resident-status-dropdown">
               {(() => {
                 const residentStatus = customerData.resident_status
-                const isDropdownOpen = residentStatusDropdownOpen === customerData.id
+                const isDropdownOpen = residentStatusDropdownOpen === reservation.id
                 
                 const getStatusIcon = () => {
                   if (residentStatus === 'us_resident') {
@@ -741,78 +1039,16 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                     <div 
                       onClick={(e) => {
                         e.stopPropagation()
-                        setResidentStatusDropdownOpen(isDropdownOpen ? null : customerData.id)
+                        handleOpenResidentStatusModal()
                       }}
                       className="relative group"
                     >
                       {getStatusIcon()}
-                      {!isDropdownOpen && (
-                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
-                          {getStatusLabel()} (클릭하여 변경)
-                          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* 드롭다운 메뉴 */}
-                    {isDropdownOpen && (
-                      <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[180px]">
-                        <div className="py-1">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleUpdateResidentStatus(customerData.id, 'us_resident')
-                            }}
-                            className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 flex items-center space-x-2 ${
-                              residentStatus === 'us_resident' ? 'bg-green-50 text-green-700' : 'text-gray-700'
-                            }`}
-                          >
-                            <Home className="h-4 w-4 text-green-600" />
-                            <span>미국 거주자</span>
-                            {residentStatus === 'us_resident' && <span className="ml-auto text-xs">✓</span>}
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleUpdateResidentStatus(customerData.id, 'non_resident')
-                            }}
-                            className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 flex items-center space-x-2 ${
-                              residentStatus === 'non_resident' ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
-                            }`}
-                          >
-                            <Plane className="h-4 w-4 text-blue-600" />
-                            <span>비거주자</span>
-                            {residentStatus === 'non_resident' && <span className="ml-auto text-xs">✓</span>}
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleUpdateResidentStatus(customerData.id, 'non_resident_with_pass')
-                            }}
-                            className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 flex items-center space-x-2 ${
-                              residentStatus === 'non_resident_with_pass' ? 'bg-purple-50 text-purple-700' : 'text-gray-700'
-                            }`}
-                          >
-                            <PlaneTakeoff className="h-4 w-4 text-purple-600" />
-                            <span>비거주자 (패스 보유)</span>
-                            {residentStatus === 'non_resident_with_pass' && <span className="ml-auto text-xs">✓</span>}
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleUpdateResidentStatus(customerData.id, null)
-                            }}
-                            className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 flex items-center space-x-2 ${
-                              !residentStatus ? 'bg-gray-50 text-gray-700' : 'text-gray-700'
-                            }`}
-                          >
-                            <HelpCircle className="h-4 w-4 text-gray-400" />
-                            <span>정보 없음</span>
-                            {!residentStatus && <span className="ml-auto text-xs">✓</span>}
-                          </button>
-                        </div>
+                      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                        {getStatusLabel()} (클릭하여 변경)
+                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
                       </div>
-                    )}
+                    </div>
                   </div>
                 )
               })()}
@@ -1285,6 +1521,183 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
          onClose={() => setShowSimplePickupModal(false)}
          getCustomerName={getCustomerName}
        />
+
+       {/* 거주 상태별 인원 수 설정 모달 */}
+       {showResidentStatusModal && (
+         <div 
+           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+           onClick={(e) => {
+             if (e.target === e.currentTarget) {
+               setShowResidentStatusModal(false)
+             }
+           }}
+         >
+           <div 
+             className="bg-white rounded-lg p-6 w-full max-w-md"
+             onClick={(e) => e.stopPropagation()}
+           >
+             <div className="flex items-center justify-between mb-4">
+               <h3 className="text-lg font-semibold text-gray-900">
+                 거주 상태별 인원 수 설정
+               </h3>
+               <button
+                 onClick={() => setShowResidentStatusModal(false)}
+                 className="text-gray-400 hover:text-gray-600"
+               >
+                 <X className="h-5 w-5" />
+               </button>
+             </div>
+
+             <div className="space-y-4">
+               {/* 총 인원 표시 */}
+               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                 <div className="text-sm font-medium text-blue-900">
+                   총 인원: {(reservation.adults || 0) + (reservation.children || 0) + (reservation.infants || 0)}명
+                 </div>
+               </div>
+
+               {/* 미국 거주자 */}
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                   <span className="inline-flex items-center">
+                     <span className="w-3 h-3 rounded-full bg-green-600 mr-2"></span>
+                     미국 거주자
+                   </span>
+                 </label>
+                 <input
+                   type="number"
+                  value={residentStatusCounts.usResident}
+                  onChange={(e) => {
+                    const newCount = Number(e.target.value) || 0
+                    const actualPassCovered = calculateActualPassCovered(
+                      residentStatusCounts.nonResidentWithPass,
+                      newCount,
+                      residentStatusCounts.nonResident
+                    )
+                    setResidentStatusCounts(prev => ({ 
+                      ...prev, 
+                      usResident: newCount,
+                      passCoveredCount: actualPassCovered
+                    }))
+                  }}
+                   min="0"
+                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                 />
+               </div>
+
+               {/* 비거주자 */}
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                   <span className="inline-flex items-center">
+                     <span className="w-3 h-3 rounded-full bg-blue-600 mr-2"></span>
+                     비거주자
+                   </span>
+                 </label>
+                 <input
+                   type="number"
+                  value={residentStatusCounts.nonResident}
+                  onChange={(e) => {
+                    const newCount = Number(e.target.value) || 0
+                    const actualPassCovered = calculateActualPassCovered(
+                      residentStatusCounts.nonResidentWithPass,
+                      residentStatusCounts.usResident,
+                      newCount
+                    )
+                    setResidentStatusCounts(prev => ({ 
+                      ...prev, 
+                      nonResident: newCount,
+                      passCoveredCount: actualPassCovered
+                    }))
+                  }}
+                   min="0"
+                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                 />
+               </div>
+
+               {/* 비거주자 (패스 보유) - 실제 패스 장수 입력 */}
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                   <span className="inline-flex items-center">
+                     <span className="w-3 h-3 rounded-full bg-purple-600 mr-2"></span>
+                     비거주자 (패스 보유) (패스 장수)
+                   </span>
+                 </label>
+                 <input
+                   type="number"
+                   value={residentStatusCounts.nonResidentWithPass}
+                   onChange={(e) => {
+                     const newPassCount = Number(e.target.value) || 0
+                     const actualPassCovered = calculateActualPassCovered(
+                       newPassCount,
+                       residentStatusCounts.usResident,
+                       residentStatusCounts.nonResident
+                     )
+                     setResidentStatusCounts(prev => ({ 
+                       ...prev, 
+                       nonResidentWithPass: newPassCount,
+                       passCoveredCount: actualPassCovered // 패스 장수와 실제 예약 인원에 따라 자동 계산
+                     }))
+                   }}
+                   min="0"
+                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                   placeholder="실제 보유한 패스 장수 입력"
+                 />
+                 <p className="text-xs text-gray-500 mt-1">
+                   패스 {residentStatusCounts.nonResidentWithPass}장 = {calculateActualPassCovered(residentStatusCounts.nonResidentWithPass, residentStatusCounts.usResident, residentStatusCounts.nonResident)}인 커버 (최대 {residentStatusCounts.nonResidentWithPass * 4}인 가능)
+                 </p>
+               </div>
+
+               {/* 패스로 커버되는 인원 수 - 자동 계산 표시 */}
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                   패스로 커버되는 인원 수 (자동 계산)
+                 </label>
+                 <input
+                   type="number"
+                   value={residentStatusCounts.passCoveredCount}
+                   readOnly
+                   className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-700 cursor-not-allowed"
+                 />
+                 <p className="text-xs text-gray-500 mt-1">
+                   패스 1장당 4인 커버 (실제 예약 인원과 패스 최대 커버 인원 중 작은 값)
+                 </p>
+               </div>
+
+               {/* 합계 확인 */}
+               <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                 <div className="text-sm text-gray-700">
+                   거주 상태별 합계: {residentStatusCounts.usResident + residentStatusCounts.nonResident + residentStatusCounts.passCoveredCount}명
+                 </div>
+                 <div className="text-xs text-gray-600 mt-1">
+                   (미국 거주자: {residentStatusCounts.usResident}명, 비거주자: {residentStatusCounts.nonResident}명, 패스 커버: {residentStatusCounts.passCoveredCount}명)
+                 </div>
+                 {(residentStatusCounts.usResident + residentStatusCounts.nonResident + residentStatusCounts.passCoveredCount) !== 
+                  ((reservation.adults || 0) + (reservation.children || 0) + (reservation.infants || 0)) && (
+                  <div className="text-xs text-orange-600 mt-1">
+                    ⚠️ 총 인원과 일치하지 않습니다
+                  </div>
+                )}
+               </div>
+
+               {/* 버튼 */}
+               <div className="flex justify-end space-x-2 pt-4">
+                 <button
+                   onClick={() => setShowResidentStatusModal(false)}
+                   className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                 >
+                   취소
+                 </button>
+                 <button
+                   onClick={handleSaveResidentStatusCounts}
+                   className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                 >
+                   저장
+                 </button>
+               </div>
+             </div>
+           </div>
+         </div>
+       )}
      </div>
    )
  }

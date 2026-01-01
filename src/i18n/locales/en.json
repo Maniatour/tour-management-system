@@ -434,7 +434,24 @@
     "schedule": "Schedule",
     "faq": "FAQ",
     "media": "Media",
-    "changeHistory": "Change History"
+    "changeHistory": "Change History",
+    "statusUsResident": "US Resident",
+    "statusNonResident": "Non-Resident",
+    "statusNonResidentWithPass": "Non-Resident (with Pass)",
+    "statusNone": "No Information",
+    "customer": "Customer",
+    "residentStatusByCount": "Resident Status by Count",
+    "passCovered": "Pass Covered",
+    "total": "Total",
+    "people": "people",
+    "residentStatusSetup": "Resident Status Setup",
+    "passCoveredCount": "Number of people covered by pass",
+    "passCoveredExample": "Example: Enter 4 if one pass covers 4 people",
+    "residentStatusTotal": "Resident Status Total",
+    "peopleCountMismatch": "Does not match total people",
+    "residentStatusUpdateSuccess": "Resident status has been successfully updated.",
+    "residentStatusUpdateFailed": "Failed to update resident status.",
+    "peopleCountMismatchAlert": "Total people ({total}) does not match resident status total ({statusTotal})."
   },
   "products": {
     "title": "Product Management",
@@ -2093,11 +2110,6 @@
     "loading": "Loading...",
     "loginRequired": "Login required.",
     "goToDashboard": "Go to Dashboard",
-    "currentStatus": "Current Status:",
-    "statusUsResident": "US Resident",
-    "statusNonResident": "Non-Resident",
-    "statusNonResidentWithPass": "Non-Resident (with Pass)",
-    "statusNone": "No Information",
-    "customer": "Customer"
+    "currentStatus": "Current Status:"
   }
 }

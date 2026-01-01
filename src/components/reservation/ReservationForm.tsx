@@ -136,6 +136,11 @@ export default function ReservationForm({
     child: number
     infant: number
     totalPeople: number
+    // 거주 상태별 인원 수
+    usResidentCount?: number
+    nonResidentCount?: number
+    nonResidentWithPassCount?: number
+    passCoveredCount?: number // 패스로 커버되는 인원 수
     channelId: string
     selectedChannelType: 'ota' | 'self' | 'partner'
     channelSearch: string
@@ -327,6 +332,11 @@ export default function ReservationForm({
     child: reservation?.child || rez.child || 0,
     infant: reservation?.infant || rez.infant || 0,
     totalPeople: reservation?.totalPeople || rez.total_people || 1,
+    // 거주 상태별 인원 수 (초기값은 0, 예약 수정 시 reservation_customers에서 로드)
+    usResidentCount: 0,
+    nonResidentCount: 0,
+    nonResidentWithPassCount: 0,
+    passCoveredCount: 0,
     channelId: reservation?.channelId || rez.channel_id || '',
     selectedChannelType: reservation?.channelId ? 
       (channels.find(c => c.id === reservation?.channelId)?.type || 'self') : (rez.channel_id ? (channels.find(c => c.id === rez.channel_id)?.type || 'self') : 'self'),
@@ -502,6 +512,37 @@ export default function ReservationForm({
         if (reservationData) {
           console.log('ReservationForm: 예약 데이터 조회 성공:', reservationData)
           
+          // reservation_customers 테이블에서 거주 상태별 인원 수 가져오기
+          let usResidentCount = 0
+          let nonResidentCount = 0
+          let nonResidentWithPassCount = 0
+          let passCoveredCount = 0
+          
+          try {
+            const { data: reservationCustomers, error: rcError } = await supabase
+              .from('reservation_customers')
+              .select('resident_status, pass_covered_count')
+              .eq('reservation_id', reservation.id)
+            
+            if (!rcError && reservationCustomers && reservationCustomers.length > 0) {
+              reservationCustomers.forEach((rc: any) => {
+                if (rc.resident_status === 'us_resident') {
+                  usResidentCount++
+                } else if (rc.resident_status === 'non_resident') {
+                  nonResidentCount++
+                } else if (rc.resident_status === 'non_resident_with_pass') {
+                  nonResidentWithPassCount++
+                  // 각 패스는 4인을 커버하므로 합산
+                  if (rc.pass_covered_count) {
+                    passCoveredCount += rc.pass_covered_count
+                  }
+                }
+              })
+            }
+          } catch (rcError) {
+            console.error('ReservationForm: reservation_customers 조회 오류:', rcError)
+          }
+          
           // customer_id로 customers 테이블에서 고객 정보 조회
           if (reservationData.customer_id) {
             const { data: customerData, error: customerError } = await (supabase as any)
@@ -521,13 +562,17 @@ export default function ReservationForm({
             } else if (customerData) {
               console.log('ReservationForm: 고객 데이터 조회 성공:', customerData)
               
-              // formData 업데이트 (기본 필드와 choices 데이터)
+              // formData 업데이트 (기본 필드와 choices 데이터, 거주 상태별 인원 수)
               setFormData(prev => ({
                 ...prev,
                 customerId: customerData.id,
                 customerSearch: customerData.name || '',
                 productId: reservationData.product_id || '',
-                status: reservationData.status || 'pending'
+                status: reservationData.status || 'pending',
+                usResidentCount,
+                nonResidentCount,
+                nonResidentWithPassCount,
+                passCoveredCount
               }))
               
               // 상품 ID가 설정된 후 초이스 로드
@@ -2331,6 +2376,11 @@ export default function ReservationForm({
         totalPeople,
         choices: choicesData,
         selectedChoices: formData.selectedChoices as any,
+        // 거주 상태별 인원 수 정보 전달
+        usResidentCount: formData.usResidentCount || 0,
+        nonResidentCount: formData.nonResidentCount || 0,
+        nonResidentWithPassCount: formData.nonResidentWithPassCount || 0,
+        passCoveredCount: formData.passCoveredCount || 0,
         // 가격 정보를 포함하여 전달
         pricingInfo: {
           adultProductPrice: formData.adultProductPrice,

@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, DollarSign, Eye, X, GripVertical, Clock, Mail, ChevronDown, Edit } from 'lucide-react'
+import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, DollarSign, Eye, X, GripVertical, Clock, Mail, ChevronDown, Edit, Home, Plane, PlaneTakeoff, HelpCircle } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
@@ -30,6 +30,7 @@ import {
   getStatusColor, 
   calculateTotalPrice 
 } from '@/utils/reservationUtils'
+import { ResidentStatusIcon } from '@/components/reservation/ResidentStatusIcon'
 import type { 
   Customer, 
   Reservation 
@@ -1133,6 +1134,76 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       console.log('New reservation created with ID:', (newReservation as any)?.id)
       console.log('Full reservation data:', newReservation)
 
+      // reservation_customers 테이블에 거주 상태별 인원 수 저장
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const reservationId = (newReservation as any)?.id
+      if (reservationId) {
+        try {
+          // 기존 reservation_customers 데이터 삭제 (업데이트 시)
+          await supabase
+            .from('reservation_customers')
+            .delete()
+            .eq('reservation_id', reservationId)
+
+          // 상태별 인원 수에 따라 reservation_customers 레코드 생성
+          const reservationCustomers: any[] = []
+          let orderIndex = 0
+
+          // 미국 거주자
+          const usResidentCount = (reservation as any).usResidentCount || 0
+          for (let i = 0; i < usResidentCount; i++) {
+            reservationCustomers.push({
+              reservation_id: reservationId,
+              customer_id: reservation.customerId,
+              resident_status: 'us_resident',
+              pass_covered_count: 0,
+              order_index: orderIndex++
+            })
+          }
+
+          // 비거주자
+          const nonResidentCount = (reservation as any).nonResidentCount || 0
+          for (let i = 0; i < nonResidentCount; i++) {
+            reservationCustomers.push({
+              reservation_id: reservationId,
+              customer_id: reservation.customerId,
+              resident_status: 'non_resident',
+              pass_covered_count: 0,
+              order_index: orderIndex++
+            })
+          }
+
+          // 비거주자 (패스 보유) - 패스 장수는 nonResidentWithPassCount와 같음
+          const nonResidentWithPassCount = (reservation as any).nonResidentWithPassCount || 0
+          
+          // 비거주자 (패스 보유) - 패스 장수만큼 생성, 각 패스는 4인을 커버
+          for (let i = 0; i < nonResidentWithPassCount; i++) {
+            reservationCustomers.push({
+              reservation_id: reservationId,
+              customer_id: reservation.customerId,
+              resident_status: 'non_resident_with_pass',
+              pass_covered_count: 4, // 패스 1장당 4인 커버
+              order_index: orderIndex++
+            })
+          }
+
+          // reservation_customers 데이터 삽입
+          if (reservationCustomers.length > 0) {
+            const { error: rcError } = await supabase
+              .from('reservation_customers')
+              .insert(reservationCustomers)
+
+            if (rcError) {
+              console.error('Error saving reservation_customers:', rcError)
+            } else {
+              console.log('Reservation customers saved successfully')
+            }
+          }
+        } catch (rcError) {
+          console.error('Error saving reservation_customers:', rcError)
+        }
+      }
+
       // 투어 자동 생성 또는 업데이트
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (newReservation && (newReservation as any).id) {
@@ -1214,6 +1285,72 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           })
           alert(t('messages.reservationUpdateError') + error.message)
           return
+        }
+
+        // reservation_customers 테이블에 거주 상태별 인원 수 저장
+        try {
+          // 기존 reservation_customers 데이터 삭제
+          await supabase
+            .from('reservation_customers')
+            .delete()
+            .eq('reservation_id', editingReservation.id)
+
+          // 상태별 인원 수에 따라 reservation_customers 레코드 생성
+          const reservationCustomers: any[] = []
+          let orderIndex = 0
+
+          // 미국 거주자
+          const usResidentCount = (reservation as any).usResidentCount || 0
+          for (let i = 0; i < usResidentCount; i++) {
+            reservationCustomers.push({
+              reservation_id: editingReservation.id,
+              customer_id: reservation.customerId,
+              resident_status: 'us_resident',
+              pass_covered_count: 0,
+              order_index: orderIndex++
+            })
+          }
+
+          // 비거주자
+          const nonResidentCount = (reservation as any).nonResidentCount || 0
+          for (let i = 0; i < nonResidentCount; i++) {
+            reservationCustomers.push({
+              reservation_id: editingReservation.id,
+              customer_id: reservation.customerId,
+              resident_status: 'non_resident',
+              pass_covered_count: 0,
+              order_index: orderIndex++
+            })
+          }
+
+          // 비거주자 (패스 보유) - 패스 장수는 nonResidentWithPassCount와 같음
+          const nonResidentWithPassCount = (reservation as any).nonResidentWithPassCount || 0
+          
+          // 비거주자 (패스 보유) - 패스 장수만큼 생성, 각 패스는 4인을 커버
+          for (let i = 0; i < nonResidentWithPassCount; i++) {
+            reservationCustomers.push({
+              reservation_id: editingReservation.id,
+              customer_id: reservation.customerId,
+              resident_status: 'non_resident_with_pass',
+              pass_covered_count: 4, // 패스 1장당 4인 커버
+              order_index: orderIndex++
+            })
+          }
+
+          // reservation_customers 데이터 삽입
+          if (reservationCustomers.length > 0) {
+            const { error: rcError } = await supabase
+              .from('reservation_customers')
+              .insert(reservationCustomers)
+
+            if (rcError) {
+              console.error('Error saving reservation_customers:', rcError)
+            } else {
+              console.log('Reservation customers updated successfully')
+            }
+          }
+        } catch (rcError) {
+          console.error('Error saving reservation_customers:', rcError)
         }
 
         // 가격 정보가 있으면 업데이트 또는 삽입
@@ -2987,6 +3124,18 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         }
                         return null;
                       })()}
+                      
+                      {/* 거주 상태 아이콘 */}
+                      <ResidentStatusIcon
+                        reservationId={reservation.id}
+                        customerId={reservation.customerId}
+                        totalPeople={(reservation.adults || 0) + (reservation.children || 0) + (reservation.infants || 0)}
+                        onUpdate={() => {
+                          // 예약 목록 새로고침
+                          refreshReservations()
+                        }}
+                      />
+                      
                       <span>{getCustomerName(reservation.customerId, (customers as Customer[]) || [])}</span>
                       {/* 인원 정보 */}
                       {(() => {

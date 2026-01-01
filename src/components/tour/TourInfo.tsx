@@ -18,6 +18,7 @@ interface TourInfoProps {
   onProductChange?: (productId: string) => Promise<void>
   getStatusColor: (status: string | null) => string
   getStatusText: (status: string | null) => string
+  assignedReservations?: Array<{ id: string }>
 }
 
 interface Product {
@@ -40,14 +41,76 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   onTourTimeChange,
   onProductChange,
   getStatusColor,
-  getStatusText
+  getStatusText,
+  assignedReservations = []
 }) => {
   const t = useTranslations('tours.tourInfo')
+  const tCommon = useTranslations('common')
   const productName = params.locale === 'ko' ? product?.name_ko : product?.name_en
   const dateLocale = params.locale === 'ko' ? 'ko-KR' : 'en-US'
   
   // 편집 상태 관리
   const [editingProduct, setEditingProduct] = useState(false)
+  const [residentStatusSummary, setResidentStatusSummary] = useState({
+    usResident: 0,
+    nonResident: 0,
+    nonResidentWithPass: 0,
+    passCoveredCount: 0
+  })
+
+  // 거주 상태별 인원 수 합산 가져오기
+  useEffect(() => {
+    const fetchResidentStatusSummary = async () => {
+      if (!assignedReservations || assignedReservations.length === 0) {
+        setResidentStatusSummary({
+          usResident: 0,
+          nonResident: 0,
+          nonResidentWithPass: 0,
+          passCoveredCount: 0
+        })
+        return
+      }
+
+      try {
+        const reservationIds = assignedReservations.map(r => r.id)
+        const { data: reservationCustomers, error } = await supabase
+          .from('reservation_customers')
+          .select('resident_status, pass_covered_count')
+          .in('reservation_id', reservationIds)
+        
+        if (!error && reservationCustomers) {
+          let usResidentCount = 0
+          let nonResidentCount = 0
+          let nonResidentWithPassCount = 0
+          let passCoveredCount = 0
+          
+          reservationCustomers.forEach((rc: any) => {
+            if (rc.resident_status === 'us_resident') {
+              usResidentCount++
+            } else if (rc.resident_status === 'non_resident') {
+              nonResidentCount++
+            } else if (rc.resident_status === 'non_resident_with_pass') {
+              nonResidentWithPassCount++
+              if (rc.pass_covered_count) {
+                passCoveredCount += rc.pass_covered_count
+              }
+            }
+          })
+          
+          setResidentStatusSummary({
+            usResident: usResidentCount,
+            nonResident: nonResidentCount,
+            nonResidentWithPass: nonResidentWithPassCount,
+            passCoveredCount: passCoveredCount
+          })
+        }
+      } catch (error) {
+        console.error('거주 상태 합산 조회 오류:', error)
+      }
+    }
+
+    fetchResidentStatusSummary()
+  }, [assignedReservations])
   const [editingDate, setEditingDate] = useState(false)
   const [editingTime, setEditingTime] = useState(false)
   const [products, setProducts] = useState<Product[]>([])
@@ -312,6 +375,56 @@ export const TourInfo: React.FC<TourInfoProps> = ({
             </button>
           </div>
         </div>
+        
+        {/* 거주 상태별 인원 수 합산 */}
+        {assignedReservations && assignedReservations.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {tCommon('residentStatusByCount')}
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <div className="flex items-center space-x-2 mb-1">
+                  <span className="w-3 h-3 rounded-full bg-green-600"></span>
+                  <span className="text-xs font-medium text-green-900">{tCommon('statusUsResident')}</span>
+                </div>
+                <div className="text-lg font-semibold text-green-900">
+                  {residentStatusSummary.usResident}{params.locale === 'ko' ? '명' : ''}
+                </div>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <div className="flex items-center space-x-2 mb-1">
+                  <span className="w-3 h-3 rounded-full bg-blue-600"></span>
+                  <span className="text-xs font-medium text-blue-900">{tCommon('statusNonResident')}</span>
+                </div>
+                <div className="text-lg font-semibold text-blue-900">
+                  {residentStatusSummary.nonResident}{params.locale === 'ko' ? '명' : ''}
+                </div>
+              </div>
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                <div className="flex items-center space-x-2 mb-1">
+                  <span className="w-3 h-3 rounded-full bg-purple-600"></span>
+                  <span className="text-xs font-medium text-purple-900">{params.locale === 'ko' ? '패스 커버' : 'Pass Covered'}</span>
+                </div>
+                <div className="text-lg font-semibold text-purple-900">
+                  {residentStatusSummary.passCoveredCount}{params.locale === 'ko' ? '명' : ''}
+                </div>
+              </div>
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                <div className="flex items-center space-x-2 mb-1">
+                  <span className="w-3 h-3 rounded-full bg-purple-600"></span>
+                  <span className="text-xs font-medium text-purple-900">{params.locale === 'ko' ? '패스 장수' : 'Pass Count'}</span>
+                </div>
+                <div className="text-lg font-semibold text-purple-900">
+                  {residentStatusSummary.nonResidentWithPass}{params.locale === 'ko' ? '장' : ''}
+                </div>
+              </div>
+            </div>
+            <div className="mt-2 text-xs text-gray-600">
+              {tCommon('total')}: {residentStatusSummary.usResident + residentStatusSummary.nonResident + residentStatusSummary.passCoveredCount}{params.locale === 'ko' ? '명' : ` ${tCommon('people')}`}
+            </div>
+          </div>
+        )}
         
         {/* 투어 노트 */}
         <div className="mt-4 pt-4 border-t border-gray-200">

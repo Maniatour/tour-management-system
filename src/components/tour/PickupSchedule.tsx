@@ -1,7 +1,8 @@
-import React, { useState } from 'react'
-import { ChevronDown, ChevronUp, MapPin, Map, Users, Mail, Eye, CheckCircle2 } from 'lucide-react'
-import { useTranslations } from 'next-intl'
+import React, { useState, useEffect } from 'react'
+import { ChevronDown, ChevronUp, MapPin, Map, Users, Mail, Eye, CheckCircle2, Home, Plane, PlaneTakeoff, HelpCircle } from 'lucide-react'
+import { useTranslations, useLocale } from 'next-intl'
 import { ConnectionStatusLabel } from './TourUIComponents'
+import { supabase } from '@/lib/supabase'
 
 interface PickupScheduleProps {
   assignedReservations: Array<{
@@ -46,7 +47,84 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
   openGoogleMaps
 }) => {
   const t = useTranslations('tours.pickupSchedule')
+  const tCommon = useTranslations('common')
+  const locale = useLocale()
   const [sendingNotifications, setSendingNotifications] = useState(false)
+  const [reservationResidentStatus, setReservationResidentStatus] = useState<Record<string, {
+    usResident: number
+    nonResident: number
+    nonResidentWithPass: number
+  }>>({})
+
+  // 예약별 거주 상태 정보 가져오기
+  useEffect(() => {
+    const fetchResidentStatus = async () => {
+      if (assignedReservations.length === 0) return
+
+      const reservationIds = assignedReservations.map(r => r.id)
+      const { data: reservationCustomers, error } = await supabase
+        .from('reservation_customers')
+        .select('reservation_id, resident_status')
+        .in('reservation_id', reservationIds)
+      
+      if (!error && reservationCustomers) {
+        const statusMap: Record<string, {
+          usResident: number
+          nonResident: number
+          nonResidentWithPass: number
+        }> = {}
+
+        reservationCustomers.forEach((rc: any) => {
+          if (!statusMap[rc.reservation_id]) {
+            statusMap[rc.reservation_id] = {
+              usResident: 0,
+              nonResident: 0,
+              nonResidentWithPass: 0
+            }
+          }
+
+          if (rc.resident_status === 'us_resident') {
+            statusMap[rc.reservation_id].usResident++
+          } else if (rc.resident_status === 'non_resident') {
+            statusMap[rc.reservation_id].nonResident++
+          } else if (rc.resident_status === 'non_resident_with_pass') {
+            statusMap[rc.reservation_id].nonResidentWithPass++
+          }
+        })
+
+        setReservationResidentStatus(statusMap)
+      }
+    }
+
+    fetchResidentStatus()
+  }, [assignedReservations])
+
+  // 거주 상태 아이콘 가져오기
+  const getResidentStatusIcon = (reservationId: string) => {
+    const status = reservationResidentStatus[reservationId]
+    if (!status) return null
+
+    const total = status.usResident + status.nonResident + status.nonResidentWithPass
+    if (total === 0) return null
+
+    // 가장 많은 상태를 대표 아이콘으로 표시
+    if (status.usResident >= status.nonResident && status.usResident >= status.nonResidentWithPass) {
+      const title = locale === 'ko' 
+        ? `${tCommon('statusUsResident')}: ${status.usResident}명`
+        : `${tCommon('statusUsResident')}: ${status.usResident}`
+      return <Home className="h-3 w-3 text-green-600" title={title} />
+    } else if (status.nonResident >= status.nonResidentWithPass) {
+      const title = locale === 'ko'
+        ? `${tCommon('statusNonResident')}: ${status.nonResident}명`
+        : `${tCommon('statusNonResident')}: ${status.nonResident}`
+      return <Plane className="h-3 w-3 text-blue-600" title={title} />
+    } else {
+      const title = locale === 'ko'
+        ? `${tCommon('statusNonResidentWithPass')}: ${status.nonResidentWithPass}명`
+        : `${tCommon('statusNonResidentWithPass')}: ${status.nonResidentWithPass}`
+      return <PlaneTakeoff className="h-3 w-3 text-purple-600" title={title} />
+    }
+  }
   
   // 픽업 시간이 설정된 예약 개수 확인
   const reservationsWithPickupTime = assignedReservations.filter(
@@ -134,29 +212,48 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
             </div>
           )}
           <div className="space-y-1">
-            {reservations.map((reservation) => (
-              <div key={reservation.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                <div className="flex items-center space-x-1 text-xs text-gray-600">
-                  {reservation.pickup_notification_sent ? (
-                    <CheckCircle2 
-                      size={14} 
-                      className="text-green-600 flex-shrink-0" 
-                      title="픽업 안내 발송됨"
-                    />
-                  ) : (
-                    <Mail 
-                      size={14} 
-                      className="text-gray-400 flex-shrink-0" 
-                      title="픽업 안내 미발송"
-                    />
-                  )}
-                  <span>{getCustomerName(reservation.customer_id || '')}</span>
+            {reservations.map((reservation) => {
+              const status = reservationResidentStatus[reservation.id]
+              const statusIcon = getResidentStatusIcon(reservation.id)
+              
+              return (
+                <div key={reservation.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                  <div className="flex items-center space-x-1 text-xs text-gray-600">
+                    {reservation.pickup_notification_sent ? (
+                      <CheckCircle2 
+                        size={14} 
+                        className="text-green-600 flex-shrink-0" 
+                        title="픽업 안내 발송됨"
+                      />
+                    ) : (
+                      <Mail 
+                        size={14} 
+                        className="text-gray-400 flex-shrink-0" 
+                        title="픽업 안내 미발송"
+                      />
+                    )}
+                    {statusIcon && (
+                      <span className="flex-shrink-0">
+                        {statusIcon}
+                      </span>
+                    )}
+                    <span>{getCustomerName(reservation.customer_id || '')}</span>
+                  </div>
+                  <div className="flex items-center space-x-1 text-xs text-gray-500">
+                    {status && (status.usResident > 0 || status.nonResident > 0 || status.nonResidentWithPass > 0) && (
+                      <span className="text-gray-400">
+                        ({status.usResident > 0 && <span className="text-green-600">{status.usResident}</span>}
+                        {status.usResident > 0 && (status.nonResident > 0 || status.nonResidentWithPass > 0) && <span className="text-gray-400">/</span>}
+                        {status.nonResident > 0 && <span className="text-blue-600">{status.nonResident}</span>}
+                        {status.nonResident > 0 && status.nonResidentWithPass > 0 && <span className="text-gray-400">/</span>}
+                        {status.nonResidentWithPass > 0 && <span className="text-purple-600">{status.nonResidentWithPass}</span>})
+                      </span>
+                    )}
+                    <span>{reservation.total_people || 0}인</span>
+                  </div>
                 </div>
-                <div className="text-xs text-gray-500">
-                  {reservation.total_people || 0}인
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )
