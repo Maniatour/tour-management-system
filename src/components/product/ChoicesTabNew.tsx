@@ -1376,7 +1376,28 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                       </select>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  
+                  {/* 초이스 그룹 설명 표시 */}
+                  {(choice.description_ko || choice.description_en) && (
+                    <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {choice.description_ko && (
+                          <div>
+                            <p className="text-xs font-medium text-blue-900 mb-1">설명 (한국어)</p>
+                            <p className="text-sm text-blue-800 whitespace-pre-wrap">{choice.description_ko}</p>
+                          </div>
+                        )}
+                        {choice.description_en && (
+                          <div>
+                            <p className="text-xs font-medium text-blue-900 mb-1">설명 (영어)</p>
+                            <p className="text-sm text-blue-800 whitespace-pre-wrap">{choice.description_en}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         설명 (한국어)
@@ -1691,6 +1712,18 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                            </button>
                          </div>
                        </div>
+
+                       {/* 옵션 설명 표시 (항상 표시) */}
+                       {(option.description_ko || option.description) && (
+                         <div className="mb-3 bg-gray-50 border border-gray-200 rounded-lg p-2">
+                           {option.description_ko && (
+                             <p className="text-xs text-gray-600 mb-1 whitespace-pre-wrap line-clamp-2">{option.description_ko}</p>
+                           )}
+                           {option.description && (
+                             <p className="text-xs text-gray-500 whitespace-pre-wrap line-clamp-2">{option.description}</p>
+                           )}
+                         </div>
+                       )}
 
                        {!allCardsCollapsed && (
                          <>

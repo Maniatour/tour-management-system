@@ -610,6 +610,9 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
     }
   })
 
+  // 수량 선택 초이스를 위한 상태 추가
+  const [selectedChoiceQuantities, setSelectedChoiceQuantities] = useState<Record<string, Record<string, number>>>({})
+
   const productDisplayName = isEnglish
     ? product.customer_name_en || product.name_en || product.customer_name_ko || product.name
     : product.customer_name_ko || product.name
@@ -1502,11 +1505,79 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         alert(validation.error)
         return
       }
+      
+      // 수량 선택 초이스 검증
+      const quantityValidation = validateQuantityChoices()
+      if (!quantityValidation.valid) {
+        alert(quantityValidation.error)
+        return
+      }
     }
     
     if (currentStep < steps.length - 1) {
       setCurrentStep(currentStep + 1)
     }
+  }
+  
+  // 수량 선택 초이스 검증 함수
+  const validateQuantityChoices = (): { valid: boolean; error?: string } => {
+    const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
+    let totalCoveredPeople = 0
+    
+    for (const group of requiredChoices) {
+      if (group.choice_type === 'quantity') {
+        const selectedOptionId = bookingData.selectedOptions[group.choice_id]
+        if (!selectedOptionId) {
+          return {
+            valid: false,
+            error: isEnglish 
+              ? `Please select a quantity for ${group.choice_name || group.choice_name_ko}` 
+              : `${group.choice_name_ko || group.choice_name}에 대한 수량을 선택해주세요.`
+          }
+        }
+        
+        const quantity = selectedChoiceQuantities[group.choice_id]?.[selectedOptionId] || 0
+        if (quantity <= 0) {
+          return {
+            valid: false,
+            error: isEnglish 
+              ? `Please select a quantity greater than 0 for ${group.choice_name || group.choice_name_ko}` 
+              : `${group.choice_name_ko || group.choice_name}의 수량을 1개 이상 선택해주세요.`
+          }
+        }
+        
+        // 선택된 옵션 찾기
+        const selectedOption = group.options.find(opt => opt.option_id === selectedOptionId)
+        if (selectedOption) {
+          const optionName = (selectedOption.option_name || selectedOption.option_name_ko || selectedOption.option_name_en || '').toLowerCase()
+          // 패스 옵션인지 확인: "비 거주자 (패스 소유)", "비 거주자 (패스 구매)", "non-resident with pass" 등
+          // 패스가 포함되고, 비거주자 관련 키워드가 있으면 패스 옵션으로 판단
+          const hasPass = optionName.includes('pass') || optionName.includes('패스')
+          const hasNonResident = optionName.includes('non-resident') || optionName.includes('비 거주자') || optionName.includes('nonresident')
+          const isPassOption = hasPass && hasNonResident
+          
+          if (isPassOption) {
+            // 패스 1장당 4인 커버
+            totalCoveredPeople += quantity * 4
+          } else {
+            // 일반 옵션: 수량 × 예약 인원
+            totalCoveredPeople += quantity * totalParticipants
+          }
+        }
+      }
+    }
+    
+    // 총 커버 인원이 예약 인원보다 작으면 경고
+    if (totalCoveredPeople > 0 && totalCoveredPeople < totalParticipants) {
+      return {
+        valid: false,
+        error: isEnglish 
+          ? `The total number of people covered (${totalCoveredPeople}) is less than the number of participants (${totalParticipants}). Please increase the quantity or add more options.`
+          : `거주자 구분 인원 총합(${totalCoveredPeople}명)이 예약 인원(${totalParticipants}명)보다 적습니다. 수량을 늘리거나 추가 옵션을 선택해주세요.`
+      }
+    }
+    
+    return { valid: true }
   }
 
   const handlePrevious = () => {
@@ -1544,6 +1615,13 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         alert(validation.error)
         return
       }
+      
+      // 수량 선택 초이스 검증
+      const quantityValidation = validateQuantityChoices()
+      if (!quantityValidation.valid) {
+        alert(quantityValidation.error)
+        return
+      }
 
       // CartProvider 확인
       if (!cart || !cart.addItem) {
@@ -1565,6 +1643,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         optionNameKo: string | null
         optionNameEn: string | null
         optionPrice: number | null
+        quantity?: number
       }> = []
 
       // 필수 선택에서 선택된 항목 찾기
@@ -1573,6 +1652,15 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
         if (selectedOptionId) {
           const selectedOption = group.options.find((opt) => opt.option_id === selectedOptionId)
           if (selectedOption) {
+            const quantity = group.choice_type === 'quantity' 
+              ? (selectedChoiceQuantities[group.choice_id]?.[selectedOptionId] || 0)
+              : undefined
+            
+            // 수량 선택 초이스인 경우 수량이 0보다 큰 경우만 추가
+            if (group.choice_type === 'quantity' && (!quantity || quantity <= 0)) {
+              return
+            }
+            
             selectedChoices.push({
               choiceId: group.choice_id,
               choiceName: group.choice_name,
@@ -1582,7 +1670,8 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
               optionName: selectedOption.option_name,
               optionNameKo: selectedOption.option_name_ko,
               optionNameEn: selectedOption.option_name_en || null,
-              optionPrice: selectedOption.option_price
+              optionPrice: selectedOption.option_price,
+              ...(quantity !== undefined && { quantity })
             })
           }
         }
@@ -2445,6 +2534,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                     }
                     
                     const hasDescription = groupDescription && groupDescription.trim().length > 0
+                    const isQuantityChoice = group.choice_type === 'quantity'
                     
                     return (
                     <div key={group.choice_id} className="mb-6">
@@ -2492,6 +2582,176 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                         }
                         return null
                       })()}
+                      
+                      {/* 수량 선택 초이스인 경우 */}
+                      {isQuantityChoice ? (
+                        <div className="space-y-4">
+                          {group.options.map((option: ChoiceOption) => {
+                            const currentQuantity = selectedChoiceQuantities[group.choice_id]?.[option.option_id] || 0
+                            const adultPrice = option.option_price || 0
+                            const childPrice = option.option_child_price || 0
+                            const infantPrice = option.option_infant_price || 0
+                            const totalParticipants = bookingData.participants.adults + bookingData.participants.children + bookingData.participants.infants
+                            const totalPrice = (adultPrice * bookingData.participants.adults + 
+                                              childPrice * bookingData.participants.children + 
+                                              infantPrice * bookingData.participants.infants) * currentQuantity
+                            
+                            const optionDescription = isEnglish 
+                              ? (option.option_description || option.option_description_ko)
+                              : (option.option_description_ko || option.option_description)
+                            
+                            // 옵션 이름을 확인하여 인원인지 장수인지 판단
+                            const optionName = (option.option_name || option.option_name_ko || option.option_name_en || '').toLowerCase()
+                            // 패스 옵션인지 확인: "비 거주자 (패스 소유)", "비 거주자 (패스 구매)", "non-resident with pass" 등
+                            const hasPass = optionName.includes('pass') || optionName.includes('패스')
+                            const hasNonResident = optionName.includes('non-resident') || optionName.includes('비 거주자') || optionName.includes('nonresident')
+                            const isPassOption = hasPass && hasNonResident
+                            const quantityUnit = isPassOption ? translate('장수', 'passes') : translate('인원', 'people')
+                            
+                            return (
+                              <div key={option.option_id} className="border rounded-lg p-4 bg-white">
+                                <div className="flex items-center justify-between mb-3">
+                                  <div className="flex-1">
+                                    <h5 className="font-semibold text-gray-900">
+                                      {isEnglish ? option.option_name_en || option.option_name || option.option_name_ko : option.option_name_ko || option.option_name || option.option_name_en}
+                                    </h5>
+                                    {(adultPrice > 0 || childPrice > 0 || infantPrice > 0) && (
+                                      <div className="mt-1 text-sm text-gray-600">
+                                        {adultPrice > 0 && (
+                                          <span>{translate('성인', 'Adult')}: ${adultPrice.toFixed(2)} </span>
+                                        )}
+                                        {childPrice > 0 && (
+                                          <span>{translate('아동', 'Child')}: ${childPrice.toFixed(2)} </span>
+                                        )}
+                                        {infantPrice > 0 && (
+                                          <span>{translate('유아', 'Infant')}: ${infantPrice.toFixed(2)}</span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center space-x-2 ml-4">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const newQuantity = Math.max(0, currentQuantity - 1)
+                                        setSelectedChoiceQuantities(prev => ({
+                                          ...prev,
+                                          [group.choice_id]: {
+                                            ...(prev[group.choice_id] || {}),
+                                            [option.option_id]: newQuantity
+                                          }
+                                        }))
+                                        if (newQuantity === 0) {
+                                          setBookingData(prev => {
+                                            const newOptions = { ...prev.selectedOptions }
+                                            delete newOptions[group.choice_id]
+                                            return { ...prev, selectedOptions: newOptions }
+                                          })
+                                        } else {
+                                          setBookingData(prev => ({
+                                            ...prev,
+                                            selectedOptions: {
+                                              ...prev.selectedOptions,
+                                              [group.choice_id]: option.option_id
+                                            }
+                                          }))
+                                        }
+                                      }}
+                                      disabled={currentQuantity <= 0}
+                                      className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                      <Minus className="h-4 w-4" />
+                                    </button>
+                                    <div className="flex items-center border border-gray-300 rounded">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        value={currentQuantity}
+                                        onChange={(e) => {
+                                          const newQuantity = Math.max(0, parseInt(e.target.value) || 0)
+                                          setSelectedChoiceQuantities(prev => ({
+                                            ...prev,
+                                            [group.choice_id]: {
+                                              ...(prev[group.choice_id] || {}),
+                                              [option.option_id]: newQuantity
+                                            }
+                                          }))
+                                          if (newQuantity === 0) {
+                                            setBookingData(prev => {
+                                              const newOptions = { ...prev.selectedOptions }
+                                              delete newOptions[group.choice_id]
+                                              return { ...prev, selectedOptions: newOptions }
+                                            })
+                                          } else {
+                                            setBookingData(prev => ({
+                                              ...prev,
+                                              selectedOptions: {
+                                                ...prev.selectedOptions,
+                                                [group.choice_id]: option.option_id
+                                              }
+                                            }))
+                                          }
+                                        }}
+                                        className="w-16 text-center px-2 py-1 text-sm border-0 focus:outline-none focus:ring-0"
+                                      />
+                                      <span className="px-2 py-1 text-xs font-medium text-gray-600 bg-gray-50 border-l border-gray-300">
+                                        {quantityUnit}
+                                      </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const newQuantity = currentQuantity + 1
+                                        setSelectedChoiceQuantities(prev => ({
+                                          ...prev,
+                                          [group.choice_id]: {
+                                            ...(prev[group.choice_id] || {}),
+                                            [option.option_id]: newQuantity
+                                          }
+                                        }))
+                                        setBookingData(prev => ({
+                                          ...prev,
+                                          selectedOptions: {
+                                            ...prev.selectedOptions,
+                                            [group.choice_id]: option.option_id
+                                          }
+                                        }))
+                                      }}
+                                      className="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center hover:bg-gray-50"
+                                    >
+                                      <Plus className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                                
+                                {/* 옵션 설명 */}
+                                {optionDescription && optionDescription.trim() && (
+                                  <div className="mb-3">
+                                    <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                                      {optionDescription}
+                                    </p>
+                                  </div>
+                                )}
+                                
+                                {currentQuantity > 0 && (
+                                  <div className="mt-2 pt-2 border-t border-gray-200 text-sm text-gray-600">
+                                    {isPassOption ? (
+                                      <div>
+                                        <p>{translate('수량', 'Quantity')}: {currentQuantity} {quantityUnit}</p>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                          {translate('패스 1장당 최대 4인까지 커버', '1 pass covers up to 4 people')}
+                                        </p>
+                                      </div>
+                                    ) : (
+                                      <p>{translate('수량', 'Quantity')}: {currentQuantity} {quantityUnit} × {totalParticipants} {translate('명', 'people')} = {translate('총', 'Total')} ${totalPrice.toFixed(2)}</p>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {group.options.map((option: ChoiceOption, optionIndex: number) => {
                           const isAvailable = isChoiceCombinationAvailable(group.choice_id, option.option_id)
@@ -2817,6 +3077,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
                           )
                         })}
                       </div>
+                      )}
                     </div>
                     )
                   })}

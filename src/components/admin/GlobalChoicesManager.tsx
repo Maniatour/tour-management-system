@@ -974,8 +974,18 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
                         </div>
 
                         {/* 설명 */}
-                        {template.description && (
-                          <p className="text-sm text-gray-600 line-clamp-2">{template.description}</p>
+                        {(template.description_ko || template.description || template.description_en) && (
+                          <div className="space-y-1">
+                            {template.description_ko && (
+                              <p className="text-sm text-gray-600 line-clamp-2">{template.description_ko}</p>
+                            )}
+                            {!template.description_ko && template.description && (
+                              <p className="text-sm text-gray-600 line-clamp-2">{template.description}</p>
+                            )}
+                            {!template.description_ko && !template.description && template.description_en && (
+                              <p className="text-sm text-gray-600 line-clamp-2">{template.description_en}</p>
+                            )}
+                          </div>
                         )}
 
                         {/* 가격 정보 */}
