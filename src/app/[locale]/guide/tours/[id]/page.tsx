@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import TourPhotoUpload from '@/components/TourPhotoUpload'
-import { useFloatingChat } from '@/contexts/FloatingChatContext'
+import TourChatRoom from '@/components/TourChatRoom'
 import TourExpenseManager from '@/components/TourExpenseManager'
 import TourReportSection from '@/components/TourReportSection'
 import TourReportForm from '@/components/TourReportForm'
@@ -39,7 +39,6 @@ export default function GuideTourDetailPage() {
   const router = useRouter()
   const locale = useLocale()
   const { user, userRole, simulatedUser, isSimulating } = useAuth()
-  const { openChat } = useFloatingChat()
   const t = useTranslations('guideTour')
   const tCommon = useTranslations('common')
   
@@ -79,7 +78,7 @@ export default function GuideTourDetailPage() {
   
   // 모바일 최적화를 위한 상태
   const [activeTab, setActiveTab] = useState<'overview' | 'schedule' | 'bookings' | 'photos' | 'chat' | 'expenses' | 'report'>('overview')
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['tour-info', 'pickup-schedule']))
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['tour-info', 'pickup-schedule', 'chat']))
   const [isReportModalOpen, setIsReportModalOpen] = useState(false)
   const [calculatedTourTimes, setCalculatedTourTimes] = useState<{
     startTime: string;
@@ -601,11 +600,8 @@ export default function GuideTourDetailPage() {
   // 탭 변경 함수
   const handleTabChange = (tab: typeof activeTab) => {
     setActiveTab(tab)
-    // 해당 탭의 섹션들을 모두 열기
-    const sectionsToOpen = tabSections[tab]
-    const newExpanded = new Set(expandedSections)
-    sectionsToOpen.forEach(sectionId => newExpanded.add(sectionId))
-    setExpandedSections(newExpanded)
+    // 탭 변경 시에는 섹션 상태를 강제로 변경하지 않음
+    // 사용자가 collapse한 섹션은 그대로 유지
   }
   
   // 아코디언 섹션 컴포넌트
@@ -810,14 +806,14 @@ export default function GuideTourDetailPage() {
         {/* 투어 기본 정보 - 개요 탭에만 표시 */}
         <div className={`${activeTab === 'overview' ? 'block' : 'hidden'} lg:block`}>
           <div className="bg-white rounded-lg shadow mb-3 sm:mb-4">
-            <button
-              onClick={() => toggleSection('tour-info')}
-              className="w-full flex items-center justify-between p-3 sm:p-4 text-left hover:bg-gray-50 transition-colors"
-            >
-              <div className="flex items-center">
+            <div className="flex items-center justify-between p-3 sm:p-4">
+              <button
+                onClick={() => toggleSection('tour-info')}
+                className="flex items-center flex-1 text-left hover:bg-gray-50 transition-colors rounded -ml-3 sm:-ml-4 px-3 sm:px-4 py-2 -my-2"
+              >
                 <Calendar className="w-5 h-5 text-gray-400 mr-3" />
                 <h2 className="text-lg font-semibold text-gray-900">{t('tourInfo')}</h2>
-              </div>
+              </button>
               <div className="flex items-center space-x-2">
                 <span className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${
                   (tour as TourRow & { assignment_status?: string }).assignment_status === 'confirmed' ? 'bg-green-100 text-green-800' :
@@ -864,13 +860,18 @@ export default function GuideTourDetailPage() {
                     </button>
                   </div>
                 )}
-                {expandedSections.has('tour-info') ? (
-                  <ChevronUp className="w-5 h-5 text-gray-400" />
-                ) : (
-                  <ChevronDown className="w-5 h-5 text-gray-400" />
-                )}
+                <button
+                  onClick={() => toggleSection('tour-info')}
+                  className="p-1 hover:bg-gray-50 rounded transition-colors"
+                >
+                  {expandedSections.has('tour-info') ? (
+                    <ChevronUp className="w-5 h-5 text-gray-400" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-gray-400" />
+                  )}
+                </button>
               </div>
-            </button>
+            </div>
             {expandedSections.has('tour-info') && (
               <div className="px-3 sm:px-4 pb-3 sm:pb-4">
                 <div className="space-y-2">
@@ -1531,30 +1532,22 @@ export default function GuideTourDetailPage() {
 
         {/* 채팅 - 채팅 탭에만 표시 */}
         <div className={`${activeTab === 'chat' ? 'block' : 'hidden'} lg:block`}>
-          <AccordionSection id="chat" title={t('chat')} icon={MessageSquare}>
-            <div className="flex flex-col items-center justify-center py-8">
+          {tour && tour.tour_date && currentUserEmail ? (
+            <div className="h-[600px] border border-gray-200 rounded-lg overflow-hidden bg-white">
+              <TourChatRoom
+                tourId={tour.id}
+                guideEmail={currentUserEmail}
+                tourDate={tour.tour_date}
+                isPublicView={false}
+              />
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-8 bg-white rounded-lg shadow">
               <MessageSquare className="h-16 w-16 text-gray-300 mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">{locale === 'ko' ? '투어 채팅방' : 'Tour Chat Room'}</h3>
-              <p className="text-sm text-gray-500 mb-4">{locale === 'ko' ? '투어 관련 소통을 위한 채팅방입니다.' : 'Chat room for tour-related communication.'}</p>
-              <button
-                onClick={() => {
-                  if (tour) {
-                    openChat({
-                      id: `chat_${tour.id}_${Date.now()}`, // 고유한 ID 생성
-                      tourId: tour.id,
-                      tourDate: tour.tour_date,
-                      guideEmail: currentUserEmail || "",
-                      tourName: tour.id
-                    })
-                  }
-                }}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-              >
-                <MessageSquare className="h-4 w-4" />
-{locale === 'ko' ? '채팅방 플로팅' : 'Open Chat'}
-              </button>
+              <p className="text-sm text-gray-500 mb-4">{locale === 'ko' ? '투어 정보를 불러오는 중...' : 'Loading tour information...'}</p>
             </div>
-          </AccordionSection>
+          )}
         </div>
 
         {/* 정산 관리 - 정산 탭에만 표시 */}

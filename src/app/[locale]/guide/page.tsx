@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { Calendar, Users, CalendarOff, CheckCircle, XCircle, Clock as ClockIcon, Plus, X, User, Car, History } from 'lucide-react'
+import { Calendar, Users, CalendarOff, CheckCircle, XCircle, Clock as ClockIcon, Plus, X, User, Car, History, MessageSquare, MessageCircle, Search as SearchIcon, RefreshCw } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTranslations, useLocale } from 'next-intl'
+import { useOptimizedData } from '@/hooks/useOptimizedData'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 type ExtendedTour = Omit<Tour, 'assignment_status'> & {
@@ -27,6 +28,88 @@ type ExtendedTour = Omit<Tour, 'assignment_status'> & {
 }
 
 type OffSchedule = Database['public']['Tables']['off_schedules']['Row']
+
+interface TeamChatRoom {
+  id: string
+  room_name: string
+  room_type: 'general' | 'department' | 'project' | 'announcement'
+  description?: string
+  is_active: boolean
+  created_by: string
+  created_at: string
+  updated_at: string
+  last_message_at?: string
+  unread_count: number
+  participants_count: number
+  team_chat_participants?: Array<{ count: number }>
+  last_message?: {
+    id: string
+    message: string
+    sender_name: string
+    sender_position?: string
+    created_at: string
+  }
+}
+
+interface TeamChatMessage {
+  id: string
+  room_id: string
+  sender_email: string
+  sender_name: string
+  sender_position?: string
+  message: string
+  message_type: 'text' | 'image' | 'file' | 'system' | 'announcement'
+  file_url?: string
+  file_name?: string
+  file_size?: number
+  file_type?: string
+  is_pinned: boolean
+  reply_to_id?: string
+  reply_to_message?: {
+    id: string
+    message: string
+    sender_name: string
+  }
+  created_at: string
+  read_by: Array<{
+    reader_email: string
+    read_at: string
+  }>
+}
+
+interface TourChatRoom {
+  id: string
+  tour_id: string
+  tour_name: string
+  tour_date: string
+  product_name?: string
+  product_name_en?: string
+  assigned_people?: number
+  guide_name?: string
+  assistant_name?: string
+  vehicle_number?: string
+  last_message?: {
+    id: string
+    message: string
+    sender_name: string
+    created_at: string
+  }
+  unread_count: number
+}
+
+interface TourChatMessage {
+  id: string
+  tour_id: string
+  sender_email: string
+  sender_name: string
+  message: string
+  message_type: 'text' | 'image' | 'file' | 'system'
+  file_url?: string
+  file_name?: string
+  file_size?: number
+  file_type?: string
+  created_at: string
+}
 
 export default function GuideDashboard() {
   const router = useRouter()
@@ -105,7 +188,357 @@ export default function GuideDashboard() {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming')
   const [offScheduleActiveTab, setOffScheduleActiveTab] = useState<'upcoming' | 'past' | 'pending' | 'approved' | 'rejected'>('upcoming')
   
-  // 팀채팅 관련 상태 (제거됨 - 별도 페이지로 이동)
+  // 채팅 관련 상태
+  const [chatActiveTab, setChatActiveTab] = useState<'team' | 'tour'>('team')
+  const [selectedChatRoom, setSelectedChatRoom] = useState<TeamChatRoom | TourChatRoom | null>(null)
+  const [chatMessages, setChatMessages] = useState<TeamChatMessage[] | TourChatMessage[]>([])
+  const [newChatMessage, setNewChatMessage] = useState('')
+  const [chatSending, setChatSending] = useState(false)
+  const [chatSearchTerm, setChatSearchTerm] = useState('')
+  const [chatFilterType, setChatFilterType] = useState('all')
+  const [showChatSection, setShowChatSection] = useState(false)
+  const [chatRefreshing, setChatRefreshing] = useState(false)
+
+  // 시간 포맷팅 함수
+  const formatChatTime = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diff = now.getTime() - date.getTime()
+    const minutes = Math.floor(diff / 60000)
+    const hours = Math.floor(diff / 3600000)
+    const days = Math.floor(diff / 86400000)
+
+    if (minutes < 1) return locale === 'en' ? 'Just now' : '방금'
+    if (minutes < 60) return `${minutes}${locale === 'en' ? 'm ago' : '분 전'}`
+    if (hours < 24) return `${hours}${locale === 'en' ? 'h ago' : '시간 전'}`
+    if (days < 7) return `${days}${locale === 'en' ? 'd ago' : '일 전'}`
+    return date.toLocaleDateString(locale === 'en' ? 'en-US' : 'ko-KR', { month: 'short', day: 'numeric' })
+  }
+
+  // 팀 채팅방 데이터 로딩
+  const { data: teamChatRoomsData, loading: teamChatLoading, refetch: refetchTeamChatRooms } = useOptimizedData<TeamChatRoom[]>({
+    fetchFn: async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) {
+          console.error('세션이 없습니다')
+          return []
+        }
+
+        const headers: Record<string, string> = {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+        
+        if (isSimulating && simulatedUser?.email) {
+          headers['x-simulated-user-email'] = simulatedUser.email
+        }
+
+        const response = await fetch('/api/team-chat/rooms', {
+          headers
+        })
+        
+        const result = await response.json()
+        if (result.error) {
+          console.error('팀 채팅방 조회 오류:', result.error)
+          return []
+        }
+
+        const rooms = (result.rooms || []) as TeamChatRoom[]
+        if (!rooms || rooms.length === 0) {
+          return []
+        }
+
+        const roomsWithStats = await Promise.all(
+          rooms.map(async (room) => {
+            try {
+              const { data: { session } } = await supabase.auth.getSession()
+              let lastMessage = null
+              
+              if (session?.access_token) {
+                try {
+                  const response = await fetch(`/api/team-chat/last-message?room_id=${room.id}`, {
+                    headers: {
+                      'Authorization': `Bearer ${session.access_token}`
+                    }
+                  })
+
+                  if (response.ok) {
+                    const result = await response.json()
+                    lastMessage = result.lastMessage
+                  }
+                } catch (error) {
+                  console.error(`채팅방 ${room.id} 마지막 메시지 조회 오류:`, error)
+                }
+              }
+
+              return {
+                ...room,
+                last_message: lastMessage,
+                unread_count: 0,
+                participants_count: room.team_chat_participants?.[0]?.count || 0
+              }
+            } catch (error) {
+              console.error(`채팅방 ${room.id} 통계 계산 오류:`, error)
+              return {
+                ...room,
+                last_message: null,
+                unread_count: 0,
+                participants_count: room.team_chat_participants?.[0]?.count || 0
+              }
+            }
+          })
+        )
+
+        return roomsWithStats
+      } catch (error) {
+        console.error('Team chat room data loading error:', error)
+        return []
+      }
+    },
+    dependencies: [currentUserEmail]
+  })
+
+  // 투어 채팅방 데이터 로딩
+  const { data: tourChatRoomsData, loading: tourChatLoading, refetch: refetchTourChatRooms } = useOptimizedData<TourChatRoom[]>({
+    fetchFn: async () => {
+      try {
+        if (!currentUserEmail) return []
+
+        // 최근 30일간의 투어 데이터 가져오기
+        const thirtyDaysAgo = new Date()
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+        const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0]
+
+        const { data: toursData, error } = await supabase
+          .from('tours')
+          .select('*')
+          .or(`tour_guide_id.eq.${currentUserEmail},assistant_id.eq.${currentUserEmail}`)
+          .gte('tour_date', thirtyDaysAgoStr)
+          .order('tour_date', { ascending: false })
+          .limit(50)
+
+        if (error) {
+          console.error('Error loading tours:', error)
+          return []
+        }
+
+        // 상품 정보 가져오기
+        const productIds = [...new Set((toursData || []).map(tour => tour.product_id).filter(Boolean))]
+        let productMap = new Map()
+        let productEnMap = new Map()
+        
+        if (productIds.length > 0) {
+          const { data: productsData } = await supabase
+            .from('products')
+            .select('id, name_ko, name_en, name')
+            .in('id', productIds)
+          
+          productMap = new Map((productsData || []).map(p => [p.id, p.name_ko || p.name_en || p.name]))
+          productEnMap = new Map((productsData || []).map(p => [p.id, p.name_en || p.name_ko || p.name]))
+        }
+
+        // 팀원 정보 가져오기
+        const guideEmails = [...new Set((toursData || []).map(tour => tour.tour_guide_id).filter(Boolean))]
+        const assistantEmails = [...new Set((toursData || []).map(tour => tour.assistant_id).filter(Boolean))]
+        const allEmails = [...new Set([...guideEmails, ...assistantEmails])]
+        
+        let teamMap = new Map()
+        let teamEnMap = new Map()
+        if (allEmails.length > 0) {
+          const { data: teamData } = await supabase
+            .from('team')
+            .select('email, name_ko, name_en')
+            .in('email', allEmails)
+          
+          teamMap = new Map((teamData || []).map(member => [member.email, member.name_ko]))
+          teamEnMap = new Map((teamData || []).map(member => [member.email, member.name_en || member.name_ko]))
+        }
+
+        // 차량 정보 가져오기
+        const vehicleIds = [...new Set((toursData || []).map(tour => tour.tour_car_id).filter(Boolean))]
+        
+        let vehicleMap = new Map()
+        if (vehicleIds.length > 0) {
+          const { data: vehiclesData } = await supabase
+            .from('vehicles')
+            .select('id, vehicle_number')
+            .in('id', vehicleIds)
+          
+          vehicleMap = new Map((vehiclesData || []).map(vehicle => [vehicle.id, vehicle.vehicle_number]))
+        }
+
+        // 예약 정보로 인원 계산
+        const reservationIds = [...new Set((toursData || []).flatMap(tour => {
+          if (!tour.reservation_ids) return []
+          return Array.isArray(tour.reservation_ids) 
+            ? tour.reservation_ids 
+            : String(tour.reservation_ids).split(',').map(id => id.trim()).filter(id => id)
+        }))]
+
+        let reservationMap = new Map()
+        if (reservationIds.length > 0) {
+          const { data: reservationsData } = await supabase
+            .from('reservations')
+            .select('id, total_people')
+            .in('id', reservationIds)
+          
+          reservationMap = new Map((reservationsData || []).map(r => [r.id, r.total_people || 0]))
+        }
+
+        // 투어 채팅방 데이터 생성
+        const tourChatRooms: TourChatRoom[] = (toursData || []).map(tour => {
+          let assignedPeople = 0
+          if (tour.reservation_ids) {
+            const ids = Array.isArray(tour.reservation_ids) 
+              ? tour.reservation_ids 
+              : String(tour.reservation_ids).split(',').map(id => id.trim()).filter(id => id)
+            
+            assignedPeople = ids.reduce((sum, id) => sum + (reservationMap.get(id) || 0), 0)
+          }
+
+          const isEnglish = locale === 'en'
+          const productName = tour.product_id ? (isEnglish ? productEnMap.get(tour.product_id) : productMap.get(tour.product_id)) : (isEnglish ? `Tour ${tour.id}` : `투어 ${tour.id}`)
+          const guideName = tour.tour_guide_id ? (isEnglish ? teamEnMap.get(tour.tour_guide_id) : teamMap.get(tour.tour_guide_id)) : null
+          const assistantName = tour.assistant_id ? (isEnglish ? teamEnMap.get(tour.assistant_id) : teamMap.get(tour.assistant_id)) : null
+
+          return {
+            id: `tour_${tour.id}`,
+            tour_id: tour.id,
+            tour_name: productName,
+            tour_date: tour.tour_date,
+            product_name: tour.product_id ? productMap.get(tour.product_id) : null,
+            product_name_en: tour.product_id ? productEnMap.get(tour.product_id) : null,
+            assigned_people: assignedPeople,
+            guide_name: guideName,
+            assistant_name: assistantName,
+            vehicle_number: tour.tour_car_id ? vehicleMap.get(tour.tour_car_id) : null,
+            last_message: null,
+            unread_count: 0
+          }
+        })
+
+        return tourChatRooms
+      } catch (error) {
+        console.error('Tour chat room data loading error:', error)
+        return []
+      }
+    },
+    dependencies: [currentUserEmail, locale]
+  })
+
+  // 메시지 로딩
+  const loadChatMessages = async (room: TeamChatRoom | TourChatRoom) => {
+    if (!room) return
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        console.error('세션이 없습니다')
+        return
+      }
+
+      if (chatActiveTab === 'team' && 'room_id' in room) {
+        const response = await fetch(`/api/team-chat/messages?room_id=${room.id}`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        })
+        
+        const result = await response.json()
+        if (result.error) {
+          console.error('Message loading error:', result.error)
+          return
+        }
+
+        setChatMessages(result.messages || [])
+      } else if (chatActiveTab === 'tour' && 'tour_id' in room) {
+        // 투어 채팅 메시지 로딩 (추후 구현)
+        setChatMessages([])
+      }
+    } catch (error) {
+      console.error('Error loading messages:', error)
+    }
+  }
+
+  // 채팅방 선택
+  const selectChatRoom = async (room: TeamChatRoom | TourChatRoom) => {
+    setSelectedChatRoom(room)
+    setChatMessages([])
+    await loadChatMessages(room)
+  }
+
+  // 메시지 전송
+  const sendChatMessage = async () => {
+    if (!newChatMessage.trim() || !selectedChatRoom || chatSending) return
+
+    try {
+      setChatSending(true)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        alert(locale === 'en' ? 'Session expired. Please refresh the page.' : '세션이 만료되었습니다. 페이지를 새로고침해주세요.')
+        return
+      }
+
+      if (chatActiveTab === 'team' && 'room_id' in selectedChatRoom) {
+        const response = await fetch('/api/team-chat/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            room_id: selectedChatRoom.id,
+            message: newChatMessage.trim(),
+            message_type: 'text',
+            reply_to_id: null
+          })
+        })
+
+        const result = await response.json()
+        if (result.error) {
+          alert(`${locale === 'en' ? 'Failed to send message' : '메시지 전송 실패'}: ${result.error}`)
+          return
+        }
+
+        setNewChatMessage('')
+        await loadChatMessages(selectedChatRoom)
+        if (chatActiveTab === 'team') {
+          refetchTeamChatRooms()
+        } else {
+          refetchTourChatRooms()
+        }
+      } else {
+        // 투어 채팅 메시지 전송 (추후 구현)
+        console.log('Tour chat message sending not implemented yet')
+      }
+    } catch (error) {
+      console.error('Error sending message:', error)
+      alert(locale === 'en' ? 'Failed to send message' : '메시지 전송 중 오류가 발생했습니다')
+    } finally {
+      setChatSending(false)
+    }
+  }
+
+  // 필터링된 채팅방 목록
+  const filteredChatRooms = (chatActiveTab === 'team' ? (teamChatRoomsData || []) : (tourChatRoomsData || [])).filter(room => {
+    if (chatSearchTerm) {
+      const searchLower = chatSearchTerm.toLowerCase()
+      if (chatActiveTab === 'team' && 'room_name' in room) {
+        return room.room_name.toLowerCase().includes(searchLower) ||
+               (room.description || '').toLowerCase().includes(searchLower)
+      } else if (chatActiveTab === 'tour' && 'tour_name' in room) {
+        return room.tour_name.toLowerCase().includes(searchLower) ||
+               room.tour_date.includes(searchLower)
+      }
+    }
+    if (chatActiveTab === 'team' && chatFilterType !== 'all' && 'room_type' in room) {
+      return room.room_type === chatFilterType
+    }
+    return true
+  })
+
+  const teamChatRooms = teamChatRoomsData || []
+  const tourChatRooms = tourChatRoomsData || []
   
   const [showOffScheduleModal, setShowOffScheduleModal] = useState(false)
   const [offScheduleForm, setOffScheduleForm] = useState({
@@ -878,6 +1311,222 @@ export default function GuideDashboard() {
         })()}
       </div>
 
+      {/* 채팅 섹션 */}
+      <div className="bg-white rounded-lg shadow p-3 sm:p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+            <MessageSquare className="w-5 h-5 mr-2 text-green-500" />
+            {t('chat')}
+          </h2>
+          <button
+            onClick={() => setShowChatSection(!showChatSection)}
+            className="w-8 h-8 bg-green-100 hover:bg-green-200 text-green-600 hover:text-green-700 rounded-lg flex items-center justify-center transition-colors"
+            title={showChatSection ? '채팅 닫기' : '채팅 열기'}
+          >
+            {showChatSection ? <X className="w-4 h-4" /> : <MessageSquare className="w-4 h-4" />}
+          </button>
+        </div>
+
+        {showChatSection && (
+          <div className="flex flex-col lg:flex-row gap-4 h-[600px]">
+            {/* 왼쪽: 채팅방 목록 */}
+            <div className="w-full lg:w-80 border border-gray-200 rounded-lg flex flex-col bg-white">
+              {/* 탭 */}
+              <div className="flex space-x-1 p-2 bg-gray-100 rounded-t-lg">
+                <button
+                  onClick={() => {
+                    setChatActiveTab('team')
+                    setSelectedChatRoom(null)
+                    setChatMessages([])
+                  }}
+                  className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                    chatActiveTab === 'team'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  {locale === 'en' ? 'Team Chat' : '팀 채팅'}
+                </button>
+                <button
+                  onClick={() => {
+                    setChatActiveTab('tour')
+                    setSelectedChatRoom(null)
+                    setChatMessages([])
+                  }}
+                  className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                    chatActiveTab === 'tour'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  {locale === 'en' ? 'Tour Chat' : '투어 채팅'}
+                </button>
+              </div>
+
+              {/* 검색 */}
+              <div className="p-2 border-b border-gray-200">
+                <div className="relative">
+                  <SearchIcon size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder={locale === 'en' ? 'Search...' : '검색...'}
+                    value={chatSearchTerm}
+                    onChange={(e) => setChatSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* 채팅방 목록 */}
+              <div className="flex-1 overflow-y-auto">
+                {filteredChatRooms.length === 0 ? (
+                  <div className="p-4 text-center text-gray-500">
+                    <MessageCircle size={48} className="mx-auto mb-2 text-gray-300" />
+                    <p className="text-sm">{locale === 'en' ? 'No chat rooms' : '채팅방이 없습니다'}</p>
+                  </div>
+                ) : (
+                  filteredChatRooms.map((room) => (
+                    <div
+                      key={room.id}
+                      onClick={() => selectChatRoom(room)}
+                      className={`p-3 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
+                        selectedChatRoom?.id === room.id 
+                          ? 'bg-blue-50 border-l-2 border-l-blue-500' 
+                          : room.unread_count > 0 
+                          ? 'bg-yellow-50 border-l-2 border-l-yellow-400' 
+                          : ''
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <h3 className={`text-sm truncate ${
+                              room.unread_count > 0 
+                                ? 'font-bold text-gray-900' 
+                                : 'font-medium text-gray-900'
+                            }`}>
+                              {chatActiveTab === 'team' && 'room_name' in room ? room.room_name : 
+                               chatActiveTab === 'tour' && 'tour_name' in room ? room.tour_name : room.id}
+                            </h3>
+                            {room.unread_count > 0 && (
+                              <div className="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-medium ml-2">
+                                {room.unread_count}
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span className="truncate">
+                              {chatActiveTab === 'team' && 'description' in room ? 
+                                (room.description || `${locale === 'en' ? 'Participants' : '참가자'} ${'participants_count' in room ? room.participants_count : 0}`) :
+                                chatActiveTab === 'tour' && 'tour_date' in room ? 
+                                formatDateWithDay(room.tour_date) : ''}
+                            </span>
+                            {room.last_message && (
+                              <span className="text-xs text-gray-400 ml-2">
+                                {formatChatTime(room.last_message.created_at)}
+                              </span>
+                            )}
+                          </div>
+                          
+                          {room.last_message && (
+                            <p className="text-xs text-gray-600 truncate mt-1">
+                              <span className="font-medium">{room.last_message.sender_name}:</span>
+                              {' '}{room.last_message.message}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* 오른쪽: 채팅 영역 */}
+            <div className="flex-1 border border-gray-200 rounded-lg flex flex-col bg-white">
+              {selectedChatRoom ? (
+                <>
+                  {/* 채팅방 헤더 */}
+                  <div className="p-4 border-b border-gray-200">
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      {chatActiveTab === 'team' && 'room_name' in selectedChatRoom ? selectedChatRoom.room_name :
+                       chatActiveTab === 'tour' && 'tour_name' in selectedChatRoom ? selectedChatRoom.tour_name : selectedChatRoom.id}
+                    </h3>
+                  </div>
+
+                  {/* 메시지 목록 */}
+                  <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                    {chatMessages.length === 0 ? (
+                      <div className="text-center text-gray-500 py-8">
+                        <MessageCircle size={48} className="mx-auto mb-2 text-gray-300" />
+                        <p className="text-sm">{locale === 'en' ? 'No messages yet' : '아직 메시지가 없습니다'}</p>
+                        <p className="text-xs mt-2 text-gray-400">{locale === 'en' ? 'Start the conversation!' : '대화를 시작해보세요!'}</p>
+                      </div>
+                    ) : (
+                      chatMessages.map((message) => (
+                        <div
+                          key={message.id}
+                          className={`flex ${message.sender_email === currentUserEmail ? 'justify-end' : 'justify-start'}`}
+                        >
+                          <div
+                            className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg shadow-sm ${
+                              message.sender_email === currentUserEmail
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-100 text-gray-900'
+                            }`}
+                          >
+                            <div className="text-xs font-medium mb-1">{message.sender_name}</div>
+                            <div className="text-sm">{message.message}</div>
+                            <div className="text-xs opacity-70 mt-1">
+                              {formatChatTime(message.created_at)}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* 메시지 입력 */}
+                  <div className="p-4 border-t border-gray-200">
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        value={newChatMessage}
+                        onChange={(e) => setNewChatMessage(e.target.value)}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault()
+                            sendChatMessage()
+                          }
+                        }}
+                        placeholder={locale === 'en' ? 'Type a message...' : '메시지를 입력하세요...'}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        disabled={chatSending}
+                      />
+                      <button
+                        onClick={sendChatMessage}
+                        disabled={!newChatMessage.trim() || chatSending}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                      >
+                        {chatSending ? (locale === 'en' ? 'Sending...' : '전송 중...') : (locale === 'en' ? 'Send' : '전송')}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="text-center text-gray-500">
+                    <MessageCircle size={64} className="mx-auto mb-4 text-gray-300" />
+                    <h3 className="text-lg font-medium mb-2">{locale === 'en' ? 'Select a chat room' : '채팅방을 선택하세요'}</h3>
+                    <p className="text-sm">{locale === 'en' ? 'Choose a room from the list to start chatting' : '목록에서 채팅방을 선택하여 대화를 시작하세요'}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* 오프 스케줄 모달 */}
       {showOffScheduleModal && (

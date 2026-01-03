@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
-import { X, Copy, Share2, QrCode, MessageCircle, Users, Calendar } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { X, Copy, Share2, QrCode, MessageCircle, Users, Calendar, Bell, BellOff } from 'lucide-react'
+import { usePushNotification } from '@/hooks/usePushNotification'
+import { supabase } from '@/lib/supabase'
 
 interface ChatRoomShareModalProps {
   isOpen: boolean
@@ -11,6 +13,8 @@ interface ChatRoomShareModalProps {
   tourDate?: string
   isPublicView?: boolean
   language?: 'en' | 'ko'
+  roomId?: string
+  customerEmail?: string
 }
 
 export default function ChatRoomShareModal({ 
@@ -20,10 +24,53 @@ export default function ChatRoomShareModal({
   roomName,
   tourDate,
   isPublicView = false,
-  language = 'ko'
+  language = 'ko',
+  roomId,
+  customerEmail
 }: ChatRoomShareModalProps) {
   const [copied, setCopied] = useState(false)
   const [showQR, setShowQR] = useState(false)
+  const [roomIdFromCode, setRoomIdFromCode] = useState<string | undefined>(roomId)
+  
+  // 푸시 알림 훅
+  const {
+    isSupported,
+    isSubscribed,
+    isLoading: isPushLoading,
+    subscribe,
+    unsubscribe
+  } = usePushNotification(roomIdFromCode, customerEmail)
+
+  // roomCode로 roomId 찾기
+  useEffect(() => {
+    if (!roomId && roomCode && isPublicView) {
+      const findRoomId = async () => {
+        const { data } = await supabase
+          .from('chat_rooms')
+          .select('id')
+          .eq('room_code', roomCode)
+          .single()
+        
+        if (data) {
+          setRoomIdFromCode(data.id)
+        }
+      }
+      findRoomId()
+    }
+  }, [roomCode, roomId, isPublicView])
+
+  const handlePushToggle = async () => {
+    if (isSubscribed) {
+      await unsubscribe()
+    } else {
+      const success = await subscribe()
+      if (success) {
+        alert(language === 'ko' 
+          ? '푸시 알림이 활성화되었습니다. 새 메시지가 도착하면 알림을 받을 수 있습니다.' 
+          : 'Push notifications enabled. You will receive notifications when new messages arrive.')
+      }
+    }
+  }
 
   if (!isOpen) return null
 
@@ -82,6 +129,10 @@ export default function ChatRoomShareModal({
         '투어 중 특별한 요청사항이 있으면 언제든지 말씀해주세요',
         '가이드가 답변을 드릴 때까지 잠시 기다려주세요'
       ],
+      pushNotification: '푸시 알림 받기',
+      pushNotificationDesc: '새 메시지가 도착하면 알림을 받을 수 있습니다',
+      pushNotificationEnabled: '푸시 알림 활성화됨',
+      pushNotificationDisabled: '푸시 알림 비활성화',
       close: '닫기'
     },
     en: {
@@ -100,6 +151,10 @@ export default function ChatRoomShareModal({
         'Feel free to share any special requests during the tour',
         'Please wait a moment for your guide to respond'
       ],
+      pushNotification: 'Enable Push Notifications',
+      pushNotificationDesc: 'Receive notifications when new messages arrive',
+      pushNotificationEnabled: 'Push notifications enabled',
+      pushNotificationDisabled: 'Push notifications disabled',
       close: 'Close'
     }
   }
@@ -222,6 +277,43 @@ export default function ChatRoomShareModal({
               </button>
             </div>
           </div>
+
+          {/* 푸시 알림 설정 (고객용) */}
+          {isPublicView && isSupported && (
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-200">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center space-x-2 mb-1">
+                    {isSubscribed ? (
+                      <Bell className="w-5 h-5 text-blue-600" />
+                    ) : (
+                      <BellOff className="w-5 h-5 text-gray-400" />
+                    )}
+                    <h4 className="font-medium text-gray-900">
+                      {isSubscribed ? t.pushNotificationEnabled : t.pushNotification}
+                    </h4>
+                  </div>
+                  <p className="text-sm text-gray-600">{t.pushNotificationDesc}</p>
+                </div>
+                <button
+                  onClick={handlePushToggle}
+                  disabled={isPushLoading}
+                  className={`ml-4 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    isSubscribed
+                      ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {isPushLoading 
+                    ? (language === 'ko' ? '처리 중...' : 'Loading...')
+                    : isSubscribed 
+                    ? (language === 'ko' ? '비활성화' : 'Disable')
+                    : (language === 'ko' ? '활성화' : 'Enable')
+                  }
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* 사용 안내 */}
           <div className="bg-gray-50 rounded-lg p-4">
