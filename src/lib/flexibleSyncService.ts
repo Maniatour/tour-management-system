@@ -234,6 +234,31 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
     }
   })
 
+  // reservations 테이블의 status 변환: 구글 시트의 상태 값을 프론트엔드에서 사용하는 값으로 변환
+  if (tableName === 'reservations' && converted.status) {
+    const statusMap: { [key: string]: string } = {
+      'Confirmed': 'confirmed',
+      'Canceled': 'cancelled',
+      'Refunded': 'cancelled',
+      'Refund Deleted': 'cancelled',
+      'Deposit Received': 'pending',
+      'Deleted': 'cancelled',
+      'Scenic Received': 'confirmed',
+      'Deposit Deleted': 'cancelled',
+      'Need to Refund': 'cancelled',
+      'Recruiting': 'pending',
+      'Pending': 'pending',
+      'Payment Requested': 'pending'
+    }
+    
+    // 대소문자 구분 없이 매핑 (정확한 매칭 우선, 없으면 대소문자 무시)
+    const normalizedStatus = String(converted.status).trim()
+    converted.status = statusMap[normalizedStatus] || 
+                        statusMap[normalizedStatus.toLowerCase()] || 
+                        statusMap[normalizedStatus.charAt(0).toUpperCase() + normalizedStatus.slice(1).toLowerCase()] ||
+                        'pending'
+  }
+
   // 기본값은 삽입 시에만 적용하도록 이 단계에서는 설정하지 않음
 
   return converted

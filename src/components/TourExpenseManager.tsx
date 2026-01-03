@@ -93,6 +93,7 @@ export default function TourExpenseManager({
   const [showOptionManagement, setShowOptionManagement] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
   const [viewingReceipt, setViewingReceipt] = useState<{ imageUrl: string; expenseId: string; paidFor: string } | null>(null)
   const [showDriveImporter, setShowDriveImporter] = useState(false)
   const [showMoreCategories, setShowMoreCategories] = useState(false)
@@ -1664,13 +1665,42 @@ export default function TourExpenseManager({
                     onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
                     className="hidden"
                   />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="mt-2 px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-                  >
-                    {t('cameraOrFile')}
-                  </button>
+                  <input
+                    ref={cameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture={typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'environment' : undefined}
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        handleFileUpload(e.target.files)
+                        // input 값 초기화
+                        setTimeout(() => {
+                          if (e.target) {
+                            (e.target as HTMLInputElement).value = ''
+                          }
+                        }, 100)
+                      }
+                    }}
+                    className="hidden"
+                  />
+                  <div className="mt-2 flex gap-2 justify-center">
+                    <button
+                      type="button"
+                      onClick={() => cameraInputRef.current?.click()}
+                      className="px-4 py-2 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center gap-2"
+                    >
+                      <ImageIcon size={16} />
+                      {t('camera')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 flex items-center gap-2"
+                    >
+                      <Upload size={16} />
+                      {t('file')}
+                    </button>
+                  </div>
                 </div>
               </div>
 

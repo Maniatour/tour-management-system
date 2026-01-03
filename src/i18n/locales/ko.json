@@ -1410,6 +1410,8 @@
         "dragOrClickReceipt": "영수증을 드래그하여 놓거나 클릭하여 선택하세요",
         "mobileCameraInfo": "모바일에서는 길게 눌러 카메라에 액세스",
         "cameraOrFile": "카메라 또는 파일",
+        "camera": "카메라",
+        "file": "파일 선택",
         "cancel": "취소",
         "selectOptions": {
           "pleaseSelect": "선택하세요"

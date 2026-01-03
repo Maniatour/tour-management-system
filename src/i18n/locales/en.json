@@ -1366,6 +1366,8 @@
         "dragOrClickReceipt": "Drag and drop receipt here or click to select",
         "mobileCameraInfo": "On mobile, use long-press to access camera",
         "cameraOrFile": "Camera or File",
+        "camera": "Camera",
+        "file": "Select File",
         "cancel": "Cancel",
         "selectOptions": {
           "pleaseSelect": "Please Select"
