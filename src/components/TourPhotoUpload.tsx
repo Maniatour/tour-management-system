@@ -307,8 +307,8 @@ export default function TourPhotoUpload({
 
     console.log(`총 ${fileArray.length}개 파일 업로드 시작`)
 
-    // 대량 파일 처리를 위한 배치 업로드 (한번에 10개씩으로 조정)
-    const batchSize = 10
+    // 대량 파일 처리를 위한 배치 업로드 (한번에 500개씩으로 조정)
+    const batchSize = 500
     const batches = []
     
     for (let i = 0; i < fileArray.length; i += batchSize) {

@@ -355,8 +355,8 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
     const fileArray = Array.from(files)
     
     // 파일 개수 제한
-    if (fileArray.length > 100) {
-      alert(language === 'ko' ? '한번에 최대 100개의 파일만 업로드할 수 있습니다.' : 'Maximum 100 files can be uploaded at once.')
+    if (fileArray.length > 500) {
+      alert(language === 'ko' ? '한번에 최대 500개의 파일만 업로드할 수 있습니다.' : 'Maximum 500 files can be uploaded at once.')
       return
     }
 
@@ -367,8 +367,8 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       let successCount = 0
       let failCount = 0
 
-      // 배치 업로드 (한번에 5개씩)
-      const batchSize = 5
+      // 배치 업로드 (한번에 500개씩)
+      const batchSize = 500
       for (let i = 0; i < fileArray.length; i += batchSize) {
         const batch = fileArray.slice(i, i + batchSize)
         

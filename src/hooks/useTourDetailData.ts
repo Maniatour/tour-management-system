@@ -628,18 +628,40 @@ export function useTourDetailData() {
             !otherToursAssignedReservations.some(ot => ot.id === r.id)
           )
           
+          // cancelled 상태 확인 함수
+          const isCancelled = (status: string | null | undefined): boolean => {
+            if (!status) return false
+            const normalizedStatus = String(status).toLowerCase().trim()
+            return normalizedStatus === 'cancelled' || normalizedStatus === 'canceled' || normalizedStatus.includes('cancel')
+          }
+
+          // assignedReservations에서 cancelled 상태 제외
+          const cancelledFromAssigned = assignedReservations.filter(r => isCancelled(r.status))
+          const activeAssignedReservations = assignedReservations.filter(r => !isCancelled(r.status))
+
+          // otherToursAssignedReservations에서 cancelled 상태 제외
+          const cancelledFromOtherTours = otherToursAssignedReservations.filter(r => isCancelled(r.status))
+          const activeOtherToursAssignedReservations = otherToursAssignedReservations.filter(r => !isCancelled(r.status))
+
           // 4. 다른 상태의 예약 (tour_date와 product_id가 같고, status가 confirmed 또는 recruiting이 아닌 예약)
+          // cancelled 상태의 예약도 포함 (assigned와 otherTours에서 제외된 cancelled 포함)
           const otherStatusReservations = reservationsData.filter(r => 
             r.product_id === tourData.product_id && 
             r.tour_date === tourData.tour_date &&
             r.status && 
             !['confirmed', 'recruiting'].includes(r.status.toLowerCase()) &&
             !assignedReservationIds.includes(r.id) &&
-            !otherToursAssignedReservations.some(ot => ot.id === r.id) &&
+            !activeOtherToursAssignedReservations.some(ot => ot.id === r.id) &&
             !pendingReservations.some(p => p.id === r.id)
           )
+
+          // cancelled 상태의 예약들을 otherStatusReservations에 추가 (중복 제거)
+          const allCancelledReservations = [...cancelledFromAssigned, ...cancelledFromOtherTours]
+          const otherStatusReservationIds = new Set(otherStatusReservations.map(r => r.id))
+          const cancelledToAdd = allCancelledReservations.filter(r => !otherStatusReservationIds.has(r.id))
+          const allOtherStatusReservations = [...otherStatusReservations, ...cancelledToAdd]
           
-          console.log('📊 Other status reservations:', otherStatusReservations.map(r => ({
+          console.log('📊 Other status reservations:', allOtherStatusReservations.map(r => ({
             id: r.id,
             customer_id: r.customer_id,
             customer_name: r.customer_name,
@@ -648,9 +670,11 @@ export function useTourDetailData() {
           
           console.log('예약 분류 계산:', {
             assigned: assignedReservations.length,
+            cancelledFromAssigned: cancelledFromAssigned.length,
             otherToursAssigned: otherToursAssignedReservations.length,
+            cancelledFromOtherTours: cancelledFromOtherTours.length,
             pending: pendingReservations.length,
-            otherStatus: otherStatusReservations.length
+            otherStatus: allOtherStatusReservations.length
           })
           
           // 고객 이름이 "정보 없음"인 예약들 디버깅
@@ -682,17 +706,26 @@ export function useTourDetailData() {
             })))
           }
           
-          setAssignedReservations(assignedReservations)
+          setAssignedReservations(activeAssignedReservations)
           setPendingReservations(pendingReservations)
-          setOtherToursAssignedReservations(otherToursAssignedReservations)
-          setOtherStatusReservations(otherStatusReservations)
+          setOtherToursAssignedReservations(activeOtherToursAssignedReservations)
+          setOtherStatusReservations(allOtherStatusReservations)
         } else if (reservationsData && tourData) {
           // 고객 데이터가 아직 로드되지 않은 경우 기본 예약 분류만 수행
           console.log('⚠️ 고객 데이터가 아직 로드되지 않음, 기본 예약 분류만 수행')
           const assignedReservationIds = tourData.reservation_ids || []
           
+          // cancelled 상태 확인 함수
+          const isCancelled = (status: string | null | undefined): boolean => {
+            if (!status) return false
+            const normalizedStatus = String(status).toLowerCase().trim()
+            return normalizedStatus === 'cancelled' || normalizedStatus === 'canceled' || normalizedStatus.includes('cancel')
+          }
+          
           // 기본 예약 분류 (고객 정보 없이)
-          const assignedReservations = reservationsData.filter(r => assignedReservationIds.includes(r.id))
+          const allAssignedReservations = reservationsData.filter(r => assignedReservationIds.includes(r.id))
+          const activeAssignedReservations = allAssignedReservations.filter(r => !isCancelled(r.status))
+          
           const pendingReservations = reservationsData.filter(r => 
             r.product_id === tourData.product_id && 
             r.tour_date === tourData.tour_date &&
@@ -700,7 +733,7 @@ export function useTourDetailData() {
             !assignedReservationIds.includes(r.id)
           )
           
-          setAssignedReservations(assignedReservations)
+          setAssignedReservations(activeAssignedReservations)
           setPendingReservations(pendingReservations)
           setOtherToursAssignedReservations([])
           setOtherStatusReservations([])

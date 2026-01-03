@@ -1368,6 +1368,15 @@
         "cameraOrFile": "Camera or File",
         "camera": "Camera",
         "file": "Select File",
+        "removeImage": "Remove Image",
+        "guideDriverFee": "Guide/Driver Fee",
+        "guideFee": "Guide Fee",
+        "assistantDriverFee": "Assistant/Driver Fee",
+        "bookingCost": "Booking Cost",
+        "ticketBooking": "Ticket Booking",
+        "hotelBooking": "Hotel Booking",
+        "noMemo": "No memo",
+        "items": "items",
         "cancel": "Cancel",
         "selectOptions": {
           "pleaseSelect": "Please Select"

@@ -7,6 +7,12 @@ const UUID_MAPPING: Record<string, string> = {
   '8aab7091-b636-4426-9c1e-df37ed7d6538': '982a5e11-7d81-42cc-9011-f2ec5a379899'
 }
 
+// Antelope X Canyon → Lower Antelope Canyon 매핑
+// 3a842aec-a3c3-4516-b846-13fed5dd95b8 (Antelope X Canyon) → 8aab7091-b636-4426-9c1e-df37ed7d6538 (Lower Antelope Canyon)
+const OPTION_ID_MIGRATION: Record<string, string> = {
+  '3a842aec-a3c3-4516-b846-13fed5dd95b8': '8aab7091-b636-4426-9c1e-df37ed7d6538'
+}
+
 export async function POST() {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -123,13 +129,25 @@ export async function POST() {
           for (const optionId of optionIds) {
             if (!optionId) continue
 
+            // 옵션 ID 마이그레이션 적용 (Antelope X Canyon → Lower Antelope Canyon)
+            let finalOptionId = optionId
+            if (OPTION_ID_MIGRATION[optionId]) {
+              finalOptionId = OPTION_ID_MIGRATION[optionId]
+              console.log(`Migrating option_id ${optionId} to ${finalOptionId} for reservation ${reservation.id}`)
+            }
+
             // option_id에 해당하는 choice_id 조회
-            const choiceId = optionToChoiceMap.get(optionId)
+            let choiceId = optionToChoiceMap.get(finalOptionId)
+            
+            // 마이그레이션된 ID로도 찾지 못하면 원본 ID로 시도
+            if (!choiceId && finalOptionId !== optionId) {
+              choiceId = optionToChoiceMap.get(optionId)
+            }
             
             if (!choiceId) {
               // 매핑이 없으면 에러 로그
               if (errorMessages.length < 10) {
-                errorMessages.push(`No choice_id found for option_id: ${optionId} (reservation: ${reservation.id})`)
+                errorMessages.push(`No choice_id found for option_id: ${optionId} (migrated to: ${finalOptionId}, reservation: ${reservation.id})`)
               }
               continue
             }
@@ -137,7 +155,7 @@ export async function POST() {
             choicesToInsert.push({
               reservation_id: reservation.id,
               choice_id: choiceId,
-              option_id: optionId,
+              option_id: finalOptionId, // 마이그레이션된 option_id 사용
               quantity: 1,
               total_price: 0
             })

@@ -57,8 +57,21 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
   safeJsonParse,
   pickupHotels = []
 }) => {
+  // 중복 제거: 같은 ID를 가진 예약 중 첫 번째 것만 유지
+  const uniqueReservations = React.useMemo(() => {
+    const seen = new Set<string>()
+    return reservations.filter(reservation => {
+      if (seen.has(reservation.id)) {
+        console.warn(`⚠️ 중복된 예약 ID 발견: ${reservation.id} - 제거됨`)
+        return false
+      }
+      seen.add(reservation.id)
+      return true
+    })
+  }, [reservations])
+
   // 총 인원 계산
-  const totalPeople = reservations.reduce((sum, reservation) => {
+  const totalPeople = uniqueReservations.reduce((sum, reservation) => {
     const adults = reservation.adults || 0
     const children = reservation.children || 0
     const infants = reservation.infants || 0
@@ -69,7 +82,7 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
     <div className="mb-4">
       <div className="flex items-center gap-2 mb-2">
         <h3 className="text-sm font-medium text-gray-700">
-          {title} ({reservations.length})
+          {title} ({uniqueReservations.length})
         </h3>
         {totalPeople > 0 && (
           <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -78,12 +91,12 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
         )}
       </div>
       <div className="space-y-2">
-        {reservations.length === 0 ? (
+        {uniqueReservations.length === 0 ? (
           <div className="text-center py-4 text-gray-500">
             <p className="text-sm">{emptyMessage}</p>
           </div>
         ) : (
-          reservations.map((reservation) => (
+          uniqueReservations.map((reservation) => (
             <ReservationCard
               key={reservation.id}
               reservation={reservation}

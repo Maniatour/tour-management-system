@@ -1412,6 +1412,15 @@
         "cameraOrFile": "카메라 또는 파일",
         "camera": "카메라",
         "file": "파일 선택",
+        "removeImage": "이미지 삭제",
+        "guideDriverFee": "가이드/드라이버 수수료",
+        "guideFee": "가이드 수수료",
+        "assistantDriverFee": "어시스턴트/드라이버 수수료",
+        "bookingCost": "부킹 비용",
+        "ticketBooking": "티켓 부킹",
+        "hotelBooking": "호텔 부킹",
+        "noMemo": "메모 없음",
+        "items": "건",
         "cancel": "취소",
         "selectOptions": {
           "pleaseSelect": "선택하세요"

@@ -41,12 +41,30 @@ export default function TourReservationManager({
       console.log('📋 Reservation IDs:', reservationIds)
 
       // 1. 이 투어에 배정된 예약들 (reservation_ids에 있는 예약들)
-      const assignedReservations = await loadAssignedReservations(reservationIds)
-      console.log('✅ Assigned reservations:', assignedReservations.length)
+      const allAssignedReservations = await loadAssignedReservations(reservationIds)
+      console.log('✅ All assigned reservations:', allAssignedReservations.length)
+
+      // cancelled 상태의 예약 분리
+      const isCancelled = (status: string | null | undefined): boolean => {
+        if (!status) return false
+        const normalizedStatus = String(status).toLowerCase().trim()
+        return normalizedStatus === 'cancelled' || normalizedStatus === 'canceled' || normalizedStatus.includes('cancel')
+      }
+
+      const assignedReservations = allAssignedReservations.filter(r => !isCancelled(r.status))
+      const cancelledFromAssigned = allAssignedReservations.filter(r => isCancelled(r.status))
+      console.log('✅ Active assigned reservations:', assignedReservations.length)
+      console.log('✅ Cancelled from assigned:', cancelledFromAssigned.length)
 
       // 2. 다른 투어에 배정된 예약들 (같은 상품/날짜의 다른 투어들)
-      const otherToursReservations = await loadOtherToursReservations()
-      console.log('✅ Other tours reservations:', otherToursReservations.length)
+      const allOtherToursReservations = await loadOtherToursReservations()
+      console.log('✅ All other tours reservations:', allOtherToursReservations.length)
+
+      // 다른 투어에 배정된 예약에서도 cancelled 상태 분리
+      const otherToursReservations = allOtherToursReservations.filter(r => !isCancelled(r.status))
+      const cancelledFromOtherTours = allOtherToursReservations.filter(r => isCancelled(r.status))
+      console.log('✅ Active other tours reservations:', otherToursReservations.length)
+      console.log('✅ Cancelled from other tours:', cancelledFromOtherTours.length)
 
       // 3. 어느 투어에도 배정되지 않은 예약들 (event_id가 비어있는 예약들)
       const unassignedReservations = await loadUnassignedReservations()
@@ -55,6 +73,12 @@ export default function TourReservationManager({
       // 4. 취소/기타 상태 예약들 (confirmed, recruiting이 아닌 예약들)
       const inactiveReservations = await loadInactiveReservations()
       console.log('✅ Inactive reservations:', inactiveReservations.length)
+
+      // cancelled 상태의 예약들을 inactiveReservations에 추가 (중복 제거)
+      const allCancelledReservations = [...cancelledFromAssigned, ...cancelledFromOtherTours]
+      const cancelledReservationIds = new Set(allCancelledReservations.map(r => r.id))
+      const inactiveWithoutCancelled = inactiveReservations.filter(r => !cancelledReservationIds.has(r.id))
+      const allInactiveReservations = [...inactiveWithoutCancelled, ...allCancelledReservations]
 
       // 그룹별로 정리
       const groups: ReservationGroup[] = [
@@ -75,8 +99,8 @@ export default function TourReservationManager({
         },
         {
           title: '4. 취소/기타 상태 예약',
-          reservations: inactiveReservations,
-          count: inactiveReservations.length
+          reservations: allInactiveReservations,
+          count: allInactiveReservations.length
         }
       ]
 

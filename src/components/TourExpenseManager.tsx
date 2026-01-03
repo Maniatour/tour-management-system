@@ -209,9 +209,14 @@ export default function TourExpenseManager({
   // 예약 가격 정보 로드
   const loadReservationPricing = useCallback(async () => {
     try {
-      console.log('🔍 Loading reservation pricing for reservations:', reservations.map(r => r.id))
+      // reservationIds가 있으면 그것을 사용, 없으면 reservations 상태 사용
+      const targetReservationIds = reservationIds && reservationIds.length > 0 
+        ? reservationIds 
+        : reservations.map(r => r.id)
       
-      if (reservations.length === 0) {
+      console.log('🔍 Loading reservation pricing for reservations:', targetReservationIds)
+      
+      if (targetReservationIds.length === 0) {
         setReservationPricing([])
         return
       }
@@ -219,7 +224,7 @@ export default function TourExpenseManager({
       const { data, error } = await supabase
         .from('reservation_pricing')
         .select('id, reservation_id, total_price, adult_product_price, child_product_price, infant_product_price')
-        .in('reservation_id', reservations.map(r => r.id))
+        .in('reservation_id', targetReservationIds)
 
       if (error) {
         console.error('❌ Reservation pricing error:', error)
@@ -232,7 +237,7 @@ export default function TourExpenseManager({
       console.error('❌ Error loading reservation pricing:', error)
       setReservationPricing([])
     }
-  }, [reservations])
+  }, [reservations, reservationIds])
 
   // 팀 멤버 정보 로드
   const loadTeamMembers = async () => {
@@ -362,10 +367,61 @@ export default function TourExpenseManager({
 
       if (paidToError) throw paidToError
       
-      // Extract unique paid_to values and sort alphabetically (case-insensitive)
-      const uniquePaidToValues = Array.from(
-        new Set(paidToData?.map(item => item.paid_to).filter(Boolean))
-      ).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+      // Normalize function: remove spaces and convert to lowercase for comparison
+      const normalize = (str: string): string => {
+        return str.toLowerCase().replace(/\s+/g, '').trim()
+      }
+      
+      // First pass: count occurrences of each original value
+      const originalCounts: { [key: string]: number } = {}
+      paidToData?.forEach(item => {
+        if (item.paid_to) {
+          originalCounts[item.paid_to] = (originalCounts[item.paid_to] || 0) + 1
+        }
+      })
+      
+      // Second pass: group by normalized value and track the most common original
+      const normalizedGroups: { [normalized: string]: { original: string; totalCount: number; variants: { [original: string]: number } } } = {}
+      
+      Object.keys(originalCounts).forEach(original => {
+        const normalized = normalize(original)
+        const count = originalCounts[original]
+        
+        if (!normalizedGroups[normalized]) {
+          normalizedGroups[normalized] = {
+            original: original,
+            totalCount: count,
+            variants: { [original]: count }
+          }
+        } else {
+          // Add this variant
+          normalizedGroups[normalized].variants[original] = count
+          normalizedGroups[normalized].totalCount += count
+          
+          // Update the representative original to the most common variant
+          const currentRep = normalizedGroups[normalized].original
+          if (count > normalizedGroups[normalized].variants[currentRep]) {
+            normalizedGroups[normalized].original = original
+          }
+        }
+      })
+      
+      // Convert to array and sort by total usage frequency (descending), then alphabetically for same frequency
+      const uniquePaidToValues = Object.values(normalizedGroups)
+        .map(group => group.original)
+        .sort((a, b) => {
+          const normalizedA = normalize(a)
+          const normalizedB = normalize(b)
+          const countA = normalizedGroups[normalizedA].totalCount
+          const countB = normalizedGroups[normalizedB].totalCount
+          
+          const countDiff = countB - countA
+          if (countDiff !== 0) {
+            return countDiff // Sort by frequency first
+          }
+          // If same frequency, sort alphabetically
+          return a.toLowerCase().localeCompare(b.toLowerCase())
+        })
       
       setPaidToOptions(uniquePaidToValues)
     } catch (error) {
@@ -551,6 +607,47 @@ export default function TourExpenseManager({
     const files = e.dataTransfer.files
     if (files.length) {
       handleFileUpload(files)
+    }
+  }
+
+  // 이미지 삭제 핸들러
+  const handleImageRemove = async () => {
+    if (!formData.image_url || !formData.file_path) {
+      // 파일이 없으면 그냥 formData만 초기화
+      setFormData(prev => ({
+        ...prev,
+        image_url: '',
+        file_path: ''
+      }))
+      return
+    }
+
+    try {
+      // Storage에서 파일 삭제 시도 (실패해도 계속 진행)
+      if (formData.file_path) {
+        try {
+          await supabase.storage
+            .from('tour-expenses')
+            .remove([formData.file_path])
+        } catch (error) {
+          console.warn('Storage 파일 삭제 실패 (무시):', error)
+        }
+      }
+
+      // formData에서 이미지 정보 제거
+      setFormData(prev => ({
+        ...prev,
+        image_url: '',
+        file_path: ''
+      }))
+    } catch (error) {
+      console.error('이미지 삭제 오류:', error)
+      // 오류가 발생해도 formData는 초기화
+      setFormData(prev => ({
+        ...prev,
+        image_url: '',
+        file_path: ''
+      }))
     }
   }
 
@@ -850,8 +947,11 @@ export default function TourExpenseManager({
       assistantFee
     })
     
-    // 총 입금액 계산
-    const totalPayments = reservationPricing.reduce((sum, pricing) => sum + pricing.total_price, 0)
+    // 총 입금액 계산 (reservationIds에 있는 예약만)
+    const filteredPricing = reservationIds && reservationIds.length > 0
+      ? reservationPricing.filter(p => reservationIds.includes(p.reservation_id))
+      : reservationPricing
+    const totalPayments = filteredPricing.reduce((sum, pricing) => sum + pricing.total_price, 0)
     
     // 총 지출 계산 (기존 지출 + 가이드/드라이버 수수료 + 부킹 비용)
     const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0)
@@ -974,30 +1074,32 @@ export default function TourExpenseManager({
           {expandedSections.payments && (
             <div className="border-t p-4 bg-gray-50">
               <div className="mb-2 text-xs text-gray-500">
-                📋 표시된 예약: {reservations.length}팀 (배정된 예약만)
+                📋 표시된 예약: {reservations.filter(r => reservationIds?.includes(r.id)).length}팀 (배정된 예약만)
               </div>
               <div className="space-y-2">
-                {reservations.map((reservation) => {
-                  const pricing = reservationPricing.find(p => p.reservation_id === reservation.id)
-                  const totalPeople = reservation.adults + reservation.children + reservation.infants
-                  console.log('💰 Payment display:', {
-                    reservationId: reservation.id,
-                    customerName: reservation.customer_name,
-                    totalPeople,
-                    pricing: pricing?.total_price || 0
-                  })
-                  return (
-                    <div key={reservation.id} className="flex items-center justify-between text-sm">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-medium">{reservation.customer_name}</span>
-                        <span className="text-gray-500">({totalPeople}명)</span>
+                {reservations
+                  .filter(reservation => reservationIds?.includes(reservation.id))
+                  .map((reservation) => {
+                    const pricing = reservationPricing.find(p => p.reservation_id === reservation.id)
+                    const totalPeople = reservation.adults + reservation.children + reservation.infants
+                    console.log('💰 Payment display:', {
+                      reservationId: reservation.id,
+                      customerName: reservation.customer_name,
+                      totalPeople,
+                      pricing: pricing?.total_price || 0
+                    })
+                    return (
+                      <div key={reservation.id} className="flex items-center justify-between text-sm">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-medium">{reservation.customer_name}</span>
+                          <span className="text-gray-500">({totalPeople}명)</span>
+                        </div>
+                        <span className="font-medium text-green-600">
+                          {pricing ? formatCurrency(pricing.total_price) : '$0'}
+                        </span>
                       </div>
-                      <span className="font-medium text-green-600">
-                        {pricing ? formatCurrency(pricing.total_price) : '$0'}
-                      </span>
-                    </div>
-                  )
-                })}
+                    )
+                  })}
               </div>
             </div>
           )}
@@ -1027,7 +1129,7 @@ export default function TourExpenseManager({
                 {(guideFee > 0 || assistantFee > 0) && (
                   <div className="bg-white rounded p-3">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-gray-900">가이드/드라이버 수수료</span>
+                      <span className="font-medium text-gray-900">{t('guideDriverFee')}</span>
                       <span className="font-bold text-red-600">
                         {formatCurrency(financialStats.totalFees)}
                       </span>
@@ -1035,13 +1137,13 @@ export default function TourExpenseManager({
                     <div className="space-y-1 text-sm text-gray-600">
                       {guideFee > 0 && (
                         <div className="flex items-center justify-between">
-                          <span>가이드 수수료</span>
+                          <span>{t('guideFee')}</span>
                           <span>{formatCurrency(guideFee)}</span>
                         </div>
                       )}
                       {assistantFee > 0 && (
                         <div className="flex items-center justify-between">
-                          <span>어시스턴트/드라이버 수수료</span>
+                          <span>{t('assistantDriverFee')}</span>
                           <span>{formatCurrency(assistantFee)}</span>
                         </div>
                       )}
@@ -1053,7 +1155,7 @@ export default function TourExpenseManager({
                 {(financialStats.totalBookingCosts > 0) && (
                   <div className="bg-white rounded p-3">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-gray-900">부킹 비용</span>
+                      <span className="font-medium text-gray-900">{t('bookingCost')}</span>
                       <span className="font-bold text-red-600">
                         {formatCurrency(financialStats.totalBookingCosts)}
                       </span>
@@ -1061,13 +1163,13 @@ export default function TourExpenseManager({
                     <div className="space-y-1 text-sm text-gray-600">
                       {financialStats.totalTicketCosts > 0 && (
                         <div className="flex items-center justify-between">
-                          <span>티켓 부킹</span>
+                          <span>{t('ticketBooking')}</span>
                           <span>{formatCurrency(financialStats.totalTicketCosts)}</span>
                         </div>
                       )}
                       {financialStats.totalHotelCosts > 0 && (
                         <div className="flex items-center justify-between">
-                          <span>호텔 부킹</span>
+                          <span>{t('hotelBooking')}</span>
                           <span>{formatCurrency(financialStats.totalHotelCosts)}</span>
                         </div>
                       )}
@@ -1081,13 +1183,13 @@ export default function TourExpenseManager({
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-medium text-gray-900">{category}</span>
                       <span className="font-bold text-red-600">
-                        {formatCurrency(data.amount)} ({data.count}건)
+                        {formatCurrency(data.amount)} ({data.count} {t('items')})
                       </span>
                     </div>
                     <div className="space-y-1 text-sm text-gray-600">
                       {data.expenses.map((expense) => (
                         <div key={expense.id} className="flex items-center justify-between">
-                          <span>{expense.paid_to} - {expense.note || '메모 없음'}</span>
+                          <span>{expense.paid_to} - {expense.note || t('noMemo')}</span>
                           <span>{formatCurrency(expense.amount)}</span>
                         </div>
                       ))}
@@ -1141,26 +1243,30 @@ export default function TourExpenseManager({
         )}
       </div>
 
-      {/* 구글 드라이브 영수증 가져오기 */}
-      <div className="mb-4 flex justify-end">
-        <button
-          onClick={() => setShowDriveImporter(!showDriveImporter)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-        >
-          <Folder className="w-4 h-4" />
-          <span>구글 드라이브에서 영수증 가져오기</span>
-        </button>
-      </div>
+      {/* 구글 드라이브 영수증 가져오기 - 가이드(team_member)는 숨김 */}
+      {userRole !== 'team_member' && (
+        <>
+          <div className="mb-4 flex justify-end">
+            <button
+              onClick={() => setShowDriveImporter(!showDriveImporter)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+            >
+              <Folder className="w-4 h-4" />
+              <span>구글 드라이브에서 영수증 가져오기</span>
+            </button>
+          </div>
 
-      {showDriveImporter && (
-        <div className="mb-4">
-          <GoogleDriveReceiptImporter
-            onImportComplete={() => {
-              setShowDriveImporter(false)
-              loadExpenses() // 지출 목록 새로고침
-            }}
-          />
-        </div>
+          {showDriveImporter && (
+            <div className="mb-4">
+              <GoogleDriveReceiptImporter
+                onImportComplete={() => {
+                  setShowDriveImporter(false)
+                  loadExpenses() // 지출 목록 새로고침
+                }}
+              />
+            </div>
+          )}
+        </>
       )}
 
       {/* 지출 목록 */}
@@ -1641,12 +1747,22 @@ export default function TourExpenseManager({
                   onDrop={handleDrop}
                 >
                   {formData.image_url ? (
-                    <div className="space-y-2">
-                      <img
-                        src={formData.image_url}
-                        alt={t('receipt')}
-                        className="mx-auto max-h-32 rounded"
-                      />
+                    <div className="space-y-2 relative">
+                      <div className="relative inline-block mx-auto">
+                        <img
+                          src={formData.image_url}
+                          alt={t('receipt')}
+                          className="mx-auto max-h-32 rounded"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleImageRemove}
+                          className="absolute top-0 right-0 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                          title={t('removeImage') || '이미지 삭제'}
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
                       <p className="text-sm text-green-600">{t('receiptUploaded')}</p>
                     </div>
                   ) : (
