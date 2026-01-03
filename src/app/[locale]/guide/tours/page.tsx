@@ -22,6 +22,9 @@ type ExtendedTour = Omit<Tour, 'assignment_status'> & {
   customer_name_en?: string | null;
   total_people?: number;
   assigned_people?: number;
+  assigned_adults?: number;
+  assigned_children?: number;
+  assigned_infants?: number;
   unassigned_people?: number;
   guide_name?: string | null;
   guide_name_en?: string | null;
@@ -159,8 +162,10 @@ export default function GuideTours({ params }: GuideToursProps) {
   // 투어 이름 매핑 함수
   const getTourDisplayName = (tour: ExtendedTour, locale: string) => {
     if (locale === 'en') {
-      // 영어 모드에서는 name_en 우선 사용
-      return tour.name_en || tour.product_name || tour.product_id
+      // 영어 모드에서는 product_id의 name_en을 우선 사용
+      // name_en (productInternalEnMap에서 가져온 product의 name_en)을 최우선 사용
+      // 없으면 product_id만 표시 (한글 이름이나 customer_name_en은 표시하지 않음)
+      return tour.name_en || tour.product_id
     } else {
       // 한국어 모드에서는 name_ko 우선 사용
       return tour.name_ko || tour.product_name || tour.product_id
@@ -331,8 +336,11 @@ export default function GuideTours({ params }: GuideToursProps) {
 
       // 7. 각 투어에 대해 인원 계산
       const toursWithDetails: ExtendedTour[] = (toursDataActive || []).map((tour: ExtendedTour) => {
-        // 배정 인원: reservation_ids 합산
+        // 배정 인원: reservation_ids 합산 (adults, child, infant 구분)
         let assignedPeople = 0
+        let assignedAdults = 0
+        let assignedChildren = 0
+        let assignedInfants = 0
         const counted = new Set<string>()
         // reservation_ids 정규화: 배열/JSON/콤마 지원
         const normalize = (value: unknown): string[] => {
@@ -352,7 +360,8 @@ export default function GuideTours({ params }: GuideToursProps) {
           return []
         }
         const ids = normalize(tour.reservation_ids as unknown)
-        for (const id of ids) {
+        const uniqueIds = [...new Set(ids)] // 중복 제거
+        for (const id of uniqueIds) {
           const rid = String(id).trim()
           if (counted.has(rid)) continue
           counted.add(rid)
@@ -361,6 +370,11 @@ export default function GuideTours({ params }: GuideToursProps) {
           // 동일한 상품/날짜에 속하는 예약만 합산 (잘못 연결된 ID 방지)
           if ((row.product_id || '') === (tour.product_id || '') && (row.tour_date || '') === (tour.tour_date || '')) {
             assignedPeople += row.total_people || 0
+            assignedAdults += row.adults || 0
+            // child와 children 필드 모두 확인
+            assignedChildren += (row.child || (row as any).children || 0) as number
+            // infant와 infants 필드 모두 확인
+            assignedInfants += (row.infant || (row as any).infants || 0) as number
           }
         }
         // 같은 상품/날짜 총 인원
@@ -382,6 +396,9 @@ export default function GuideTours({ params }: GuideToursProps) {
           customer_name_en: product?.customer_name_en || null,
           total_people: totalPeople,
           assigned_people: assignedPeople,
+          assigned_adults: assignedAdults,
+          assigned_children: assignedChildren,
+          assigned_infants: assignedInfants,
           unassigned_people: unassignedPeople,
           guide_name: guide?.name_ko || null,
           guide_name_en: guide?.name_en || null,
@@ -591,7 +608,29 @@ export default function GuideTours({ params }: GuideToursProps) {
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <div className="text-sm font-semibold text-gray-900 truncate">
-                    {tour.tour_date} {getTourDisplayName(tour, locale)} {tour.assigned_people || 0}
+                    {tour.tour_date} {getTourDisplayName(tour, locale)} 
+                    <span className="ml-1">
+                      {(() => {
+                        const adults = tour.assigned_adults || 0
+                        const children = tour.assigned_children || 0
+                        const infants = tour.assigned_infants || 0
+                        const total = tour.assigned_people || 0
+                        
+                        if (children === 0 && infants === 0) {
+                          return `${total}${locale === 'en' ? ' people' : '명'}`
+                        }
+                        const detailParts: string[] = []
+                        if (children > 0) {
+                          detailParts.push(locale === 'en' ? `Child ${children}` : `아동${children}`)
+                        }
+                        if (infants > 0) {
+                          detailParts.push(locale === 'en' ? `Infant ${infants}` : `유아${infants}`)
+                        }
+                        return locale === 'en' 
+                          ? `Total ${total} people, ${detailParts.join(', ')}`
+                          : `총 ${total}명, ${detailParts.join(', ')}`
+                      })()}
+                    </span>
                   </div>
                   <div className="ml-auto flex items-center gap-2">
                     {navigatingToTour === tour.id && (

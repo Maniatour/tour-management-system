@@ -16,6 +16,9 @@ interface ExtendedTour extends Omit<Tour, 'assignment_status'> {
   assignment_status?: string | null | undefined;
   total_people?: number | undefined;
   assigned_people?: number | undefined;
+  assigned_adults?: number | undefined;
+  assigned_children?: number | undefined;
+  assigned_infants?: number | undefined;
   unassigned_people?: number | undefined;
   guide_name?: string | null | undefined;
   assistant_name?: string | null | undefined;
@@ -59,14 +62,19 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
   
   // 투어 이름 매핑 함수 (상품명 사용)
   const getTourDisplayName = (tour: ExtendedTour) => {
-    // 상품명이 있으면 사용
-    if (tour.name_ko || tour.name_en) {
-      // 현재 로케일에 따라 적절한 이름 반환
-      if (locale === 'en') {
-        return tour.name_en || tour.name_ko || tour.product_name || tour.product_id
-      } else {
-        return tour.name_ko || tour.name_en || tour.product_name || tour.product_id
+    // 영어 모드에서는 product_id의 name_en을 우선 사용
+    if (locale === 'en') {
+      // name_en (productInternalEnMap에서 가져온 product의 name_en)을 최우선 사용
+      // 없으면 product_id만 표시 (한글 이름이나 customer_name_en은 표시하지 않음)
+      if (tour.name_en) {
+        return tour.name_en
       }
+      return tour.product_id || ''
+    }
+    
+    // 한국어 모드에서는 name_ko 우선 사용
+    if (tour.name_ko || tour.name_en) {
+      return tour.name_ko || tour.name_en || tour.product_name || tour.product_id
     }
     
     // 기존 방식 (fallback)
@@ -773,7 +781,29 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                           {assignmentIcon && <span className="inline-block mr-0.5">{assignmentIcon}</span>}
                           {isPrivateTour ? '🔒 ' : ''}{getTourDisplayName(tour)}
                         </span>
-                        <span className="mx-0.5 sm:mx-1">{assignedPeople}/{totalPeopleFiltered} ({othersPeople})</span>
+                        <span className="mx-0.5 sm:mx-1">
+                          {(() => {
+                            // tour 객체에 assigned_adults, assigned_children, assigned_infants가 있으면 사용
+                            const adults = tour.assigned_adults ?? 0
+                            const children = tour.assigned_children ?? 0
+                            const infants = tour.assigned_infants ?? 0
+                            const total = tour.assigned_people ?? assignedPeople
+                            
+                            if (children === 0 && infants === 0) {
+                              return `${total}/${totalPeopleFiltered}${othersPeople > 0 ? ` (${othersPeople})` : ''}`
+                            }
+                            const detailParts: string[] = []
+                            if (children > 0) {
+                              detailParts.push(locale === 'en' ? `Child ${children}` : `아동${children}`)
+                            }
+                            if (infants > 0) {
+                              detailParts.push(locale === 'en' ? `Infant ${infants}` : `유아${infants}`)
+                            }
+                            return locale === 'en' 
+                              ? `Total ${total}/${totalPeopleFiltered}${othersPeople > 0 ? ` (${othersPeople})` : ''}, ${detailParts.join(', ')}`
+                              : `총 ${total}/${totalPeopleFiltered}${othersPeople > 0 ? ` (${othersPeople})` : ''}, ${detailParts.join(', ')}`
+                          })()}
+                        </span>
                       </div>
                     </div>
                   )

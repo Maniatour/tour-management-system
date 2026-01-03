@@ -25,6 +25,7 @@ export default function OffSchedulePage() {
   const [offSchedules, setOffSchedules] = useState<OffSchedule[]>([])
   const [loading, setLoading] = useState(true)
   const [showRequestForm, setShowRequestForm] = useState(false)
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'pending' | 'approved' | 'rejected'>('upcoming')
   const [newRequest, setNewRequest] = useState({
     off_date: '',
     reason: ''
@@ -165,6 +166,29 @@ export default function OffSchedulePage() {
     }
   }
 
+  // 필터링된 오프 스케줄 목록
+  const filteredSchedules = offSchedules.filter((schedule) => {
+    const today = dayjs().format('YYYY-MM-DD')
+    const scheduleDate = dayjs(schedule.off_date).format('YYYY-MM-DD')
+    const isUpcoming = scheduleDate >= today
+    const isPast = scheduleDate < today
+
+    switch (activeTab) {
+      case 'upcoming':
+        return isUpcoming
+      case 'past':
+        return isPast
+      case 'pending':
+        return schedule.status === 'pending'
+      case 'approved':
+        return schedule.status === 'approved'
+      case 'rejected':
+        return schedule.status === 'rejected'
+      default:
+        return true
+    }
+  })
+
   if (userLoading || loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -255,19 +279,106 @@ export default function OffSchedulePage() {
               </div>
             )}
 
-            {/* Off 신청 내역 */}
-            <div className="mb-8">
-              <h3 className="text-lg font-semibold mb-4">Off 신청 내역</h3>
-              {offSchedules.length === 0 ? (
+            {/* 탭 메뉴 */}
+            <div className="mb-6 border-b border-gray-200">
+              <nav className="flex space-x-4" aria-label="Tabs">
+                <button
+                  onClick={() => setActiveTab('upcoming')}
+                  className={`py-3 px-4 border-b-2 font-medium text-sm ${
+                    activeTab === 'upcoming'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Upcoming
+                  <span className="ml-2 bg-gray-100 text-gray-600 py-0.5 px-2 rounded-full text-xs">
+                    {offSchedules.filter(s => {
+                      const today = dayjs().format('YYYY-MM-DD')
+                      return dayjs(s.off_date).format('YYYY-MM-DD') >= today
+                    }).length}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('past')}
+                  className={`py-3 px-4 border-b-2 font-medium text-sm ${
+                    activeTab === 'past'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Past
+                  <span className="ml-2 bg-gray-100 text-gray-600 py-0.5 px-2 rounded-full text-xs">
+                    {offSchedules.filter(s => {
+                      const today = dayjs().format('YYYY-MM-DD')
+                      return dayjs(s.off_date).format('YYYY-MM-DD') < today
+                    }).length}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('pending')}
+                  className={`py-3 px-4 border-b-2 font-medium text-sm ${
+                    activeTab === 'pending'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Pending
+                  <span className="ml-2 bg-yellow-100 text-yellow-600 py-0.5 px-2 rounded-full text-xs">
+                    {offSchedules.filter(s => s.status === 'pending').length}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('approved')}
+                  className={`py-3 px-4 border-b-2 font-medium text-sm ${
+                    activeTab === 'approved'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Approved
+                  <span className="ml-2 bg-green-100 text-green-600 py-0.5 px-2 rounded-full text-xs">
+                    {offSchedules.filter(s => s.status === 'approved').length}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('rejected')}
+                  className={`py-3 px-4 border-b-2 font-medium text-sm ${
+                    activeTab === 'rejected'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  Rejected
+                  <span className="ml-2 bg-red-100 text-red-600 py-0.5 px-2 rounded-full text-xs">
+                    {offSchedules.filter(s => s.status === 'rejected').length}
+                  </span>
+                </button>
+              </nav>
+            </div>
+
+            {/* 필터링된 Off 신청 내역 */}
+            <div>
+              <h3 className="text-lg font-semibold mb-4">
+                {activeTab === 'upcoming' && 'Upcoming Off Schedules'}
+                {activeTab === 'past' && 'Past Off Schedules'}
+                {activeTab === 'pending' && 'Pending Off Schedules'}
+                {activeTab === 'approved' && 'Approved Off Schedules'}
+                {activeTab === 'rejected' && 'Rejected Off Schedules'}
+              </h3>
+              {filteredSchedules.length === 0 ? (
                 <div className="text-gray-500 text-center py-8">
-                  신청한 Off가 없습니다.
+                  {activeTab === 'upcoming' && '예정된 Off가 없습니다.'}
+                  {activeTab === 'past' && '과거 Off가 없습니다.'}
+                  {activeTab === 'pending' && '대기 중인 Off가 없습니다.'}
+                  {activeTab === 'approved' && '승인된 Off가 없습니다.'}
+                  {activeTab === 'rejected' && '거부된 Off가 없습니다.'}
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {offSchedules.map((schedule) => (
+                  {filteredSchedules.map((schedule) => (
                     <div
                       key={schedule.id}
-                      className="flex items-center justify-between p-4 border border-gray-200 rounded-lg"
+                      className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                     >
                       <div className="flex items-center space-x-4">
                         {getStatusIcon(schedule.status)}
@@ -304,34 +415,6 @@ export default function OffSchedulePage() {
                           </button>
                         )}
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* 승인된 Off 스케줄 */}
-            <div>
-              <h3 className="text-lg font-semibold mb-4">승인된 Off 스케줄</h3>
-              {offSchedules.filter(s => s.status === 'approved').length === 0 ? (
-                <div className="text-gray-500 text-center py-8">
-                  승인된 Off가 없습니다.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {offSchedules.filter(s => s.status === 'approved').map((schedule) => (
-                    <div
-                      key={schedule.id}
-                      className="p-4 border border-gray-200 rounded-lg bg-green-50"
-                    >
-                      <div className="flex items-center space-x-2 mb-2">
-                        <CheckCircle className="w-4 h-4 text-green-500" />
-                        <span className="font-medium text-green-800">승인됨</span>
-                      </div>
-                      <div className="font-medium text-gray-900">
-                        {dayjs(schedule.off_date).format('YYYY년 MM월 DD일 (ddd)')}
-                      </div>
-                      <div className="text-sm text-gray-600 mt-1">{schedule.reason}</div>
                     </div>
                   ))}
                 </div>

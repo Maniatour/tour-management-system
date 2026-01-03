@@ -29,10 +29,10 @@ export async function POST() {
 
     console.log('Starting selected_options migration to reservation_choices...')
 
-    // 먼저 choice_options 테이블에서 option_id -> choice_id 매핑 가져오기
+    // 먼저 choice_options 테이블에서 option_key -> choice_id, option_id 매핑 가져오기
     const { data: choiceOptionsData, error: coError } = await supabase
       .from('choice_options')
-      .select('id, choice_id')
+      .select('id, choice_id, option_key')
     
     if (coError) {
       console.error('Error fetching choice_options:', coError)
@@ -42,14 +42,24 @@ export async function POST() {
       )
     }
 
-    // option_id -> choice_id 매핑 생성
-    const optionToChoiceMap = new Map<string, string>()
+    // option_key -> choice_id, option_id 매핑 생성
+    // selected_options의 키는 option_key이므로 이를 사용
+    const optionKeyToChoiceMap = new Map<string, { choiceId: string; optionId: string }>()
+    const optionIdToChoiceMap = new Map<string, string>() // 백업용: option_id -> choice_id
+    
     if (choiceOptionsData) {
       for (const opt of choiceOptionsData) {
-        optionToChoiceMap.set(opt.id, opt.choice_id)
+        if (opt.option_key) {
+          optionKeyToChoiceMap.set(opt.option_key, {
+            choiceId: opt.choice_id,
+            optionId: opt.id
+          })
+        }
+        // option_id로도 매핑 생성 (값 배열의 option_id를 위해)
+        optionIdToChoiceMap.set(opt.id, opt.choice_id)
       }
     }
-    console.log(`Loaded ${optionToChoiceMap.size} option_id -> choice_id mappings`)
+    console.log(`Loaded ${optionKeyToChoiceMap.size} option_key -> choice_id mappings, ${optionIdToChoiceMap.size} option_id -> choice_id mappings`)
 
     let totalProcessed = 0
     let totalCreated = 0
@@ -115,6 +125,7 @@ export async function POST() {
         }
 
         // selected_options를 reservation_choices로 변환
+        // selected_options의 키는 option_key, 값은 option_id 배열
         const choicesToInsert: Array<{
           reservation_id: string
           choice_id: string
@@ -123,39 +134,111 @@ export async function POST() {
           total_price: number
         }> = []
 
-        for (const [, optionIds] of Object.entries(selectedOptions)) {
-          if (!optionIds || optionIds.length === 0) continue
-
-          for (const optionId of optionIds) {
-            if (!optionId) continue
-
-            // 옵션 ID 마이그레이션 적용 (Antelope X Canyon → Lower Antelope Canyon)
-            let finalOptionId = optionId
-            if (OPTION_ID_MIGRATION[optionId]) {
-              finalOptionId = OPTION_ID_MIGRATION[optionId]
-              console.log(`Migrating option_id ${optionId} to ${finalOptionId} for reservation ${reservation.id}`)
-            }
-
-            // option_id에 해당하는 choice_id 조회
-            let choiceId = optionToChoiceMap.get(finalOptionId)
-            
-            // 마이그레이션된 ID로도 찾지 못하면 원본 ID로 시도
-            if (!choiceId && finalOptionId !== optionId) {
-              choiceId = optionToChoiceMap.get(optionId)
-            }
-            
-            if (!choiceId) {
-              // 매핑이 없으면 에러 로그
-              if (errorMessages.length < 10) {
-                errorMessages.push(`No choice_id found for option_id: ${optionId} (migrated to: ${finalOptionId}, reservation: ${reservation.id})`)
+        for (const [optionKey, optionIds] of Object.entries(selectedOptions)) {
+          if (!optionKey) continue
+          
+          // option_key로 choice_id 찾기 (selected_options의 키가 option_key)
+          let choiceMapping = optionKeyToChoiceMap.get(optionKey)
+          
+          // option_key로 찾지 못하면, 값 배열의 첫 번째 option_id로도 시도 (백업)
+          // 키와 값이 같은 경우가 있을 수 있음 (option_key == option_id)
+          if (!choiceMapping && optionIds && optionIds.length > 0) {
+            const firstOptionId = optionIds[0]
+            if (firstOptionId) {
+              // option_id로 choice_id 찾기
+              const choiceId = optionIdToChoiceMap.get(firstOptionId)
+              if (choiceId) {
+                // option_id를 option_key로 사용하는 경우도 있으므로 매핑 생성
+                choiceMapping = {
+                  choiceId: choiceId,
+                  optionId: firstOptionId
+                }
+                console.log(`Found choice_id via option_id fallback: option_key=${optionKey}, option_id=${firstOptionId}, choice_id=${choiceId} (reservation: ${reservation.id})`)
               }
+            }
+          }
+          
+          if (!choiceMapping) {
+            // option_key로 찾지 못하면 에러 로그
+            if (errorMessages.length < 10) {
+              errorMessages.push(`No choice_id found for option_key: ${optionKey} (reservation: ${reservation.id})`)
+            }
+            console.log(`Skipping option_key ${optionKey} - not found in choice_options (reservation: ${reservation.id})`)
+            continue
+          }
+
+          // optionIds 배열이 비어있으면 스킵 (선택하지 않은 옵션)
+          if (!optionIds || optionIds.length === 0) {
+            continue
+          }
+
+          // 각 option_id에 대해 reservation_choice 생성
+          // 값 배열의 요소는 option_id일 수도 있고 option_key일 수도 있음
+          for (const optionValue of optionIds) {
+            if (!optionValue) continue
+
+            let finalOptionId: string | undefined
+            let finalChoiceId: string | undefined
+
+            // 1차 시도: option_key로 조회 (값이 option_key일 수 있음)
+            const optionKeyMapping = optionKeyToChoiceMap.get(optionValue)
+            if (optionKeyMapping) {
+              finalChoiceId = optionKeyMapping.choiceId
+              finalOptionId = optionKeyMapping.optionId
+              console.log(`Found via option_key: ${optionValue} -> choice_id: ${finalChoiceId}, option_id: ${finalOptionId} (reservation: ${reservation.id})`)
+            } else {
+              // 2차 시도: option_id로 조회
+              let testOptionId = optionValue
+              
+              // 옵션 ID 마이그레이션 적용
+              if (OPTION_ID_MIGRATION[testOptionId]) {
+                testOptionId = OPTION_ID_MIGRATION[testOptionId]
+                console.log(`Migrating option_id ${optionValue} to ${testOptionId} for reservation ${reservation.id}`)
+              }
+
+              const optionChoiceId = optionIdToChoiceMap.get(testOptionId)
+              if (optionChoiceId) {
+                finalChoiceId = optionChoiceId
+                finalOptionId = testOptionId
+                console.log(`Found via option_id: ${optionValue} -> choice_id: ${finalChoiceId}, option_id: ${finalOptionId} (reservation: ${reservation.id})`)
+              } else {
+                // 마이그레이션된 ID로도 찾지 못하면 원본 ID로 시도
+                const originalChoiceId = optionIdToChoiceMap.get(optionValue)
+                if (originalChoiceId) {
+                  finalChoiceId = originalChoiceId
+                  finalOptionId = optionValue
+                  console.log(`Found via original option_id: ${optionValue} -> choice_id: ${finalChoiceId}, option_id: ${finalOptionId} (reservation: ${reservation.id})`)
+                }
+              }
+            }
+
+            // 둘 다 실패하면 choiceMapping의 choice_id를 사용하고 option_id는 값 그대로 사용
+            if (!finalChoiceId) {
+              // option_key로 찾은 choice_id 사용 (같은 choice 그룹 내의 옵션들이므로)
+              finalChoiceId = choiceMapping.choiceId
+              
+              // option_id는 값 그대로 사용 (나중에 수정될 수 있음)
+              finalOptionId = optionValue
+              
+              console.log(`Using choice_id from option_key mapping: ${optionKey} -> choice_id: ${finalChoiceId}, option_id: ${finalOptionId} (reservation: ${reservation.id})`)
+            }
+
+            if (!finalChoiceId) {
+              if (errorMessages.length < 10) {
+                errorMessages.push(`No choice_id found for option_key: ${optionKey}, option_value: ${optionValue} (reservation: ${reservation.id})`)
+              }
+              console.log(`Skipping option_value ${optionValue} - no choice_id found (reservation: ${reservation.id})`)
               continue
+            }
+
+            if (!finalOptionId) {
+              finalOptionId = optionValue
             }
 
             choicesToInsert.push({
               reservation_id: reservation.id,
-              choice_id: choiceId,
-              option_id: finalOptionId, // 마이그레이션된 option_id 사용
+              choice_id: finalChoiceId,
+              option_id: finalOptionId,
               quantity: 1,
               total_price: 0
             })

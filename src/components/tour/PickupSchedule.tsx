@@ -176,7 +176,12 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
     }, {} as Record<string, any[]>)
 
     return Object.entries(groupedByHotel).map(([hotelName, reservations]) => {
-      const totalPeople = reservations.reduce((sum: number, res) => sum + ((res.adults || 0) + (res.children || 0) + (res.infants || 0)), 0)
+      const totalPeople = reservations.reduce((sum: number, res) => {
+        const adults = res.adults || 0
+        const children = (res.children || (res as any).child || 0) as number
+        const infants = (res.infants || (res as any).infant || 0) as number
+        return sum + adults + children + infants
+      }, 0)
       const hotelInfo = pickupHotels.find((h) => h.hotel === hotelName)
       
       // 가장 빠른 픽업 시간 찾기
@@ -249,7 +254,31 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                         {status.nonResidentWithPass > 0 && <span className="text-purple-600">{status.nonResidentWithPass}</span>})
                       </span>
                     )}
-                    <span>{reservation.total_people || 0}인</span>
+                    <span>
+                      {(() => {
+                        // 필드명이 child/infant일 수도 있고 children/infants일 수도 있음
+                        const adults = reservation.adults || 0
+                        const children = (reservation.children || (reservation as any).child || 0) as number
+                        const infants = (reservation.infants || (reservation as any).infant || 0) as number
+                        const total = adults + children + infants
+                        
+                        // 성인만 있는 경우
+                        if (children === 0 && infants === 0) {
+                          return `${total}명`
+                        }
+                        
+                        // 아동이나 유아가 있는 경우: "총 인원, 아동X, 유아Y" 형식
+                        const detailParts: string[] = []
+                        if (children > 0) {
+                          detailParts.push(`아동${children}`)
+                        }
+                        if (infants > 0) {
+                          detailParts.push(`유아${infants}`)
+                        }
+                        
+                        return `총 ${total}명, ${detailParts.join(', ')}`
+                      })()}
+                    </span>
                   </div>
                 </div>
               )

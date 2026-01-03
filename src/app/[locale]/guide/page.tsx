@@ -16,6 +16,9 @@ type ExtendedTour = Omit<Tour, 'assignment_status'> & {
   name_en?: string | null;
   assignment_status?: string | null | undefined;
   assigned_people?: number;
+  assigned_adults?: number;
+  assigned_children?: number;
+  assigned_infants?: number;
   guide_name?: string | null;
   guide_name_en?: string | null;
   assistant_name?: string | null;
@@ -100,6 +103,7 @@ export default function GuideDashboard() {
   const [offSchedules, setOffSchedules] = useState<OffSchedule[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming')
+  const [offScheduleActiveTab, setOffScheduleActiveTab] = useState<'upcoming' | 'past' | 'pending' | 'approved' | 'rejected'>('upcoming')
   
   // 팀채팅 관련 상태 (제거됨 - 별도 페이지로 이동)
   
@@ -197,9 +201,10 @@ export default function GuideDashboard() {
           console.log('Products Data Debug:', productsData)
           
           productMap = new Map((productsData || []).map(p => [p.id, p.customer_name_ko || p.name_ko || p.name]))
-          productEnMap = new Map((productsData || []).map(p => [p.id, p.customer_name_en || p.name_en || p.name]))
+          // 영어 맵: 영어 이름만 사용 (한글 이름은 fallback으로 사용하지 않음)
+          productEnMap = new Map((productsData || []).map(p => [p.id, p.customer_name_en || p.name_en || null]))
           productInternalKoMap = new Map((productsData || []).map(p => [p.id, p.name_ko || p.name]))
-          productInternalEnMap = new Map((productsData || []).map(p => [p.id, p.name_en]))
+          productInternalEnMap = new Map((productsData || []).map(p => [p.id, p.name_en || null]))
           
           // 디버깅을 위한 로그
           console.log('Product Maps Debug:', {
@@ -263,34 +268,107 @@ export default function GuideDashboard() {
           vehicleMap = new Map((vehiclesData || []).map(vehicle => [vehicle.id, vehicle.vehicle_number]))
         }
 
+        // reservation_ids 정규화 함수: 배열/JSON/콤마 지원
+        const normalizeReservationIds = (value: unknown): string[] => {
+          if (!value) return []
+          if (Array.isArray(value)) {
+            return value.map(v => String(v).trim()).filter(v => v.length > 0)
+          }
+          if (typeof value === 'string') {
+            const trimmed = value.trim()
+            if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+              try {
+                const parsed = JSON.parse(trimmed)
+                return Array.isArray(parsed) 
+                  ? parsed.map((v: unknown) => String(v).trim()).filter((v: string) => v.length > 0) 
+                  : []
+              } catch {
+                return []
+              }
+            }
+            if (trimmed.includes(',')) {
+              return trimmed.split(',').map(s => s.trim()).filter(s => s.length > 0)
+            }
+            return trimmed.length > 0 ? [trimmed] : []
+          }
+          return []
+        }
+
         // 예약 정보로 인원 계산
         const reservationIds = [...new Set((toursData || []).flatMap(tour => {
-          if (!tour.reservation_ids) return []
-          return Array.isArray(tour.reservation_ids) 
-            ? tour.reservation_ids 
-            : String(tour.reservation_ids).split(',').map(id => id.trim()).filter(id => id)
+          return normalizeReservationIds(tour.reservation_ids)
         }))]
 
-        let reservationMap = new Map()
+        console.log('Reservation IDs to fetch:', reservationIds)
+
+        let reservationMap = new Map<string, { total: number; adults: number; children: number; infants: number }>()
         if (reservationIds.length > 0) {
-          const { data: reservationsData } = await supabase
-            .from('reservations')
-            .select('id, total_people')
-            .in('id', reservationIds) as { data: { id: string; total_people: number | null }[] | null }
-          
-          reservationMap = new Map((reservationsData || []).map(r => [r.id, r.total_people || 0]))
+          try {
+            const { data: reservationsData, error: reservationsError } = await supabase
+              .from('reservations')
+              .select('id, adults, child, infant, total_people')
+              .in('id', reservationIds)
+            
+            if (reservationsError) {
+              console.error('Error fetching reservations:', reservationsError)
+              console.error('Error details:', {
+                message: reservationsError.message,
+                details: reservationsError.details,
+                hint: reservationsError.hint,
+                code: reservationsError.code
+              })
+            } else {
+              console.log('Reservations data fetched:', reservationsData?.length || 0, 'reservations')
+              
+              if (reservationsData && reservationsData.length > 0) {
+                reservationMap = new Map((reservationsData as Array<{
+                  id: string;
+                  adults?: number | null;
+                  child?: number | null;
+                  infant?: number | null;
+                  total_people?: number | null;
+                }>).map(r => {
+                  const adults = r.adults || 0
+                  const children = r.child || 0
+                  const infants = r.infant || 0
+                  const total = r.total_people || (adults + children + infants)
+                  return [r.id, { total, adults, children, infants }]
+                }))
+                
+                console.log('Reservation map created:', reservationMap.size, 'entries')
+              }
+            }
+          } catch (error) {
+            console.error('Exception while fetching reservations:', error)
+          }
         }
 
         // 투어 데이터 확장
         const extendedTours: ExtendedTour[] = (toursData || []).map(tour => {
           let assignedPeople = 0
-          if (tour.reservation_ids) {
-            const ids = Array.isArray(tour.reservation_ids) 
-              ? tour.reservation_ids 
-              : String(tour.reservation_ids).split(',').map(id => id.trim()).filter(id => id)
-            
-            assignedPeople = ids.reduce((sum, id) => sum + (reservationMap.get(id) || 0), 0)
-          }
+          let assignedAdults = 0
+          let assignedChildren = 0
+          let assignedInfants = 0
+          
+          const ids = normalizeReservationIds(tour.reservation_ids)
+          // 중복 제거
+          const uniqueIds = [...new Set(ids)]
+          console.log(`Tour ${tour.id} reservation_ids:`, tour.reservation_ids, 'normalized:', ids, 'unique:', uniqueIds)
+          
+          uniqueIds.forEach(id => {
+            const reservation = reservationMap.get(id)
+            if (reservation) {
+              assignedPeople += reservation.total
+              assignedAdults += reservation.adults
+              assignedChildren += reservation.children
+              assignedInfants += reservation.infants
+              console.log(`Tour ${tour.id} - Reservation ${id}: total=${reservation.total}, adults=${reservation.adults}, children=${reservation.children}, infants=${reservation.infants}`)
+            } else {
+              console.warn(`Tour ${tour.id} - Reservation ${id} not found in map`)
+            }
+          })
+          
+          console.log(`Tour ${tour.id} final counts: total=${assignedPeople}, adults=${assignedAdults}, children=${assignedChildren}, infants=${assignedInfants}`)
 
           const extendedTour = {
             ...tour,
@@ -299,6 +377,9 @@ export default function GuideDashboard() {
             name_ko: tour.product_id ? productInternalKoMap.get(tour.product_id) : null,
             name_en: tour.product_id ? productInternalEnMap.get(tour.product_id) : null,
             assigned_people: assignedPeople,
+            assigned_adults: assignedAdults,
+            assigned_children: assignedChildren,
+            assigned_infants: assignedInfants,
             guide_name: tour.tour_guide_id ? teamMap.get(tour.tour_guide_id) : null,
             guide_name_en: tour.tour_guide_id ? teamEnMap.get(tour.tour_guide_id) : null,
             assistant_name: tour.assistant_id ? teamMap.get(tour.assistant_id) : null,
@@ -622,10 +703,107 @@ export default function GuideDashboard() {
             <Plus className="w-4 h-4" />
           </button>
         </div>
+
+        {/* 탭 메뉴 */}
+        <div className="mb-4 border-b border-gray-200">
+          <nav className="flex space-x-2 sm:space-x-4 overflow-x-auto" aria-label="Tabs">
+            <button
+              onClick={() => setOffScheduleActiveTab('upcoming')}
+              className={`py-2 px-2 sm:px-4 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${
+                offScheduleActiveTab === 'upcoming'
+                  ? 'border-purple-500 text-purple-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Upcoming
+              <span className="ml-1 sm:ml-2 bg-gray-100 text-gray-600 py-0.5 px-1.5 sm:px-2 rounded-full text-xs">
+                {offSchedules.filter(s => {
+                  return s.off_date >= today
+                }).length}
+              </span>
+            </button>
+            <button
+              onClick={() => setOffScheduleActiveTab('past')}
+              className={`py-2 px-2 sm:px-4 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${
+                offScheduleActiveTab === 'past'
+                  ? 'border-purple-500 text-purple-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Past
+              <span className="ml-1 sm:ml-2 bg-gray-100 text-gray-600 py-0.5 px-1.5 sm:px-2 rounded-full text-xs">
+                {offSchedules.filter(s => {
+                  return s.off_date < today
+                }).length}
+              </span>
+            </button>
+            <button
+              onClick={() => setOffScheduleActiveTab('pending')}
+              className={`py-2 px-2 sm:px-4 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${
+                offScheduleActiveTab === 'pending'
+                  ? 'border-purple-500 text-purple-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Pending
+              <span className="ml-1 sm:ml-2 bg-yellow-100 text-yellow-600 py-0.5 px-1.5 sm:px-2 rounded-full text-xs">
+                {offSchedules.filter(s => s.status === 'pending').length}
+              </span>
+            </button>
+            <button
+              onClick={() => setOffScheduleActiveTab('approved')}
+              className={`py-2 px-2 sm:px-4 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${
+                offScheduleActiveTab === 'approved'
+                  ? 'border-purple-500 text-purple-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Approved
+              <span className="ml-1 sm:ml-2 bg-green-100 text-green-600 py-0.5 px-1.5 sm:px-2 rounded-full text-xs">
+                {offSchedules.filter(s => s.status === 'approved').length}
+              </span>
+            </button>
+            <button
+              onClick={() => setOffScheduleActiveTab('rejected')}
+              className={`py-2 px-2 sm:px-4 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${
+                offScheduleActiveTab === 'rejected'
+                  ? 'border-purple-500 text-purple-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Rejected
+              <span className="ml-1 sm:ml-2 bg-red-100 text-red-600 py-0.5 px-1.5 sm:px-2 rounded-full text-xs">
+                {offSchedules.filter(s => s.status === 'rejected').length}
+              </span>
+            </button>
+          </nav>
+        </div>
         
-        {offSchedules.length > 0 ? (
-          <div className="space-y-3">
-            {offSchedules.slice(0, 10).map((schedule) => (
+        {(() => {
+          // 필터링된 오프 스케줄 목록
+          const filteredSchedules = offSchedules.filter((schedule) => {
+            const isUpcoming = schedule.off_date >= today
+            const isPast = schedule.off_date < today
+
+            switch (offScheduleActiveTab) {
+              case 'upcoming':
+                return isUpcoming
+              case 'past':
+                return isPast
+              case 'pending':
+                return schedule.status === 'pending'
+              case 'approved':
+                return schedule.status === 'approved'
+              case 'rejected':
+                return schedule.status === 'rejected'
+              default:
+                return true
+            }
+          })
+
+          return filteredSchedules.length > 0 ? (
+            <div className="space-y-3">
+              {filteredSchedules.slice(0, 10).map((schedule) => (
               <div
                 key={schedule.id}
                 onClick={() => {
@@ -685,12 +863,19 @@ export default function GuideDashboard() {
               </div>
             ))}
           </div>
-        ) : (
-          <div className="text-center text-gray-500 py-8">
-            <CalendarOff className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-            <p>{t('offSchedule.noSchedules')}</p>
-          </div>
-        )}
+          ) : (
+            <div className="text-center text-gray-500 py-8">
+              <CalendarOff className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+              <p>
+                {offScheduleActiveTab === 'upcoming' && '예정된 Off가 없습니다.'}
+                {offScheduleActiveTab === 'past' && '과거 Off가 없습니다.'}
+                {offScheduleActiveTab === 'pending' && '대기 중인 Off가 없습니다.'}
+                {offScheduleActiveTab === 'approved' && '승인된 Off가 없습니다.'}
+                {offScheduleActiveTab === 'rejected' && '거부된 Off가 없습니다.'}
+              </p>
+            </div>
+          )
+        })()}
       </div>
 
 
@@ -823,9 +1008,16 @@ function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () =
     })
     
     if (locale === 'en') {
-      // 영어 모드에서는 영어 이름 우선 사용
-      const result = tour.name_en || tour.product_name_en || tour.name_ko || tour.product_name || tour.product_id
-      console.log('English result:', result)
+      // 영어 모드에서는 product_id의 name_en을 우선 사용
+      // name_en (productInternalEnMap에서 가져온 product의 name_en)을 최우선 사용
+      // 없으면 product_id만 표시 (한글 이름이나 customer_name_en은 표시하지 않음)
+      const result = tour.name_en || tour.product_id
+      console.log('English result:', result, {
+        name_en: tour.name_en,
+        product_name_en: tour.product_name_en,
+        name_ko: tour.name_ko,
+        product_name: tour.product_name
+      })
       return result
     } else {
       // 한국어 모드에서는 한국어 이름 우선 사용
@@ -918,10 +1110,42 @@ function TourCard({ tour, onClick, locale }: { tour: ExtendedTour; onClick: () =
               {isToday && <span className="ml-1 text-xs">({t('tourCard.today')})</span>}
             </span>
 
-            {/* 인원 배지 */}
+            {/* 인원 배지 - 성인/아동/유아 구분 표시 */}
             <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
               <Users className="w-3 h-3 mr-1" />
-              {tour.assigned_people || 0}
+              <span>
+                {(() => {
+                  const adults = tour.assigned_adults || 0
+                  const children = tour.assigned_children || 0
+                  const infants = tour.assigned_infants || 0
+                  const total = tour.assigned_people || 0
+                  
+                  // locale에 따른 텍스트
+                  const isEnglish = locale === 'en'
+                  const totalLabel = isEnglish ? 'Total' : '총'
+                  const peopleLabel = isEnglish ? 'people' : '명'
+                  const childLabel = isEnglish ? 'Child' : '아동'
+                  const infantLabel = isEnglish ? 'Infant' : '유아'
+                  
+                  // 성인만 있는 경우
+                  if (children === 0 && infants === 0) {
+                    return `${total}${peopleLabel}`
+                  }
+                  
+                  // 아동이나 유아가 있는 경우
+                  const detailParts: string[] = []
+                  if (children > 0) {
+                    detailParts.push(isEnglish ? `${childLabel} ${children}` : `${childLabel}${children}`)
+                  }
+                  if (infants > 0) {
+                    detailParts.push(isEnglish ? `${infantLabel} ${infants}` : `${infantLabel}${infants}`)
+                  }
+                  
+                  return isEnglish 
+                    ? `${totalLabel} ${total} ${peopleLabel}, ${detailParts.join(', ')}`
+                    : `${totalLabel} ${total}${peopleLabel}, ${detailParts.join(', ')}`
+                })()}
+              </span>
             </span>
 
           </div>

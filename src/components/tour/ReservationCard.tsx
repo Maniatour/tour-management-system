@@ -106,7 +106,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   // 패스 장수에 따라 실제 커버되는 인원 수 계산 (패스 1장 = 4인)
   // 실제 예약 인원을 초과할 수 없음
   const calculateActualPassCovered = (passCount: number, usResident: number, nonResident: number) => {
-    const totalPeople = (reservation.adults || 0) + (reservation.children || 0) + (reservation.infants || 0)
+    const totalPeople = (reservation.adults || 0) + 
+      ((reservation.children || (reservation as any).child || 0) as number) + 
+      ((reservation.infants || (reservation as any).infant || 0) as number)
     const maxCoverable = passCount * 4 // 패스로 최대 커버 가능한 인원 수
     const remainingPeople = totalPeople - usResident - nonResident // 패스로 커버해야 할 인원 수
     return Math.min(maxCoverable, remainingPeople) // 둘 중 작은 값
@@ -399,7 +401,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   // 거주 상태별 인원 수 저장
   const handleSaveResidentStatusCounts = async () => {
     try {
-      const totalPeople = (reservation.adults || 0) + (reservation.children || 0) + (reservation.infants || 0)
+      const totalPeople = (reservation.adults || 0) + 
+        ((reservation.children || (reservation as any).child || 0) as number) + 
+        ((reservation.infants || (reservation as any).infant || 0) as number)
       
       // 패스 장수는 비거주자 (패스 보유) 인원 수와 같음
       const passCount = residentStatusCounts.nonResidentWithPass
@@ -623,8 +627,10 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }
   }
 
-  // 총 인원수 계산
-  const totalPeople = (reservation.adults || 0) + (reservation.children || 0) + (reservation.infants || 0)
+  // 총 인원수 계산 (필드명이 child/infant일 수도 있고 children/infants일 수도 있음)
+  const totalPeople = (reservation.adults || 0) + 
+    ((reservation.children || (reservation as any).child || 0) as number) + 
+    ((reservation.infants || (reservation as any).infant || 0) as number)
   
   // 언어에 따른 국기 코드 결정
   const getFlagCode = (language: string) => {
@@ -1058,10 +1064,34 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           {/* 고객 이름 */}
           <p className="font-medium text-sm text-gray-900">{customerName}</p>
           
-          {/* 총 인원수 뱃지 */}
+          {/* 총 인원수 뱃지 - 성인/아동/유아 구분 표시 */}
           <div className="flex items-center space-x-1 bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
             <Users size={12} />
-            <span>{totalPeople}</span>
+            <span>
+              {(() => {
+                // 필드명이 child/infant일 수도 있고 children/infants일 수도 있음
+                const adults = reservation.adults || 0
+                const children = (reservation.children || (reservation as any).child || 0) as number
+                const infants = (reservation.infants || (reservation as any).infant || 0) as number
+                const total = adults + children + infants
+                
+                // 성인만 있는 경우
+                if (children === 0 && infants === 0) {
+                  return `${total}명`
+                }
+                
+                // 아동이나 유아가 있는 경우: "총 인원, 아동X, 유아Y" 형식
+                const detailParts: string[] = []
+                if (children > 0) {
+                  detailParts.push(`아동${children}`)
+                }
+                if (infants > 0) {
+                  detailParts.push(`유아${infants}`)
+                }
+                
+                return `총 ${total}명, ${detailParts.join(', ')}`
+              })()}
+            </span>
           </div>
           
           {/* 선택된 Choices 뱃지들 */}
@@ -1166,7 +1196,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           const commissionAmount = toNumber(reservationPricing.commission_amount)
           
           // 총 인원수
-          const totalPeople = (reservation.adults || 0) + (reservation.children || 0) + (reservation.infants || 0)
+          const totalPeople = (reservation.adults || 0) + 
+        ((reservation.children || (reservation as any).child || 0) as number) + 
+        ((reservation.infants || (reservation as any).infant || 0) as number)
           
           // 할인/추가비용 합계
           const discountTotal = couponDiscount + additionalDiscount
@@ -1211,7 +1243,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             // 1. 상품가격 x 총인원 = 소계
             let subtotal = productPriceTotal
             if (subtotal === 0 && adultPrice > 0 && totalPeople > 0) {
-              subtotal = adultPrice * (reservation.adults || 0) + childPrice * (reservation.children || 0) + infantPrice * (reservation.infants || 0)
+              const children = (reservation.children || (reservation as any).child || 0) as number
+              const infants = (reservation.infants || (reservation as any).infant || 0) as number
+              subtotal = adultPrice * (reservation.adults || 0) + childPrice * children + infantPrice * infants
             }
             
             // subtotal이 0이면 grandTotal을 역산하여 추정
@@ -1224,7 +1258,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             }
             
             if (subtotal > 0) {
-              if (totalPeople > 0 && adultPrice > 0 && totalPeople === (reservation.adults || 0) && (reservation.children || 0) === 0 && (reservation.infants || 0) === 0) {
+              const children = (reservation.children || (reservation as any).child || 0) as number
+              const infants = (reservation.infants || (reservation as any).infant || 0) as number
+              if (totalPeople > 0 && adultPrice > 0 && totalPeople === (reservation.adults || 0) && children === 0 && infants === 0) {
                 // 성인만 있는 경우
                 calculationString = `${currencySymbol}${adultPrice.toFixed(2)} × ${totalPeople} = ${currencySymbol}${subtotal.toFixed(2)}`
               } else if (totalPeople > 0 && (adultPrice > 0 || childPrice > 0 || infantPrice > 0)) {
@@ -1233,11 +1269,13 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                 if ((reservation.adults || 0) > 0 && adultPrice > 0) {
                   priceParts.push(`${currencySymbol}${adultPrice.toFixed(2)} × ${reservation.adults || 0}`)
                 }
-                if ((reservation.children || 0) > 0 && childPrice > 0) {
-                  priceParts.push(`${currencySymbol}${childPrice.toFixed(2)} × ${reservation.children || 0}`)
+                const children = (reservation.children || (reservation as any).child || 0) as number
+                const infants = (reservation.infants || (reservation as any).infant || 0) as number
+                if (children > 0 && childPrice > 0) {
+                  priceParts.push(`${currencySymbol}${childPrice.toFixed(2)} × ${children}`)
                 }
-                if ((reservation.infants || 0) > 0 && infantPrice > 0) {
-                  priceParts.push(`${currencySymbol}${infantPrice.toFixed(2)} × ${reservation.infants || 0}`)
+                if (infants > 0 && infantPrice > 0) {
+                  priceParts.push(`${currencySymbol}${infantPrice.toFixed(2)} × ${infants}`)
                 }
                 if (priceParts.length > 0) {
                   calculationString = `${priceParts.join(' + ')} = ${currencySymbol}${subtotal.toFixed(2)}`
@@ -1552,7 +1590,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                {/* 총 인원 표시 */}
                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                  <div className="text-sm font-medium text-blue-900">
-                   총 인원: {(reservation.adults || 0) + (reservation.children || 0) + (reservation.infants || 0)}명
+                   총 인원: {(reservation.adults || 0) + 
+                     ((reservation.children || (reservation as any).child || 0) as number) + 
+                     ((reservation.infants || (reservation as any).infant || 0) as number)}명
                  </div>
                </div>
 
@@ -1672,7 +1712,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                    (미국 거주자: {residentStatusCounts.usResident}명, 비거주자: {residentStatusCounts.nonResident}명, 패스 커버: {residentStatusCounts.passCoveredCount}명)
                  </div>
                  {(residentStatusCounts.usResident + residentStatusCounts.nonResident + residentStatusCounts.passCoveredCount) !== 
-                  ((reservation.adults || 0) + (reservation.children || 0) + (reservation.infants || 0)) && (
+                  ((reservation.adults || 0) + 
+                    ((reservation.children || (reservation as any).child || 0) as number) + 
+                    ((reservation.infants || (reservation as any).infant || 0) as number)) && (
                   <div className="text-xs text-orange-600 mt-1">
                     ⚠️ 총 인원과 일치하지 않습니다
                   </div>
