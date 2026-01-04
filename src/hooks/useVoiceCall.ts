@@ -167,16 +167,28 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
     try {
       if (!targetUserId) {
         console.error('통화할 사용자가 선택되지 않았습니다.')
-        return
+        return false
+      }
+
+      // 먼저 마이크 권한 요청 및 스트림 가져오기
+      let stream: MediaStream
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: true,
+          video: false 
+        })
+      } catch (mediaError: any) {
+        console.error('Error getting user media:', mediaError)
+        if (mediaError.name === 'NotAllowedError' || mediaError.name === 'PermissionDeniedError') {
+          throw new Error('마이크 권한이 거부되었습니다. 브라우저 설정에서 마이크 권한을 허용해주세요.')
+        } else if (mediaError.name === 'NotFoundError' || mediaError.name === 'DevicesNotFoundError') {
+          throw new Error('마이크를 찾을 수 없습니다. 마이크가 연결되어 있는지 확인해주세요.')
+        } else {
+          throw new Error('마이크에 접근할 수 없습니다. 브라우저 설정을 확인해주세요.')
+        }
       }
 
       setCallStatus('calling')
-
-      // 마이크 권한 요청 및 스트림 가져오기
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: true,
-        video: false 
-      })
       localStreamRef.current = stream
       setLocalStream(stream)
 
@@ -201,18 +213,32 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
       }
 
       // 30초 후 자동 종료 (응답 없을 경우)
+      if (callTimerRef.current) {
+        clearTimeout(callTimerRef.current)
+      }
       callTimerRef.current = setTimeout(() => {
-        if (callStatus === 'calling') {
-          endCall()
-        }
+        // 현재 상태를 확인하기 위해 함수형 업데이트 사용
+        setCallStatus(currentStatus => {
+          if (currentStatus === 'calling') {
+            endCall()
+          }
+          return currentStatus
+        })
       }, 30000)
 
-    } catch (error) {
+      return true
+    } catch (error: any) {
       console.error('Error starting call:', error)
-      alert('마이크 권한이 필요합니다.')
+      // 스트림이 이미 생성된 경우 정리
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop())
+        localStreamRef.current = null
+        setLocalStream(null)
+      }
       setCallStatus('idle')
+      throw error // 에러를 다시 throw하여 호출자가 처리할 수 있도록
     }
-  }, [userId, userName, targetUserId, setupPeerConnection, callStatus])
+  }, [userId, userName, targetUserId, setupPeerConnection, callStatus, endCall])
 
   // 통화 수락
   const acceptCall = useCallback(async (offer: RTCSessionDescriptionInit) => {

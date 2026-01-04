@@ -365,7 +365,7 @@ export default function TourChatRoom({
   })
   
   // 통화 시작 (사용자 선택 후)
-  const handleStartCall = () => {
+  const handleStartCall = async () => {
     if (availableCallUsers.length === 0) {
       alert(selectedLanguage === 'ko' ? '통화할 수 있는 사용자가 없습니다.' : 'No users available to call.')
       return
@@ -376,8 +376,12 @@ export default function TourChatRoom({
       const user = availableCallUsers[0]
       setSelectedCallTarget({ id: user.id, name: user.name })
       // targetUserId가 설정된 후 통화 시작
-      setTimeout(() => {
-        startCallInternal()
+      setTimeout(async () => {
+        try {
+          await startCallInternal()
+        } catch (error: any) {
+          alert(error.message || (selectedLanguage === 'ko' ? '통화를 시작할 수 없습니다.' : 'Failed to start call.'))
+        }
       }, 100)
     } else {
       setShowCallUserSelector(true)
@@ -385,11 +389,15 @@ export default function TourChatRoom({
   }
   
   // 사용자 선택 후 통화 시작
-  const handleSelectUserAndCall = (userId: string, userName: string) => {
+  const handleSelectUserAndCall = async (userId: string, userName: string) => {
     setSelectedCallTarget({ id: userId, name: userName })
     // targetUserId가 설정된 후 통화 시작
-    setTimeout(() => {
-      startCallInternal()
+    setTimeout(async () => {
+      try {
+        await startCallInternal()
+      } catch (error: any) {
+        alert(error.message || (selectedLanguage === 'ko' ? '통화를 시작할 수 없습니다.' : 'Failed to start call.'))
+      }
     }, 100)
   }
   
