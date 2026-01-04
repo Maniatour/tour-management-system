@@ -70,8 +70,10 @@ export default function VoiceCallUserSelector({
               {users.map((user) => (
                 <button
                   key={user.id}
-                  onClick={() => {
-                    onSelectUser(user.id, user.name)
+                  onClick={async () => {
+                    await onSelectUser(user.id, user.name)
+                    // 통화가 성공적으로 시작된 경우에만 모달 닫기
+                    // (에러가 발생하면 모달을 열어둬서 에러 메시지를 볼 수 있도록)
                     onClose()
                   }}
                   className="w-full flex items-center space-x-3 p-3 rounded-lg border border-gray-200 hover:bg-blue-50 hover:border-blue-300 transition-colors text-left"

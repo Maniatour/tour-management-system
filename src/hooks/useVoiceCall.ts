@@ -32,6 +32,12 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
   const durationTimerRef = useRef<NodeJS.Timeout | null>(null)
   const endCallRef = useRef<(() => void) | null>(null)
 
+  // callStatus를 ref로 추적하여 stale closure 문제 방지
+  const callStatusRef = useRef<CallStatus>('idle')
+  useEffect(() => {
+    callStatusRef.current = callStatus
+  }, [callStatus])
+
   // Supabase Realtime 채널 구독
   useEffect(() => {
     if (!roomId) return
@@ -43,7 +49,7 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
       const payloadData = payload.payload
       // 현재 사용자에게 보낸 통화 요청인지 확인 (to가 없거나 현재 userId와 일치)
       const isForMe = !payloadData.to || payloadData.to === userId
-      if (payloadData.from !== userId && callStatus === 'idle' && isForMe) {
+      if (payloadData.from !== userId && callStatusRef.current === 'idle' && isForMe) {
         setIncomingOffer(payloadData.offer)
         setCallerName(payloadData.userName || '상대방')
         setCallStatus('ringing')
@@ -52,7 +58,7 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
 
     // 통화 수락 수신
     channel.on('broadcast', { event: 'call-answer' }, async (payload) => {
-      if (payload.payload.from !== userId && callStatus === 'calling') {
+      if (payload.payload.from !== userId && callStatusRef.current === 'calling') {
         const answer = payload.payload.answer
         if (peerConnectionRef.current && answer) {
           await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer))
@@ -65,14 +71,14 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
     // 통화 거절 수신
     channel.on('broadcast', { event: 'call-reject' }, (payload) => {
       if (payload.payload.from !== userId) {
-        endCall()
+        endCallRef.current?.()
       }
     })
 
     // 통화 종료 수신
     channel.on('broadcast', { event: 'call-end' }, (payload) => {
       if (payload.payload.from !== userId) {
-        endCall()
+        endCallRef.current?.()
       }
     })
 
@@ -91,9 +97,12 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
 
     return () => {
       channel.unsubscribe()
-      endCall()
+      // 컴포넌트 언마운트 시에만 endCall 호출
+      if (callStatusRef.current !== 'idle') {
+        endCallRef.current?.()
+      }
     }
-  }, [roomId, userId, callStatus])
+  }, [roomId, userId])
 
   // 통화 타이머 시작
   const startCallTimer = useCallback(() => {

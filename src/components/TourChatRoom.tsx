@@ -433,8 +433,14 @@ export default function TourChatRoom({
     setSelectedCallTarget({ id: userId, name: userName })
     // targetUserId를 직접 파라미터로 전달
     try {
-      await startCallInternal(userId, userName)
+      const success = await startCallInternal(userId, userName)
+      if (!success) {
+        // startCall이 false를 반환하면 에러 메시지가 이미 설정되어 있음
+        // callError가 설정되어 있으면 VoiceCallModal에서 표시됨
+        console.error('Failed to start call')
+      }
     } catch (error: any) {
+      console.error('Error in handleSelectUserAndCall:', error)
       alert(error.message || (selectedLanguage === 'ko' ? '통화를 시작할 수 없습니다.' : 'Failed to start call.'))
     }
   }
