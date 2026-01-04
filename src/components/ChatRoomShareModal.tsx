@@ -109,6 +109,10 @@ export default function ChatRoomShareModal({
       if (outcome === 'accepted') {
         console.log('User accepted the install prompt')
         setShowInstallButton(false)
+        // 설치 시점의 현재 URL 저장 (채팅방 URL)
+        if (typeof window !== 'undefined' && roomCode) {
+          localStorage.setItem('pwa_install_url', `/chat/${roomCode}`)
+        }
         alert(language === 'ko' 
           ? '홈 화면에 추가되었습니다!'
           : 'Added to home screen!')

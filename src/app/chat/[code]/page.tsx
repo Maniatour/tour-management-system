@@ -102,6 +102,10 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
     // 이미 설치되었는지 확인
     if (window.matchMedia('(display-mode: standalone)').matches) {
       setShowInstallButton(false)
+      // standalone 모드에서 현재 URL이 채팅방이면 저장
+      if (typeof window !== 'undefined' && window.location.pathname.startsWith('/chat/')) {
+        localStorage.setItem('pwa_install_url', window.location.pathname)
+      }
     }
 
     // manifest.json이 로드되었는지 확인
@@ -187,6 +191,10 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
       if (outcome === 'accepted') {
         console.log('User accepted the install prompt')
         setShowInstallButton(false)
+        // 설치 시점의 현재 URL 저장 (채팅방 URL)
+        if (typeof window !== 'undefined' && window.location.pathname.startsWith('/chat/')) {
+          localStorage.setItem('pwa_install_url', window.location.pathname)
+        }
         alert(selectedLanguage === 'ko' 
           ? '홈 화면에 추가되었습니다!'
           : 'Added to home screen!')
