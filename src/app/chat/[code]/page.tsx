@@ -416,16 +416,14 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
               </h1>
             </div>
             <div className="flex items-center gap-2 ml-2 flex-shrink-0">
-              {/* 홈 화면에 추가 버튼 */}
-              {showInstallButton && (
-                <button
-                  onClick={handleAddToHomeScreen}
-                  className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors"
-                  title={selectedLanguage === 'ko' ? '홈 화면에 추가' : 'Add to Home Screen'}
-                >
-                  <Download size={16} />
-                </button>
-              )}
+              {/* 홈 화면에 추가 버튼 (항상 표시, 클릭 시 안내 또는 설치 프롬프트) */}
+              <button
+                onClick={handleAddToHomeScreen}
+                className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors"
+                title={selectedLanguage === 'ko' ? '홈 화면에 추가' : 'Add to Home Screen'}
+              >
+                <Download size={16} />
+              </button>
               {/* 푸시 알림 토글 버튼 (국기 아이콘 왼쪽) */}
               {isPushSupported && room && (
                 <button

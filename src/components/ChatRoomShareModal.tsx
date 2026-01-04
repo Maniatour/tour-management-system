@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Copy, Share2, QrCode, MessageCircle, Users, Calendar } from 'lucide-react'
+import { X, Copy, Share2, QrCode, MessageCircle, Users, Calendar, Download } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface ChatRoomShareModalProps {
@@ -30,6 +30,8 @@ export default function ChatRoomShareModal({
   const [copied, setCopied] = useState(false)
   const [showQR, setShowQR] = useState(false)
   const [roomIdFromCode, setRoomIdFromCode] = useState<string | undefined>(roomId)
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
+  const [showInstallButton, setShowInstallButton] = useState(false)
 
   // roomCode로 roomId 찾기
   useEffect(() => {
@@ -48,6 +50,64 @@ export default function ChatRoomShareModal({
       findRoomId()
     }
   }, [roomCode, roomId, isPublicView])
+
+  // PWA 설치 프롬프트 감지
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      // 기본 설치 프롬프트 방지
+      e.preventDefault()
+      // 설치 프롬프트 저장
+      setDeferredPrompt(e)
+      setShowInstallButton(true)
+    }
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+
+    // 이미 설치되었는지 확인
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setShowInstallButton(false)
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+    }
+  }, [])
+
+  // 홈 화면에 추가 버튼 클릭 핸들러
+  const handleAddToHomeScreen = async () => {
+    if (!deferredPrompt) {
+      // iOS Safari의 경우 수동 안내
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+      const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent)
+      
+      if (isIOS && isSafari) {
+        alert(language === 'ko' 
+          ? 'Safari에서 공유 버튼(⬆️)을 누르고 "홈 화면에 추가"를 선택하세요.'
+          : 'Tap the Share button (⬆️) in Safari and select "Add to Home Screen".')
+      } else {
+        alert(language === 'ko' 
+          ? '브라우저 메뉴에서 "홈 화면에 추가" 또는 "앱 설치" 옵션을 찾아주세요.'
+          : 'Please look for "Add to Home Screen" or "Install App" option in your browser menu.')
+      }
+      return
+    }
+
+    // 설치 프롬프트 표시
+    deferredPrompt.prompt()
+    
+    // 사용자 선택 대기
+    const { outcome } = await deferredPrompt.userChoice
+    
+    if (outcome === 'accepted') {
+      console.log('User accepted the install prompt')
+      setShowInstallButton(false)
+    } else {
+      console.log('User dismissed the install prompt')
+    }
+    
+    // 프롬프트는 한 번만 사용 가능
+    setDeferredPrompt(null)
+  }
 
   if (!isOpen) return null
 
@@ -226,6 +286,17 @@ export default function ChatRoomShareModal({
                 <QrCode size={16} />
               </button>
             </div>
+
+            {/* 홈 화면에 추가 버튼 */}
+            {showInstallButton && (
+              <button
+                onClick={handleAddToHomeScreen}
+                className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                <Download size={16} />
+                <span>{language === 'ko' ? '홈 화면에 추가' : 'Add to Home Screen'}</span>
+              </button>
+            )}
 
             {/* QR 코드 */}
             {showQR && (
