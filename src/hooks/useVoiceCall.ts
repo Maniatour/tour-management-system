@@ -29,6 +29,7 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
   const channelRef = useRef<any>(null)
   const callTimerRef = useRef<NodeJS.Timeout | null>(null)
   const durationTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const endCallRef = useRef<(() => void) | null>(null)
 
   // Supabase Realtime 채널 구독
   useEffect(() => {
@@ -163,9 +164,12 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
   }, [userId])
 
   // 통화 시작
-  const startCall = useCallback(async () => {
+  const startCall = useCallback(async (overrideTargetUserId?: string, overrideTargetUserName?: string) => {
     try {
-      if (!targetUserId) {
+      const finalTargetUserId = overrideTargetUserId || targetUserId
+      const finalTargetUserName = overrideTargetUserName || targetUserName
+      
+      if (!finalTargetUserId) {
         console.error('통화할 사용자가 선택되지 않았습니다.')
         return false
       }
@@ -206,7 +210,7 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
           payload: {
             from: userId,
             userName: userName,
-            to: targetUserId, // 특정 사용자에게만 전송
+            to: finalTargetUserId, // 특정 사용자에게만 전송
             offer: offer.toJSON()
           }
         })
@@ -219,8 +223,8 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
       callTimerRef.current = setTimeout(() => {
         // 현재 상태를 확인하기 위해 함수형 업데이트 사용
         setCallStatus(currentStatus => {
-          if (currentStatus === 'calling') {
-            endCall()
+          if (currentStatus === 'calling' && endCallRef.current) {
+            endCallRef.current()
           }
           return currentStatus
         })
@@ -238,7 +242,7 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
       setCallStatus('idle')
       throw error // 에러를 다시 throw하여 호출자가 처리할 수 있도록
     }
-  }, [userId, userName, targetUserId, setupPeerConnection, callStatus, endCall])
+  }, [userId, userName, targetUserId, targetUserName, setupPeerConnection])
 
   // 통화 수락
   const acceptCall = useCallback(async (offer: RTCSessionDescriptionInit) => {
@@ -343,6 +347,11 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
 
     setCallStatus('idle')
   }, [userId, remoteAudio, callStatus, stopCallTimer])
+
+  // endCall을 ref에 저장하여 startCall에서 사용할 수 있도록
+  useEffect(() => {
+    endCallRef.current = endCall
+  }, [endCall])
 
   // 음소거 토글
   const toggleMute = useCallback(() => {

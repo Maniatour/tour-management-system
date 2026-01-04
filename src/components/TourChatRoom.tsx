@@ -142,15 +142,6 @@ export default function TourChatRoom({
   // customerLanguage prop을 사용하여 locale 결정 (next-intl 컨텍스트가 없을 수 있으므로)
   const locale: 'ko' | 'en' = customerLanguage === 'ko' ? 'ko' : 'en'
   
-  // 고객용 채팅에서 초기 props 디버깅
-  if (isPublicView) {
-    console.log('=== TourChatRoom 초기 props 디버깅 ===')
-    console.log('tourId:', tourId)
-    console.log('guideEmail:', guideEmail)
-    console.log('isPublicView:', isPublicView)
-    console.log('customerLanguage:', customerLanguage)
-    console.log('=====================================')
-  }
   const [room, setRoom] = useState<ChatRoom | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
@@ -375,14 +366,12 @@ export default function TourChatRoom({
     if (availableCallUsers.length === 1) {
       const user = availableCallUsers[0]
       setSelectedCallTarget({ id: user.id, name: user.name })
-      // targetUserId가 설정된 후 통화 시작
-      setTimeout(async () => {
-        try {
-          await startCallInternal()
-        } catch (error: any) {
-          alert(error.message || (selectedLanguage === 'ko' ? '통화를 시작할 수 없습니다.' : 'Failed to start call.'))
-        }
-      }, 100)
+      // targetUserId를 직접 파라미터로 전달
+      try {
+        await startCallInternal(user.id, user.name)
+      } catch (error: any) {
+        alert(error.message || (selectedLanguage === 'ko' ? '통화를 시작할 수 없습니다.' : 'Failed to start call.'))
+      }
     } else {
       setShowCallUserSelector(true)
     }
@@ -391,14 +380,12 @@ export default function TourChatRoom({
   // 사용자 선택 후 통화 시작
   const handleSelectUserAndCall = async (userId: string, userName: string) => {
     setSelectedCallTarget({ id: userId, name: userName })
-    // targetUserId가 설정된 후 통화 시작
-    setTimeout(async () => {
-      try {
-        await startCallInternal()
-      } catch (error: any) {
-        alert(error.message || (selectedLanguage === 'ko' ? '통화를 시작할 수 없습니다.' : 'Failed to start call.'))
-      }
-    }, 100)
+    // targetUserId를 직접 파라미터로 전달
+    try {
+      await startCallInternal(userId, userName)
+    } catch (error: any) {
+      alert(error.message || (selectedLanguage === 'ko' ? '통화를 시작할 수 없습니다.' : 'Failed to start call.'))
+    }
   }
   
   // 들어오는 통화 처리
@@ -930,9 +917,7 @@ export default function TourChatRoom({
   }
 
   const loadRoomByCode = async (code: string) => {
-    console.log('loadRoomByCode called with code:', code)
     if (!code) {
-      console.log('No room code provided, setting loading to false')
       setLoading(false)
       return
     }
@@ -951,51 +936,52 @@ export default function TourChatRoom({
         throw error
       }
       
-      console.log('Found rooms:', rooms)
       const room = rooms?.[0] as ChatRoom | undefined
       setRoom(room || null)
       if (room) {
-        console.log('Room found, loading messages...')
         // soft-ban check on mount (오류가 발생해도 계속 진행)
         try {
           const banned = await checkBanned(room.id)
           if (banned) {
-            console.log('User is banned')
             setRoom({ ...room, is_active: false })
           }
         } catch (banError) {
           console.warn('Ban check failed, continuing:', banError)
         }
         await loadMessages(room.id)
-        console.log('Messages loaded successfully')
         
         // 투어에 배정된 팀원들을 자동으로 참여시키기 (고객 뷰가 아니고 tourId가 있는 경우)
-        if (room.tour_id && !isPublicView) {
-          await autoAddTeamMembers(room.id, room.tour_id)
+        if (room.tour_id && !isPublicView && autoAddTeamMembersFnRef.current) {
+          await autoAddTeamMembersFnRef.current(room.id, room.tour_id)
         }
         
         // 고객용 채팅에서 픽업 스케줄 및 팀 정보 로드
         if (isPublicView && room.tour_id) {
-          console.log('Loading pickup schedule for public view, tourId:', room.tour_id)
           loadPickupSchedule()
           loadTeamInfo()
         }
-      } else {
-        console.log('No room found for code:', code)
       }
     } catch (error) {
       console.error('Error loading room by code:', error)
     } finally {
-      console.log('Setting loading to false')
       setLoading(false)
     }
   }
 
   // 투어에 배정된 팀원들을 채팅방에 자동 참여시키기 (배정 변경 시 동기화)
+  const autoAddTeamMembersRef = useRef<{ [key: string]: boolean }>({})
+  const autoAddTeamMembersFnRef = useRef<((roomId: string, tourIdParam?: string) => Promise<void>) | null>(null)
   const autoAddTeamMembers = useCallback(async (roomId: string, tourIdParam?: string) => {
     try {
       const targetTourId = tourIdParam || tourId
       if (!targetTourId || isPublicView) return // 고객 뷰에서는 실행하지 않음
+      
+      // 중복 실행 방지: 같은 roomId에 대해 이미 실행 중이면 무시
+      const key = `${roomId}_${targetTourId}`
+      if (autoAddTeamMembersRef.current[key]) {
+        return
+      }
+      autoAddTeamMembersRef.current[key] = true
 
       // 투어 정보 가져오기
       const { data: tour, error: tourError } = await supabase
@@ -1161,10 +1147,24 @@ export default function TourChatRoom({
       }
     } catch (error) {
       console.error('Error in autoAddTeamMembers:', error)
+    } finally {
+      // 실행 완료 후 플래그 제거
+      const key = `${roomId}_${tourIdParam || tourId}`
+      delete autoAddTeamMembersRef.current[key]
     }
   }, [tourId, isPublicView])
+  
+  // autoAddTeamMembers를 ref에 저장하여 loadRoom에서 사용
+  useEffect(() => {
+    autoAddTeamMembersFnRef.current = autoAddTeamMembers
+  }, [autoAddTeamMembers])
 
-  const loadRoom = async () => {
+  const loadRoom = useCallback(async () => {
+    if (!tourId) {
+      setLoading(false)
+      return
+    }
+    
     try {
       // 기존 채팅방 찾기 (데이터베이스 트리거에 의해 자동 생성됨)
       const { data: existingRooms, error: findError } = await supabase
@@ -1183,11 +1183,12 @@ export default function TourChatRoom({
         await loadMessages(existingRoom.id)
         await loadAnnouncements(existingRoom.id)
         // 투어에 배정된 팀원들을 자동으로 참여시키기
-        await autoAddTeamMembers(existingRoom.id)
-        // 픽업 스케줄은 별도로 로드 (await 제거)
+        if (autoAddTeamMembersFnRef.current) {
+          await autoAddTeamMembersFnRef.current(existingRoom.id, tourId)
+        }
+        // 픽업 스케줄은 별도로 로드
         loadPickupSchedule()
       } else {
-        console.warn('Chat room not found. Please wait a moment after the tour is created.')
         setRoom(null)
         // room이 없어도 픽업 스케줄은 로드할 수 있음
         loadPickupSchedule()
@@ -1197,32 +1198,35 @@ export default function TourChatRoom({
     } finally {
       setLoading(false)
     }
-  }
+  }, [tourId])
 
-  // 채팅방 로드 또는 생성 - 한 번만 실행
+  // 채팅방 로드 또는 생성
   useEffect(() => {
-    console.log('useEffect triggered - isPublicView:', isPublicView, 'roomCode:', roomCode)
+    let isMounted = true
     
     const initializeChat = async () => {
       if (isPublicView && roomCode) {
-        console.log('Loading room by code for public view')
         await loadRoomByCode(roomCode)
-      } else if (!isPublicView) {
-        console.log('Loading room for admin view')
+      } else if (!isPublicView && tourId) {
         await loadRoom()
       } else if (isPublicView && !roomCode) {
-        console.log('Public view without room code, setting loading to false')
-        setLoading(false)
+        if (isMounted) {
+          setLoading(false)
+        }
       }
     }
 
     initializeChat()
+    
+    return () => {
+      isMounted = false
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // 의존성 배열을 비워서 한 번만 실행
+  }, [tourId, isPublicView, roomCode]) // loadRoom은 useCallback으로 메모이제이션되어 있으므로 의존성에서 제외
 
   // 실시간 메시지 구독
   useEffect(() => {
-    if (!room) return
+    if (!room?.id) return
 
     const channel = supabase
       .channel(`chat_${room.id}`)
@@ -1277,11 +1281,11 @@ export default function TourChatRoom({
     return () => {
       supabase.removeChannel(channel)
   }
-  }, [room])
+  }, [room?.id, isPublicView, customerName, guideEmail])
 
   // 투어 배정 변경 감지 및 동기화
   useEffect(() => {
-    if (!room || !tourId || isPublicView) return
+    if (!room?.id || !tourId || isPublicView) return
 
     const channel = supabase
       .channel(`tour_${tourId}_assignments`)
@@ -1296,7 +1300,9 @@ export default function TourChatRoom({
         () => {
           // 투어 정보가 업데이트되면 팀원 동기화
           console.log('Tour assignment changed, syncing team members...')
-          autoAddTeamMembers(room.id)
+          if (autoAddTeamMembersFnRef.current) {
+            autoAddTeamMembersFnRef.current(room.id, tourId)
+          }
         }
       )
       .subscribe()
@@ -1304,7 +1310,7 @@ export default function TourChatRoom({
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [room, tourId, isPublicView, autoAddTeamMembers])
+  }, [room?.id, tourId, isPublicView])
 
   // 공지사항 로드 (모달 전용)
   const loadAnnouncements = async (roomId: string) => {
