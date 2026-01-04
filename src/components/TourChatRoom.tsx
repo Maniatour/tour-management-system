@@ -325,10 +325,11 @@ export default function TourChatRoom({
   const [showCallUserSelector, setShowCallUserSelector] = useState(false)
   const [selectedCallTarget, setSelectedCallTarget] = useState<{id: string, name: string} | null>(null)
   
-  // 메시지에서 통화 가능한 사용자 목록 추출
+  // 메시지와 온라인 참여자에서 통화 가능한 사용자 목록 추출
   const availableCallUsers = React.useMemo(() => {
     const userMap = new Map<string, { id: string; name: string; type: 'guide' | 'customer'; email?: string }>()
     
+    // 메시지에서 사용자 추출
     messages.forEach(message => {
       if (message.sender_type === 'system') return
       
@@ -350,8 +351,39 @@ export default function TourChatRoom({
       }
     })
     
+    // 온라인 참여자에서 사용자 추가 (고객용 뷰에서는 가이드/어시스턴트만)
+    onlineParticipants.forEach((participant, key) => {
+      if (isPublicView) {
+        // 고객용 뷰: 가이드 타입만 통화 가능
+        if (participant.type === 'guide') {
+          const userKey = participant.email || participant.id
+          if (!userMap.has(userKey)) {
+            userMap.set(userKey, {
+              id: participant.email || participant.id,
+              name: participant.name,
+              type: participant.type,
+              email: participant.email
+            })
+          }
+        }
+      } else {
+        // 관리자/가이드 뷰: 고객 타입만 통화 가능
+        if (participant.type === 'customer') {
+          const userKey = participant.id
+          if (!userMap.has(userKey)) {
+            userMap.set(userKey, {
+              id: participant.id,
+              name: participant.name,
+              type: participant.type,
+              email: participant.email
+            })
+          }
+        }
+      }
+    })
+    
     return Array.from(userMap.values())
-  }, [messages, isPublicView, customerName, guideEmail])
+  }, [messages, isPublicView, customerName, guideEmail, onlineParticipants])
   
   const {
     callStatus,
@@ -1069,10 +1101,8 @@ export default function TourChatRoom({
           await autoAddTeamMembersFnRef.current(room.id, room.tour_id)
         }
         
-        // chat_participants에서 참여자 목록 로드 (관리자/가이드 뷰만)
-        if (!isPublicView) {
-          loadChatParticipants(room.id)
-        }
+        // chat_participants에서 참여자 목록 로드 (모든 뷰에서 로드)
+        loadChatParticipants(room.id)
         
         // 고객용 채팅에서 픽업 스케줄 및 팀 정보 로드
         if (isPublicView && room.tour_id) {
