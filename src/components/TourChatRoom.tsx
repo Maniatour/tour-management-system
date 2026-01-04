@@ -1,10 +1,11 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Send, Image as ImageIcon, Copy, Share2, Calendar, Megaphone, Trash2, ChevronDown, ChevronUp, MapPin, Camera, ExternalLink, Users, Play, Phone, User, X, Menu } from 'lucide-react'
+import { Send, Image as ImageIcon, Copy, Share2, Calendar, Megaphone, Trash2, ChevronDown, ChevronUp, MapPin, Camera, ExternalLink, Users, Play, Phone, User, X, Menu, UserCircle, Smile } from 'lucide-react'
 import { useVoiceCall } from '@/hooks/useVoiceCall'
 import VoiceCallModal from './VoiceCallModal'
 import VoiceCallUserSelector from './VoiceCallUserSelector'
+import AvatarSelector from './AvatarSelector'
 import PickupHotelPhotoGallery from './PickupHotelPhotoGallery'
 import ReactCountryFlag from 'react-country-flag'
 import { useRouter } from 'next/navigation'
@@ -21,6 +22,7 @@ interface ChatMessage {
   sender_type: 'guide' | 'customer' | 'system'
   sender_name: string
   sender_email?: string
+  sender_avatar?: string
   message: string
   message_type: 'text' | 'image' | 'file' | 'system'
   file_url?: string
@@ -192,6 +194,48 @@ export default function TourChatRoom({
   }>>(new Map())
   const [showParticipantsList, setShowParticipantsList] = useState(false)
   const presenceChannelRef = useRef<any>(null)
+  
+  // 고객용 아바타 선택
+  const [selectedAvatar, setSelectedAvatar] = useState<string>('')
+  const [showAvatarSelector, setShowAvatarSelector] = useState(false)
+  const [usedAvatars, setUsedAvatars] = useState<Set<string>>(new Set())
+  
+  // 이미지 업로드
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [gettingLocation, setGettingLocation] = useState(false)
+  
+  // localStorage에서 아바타 불러오기
+  useEffect(() => {
+    if (isPublicView && typeof window !== 'undefined') {
+      const savedAvatar = localStorage.getItem(`chat_avatar_${roomCode || 'default'}`)
+      if (savedAvatar) {
+        setSelectedAvatar(savedAvatar)
+      } else {
+        // 기본 아바타 설정
+        const defaultAvatar = 'https://api.dicebear.com/7.x/avataaars/svg?seed=happy'
+        setSelectedAvatar(defaultAvatar)
+        localStorage.setItem(`chat_avatar_${roomCode || 'default'}`, defaultAvatar)
+      }
+    }
+  }, [isPublicView, roomCode])
+  
+  // 다른 고객들이 사용 중인 아바타 추적
+  useEffect(() => {
+    if (isPublicView && messages.length > 0) {
+      const used = new Set<string>()
+      messages.forEach(msg => {
+        if (msg.sender_type === 'customer' && msg.sender_name !== (customerName || '고객')) {
+          const avatar = (msg as any).sender_avatar
+          if (avatar) {
+            used.add(avatar)
+          }
+        }
+      })
+      setUsedAvatars(used)
+    }
+  }, [messages, isPublicView, customerName])
   // 외부에서 제어하는 경우 externalMobileMenuOpen 사용, 아니면 내부 상태 사용
   const isMobileMenuOpen = externalMobileMenuOpen !== undefined ? externalMobileMenuOpen : internalMobileMenuOpen
   const handleMobileMenuToggle = () => {
@@ -1171,7 +1215,14 @@ export default function TourChatRoom({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (payload: { new: any }) => {
           const newMessage = payload.new as ChatMessage
-          setMessages(prev => [...prev, newMessage])
+          setMessages(prev => {
+            // 중복 메시지 방지: 이미 존재하는 메시지 ID는 추가하지 않음
+            const exists = prev.some(m => m.id === newMessage.id)
+            if (exists) {
+              return prev
+            }
+            return [...prev, newMessage]
+          })
       scrollToBottom()
     }
       )
@@ -1266,6 +1317,162 @@ export default function TourChatRoom({
     return (currentTime - messageTime) < oneMinute
   }
 
+  // 이미지 업로드 처리
+  const handleImageUpload = async (file: File) => {
+    if (!room || uploading) return
+    
+    // 파일 타입 검증
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+    if (!allowedTypes.includes(file.type)) {
+      alert(selectedLanguage === 'ko' ? '지원하지 않는 파일 형식입니다. JPEG, PNG, GIF, WebP 파일만 업로드 가능합니다.' : 'Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.')
+      return
+    }
+    
+    // 파일 크기 검증 (5MB)
+    const maxSize = 5 * 1024 * 1024
+    if (file.size > maxSize) {
+      alert(selectedLanguage === 'ko' ? '파일 크기가 너무 큽니다. 최대 5MB까지 업로드 가능합니다.' : 'File too large. Maximum size is 5MB.')
+      return
+    }
+    
+    setUploading(true)
+    
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('folder', 'chat-messages')
+      
+      const response = await fetch('/api/upload/image', {
+        method: 'POST',
+        body: formData
+      })
+      
+      const result = await response.json()
+      
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Upload failed')
+      }
+      
+      // 이미지를 메시지로 전송
+      await sendImageMessage(result.imageUrl, file.name, file.size)
+    } catch (error) {
+      console.error('Image upload error:', error)
+      alert(error instanceof Error ? error.message : (selectedLanguage === 'ko' ? '이미지 업로드 중 오류가 발생했습니다.' : 'An error occurred while uploading the image.'))
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+  
+  // 이미지 메시지 전송
+  const sendImageMessage = async (imageUrl: string, fileName: string, fileSize: number) => {
+    if (!room || sending) return
+    
+    setSending(true)
+    
+    // 즉시 UI에 메시지 표시 (낙관적 업데이트)
+    const tempMessage: ChatMessage = {
+      id: `temp_${Date.now()}`,
+      room_id: room.id,
+      sender_type: isPublicView ? 'customer' : 'guide',
+      sender_name: isPublicView ? (customerName || '고객') : '가이드',
+      sender_email: isPublicView ? undefined : guideEmail,
+      sender_avatar: isPublicView ? selectedAvatar : undefined,
+      message: '',
+      message_type: 'image',
+      file_url: imageUrl,
+      file_name: fileName,
+      file_size: fileSize,
+      is_read: false,
+      created_at: new Date().toISOString()
+    }
+    
+    setMessages(prev => [...prev, tempMessage])
+    scrollToBottom()
+    
+    try {
+      let data: ChatMessage | null = null
+      
+      if (isPublicView) {
+        const response = await fetch('/api/chat-messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            room_id: room.id,
+            sender_name: customerName || '고객',
+            sender_type: 'customer',
+            sender_avatar: selectedAvatar,
+            message: '',
+            message_type: 'image',
+            file_url: imageUrl,
+            file_name: fileName,
+            file_size: fileSize
+          })
+        })
+        
+        if (!response.ok) {
+          let errorData
+          try {
+            errorData = await response.json()
+          } catch (e) {
+            const text = await response.text()
+            errorData = { error: `HTTP ${response.status}: ${response.statusText}`, raw: text }
+          }
+          console.error('API Error:', {
+            status: response.status,
+            statusText: response.statusText,
+            errorData,
+            fullError: JSON.stringify(errorData, null, 2)
+          })
+          const errorMessage = errorData.error || errorData.details || errorData.message || '메시지 전송에 실패했습니다'
+          const errorDetails = errorData.code || errorData.hint ? ` (${errorData.code || ''} ${errorData.hint || ''})` : ''
+          throw new Error(`${errorMessage}${errorDetails}`)
+        }
+        
+        const result = await response.json()
+        data = result.message
+      } else {
+        const result = await (supabase
+          .from('chat_messages') as unknown as SupabaseInsertBuilder)
+          .insert({
+            room_id: room.id,
+            sender_type: 'guide',
+            sender_name: '가이드',
+            sender_email: guideEmail,
+            message: '',
+            message_type: 'image',
+            file_url: imageUrl,
+            file_name: fileName,
+            file_size: fileSize
+          })
+          .select()
+          .single()
+        
+        if (result.error) throw result.error
+        data = result.data
+      }
+      
+      // 실제 메시지로 교체
+      if (data) {
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === tempMessage.id ? data : msg
+          )
+        )
+      }
+    } catch (error) {
+      console.error('Error sending image message:', error)
+      alert(error instanceof Error ? error.message : 'An error occurred while sending the image.')
+      setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id))
+    } finally {
+      setSending(false)
+    }
+  }
+
   const sendMessage = async () => {
     if (!newMessage.trim() || !room || sending) return
     // block banned customers
@@ -1284,6 +1491,7 @@ export default function TourChatRoom({
       sender_type: isPublicView ? 'customer' : 'guide',
       sender_name: isPublicView ? (customerName || '고객') : '가이드',
       sender_email: isPublicView ? undefined : guideEmail,
+      sender_avatar: isPublicView ? selectedAvatar : undefined,
       message: messageText,
       message_type: 'text',
       is_read: false,
@@ -1295,20 +1503,64 @@ export default function TourChatRoom({
     scrollToBottom()
 
     try {
-      const { data, error } = await (supabase
-        .from('chat_messages') as unknown as SupabaseInsertBuilder)
-        .insert({
-          room_id: room.id,
-          sender_type: isPublicView ? 'customer' : 'guide',
-          sender_name: isPublicView ? (customerName || '고객') : '가이드',
-          sender_email: isPublicView ? undefined : guideEmail,
-          message: messageText,
-          message_type: 'text'
-        })
-        .select()
-        .single()
+      let data: ChatMessage | null = null
 
-      if (error) throw error
+      // 고객용 공유 페이지는 API 엔드포인트 사용 (RLS 우회)
+      if (isPublicView) {
+        const response = await fetch('/api/chat-messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            room_id: room.id,
+            sender_name: customerName || '고객',
+            sender_type: 'customer',
+            sender_avatar: selectedAvatar,
+            message: messageText,
+            message_type: 'text'
+          })
+        })
+
+        if (!response.ok) {
+          let errorData
+          try {
+            errorData = await response.json()
+          } catch (e) {
+            const text = await response.text()
+            errorData = { error: `HTTP ${response.status}: ${response.statusText}`, raw: text }
+          }
+          console.error('API Error:', {
+            status: response.status,
+            statusText: response.statusText,
+            errorData,
+            fullError: JSON.stringify(errorData, null, 2)
+          })
+          const errorMessage = errorData.error || errorData.details || errorData.message || '메시지 전송에 실패했습니다'
+          const errorDetails = errorData.code || errorData.hint ? ` (${errorData.code || ''} ${errorData.hint || ''})` : ''
+          throw new Error(`${errorMessage}${errorDetails}`)
+        }
+
+        const result = await response.json()
+        data = result.message
+      } else {
+        // 가이드/관리자는 직접 Supabase 사용
+        const result = await (supabase
+          .from('chat_messages') as unknown as SupabaseInsertBuilder)
+          .insert({
+            room_id: room.id,
+            sender_type: 'guide',
+            sender_name: '가이드',
+            sender_email: guideEmail,
+            message: messageText,
+            message_type: 'text'
+          })
+          .select()
+          .single()
+
+        if (result.error) throw result.error
+        data = result.data
+      }
       
       // 실제 메시지로 교체
       if (data) {
@@ -1340,7 +1592,10 @@ export default function TourChatRoom({
       }
     } catch (error) {
       console.error('Error sending message:', error)
-      alert('An error occurred while sending the message.')
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'An error occurred while sending the message.'
+      alert(errorMessage)
       
       // 실패 시 임시 메시지 제거
       setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id))
@@ -1353,6 +1608,68 @@ export default function TourChatRoom({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       sendMessage()
+    }
+  }
+
+  // 위치 공유 함수
+  const shareLocation = async () => {
+    if (!room || gettingLocation || sending) return
+    
+    if (!navigator.geolocation) {
+      alert(selectedLanguage === 'ko' ? '이 브라우저는 위치 서비스를 지원하지 않습니다.' : 'Geolocation is not supported by this browser.')
+      return
+    }
+    
+    setGettingLocation(true)
+    
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: false, // 정확도보다 속도 우선
+          timeout: 20000, // 20초로 증가
+          maximumAge: 60000 // 1분 이내 캐시된 위치 허용
+        })
+      })
+      
+      const { latitude, longitude } = position.coords
+      const googleMapsLink = `https://www.google.com/maps?q=${latitude},${longitude}`
+      const naverMapsLink = `https://map.naver.com/?dlevel=11&lat=${latitude}&lng=${longitude}&mapMode=0&pinTitle=내+위치&pinType=default`
+      
+      // 위치 정보를 메시지로 전송
+      const locationMessage = selectedLanguage === 'ko' 
+        ? `📍 내 위치\n위도: ${latitude.toFixed(6)}\n경도: ${longitude.toFixed(6)}\n\n🗺️ 지도 보기:\nGoogle Maps: ${googleMapsLink}\nNaver Maps: ${naverMapsLink}`
+        : `📍 My Location\nLatitude: ${latitude.toFixed(6)}\nLongitude: ${longitude.toFixed(6)}\n\n🗺️ View on Map:\nGoogle Maps: ${googleMapsLink}`
+      
+      // 메시지에 위치 정보를 포함하여 전송
+      setNewMessage(locationMessage)
+      // 자동으로 메시지 전송
+      setTimeout(() => {
+        sendMessage()
+      }, 100)
+    } catch (error) {
+      console.error('Error getting location:', error)
+      if (error instanceof GeolocationPositionError) {
+        if (error.code === error.PERMISSION_DENIED) {
+          alert(selectedLanguage === 'ko' ? '위치 권한이 거부되었습니다. 브라우저 설정에서 위치 권한을 허용해주세요.' : 'Location permission denied. Please enable location access in your browser settings.')
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          alert(selectedLanguage === 'ko' ? '위치 정보를 가져올 수 없습니다.' : 'Location information is unavailable.')
+        } else if (error.code === error.TIMEOUT) {
+          // 타임아웃 시 재시도 옵션 제공
+          const retry = confirm(selectedLanguage === 'ko' 
+            ? '위치 정보 요청 시간이 초과되었습니다. 다시 시도하시겠습니까?' 
+            : 'Location request timed out. Would you like to try again?')
+          if (retry) {
+            setTimeout(() => shareLocation(), 500)
+            return
+          }
+        } else {
+          alert(selectedLanguage === 'ko' ? '위치 정보를 가져오는 중 오류가 발생했습니다.' : 'An error occurred while getting location.')
+        }
+      } else {
+        alert(selectedLanguage === 'ko' ? '위치 정보를 가져오는 중 오류가 발생했습니다.' : 'An error occurred while getting location.')
+      }
+    } finally {
+      setGettingLocation(false)
     }
   }
 
@@ -1484,7 +1801,7 @@ export default function TourChatRoom({
       style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
     >
       {/* 채팅방 헤더 */}
-        <div className="px-2 lg:px-3 border-b bg-white bg-opacity-90 backdrop-blur-sm shadow-sm relative">
+        <div className="flex-shrink-0 px-2 lg:px-3 py-2 border-b bg-white bg-opacity-90 backdrop-blur-sm shadow-sm relative">
           {!isPublicView && (
           <div className="mb-1">
             <div className="flex items-center justify-between">
@@ -1496,7 +1813,89 @@ export default function TourChatRoom({
         
 
         {/* 버튼 영역 */}
-        <div className="mt-1 flex items-center gap-1 lg:gap-2 justify-between">
+        <div className={`mt-1 flex items-center gap-1 lg:gap-2 ${isMobileMenuOpen ? 'justify-between' : 'justify-center'} lg:justify-between`}>
+          {/* 모바일: 접었을 때 아이콘만 표시 */}
+          <div className={`lg:hidden flex items-center gap-2 flex-wrap justify-center flex-1 ${isMobileMenuOpen ? 'hidden' : ''}`}>
+            {isPublicView && (
+              <>
+                <button
+                  onClick={() => setIsAnnouncementsOpen(true)}
+                  className="p-2 bg-amber-100 text-amber-800 rounded border border-amber-200 hover:bg-amber-200"
+                  title={selectedLanguage === 'ko' ? '공지사항' : 'Announcements'}
+                >
+                  <Megaphone size={18} />
+                </button>
+                <button
+                  onClick={() => setShowPickupScheduleModal(true)}
+                  className="p-2 bg-blue-100 text-blue-800 rounded border border-blue-200 hover:bg-blue-200"
+                  title={selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}
+                >
+                  <Calendar size={18} />
+                </button>
+                <button
+                  onClick={() => setShowPhotoGallery(true)}
+                  className="p-2 bg-violet-100 text-violet-800 rounded border border-violet-200 hover:bg-violet-200"
+                  title={selectedLanguage === 'ko' ? '투어 사진' : 'Tour Photos'}
+                >
+                  <ImageIcon size={18} />
+                </button>
+                <button
+                  onClick={() => setShowTeamInfo(true)}
+                  className="p-2 bg-indigo-100 text-indigo-800 rounded border border-indigo-200 hover:bg-indigo-200"
+                  title={selectedLanguage === 'ko' ? '가이드 정보' : 'Guide Info'}
+                >
+                  <Users size={18} />
+                </button>
+              </>
+            )}
+            {!isPublicView && (
+              <>
+                <button
+                  onClick={() => setIsAnnouncementsOpen(true)}
+                  className="p-2 bg-amber-100 text-amber-800 rounded border border-amber-200 hover:bg-amber-200"
+                  title={selectedLanguage === 'ko' ? '공지사항' : 'Announcements'}
+                >
+                  <Megaphone size={18} />
+                </button>
+                <button
+                  onClick={() => setShowPickupScheduleModal(true)}
+                  className="p-2 bg-blue-100 text-blue-800 rounded border border-blue-200 hover:bg-blue-200"
+                  title={selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}
+                >
+                  <Calendar size={18} />
+                </button>
+                <button
+                  onClick={goToTourDetail}
+                  className="p-2 bg-purple-100 text-purple-800 rounded border border-purple-200 hover:bg-purple-200"
+                  title={selectedLanguage === 'ko' ? '투어 상세 페이지' : 'Tour Details'}
+                >
+                  <ExternalLink size={18} />
+                </button>
+              </>
+            )}
+            <button
+              onClick={copyRoomLink}
+              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
+              title={selectedLanguage === 'ko' ? '링크 복사' : 'Copy Link'}
+            >
+              <Copy size={18} />
+            </button>
+            <button
+              onClick={shareRoomLink}
+              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
+              title={selectedLanguage === 'ko' ? '공유' : 'Share'}
+            >
+              <Share2 size={18} />
+            </button>
+            <button
+              onClick={handleMobileMenuToggle}
+              className="p-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded"
+              title={selectedLanguage === 'ko' ? '펼치기' : 'Expand'}
+            >
+              <ChevronDown size={18} />
+            </button>
+          </div>
+
           {/* 데스크톱: 왼쪽 버튼 그룹 */}
           <div className="hidden lg:flex items-center gap-1 lg:gap-2 flex-wrap">
             {/* 방 활성/비활성 스위치 - 가장 왼쪽, 관리자 전용 */}
@@ -1618,7 +2017,7 @@ export default function TourChatRoom({
           </div>
 
           {/* 모바일: 접었다 폈다 할 수 있는 메뉴 */}
-          <div className={`lg:hidden absolute top-full left-0 right-0 bg-white border-b shadow-md z-10 p-3 space-y-2`}>
+          <div className={`lg:hidden relative p-3 space-y-2 ${isMobileMenuOpen ? '' : 'hidden'}`}>
             {/* 활성화 버튼, 공지사항, 픽업스케줄 - collapse 시 숨김 */}
             {isMobileMenuOpen && (
               <>
@@ -1784,7 +2183,7 @@ export default function TourChatRoom({
 
       {/* 참여자 목록 사이드바 (관리자/가이드/드라이버/어시스턴트만) */}
       {!isPublicView && showParticipantsList && (
-        <div className="absolute right-0 top-0 bottom-0 w-64 bg-white border-l border-gray-200 shadow-lg z-20 flex flex-col">
+        <div className="absolute right-0 top-0 bottom-0 w-64 bg-white border-l border-gray-200 shadow-lg z-30 flex flex-col">
           <div className="p-4 border-b bg-indigo-50">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900 flex items-center">
@@ -1810,9 +2209,9 @@ export default function TourChatRoom({
               </div>
             ) : (
               <div className="space-y-2">
-                {Array.from(onlineParticipants.values()).map((participant) => (
+                {Array.from(onlineParticipants.values()).map((participant, index) => (
                   <div
-                    key={participant.id}
+                    key={`${participant.id}-${participant.type}-${index}`}
                     className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 border border-gray-100"
                   >
                     <div className="relative">
@@ -1839,85 +2238,186 @@ export default function TourChatRoom({
 
       {/* 메시지 목록 */}
       <div 
-        className={`flex-1 overflow-y-auto p-2 lg:p-4 space-y-2 lg:space-y-3 min-h-0 bg-gradient-to-b from-transparent to-blue-50 bg-opacity-20 ${!isPublicView && showParticipantsList ? 'mr-64' : ''}`}
+        className={`flex-1 overflow-y-auto p-2 lg:p-4 space-y-2 lg:space-y-3 min-h-0 bg-gradient-to-b from-transparent to-blue-50 bg-opacity-20 ${!isPublicView && showParticipantsList ? 'mr-64' : ''} ${!isMobileMenuOpen ? 'lg:mt-0' : ''}`}
         style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
       >
-        {messages.map((message) => {
+        {messages.map((message, index) => {
           const needsTrans = needsTranslation(message)
           const hasTranslation = translatedMessages[message.id]
           // const isTranslating = translating[message.id] // 사용되지 않음
           
+          // 아바타 URL 가져오기 (메시지에 저장된 아바타 또는 기본값)
+          const avatarUrl = (message as any).sender_avatar || 
+            (message.sender_type === 'customer' 
+              ? (message.sender_name === (customerName || '고객') ? selectedAvatar : undefined)
+              : undefined)
+          
           return (
             <div
-              key={message.id}
-              className={`flex ${message.sender_type === 'guide' ? 'justify-end' : 'justify-start'}`}
+              key={`${message.id}-${index}`}
+              className={`flex items-start space-x-2 ${message.sender_type === 'guide' ? 'justify-end' : 'justify-start'}`}
             >
-              <div
-                className={`max-w-xs lg:max-w-md px-3 lg:px-4 py-2 rounded-lg border shadow-sm ${
-                  message.sender_type === 'system'
-                    ? 'bg-gray-200 bg-opacity-80 backdrop-blur-sm text-gray-700 text-center'
-                    : message.sender_type === 'guide'
-                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-600'
-                    : 'bg-white bg-opacity-90 backdrop-blur-sm text-gray-900 border-gray-200'
-                }`}
-              >
-                {message.sender_type !== 'system' && (
-                  <div className="text-xs font-medium mb-1">
+              {/* 아바타 (고객 메시지일 때만 왼쪽에 표시) */}
+              {message.sender_type === 'customer' && (
+                <div className="flex-shrink-0">
+                  <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200">
+                    {avatarUrl ? (
+                      <img
+                        src={avatarUrl}
+                        alt={message.sender_name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                        <User size={20} className="text-gray-400" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              <div className="flex flex-col max-w-xs lg:max-w-md">
+                {/* 이름 (고객 메시지일 때만) */}
+                {message.sender_type === 'customer' && (
+                  <div className="text-xs font-medium text-gray-700 mb-1 px-1">
                     {message.sender_name}
                   </div>
                 )}
                 
-                {/* 메시지 내용 */}
-                <div className="text-sm" style={{ touchAction: 'pan-x pan-y pinch-zoom' }}>
-                  {message.message.startsWith('[EN] ') ? (
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">번역된 메시지:</div>
-                      <div>{message.message.replace('[EN] ', '')}</div>
-                    </div>
-                  ) : (
-                    <div>
-                {/* 원본 메시지 */}
-                      <div>{message.message}</div>
-                      
-                      {/* 가이드 메시지 자동 번역 (고객용/관리자용) */}
-                      {message.sender_type === 'guide' && needsTrans && (
-                        <div className="mt-2 pt-2 border-t border-gray-200">
-                          {hasTranslation ? (
-                            <div className="text-xs text-white">
-                              <span className="font-medium">{getLanguageDisplayName(selectedLanguage)}:</span> {hasTranslation}
-                            </div>
-                          ) : (
-                            <div className="text-xs text-gray-400">
-                              {getLanguageDisplayName(selectedLanguage)}으로 번역 사용 가능
-                            </div>
-                          )}
-                        </div>
-                      )}
+                <div
+                  className={`px-3 lg:px-4 py-2 rounded-lg border shadow-sm ${
+                    message.sender_type === 'system'
+                      ? 'bg-gray-200 bg-opacity-80 backdrop-blur-sm text-gray-700 text-center'
+                      : message.sender_type === 'guide'
+                      ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-600'
+                      : 'bg-white bg-opacity-90 backdrop-blur-sm text-gray-900 border-gray-200'
+                  }`}
+                >
+                  {message.sender_type === 'guide' && (
+                    <div className="text-xs font-medium mb-1 opacity-90">
+                      {message.sender_name}
                     </div>
                   )}
-                </div>
-                
-                <div className="flex items-center justify-between mt-1">
-                  <div className="text-xs opacity-70">
-                  {formatTime(message.created_at)}
+                  
+                  {/* 메시지 내용 */}
+                  <div className="text-sm" style={{ touchAction: 'pan-x pan-y pinch-zoom' }}>
+                    {message.message_type === 'image' && message.file_url ? (
+                      <div className="mt-2">
+                        <img
+                          src={message.file_url}
+                          alt={message.file_name || 'Uploaded image'}
+                          className="max-w-full h-auto rounded-lg cursor-pointer"
+                          onClick={() => window.open(message.file_url, '_blank')}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23ddd" width="200" height="200"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" dy="10.5" font-weight="bold" x="50%25" y="50%25" text-anchor="middle"%3EImage not found%3C/text%3E%3C/svg%3E'
+                          }}
+                        />
+                        {message.file_name && (
+                          <div className="text-xs text-gray-500 mt-1">{message.file_name}</div>
+                        )}
+                      </div>
+                    ) : message.message.startsWith('[EN] ') ? (
+                      <div>
+                        <div className="text-xs text-gray-500 mb-1">번역된 메시지:</div>
+                        <div>{message.message.replace('[EN] ', '')}</div>
+                      </div>
+                    ) : (
+                      <div>
+                        {/* 원본 메시지 */}
+                        <div className="whitespace-pre-wrap break-words">
+                          {message.message.split('\n').map((line, idx) => {
+                            // Google Maps 링크 감지
+                            if (line.includes('Google Maps:') || line.includes('google.com/maps')) {
+                              const urlMatch = line.match(/https?:\/\/[^\s]+/)
+                              if (urlMatch) {
+                                return (
+                                  <div key={idx} className="my-1">
+                                    {line.split(urlMatch[0])[0]}
+                                    <a
+                                      href={urlMatch[0]}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-blue-600 hover:text-blue-800 underline flex items-center gap-1 inline-block"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        window.open(urlMatch[0], '_blank')
+                                      }}
+                                    >
+                                      <MapPin size={14} />
+                                      {selectedLanguage === 'ko' ? 'Google Maps에서 보기' : 'View on Google Maps'}
+                                    </a>
+                                  </div>
+                                )
+                              }
+                            }
+                            // Naver Maps 링크 감지
+                            if (line.includes('Naver Maps:') || line.includes('map.naver.com')) {
+                              const urlMatch = line.match(/https?:\/\/[^\s]+/)
+                              if (urlMatch) {
+                                return (
+                                  <div key={idx} className="my-1">
+                                    {line.split(urlMatch[0])[0]}
+                                    <a
+                                      href={urlMatch[0]}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-green-600 hover:text-green-800 underline flex items-center gap-1 inline-block"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        window.open(urlMatch[0], '_blank')
+                                      }}
+                                    >
+                                      <MapPin size={14} />
+                                      {selectedLanguage === 'ko' ? 'Naver Maps에서 보기' : 'View on Naver Maps'}
+                                    </a>
+                                  </div>
+                                )
+                              }
+                            }
+                            return <div key={idx}>{line}</div>
+                          })}
+                        </div>
+                        
+                        {/* 가이드 메시지 자동 번역 (고객용/관리자용) */}
+                        {message.sender_type === 'guide' && needsTrans && (
+                          <div className="mt-2 pt-2 border-t border-gray-200">
+                            {hasTranslation ? (
+                              <div className="text-xs text-white">
+                                <span className="font-medium">{getLanguageDisplayName(selectedLanguage)}:</span> {hasTranslation}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-400">
+                                {getLanguageDisplayName(selectedLanguage)}으로 번역 사용 가능
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   
-                  {/* 삭제 버튼 (자신이 보낸 메시지이고 1분 이내) */}
-                  {((isPublicView && message.sender_type === 'customer') || 
-                    (!isPublicView && message.sender_type === 'guide')) && 
-                   canDeleteMessage(message) && (
-                    <button
-                      onClick={() => {
-                        if (confirm('메시지를 삭제하시겠습니까?')) {
-                          deleteMessage(message.id)
-                        }
-                      }}
-                      className="ml-2 p-1 text-gray-400 hover:text-red-500 transition-colors"
-                      title="메시지 삭제"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  )}
+                  <div className="flex items-center justify-between mt-1">
+                    <div className="text-xs opacity-70">
+                      {formatTime(message.created_at)}
+                    </div>
+                    
+                    {/* 삭제 버튼 (자신이 보낸 메시지이고 1분 이내) */}
+                    {((isPublicView && message.sender_type === 'customer') || 
+                      (!isPublicView && message.sender_type === 'guide')) && 
+                     canDeleteMessage(message) && (
+                      <button
+                        onClick={() => {
+                          if (confirm('메시지를 삭제하시겠습니까?')) {
+                            deleteMessage(message.id)
+                          }
+                        }}
+                        className="ml-2 p-1 text-gray-400 hover:text-red-500 transition-colors"
+                        title="메시지 삭제"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1928,21 +2428,93 @@ export default function TourChatRoom({
 
       {/* 메시지 입력 */}
       {room.is_active && (
-        <div className={`${isPublicView ? 'p-2 lg:p-4' : 'p-2 lg:p-4 border-t bg-white bg-opacity-90 backdrop-blur-sm shadow-lg'} flex-shrink-0`}>
-          <div className="flex items-center space-x-2 w-full">
+        <div className={`${isPublicView ? 'p-2 lg:p-4' : 'p-2 lg:p-4 border-t bg-white bg-opacity-90 backdrop-blur-sm shadow-lg'} flex-shrink-0 relative`}>
+          <div className="flex items-center space-x-1 w-full">
+            {/* 아바타 선택 버튼 (고객용만) */}
+            {isPublicView && (
+              <button
+                onClick={() => setShowAvatarSelector(true)}
+                className="flex-shrink-0 w-8 h-8 rounded-full overflow-hidden border-2 border-gray-300 hover:border-blue-500 transition-colors"
+                title={selectedLanguage === 'ko' ? '아바타 변경' : 'Change Avatar'}
+              >
+                {selectedAvatar ? (
+                  <img
+                    src={selectedAvatar}
+                    alt="Avatar"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                    <UserCircle size={16} className="text-gray-400" />
+                  </div>
+                )}
+              </button>
+            )}
+            
+            {/* 이미지 업로드 버튼 */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || sending}
+              className="flex-shrink-0 p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title={selectedLanguage === 'ko' ? '이미지 업로드' : 'Upload Image'}
+            >
+              {uploading ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+              ) : (
+                <ImageIcon size={18} />
+              )}
+            </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) {
+                  handleImageUpload(file)
+                }
+              }}
+              className="hidden"
+            />
+            
+            {/* 이모티콘 버튼 */}
+            <button
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              className="flex-shrink-0 p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
+              title={selectedLanguage === 'ko' ? '이모티콘' : 'Emoji'}
+            >
+              <Smile size={18} />
+            </button>
+            
+            {/* 위치 공유 버튼 (고객용만) */}
+            {isPublicView && (
+              <button
+                onClick={shareLocation}
+                disabled={gettingLocation || sending || uploading}
+                className="flex-shrink-0 p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title={selectedLanguage === 'ko' ? '위치 공유' : 'Share Location'}
+              >
+                {gettingLocation ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+                ) : (
+                  <MapPin size={18} />
+                )}
+              </button>
+            )}
+            
             <input
               type="text"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Type your message..."
+              placeholder={selectedLanguage === 'ko' ? '메시지를 입력하세요...' : 'Type your message...'}
               className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm lg:text-base"
-              disabled={sending}
+              disabled={sending || uploading || gettingLocation}
             />
             
             <button
               onClick={sendMessage}
-              disabled={!newMessage.trim() || sending}
+              disabled={!newMessage.trim() || sending || uploading}
               className="flex-shrink-0 px-3 lg:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1 lg:space-x-2 text-sm lg:text-base"
             >
               <Send size={14} className="lg:w-4 lg:h-4" />
@@ -1964,6 +2536,53 @@ export default function TourChatRoom({
           isPublicView={isPublicView}
           language={selectedLanguage as 'en' | 'ko'}
         />
+      )}
+
+      {/* 아바타 선택 모달 (고객용만) */}
+      {isPublicView && (
+        <AvatarSelector
+          isOpen={showAvatarSelector}
+          onClose={() => setShowAvatarSelector(false)}
+          onSelect={(avatarUrl) => {
+            setSelectedAvatar(avatarUrl)
+            if (roomCode) {
+              localStorage.setItem(`chat_avatar_${roomCode}`, avatarUrl)
+            }
+          }}
+          currentAvatar={selectedAvatar}
+          usedAvatars={usedAvatars}
+          language={selectedLanguage as 'ko' | 'en'}
+        />
+      )}
+
+      {/* 이모티콘 선택기 */}
+      {showEmojiPicker && (
+        <div className="absolute bottom-16 left-2 lg:left-4 bg-white border border-gray-300 rounded-lg shadow-lg p-3 z-50 max-w-xs">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-700">{selectedLanguage === 'ko' ? '이모티콘' : 'Emoji'}</span>
+            <button
+              onClick={() => setShowEmojiPicker(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div className="grid grid-cols-8 gap-1 max-h-48 overflow-y-auto">
+            {['😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖', '😫', '😩', '🥺', '😢', '😭', '😤', '😠', '😡', '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗', '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄', '😯', '😦', '😧', '😮', '😲', '🥱', '😴', '🤤', '😪', '😵', '🤐', '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑', '🤠', '😈', '👿', '👹', '👺', '🤡', '💩', '👻', '💀', '☠️', '👽', '👾', '🤖', '🎃', '😺', '😸', '😹', '😻', '😼', '😽', '🙀', '😿', '😾'].map((emoji) => (
+              <button
+                key={emoji}
+                onClick={() => {
+                  setNewMessage(prev => prev + emoji)
+                  setShowEmojiPicker(false)
+                }}
+                className="p-2 hover:bg-gray-100 rounded text-lg"
+                title={emoji}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* 통화할 사용자 선택 모달 */}

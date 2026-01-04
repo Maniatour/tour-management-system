@@ -13,3 +13,4 @@ COMMENT ON COLUMN public.tours.assignment_status IS '투어 배정 현황: pendi
 -- assigned, rejected 상태는 새로 추가되는 상태이므로 기존 데이터는 변경하지 않음
 
 
+

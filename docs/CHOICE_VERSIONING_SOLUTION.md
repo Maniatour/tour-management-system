@@ -86,3 +86,4 @@
 별도 파일로 제공: `supabase/migrations/YYYYMMDDHHMMSS_fix_choices_pricing_keys.sql`
 
 
+

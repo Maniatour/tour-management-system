@@ -1,10 +1,11 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { ArrowLeft, ChevronDown, SquarePen, Menu } from 'lucide-react'
+import { ArrowLeft, ChevronDown, SquarePen, Menu, User } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import Link from 'next/link'
 import TourChatRoom from '@/components/TourChatRoom'
+import AvatarSelector from '@/components/AvatarSelector'
 import { SUPPORTED_LANGUAGES, SupportedLanguage } from '@/lib/translation'
 import { supabase } from '@/lib/supabase'
 import { useParams } from 'next/navigation'
@@ -45,6 +46,8 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
   const [showNameEdit, setShowNameEdit] = useState(false)
   const [productNames, setProductNames] = useState<ProductNames | null>(null)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(true)
+  const [selectedAvatar, setSelectedAvatar] = useState<string>('')
+  const [showAvatarSelector, setShowAvatarSelector] = useState(false)
 
   const paramsObj = useParams()
   const code = paramsObj.code as string
@@ -79,6 +82,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
       if (typeof window !== 'undefined' && window.localStorage) {
         const savedName = localStorage.getItem('tour_chat_customer_name')
         const savedLanguage = localStorage.getItem('tour_chat_language') as 'ko' | 'en' | null
+        const savedAvatar = localStorage.getItem(`chat_avatar_${code || 'default'}`)
         
         if (savedName) {
           setCustomerName(savedName)
@@ -87,6 +91,14 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
         }
         if (savedLanguage && ['ko', 'en'].includes(savedLanguage)) {
           setSelectedLanguage(savedLanguage)
+        }
+        if (savedAvatar) {
+          setSelectedAvatar(savedAvatar)
+        } else {
+          // 기본 아바타 설정
+          const defaultAvatar = 'https://api.dicebear.com/7.x/avataaars/svg?seed=happy'
+          setSelectedAvatar(defaultAvatar)
+          localStorage.setItem(`chat_avatar_${code || 'default'}`, defaultAvatar)
         }
       }
     } catch (error) {
@@ -195,6 +207,9 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
     if (typeof window !== 'undefined') {
       localStorage.setItem('tour_chat_customer_name', trimmedName)
       localStorage.setItem('tour_chat_language', selectedLanguage)
+      if (selectedAvatar) {
+        localStorage.setItem(`chat_avatar_${code || 'default'}`, selectedAvatar)
+      }
     }
     
     console.log('Customer joined chat:', trimmedName)
@@ -422,6 +437,39 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
                   )}
                 </div>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Avatar
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowAvatarSelector(true)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent flex items-center justify-between hover:bg-gray-50"
+                >
+                  <span className="flex items-center">
+                    {selectedAvatar ? (
+                      <>
+                        <img
+                          src={selectedAvatar}
+                          alt="Selected Avatar"
+                          className="w-8 h-8 rounded-full mr-2 border-2 border-gray-200"
+                        />
+                        <span className="text-sm text-gray-700">
+                          {selectedLanguage === 'ko' ? '아바타 선택됨' : 'Avatar Selected'}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <User size={20} className="mr-2 text-gray-400" />
+                        <span className="text-sm text-gray-500">
+                          {selectedLanguage === 'ko' ? '아바타 선택' : 'Select Avatar'}
+                        </span>
+                      </>
+                    )}
+                  </span>
+                  <ChevronDown size={16} className="text-gray-400" />
+                </button>
+              </div>
               <button
                 onClick={handleJoinChat}
                 disabled={!tempName.trim()}
@@ -435,8 +483,8 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
 
         {/* 채팅방 */}
         {customerName && room && tourInfo && room.tour_id && room.created_by && room.room_code && tourInfo.tour_date && (
-          <div className="flex flex-col overflow-hidden h-full">
-            <div className="flex-1 overflow-hidden">
+          <div className="flex flex-col h-full min-h-0">
+            <div className="flex-1 min-h-0 overflow-hidden">
               <TourChatRoom
                 tourId={room.tour_id}
                 guideEmail={room.created_by}
@@ -512,6 +560,21 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
             </div>
           </div>
         )}
+
+        {/* 아바타 선택 모달 */}
+        <AvatarSelector
+          isOpen={showAvatarSelector}
+          onClose={() => setShowAvatarSelector(false)}
+          onSelect={(avatarUrl) => {
+            setSelectedAvatar(avatarUrl)
+            if (typeof window !== 'undefined') {
+              localStorage.setItem(`chat_avatar_${code || 'default'}`, avatarUrl)
+            }
+          }}
+          currentAvatar={selectedAvatar}
+          usedAvatars={new Set()} // 초기 입장 시에는 사용 중인 아바타 정보가 없으므로 빈 Set
+          language={selectedLanguage as 'ko' | 'en'}
+        />
       </div>
     </div>
   )
