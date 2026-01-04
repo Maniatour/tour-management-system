@@ -10,9 +10,11 @@ interface UseVoiceCallProps {
   userId: string
   userName: string
   isPublicView: boolean
+  targetUserId?: string
+  targetUserName?: string
 }
 
-export function useVoiceCall({ roomId, userId, userName, isPublicView }: UseVoiceCallProps) {
+export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUserId, targetUserName }: UseVoiceCallProps) {
   const [callStatus, setCallStatus] = useState<CallStatus>('idle')
   const [remoteAudio, setRemoteAudio] = useState<HTMLAudioElement | null>(null)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
@@ -36,9 +38,12 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView }: UseVoic
     
     // 통화 요청 수신
     channel.on('broadcast', { event: 'call-offer' }, (payload) => {
-      if (payload.payload.from !== userId && callStatus === 'idle') {
-        setIncomingOffer(payload.payload.offer)
-        setCallerName(payload.payload.userName || '상대방')
+      const payloadData = payload.payload
+      // 현재 사용자에게 보낸 통화 요청인지 확인 (to가 없거나 현재 userId와 일치)
+      const isForMe = !payloadData.to || payloadData.to === userId
+      if (payloadData.from !== userId && callStatus === 'idle' && isForMe) {
+        setIncomingOffer(payloadData.offer)
+        setCallerName(payloadData.userName || '상대방')
         setCallStatus('ringing')
       }
     })
@@ -160,6 +165,11 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView }: UseVoic
   // 통화 시작
   const startCall = useCallback(async () => {
     try {
+      if (!targetUserId) {
+        console.error('통화할 사용자가 선택되지 않았습니다.')
+        return
+      }
+
       setCallStatus('calling')
 
       // 마이크 권한 요청 및 스트림 가져오기
@@ -184,6 +194,7 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView }: UseVoic
           payload: {
             from: userId,
             userName: userName,
+            to: targetUserId, // 특정 사용자에게만 전송
             offer: offer.toJSON()
           }
         })
@@ -201,7 +212,7 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView }: UseVoic
       alert('마이크 권한이 필요합니다.')
       setCallStatus('idle')
     }
-  }, [userId, userName, setupPeerConnection, callStatus])
+  }, [userId, userName, targetUserId, setupPeerConnection, callStatus])
 
   // 통화 수락
   const acceptCall = useCallback(async (offer: RTCSessionDescriptionInit) => {

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Send, Image as ImageIcon, Copy, Share2, Calendar, Megaphone, Trash2, ChevronDown, ChevronUp, MapPin, Camera, ExternalLink, Users, Play, Phone, User, X, Menu } from 'lucide-react'
 import { useVoiceCall } from '@/hooks/useVoiceCall'
 import VoiceCallModal from './VoiceCallModal'
+import VoiceCallUserSelector from './VoiceCallUserSelector'
 import PickupHotelPhotoGallery from './PickupHotelPhotoGallery'
 import ReactCountryFlag from 'react-country-flag'
 import { useRouter } from 'next/navigation'
@@ -180,6 +181,17 @@ export default function TourChatRoom({
     driver?: { name?: string; phone?: string }
   }>({})
   const [internalMobileMenuOpen, setInternalMobileMenuOpen] = useState(true)
+  
+  // 채팅방 참여자 목록 (관리자/가이드/드라이버/어시스턴트만 볼 수 있음)
+  const [onlineParticipants, setOnlineParticipants] = useState<Map<string, {
+    id: string
+    name: string
+    type: 'guide' | 'customer'
+    email?: string
+    lastSeen: Date
+  }>>(new Map())
+  const [showParticipantsList, setShowParticipantsList] = useState(false)
+  const presenceChannelRef = useRef<any>(null)
   // 외부에서 제어하는 경우 externalMobileMenuOpen 사용, 아니면 내부 상태 사용
   const isMobileMenuOpen = externalMobileMenuOpen !== undefined ? externalMobileMenuOpen : internalMobileMenuOpen
   const handleMobileMenuToggle = () => {
@@ -247,6 +259,36 @@ export default function TourChatRoom({
   // 음성 통화
   const userId = isPublicView ? (customerName || 'customer') : (guideEmail || 'guide')
   const userName = isPublicView ? (customerName || '고객') : '가이드'
+  const [showCallUserSelector, setShowCallUserSelector] = useState(false)
+  const [selectedCallTarget, setSelectedCallTarget] = useState<{id: string, name: string} | null>(null)
+  
+  // 메시지에서 통화 가능한 사용자 목록 추출
+  const availableCallUsers = React.useMemo(() => {
+    const userMap = new Map<string, { id: string; name: string; type: 'guide' | 'customer'; email?: string }>()
+    
+    messages.forEach(message => {
+      if (message.sender_type === 'system') return
+      
+      // 현재 사용자와 다른 타입의 사용자만 추가
+      const isCurrentUser = isPublicView 
+        ? message.sender_type === 'customer' && message.sender_name === (customerName || '고객')
+        : message.sender_type === 'guide' && message.sender_email === guideEmail
+      
+      if (!isCurrentUser) {
+        const userKey = message.sender_email || message.sender_name
+        if (!userMap.has(userKey)) {
+          userMap.set(userKey, {
+            id: userKey,
+            name: message.sender_name,
+            type: message.sender_type,
+            email: message.sender_email
+          })
+        }
+      }
+    })
+    
+    return Array.from(userMap.values())
+  }, [messages, isPublicView, customerName, guideEmail])
   
   const {
     callStatus,
@@ -254,7 +296,7 @@ export default function TourChatRoom({
     callDuration,
     incomingOffer,
     callerName,
-    startCall,
+    startCall: startCallInternal,
     acceptCall,
     rejectCall,
     endCall,
@@ -263,8 +305,39 @@ export default function TourChatRoom({
     roomId: room?.id || '',
     userId: userId,
     userName: userName,
-    isPublicView: isPublicView
+    isPublicView: isPublicView,
+    targetUserId: selectedCallTarget?.id,
+    targetUserName: selectedCallTarget?.name
   })
+  
+  // 통화 시작 (사용자 선택 후)
+  const handleStartCall = () => {
+    if (availableCallUsers.length === 0) {
+      alert(selectedLanguage === 'ko' ? '통화할 수 있는 사용자가 없습니다.' : 'No users available to call.')
+      return
+    }
+    
+    // 사용자가 1명이면 바로 통화, 여러 명이면 선택 UI 표시
+    if (availableCallUsers.length === 1) {
+      const user = availableCallUsers[0]
+      setSelectedCallTarget({ id: user.id, name: user.name })
+      // targetUserId가 설정된 후 통화 시작
+      setTimeout(() => {
+        startCallInternal()
+      }, 100)
+    } else {
+      setShowCallUserSelector(true)
+    }
+  }
+  
+  // 사용자 선택 후 통화 시작
+  const handleSelectUserAndCall = (userId: string, userName: string) => {
+    setSelectedCallTarget({ id: userId, name: userName })
+    // targetUserId가 설정된 후 통화 시작
+    setTimeout(() => {
+      startCallInternal()
+    }, 100)
+  }
   
   // 들어오는 통화 처리
   useEffect(() => {
@@ -545,6 +618,128 @@ export default function TourChatRoom({
     }
   }
 
+  // Supabase Realtime Presence를 사용하여 채팅방 참여자 추적
+  useEffect(() => {
+    if (!room?.id || isPublicView) return // 고객은 참여자 목록을 볼 수 없음
+
+    const channelName = `chat-presence-${room.id}`
+    const channel = supabase.channel(channelName, {
+      config: {
+        presence: {
+          key: userId, // 사용자 ID (가이드 이메일 또는 고객 이름)
+        }
+      }
+    })
+
+    // 현재 사용자의 presence 설정
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState()
+        const participants = new Map<string, {
+          id: string
+          name: string
+          type: 'guide' | 'customer'
+          email?: string
+          lastSeen: Date
+        }>()
+
+        // Presence state에서 참여자 정보 추출
+        Object.entries(state).forEach(([key, presences]) => {
+          if (Array.isArray(presences) && presences.length > 0) {
+            const presence = presences[0] as any
+            // 현재 사용자는 제외
+            if (presence && presence.userId !== userId) {
+              // 메시지에서 사용자 정보 찾기
+              const userMessage = messages.find(m => 
+                (presence.userId === m.sender_email) || 
+                (presence.userId === m.sender_name)
+              )
+              
+              if (userMessage) {
+                participants.set(presence.userId, {
+                  id: presence.userId,
+                  name: userMessage.sender_name,
+                  type: userMessage.sender_type,
+                  email: userMessage.sender_email,
+                  lastSeen: new Date()
+                })
+              } else if (presence.userName) {
+                // 메시지에 없는 경우 presence 데이터에서 직접 가져오기
+                participants.set(presence.userId, {
+                  id: presence.userId,
+                  name: presence.userName || presence.userId,
+                  type: presence.userType || 'guide',
+                  email: presence.userEmail,
+                  lastSeen: new Date()
+                })
+              }
+            }
+          }
+        })
+
+        setOnlineParticipants(participants)
+      })
+      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+        console.log('User joined:', key, newPresences)
+        // 새 참여자 추가
+        if (Array.isArray(newPresences) && newPresences.length > 0) {
+          const presence = newPresences[0] as any
+          if (presence && presence.userId !== userId) {
+            setOnlineParticipants(prev => {
+              const updated = new Map(prev)
+              const userMessage = messages.find(m => 
+                (presence.userId === m.sender_email) || 
+                (presence.userId === m.sender_name)
+              )
+              
+              updated.set(presence.userId, {
+                id: presence.userId,
+                name: userMessage?.sender_name || presence.userName || presence.userId,
+                type: userMessage?.sender_type || presence.userType || 'guide',
+                email: userMessage?.sender_email || presence.userEmail,
+                lastSeen: new Date()
+              })
+              return updated
+            })
+          }
+        }
+      })
+      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+        console.log('User left:', key, leftPresences)
+        setOnlineParticipants(prev => {
+          const updated = new Map(prev)
+          if (Array.isArray(leftPresences) && leftPresences.length > 0) {
+            const presence = leftPresences[0] as any
+            if (presence && presence.userId) {
+              updated.delete(presence.userId)
+            }
+          }
+          return updated
+        })
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          // 현재 사용자의 presence 전송
+          await channel.track({
+            userId: userId,
+            userName: userName,
+            userType: isPublicView ? 'customer' : 'guide',
+            userEmail: isPublicView ? undefined : guideEmail,
+            onlineAt: new Date().toISOString()
+          })
+        }
+      })
+
+    presenceChannelRef.current = channel
+
+    return () => {
+      if (presenceChannelRef.current) {
+        presenceChannelRef.current.unsubscribe()
+        presenceChannelRef.current = null
+      }
+    }
+  }, [room?.id, userId, userName, isPublicView, guideEmail, messages])
+
   // 팀 정보 로드 (가이드, 어시스턴트, 드라이버)
   const loadTeamInfo = useCallback(async () => {
     try {
@@ -708,6 +903,11 @@ export default function TourChatRoom({
         await loadMessages(room.id)
         console.log('Messages loaded successfully')
         
+        // 투어에 배정된 팀원들을 자동으로 참여시키기 (고객 뷰가 아니고 tourId가 있는 경우)
+        if (room.tour_id && !isPublicView) {
+          await autoAddTeamMembers(room.id, room.tour_id)
+        }
+        
         // 고객용 채팅에서 픽업 스케줄 및 팀 정보 로드
         if (isPublicView && room.tour_id) {
           console.log('Loading pickup schedule for public view, tourId:', room.tour_id)
@@ -724,6 +924,179 @@ export default function TourChatRoom({
       setLoading(false)
     }
   }
+
+  // 투어에 배정된 팀원들을 채팅방에 자동 참여시키기 (배정 변경 시 동기화)
+  const autoAddTeamMembers = useCallback(async (roomId: string, tourIdParam?: string) => {
+    try {
+      const targetTourId = tourIdParam || tourId
+      if (!targetTourId || isPublicView) return // 고객 뷰에서는 실행하지 않음
+
+      // 투어 정보 가져오기
+      const { data: tour, error: tourError } = await supabase
+        .from('tours')
+        .select('tour_guide_id, assistant_id, tour_car_id')
+        .eq('id', targetTourId)
+        .single()
+
+      if (tourError || !tour) {
+        console.error('Error loading tour for auto-add team members:', tourError)
+        return
+      }
+
+      // 현재 배정된 팀원 ID 목록 생성
+      const assignedTeamMemberIds = new Set<string>()
+      
+      // 가이드 ID 추가
+      if (tour.tour_guide_id) {
+        assignedTeamMemberIds.add(tour.tour_guide_id)
+      }
+      
+      // 어시스턴트 ID 추가
+      if (tour.assistant_id) {
+        assignedTeamMemberIds.add(tour.assistant_id)
+      }
+      
+      // 드라이버 ID 추가 (차량 정보에서)
+      if (tour.tour_car_id) {
+        const { data: vehicleData } = await supabase
+          .from('vehicles')
+          .select('driver_name, driver_email')
+          .eq('id', tour.tour_car_id)
+          .maybeSingle()
+
+        if (vehicleData && vehicleData.driver_name) {
+          const driverId = vehicleData.driver_email || `driver_${tour.tour_car_id}`
+          assignedTeamMemberIds.add(driverId)
+        }
+      }
+
+      // 현재 참여자 목록 가져오기 (가이드 타입만)
+      const { data: existingParticipants, error: participantsError } = await supabase
+        .from('chat_participants')
+        .select('id, participant_id, participant_type')
+        .eq('room_id', roomId)
+        .eq('participant_type', 'guide')
+
+      if (participantsError) {
+        console.error('Error loading existing participants:', participantsError)
+        return
+      }
+
+      const existingParticipantsList = existingParticipants || []
+      const existingParticipantIds = new Set(
+        existingParticipantsList.map(p => p.participant_id)
+      )
+
+      // 새로 배정된 사람 추가
+      const participantsToAdd: Array<{
+        room_id: string
+        participant_type: 'guide'
+        participant_id: string
+        participant_name: string
+        is_active: boolean
+      }> = []
+
+      // 가이드 추가
+      if (tour.tour_guide_id && !existingParticipantIds.has(tour.tour_guide_id)) {
+        const { data: guideData } = await supabase
+          .from('team')
+          .select('email, name_ko, name_en')
+          .eq('email', tour.tour_guide_id)
+          .maybeSingle()
+
+        if (guideData) {
+          participantsToAdd.push({
+            room_id: roomId,
+            participant_type: 'guide',
+            participant_id: tour.tour_guide_id,
+            participant_name: guideData.name_ko || guideData.name_en || tour.tour_guide_id,
+            is_active: true
+          })
+        }
+      }
+
+      // 어시스턴트 추가
+      if (tour.assistant_id && !existingParticipantIds.has(tour.assistant_id)) {
+        const { data: assistantData } = await supabase
+          .from('team')
+          .select('email, name_ko, name_en')
+          .eq('email', tour.assistant_id)
+          .maybeSingle()
+
+        if (assistantData) {
+          participantsToAdd.push({
+            room_id: roomId,
+            participant_type: 'guide',
+            participant_id: tour.assistant_id,
+            participant_name: assistantData.name_ko || assistantData.name_en || tour.assistant_id,
+            is_active: true
+          })
+        }
+      }
+
+      // 드라이버 추가 (차량 정보에서)
+      if (tour.tour_car_id) {
+        const { data: vehicleData } = await supabase
+          .from('vehicles')
+          .select('driver_name, driver_email')
+          .eq('id', tour.tour_car_id)
+          .maybeSingle()
+
+        if (vehicleData && vehicleData.driver_name) {
+          const driverId = vehicleData.driver_email || `driver_${tour.tour_car_id}`
+          
+          if (!existingParticipantIds.has(driverId)) {
+            participantsToAdd.push({
+              room_id: roomId,
+              participant_type: 'guide',
+              participant_id: driverId,
+              participant_name: vehicleData.driver_name,
+              is_active: true
+            })
+          }
+        }
+      }
+
+      // 더 이상 배정되지 않은 사람 제거 (is_active = false로 설정)
+      const participantsToDeactivate: string[] = []
+      
+      for (const participant of existingParticipantsList) {
+        // 고객 타입은 제외하고, 가이드 타입만 처리
+        if (participant.participant_type === 'guide' && !assignedTeamMemberIds.has(participant.participant_id)) {
+          participantsToDeactivate.push(participant.id)
+        }
+      }
+
+      // 배정이 변경된 사람들 처리
+      if (participantsToDeactivate.length > 0) {
+        const { error: deactivateError } = await supabase
+          .from('chat_participants')
+          .update({ is_active: false })
+          .in('id', participantsToDeactivate)
+
+        if (deactivateError) {
+          console.error('Error deactivating removed team members:', deactivateError)
+        } else {
+          console.log(`Deactivated ${participantsToDeactivate.length} removed team member(s) from chat room`)
+        }
+      }
+
+      // 새로 배정된 사람 추가
+      if (participantsToAdd.length > 0) {
+        const { error: insertError } = await supabase
+          .from('chat_participants')
+          .insert(participantsToAdd)
+
+        if (insertError) {
+          console.error('Error auto-adding team members:', insertError)
+        } else {
+          console.log(`Auto-added ${participantsToAdd.length} team member(s) to chat room`)
+        }
+      }
+    } catch (error) {
+      console.error('Error in autoAddTeamMembers:', error)
+    }
+  }, [tourId, isPublicView])
 
   const loadRoom = async () => {
     try {
@@ -743,6 +1116,8 @@ export default function TourChatRoom({
         setRoom(existingRoom)
         await loadMessages(existingRoom.id)
         await loadAnnouncements(existingRoom.id)
+        // 투어에 배정된 팀원들을 자동으로 참여시키기
+        await autoAddTeamMembers(existingRoom.id)
         // 픽업 스케줄은 별도로 로드 (await 제거)
         loadPickupSchedule()
       } else {
@@ -806,6 +1181,33 @@ export default function TourChatRoom({
       supabase.removeChannel(channel)
   }
   }, [room])
+
+  // 투어 배정 변경 감지 및 동기화
+  useEffect(() => {
+    if (!room || !tourId || isPublicView) return
+
+    const channel = supabase
+      .channel(`tour_${tourId}_assignments`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'tours',
+          filter: `id=eq.${tourId}`
+        },
+        () => {
+          // 투어 정보가 업데이트되면 팀원 동기화
+          console.log('Tour assignment changed, syncing team members...')
+          autoAddTeamMembers(room.id)
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [room, tourId, isPublicView, autoAddTeamMembers])
 
   // 공지사항 로드 (모달 전용)
   const loadAnnouncements = async (roomId: string) => {
@@ -1160,17 +1562,34 @@ export default function TourChatRoom({
                 >
                   <Users size={12} className="lg:w-3.5 lg:h-3.5" />
                 </button>
+                {/* 참여자 목록 버튼 (모바일) */}
+                {!isPublicView && (
+                  <button
+                    onClick={() => setShowParticipantsList(!showParticipantsList)}
+                    className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-indigo-100 text-indigo-800 rounded border border-indigo-200 hover:bg-indigo-200 flex items-center justify-center relative"
+                    title={selectedLanguage === 'ko' ? '참여자 목록' : 'Participants'}
+                  >
+                    <Users size={12} className="lg:w-3.5 lg:h-3.5" />
+                    {onlineParticipants.size > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-green-500 text-white text-[8px] rounded-full w-4 h-4 flex items-center justify-center">
+                        {onlineParticipants.size}
+                      </span>
+                    )}
+                  </button>
+                )}
               </>
             )}
             
             {/* 음성 통화 버튼 */}
             <button
-              onClick={startCall}
-              disabled={!room || callStatus !== 'idle'}
+              onClick={handleStartCall}
+              disabled={!room || callStatus !== 'idle' || availableCallUsers.length === 0}
               className={`px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs rounded border flex items-center justify-center ${
                 callStatus === 'connected'
                   ? 'bg-green-100 text-green-800 border-green-200'
                   : callStatus !== 'idle'
+                  ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                  : availableCallUsers.length === 0
                   ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
                   : 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200'
               }`}
@@ -1179,6 +1598,23 @@ export default function TourChatRoom({
             >
               <Phone size={12} className="lg:w-3.5 lg:h-3.5" />
             </button>
+            
+            {/* 참여자 목록 버튼 (관리자/가이드/드라이버/어시스턴트만) */}
+            {!isPublicView && (
+              <button
+                onClick={() => setShowParticipantsList(!showParticipantsList)}
+                className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs rounded border bg-indigo-100 text-indigo-800 border-indigo-200 hover:bg-indigo-200 flex items-center justify-center relative"
+                title={selectedLanguage === 'ko' ? '참여자 목록' : 'Participants'}
+                aria-label={selectedLanguage === 'ko' ? '참여자 목록' : 'Participants'}
+              >
+                <Users size={12} className="lg:w-3.5 lg:h-3.5" />
+                {onlineParticipants.size > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-green-500 text-white text-[8px] rounded-full w-4 h-4 flex items-center justify-center">
+                    {onlineParticipants.size}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
 
           {/* 모바일: 접었다 폈다 할 수 있는 메뉴 */}
@@ -1346,10 +1782,64 @@ export default function TourChatRoom({
         </div>
         </div>
 
+      {/* 참여자 목록 사이드바 (관리자/가이드/드라이버/어시스턴트만) */}
+      {!isPublicView && showParticipantsList && (
+        <div className="absolute right-0 top-0 bottom-0 w-64 bg-white border-l border-gray-200 shadow-lg z-20 flex flex-col">
+          <div className="p-4 border-b bg-indigo-50">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center">
+                <Users size={16} className="mr-2 text-indigo-600" />
+                {selectedLanguage === 'ko' ? '참여자' : 'Participants'}
+              </h3>
+              <button
+                onClick={() => setShowParticipantsList(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {onlineParticipants.size} {selectedLanguage === 'ko' ? '명 온라인' : 'online'}
+            </p>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2">
+            {onlineParticipants.size === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <Users className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                <p className="text-sm">{selectedLanguage === 'ko' ? '온라인 참여자가 없습니다' : 'No online participants'}</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {Array.from(onlineParticipants.values()).map((participant) => (
+                  <div
+                    key={participant.id}
+                    className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 border border-gray-100"
+                  >
+                    <div className="relative">
+                      <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
+                        <User size={16} className="text-indigo-600" />
+                      </div>
+                      <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{participant.name}</p>
+                      <p className="text-xs text-gray-500">
+                        {participant.type === 'guide' 
+                          ? (selectedLanguage === 'ko' ? '가이드' : 'Guide')
+                          : (selectedLanguage === 'ko' ? '고객' : 'Customer')}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 메시지 목록 */}
       <div 
-        className="flex-1 overflow-y-auto p-2 lg:p-4 space-y-2 lg:space-y-3 min-h-0 bg-gradient-to-b from-transparent to-blue-50 bg-opacity-20"
+        className={`flex-1 overflow-y-auto p-2 lg:p-4 space-y-2 lg:space-y-3 min-h-0 bg-gradient-to-b from-transparent to-blue-50 bg-opacity-20 ${!isPublicView && showParticipantsList ? 'mr-64' : ''}`}
         style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
       >
         {messages.map((message) => {
@@ -1476,11 +1966,20 @@ export default function TourChatRoom({
         />
       )}
 
+      {/* 통화할 사용자 선택 모달 */}
+      <VoiceCallUserSelector
+        isOpen={showCallUserSelector}
+        onClose={() => setShowCallUserSelector(false)}
+        users={availableCallUsers}
+        onSelectUser={handleSelectUserAndCall}
+        language={selectedLanguage as 'ko' | 'en'}
+      />
+
       {/* 음성 통화 모달 */}
       <VoiceCallModal
         isOpen={callStatus !== 'idle'}
         callStatus={callStatus}
-        callerName={callerName}
+        callerName={callerName || selectedCallTarget?.name}
         callDuration={callDuration}
         isMuted={isMuted}
         onAccept={callStatus === 'ringing' ? acceptCall : undefined}
