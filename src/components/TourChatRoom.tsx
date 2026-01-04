@@ -244,6 +244,17 @@ export default function TourChatRoom({
       setUsedAvatars(used)
     }
   }, [messages, isPublicView, customerName])
+
+  // 메시지 로드 후 스크롤을 맨 아래로 이동
+  useEffect(() => {
+    if (!loading && messages.length > 0) {
+      // 초기 로딩 완료 시 즉시 스크롤 (애니메이션 없이)
+      setTimeout(() => {
+        scrollToBottom(true)
+      }, 50)
+    }
+  }, [loading, messages.length])
+
   // 외부에서 제어하는 경우 externalMobileMenuOpen 사용, 아니면 내부 상태 사용
   const isMobileMenuOpen = externalMobileMenuOpen !== undefined ? externalMobileMenuOpen : internalMobileMenuOpen
   const handleMobileMenuToggle = () => {
@@ -938,8 +949,12 @@ export default function TourChatRoom({
     }
   }, [tourId])
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  const scrollToBottom = (instant = false) => {
+    if (instant) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
   }
 
   const getLanguageDisplayName = (langCode: SupportedLanguage) => {
@@ -980,7 +995,6 @@ export default function TourChatRoom({
       // 시간순으로 정렬하여 표시
       const sortedMessages = (data || []).reverse()
       setMessages(sortedMessages)
-      scrollToBottom()
     } catch (error) {
       console.error('Error loading messages:', error)
     }
@@ -2802,27 +2816,6 @@ export default function TourChatRoom({
       {room.is_active && (
         <div className={`${isPublicView ? 'p-2 lg:p-4' : 'p-2 lg:p-4 border-t bg-white bg-opacity-90 backdrop-blur-sm shadow-lg'} flex-shrink-0 relative`}>
           <div className="flex items-center space-x-1 w-full">
-            {/* 아바타 선택 버튼 (고객용만) */}
-            {isPublicView && (
-              <button
-                onClick={() => setShowAvatarSelector(true)}
-                className="flex-shrink-0 w-8 h-8 rounded-full overflow-hidden border-2 border-gray-300 hover:border-blue-500 transition-colors"
-                title={selectedLanguage === 'ko' ? '아바타 변경' : 'Change Avatar'}
-              >
-                {selectedAvatar ? (
-                  <img
-                    src={selectedAvatar}
-                    alt="Avatar"
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                    <UserCircle size={16} className="text-gray-400" />
-                  </div>
-                )}
-              </button>
-            )}
-            
             {/* 이미지 업로드 버튼 */}
             <button
               onClick={() => fileInputRef.current?.click()}

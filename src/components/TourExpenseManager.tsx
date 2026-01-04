@@ -576,6 +576,16 @@ export default function TourExpenseManager({
     try {
       setUploading(true)
       const file = files[0] // 첫 번째 파일만 사용
+      
+      // 파일 유효성 검사
+      if (!file.type.startsWith('image/')) {
+        throw new Error('이미지 파일만 업로드할 수 있습니다.')
+      }
+      
+      if (file.size > 5 * 1024 * 1024) {
+        throw new Error('파일 크기는 5MB 이하여야 합니다.')
+      }
+      
       const { filePath, imageUrl } = await handleImageUpload(file)
       
       setFormData(prev => ({
@@ -584,7 +594,8 @@ export default function TourExpenseManager({
         image_url: imageUrl
       }))
     } catch (error) {
-      alert(t('imageUploadFailed', { error: error instanceof Error ? error.message : t('unknownError') }))
+      console.error('File upload error:', error)
+      alert(error instanceof Error ? error.message : t('imageUploadFailed', { error: error instanceof Error ? error.message : t('unknownError') }))
     } finally {
       setUploading(false)
     }
@@ -1439,8 +1450,24 @@ export default function TourExpenseManager({
 
       {/* 지출 추가 폼 모달 */}
       {showAddForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md mt-8 mb-8">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 p-4 overflow-y-auto"
+          onClick={(e) => {
+            // 모달 배경 클릭 시에만 닫기 (모달 내부 클릭은 무시)
+            if (e.target === e.currentTarget && !uploading) {
+              if (editingExpense) {
+                handleCancelEdit()
+              } else {
+                setShowAddForm(false)
+                setShowMoreCategories(false)
+              }
+            }
+          }}
+        >
+          <div 
+            className="bg-white rounded-lg p-6 w-full max-w-md mt-8 mb-8"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
               {editingExpense ? '지출 수정' : t('addExpense')}
             </h3>
@@ -1742,9 +1769,22 @@ export default function TourExpenseManager({
                       ? 'border-blue-500 bg-blue-50' 
                       : 'border-gray-300 hover:border-gray-400'
                   }`}
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    handleDragOver(e)
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    handleDragLeave(e)
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    handleDrop(e)
+                  }}
+                  onClick={(e) => e.stopPropagation()}
                 >
                   {formData.image_url ? (
                     <div className="space-y-2 relative">
@@ -1778,15 +1818,8 @@ export default function TourExpenseManager({
                     ref={fileInputRef}
                     type="file"
                     accept="image/*"
-                    onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
-                    className="hidden"
-                  />
-                  <input
-                    ref={cameraInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture={typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'environment' : undefined}
                     onChange={(e) => {
+                      e.stopPropagation()
                       if (e.target.files && e.target.files.length > 0) {
                         handleFileUpload(e.target.files)
                         // input 값 초기화
@@ -1797,21 +1830,50 @@ export default function TourExpenseManager({
                         }, 100)
                       }
                     }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="hidden"
+                  />
+                  <input
+                    ref={cameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture={typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'environment' : undefined}
+                    onChange={(e) => {
+                      e.stopPropagation()
+                      if (e.target.files && e.target.files.length > 0) {
+                        handleFileUpload(e.target.files)
+                        // input 값 초기화
+                        setTimeout(() => {
+                          if (e.target) {
+                            (e.target as HTMLInputElement).value = ''
+                          }
+                        }, 100)
+                      }
+                    }}
+                    onClick={(e) => e.stopPropagation()}
                     className="hidden"
                   />
                   <div className="mt-2 flex gap-2 justify-center">
                     <button
                       type="button"
-                      onClick={() => cameraInputRef.current?.click()}
-                      className="px-4 py-2 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center gap-2"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        cameraInputRef.current?.click()
+                      }}
+                      disabled={uploading}
+                      className="px-4 py-2 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <ImageIcon size={16} />
                       {t('camera')}
                     </button>
                     <button
                       type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 flex items-center gap-2"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        fileInputRef.current?.click()
+                      }}
+                      disabled={uploading}
+                      className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Upload size={16} />
                       {t('file')}

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { ArrowLeft, ChevronDown, SquarePen, Menu, User, Bell, BellOff } from 'lucide-react'
+import { ArrowLeft, ChevronDown, SquarePen, Menu, User, Bell, BellOff, Download } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import Link from 'next/link'
 import TourChatRoom from '@/components/TourChatRoom'
@@ -50,6 +50,8 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
   const [selectedAvatar, setSelectedAvatar] = useState<string>('')
   const [showAvatarSelector, setShowAvatarSelector] = useState(false)
   const [faviconUrl, setFaviconUrl] = useState<string | null>(null)
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
+  const [showInstallButton, setShowInstallButton] = useState(false)
 
   const paramsObj = useParams()
   const code = paramsObj.code as string
@@ -70,6 +72,64 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
     loadFavicon()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code])
+
+  // PWA 설치 프롬프트 감지
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      // 기본 설치 프롬프트 방지
+      e.preventDefault()
+      // 설치 프롬프트 저장
+      setDeferredPrompt(e)
+      setShowInstallButton(true)
+    }
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+
+    // 이미 설치되었는지 확인
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setShowInstallButton(false)
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
+    }
+  }, [])
+
+  // 홈 화면에 추가 버튼 클릭 핸들러
+  const handleAddToHomeScreen = async () => {
+    if (!deferredPrompt) {
+      // iOS Safari의 경우 수동 안내
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+      const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent)
+      
+      if (isIOS && isSafari) {
+        alert(selectedLanguage === 'ko' 
+          ? 'Safari에서 공유 버튼(⬆️)을 누르고 "홈 화면에 추가"를 선택하세요.'
+          : 'Tap the Share button (⬆️) in Safari and select "Add to Home Screen".')
+      } else {
+        alert(selectedLanguage === 'ko' 
+          ? '브라우저 메뉴에서 "홈 화면에 추가" 또는 "앱 설치" 옵션을 찾아주세요.'
+          : 'Please look for "Add to Home Screen" or "Install App" option in your browser menu.')
+      }
+      return
+    }
+
+    // 설치 프롬프트 표시
+    deferredPrompt.prompt()
+    
+    // 사용자 선택 대기
+    const { outcome } = await deferredPrompt.userChoice
+    
+    if (outcome === 'accepted') {
+      console.log('User accepted the install prompt')
+      setShowInstallButton(false)
+    } else {
+      console.log('User dismissed the install prompt')
+    }
+    
+    // 프롬프트는 한 번만 사용 가능
+    setDeferredPrompt(null)
+  }
 
   // Favicon 로드
   const loadFavicon = async () => {
@@ -258,12 +318,12 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
     const trimmedName = tempName.trim()
     
     if (!trimmedName) {
-      alert('Please enter your name.')
+      alert(selectedLanguage === 'ko' ? '이름을 입력해주세요.' : 'Please enter your name.')
       return
     }
     
     if (trimmedName.length < 2) {
-      alert('Please enter a name with at least 2 characters.')
+      alert(selectedLanguage === 'ko' ? '이름은 최소 2자 이상이어야 합니다.' : 'Please enter a name with at least 2 characters.')
       return
     }
     
@@ -273,6 +333,10 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
     // localStorage에 저장
     if (typeof window !== 'undefined') {
       localStorage.setItem('tour_chat_customer_name', trimmedName)
+      // 아바타도 함께 저장
+      if (selectedAvatar) {
+        localStorage.setItem(`chat_avatar_${code || 'default'}`, selectedAvatar)
+      }
     }
     
     setShowNameEdit(false)
@@ -352,6 +416,16 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
               </h1>
             </div>
             <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+              {/* 홈 화면에 추가 버튼 */}
+              {showInstallButton && (
+                <button
+                  onClick={handleAddToHomeScreen}
+                  className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors"
+                  title={selectedLanguage === 'ko' ? '홈 화면에 추가' : 'Add to Home Screen'}
+                >
+                  <Download size={16} />
+                </button>
+              )}
               {/* 푸시 알림 토글 버튼 (국기 아이콘 왼쪽) */}
               {isPushSupported && room && (
                 <button
@@ -438,12 +512,25 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
               <div className="flex items-center space-x-2 ml-2">
                 <span className="text-gray-700">Hi! {customerName}</span>
                 <button
-                  onClick={() => setShowNameEdit(true)}
-                  className="p-1 rounded hover:bg-gray-100"
-                  aria-label="Change Name"
-                  title="Change Name"
+                  onClick={() => {
+                    setTempName(customerName)
+                    setShowNameEdit(true)
+                  }}
+                  className="flex-shrink-0 w-6 h-6 rounded-full overflow-hidden border-2 border-gray-300 hover:border-blue-500 transition-colors"
+                  aria-label={selectedLanguage === 'ko' ? '이름 및 아바타 변경' : 'Change Name and Avatar'}
+                  title={selectedLanguage === 'ko' ? '이름 및 아바타 변경' : 'Change Name and Avatar'}
                 >
-                  <SquarePen size={14} />
+                  {selectedAvatar ? (
+                    <img
+                      src={selectedAvatar}
+                      alt="Avatar"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                      <User size={12} className="text-gray-400" />
+                    </div>
+                  )}
                 </button>
               </div>
             )}
@@ -643,15 +730,52 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
           </div>
         )}
 
-        {/* 이름 변경 모달 */}
+        {/* 이름 및 아바타 변경 모달 */}
         {showNameEdit && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Change Name</h3>
+            <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                {selectedLanguage === 'ko' ? '이름 및 아바타 변경' : 'Change Name and Avatar'}
+              </h3>
               <div className="space-y-4">
+                {/* 아바타 선택 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Enter your new name
+                    {selectedLanguage === 'ko' ? '아바타' : 'Avatar'}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowAvatarSelector(true)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent flex items-center justify-between hover:bg-gray-50"
+                  >
+                    <span className="flex items-center">
+                      {selectedAvatar ? (
+                        <>
+                          <img
+                            src={selectedAvatar}
+                            alt="Selected Avatar"
+                            className="w-8 h-8 rounded-full mr-2 border-2 border-gray-200"
+                          />
+                          <span className="text-sm text-gray-700">
+                            {selectedLanguage === 'ko' ? '아바타 선택됨' : 'Avatar Selected'}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <User size={20} className="mr-2 text-gray-400" />
+                          <span className="text-sm text-gray-500">
+                            {selectedLanguage === 'ko' ? '아바타 선택' : 'Select Avatar'}
+                          </span>
+                        </>
+                      )}
+                    </span>
+                    <ChevronDown size={16} className="text-gray-400" />
+                  </button>
+                </div>
+                {/* 이름 입력 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {selectedLanguage === 'ko' ? '이름' : 'Name'}
                   </label>
                   <input
                     type="text"
@@ -663,7 +787,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
                         handleNameChange()
                       }
                     }}
-                    placeholder="e.g., John Smith"
+                    placeholder={selectedLanguage === 'ko' ? '예: 홍길동' : 'e.g., John Smith'}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     autoFocus
                   />
@@ -674,7 +798,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
                     disabled={!tempName.trim()}
                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Update Name
+                    {selectedLanguage === 'ko' ? '업데이트' : 'Update'}
                   </button>
                   <button
                     onClick={() => {
@@ -683,7 +807,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
                     }}
                     className="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
                   >
-                    Cancel
+                    {selectedLanguage === 'ko' ? '취소' : 'Cancel'}
                   </button>
                 </div>
               </div>
@@ -691,7 +815,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
           </div>
         )}
 
-        {/* 아바타 선택 모달 */}
+        {/* 아바타 선택 모달 (이름 변경 모달에서 열림) */}
         <AvatarSelector
           isOpen={showAvatarSelector}
           onClose={() => setShowAvatarSelector(false)}
@@ -700,6 +824,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
             if (typeof window !== 'undefined') {
               localStorage.setItem(`chat_avatar_${code || 'default'}`, avatarUrl)
             }
+            setShowAvatarSelector(false)
           }}
           currentAvatar={selectedAvatar}
           usedAvatars={new Set()} // 초기 입장 시에는 사용 중인 아바타 정보가 없으므로 빈 Set

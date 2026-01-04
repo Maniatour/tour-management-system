@@ -10,6 +10,7 @@ interface AuthContextType {
   user: AuthUser | null
   authUser: AuthUser | null
   userRole: UserRole | null
+  userPosition: string | null
   permissions: UserPermissions | null
   loading: boolean
   isInitialized: boolean
@@ -42,6 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [userRole, setUserRole] = useState<UserRole | null>(null)
+  const [userPosition, setUserPosition] = useState<string | null>(null)
   const [permissions, setPermissions] = useState<UserPermissions | null>(null)
   const [loading, setLoading] = useState(true)
   const [isInitialized, setIsInitialized] = useState(false)
@@ -101,6 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!email) {
       console.log('AuthContext: No email provided, setting customer role')
       setUserRole('customer')
+      setUserPosition(null)
       setPermissions(null)
       setLoading(false)
       setIsInitialized(true)
@@ -113,6 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!supabase) {
         console.error('AuthContext: Supabase client not available')
         setUserRole('customer')
+        setUserPosition(null)
         setPermissions(null)
         setLoading(false)
         setIsInitialized(true)
@@ -128,6 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (superAdminEmails.includes(normalizedEmail)) {
         console.log('AuthContext: Super admin detected, setting admin role')
         setUserRole('admin')
+        setUserPosition(null) // 슈퍼관리자는 position 없음
         setPermissions({
           canViewAdmin: true,
           canManageProducts: true,
@@ -183,6 +188,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         const role = getUserRole(email, teamData && !error ? teamData as Record<string, unknown> : undefined)
+        const position = teamData && !error ? (teamData as Record<string, unknown>).position as string | null : null
+        
+        // position 저장
+        setUserPosition(position)
+        
         const userPermissions = {
           canViewAdmin: hasPermission(role, 'canViewAdmin'),
           canManageProducts: hasPermission(role, 'canManageProducts'),
@@ -215,6 +225,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (error) {
         console.warn('AuthContext: Team query failed, using customer role:', error)
         setUserRole('customer')
+        setUserPosition(null)
         setPermissions(null)
         setLoading(false)
         setIsInitialized(true)
@@ -222,6 +233,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('AuthContext: Error checking user role:', error)
       setUserRole('customer')
+      setUserPosition(null)
       setPermissions(null)
       setLoading(false)
       setIsInitialized(true)
@@ -541,6 +553,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 checkUserRole(mockUser.email || '').catch(error => {
                   console.error('AuthContext: Team membership check failed:', error)
                   setUserRole('customer')
+                  setUserPosition(null)
                   setPermissions(null)
                 })
                 
@@ -601,11 +614,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               checkUserRole(session.user.email).catch(error => {
                 console.error('AuthContext: Team membership check failed:', error)
                 setUserRole('customer')
+                setUserPosition(null)
                 setPermissions(null)
               })
             } else {
               console.error('AuthContext: No email in session user')
               setUserRole('customer')
+              setUserPosition(null)
               setPermissions(null)
             }
             return
@@ -661,6 +676,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 checkUserRole(mockUser.email || '').catch(error => {
                   console.error('AuthContext: Team membership check failed:', error)
                   setUserRole('customer')
+                  setUserPosition(null)
                   setPermissions(null)
                 })
                 return
@@ -674,6 +690,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // 여전히 토큰이 없으면 customer로 설정
         console.log('AuthContext: No token found after delay, setting customer role')
         setUserRole('customer')
+        setUserPosition(null)
         setPermissions(null)
         setLoading(false)
         setIsInitialized(true)
@@ -706,6 +723,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null)
           setAuthUser(null)
           setUserRole('customer')
+          setUserPosition(null)
           setPermissions(null)
           setLoading(false)
           return
@@ -733,6 +751,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           checkUserRole(session.user.email).catch(error => {
             console.error('AuthContext: Team membership check failed:', error)
             setUserRole('customer')
+            setUserPosition(null)
             setPermissions(null)
           })
         } else if (event === 'TOKEN_REFRESHED' && session?.user?.email) {
@@ -776,6 +795,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             checkUserRole(session.user.email).catch(error => {
               console.error('AuthContext: Team membership check failed:', error)
               setUserRole('customer')
+              setUserPosition(null)
               setPermissions(null)
             })
           } else {
@@ -811,6 +831,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null)
       setAuthUser(null)
       setUserRole('customer')
+      setUserPosition(null)
       setPermissions(null)
     } catch (error) {
       console.error('Error signing out:', error)
@@ -1013,6 +1034,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     authUser,
     userRole: effectiveUserRole,
+    userPosition: isSimulating && simulatedUser ? simulatedUser.position : userPosition,
     permissions: effectivePermissions,
     loading,
     isInitialized,

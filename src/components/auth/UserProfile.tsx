@@ -14,7 +14,7 @@ interface UserProfileProps {
 }
 
 export default function UserProfile({ className = '' }: UserProfileProps) {
-  const { authUser, userRole } = useAuth()
+  const { authUser, userRole, userPosition } = useAuth()
   const [isOpen, setIsOpen] = useState(false)
   const params = useParams()
   const locale = params.locale as string
@@ -90,14 +90,17 @@ export default function UserProfile({ className = '' }: UserProfileProps) {
               {/* 직원인 경우 관리자 페이지와 고객 페이지 메뉴 표시 */}
               {userRole && userRole !== 'customer' && (
                 <>
-                  <Link
-                    href={`/${locale}/admin`}
-                    onClick={handleMenuClick}
-                    className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                  >
-                    <Shield className="w-4 h-4 mr-2" />
-                    {t('adminPage')}
-                  </Link>
+                  {/* tour guide와 driver는 관리자 페이지 접근 불가 */}
+                  {userPosition && (userPosition.toLowerCase() === 'tour guide' || userPosition.toLowerCase() === 'driver') ? null : (
+                    <Link
+                      href={`/${locale}/admin`}
+                      onClick={handleMenuClick}
+                      className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                    >
+                      <Shield className="w-4 h-4 mr-2" />
+                      {t('adminPage')}
+                    </Link>
+                  )}
                   
                   <Link
                     href={`/${locale}/dashboard`}

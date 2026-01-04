@@ -10,12 +10,13 @@ interface AdminAuthGuardProps {
 }
 
 export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps) {
-  const { user, userRole, loading, isInitialized, isSimulating, simulatedUser } = useAuth()
+  const { user, userRole, userPosition, loading, isInitialized, isSimulating, simulatedUser } = useAuth()
   const router = useRouter()
 
   // 시뮬레이션 중일 때는 시뮬레이션된 사용자 정보 사용
   const currentUser = isSimulating && simulatedUser ? simulatedUser : user
   const currentUserRole = isSimulating && simulatedUser ? simulatedUser.role : userRole
+  const currentUserPosition = isSimulating && simulatedUser ? simulatedUser.position : userPosition
 
   // 디버깅을 위한 로깅
   console.log('AdminAuthGuard - 상태:', {
@@ -45,12 +46,20 @@ export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps
       return
     }
     
-    // customer 역할인 경우에만 리다이렉트
+    // customer 역할인 경우 리다이렉트
     if (currentUserRole === 'customer') {
       console.log('AdminAuthGuard: Customer role, redirecting to home')
       router.replace(`/${locale}`)
+      return
     }
-  }, [currentUser, currentUserRole, isInitialized, loading, router, locale])
+    
+    // tour guide나 driver인 경우 리다이렉트
+    if (currentUserPosition && (currentUserPosition.toLowerCase() === 'tour guide' || currentUserPosition.toLowerCase() === 'driver')) {
+      console.log('AdminAuthGuard: Tour guide or driver position, redirecting to guide page')
+      router.replace(`/${locale}/guide`)
+      return
+    }
+  }, [currentUser, currentUserRole, currentUserPosition, isInitialized, loading, router, locale])
 
   // SSR 호환성을 위해 초기 로딩 상태 처리
   const [isClient, setIsClient] = useState(false)
@@ -115,6 +124,25 @@ export default function AdminAuthGuard({ children, locale }: AdminAuthGuardProps
             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
           >
             로그인 페이지로 이동
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // tour guide나 driver인 경우 리다이렉트
+  if (currentUserPosition && (currentUserPosition.toLowerCase() === 'tour guide' || currentUserPosition.toLowerCase() === 'driver')) {
+    console.log('AdminAuthGuard: Tour guide or driver position, redirecting to guide page')
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">접근 권한이 없습니다</h1>
+          <p className="text-gray-600 mb-6">투어 가이드와 드라이버는 관리자 페이지에 접근할 수 없습니다.</p>
+          <button
+            onClick={() => router.push(`/${locale}/guide`)}
+            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
+          >
+            가이드 페이지로 이동
           </button>
         </div>
       </div>

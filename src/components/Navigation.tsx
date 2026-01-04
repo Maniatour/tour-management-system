@@ -20,7 +20,7 @@ const NavigationContent = () => {
   const pathname = usePathname()
   const locale = useLocale()
   const router = useRouter()
-  const { userRole, loading, signOut, authUser, simulatedUser, isSimulating, stopSimulation } = useAuth()
+  const { userRole, userPosition, loading, signOut, authUser, simulatedUser, isSimulating, stopSimulation } = useAuth()
   
   // 시뮬레이션 상태에서 현재 사용자와 역할 결정
   const currentUser = isSimulating && simulatedUser ? simulatedUser : authUser
@@ -190,8 +190,9 @@ const NavigationContent = () => {
                               {t('customerPage')}
                             </Link>
                             
-                            {/* 관리자 페이지 (관리자/매니저/팀원) */}
-                            {currentUserRole && currentUserRole !== 'customer' && (
+                            {/* 관리자 페이지 (관리자/매니저/팀원, 단 tour guide와 driver 제외) */}
+                            {currentUserRole && currentUserRole !== 'customer' && 
+                             !(userPosition && (userPosition.toLowerCase() === 'tour guide' || userPosition.toLowerCase() === 'driver')) && (
                               <Link
                                 href={`/${locale}/admin`}
                                 onClick={handleUserMenuClick}
@@ -447,8 +448,9 @@ const NavigationContent = () => {
                     </>
                   )}
                   
-                  {/* 관리자 페이지 링크 (관리자/매니저/팀원만) */}
-                  {currentUserRole && currentUserRole !== 'customer' && (
+                  {/* 관리자 페이지 링크 (관리자/매니저/팀원만, 단 tour guide와 driver 제외) */}
+                  {currentUserRole && currentUserRole !== 'customer' && 
+                   !(userPosition && (userPosition.toLowerCase() === 'tour guide' || userPosition.toLowerCase() === 'driver')) && (
                     <Link
                       href={`/${locale}/admin`}
                       className="flex items-center text-gray-600 hover:text-gray-900 transition-colors px-2 py-2"

@@ -107,22 +107,50 @@ export function usePushNotification(roomId?: string, customerEmail?: string, lan
       }
 
       // 서버에 구독 정보 저장
-      const { error } = await supabase
+      // 먼저 기존 구독이 있는지 확인
+      const { data: existingSubscription } = await supabase
         .from('push_subscriptions')
-        .upsert({
-          room_id: roomId,
-          customer_email: customerEmail || null,
-          endpoint: subscriptionData.endpoint,
-          p256dh_key: subscriptionData.keys.p256dh,
-          auth_key: subscriptionData.keys.auth,
-          language: language || 'ko',
-          created_at: new Date().toISOString()
-        }, {
-          onConflict: 'endpoint'
-        })
+        .select('id')
+        .eq('endpoint', subscriptionData.endpoint)
+        .maybeSingle()
+
+      let error
+      if (existingSubscription) {
+        // 기존 구독 업데이트
+        const { error: updateError } = await supabase
+          .from('push_subscriptions')
+          .update({
+            room_id: roomId,
+            customer_email: customerEmail || null,
+            p256dh_key: subscriptionData.keys.p256dh,
+            auth_key: subscriptionData.keys.auth,
+            language: language || 'ko'
+          })
+          .eq('endpoint', subscriptionData.endpoint)
+        error = updateError
+      } else {
+        // 새 구독 생성
+        const { error: insertError } = await supabase
+          .from('push_subscriptions')
+          .insert({
+            room_id: roomId,
+            customer_email: customerEmail || null,
+            endpoint: subscriptionData.endpoint,
+            p256dh_key: subscriptionData.keys.p256dh,
+            auth_key: subscriptionData.keys.auth,
+            language: language || 'ko'
+          })
+        error = insertError
+      }
 
       if (error) {
-        console.error('Error saving subscription:', error)
+        console.error('Error saving subscription:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+          fullError: error
+        })
         setIsLoading(false)
         return false
       }
