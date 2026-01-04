@@ -7,7 +7,7 @@ import VoiceCallModal from './VoiceCallModal'
 import VoiceCallUserSelector from './VoiceCallUserSelector'
 import AvatarSelector from './AvatarSelector'
 import PickupHotelPhotoGallery from './PickupHotelPhotoGallery'
-import ReactCountryFlag from 'react-country-flag'
+// ReactCountryFlag는 ChatHeader에서 사용됨
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import ChatRoomShareModal from './ChatRoomShareModal'
@@ -16,42 +16,16 @@ import TourPhotoGallery from './TourPhotoGallery'
 import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
 import { formatTimeWithAMPM } from '@/lib/utils'
 import { usePushNotification } from '@/hooks/usePushNotification'
+import { useChatRoom } from '@/hooks/useChatRoom'
+import { useChatMessages } from '@/hooks/useChatMessages'
+import { useChatParticipants } from '@/hooks/useChatParticipants'
+import type { ChatMessage, ChatRoom, ChatAnnouncement } from '@/types/chat'
+import ChatHeader from './chat/ChatHeader'
+import MessageList from './chat/MessageList'
+import MessageInput from './chat/MessageInput'
+import ChatSidebar from './chat/ChatSidebar'
 
-interface ChatMessage {
-  id: string
-  room_id: string
-  sender_type: 'guide' | 'customer' | 'system'
-  sender_name: string
-  sender_email?: string
-  sender_avatar?: string
-  message: string
-  message_type: 'text' | 'image' | 'file' | 'system'
-  file_url?: string
-  file_name?: string
-  file_size?: number
-  is_read: boolean
-  created_at: string
-}
-
-interface ChatRoom {
-  id: string
-  tour_id: string
-  room_name: string
-  room_code: string
-  description?: string
-  is_active: boolean
-  created_by: string
-  created_at: string
-}
-
-interface ChatAnnouncement {
-  id: string
-  title: string
-  content: string
-  language: string
-  is_active: boolean
-  created_at: string
-}
+// 타입은 @/types/chat에서 import
 
 interface ChatBan {
   id: string
@@ -142,17 +116,54 @@ export default function TourChatRoom({
   // customerLanguage prop을 사용하여 locale 결정 (next-intl 컨텍스트가 없을 수 있으므로)
   const locale: 'ko' | 'en' = customerLanguage === 'ko' ? 'ko' : 'en'
   
-  const [room, setRoom] = useState<ChatRoom | null>(null)
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [newMessage, setNewMessage] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [sending, setSending] = useState(false)
+  // 커스텀 훅 사용
   const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>(customerLanguage)
   
   // customerLanguage prop이 변경되면 selectedLanguage도 업데이트
   useEffect(() => {
     setSelectedLanguage(customerLanguage)
   }, [customerLanguage])
+  
+  const { room, setRoom, loading, setLoading, roomRef, loadRoom: loadRoomFromHook, loadRoomByCode: loadRoomByCodeFromHook } = useChatRoom({
+    tourId: tourId || undefined,
+    isPublicView,
+    roomCode: roomCode || undefined
+  })
+  
+  const {
+    messages,
+    setMessages,
+    sending,
+    setSending,
+    loadMessages,
+    scrollToBottom,
+    messagesEndRef,
+    messagesRef
+  } = useChatMessages({
+    roomId: room?.id || null,
+    isPublicView,
+    customerName: customerName || undefined,
+    guideEmail: guideEmail || undefined,
+    selectedLanguage: selectedLanguage === 'ko' ? 'ko' : 'en'
+  })
+  
+  const userId = isPublicView ? (customerName || '고객') : (guideEmail || '')
+  const userName = isPublicView ? (customerName || '고객') : '가이드'
+  
+  const {
+    onlineParticipants,
+    setOnlineParticipants,
+    loadChatParticipants
+  } = useChatParticipants({
+    roomId: room?.id || null,
+    isPublicView,
+    userId,
+    userName,
+    guideEmail,
+    messagesRef
+  })
+  
+  const [newMessage, setNewMessage] = useState('')
   
   // const [participantCount, setParticipantCount] = useState(0) // 사용되지 않음
   const [showShareModal, setShowShareModal] = useState(false)
@@ -176,16 +187,7 @@ export default function TourChatRoom({
   }>({})
   const [internalMobileMenuOpen, setInternalMobileMenuOpen] = useState(true)
   
-  // 채팅방 참여자 목록 (관리자/가이드/드라이버/어시스턴트만 볼 수 있음)
-  const [onlineParticipants, setOnlineParticipants] = useState<Map<string, {
-    id: string
-    name: string
-    type: 'guide' | 'customer'
-    email?: string
-    lastSeen: Date
-  }>>(new Map())
   const [showParticipantsList, setShowParticipantsList] = useState(false)
-  const presenceChannelRef = useRef<any>(null)
   
   // 고객용 아바타 선택
   const [selectedAvatar, setSelectedAvatar] = useState<string>('')
@@ -199,12 +201,11 @@ export default function TourChatRoom({
     isLoading: isPushLoading,
     subscribe: subscribeToPush,
     unsubscribe: unsubscribeFromPush
-  } = usePushNotification(room?.id, undefined, selectedLanguage)
+  } = usePushNotification(room?.id, undefined, selectedLanguage === 'ko' ? 'ko' : 'en')
   
   // 이미지 업로드
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [gettingLocation, setGettingLocation] = useState(false)
   const [showLocationShareModal, setShowLocationShareModal] = useState(false)
   const [pendingLocation, setPendingLocation] = useState<{
@@ -317,11 +318,6 @@ export default function TourChatRoom({
   const [announcements, setAnnouncements] = useState<ChatAnnouncement[]>([])
   const [isAnnouncementsOpen, setIsAnnouncementsOpen] = useState(false)
   const [togglingActive, setTogglingActive] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  
-  // 음성 통화
-  const userId = isPublicView ? (customerName || 'customer') : (guideEmail || 'guide')
-  const userName = isPublicView ? (customerName || '고객') : '가이드'
   const [showCallUserSelector, setShowCallUserSelector] = useState(false)
   const [selectedCallTarget, setSelectedCallTarget] = useState<{id: string, name: string} | null>(null)
   
@@ -344,8 +340,8 @@ export default function TourChatRoom({
           userMap.set(userKey, {
             id: userKey,
             name: message.sender_name,
-            type: message.sender_type,
-            email: message.sender_email
+            type: message.sender_type === 'system' ? 'guide' : message.sender_type,
+            email: message.sender_email || undefined
           })
         }
       }
@@ -362,7 +358,7 @@ export default function TourChatRoom({
               id: participant.email || participant.id,
               name: participant.name,
               type: participant.type,
-              email: participant.email
+              email: participant.email || undefined
             })
           }
         }
@@ -375,7 +371,7 @@ export default function TourChatRoom({
               id: participant.id,
               name: participant.name,
               type: participant.type,
-              email: participant.email
+              email: participant.email || undefined
             })
           }
         }
@@ -402,8 +398,8 @@ export default function TourChatRoom({
     userId: userId,
     userName: userName,
     isPublicView: isPublicView,
-    targetUserId: selectedCallTarget?.id,
-    targetUserName: selectedCallTarget?.name
+    targetUserId: selectedCallTarget?.id || undefined,
+    targetUserName: selectedCallTarget?.name || undefined
   })
   
   // 통화 시작 (사용자 선택 후)
@@ -483,7 +479,7 @@ export default function TourChatRoom({
   // }
 
   // 픽업 스케줄 로드
-  const loadPickupSchedule = async () => {
+  const loadPickupSchedule = useCallback(async () => {
     try {
       if (!tourId) {
         console.log('No tourId provided for pickup schedule')
@@ -569,9 +565,9 @@ export default function TourChatRoom({
       }
 
       // 예약 데이터에 고객 정보 병합
-      const reservationsWithCustomers = reservationsData?.map((reservation: Reservation) => ({
+      const reservationsWithCustomers: Array<Reservation & { customers?: Customer }> = reservationsData?.map((reservation: Reservation) => ({
         ...reservation,
-        customers: customersData.find((customer: Customer) => customer.id === reservation.customer_id)
+        customers: customersData.find((customer: Customer) => customer.id === reservation.customer_id) || undefined
       })) || []
 
       console.log('Reservations for pickup schedule:', reservationsWithCustomers)
@@ -598,14 +594,14 @@ export default function TourChatRoom({
       }
 
       // 픽업 스케줄 데이터 생성 (호텔별로 그룹화)
-      const groupedByHotel = reservationsWithCustomers.reduce((acc: Record<string, {
+      const groupedByHotel = reservationsWithCustomers.reduce<Record<string, {
         time: string;
         date: string;
         hotel: string;
         location: string;
         people: number;
         customers: Array<{ name: string; people: number }>;
-      }>, reservation: Reservation & { customers?: Customer }) => {
+      }>>((acc, reservation) => {
         const hotel = pickupHotels.find(h => h.id === reservation.pickup_hotel)
         if (!hotel) {
           // 호텔 정보가 없으면 기본값 사용
@@ -668,23 +664,20 @@ export default function TourChatRoom({
           people: reservation.total_people || 0
         })
         return acc
-      }, {} as Record<string, {
+      }, {})
+
+      const schedule: Array<{
         time: string;
         date: string;
         hotel: string;
         location: string;
         people: number;
-        customers: Array<{ name: string; people: number }>;
-      }>)
-
-      const schedule = Object.values(groupedByHotel)
-        .sort((a, b) => a.time.localeCompare(b.time)) as Array<{
-          time: string;
-          date: string;
-          hotel: string;
-          location: string;
-          people: number;
-        }>
+      }> = Object.values(groupedByHotel)
+        .sort((a, b) => {
+          if (!a || !b) return 0
+          return a.time.localeCompare(b.time)
+        })
+        .filter((item): item is { time: string; date: string; hotel: string; location: string; people: number } => item !== undefined)
 
       console.log('Generated pickup schedule:', schedule)
       console.log('Final pickup schedule array length:', schedule.length)
@@ -722,191 +715,18 @@ export default function TourChatRoom({
       // 오류가 발생해도 빈 배열로 설정하여 무한 로딩 방지
       setPickupSchedule([])
     }
-  }
-
-  // chat_participants 테이블에서 참여자 목록 로드
-  const loadChatParticipants = useCallback(async (roomId: string) => {
-    try {
-      const { data: participants, error } = await supabase
-        .from('chat_participants')
-        .select('participant_id, participant_name, participant_type, is_active')
-        .eq('room_id', roomId)
-        .eq('is_active', true)
-
-      if (error) {
-        console.error('Error loading chat participants:', error)
-        return
-      }
-
-      if (!participants || participants.length === 0) {
-        return
-      }
-
-      // 참여자 목록을 Map에 추가 (Presence와 병합)
-      // chat_participants의 모든 참여자를 기본으로 설정하고, Presence 정보로 업데이트
-      setOnlineParticipants(prev => {
-        const updated = new Map<string, {
-          id: string
-          name: string
-          type: 'guide' | 'customer'
-          email?: string
-          lastSeen: Date
-        }>()
-        
-        // 먼저 chat_participants의 모든 참여자를 추가
-        participants.forEach(participant => {
-          const key = participant.participant_id
-          updated.set(key, {
-            id: key,
-            name: participant.participant_name || key,
-            type: participant.participant_type === 'customer' ? 'customer' : 'guide',
-            email: participant.participant_type === 'guide' ? key : undefined,
-            lastSeen: new Date()
-          })
-        })
-        
-        // 기존 Presence 정보가 있으면 유지 (온라인 상태 표시를 위해)
-        prev.forEach((value, key) => {
-          if (updated.has(key)) {
-            // chat_participants에 있는 참여자는 Presence 정보로 업데이트
-            const existing = updated.get(key)!
-            updated.set(key, {
-              ...existing,
-              lastSeen: value.lastSeen
-            })
-          } else {
-            // chat_participants에 없지만 Presence에 있는 참여자도 추가 (메시지를 보낸 사람일 수 있음)
-            updated.set(key, value)
-          }
-        })
-        
-        return updated
-      })
-    } catch (error) {
-      console.error('Error in loadChatParticipants:', error)
-    }
-  }, [])
-
-  // Supabase Realtime Presence를 사용하여 채팅방 참여자 추적
+  }, [tourId, tourDate, isPublicView])
+  
+  // loadPickupSchedule을 ref에 저장
   useEffect(() => {
-    if (!room?.id || isPublicView) return // 고객은 참여자 목록을 볼 수 없음
+    loadPickupScheduleRef.current = loadPickupSchedule
+  }, [loadPickupSchedule])
 
-    // chat_participants 테이블에서 참여자 목록 로드
-    loadChatParticipants(room.id)
-
-    const channelName = `chat-presence-${room.id}`
-    const channel = supabase.channel(channelName, {
-      config: {
-        presence: {
-          key: userId, // 사용자 ID (가이드 이메일 또는 고객 이름)
-        }
-      }
-    })
-
-      // 현재 사용자의 presence 설정
-      channel
-        .on('presence', { event: 'sync' }, () => {
-          const state = channel.presenceState()
-          
-          // 기존 참여자 목록을 유지하면서 Presence에서 온라인 참여자 추가/업데이트
-          setOnlineParticipants(prev => {
-            const updated = new Map(prev)
-
-            // Presence state에서 참여자 정보 추출
-            Object.entries(state).forEach(([key, presences]) => {
-              if (Array.isArray(presences) && presences.length > 0) {
-                const presence = presences[0] as any
-                // 현재 사용자는 제외
-                if (presence && presence.userId !== userId) {
-                  // 메시지에서 사용자 정보 찾기
-                  const userMessage = messages.find(m => 
-                    (presence.userId === m.sender_email) || 
-                    (presence.userId === m.sender_name)
-                  )
-                  
-                  if (userMessage) {
-                    updated.set(presence.userId, {
-                      id: presence.userId,
-                      name: userMessage.sender_name,
-                      type: userMessage.sender_type,
-                      email: userMessage.sender_email,
-                      lastSeen: new Date()
-                    })
-                  } else if (presence.userName) {
-                    // 메시지에 없는 경우 presence 데이터에서 직접 가져오기
-                    updated.set(presence.userId, {
-                      id: presence.userId,
-                      name: presence.userName || presence.userId,
-                      type: presence.userType || 'guide',
-                      email: presence.userEmail,
-                      lastSeen: new Date()
-                    })
-                  }
-                }
-              }
-            })
-
-            return updated
-          })
-        })
-      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-        console.log('User joined:', key, newPresences)
-        // 새 참여자 추가
-        if (Array.isArray(newPresences) && newPresences.length > 0) {
-          const presence = newPresences[0] as any
-          if (presence && presence.userId !== userId) {
-            setOnlineParticipants(prev => {
-              const updated = new Map(prev)
-              const userMessage = messages.find(m => 
-                (presence.userId === m.sender_email) || 
-                (presence.userId === m.sender_name)
-              )
-              
-              updated.set(presence.userId, {
-                id: presence.userId,
-                name: userMessage?.sender_name || presence.userName || presence.userId,
-                type: userMessage?.sender_type || presence.userType || 'guide',
-                email: userMessage?.sender_email || presence.userEmail,
-                lastSeen: new Date()
-              })
-              return updated
-            })
-          }
-        }
-      })
-      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-        console.log('User left:', key, leftPresences)
-        // 참여자를 삭제하지 않고 유지 (chat_participants에 등록된 참여자는 계속 표시)
-        // 단지 온라인 상태만 업데이트
-        setOnlineParticipants(prev => {
-          const updated = new Map(prev)
-          // Presence에서 나간 참여자는 삭제하지 않고 유지
-          // chat_participants에 등록된 참여자는 계속 표시되어야 함
-          return updated
-        })
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          // 현재 사용자의 presence 전송
-          await channel.track({
-            userId: userId,
-            userName: userName,
-            userType: isPublicView ? 'customer' : 'guide',
-            userEmail: isPublicView ? undefined : guideEmail,
-            onlineAt: new Date().toISOString()
-          })
-        }
-      })
-
-    presenceChannelRef.current = channel
-
-    return () => {
-      if (presenceChannelRef.current) {
-        presenceChannelRef.current.unsubscribe()
-        presenceChannelRef.current = null
-      }
-    }
-  }, [room?.id, userId, userName, isPublicView, guideEmail, messages, loadChatParticipants])
+  // loadChatParticipants와 Presence 채널은 useChatParticipants 훅에서 처리됨
+  // ref로 접근하기 위해 저장
+  useEffect(() => {
+    loadChatParticipantsRef.current = loadChatParticipants
+  }, [loadChatParticipants])
 
   // 팀 정보 로드 (가이드, 어시스턴트, 드라이버)
   const loadTeamInfo = useCallback(async () => {
@@ -918,7 +738,7 @@ export default function TourChatRoom({
         .from('tours')
         .select('tour_guide_id, assistant_id, tour_car_id')
         .eq('id', tourId)
-        .single()
+        .single<{ tour_guide_id: string | null; assistant_id: string | null; tour_car_id: string | null }>()
 
       if (tourError || !tour) {
         console.error('Error loading tour for team info:', tourError)
@@ -937,7 +757,7 @@ export default function TourChatRoom({
           .from('team')
           .select('name_ko, name_en, phone')
           .eq('email', tour.tour_guide_id)
-          .maybeSingle()
+          .maybeSingle<{ name_ko: string | null; name_en: string | null; phone: string | null }>()
 
         if (guideData) {
           teamData.guide = {
@@ -954,7 +774,7 @@ export default function TourChatRoom({
           .from('team')
           .select('name_ko, name_en, phone')
           .eq('email', tour.assistant_id)
-          .maybeSingle()
+          .maybeSingle<{ name_ko: string | null; name_en: string | null; phone: string | null }>()
 
         if (assistantData) {
           teamData.assistant = {
@@ -971,7 +791,7 @@ export default function TourChatRoom({
           .from('vehicles')
           .select('driver_name, driver_phone')
           .eq('id', tour.tour_car_id)
-          .maybeSingle()
+          .maybeSingle<{ driver_name: string | null; driver_phone: string | null }>()
 
         if (vehicleData) {
           teamData.driver = {
@@ -986,14 +806,13 @@ export default function TourChatRoom({
       console.error('Error loading team info:', error)
     }
   }, [tourId])
+  
+  // loadTeamInfo를 ref에 저장
+  useEffect(() => {
+    loadTeamInfoRef.current = loadTeamInfo
+  }, [loadTeamInfo])
 
-  const scrollToBottom = (instant = false) => {
-    if (instant) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
-    } else {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
-  }
+  // scrollToBottom은 useChatMessages 훅에서 제공됨
 
   const getLanguageDisplayName = (langCode: SupportedLanguage) => {
     const lang = SUPPORTED_LANGUAGES.find(l => l.code === langCode)
@@ -1019,113 +838,39 @@ export default function TourChatRoom({
     }
   }
 
-  const loadMessages = async (roomId: string) => {
-    try {
-      // 최근 200개 메시지만 로드하여 WebSocket 페이로드 크기 제한
-      const { data, error } = await supabase
-        .from('chat_messages')
-        .select('*')
-        .eq('room_id', roomId)
-        .order('created_at', { ascending: false })
-        .limit(200)
+  // loadMessages는 useChatMessages 훅에서 제공됨
+  // ref로 접근하기 위해 저장
+  const loadMessagesRef = useRef<((roomId: string) => Promise<void>) | null>(null)
+  
+  useEffect(() => {
+    loadMessagesRef.current = loadMessages
+  }, [loadMessages])
 
-      if (error) throw error
-      // 시간순으로 정렬하여 표시
-      const sortedMessages = (data || []).reverse()
-      setMessages(sortedMessages)
-    } catch (error) {
-      console.error('Error loading messages:', error)
-    }
-  }
-
-  const loadRoomByCode = async (code: string) => {
-    if (!code) {
-      setLoading(false)
-      return
-    }
-    
-    try {
-      setLoading(true)
-      const { data: rooms, error } = await supabase
-        .from('chat_rooms')
-        .select('*')
-        .eq('room_code', code)
-        .eq('is_active', true)
-        .limit(1)
-
-      if (error) {
-        console.error('Supabase error:', error)
-        throw error
-      }
-      
-      const room = rooms?.[0] as ChatRoom | undefined
-      setRoom(room || null)
-      if (room) {
-        // soft-ban check on mount (오류가 발생해도 계속 진행)
-        try {
-          const banned = await checkBanned(room.id)
-          if (banned) {
-            setRoom({ ...room, is_active: false })
-          }
-        } catch (banError) {
-          console.warn('Ban check failed, continuing:', banError)
-        }
-        await loadMessages(room.id)
-        
-        // 고객이 채팅방에 입장할 때 chat_participants에 추가
-        if (isPublicView && customerName && room.id) {
-          try {
-            // 이미 등록되어 있는지 확인
-            const { data: existingParticipant } = await supabase
-              .from('chat_participants')
-              .select('id')
-              .eq('room_id', room.id)
-              .eq('participant_type', 'customer')
-              .eq('participant_id', customerName)
-              .eq('is_active', true)
-              .maybeSingle()
-
-            // 등록되어 있지 않으면 추가
-            if (!existingParticipant) {
-              await supabase
-                .from('chat_participants')
-                .insert({
-                  room_id: room.id,
-                  participant_type: 'customer',
-                  participant_id: customerName,
-                  participant_name: customerName,
-                  is_active: true
-                })
-            }
-          } catch (error) {
-            console.error('Error adding customer to participants:', error)
-          }
-        }
-        
-        // 투어에 배정된 팀원들을 자동으로 참여시키기 (고객 뷰가 아니고 tourId가 있는 경우)
-        if (room.tour_id && !isPublicView && autoAddTeamMembersFnRef.current) {
-          await autoAddTeamMembersFnRef.current(room.id, room.tour_id)
-        }
-        
-        // chat_participants에서 참여자 목록 로드 (모든 뷰에서 로드)
-        loadChatParticipants(room.id)
-        
-        // 고객용 채팅에서 픽업 스케줄 및 팀 정보 로드
-        if (isPublicView && room.tour_id) {
-          loadPickupSchedule()
-          loadTeamInfo()
-        }
-      }
-    } catch (error) {
-      console.error('Error loading room by code:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  // loadRoomByCode는 useChatRoom 훅에서 제공됨
 
   // 투어에 배정된 팀원들을 채팅방에 자동 참여시키기 (배정 변경 시 동기화)
   const autoAddTeamMembersRef = useRef<{ [key: string]: boolean }>({})
   const autoAddTeamMembersFnRef = useRef<((roomId: string, tourIdParam?: string) => Promise<void>) | null>(null)
+  
+  // 함수들을 ref로 저장하여 의존성 배열 문제 해결
+  // loadMessagesRef는 위에서 이미 정의됨
+  const loadAnnouncementsRef = useRef<((roomId: string) => Promise<void>) | null>(null)
+  const loadChatParticipantsRef = useRef<((roomId: string) => Promise<void>) | null>(null)
+  const loadPickupScheduleRef = useRef<(() => Promise<void>) | null>(null)
+  const loadTeamInfoRef = useRef<(() => Promise<void>) | null>(null)
+  const loadRoomRef = useRef<(() => Promise<void>) | null>(null)
+  
+  // messagesRef와 roomRef는 각각 useChatMessages와 useChatRoom 훅에서 제공됨
+  
+  // guideEmail과 customerName을 ref로 저장
+  const guideEmailRef = useRef<string | undefined>(guideEmail)
+  const customerNameRef = useRef<string | undefined>(customerName)
+  useEffect(() => {
+    guideEmailRef.current = guideEmail
+  }, [guideEmail])
+  useEffect(() => {
+    customerNameRef.current = customerName
+  }, [customerName])
   const autoAddTeamMembers = useCallback(async (roomId: string, tourIdParam?: string) => {
     try {
       const targetTourId = tourIdParam || tourId
@@ -1143,7 +888,7 @@ export default function TourChatRoom({
         .from('tours')
         .select('tour_guide_id, assistant_id, tour_car_id')
         .eq('id', targetTourId)
-        .single()
+        .single<{ tour_guide_id: string | null; assistant_id: string | null; tour_car_id: string | null }>()
 
       if (tourError || !tour) {
         console.error('Error loading tour for auto-add team members:', tourError)
@@ -1169,7 +914,7 @@ export default function TourChatRoom({
           .from('vehicles')
           .select('driver_name, driver_email')
           .eq('id', tour.tour_car_id)
-          .maybeSingle()
+          .maybeSingle<{ driver_name: string | null; driver_email: string | null }>()
 
         if (vehicleData && vehicleData.driver_name) {
           const driverId = vehicleData.driver_email || `driver_${tour.tour_car_id}`
@@ -1189,7 +934,7 @@ export default function TourChatRoom({
         return
       }
 
-      const existingParticipantsList = existingParticipants || []
+      const existingParticipantsList = (existingParticipants || []) as Array<{ id: string; participant_id: string; participant_type: string }>
       const existingParticipantIds = new Set(
         existingParticipantsList.map(p => p.participant_id)
       )
@@ -1209,7 +954,7 @@ export default function TourChatRoom({
           .from('team')
           .select('email, name_ko, name_en')
           .eq('email', tour.tour_guide_id)
-          .maybeSingle()
+          .maybeSingle<{ email: string; name_ko: string | null; name_en: string | null }>()
 
         if (guideData) {
           participantsToAdd.push({
@@ -1228,7 +973,7 @@ export default function TourChatRoom({
           .from('team')
           .select('email, name_ko, name_en')
           .eq('email', tour.assistant_id)
-          .maybeSingle()
+          .maybeSingle<{ email: string; name_ko: string | null; name_en: string | null }>()
 
         if (assistantData) {
           participantsToAdd.push({
@@ -1247,7 +992,7 @@ export default function TourChatRoom({
           .from('vehicles')
           .select('driver_name, driver_email')
           .eq('id', tour.tour_car_id)
-          .maybeSingle()
+          .maybeSingle<{ driver_name: string | null; driver_email: string | null }>()
 
         if (vehicleData && vehicleData.driver_name) {
           const driverId = vehicleData.driver_email || `driver_${tour.tour_car_id}`
@@ -1276,8 +1021,8 @@ export default function TourChatRoom({
 
       // 배정이 변경된 사람들 처리
       if (participantsToDeactivate.length > 0) {
-        const { error: deactivateError } = await supabase
-          .from('chat_participants')
+        const { error: deactivateError } = await (supabase
+          .from('chat_participants') as any)
           .update({ is_active: false })
           .in('id', participantsToDeactivate)
 
@@ -1290,8 +1035,8 @@ export default function TourChatRoom({
 
       // 새로 배정된 사람 추가
       if (participantsToAdd.length > 0) {
-        const { error: insertError } = await supabase
-          .from('chat_participants')
+        const { error: insertError } = await (supabase
+          .from('chat_participants') as any)
           .insert(participantsToAdd)
 
         if (insertError) {
@@ -1314,53 +1059,48 @@ export default function TourChatRoom({
     autoAddTeamMembersFnRef.current = autoAddTeamMembers
   }, [autoAddTeamMembers])
 
-  const loadRoom = useCallback(async () => {
-    if (!tourId) {
-      setLoading(false)
-      return
-    }
-    
+  // 공지사항 로드 (loadRoom보다 먼저 정의되어야 함)
+  const loadAnnouncements = useCallback(async (roomId: string) => {
     try {
-      // 기존 채팅방 찾기 (데이터베이스 트리거에 의해 자동 생성됨)
-      const { data: existingRooms, error: findError } = await supabase
-        .from('chat_rooms')
+      const { data: roomAnnouncements } = await supabase
+        .from('chat_room_announcements')
+        .select('*')
+        .eq('room_id', roomId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+
+      const { data: tourAnnouncements } = await supabase
+        .from('tour_announcements')
         .select('*')
         .eq('tour_id', tourId)
         .eq('is_active', true)
-        .limit(1)
+        .order('created_at', { ascending: false })
 
-      if (findError) throw findError
+      const merged = [
+        ...(roomAnnouncements || []),
+        ...(tourAnnouncements || [])
+      ] as ChatAnnouncement[]
 
-      const existingRoom = existingRooms?.[0] as ChatRoom | undefined
-
-      if (existingRoom) {
-        setRoom(existingRoom)
-        await loadMessages(existingRoom.id)
-        await loadAnnouncements(existingRoom.id)
-        // 투어에 배정된 팀원들을 자동으로 참여시키기
-        if (autoAddTeamMembersFnRef.current) {
-          await autoAddTeamMembersFnRef.current(existingRoom.id, tourId)
-        }
-        // chat_participants에서 참여자 목록 로드 (관리자/가이드 뷰만)
-        if (!isPublicView) {
-          loadChatParticipants(existingRoom.id)
-        }
-        // 픽업 스케줄은 별도로 로드
-        loadPickupSchedule()
-      } else {
-        setRoom(null)
-        // room이 없어도 픽업 스케줄은 로드할 수 있음
-        loadPickupSchedule()
-      }
+      setAnnouncements(merged)
     } catch (error) {
-      console.error('Error loading room:', error)
-    } finally {
-      setLoading(false)
+      console.error('Error loading announcements:', error)
     }
   }, [tourId])
+  
+  // loadAnnouncements를 ref에 저장
+  useEffect(() => {
+    loadAnnouncementsRef.current = loadAnnouncements
+  }, [loadAnnouncements])
+
+  // loadRoom은 useChatRoom 훅에서 제공됨
+  
+  // loadRoom을 ref에 저장
+  useEffect(() => {
+    loadRoomRef.current = loadRoomFromHook
+  }, [loadRoomFromHook])
 
   // 초기화 플래그를 ref로 관리하여 무한 루핑 방지
-  const initializationRef = useRef<{ tourId?: string; isPublicView?: boolean; roomCode?: string }>({})
+  const initializationRef = useRef<{ tourId?: string; isPublicView?: boolean; roomCode?: string; initialized?: boolean }>({})
   
   // 채팅방 로드 또는 생성
   useEffect(() => {
@@ -1370,22 +1110,38 @@ export default function TourChatRoom({
     const currentKey = `${tourId}_${isPublicView}_${roomCode}`
     const lastKey = `${initializationRef.current.tourId}_${initializationRef.current.isPublicView}_${initializationRef.current.roomCode}`
     
-    if (currentKey === lastKey && initializationRef.current.tourId !== undefined) {
+    if (currentKey === lastKey && initializationRef.current.initialized) {
       // 이미 초기화되었으므로 스킵
       return
     }
     
-    // 초기화 플래그 업데이트
-    initializationRef.current = { tourId, isPublicView, roomCode }
+    // 초기화 플래그 업데이트 (같은 키면 업데이트하지 않음)
+    if (currentKey !== lastKey) {
+      initializationRef.current = { tourId, isPublicView, roomCode, initialized: false }
+    } else if (initializationRef.current.initialized) {
+      return // 이미 초기화되었으므로 스킵
+    }
     
     const initializeChat = async () => {
       if (!isMounted) return
       
-      if (isPublicView && roomCode) {
-        await loadRoomByCode(roomCode)
-      } else if (!isPublicView && tourId) {
-        await loadRoom()
-      } else if (isPublicView && !roomCode) {
+      try {
+        if (isPublicView && roomCode) {
+          await loadRoomByCodeFromHook(roomCode)
+        } else if (!isPublicView && tourId) {
+          await loadRoomFromHook()
+        } else if (isPublicView && !roomCode) {
+          if (isMounted) {
+            setLoading(false)
+          }
+        }
+        
+        // 초기화 완료 표시
+        if (isMounted) {
+          initializationRef.current.initialized = true
+        }
+      } catch (error) {
+        console.error('Error initializing chat:', error)
         if (isMounted) {
           setLoading(false)
         }
@@ -1397,71 +1153,24 @@ export default function TourChatRoom({
     return () => {
       isMounted = false
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tourId, isPublicView, roomCode]) // loadRoom은 useCallback으로 메모이제이션되어 있으므로 의존성에서 제외
+  }, [tourId, isPublicView, roomCode, loadRoomByCodeFromHook, loadRoomFromHook])
 
-  // 실시간 메시지 구독
-  useEffect(() => {
-    if (!room?.id) return
-
-    const channel = supabase
-      .channel(`chat_${room.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `room_id=eq.${room.id}`
-        },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (payload: { new: any }) => {
-          const newMessage = payload.new as ChatMessage
-          
-          // 자신이 보낸 메시지는 Realtime 구독에서 무시 (낙관적 업데이트로 이미 추가됨)
-          if (isPublicView) {
-            // 고객용 공개 페이지: sender_name과 sender_type으로 확인
-            if (newMessage.sender_type === 'customer' && 
-                newMessage.sender_name === (customerName || '고객')) {
-              return // 자신이 보낸 메시지는 무시
-            }
-          } else {
-            // 가이드/관리자 페이지: sender_email로 확인
-            if (newMessage.sender_type === 'guide' && 
-                newMessage.sender_email === guideEmail) {
-              return // 자신이 보낸 메시지는 무시
-            }
-          }
-          
-          setMessages(prev => {
-            // 중복 메시지 방지: 이미 존재하는 메시지 ID는 추가하지 않음
-            const exists = prev.some(m => m.id === newMessage.id)
-            if (exists) {
-              return prev
-            }
-            // 메시지 배열 크기 제한 (최대 500개) - WebSocket 페이로드 크기 제한
-            const updated = [...prev, newMessage]
-            if (updated.length > 500) {
-              // 오래된 메시지 제거 (시간순으로 정렬 후 오래된 것부터 제거)
-              return updated.sort((a, b) => 
-                new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-              ).slice(-500)
-            }
-            return updated
-          })
-      scrollToBottom()
-    }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-  }
-  }, [room?.id, isPublicView, customerName, guideEmail])
+  // 실시간 메시지 구독 및 메시지 로드는 useChatMessages 훅에서 처리됨
 
   // 투어 배정 변경 감지 및 동기화
+  const assignmentChannelRoomIdRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!room?.id || !tourId || isPublicView) return
+    if (!room?.id || !tourId || isPublicView) {
+      assignmentChannelRoomIdRef.current = null
+      return
+    }
+    
+    // room.id가 실제로 변경되었는지 확인
+    if (assignmentChannelRoomIdRef.current === room.id) {
+      return // 같은 room이면 재구독하지 않음
+    }
+    
+    assignmentChannelRoomIdRef.current = room.id
 
     const channel = supabase
       .channel(`tour_${tourId}_assignments`)
@@ -1487,34 +1196,6 @@ export default function TourChatRoom({
       supabase.removeChannel(channel)
     }
   }, [room?.id, tourId, isPublicView])
-
-  // 공지사항 로드 (모달 전용)
-  const loadAnnouncements = async (roomId: string) => {
-    try {
-      const { data: roomAnnouncements } = await supabase
-        .from('chat_room_announcements')
-        .select('*')
-        .eq('room_id', roomId)
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-
-      const { data: tourAnnouncements } = await supabase
-        .from('tour_announcements')
-        .select('*')
-        .eq('tour_id', tourId)
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-
-      const merged = [
-        ...(roomAnnouncements || []),
-        ...(tourAnnouncements || [])
-      ] as ChatAnnouncement[]
-
-      setAnnouncements(merged)
-    } catch (error) {
-      console.error('Error loading announcements:', error)
-    }
-  }
 
   // 메시지 삭제 함수
   const deleteMessage = async (messageId: string) => {
@@ -1601,21 +1282,21 @@ export default function TourChatRoom({
     setSending(true)
     
     // 즉시 UI에 메시지 표시 (낙관적 업데이트)
-    const tempMessage: ChatMessage = {
+    const tempMessage = {
       id: `temp_${Date.now()}`,
       room_id: room.id,
       sender_type: isPublicView ? 'customer' : 'guide',
       sender_name: isPublicView ? (customerName || '고객') : '가이드',
-      sender_email: isPublicView ? undefined : guideEmail,
+      sender_email: isPublicView ? undefined : (guideEmail || undefined),
       sender_avatar: isPublicView ? selectedAvatar : undefined,
       message: '',
-      message_type: 'image',
+      message_type: 'image' as const,
       file_url: imageUrl,
       file_name: fileName,
       file_size: fileSize,
       is_read: false,
       created_at: new Date().toISOString()
-    }
+    } as ChatMessage
     
     setMessages(prev => [...prev, tempMessage])
     scrollToBottom()
@@ -1665,12 +1346,12 @@ export default function TourChatRoom({
         data = result.message
       } else {
         const result = await (supabase
-          .from('chat_messages') as unknown as SupabaseInsertBuilder)
+          .from('chat_messages') as any)
           .insert({
             room_id: room.id,
             sender_type: 'guide',
             sender_name: '가이드',
-            sender_email: guideEmail,
+            sender_email: guideEmail || null,
             message: '',
             message_type: 'image',
             file_url: imageUrl,
@@ -1713,18 +1394,18 @@ export default function TourChatRoom({
     setSending(true)
     
     // 즉시 UI에 메시지 표시 (낙관적 업데이트)
-    const tempMessage: ChatMessage = {
+    const tempMessage = {
       id: `temp_${Date.now()}`,
       room_id: room.id,
       sender_type: isPublicView ? 'customer' : 'guide',
       sender_name: isPublicView ? (customerName || '고객') : '가이드',
-      sender_email: isPublicView ? undefined : guideEmail,
+      sender_email: isPublicView ? undefined : (guideEmail || undefined),
       sender_avatar: isPublicView ? selectedAvatar : undefined,
       message: messageText,
-      message_type: 'text',
+      message_type: 'text' as const,
       is_read: false,
       created_at: new Date().toISOString()
-    }
+    } as ChatMessage
     
     setMessages(prev => [...prev, tempMessage])
     setNewMessage('')
@@ -1856,18 +1537,18 @@ export default function TourChatRoom({
     setSending(true)
     
     // 즉시 UI에 메시지 표시 (낙관적 업데이트)
-    const tempMessage: ChatMessage = {
+    const tempMessage = {
       id: `temp_${Date.now()}`,
       room_id: room.id,
       sender_type: isPublicView ? 'customer' : 'guide',
       sender_name: isPublicView ? (customerName || '고객') : '가이드',
-      sender_email: isPublicView ? undefined : guideEmail,
+      sender_email: isPublicView ? undefined : (guideEmail || undefined),
       sender_avatar: isPublicView ? selectedAvatar : undefined,
       message: messageText,
-      message_type: 'location',
+      message_type: 'location' as const,
       is_read: false,
       created_at: new Date().toISOString()
-    }
+    } as ChatMessage
     
     setMessages(prev => [...prev, tempMessage])
     scrollToBottom()
@@ -1917,12 +1598,12 @@ export default function TourChatRoom({
       } else {
         // 가이드/관리자는 직접 Supabase 사용
         const result = await (supabase
-          .from('chat_messages') as unknown as SupabaseInsertBuilder)
+          .from('chat_messages') as any)
           .insert({
             room_id: room.id,
             sender_type: 'guide',
             sender_name: '가이드',
-            sender_email: guideEmail,
+            sender_email: guideEmail || null,
             message: messageText,
             message_type: 'location'
           })
@@ -2178,776 +1859,91 @@ export default function TourChatRoom({
       style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
     >
       {/* 채팅방 헤더 */}
-        <div className="flex-shrink-0 px-2 lg:px-3 py-2 border-b bg-white bg-opacity-90 backdrop-blur-sm shadow-sm relative">
-          {!isPublicView && (
-          <div className="mb-1">
-            <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 lg:space-x-3 flex-1 min-w-0">
-              </div>
-            </div>
-          </div>
-        )}
-        
-
-        {/* 버튼 영역 */}
-        <div className={`mt-1 flex items-center gap-1 lg:gap-2 ${isMobileMenuOpen ? 'justify-between' : 'justify-center'} lg:justify-between`}>
-          {/* 모바일: 접었을 때 아이콘만 표시 */}
-          <div className={`lg:hidden flex items-center gap-2 flex-wrap justify-center flex-1 ${isMobileMenuOpen ? 'hidden' : ''}`}>
-            {isPublicView && (
-              <>
-                <button
-                  onClick={() => setIsAnnouncementsOpen(true)}
-                  className="p-2 bg-amber-100 text-amber-800 rounded border border-amber-200 hover:bg-amber-200"
-                  title={selectedLanguage === 'ko' ? '공지사항' : 'Announcements'}
-                >
-                  <Megaphone size={18} />
-                </button>
-                <button
-                  onClick={() => setShowPickupScheduleModal(true)}
-                  className="p-2 bg-blue-100 text-blue-800 rounded border border-blue-200 hover:bg-blue-200"
-                  title={selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}
-                >
-                  <Calendar size={18} />
-                </button>
-                <button
-                  onClick={() => setShowPhotoGallery(true)}
-                  className="p-2 bg-violet-100 text-violet-800 rounded border border-violet-200 hover:bg-violet-200"
-                  title={selectedLanguage === 'ko' ? '투어 사진' : 'Tour Photos'}
-                >
-                  <ImageIcon size={18} />
-                </button>
-                <button
-                  onClick={() => setShowTeamInfo(true)}
-                  className="p-2 bg-indigo-100 text-indigo-800 rounded border border-indigo-200 hover:bg-indigo-200"
-                  title={selectedLanguage === 'ko' ? '가이드 정보' : 'Guide Info'}
-                >
-                  <Users size={18} />
-                </button>
-                {/* 음성 통화 버튼 (고객용) */}
-                <button
-                  onClick={handleStartCall}
-                  disabled={!room || callStatus !== 'idle' || availableCallUsers.length === 0}
-                  className={`p-2 rounded border ${
-                    callStatus === 'connected'
-                      ? 'bg-green-100 text-green-800 border-green-200'
-                      : callStatus !== 'idle'
-                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                      : availableCallUsers.length === 0
-                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                      : 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200'
-                  }`}
-                  title={selectedLanguage === 'ko' ? '음성 통화' : 'Voice Call'}
-                >
-                  <Phone size={18} />
-                </button>
-              </>
-            )}
-            {!isPublicView && (
-              <>
-                <button
-                  onClick={() => setIsAnnouncementsOpen(true)}
-                  className="p-2 bg-amber-100 text-amber-800 rounded border border-amber-200 hover:bg-amber-200"
-                  title={selectedLanguage === 'ko' ? '공지사항' : 'Announcements'}
-                >
-                  <Megaphone size={18} />
-                </button>
-                <button
-                  onClick={() => setShowPickupScheduleModal(true)}
-                  className="p-2 bg-blue-100 text-blue-800 rounded border border-blue-200 hover:bg-blue-200"
-                  title={selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}
-                >
-                  <Calendar size={18} />
-                </button>
-                <button
-                  onClick={goToTourDetail}
-                  className="p-2 bg-purple-100 text-purple-800 rounded border border-purple-200 hover:bg-purple-200"
-                  title={selectedLanguage === 'ko' ? '투어 상세 페이지' : 'Tour Details'}
-                >
-                  <ExternalLink size={18} />
-                </button>
-              </>
-            )}
-            <button
-              onClick={copyRoomLink}
-              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
-              title={selectedLanguage === 'ko' ? '링크 복사' : 'Copy Link'}
-            >
-              <Copy size={18} />
-            </button>
-            <button
-              onClick={shareRoomLink}
-              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
-              title={selectedLanguage === 'ko' ? '공유' : 'Share'}
-            >
-              <Share2 size={18} />
-            </button>
-            <button
-              onClick={handleMobileMenuToggle}
-              className="p-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded"
-              title={selectedLanguage === 'ko' ? '펼치기' : 'Expand'}
-            >
-              <ChevronDown size={18} />
-            </button>
-          </div>
-
-          {/* 데스크톱: 왼쪽 버튼 그룹 */}
-          <div className="hidden lg:flex items-center gap-1 lg:gap-2 flex-wrap">
-            {/* 방 활성/비활성 스위치 - 가장 왼쪽, 관리자 전용 */}
-            {!isPublicView && (
-              <button
-                onClick={toggleRoomActive}
-                disabled={togglingActive}
-                className="flex items-center focus:outline-none"
-                title={room.is_active ? '비활성화' : '활성화'}
-                aria-label={room.is_active ? '비활성화' : '활성화'}
-              >
-                <span
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${room.is_active ? 'bg-green-500' : 'bg-gray-300'} ${togglingActive ? 'opacity-60' : ''}`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${room.is_active ? 'translate-x-4' : 'translate-x-1'}`}
-                  />
-                </span>
-              </button>
-            )}
-            <button
-              onClick={() => setIsAnnouncementsOpen(true)}
-              className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-amber-100 text-amber-800 rounded border border-amber-200 hover:bg-amber-200 flex items-center justify-center"
-              title={selectedLanguage === 'ko' ? '공지사항' : 'Announcements'}
-              aria-label={selectedLanguage === 'ko' ? '공지사항' : 'Announcements'}
-            >
-              <Megaphone size={12} className="lg:w-3.5 lg:h-3.5" />
-            </button>
-              <button
-                onClick={() => setShowPickupScheduleModal(true)}
-                className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-blue-100 text-blue-800 rounded border border-blue-200 hover:bg-blue-200 flex items-center justify-center"
-                title={selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}
-                aria-label={selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}
-              >
-                <Calendar size={12} className="lg:w-3.5 lg:h-3.5" />
-              </button>
-            {/* 투어 상세 페이지 이동 버튼 - 팀원 전용 */}
-            {!isPublicView && (
-              <button
-                onClick={goToTourDetail}
-                className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-purple-100 text-purple-800 rounded border border-purple-200 hover:bg-purple-200 flex items-center justify-center"
-                title={selectedLanguage === 'ko' ? '투어 상세 페이지' : 'Tour Details'}
-                aria-label={selectedLanguage === 'ko' ? '투어 상세 페이지' : 'Tour Details'}
-              >
-                <ExternalLink size={12} className="lg:w-3.5 lg:h-3.5" />
-              </button>
-            )}
-            {isPublicView && (
-              <>
-                <button
-                  onClick={() => setShowPhotoGallery(true)}
-                  className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-violet-100 text-violet-800 rounded border border-violet-200 hover:bg-violet-200 flex items-center justify-center"
-                  title={selectedLanguage === 'ko' ? '투어 사진' : 'Tour Photos'}
-                  aria-label={selectedLanguage === 'ko' ? '투어 사진' : 'Tour Photos'}
-                >
-                  <ImageIcon size={12} className="lg:w-3.5 lg:h-3.5" />
-                </button>
-                <button
-                  onClick={() => setShowTeamInfo(true)}
-                  className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-indigo-100 text-indigo-800 rounded border border-indigo-200 hover:bg-indigo-200 flex items-center justify-center"
-                  title={selectedLanguage === 'ko' ? '가이드 정보' : 'Guide Info'}
-                  aria-label={selectedLanguage === 'ko' ? '가이드 정보' : 'Guide Info'}
-                >
-                  <Users size={12} className="lg:w-3.5 lg:h-3.5" />
-                </button>
-                {/* 참여자 목록 버튼 (모바일) */}
-                {!isPublicView && (
-                  <button
-                    onClick={() => setShowParticipantsList(!showParticipantsList)}
-                    className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs bg-indigo-100 text-indigo-800 rounded border border-indigo-200 hover:bg-indigo-200 flex items-center justify-center relative"
-                    title={selectedLanguage === 'ko' ? '참여자 목록' : 'Participants'}
-                  >
-                    <Users size={12} className="lg:w-3.5 lg:h-3.5" />
-                    {onlineParticipants.size > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-green-500 text-white text-[8px] rounded-full w-4 h-4 flex items-center justify-center">
-                        {onlineParticipants.size}
-                      </span>
-                    )}
-                  </button>
-                )}
-              </>
-            )}
-            
-            {/* 음성 통화 버튼 */}
-            <button
-              onClick={handleStartCall}
-              disabled={!room || callStatus !== 'idle' || availableCallUsers.length === 0}
-              className={`px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs rounded border flex items-center justify-center ${
-                callStatus === 'connected'
-                  ? 'bg-green-100 text-green-800 border-green-200'
-                  : callStatus !== 'idle'
-                  ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                  : availableCallUsers.length === 0
-                  ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                  : 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200'
-              }`}
-              title={selectedLanguage === 'ko' ? '음성 통화' : 'Voice Call'}
-              aria-label={selectedLanguage === 'ko' ? '음성 통화' : 'Voice Call'}
-            >
-              <Phone size={12} className="lg:w-3.5 lg:h-3.5" />
-            </button>
-            
-            {/* 참여자 목록 버튼 (관리자/가이드/드라이버/어시스턴트만) */}
-            {!isPublicView && (
-              <button
-                onClick={() => setShowParticipantsList(!showParticipantsList)}
-                className="px-2 lg:px-2.5 py-1 lg:py-1.5 text-xs rounded border bg-indigo-100 text-indigo-800 border-indigo-200 hover:bg-indigo-200 flex items-center justify-center relative"
-                title={selectedLanguage === 'ko' ? '참여자 목록' : 'Participants'}
-                aria-label={selectedLanguage === 'ko' ? '참여자 목록' : 'Participants'}
-              >
-                <Users size={12} className="lg:w-3.5 lg:h-3.5" />
-                {onlineParticipants.size > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-green-500 text-white text-[8px] rounded-full w-4 h-4 flex items-center justify-center">
-                    {onlineParticipants.size}
-                  </span>
-                )}
-              </button>
-            )}
-          </div>
-
-          {/* 모바일: 접었다 폈다 할 수 있는 메뉴 */}
-          <div className={`lg:hidden relative p-3 space-y-2 ${isMobileMenuOpen ? '' : 'hidden'}`}>
-            {/* 활성화 버튼, 공지사항, 픽업스케줄 - collapse 시 숨김 */}
-            {isMobileMenuOpen && (
-              <>
-                {/* 활성화 버튼 (관리자용) */}
-                {!isPublicView && (
-                  <div>
-                    <button
-                      onClick={toggleRoomActive}
-                      disabled={togglingActive}
-                      className="flex items-center gap-2 px-3 py-2 focus:outline-none w-full"
-                      title={room.is_active ? (selectedLanguage === 'ko' ? '비활성화' : 'Deactivate') : (selectedLanguage === 'ko' ? '활성화' : 'Activate')}
-                    >
-                      <span
-                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ${room.is_active ? 'bg-green-500' : 'bg-gray-300'}`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${room.is_active ? 'translate-x-4' : 'translate-x-1'}`}
-                        />
-                      </span>
-                      <span className="text-[10px] text-gray-600">{selectedLanguage === 'ko' ? '활성화' : 'Active'}</span>
-                    </button>
-                  </div>
-                )}
-                
-                {/* 공지사항, 픽업스케줄: 2열 그리드 */}
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setIsAnnouncementsOpen(true)}
-                    className="flex items-center gap-2 px-3 py-2 bg-amber-100 text-amber-800 rounded-lg border border-amber-200 hover:bg-amber-200 transition-colors"
-                    title={selectedLanguage === 'ko' ? '공지사항' : 'Announcements'}
-                  >
-                    <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                      <Megaphone size={20} />
-                    </div>
-                    <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '공지사항' : 'Announcements'}</span>
-                  </button>
-                  <button
-                    onClick={() => setShowPickupScheduleModal(true)}
-                    className="flex items-center gap-2 px-3 py-2 bg-blue-100 text-blue-800 rounded-lg border border-blue-200 hover:bg-blue-200 transition-colors"
-                    title={selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}
-                  >
-                    <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                      <Calendar size={20} />
-                    </div>
-                    <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '픽업 스케줄' : 'Pickup Schedule'}</span>
-                  </button>
-                </div>
-                
-                {/* 투어 사진, 가이드 정보, 음성 통화: 3열 그리드 (고객용) */}
-                {isPublicView && (
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      onClick={() => setShowPhotoGallery(true)}
-                      className="flex items-center gap-2 px-3 py-2 bg-violet-100 text-violet-800 rounded-lg border border-violet-200 hover:bg-violet-200 transition-colors"
-                      title={selectedLanguage === 'ko' ? '투어 사진' : 'Tour Photos'}
-                    >
-                      <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                        <ImageIcon size={20} />
-                      </div>
-                      <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '투어 사진' : 'Tour Photos'}</span>
-                    </button>
-                    <button
-                      onClick={() => setShowTeamInfo(true)}
-                      className="flex items-center gap-2 px-3 py-2 bg-indigo-100 text-indigo-800 rounded-lg border border-indigo-200 hover:bg-indigo-200 transition-colors"
-                      title={selectedLanguage === 'ko' ? '가이드 정보' : 'Guide Info'}
-                    >
-                      <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                        <Users size={20} />
-                      </div>
-                      <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '가이드 정보' : 'Guide Info'}</span>
-                    </button>
-                    {/* 음성 통화 버튼 (고객용) */}
-                    <button
-                      onClick={handleStartCall}
-                      disabled={!room || callStatus !== 'idle' || availableCallUsers.length === 0}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
-                        callStatus === 'connected'
-                          ? 'bg-green-100 text-green-800 border-green-200'
-                          : callStatus !== 'idle'
-                          ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                          : availableCallUsers.length === 0
-                          ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                          : 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200'
-                      }`}
-                      title={selectedLanguage === 'ko' ? '음성 통화' : 'Voice Call'}
-                    >
-                      <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                        <Phone size={20} />
-                      </div>
-                      <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '통화' : 'Call'}</span>
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-            
-            {/* 복사, 공유, 접기: 3열 그리드 - 항상 표시 */}
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                onClick={copyRoomLink}
-                className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
-                title={selectedLanguage === 'ko' ? '링크 복사' : 'Copy Link'}
-              >
-                <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                  <Copy size={20} />
-                </div>
-                <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '복사' : 'Copy'}</span>
-              </button>
-              <button
-                onClick={shareRoomLink}
-                className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
-                title={selectedLanguage === 'ko' ? '공유' : 'Share'}
-              >
-                <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                  <Share2 size={20} />
-                </div>
-                <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '공유' : 'Share'}</span>
-              </button>
-              {/* 접기/펼치기 버튼 */}
-              <button
-                onClick={handleMobileMenuToggle}
-                className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
-                title={isMobileMenuOpen ? (selectedLanguage === 'ko' ? '접기' : 'Collapse') : (selectedLanguage === 'ko' ? '펼치기' : 'Expand')}
-              >
-                <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                  {isMobileMenuOpen ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                </div>
-                <span className="text-[10px] font-medium">{isMobileMenuOpen ? (selectedLanguage === 'ko' ? '접기' : 'Collapse') : (selectedLanguage === 'ko' ? '펼치기' : 'Expand')}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* 데스크톱: 오른쪽 버튼 그룹 */}
-          <div className="hidden lg:flex items-center space-x-1 lg:space-x-2">
-            <button
-              onClick={copyRoomLink}
-              className="p-1.5 lg:p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
-              title={selectedLanguage === 'ko' ? '링크 복사' : 'Copy Link'}
-              aria-label={selectedLanguage === 'ko' ? '링크 복사' : 'Copy Link'}
-            >
-              <Copy size={14} className="lg:w-4 lg:h-4" />
-            </button>
-            <button
-              onClick={shareRoomLink}
-              className="p-1.5 lg:p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded"
-              title={selectedLanguage === 'ko' ? '공유' : 'Share'}
-              aria-label={selectedLanguage === 'ko' ? '공유' : 'Share'}
-            >
-              <Share2 size={14} className="lg:w-4 lg:h-4" />
-            </button>
-            {/* 푸시 알림 토글 버튼 (고객용, 국기 아이콘 왼쪽) */}
-            {isPublicView && isPushSupported && (
-              <button
-                onClick={async () => {
-                  if (isPushSubscribed) {
-                    await unsubscribeFromPush()
-                  } else {
-                    const success = await subscribeToPush()
-                    if (success) {
-                      alert(selectedLanguage === 'ko' 
-                        ? '푸시 알림이 활성화되었습니다.' 
-                        : 'Push notifications enabled.')
-                    }
-                  }
-                }}
-                disabled={isPushLoading}
-                className={`p-1.5 lg:p-2 rounded transition-colors ${
-                  isPushSubscribed
-                    ? 'text-blue-600 hover:text-blue-700 hover:bg-blue-50'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
-                title={selectedLanguage === 'ko' 
-                  ? (isPushSubscribed ? '푸시 알림 비활성화' : '푸시 알림 활성화')
-                  : (isPushSubscribed ? 'Disable Push Notifications' : 'Enable Push Notifications')}
-              >
-                {isPushSubscribed ? (
-                  <Bell size={14} className="lg:w-4 lg:h-4" />
-                ) : (
-                  <BellOff size={14} className="lg:w-4 lg:h-4" />
-                )}
-              </button>
-            )}
-            {/* 언어 전환 버튼 */}
-            <button
-              onClick={handleLanguageToggle}
-              className="p-1.5 lg:p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors"
-              title={selectedLanguage === 'ko' ? 'Switch to English' : '한국어로 전환'}
-            >
-              {(() => {
-                try {
-                  const flagCountry = getLanguageFlag()
-                  if (flagCountry) {
-                    return (
-                      <ReactCountryFlag
-                        countryCode={flagCountry}
-                        svg
-                        style={{
-                          width: '16px',
-                          height: '12px',
-                          borderRadius: '2px'
-                        }}
-                      />
-                    )
-                  }
-                  return null
-                } catch (error) {
-                  console.error('Country flag rendering error:', error)
-                  return null
-                }
-              })()}
-            </button>
-          </div>
-        </div>
-        </div>
+      {room && (
+        <ChatHeader
+          room={room}
+          isPublicView={isPublicView}
+          isMobileMenuOpen={isMobileMenuOpen}
+          selectedLanguage={selectedLanguage}
+          callStatus={callStatus}
+          availableCallUsersCount={availableCallUsers.length}
+          onlineParticipantsCount={onlineParticipants.size}
+          isPushSupported={isPushSupported}
+          isPushSubscribed={isPushSubscribed}
+          isPushLoading={isPushLoading}
+          togglingActive={togglingActive}
+          onToggleRoomActive={toggleRoomActive}
+          onToggleMobileMenu={handleMobileMenuToggle}
+          onShowAnnouncements={() => setIsAnnouncementsOpen(true)}
+          onShowPickupSchedule={() => setShowPickupScheduleModal(true)}
+          onShowPhotoGallery={() => setShowPhotoGallery(true)}
+          onShowTeamInfo={() => setShowTeamInfo(true)}
+          onGoToTourDetail={goToTourDetail}
+          onStartCall={handleStartCall}
+          onCopyLink={copyRoomLink}
+          onShare={shareRoomLink}
+          onTogglePush={async () => {
+            if (isPushSubscribed) {
+              await unsubscribeFromPush()
+            } else {
+              const success = await subscribeToPush()
+              if (success) {
+                alert(selectedLanguage === 'ko' 
+                  ? '푸시 알림이 활성화되었습니다.' 
+                  : 'Push notifications enabled.')
+              }
+            }
+          }}
+          onLanguageToggle={handleLanguageToggle}
+          onShowParticipants={() => setShowParticipantsList(!showParticipantsList)}
+          getLanguageFlag={getLanguageFlag}
+        />
+      )}
 
       {/* 참여자 목록 사이드바 (관리자/가이드/드라이버/어시스턴트만) */}
-      {!isPublicView && showParticipantsList && (
-        <div className="absolute right-0 top-0 bottom-0 w-64 bg-white border-l border-gray-200 shadow-lg z-30 flex flex-col">
-          <div className="p-4 border-b bg-indigo-50">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-900 flex items-center">
-                <Users size={16} className="mr-2 text-indigo-600" />
-                {selectedLanguage === 'ko' ? '참여자' : 'Participants'}
-              </h3>
-              <button
-                onClick={() => setShowParticipantsList(false)}
-                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              {onlineParticipants.size} {selectedLanguage === 'ko' ? '명 온라인' : 'online'}
-            </p>
-          </div>
-          <div className="flex-1 overflow-y-auto p-2">
-            {onlineParticipants.size === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <Users className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                <p className="text-sm">{selectedLanguage === 'ko' ? '온라인 참여자가 없습니다' : 'No online participants'}</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {Array.from(onlineParticipants.values()).map((participant, index) => (
-                  <div
-                    key={`${participant.id}-${participant.type}-${index}`}
-                    className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 border border-gray-100"
-                  >
-                    <div className="relative">
-                      <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
-                        <User size={16} className="text-indigo-600" />
-                      </div>
-                      <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{participant.name}</p>
-                      <p className="text-xs text-gray-500">
-                        {participant.type === 'guide' 
-                          ? (selectedLanguage === 'ko' ? '가이드' : 'Guide')
-                          : (selectedLanguage === 'ko' ? '고객' : 'Customer')}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+      {!isPublicView && (
+        <ChatSidebar
+          isOpen={showParticipantsList}
+          onClose={() => setShowParticipantsList(false)}
+          participants={onlineParticipants}
+          selectedLanguage={selectedLanguage}
+        />
       )}
 
       {/* 메시지 목록 */}
-      <div 
-        className={`flex-1 overflow-y-auto p-2 lg:p-4 space-y-2 lg:space-y-3 min-h-0 bg-gradient-to-b from-transparent to-blue-50 bg-opacity-20 ${!isPublicView && showParticipantsList ? 'mr-64' : ''} ${!isMobileMenuOpen ? 'lg:mt-0' : ''}`}
-        style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
-      >
-        {messages.map((message, index) => {
-          const needsTrans = needsTranslation(message)
-          const hasTranslation = translatedMessages[message.id]
-          // const isTranslating = translating[message.id] // 사용되지 않음
-          
-          // 아바타 URL 가져오기 (메시지에 저장된 아바타 또는 기본값)
-          const avatarUrl = (message as any).sender_avatar || 
-            (message.sender_type === 'customer' 
-              ? (message.sender_name === (customerName || '고객') ? selectedAvatar : undefined)
-              : undefined)
-          
-          return (
-            <div
-              key={`${message.id}-${index}`}
-              className={`flex items-start space-x-2 ${message.sender_type === 'guide' ? 'justify-end' : 'justify-start'}`}
-            >
-              {/* 아바타 (고객 메시지일 때만 왼쪽에 표시) */}
-              {message.sender_type === 'customer' && (
-                <div className="flex-shrink-0">
-                  <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200">
-                    {avatarUrl ? (
-                      <img
-                        src={avatarUrl}
-                        alt={message.sender_name}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                        <User size={20} className="text-gray-400" />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-              
-              <div className="flex flex-col max-w-xs lg:max-w-md">
-                {/* 이름 (고객 메시지일 때만) */}
-                {message.sender_type === 'customer' && (
-                  <div className="text-xs font-medium text-gray-700 mb-1 px-1">
-                    {message.sender_name}
-                  </div>
-                )}
-                
-                <div
-                  className={`px-3 lg:px-4 py-2 rounded-lg border shadow-sm ${
-                    message.sender_type === 'system'
-                      ? 'bg-gray-200 bg-opacity-80 backdrop-blur-sm text-gray-700 text-center'
-                      : message.sender_type === 'guide'
-                      ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-600'
-                      : 'bg-white bg-opacity-90 backdrop-blur-sm text-gray-900 border-gray-200'
-                  }`}
-                >
-                  {message.sender_type === 'guide' && (
-                    <div className="text-xs font-medium mb-1 opacity-90">
-                      {message.sender_name}
-                    </div>
-                  )}
-                  
-                  {/* 메시지 내용 */}
-                  <div className="text-sm" style={{ touchAction: 'pan-x pan-y pinch-zoom' }}>
-                    {message.message_type === 'image' && message.file_url ? (
-                      <div className="mt-2">
-                        <img
-                          src={message.file_url}
-                          alt={message.file_name || 'Uploaded image'}
-                          className="max-w-full h-auto rounded-lg cursor-pointer"
-                          onClick={() => window.open(message.file_url, '_blank')}
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23ddd" width="200" height="200"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="14" dy="10.5" font-weight="bold" x="50%25" y="50%25" text-anchor="middle"%3EImage not found%3C/text%3E%3C/svg%3E'
-                          }}
-                        />
-                        {message.file_name && (
-                          <div className="text-xs text-gray-500 mt-1">{message.file_name}</div>
-                        )}
-                      </div>
-                    ) : message.message.startsWith('[EN] ') ? (
-                      <div>
-                        <div className="text-xs text-gray-500 mb-1">번역된 메시지:</div>
-                        <div>{message.message.replace('[EN] ', '')}</div>
-                      </div>
-                    ) : (
-                      <div>
-                        {/* 원본 메시지 */}
-                        <div className="whitespace-pre-wrap break-words">
-                          {message.message.split('\n').map((line, idx) => {
-                            // Google Maps 링크 감지
-                            if (line.includes('Google Maps:') || line.includes('google.com/maps')) {
-                              const urlMatch = line.match(/https?:\/\/[^\s]+/)
-                              if (urlMatch) {
-                                return (
-                                  <div key={idx} className="my-1">
-                                    {line.split(urlMatch[0])[0]}
-                                    <a
-                                      href={urlMatch[0]}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-blue-600 hover:text-blue-800 underline flex items-center gap-1 inline-block"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        window.open(urlMatch[0], '_blank')
-                                      }}
-                                    >
-                                      <MapPin size={14} />
-                                      {selectedLanguage === 'ko' ? 'Google Maps에서 보기' : 'View on Google Maps'}
-                                    </a>
-                                  </div>
-                                )
-                              }
-                            }
-                            // Naver Maps 링크 감지
-                            if (line.includes('Naver Maps:') || line.includes('map.naver.com')) {
-                              const urlMatch = line.match(/https?:\/\/[^\s]+/)
-                              if (urlMatch) {
-                                return (
-                                  <div key={idx} className="my-1">
-                                    {line.split(urlMatch[0])[0]}
-                                    <a
-                                      href={urlMatch[0]}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-green-600 hover:text-green-800 underline flex items-center gap-1 inline-block"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        window.open(urlMatch[0], '_blank')
-                                      }}
-                                    >
-                                      <MapPin size={14} />
-                                      {selectedLanguage === 'ko' ? 'Naver Maps에서 보기' : 'View on Naver Maps'}
-                                    </a>
-                                  </div>
-                                )
-                              }
-                            }
-                            return <div key={idx}>{line}</div>
-                          })}
-                        </div>
-                        
-                        {/* 가이드 메시지 자동 번역 (고객용/관리자용) */}
-                        {message.sender_type === 'guide' && needsTrans && (
-                          <div className="mt-2 pt-2 border-t border-gray-200">
-                            {hasTranslation ? (
-                              <div className="text-xs text-white">
-                                <span className="font-medium">{getLanguageDisplayName(selectedLanguage)}:</span> {hasTranslation}
-                              </div>
-                            ) : (
-                              <div className="text-xs text-gray-400">
-                                {getLanguageDisplayName(selectedLanguage)}으로 번역 사용 가능
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="flex items-center justify-between mt-1">
-                    <div className="text-xs opacity-70">
-                      {formatTime(message.created_at)}
-                    </div>
-                    
-                    {/* 삭제 버튼 (자신이 보낸 메시지이고 1분 이내) */}
-                    {((isPublicView && message.sender_type === 'customer') || 
-                      (!isPublicView && message.sender_type === 'guide')) && 
-                     canDeleteMessage(message) && (
-                      <button
-                        onClick={() => {
-                          if (confirm('메시지를 삭제하시겠습니까?')) {
-                            deleteMessage(message.id)
-                          }
-                        }}
-                        className="ml-2 p-1 text-gray-400 hover:text-red-500 transition-colors"
-                        title="메시지 삭제"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )
-        })}
-        <div ref={messagesEndRef} />
-      </div>
+      <MessageList
+        messages={messages}
+        isPublicView={isPublicView}
+        customerName={customerName}
+        selectedAvatar={selectedAvatar}
+        selectedLanguage={selectedLanguage}
+        translatedMessages={translatedMessages}
+        needsTranslation={needsTranslation}
+        getLanguageDisplayName={getLanguageDisplayName}
+        formatTime={formatTime}
+        canDeleteMessage={canDeleteMessage}
+        deleteMessage={deleteMessage}
+        messagesEndRef={messagesEndRef}
+        showParticipantsList={showParticipantsList}
+        isMobileMenuOpen={isMobileMenuOpen}
+      />
 
       {/* 메시지 입력 */}
-      {room.is_active && (
-        <div className={`${isPublicView ? 'p-2 lg:p-4' : 'p-2 lg:p-4 border-t bg-white bg-opacity-90 backdrop-blur-sm shadow-lg'} flex-shrink-0 relative`}>
-          <div className="flex items-center space-x-1 w-full">
-            {/* 이미지 업로드 버튼 */}
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading || sending}
-              className="flex-shrink-0 p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              title={selectedLanguage === 'ko' ? '이미지 업로드' : 'Upload Image'}
-            >
-              {uploading ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
-              ) : (
-                <ImageIcon size={18} />
-              )}
-            </button>
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (file) {
-                  handleImageUpload(file)
-                }
-              }}
-              className="hidden"
-            />
-            
-            {/* 이모티콘 버튼 */}
-            <button
-              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-              className="flex-shrink-0 p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
-              title={selectedLanguage === 'ko' ? '이모티콘' : 'Emoji'}
-            >
-              <Smile size={18} />
-            </button>
-            
-            {/* 위치 공유 버튼 (고객용만) */}
-            {isPublicView && (
-              <button
-                onClick={shareLocation}
-                disabled={gettingLocation || sending || uploading}
-                className="flex-shrink-0 p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title={selectedLanguage === 'ko' ? '위치 공유' : 'Share Location'}
-              >
-                {gettingLocation ? (
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
-                ) : (
-                  <MapPin size={18} />
-                )}
-              </button>
-            )}
-            
-            <input
-              type="text"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder={selectedLanguage === 'ko' ? '메시지를 입력하세요...' : 'Type your message...'}
-              className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm lg:text-base"
-              disabled={sending || uploading || gettingLocation}
-            />
-            
-            <button
-              onClick={sendMessage}
-              disabled={!newMessage.trim() || sending || uploading}
-              className="flex-shrink-0 px-3 lg:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1 lg:space-x-2 text-sm lg:text-base"
-            >
-              <Send size={14} className="lg:w-4 lg:h-4" />
-              <span className="hidden lg:inline">{sending ? 'Sending...' : 'Send'}</span>
-              <span className="lg:hidden">{sending ? '...' : 'Send'}</span>
-            </button>
-          </div>
-        </div>
+      {room && (
+        <MessageInput
+          newMessage={newMessage}
+          setNewMessage={setNewMessage}
+          sending={sending}
+          uploading={uploading}
+          gettingLocation={gettingLocation}
+          isPublicView={isPublicView}
+          selectedLanguage={selectedLanguage}
+          roomActive={room.is_active}
+          onSendMessage={sendMessage}
+          onImageUpload={handleImageUpload}
+          onShareLocation={shareLocation}
+          fileInputRef={fileInputRef}
+        />
       )}
 
       {/* 공유 모달 (관리자/고객 공통) */}
@@ -2957,7 +1953,7 @@ export default function TourChatRoom({
           onClose={() => setShowShareModal(false)}
           roomCode={room.room_code}
           roomName={room.room_name}
-          tourDate={tourDate}
+          tourDate={tourDate || undefined}
           isPublicView={isPublicView}
           language={selectedLanguage as 'en' | 'ko'}
         />
@@ -2980,36 +1976,6 @@ export default function TourChatRoom({
         />
       )}
 
-      {/* 이모티콘 선택기 */}
-      {showEmojiPicker && (
-        <div className="absolute bottom-16 left-2 lg:left-4 bg-white border border-gray-300 rounded-lg shadow-lg p-3 z-50 max-w-xs">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-gray-700">{selectedLanguage === 'ko' ? '이모티콘' : 'Emoji'}</span>
-            <button
-              onClick={() => setShowEmojiPicker(false)}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <X size={16} />
-            </button>
-          </div>
-          <div className="grid grid-cols-8 gap-1 max-h-48 overflow-y-auto">
-            {['😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '😊', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖', '😫', '😩', '🥺', '😢', '😭', '😤', '😠', '😡', '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗', '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄', '😯', '😦', '😧', '😮', '😲', '🥱', '😴', '🤤', '😪', '😵', '🤐', '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑', '🤠', '😈', '👿', '👹', '👺', '🤡', '💩', '👻', '💀', '☠️', '👽', '👾', '🤖', '🎃', '😺', '😸', '😹', '😻', '😼', '😽', '🙀', '😿', '😾'].map((emoji) => (
-              <button
-                key={emoji}
-                onClick={() => {
-                  setNewMessage(prev => prev + emoji)
-                  setShowEmojiPicker(false)
-                }}
-                className="p-2 hover:bg-gray-100 rounded text-lg"
-                title={emoji}
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* 통화할 사용자 선택 모달 */}
       <VoiceCallUserSelector
         isOpen={showCallUserSelector}
@@ -3023,7 +1989,7 @@ export default function TourChatRoom({
       <VoiceCallModal
         isOpen={callStatus !== 'idle'}
         callStatus={callStatus}
-        callerName={callerName || selectedCallTarget?.name}
+        callerName={callerName || selectedCallTarget?.name || undefined}
         callDuration={callDuration}
         isMuted={isMuted}
         callError={callError}

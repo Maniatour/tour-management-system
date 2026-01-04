@@ -14,3 +14,4 @@ COMMENT ON COLUMN public.tours.assignment_status IS '투어 배정 현황: pendi
 
 
 
+
