@@ -101,34 +101,51 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
       // iOS Safari의 경우 수동 안내
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
       const isSafari = /Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent)
+      const isAndroid = /Android/.test(navigator.userAgent)
+      const isChrome = /Chrome/.test(navigator.userAgent)
       
       if (isIOS && isSafari) {
         alert(selectedLanguage === 'ko' 
           ? 'Safari에서 공유 버튼(⬆️)을 누르고 "홈 화면에 추가"를 선택하세요.'
           : 'Tap the Share button (⬆️) in Safari and select "Add to Home Screen".')
-      } else {
+      } else if (isAndroid && isChrome) {
         alert(selectedLanguage === 'ko' 
-          ? '브라우저 메뉴에서 "홈 화면에 추가" 또는 "앱 설치" 옵션을 찾아주세요.'
-          : 'Please look for "Add to Home Screen" or "Install App" option in your browser menu.')
+          ? 'Chrome 메뉴(⋮)를 열고 "홈 화면에 추가" 또는 "앱 설치"를 선택하세요.'
+          : 'Open Chrome menu (⋮) and select "Add to Home Screen" or "Install App".')
+      } else {
+        const instructions = selectedLanguage === 'ko' 
+          ? '브라우저 메뉴(⋮ 또는 ⚙️)를 열고 다음 옵션을 찾아주세요:\n\n• "홈 화면에 추가"\n• "앱 설치"\n• "Add to Home Screen"\n• "Install App"\n\n또는 주소창 오른쪽의 설치 아이콘을 클릭하세요.'
+          : 'Open your browser menu (⋮ or ⚙️) and look for:\n\n• "Add to Home Screen"\n• "Install App"\n\nOr click the install icon on the right side of the address bar.'
+        alert(instructions)
       }
       return
     }
 
-    // 설치 프롬프트 표시
-    deferredPrompt.prompt()
-    
-    // 사용자 선택 대기
-    const { outcome } = await deferredPrompt.userChoice
-    
-    if (outcome === 'accepted') {
-      console.log('User accepted the install prompt')
-      setShowInstallButton(false)
-    } else {
-      console.log('User dismissed the install prompt')
+    try {
+      // 설치 프롬프트 표시
+      deferredPrompt.prompt()
+      
+      // 사용자 선택 대기
+      const { outcome } = await deferredPrompt.userChoice
+      
+      if (outcome === 'accepted') {
+        console.log('User accepted the install prompt')
+        setShowInstallButton(false)
+        alert(selectedLanguage === 'ko' 
+          ? '홈 화면에 추가되었습니다!'
+          : 'Added to home screen!')
+      } else {
+        console.log('User dismissed the install prompt')
+      }
+      
+      // 프롬프트는 한 번만 사용 가능
+      setDeferredPrompt(null)
+    } catch (error) {
+      console.error('Error showing install prompt:', error)
+      alert(selectedLanguage === 'ko' 
+        ? '설치 프롬프트를 표시할 수 없습니다. 브라우저 메뉴에서 직접 설치해주세요.'
+        : 'Cannot show install prompt. Please install from your browser menu.')
     }
-    
-    // 프롬프트는 한 번만 사용 가능
-    setDeferredPrompt(null)
   }
 
   // Favicon 로드

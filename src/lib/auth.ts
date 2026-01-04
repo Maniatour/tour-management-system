@@ -70,18 +70,21 @@ export async function signInWithEmail({ email, password }: SignInData) {
 }
 
 // 구글 로그인
-export async function signInWithGoogle() {
+export async function signInWithGoogle(locale: string = 'ko') {
   const supabase = createClientSupabase()
+  
+  const redirectTo = `${window.location.origin}/${locale}/auth/callback`
   
   console.log('Starting Google sign in...', {
     origin: window.location.origin,
-    redirectTo: `${window.location.origin}/auth/callback`
+    locale,
+    redirectTo
   })
   
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: `${window.location.origin}/auth/callback`,
+      redirectTo,
       queryParams: {
         access_type: 'offline',
         prompt: 'select_account',

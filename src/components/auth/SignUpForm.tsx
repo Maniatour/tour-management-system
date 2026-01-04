@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { signUpWithEmail, signInWithGoogle } from '@/lib/auth'
 import { Eye, EyeOff, Mail, Lock, User, AlertCircle, CheckCircle } from 'lucide-react'
+import { useLocale } from 'next-intl'
 
 const signUpSchema = z.object({
   name: z.string().min(2, '이름은 최소 2자 이상이어야 합니다'),
@@ -25,6 +26,7 @@ interface SignUpFormProps {
 }
 
 export default function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormProps) {
+  const locale = useLocale()
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -72,7 +74,7 @@ export default function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormPro
     setError(null)
 
     try {
-      const result = await signInWithGoogle()
+      const result = await signInWithGoogle(locale)
       
       if (result.error) {
         setError(result.error.message)

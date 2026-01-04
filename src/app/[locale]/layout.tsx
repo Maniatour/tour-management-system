@@ -38,9 +38,17 @@ export async function generateMetadata(): Promise<Metadata> {
       .sort((a: any, b: any) => (a.type === 'self' ? -1 : b.type === 'self' ? 1 : 0))
       .find((c: any) => !!c.favicon_url)?.favicon_url as string | undefined;
 
-    if (!faviconUrl) return {};
+    if (!faviconUrl) {
+      return {
+        manifest: '/manifest.json',
+        other: {
+          'preload-css': 'true'
+        }
+      }
+    }
 
     return {
+      manifest: '/manifest.json',
       icons: {
         icon: [{ url: faviconUrl }],
         shortcut: [{ url: faviconUrl }],
@@ -51,7 +59,9 @@ export async function generateMetadata(): Promise<Metadata> {
       }
     };
   } catch {
-    return {};
+    return {
+      manifest: '/manifest.json'
+    };
   }
 }
 

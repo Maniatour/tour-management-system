@@ -60,7 +60,7 @@ export default function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProp
     setError(null)
 
     try {
-      const result = await signInWithGoogle()
+      const result = await signInWithGoogle(locale)
       
       if (result.error) {
         setError(result.error.message)
