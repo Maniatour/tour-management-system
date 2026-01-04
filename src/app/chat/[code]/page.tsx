@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { ArrowLeft, ChevronDown, SquarePen, Menu, User } from 'lucide-react'
+import { ArrowLeft, ChevronDown, SquarePen, Menu, User, Bell, BellOff } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import Link from 'next/link'
 import TourChatRoom from '@/components/TourChatRoom'
@@ -9,6 +9,7 @@ import AvatarSelector from '@/components/AvatarSelector'
 import { SUPPORTED_LANGUAGES, SupportedLanguage } from '@/lib/translation'
 import { supabase } from '@/lib/supabase'
 import { useParams } from 'next/navigation'
+import { usePushNotification } from '@/hooks/usePushNotification'
 
 interface ChatRoom {
   id: string
@@ -51,6 +52,15 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
 
   const paramsObj = useParams()
   const code = paramsObj.code as string
+
+  // 푸시 알림 훅
+  const {
+    isSupported: isPushSupported,
+    isSubscribed: isPushSubscribed,
+    isLoading: isPushLoading,
+    subscribe: subscribeToPush,
+    unsubscribe: unsubscribeFromPush
+  } = usePushNotification(room?.id, undefined)
 
   useEffect(() => {
     console.log('PublicChatPage useEffect triggered with code:', code)
@@ -303,6 +313,36 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
                 : (productNames?.name_ko || productNames?.name || room.room_name)}
             </h1>
             <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+              {/* 푸시 알림 토글 버튼 (국기 아이콘 왼쪽) */}
+              {isPushSupported && room && (
+                <button
+                  onClick={async () => {
+                    if (isPushSubscribed) {
+                      await unsubscribeFromPush()
+                    } else {
+                      const success = await subscribeToPush()
+                      if (success) {
+                        alert(selectedLanguage === 'ko' 
+                          ? '푸시 알림이 활성화되었습니다.' 
+                          : 'Push notifications enabled.')
+                      }
+                    }
+                  }}
+                  disabled={isPushLoading}
+                  className={`p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded transition-colors ${
+                    isPushSubscribed ? 'text-blue-600 hover:text-blue-700 hover:bg-blue-50' : ''
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  title={selectedLanguage === 'ko' 
+                    ? (isPushSubscribed ? '푸시 알림 비활성화' : '푸시 알림 활성화')
+                    : (isPushSubscribed ? 'Disable Push Notifications' : 'Enable Push Notifications')}
+                >
+                  {isPushSubscribed ? (
+                    <Bell size={16} />
+                  ) : (
+                    <BellOff size={16} />
+                  )}
+                </button>
+              )}
               {/* 언어 전환 버튼 */}
               <button
                 onClick={() => {
@@ -470,6 +510,57 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
                   <ChevronDown size={16} className="text-gray-400" />
                 </button>
               </div>
+              {/* 푸시 알림 구독 (고객용) */}
+              {isPushSupported && room && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {selectedLanguage === 'ko' ? '푸시 알림 받기' : 'Push Notifications'}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (isPushSubscribed) {
+                        await unsubscribeFromPush()
+                      } else {
+                        const success = await subscribeToPush()
+                        if (success) {
+                          alert(selectedLanguage === 'ko' 
+                            ? '푸시 알림이 활성화되었습니다. 새 메시지가 도착하면 알림을 받을 수 있습니다.' 
+                            : 'Push notifications enabled. You will receive notifications when new messages arrive.')
+                        }
+                      }
+                    }}
+                    disabled={isPushLoading}
+                    className={`w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center space-x-2 ${
+                      isPushSubscribed
+                        ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {isPushLoading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
+                        <span>{selectedLanguage === 'ko' ? '처리 중...' : 'Loading...'}</span>
+                      </>
+                    ) : isPushSubscribed ? (
+                      <>
+                        <BellOff size={16} />
+                        <span>{selectedLanguage === 'ko' ? '푸시 알림 비활성화' : 'Disable Push Notifications'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Bell size={16} />
+                        <span>{selectedLanguage === 'ko' ? '푸시 알림 활성화' : 'Enable Push Notifications'}</span>
+                      </>
+                    )}
+                  </button>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {selectedLanguage === 'ko' 
+                      ? '새 메시지가 도착하면 알림을 받을 수 있습니다' 
+                      : 'Receive notifications when new messages arrive'}
+                  </p>
+                </div>
+              )}
               <button
                 onClick={handleJoinChat}
                 disabled={!tempName.trim()}

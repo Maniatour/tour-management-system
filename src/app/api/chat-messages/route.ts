@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
+import webpush from 'web-push'
 
 // 서비스 롤 키를 사용한 Supabase 클라이언트 생성 (RLS 우회)
 const getSupabaseAdmin = () => {
@@ -176,6 +177,81 @@ export async function POST(request: NextRequest) {
         hint: insertError.hint,
         fullError: errorInfo
       }, { status: 500 })
+    }
+
+    // 고객이 메시지를 보낸 경우 푸시 알림 전송 (비동기, 실패해도 메시지 전송은 성공)
+    if (sender_type === 'customer' && room_id) {
+      // 비동기로 처리하여 메시지 응답을 지연시키지 않음
+      Promise.resolve().then(async () => {
+        try {
+          // VAPID 키 설정
+          const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+          const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY
+          const vapidEmail = process.env.VAPID_EMAIL || 'mailto:your-email@example.com'
+          
+          if (!vapidPublicKey || !vapidPrivateKey) {
+            console.warn('VAPID keys not configured, skipping push notification')
+            return
+          }
+          
+          webpush.setVapidDetails(vapidEmail, vapidPublicKey, vapidPrivateKey)
+          
+          // 해당 채팅방의 모든 구독 가져오기
+          const { data: subscriptions, error: subError } = await supabaseAdmin
+            .from('push_subscriptions')
+            .select('*')
+            .eq('room_id', room_id)
+          
+          if (subError || !subscriptions || subscriptions.length === 0) {
+            return // 구독이 없으면 종료
+          }
+          
+          // 모든 구독에 푸시 알림 전송
+          const messageText = message || (message_type === 'image' ? '이미지를 보냈습니다' : '')
+          const notifications = subscriptions.map(async (subscription) => {
+            try {
+              const pushSubscription = {
+                endpoint: subscription.endpoint,
+                keys: {
+                  p256dh: subscription.p256dh_key,
+                  auth: subscription.auth_key
+                }
+              }
+              
+              const payload = JSON.stringify({
+                title: '새 메시지',
+                body: `${sender_name}: ${messageText.substring(0, 100)}${messageText.length > 100 ? '...' : ''}`,
+                icon: '/images/logo.png',
+                badge: '/images/logo.png',
+                tag: `chat-${room_id}`,
+                data: {
+                  url: `/chat/${room.room_code}`,
+                  roomId: room_id
+                }
+              })
+              
+              await webpush.sendNotification(pushSubscription, payload)
+            } catch (error: any) {
+              // 구독이 만료되었거나 유효하지 않은 경우 삭제
+              if (error.statusCode === 410 || error.statusCode === 404) {
+                await supabaseAdmin
+                  .from('push_subscriptions')
+                  .delete()
+                  .eq('endpoint', subscription.endpoint)
+              }
+              console.error('Error sending push notification to subscription:', error)
+            }
+          })
+          
+          await Promise.allSettled(notifications)
+        } catch (pushError) {
+          // 푸시 알림 실패는 메시지 전송에 영향을 주지 않음
+          console.error('Error sending push notification:', pushError)
+        }
+      }).catch(err => {
+        // 에러가 발생해도 무시 (메시지 전송에는 영향 없음)
+        console.error('Unhandled error in push notification:', err)
+      })
     }
 
     return NextResponse.json({ message: newMessage })

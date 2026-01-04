@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Copy, Share2, QrCode, MessageCircle, Users, Calendar, Bell, BellOff } from 'lucide-react'
-import { usePushNotification } from '@/hooks/usePushNotification'
+import { X, Copy, Share2, QrCode, MessageCircle, Users, Calendar } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface ChatRoomShareModalProps {
@@ -31,15 +30,6 @@ export default function ChatRoomShareModal({
   const [copied, setCopied] = useState(false)
   const [showQR, setShowQR] = useState(false)
   const [roomIdFromCode, setRoomIdFromCode] = useState<string | undefined>(roomId)
-  
-  // 푸시 알림 훅
-  const {
-    isSupported,
-    isSubscribed,
-    isLoading: isPushLoading,
-    subscribe,
-    unsubscribe
-  } = usePushNotification(roomIdFromCode, customerEmail)
 
   // roomCode로 roomId 찾기
   useEffect(() => {
@@ -58,19 +48,6 @@ export default function ChatRoomShareModal({
       findRoomId()
     }
   }, [roomCode, roomId, isPublicView])
-
-  const handlePushToggle = async () => {
-    if (isSubscribed) {
-      await unsubscribe()
-    } else {
-      const success = await subscribe()
-      if (success) {
-        alert(language === 'ko' 
-          ? '푸시 알림이 활성화되었습니다. 새 메시지가 도착하면 알림을 받을 수 있습니다.' 
-          : 'Push notifications enabled. You will receive notifications when new messages arrive.')
-      }
-    }
-  }
 
   if (!isOpen) return null
 
@@ -277,43 +254,6 @@ export default function ChatRoomShareModal({
               </button>
             </div>
           </div>
-
-          {/* 푸시 알림 설정 (고객용) */}
-          {isPublicView && isSupported && (
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-200">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-2 mb-1">
-                    {isSubscribed ? (
-                      <Bell className="w-5 h-5 text-blue-600" />
-                    ) : (
-                      <BellOff className="w-5 h-5 text-gray-400" />
-                    )}
-                    <h4 className="font-medium text-gray-900">
-                      {isSubscribed ? t.pushNotificationEnabled : t.pushNotification}
-                    </h4>
-                  </div>
-                  <p className="text-sm text-gray-600">{t.pushNotificationDesc}</p>
-                </div>
-                <button
-                  onClick={handlePushToggle}
-                  disabled={isPushLoading}
-                  className={`ml-4 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    isSubscribed
-                      ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
-                  {isPushLoading 
-                    ? (language === 'ko' ? '처리 중...' : 'Loading...')
-                    : isSubscribed 
-                    ? (language === 'ko' ? '비활성화' : 'Disable')
-                    : (language === 'ko' ? '활성화' : 'Enable')
-                  }
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* 사용 안내 */}
           <div className="bg-gray-50 rounded-lg p-4">

@@ -27,6 +27,21 @@ export async function POST(request: NextRequest) {
     // Supabase 클라이언트 생성
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
+    // 채팅방 정보 가져오기 (room_code 필요)
+    const { data: room, error: roomError } = await supabase
+      .from('chat_rooms')
+      .select('room_code')
+      .eq('id', roomId)
+      .single()
+
+    if (roomError || !room) {
+      console.error('Error fetching room:', roomError)
+      return NextResponse.json(
+        { error: 'Failed to fetch room information' },
+        { status: 500 }
+      )
+    }
+
     // 해당 채팅방의 모든 구독 가져오기
     const { data: subscriptions, error } = await supabase
       .from('push_subscriptions')
@@ -66,7 +81,7 @@ export async function POST(request: NextRequest) {
           badge: '/images/logo.png',
           tag: `chat-${roomId}`,
           data: {
-            url: `/chat/${subscription.room_id}`,
+            url: `/chat/${room.room_code}`,
             roomId: roomId
           }
         })

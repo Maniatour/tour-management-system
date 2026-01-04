@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Send, Image as ImageIcon, Copy, Share2, Calendar, Megaphone, Trash2, ChevronDown, ChevronUp, MapPin, Camera, ExternalLink, Users, Play, Phone, User, X, Menu, UserCircle, Smile } from 'lucide-react'
+import { Send, Image as ImageIcon, Copy, Share2, Calendar, Megaphone, Trash2, ChevronDown, ChevronUp, MapPin, Camera, ExternalLink, Users, Play, Phone, User, X, Menu, UserCircle, Smile, Bell, BellOff } from 'lucide-react'
 import { useVoiceCall } from '@/hooks/useVoiceCall'
 import VoiceCallModal from './VoiceCallModal'
 import VoiceCallUserSelector from './VoiceCallUserSelector'
@@ -15,6 +15,7 @@ import PickupScheduleModal from './PickupScheduleModal'
 import TourPhotoGallery from './TourPhotoGallery'
 import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
 import { formatTimeWithAMPM } from '@/lib/utils'
+import { usePushNotification } from '@/hooks/usePushNotification'
 
 interface ChatMessage {
   id: string
@@ -199,6 +200,15 @@ export default function TourChatRoom({
   const [selectedAvatar, setSelectedAvatar] = useState<string>('')
   const [showAvatarSelector, setShowAvatarSelector] = useState(false)
   const [usedAvatars, setUsedAvatars] = useState<Set<string>>(new Set())
+  
+  // 푸시 알림 훅 (고객용)
+  const {
+    isSupported: isPushSupported,
+    isSubscribed: isPushSubscribed,
+    isLoading: isPushLoading,
+    subscribe: subscribeToPush,
+    unsubscribe: unsubscribeFromPush
+  } = usePushNotification(room?.id, undefined)
   
   // 이미지 업로드
   const [uploading, setUploading] = useState(false)
@@ -1215,6 +1225,22 @@ export default function TourChatRoom({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (payload: { new: any }) => {
           const newMessage = payload.new as ChatMessage
+          
+          // 자신이 보낸 메시지는 Realtime 구독에서 무시 (낙관적 업데이트로 이미 추가됨)
+          if (isPublicView) {
+            // 고객용 공개 페이지: sender_name과 sender_type으로 확인
+            if (newMessage.sender_type === 'customer' && 
+                newMessage.sender_name === (customerName || '고객')) {
+              return // 자신이 보낸 메시지는 무시
+            }
+          } else {
+            // 가이드/관리자 페이지: sender_email로 확인
+            if (newMessage.sender_type === 'guide' && 
+                newMessage.sender_email === guideEmail) {
+              return // 자신이 보낸 메시지는 무시
+            }
+          }
+          
           setMessages(prev => {
             // 중복 메시지 방지: 이미 존재하는 메시지 ID는 추가하지 않음
             const exists = prev.some(m => m.id === newMessage.id)
@@ -2148,6 +2174,38 @@ export default function TourChatRoom({
             >
               <Share2 size={14} className="lg:w-4 lg:h-4" />
             </button>
+            {/* 푸시 알림 토글 버튼 (고객용, 국기 아이콘 왼쪽) */}
+            {isPublicView && isPushSupported && (
+              <button
+                onClick={async () => {
+                  if (isPushSubscribed) {
+                    await unsubscribeFromPush()
+                  } else {
+                    const success = await subscribeToPush()
+                    if (success) {
+                      alert(selectedLanguage === 'ko' 
+                        ? '푸시 알림이 활성화되었습니다.' 
+                        : 'Push notifications enabled.')
+                    }
+                  }
+                }}
+                disabled={isPushLoading}
+                className={`p-1.5 lg:p-2 rounded transition-colors ${
+                  isPushSubscribed
+                    ? 'text-blue-600 hover:text-blue-700 hover:bg-blue-50'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                title={selectedLanguage === 'ko' 
+                  ? (isPushSubscribed ? '푸시 알림 비활성화' : '푸시 알림 활성화')
+                  : (isPushSubscribed ? 'Disable Push Notifications' : 'Enable Push Notifications')}
+              >
+                {isPushSubscribed ? (
+                  <Bell size={14} className="lg:w-4 lg:h-4" />
+                ) : (
+                  <BellOff size={14} className="lg:w-4 lg:h-4" />
+                )}
+              </button>
+            )}
             {/* 언어 전환 버튼 */}
             <button
               onClick={handleLanguageToggle}
