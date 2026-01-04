@@ -1785,41 +1785,42 @@ export default function TourChatRoom({
   }, [selectedLanguage])
 
   // 언어 설정이 변경될 때 기존 메시지들 다시 번역
-  useEffect(() => {
-    if (!room) return
+  // 무한 로딩 문제로 인해 일시적으로 비활성화
+  // useEffect(() => {
+  //   if (!room) return
 
-    const translateExistingMessages = async () => {
-      console.log('Translating existing messages for language:', selectedLanguage)
-      const guideMessages = messages.filter(msg => 
-        msg.sender_type === 'guide' && 
-        !msg.message.startsWith('[EN] ') &&
-        needsTranslation(msg)
-      )
+  //   const translateExistingMessages = async () => {
+  //     console.log('Translating existing messages for language:', selectedLanguage)
+  //     const guideMessages = messages.filter(msg => 
+  //       msg.sender_type === 'guide' && 
+  //       !msg.message.startsWith('[EN] ') &&
+  //       needsTranslation(msg)
+  //     )
       
-      console.log('Found guide messages to translate:', guideMessages.length)
+  //     console.log('Found guide messages to translate:', guideMessages.length)
 
-      for (const message of guideMessages) {
-        if (translating[message.id]) continue
+  //     for (const message of guideMessages) {
+  //       if (translating[message.id]) continue
 
-        console.log('Translating message:', message.message)
-        setTranslating(prev => ({ ...prev, [message.id]: true }))
-        try {
-          const result = await translateText(message.message, detectLanguage(message.message), selectedLanguage)
-          console.log('Translation result:', result)
-      setTranslatedMessages(prev => ({
-        ...prev,
-            [message.id]: result.translatedText
-      }))
-    } catch (error) {
-          console.error('Translation error for existing message:', error)
-    } finally {
-          setTranslating(prev => ({ ...prev, [message.id]: false }))
-        }
-      }
-    }
+  //       console.log('Translating message:', message.message)
+  //       setTranslating(prev => ({ ...prev, [message.id]: true }))
+  //       try {
+  //         const result = await translateText(message.message, detectLanguage(message.message), selectedLanguage)
+  //         console.log('Translation result:', result)
+  //     setTranslatedMessages(prev => ({
+  //       ...prev,
+  //           [message.id]: result.translatedText
+  //     }))
+  //   } catch (error) {
+  //         console.error('Translation error for existing message:', error)
+  //   } finally {
+  //         setTranslating(prev => ({ ...prev, [message.id]: false }))
+  //       }
+  //     }
+  //   }
 
-    translateExistingMessages()
-  }, [selectedLanguage, messages, room, needsTranslation, translating])
+  //   translateExistingMessages()
+  // }, [selectedLanguage, messages, room, needsTranslation, translating])
 
   // 가이드 메시지 자동 번역 함수 (현재 사용되지 않음)
   // const translateGuideMessage = async (message: ChatMessage) => {
