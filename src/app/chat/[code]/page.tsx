@@ -73,14 +73,28 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code])
 
-  // PWA 설치 프롬프트 감지
+  // Service Worker 등록 및 PWA 설치 프롬프트 감지
   useEffect(() => {
+    // Service Worker 등록 (PWA 설치를 위해 필요)
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        .then((registration) => {
+          console.log('Service Worker registered:', registration)
+          // 업데이트 확인
+          registration.update()
+        })
+        .catch((error) => {
+          console.error('Service Worker registration failed:', error)
+        })
+    }
+
     const handleBeforeInstallPrompt = (e: Event) => {
       // 기본 설치 프롬프트 방지
       e.preventDefault()
       // 설치 프롬프트 저장
       setDeferredPrompt(e)
       setShowInstallButton(true)
+      console.log('beforeinstallprompt event captured')
     }
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
@@ -90,6 +104,20 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
       setShowInstallButton(false)
     }
 
+    // manifest.json이 로드되었는지 확인
+    const checkManifest = () => {
+      const link = document.querySelector('link[rel="manifest"]')
+      if (!link) {
+        // manifest 링크가 없으면 추가
+        const manifestLink = document.createElement('link')
+        manifestLink.rel = 'manifest'
+        manifestLink.href = '/manifest.json'
+        document.head.appendChild(manifestLink)
+        console.log('Manifest link added')
+      }
+    }
+    checkManifest()
+
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
     }
@@ -97,6 +125,34 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
 
   // 홈 화면에 추가 버튼 클릭 핸들러
   const handleAddToHomeScreen = async () => {
+    // Service Worker가 등록되어 있는지 확인하고, 없으면 등록 시도
+    if ('serviceWorker' in navigator) {
+      try {
+        const registration = await navigator.serviceWorker.getRegistration()
+        if (!registration) {
+          await navigator.serviceWorker.register('/sw.js', { scope: '/' })
+          console.log('Service Worker registered on button click')
+          // Service Worker 등록 후 잠시 대기 (beforeinstallprompt 이벤트가 발생할 시간을 줌)
+          await new Promise(resolve => setTimeout(resolve, 1000))
+        }
+      } catch (error) {
+        console.error('Failed to register service worker:', error)
+      }
+    }
+
+    // manifest 링크 확인 및 추가
+    let manifestLink = document.querySelector('link[rel="manifest"]')
+    if (!manifestLink) {
+      manifestLink = document.createElement('link')
+      manifestLink.setAttribute('rel', 'manifest')
+      manifestLink.setAttribute('href', '/manifest.json')
+      document.head.appendChild(manifestLink)
+      console.log('Manifest link added on button click')
+      // manifest가 로드될 시간을 주기 위해 잠시 대기
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+
+    // deferredPrompt가 아직 없으면 다시 확인
     if (!deferredPrompt) {
       // iOS Safari의 경우 수동 안내
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)

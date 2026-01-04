@@ -159,12 +159,17 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
     // ICE candidate 전송
     pc.onicecandidate = (event) => {
       if (event.candidate && channelRef.current) {
+        // candidate는 이미 객체 형태이므로 직접 사용
         channelRef.current.send({
           type: 'broadcast',
           event: 'ice-candidate',
           payload: {
             from: userId,
-            candidate: event.candidate.toJSON()
+            candidate: {
+              candidate: event.candidate.candidate,
+              sdpMLineIndex: event.candidate.sdpMLineIndex,
+              sdpMid: event.candidate.sdpMid
+            }
           }
         })
       }
@@ -214,6 +219,7 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
       await pc.setLocalDescription(offer)
 
       if (channelRef.current) {
+        // offer는 이미 객체 형태이므로 직접 사용
         channelRef.current.send({
           type: 'broadcast',
           event: 'call-offer',
@@ -221,7 +227,10 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
             from: userId,
             userName: userName,
             to: finalTargetUserId, // 특정 사용자에게만 전송
-            offer: offer.toJSON()
+            offer: {
+              type: offer.type,
+              sdp: offer.sdp
+            }
           }
         })
       }
@@ -281,13 +290,17 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
       await pc.setLocalDescription(answer)
 
       if (channelRef.current) {
+        // answer는 이미 객체 형태이므로 직접 사용
         channelRef.current.send({
           type: 'broadcast',
           event: 'call-answer',
           payload: {
             from: userId,
             userName: userName,
-            answer: answer.toJSON()
+            answer: {
+              type: answer.type,
+              sdp: answer.sdp
+            }
           }
         })
       }
