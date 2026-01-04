@@ -1892,11 +1892,27 @@ export default function TourChatRoom({
           })
         })
 
-        if (!response.ok) {
-          throw new Error('메시지 전송에 실패했습니다')
+        let result
+        try {
+          result = await response.json()
+        } catch (jsonError) {
+          console.error('Failed to parse JSON response:', jsonError)
+          const text = await response.text()
+          console.error('Response text:', text)
+          throw new Error(selectedLanguage === 'ko' ? '서버 응답을 파싱할 수 없습니다.' : 'Failed to parse server response.')
         }
 
-        const result = await response.json()
+        if (!response.ok) {
+          const errorMsg = result?.error || result?.details || (selectedLanguage === 'ko' ? '메시지 전송에 실패했습니다' : 'Failed to send message')
+          console.error('API error:', result)
+          throw new Error(errorMsg)
+        }
+
+        if (!result || !result.message) {
+          console.error('Invalid API response:', result)
+          throw new Error(selectedLanguage === 'ko' ? '서버 응답이 올바르지 않습니다.' : 'Invalid server response.')
+        }
+
         data = result.message
       } else {
         // 가이드/관리자는 직접 Supabase 사용
@@ -1950,11 +1966,19 @@ export default function TourChatRoom({
       console.error('Error sending location message:', error)
       const errorMessage = error instanceof Error 
         ? error.message 
-        : 'An error occurred while sending the message.'
-      alert(errorMessage)
+        : (selectedLanguage === 'ko' ? '메시지 전송 중 오류가 발생했습니다.' : 'An error occurred while sending the message.')
+      
+      // 더 자세한 에러 메시지 표시
+      const displayMessage = selectedLanguage === 'ko'
+        ? `위치 공유 실패: ${errorMessage}`
+        : `Failed to share location: ${errorMessage}`
+      
+      alert(displayMessage)
       
       // 실패 시 임시 메시지 제거
       setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id))
+      
+      // pendingLocation은 유지하여 다시 시도할 수 있도록 함
     } finally {
       setSending(false)
     }
