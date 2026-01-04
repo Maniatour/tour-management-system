@@ -67,6 +67,13 @@ export function usePushNotification(roomId?: string, customerEmail?: string, lan
       return false
     }
 
+    // UUID 형식 검증
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidRegex.test(roomId)) {
+      console.error('Invalid roomId format:', roomId)
+      return false
+    }
+
     setIsLoading(true)
 
     try {
@@ -108,11 +115,17 @@ export function usePushNotification(roomId?: string, customerEmail?: string, lan
 
       // 서버에 구독 정보 저장
       // 먼저 기존 구독이 있는지 확인
-      const { data: existingSubscription } = await supabase
+      const { data: existingSubscription, error: checkError } = await supabase
         .from('push_subscriptions')
         .select('id')
         .eq('endpoint', subscriptionData.endpoint)
         .maybeSingle()
+
+      if (checkError) {
+        console.error('Error checking existing subscription:', checkError)
+        setIsLoading(false)
+        return false
+      }
 
       let error
       if (existingSubscription) {
@@ -149,6 +162,8 @@ export function usePushNotification(roomId?: string, customerEmail?: string, lan
           details: error.details,
           hint: error.hint,
           code: error.code,
+          roomId: roomId,
+          customerEmail: customerEmail,
           fullError: error
         })
         setIsLoading(false)

@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import { Trash2, User, MapPin } from 'lucide-react'
+import { Trash2, User, MapPin, Languages } from 'lucide-react'
 import type { ChatMessage } from '@/types/chat'
 import type { SupportedLanguage } from '@/lib/translation'
 
@@ -20,6 +20,8 @@ interface MessageListProps {
   messagesEndRef: React.RefObject<HTMLDivElement>
   showParticipantsList: boolean
   isMobileMenuOpen: boolean
+  translateMessage?: (messageId: string, messageText: string) => Promise<void>
+  translating?: { [key: string]: boolean }
 }
 
 export default function MessageList({
@@ -36,7 +38,9 @@ export default function MessageList({
   deleteMessage,
   messagesEndRef,
   showParticipantsList,
-  isMobileMenuOpen
+  isMobileMenuOpen,
+  translateMessage,
+  translating = {}
 }: MessageListProps) {
   return (
     <div 
@@ -77,15 +81,69 @@ export default function MessageList({
               </div>
             )}
             
-            <div className="flex flex-col max-w-xs lg:max-w-md">
-              {/* 이름 (고객 메시지일 때만) */}
-              {message.sender_type === 'customer' && (
-                <div className="text-xs font-medium text-gray-700 mb-1 px-1">
-                  {message.sender_name}
-                </div>
-              )}
+            {/* 메시지 박스와 번역 뱃지를 감싸는 컨테이너 */}
+            {(() => {
+              // 내 메시지인지 확인
+              const isMyMessage = (isPublicView && message.sender_type === 'customer') || 
+                                 (!isPublicView && message.sender_type === 'guide')
               
-              <div
+              // 번역 뱃지 표시 조건 (번역이 저장되어 있지 않을 때만 표시)
+              const showTranslateBadge = translateMessage && 
+                                        !hasTranslation &&
+                                        message.message_type === 'text' && 
+                                        message.message && 
+                                        typeof message.message === 'string' &&
+                                        message.message.trim().length > 0 &&
+                                        !message.message.startsWith('[EN] ')
+              
+              return (
+                <div className={`flex items-end gap-2 ${isMyMessage ? 'flex-row-reverse' : 'flex-row'}`}>
+                  {/* 번역 뱃지 (메시지 박스 옆) - 번역이 저장되어 있지 않을 때만 표시 */}
+                  {showTranslateBadge && (
+                    <div className="flex-shrink-0 mb-1">
+                      <button
+                        onClick={() => translateMessage(message.id, message.message)}
+                        disabled={translating[message.id] || !!hasTranslation}
+                        className={`px-2 py-1 rounded-full text-xs font-medium shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 ${
+                          hasTranslation
+                            ? 'bg-green-500 text-white'
+                            : translating[message.id]
+                            ? 'bg-blue-500 text-white animate-pulse'
+                            : 'bg-blue-500 hover:bg-blue-600 text-white'
+                        }`}
+                        title={hasTranslation ? (selectedLanguage === 'ko' ? '이미 번역됨' : 'Already translated') : (selectedLanguage === 'ko' ? '번역하기' : 'Translate')}
+                      >
+                        {translating[message.id] ? (
+                          <>
+                            <div className="animate-spin">
+                              <Languages size={12} />
+                            </div>
+                            <span className="text-[10px]">{selectedLanguage === 'ko' ? '번역 중' : 'Translating'}</span>
+                          </>
+                        ) : hasTranslation ? (
+                          <>
+                            <Languages size={12} />
+                            <span className="text-[10px]">{getLanguageDisplayName(selectedLanguage)}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Languages size={12} />
+                            <span className="text-[10px]">{selectedLanguage === 'ko' ? '번역' : 'Translate'}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                  
+                  <div className="flex flex-col max-w-xs lg:max-w-md">
+                    {/* 이름 (고객 메시지일 때만) */}
+                    {message.sender_type === 'customer' && (
+                      <div className="text-xs font-medium text-gray-700 mb-1 px-1">
+                        {message.sender_name}
+                      </div>
+                    )}
+                    
+                    <div
                 className={`px-3 lg:px-4 py-2 rounded-lg border shadow-sm ${
                   message.sender_type === 'system'
                     ? 'bg-gray-200 bg-opacity-80 backdrop-blur-sm text-gray-700 text-center'
@@ -179,18 +237,12 @@ export default function MessageList({
                         })}
                       </div>
                       
-                      {/* 가이드 메시지 자동 번역 (고객용/관리자용) */}
-                      {message.sender_type === 'guide' && needsTrans && (
+                      {/* 번역 결과 표시 (저장된 번역이 있을 때 본문 아래에 표시) */}
+                      {hasTranslation && message.message_type === 'text' && !message.message.startsWith('[EN] ') && (
                         <div className="mt-2 pt-2 border-t border-gray-200">
-                          {hasTranslation ? (
-                            <div className="text-xs text-white">
-                              <span className="font-medium">{getLanguageDisplayName(selectedLanguage)}:</span> {hasTranslation}
-                            </div>
-                          ) : (
-                            <div className="text-xs text-gray-400">
-                              {getLanguageDisplayName(selectedLanguage)}으로 번역 사용 가능
-                            </div>
-                          )}
+                          <div className={`text-xs ${message.sender_type === 'guide' ? 'text-white opacity-90' : 'text-gray-600'}`}>
+                            <span className="font-medium">{getLanguageDisplayName(selectedLanguage)}:</span> {hasTranslation}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -212,7 +264,7 @@ export default function MessageList({
                           deleteMessage(message.id)
                         }
                       }}
-                      className="ml-2 p-1 text-gray-400 hover:text-red-500 transition-colors"
+                      className="p-1 text-gray-400 hover:text-red-500 transition-colors"
                       title="메시지 삭제"
                     >
                       <Trash2 size={14} />
@@ -220,7 +272,10 @@ export default function MessageList({
                   )}
                 </div>
               </div>
-            </div>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         )
       })}
