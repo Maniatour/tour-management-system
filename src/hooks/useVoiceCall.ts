@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 
-export type CallStatus = 'idle' | 'calling' | 'ringing' | 'connected' | 'ended'
+export type CallStatus = 'idle' | 'calling' | 'ringing' | 'connected' | 'ended' | 'error'
 
 interface UseVoiceCallProps {
   roomId: string
@@ -16,6 +16,7 @@ interface UseVoiceCallProps {
 
 export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUserId, targetUserName }: UseVoiceCallProps) {
   const [callStatus, setCallStatus] = useState<CallStatus>('idle')
+  const [callError, setCallError] = useState<string | null>(null)
   const [remoteAudio, setRemoteAudio] = useState<HTMLAudioElement | null>(null)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [isMuted, setIsMuted] = useState(false)
@@ -239,8 +240,11 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
         localStreamRef.current = null
         setLocalStream(null)
       }
-      setCallStatus('idle')
-      throw error // 에러를 다시 throw하여 호출자가 처리할 수 있도록
+      // 에러 상태로 설정하여 모달이 유지되도록 함
+      setCallStatus('error')
+      setCallError(error.message || '통화를 시작할 수 없습니다.')
+      // 에러를 throw하지 않고 false를 반환하여 호출자가 처리할 수 있도록 함
+      return false
     }
   }, [userId, userName, targetUserId, targetUserName, setupPeerConnection])
 
@@ -380,6 +384,7 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
 
   return {
     callStatus,
+    callError,
     localStream,
     remoteAudio,
     isMuted,

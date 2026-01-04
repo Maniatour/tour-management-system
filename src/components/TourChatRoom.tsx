@@ -206,6 +206,13 @@ export default function TourChatRoom({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [gettingLocation, setGettingLocation] = useState(false)
+  const [showLocationShareModal, setShowLocationShareModal] = useState(false)
+  const [pendingLocation, setPendingLocation] = useState<{
+    latitude: number
+    longitude: number
+    googleMapsLink: string
+    naverMapsLink: string
+  } | null>(null)
   
   // localStorage에서 아바타 불러오기
   useEffect(() => {
@@ -337,6 +344,7 @@ export default function TourChatRoom({
   
   const {
     callStatus,
+    callError,
     isMuted,
     callDuration,
     incomingOffer,
@@ -667,9 +675,75 @@ export default function TourChatRoom({
     }
   }
 
+  // chat_participants 테이블에서 참여자 목록 로드
+  const loadChatParticipants = useCallback(async (roomId: string) => {
+    try {
+      const { data: participants, error } = await supabase
+        .from('chat_participants')
+        .select('participant_id, participant_name, participant_type, is_active')
+        .eq('room_id', roomId)
+        .eq('is_active', true)
+
+      if (error) {
+        console.error('Error loading chat participants:', error)
+        return
+      }
+
+      if (!participants || participants.length === 0) {
+        return
+      }
+
+      // 참여자 목록을 Map에 추가 (Presence와 병합)
+      // chat_participants의 모든 참여자를 기본으로 설정하고, Presence 정보로 업데이트
+      setOnlineParticipants(prev => {
+        const updated = new Map<string, {
+          id: string
+          name: string
+          type: 'guide' | 'customer'
+          email?: string
+          lastSeen: Date
+        }>()
+        
+        // 먼저 chat_participants의 모든 참여자를 추가
+        participants.forEach(participant => {
+          const key = participant.participant_id
+          updated.set(key, {
+            id: key,
+            name: participant.participant_name || key,
+            type: participant.participant_type === 'customer' ? 'customer' : 'guide',
+            email: participant.participant_type === 'guide' ? key : undefined,
+            lastSeen: new Date()
+          })
+        })
+        
+        // 기존 Presence 정보가 있으면 유지 (온라인 상태 표시를 위해)
+        prev.forEach((value, key) => {
+          if (updated.has(key)) {
+            // chat_participants에 있는 참여자는 Presence 정보로 업데이트
+            const existing = updated.get(key)!
+            updated.set(key, {
+              ...existing,
+              lastSeen: value.lastSeen
+            })
+          } else {
+            // chat_participants에 없지만 Presence에 있는 참여자도 추가 (메시지를 보낸 사람일 수 있음)
+            updated.set(key, value)
+          }
+        })
+        
+        return updated
+      })
+    } catch (error) {
+      console.error('Error in loadChatParticipants:', error)
+    }
+  }, [])
+
   // Supabase Realtime Presence를 사용하여 채팅방 참여자 추적
   useEffect(() => {
     if (!room?.id || isPublicView) return // 고객은 참여자 목록을 볼 수 없음
+
+    // chat_participants 테이블에서 참여자 목록 로드
+    loadChatParticipants(room.id)
 
     const channelName = `chat-presence-${room.id}`
     const channel = supabase.channel(channelName, {
@@ -680,54 +754,52 @@ export default function TourChatRoom({
       }
     })
 
-    // 현재 사용자의 presence 설정
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState()
-        const participants = new Map<string, {
-          id: string
-          name: string
-          type: 'guide' | 'customer'
-          email?: string
-          lastSeen: Date
-        }>()
+      // 현재 사용자의 presence 설정
+      channel
+        .on('presence', { event: 'sync' }, () => {
+          const state = channel.presenceState()
+          
+          // 기존 참여자 목록을 유지하면서 Presence에서 온라인 참여자 추가/업데이트
+          setOnlineParticipants(prev => {
+            const updated = new Map(prev)
 
-        // Presence state에서 참여자 정보 추출
-        Object.entries(state).forEach(([key, presences]) => {
-          if (Array.isArray(presences) && presences.length > 0) {
-            const presence = presences[0] as any
-            // 현재 사용자는 제외
-            if (presence && presence.userId !== userId) {
-              // 메시지에서 사용자 정보 찾기
-              const userMessage = messages.find(m => 
-                (presence.userId === m.sender_email) || 
-                (presence.userId === m.sender_name)
-              )
-              
-              if (userMessage) {
-                participants.set(presence.userId, {
-                  id: presence.userId,
-                  name: userMessage.sender_name,
-                  type: userMessage.sender_type,
-                  email: userMessage.sender_email,
-                  lastSeen: new Date()
-                })
-              } else if (presence.userName) {
-                // 메시지에 없는 경우 presence 데이터에서 직접 가져오기
-                participants.set(presence.userId, {
-                  id: presence.userId,
-                  name: presence.userName || presence.userId,
-                  type: presence.userType || 'guide',
-                  email: presence.userEmail,
-                  lastSeen: new Date()
-                })
+            // Presence state에서 참여자 정보 추출
+            Object.entries(state).forEach(([key, presences]) => {
+              if (Array.isArray(presences) && presences.length > 0) {
+                const presence = presences[0] as any
+                // 현재 사용자는 제외
+                if (presence && presence.userId !== userId) {
+                  // 메시지에서 사용자 정보 찾기
+                  const userMessage = messages.find(m => 
+                    (presence.userId === m.sender_email) || 
+                    (presence.userId === m.sender_name)
+                  )
+                  
+                  if (userMessage) {
+                    updated.set(presence.userId, {
+                      id: presence.userId,
+                      name: userMessage.sender_name,
+                      type: userMessage.sender_type,
+                      email: userMessage.sender_email,
+                      lastSeen: new Date()
+                    })
+                  } else if (presence.userName) {
+                    // 메시지에 없는 경우 presence 데이터에서 직접 가져오기
+                    updated.set(presence.userId, {
+                      id: presence.userId,
+                      name: presence.userName || presence.userId,
+                      type: presence.userType || 'guide',
+                      email: presence.userEmail,
+                      lastSeen: new Date()
+                    })
+                  }
+                }
               }
-            }
-          }
-        })
+            })
 
-        setOnlineParticipants(participants)
-      })
+            return updated
+          })
+        })
       .on('presence', { event: 'join' }, ({ key, newPresences }) => {
         console.log('User joined:', key, newPresences)
         // 새 참여자 추가
@@ -755,14 +827,12 @@ export default function TourChatRoom({
       })
       .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
         console.log('User left:', key, leftPresences)
+        // 참여자를 삭제하지 않고 유지 (chat_participants에 등록된 참여자는 계속 표시)
+        // 단지 온라인 상태만 업데이트
         setOnlineParticipants(prev => {
           const updated = new Map(prev)
-          if (Array.isArray(leftPresences) && leftPresences.length > 0) {
-            const presence = leftPresences[0] as any
-            if (presence && presence.userId) {
-              updated.delete(presence.userId)
-            }
-          }
+          // Presence에서 나간 참여자는 삭제하지 않고 유지
+          // chat_participants에 등록된 참여자는 계속 표시되어야 함
           return updated
         })
       })
@@ -787,7 +857,7 @@ export default function TourChatRoom({
         presenceChannelRef.current = null
       }
     }
-  }, [room?.id, userId, userName, isPublicView, guideEmail, messages])
+  }, [room?.id, userId, userName, isPublicView, guideEmail, messages, loadChatParticipants])
 
   // 팀 정보 로드 (가이드, 어시스턴트, 드라이버)
   const loadTeamInfo = useCallback(async () => {
@@ -950,9 +1020,44 @@ export default function TourChatRoom({
         }
         await loadMessages(room.id)
         
+        // 고객이 채팅방에 입장할 때 chat_participants에 추가
+        if (isPublicView && customerName && room.id) {
+          try {
+            // 이미 등록되어 있는지 확인
+            const { data: existingParticipant } = await supabase
+              .from('chat_participants')
+              .select('id')
+              .eq('room_id', room.id)
+              .eq('participant_type', 'customer')
+              .eq('participant_id', customerName)
+              .eq('is_active', true)
+              .maybeSingle()
+
+            // 등록되어 있지 않으면 추가
+            if (!existingParticipant) {
+              await supabase
+                .from('chat_participants')
+                .insert({
+                  room_id: room.id,
+                  participant_type: 'customer',
+                  participant_id: customerName,
+                  participant_name: customerName,
+                  is_active: true
+                })
+            }
+          } catch (error) {
+            console.error('Error adding customer to participants:', error)
+          }
+        }
+        
         // 투어에 배정된 팀원들을 자동으로 참여시키기 (고객 뷰가 아니고 tourId가 있는 경우)
         if (room.tour_id && !isPublicView && autoAddTeamMembersFnRef.current) {
           await autoAddTeamMembersFnRef.current(room.id, room.tour_id)
+        }
+        
+        // chat_participants에서 참여자 목록 로드 (관리자/가이드 뷰만)
+        if (!isPublicView) {
+          loadChatParticipants(room.id)
         }
         
         // 고객용 채팅에서 픽업 스케줄 및 팀 정보 로드
@@ -1186,6 +1291,10 @@ export default function TourChatRoom({
         if (autoAddTeamMembersFnRef.current) {
           await autoAddTeamMembersFnRef.current(existingRoom.id, tourId)
         }
+        // chat_participants에서 참여자 목록 로드 (관리자/가이드 뷰만)
+        if (!isPublicView) {
+          loadChatParticipants(existingRoom.id)
+        }
         // 픽업 스케줄은 별도로 로드
         loadPickupSchedule()
       } else {
@@ -1200,11 +1309,28 @@ export default function TourChatRoom({
     }
   }, [tourId])
 
+  // 초기화 플래그를 ref로 관리하여 무한 루핑 방지
+  const initializationRef = useRef<{ tourId?: string; isPublicView?: boolean; roomCode?: string }>({})
+  
   // 채팅방 로드 또는 생성
   useEffect(() => {
     let isMounted = true
     
+    // 이미 같은 파라미터로 초기화되었는지 확인
+    const currentKey = `${tourId}_${isPublicView}_${roomCode}`
+    const lastKey = `${initializationRef.current.tourId}_${initializationRef.current.isPublicView}_${initializationRef.current.roomCode}`
+    
+    if (currentKey === lastKey && initializationRef.current.tourId !== undefined) {
+      // 이미 초기화되었으므로 스킵
+      return
+    }
+    
+    // 초기화 플래그 업데이트
+    initializationRef.current = { tourId, isPublicView, roomCode }
+    
     const initializeChat = async () => {
+      if (!isMounted) return
+      
       if (isPublicView && roomCode) {
         await loadRoomByCode(roomCode)
       } else if (!isPublicView && tourId) {
@@ -1663,6 +1789,134 @@ export default function TourChatRoom({
     }
   }
 
+  // 위치 공유 확인 후 메시지 전송
+  const confirmLocationShare = async () => {
+    if (!pendingLocation || !room) return
+    
+    setShowLocationShareModal(false)
+    setGettingLocation(false)
+    
+    // 위치 정보를 메시지로 전송
+    const locationMessage = selectedLanguage === 'ko' 
+      ? `📍 내 위치\n위도: ${pendingLocation.latitude.toFixed(6)}\n경도: ${pendingLocation.longitude.toFixed(6)}\n\n🗺️ 지도 보기:\nGoogle Maps: ${pendingLocation.googleMapsLink}\nNaver Maps: ${pendingLocation.naverMapsLink}`
+      : `📍 My Location\nLatitude: ${pendingLocation.latitude.toFixed(6)}\nLongitude: ${pendingLocation.longitude.toFixed(6)}\n\n🗺️ View on Map:\nGoogle Maps: ${pendingLocation.googleMapsLink}`
+    
+    // 메시지 전송
+    const messageText = locationMessage
+    setSending(true)
+    
+    // 즉시 UI에 메시지 표시 (낙관적 업데이트)
+    const tempMessage: ChatMessage = {
+      id: `temp_${Date.now()}`,
+      room_id: room.id,
+      sender_type: isPublicView ? 'customer' : 'guide',
+      sender_name: isPublicView ? (customerName || '고객') : '가이드',
+      sender_email: isPublicView ? undefined : guideEmail,
+      sender_avatar: isPublicView ? selectedAvatar : undefined,
+      message: messageText,
+      message_type: 'location',
+      is_read: false,
+      created_at: new Date().toISOString()
+    }
+    
+    setMessages(prev => [...prev, tempMessage])
+    scrollToBottom()
+
+    try {
+      let data: ChatMessage | null = null
+
+      // 고객용 공유 페이지는 API 엔드포인트 사용 (RLS 우회)
+      if (isPublicView) {
+        const response = await fetch('/api/chat-messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            room_id: room.id,
+            sender_name: customerName || '고객',
+            sender_type: 'customer',
+            sender_avatar: selectedAvatar,
+            message: messageText,
+            message_type: 'location'
+          })
+        })
+
+        if (!response.ok) {
+          throw new Error('메시지 전송에 실패했습니다')
+        }
+
+        const result = await response.json()
+        data = result.message
+      } else {
+        // 가이드/관리자는 직접 Supabase 사용
+        const result = await (supabase
+          .from('chat_messages') as unknown as SupabaseInsertBuilder)
+          .insert({
+            room_id: room.id,
+            sender_type: 'guide',
+            sender_name: '가이드',
+            sender_email: guideEmail,
+            message: messageText,
+            message_type: 'location'
+          })
+          .select()
+          .single()
+
+        if (result.error) throw result.error
+        data = result.data
+      }
+      
+      // 실제 메시지로 교체
+      if (data) {
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === tempMessage.id ? data : msg
+          )
+        )
+        
+        // 가이드가 메시지를 보낸 경우 푸시 알림 전송
+        if (!isPublicView && room.id) {
+          try {
+            await fetch('/api/push-notification/send', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                roomId: room.id,
+                message: messageText,
+                senderName: '가이드'
+              })
+            })
+          } catch (pushError) {
+            console.error('Error sending push notification:', pushError)
+          }
+        }
+      }
+      
+      setPendingLocation(null)
+    } catch (error) {
+      console.error('Error sending location message:', error)
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'An error occurred while sending the message.'
+      alert(errorMessage)
+      
+      // 실패 시 임시 메시지 제거
+      setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id))
+    } finally {
+      setSending(false)
+    }
+  }
+
+  // 위치 공유 취소
+  const cancelLocationShare = () => {
+    setShowLocationShareModal(false)
+    setPendingLocation(null)
+    setGettingLocation(false)
+  }
+
   // 위치 공유 함수
   const shareLocation = async () => {
     if (!room || gettingLocation || sending) return
@@ -1687,17 +1941,14 @@ export default function TourChatRoom({
       const googleMapsLink = `https://www.google.com/maps?q=${latitude},${longitude}`
       const naverMapsLink = `https://map.naver.com/?dlevel=11&lat=${latitude}&lng=${longitude}&mapMode=0&pinTitle=내+위치&pinType=default`
       
-      // 위치 정보를 메시지로 전송
-      const locationMessage = selectedLanguage === 'ko' 
-        ? `📍 내 위치\n위도: ${latitude.toFixed(6)}\n경도: ${longitude.toFixed(6)}\n\n🗺️ 지도 보기:\nGoogle Maps: ${googleMapsLink}\nNaver Maps: ${naverMapsLink}`
-        : `📍 My Location\nLatitude: ${latitude.toFixed(6)}\nLongitude: ${longitude.toFixed(6)}\n\n🗺️ View on Map:\nGoogle Maps: ${googleMapsLink}`
-      
-      // 메시지에 위치 정보를 포함하여 전송
-      setNewMessage(locationMessage)
-      // 자동으로 메시지 전송
-      setTimeout(() => {
-        sendMessage()
-      }, 100)
+      // 위치 정보를 저장하고 모달 표시
+      setPendingLocation({
+        latitude,
+        longitude,
+        googleMapsLink,
+        naverMapsLink
+      })
+      setShowLocationShareModal(true)
     } catch (error) {
       console.error('Error getting location:', error)
       if (error instanceof GeolocationPositionError) {
@@ -2722,6 +2973,7 @@ export default function TourChatRoom({
         callerName={callerName || selectedCallTarget?.name}
         callDuration={callDuration}
         isMuted={isMuted}
+        callError={callError}
         onAccept={callStatus === 'ringing' ? acceptCall : undefined}
         onReject={rejectCall}
         onEnd={endCall}
@@ -2890,6 +3142,61 @@ export default function TourChatRoom({
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 {selectedLanguage === 'ko' ? '닫기' : 'Close'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 위치 공유 확인 모달 */}
+      {showLocationShareModal && pendingLocation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              {selectedLanguage === 'ko' ? '내 위치를 공유하시겠습니까?' : 'Share your location?'}
+            </h3>
+            <div className="mb-4 text-sm text-gray-600">
+              <p className="mb-2 whitespace-pre-line">
+                {selectedLanguage === 'ko' 
+                  ? `위도: ${pendingLocation.latitude.toFixed(6)}\n경도: ${pendingLocation.longitude.toFixed(6)}`
+                  : `Latitude: ${pendingLocation.latitude.toFixed(6)}\nLongitude: ${pendingLocation.longitude.toFixed(6)}`}
+              </p>
+              <div className="flex gap-2 mt-2">
+                <a
+                  href={pendingLocation.googleMapsLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-800 text-xs underline"
+                >
+                  {selectedLanguage === 'ko' ? 'Google Maps에서 보기' : 'View on Google Maps'}
+                </a>
+                {selectedLanguage === 'ko' && (
+                  <a
+                    href={pendingLocation.naverMapsLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 text-xs underline"
+                  >
+                    Naver Maps에서 보기
+                  </a>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={cancelLocationShare}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                {selectedLanguage === 'ko' ? '취소' : 'Cancel'}
+              </button>
+              <button
+                onClick={confirmLocationShare}
+                disabled={sending}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {sending 
+                  ? (selectedLanguage === 'ko' ? '전송 중...' : 'Sending...')
+                  : (selectedLanguage === 'ko' ? '확인' : 'Confirm')}
               </button>
             </div>
           </div>

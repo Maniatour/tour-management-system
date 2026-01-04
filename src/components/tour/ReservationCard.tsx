@@ -570,13 +570,23 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
 
   // 컴포넌트 마운트 시 가격 정보, 입금 내역, 채널 정보, 고객 정보 가져오기
   useEffect(() => {
-    if (isStaff) {
-      fetchReservationPricing()
-      fetchPaymentRecords()
-    }
-    fetchChannelInfo()
-    fetchCustomerData()
-  }, [isStaff, reservation.id, reservation.customer_id, fetchReservationPricing, fetchPaymentRecords, fetchChannelInfo, fetchCustomerData])
+    // 동시 요청을 방지하기 위해 예약 ID를 기반으로 일관된 지연 시간 설정
+    // 예약 ID의 마지막 문자를 숫자로 변환하여 0-1000ms 사이의 지연 시간 생성
+    const reservationIdHash = reservation.id.charCodeAt(reservation.id.length - 1) % 1000
+    const delay = reservationIdHash * 2 // 0-2000ms 지연
+    
+    const timeoutId = setTimeout(() => {
+      if (isStaff) {
+        fetchReservationPricing()
+        // paymentRecords는 필요할 때만 로드하도록 변경 (이미 togglePaymentRecords에서 처리)
+        // fetchPaymentRecords()
+      }
+      fetchChannelInfo()
+      fetchCustomerData()
+    }, delay)
+
+    return () => clearTimeout(timeoutId)
+  }, [isStaff, reservation.id, reservation.customer_id, fetchReservationPricing, fetchChannelInfo, fetchCustomerData])
 
   // 입금 내역 표시 토글
   const togglePaymentRecords = () => {

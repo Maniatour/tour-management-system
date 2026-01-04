@@ -9,6 +9,7 @@ interface VoiceCallModalProps {
   callerName?: string
   callDuration: string
   isMuted: boolean
+  callError?: string | null
   onAccept?: () => void
   onReject: () => void
   onEnd: () => void
@@ -22,6 +23,7 @@ export default function VoiceCallModal({
   callerName,
   callDuration,
   isMuted,
+  callError,
   onAccept,
   onReject,
   onEnd,
@@ -36,9 +38,11 @@ export default function VoiceCallModal({
       ringing: '통화 요청',
       connected: '통화 중',
       incoming: '들어오는 통화',
+      error: '통화 오류',
       accept: '수락',
       reject: '거절',
       end: '종료',
+      close: '닫기',
       mute: '음소거',
       unmute: '음소거 해제'
     },
@@ -47,9 +51,11 @@ export default function VoiceCallModal({
       ringing: 'Incoming Call',
       connected: 'In Call',
       incoming: 'Incoming Call',
+      error: 'Call Error',
       accept: 'Accept',
       reject: 'Reject',
       end: 'End',
+      close: 'Close',
       mute: 'Mute',
       unmute: 'Unmute'
     }
@@ -79,9 +85,14 @@ export default function VoiceCallModal({
             {callStatus === 'calling' && t.calling}
             {callStatus === 'ringing' && t.ringing}
             {callStatus === 'connected' && t.connected}
+            {callStatus === 'error' && t.error}
           </h2>
           
-          {callerName && (
+          {callError && (
+            <p className="text-lg text-red-600 mb-1">{callError}</p>
+          )}
+          
+          {!callError && callerName && (
             <p className="text-lg text-gray-600 mb-1">{callerName}</p>
           )}
           
