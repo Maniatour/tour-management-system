@@ -49,6 +49,7 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(true)
   const [selectedAvatar, setSelectedAvatar] = useState<string>('')
   const [showAvatarSelector, setShowAvatarSelector] = useState(false)
+  const [faviconUrl, setFaviconUrl] = useState<string | null>(null)
 
   const paramsObj = useParams()
   const code = paramsObj.code as string
@@ -60,14 +61,34 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
     isLoading: isPushLoading,
     subscribe: subscribeToPush,
     unsubscribe: unsubscribeFromPush
-  } = usePushNotification(room?.id, undefined)
+  } = usePushNotification(room?.id, undefined, selectedLanguage)
 
   useEffect(() => {
     console.log('PublicChatPage useEffect triggered with code:', code)
     loadRoomInfo()
     loadSavedUserData()
+    loadFavicon()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code])
+
+  // Favicon 로드
+  const loadFavicon = async () => {
+    try {
+      const { data } = await supabase
+        .from('channels')
+        .select('favicon_url')
+        .eq('type', 'self')
+        .not('favicon_url', 'is', null)
+        .limit(1)
+        .single()
+      
+      if (data?.favicon_url) {
+        setFaviconUrl(data.favicon_url)
+      }
+    } catch (error) {
+      console.error('Error loading favicon:', error)
+    }
+  }
 
   // 드롭다운 외부 클릭 시 닫기
   useEffect(() => {
@@ -307,11 +328,29 @@ export default function PublicChatPage({ params }: { params: Promise<{ code: str
         <div className="px-4 sm:px-6 lg:px-8 py-4">
           {/* 첫 번째 줄: 제목과 컨트롤 버튼 */}
           <div className="flex items-center justify-between mb-1">
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex-1 min-w-0">
-              {selectedLanguage === 'en'
-                ? (productNames?.name_en || productNames?.name || room.room_name)
-                : (productNames?.name_ko || productNames?.name || room.room_name)}
-            </h1>
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              {/* Favicon */}
+              {faviconUrl ? (
+                <img
+                  src={faviconUrl}
+                  alt="Company favicon"
+                  className="w-6 h-6 sm:w-7 sm:h-7 rounded flex-shrink-0"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement
+                    target.style.display = 'none'
+                  }}
+                />
+              ) : (
+                <div className="w-6 h-6 sm:w-7 sm:h-7 rounded bg-gray-100 flex items-center justify-center flex-shrink-0">
+                  <span className="text-gray-400 text-xs">🌐</span>
+                </div>
+              )}
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex-1 min-w-0">
+                {selectedLanguage === 'en'
+                  ? (productNames?.name_en || productNames?.name || room.room_name)
+                  : (productNames?.name_ko || productNames?.name || room.room_name)}
+              </h1>
+            </div>
             <div className="flex items-center gap-2 ml-2 flex-shrink-0">
               {/* 푸시 알림 토글 버튼 (국기 아이콘 왼쪽) */}
               {isPushSupported && room && (

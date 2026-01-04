@@ -196,6 +196,24 @@ export async function POST(request: NextRequest) {
           
           webpush.setVapidDetails(vapidEmail, vapidPublicKey, vapidPrivateKey)
           
+          // favicon URL 가져오기 (channels 테이블에서 type='self'인 채널)
+          let faviconUrl = '/favicon.ico' // 기본값
+          try {
+            const { data: channels } = await supabaseAdmin
+              .from('channels')
+              .select('favicon_url')
+              .eq('type', 'self')
+              .not('favicon_url', 'is', null)
+              .limit(1)
+              .single()
+            
+            if (channels?.favicon_url) {
+              faviconUrl = channels.favicon_url
+            }
+          } catch (error) {
+            console.warn('Error fetching favicon, using default:', error)
+          }
+
           // 해당 채팅방의 모든 구독 가져오기
           const { data: subscriptions, error: subError } = await supabaseAdmin
             .from('push_subscriptions')
@@ -208,6 +226,10 @@ export async function POST(request: NextRequest) {
           
           // 모든 구독에 푸시 알림 전송
           const messageText = message || (message_type === 'image' ? '이미지를 보냈습니다' : '')
+          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
+            (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://www.kovegas.com')
+          const iconUrl = faviconUrl.startsWith('http') ? faviconUrl : `${baseUrl}${faviconUrl}`
+          
           const notifications = subscriptions.map(async (subscription) => {
             try {
               const pushSubscription = {
@@ -218,11 +240,18 @@ export async function POST(request: NextRequest) {
                 }
               }
               
+              // 구독의 언어 정보 사용 (기본값: 'ko')
+              const language = (subscription as any).language || 'ko'
+              const isKorean = language === 'ko'
+              const imageMessageText = isKorean ? '이미지를 보냈습니다' : 'Sent an image'
+              const displayMessage = messageText || imageMessageText
+              const truncatedMessage = displayMessage.length > 100 ? displayMessage.substring(0, 100) + '...' : displayMessage
+              
               const payload = JSON.stringify({
-                title: '새 메시지',
-                body: `${sender_name}: ${messageText.substring(0, 100)}${messageText.length > 100 ? '...' : ''}`,
-                icon: '/images/logo.png',
-                badge: '/images/logo.png',
+                title: isKorean ? '새 메시지' : 'New Message',
+                body: `${sender_name}: ${truncatedMessage}`,
+                icon: iconUrl,
+                badge: iconUrl,
                 tag: `chat-${room_id}`,
                 data: {
                   url: `/chat/${room.room_code}`,

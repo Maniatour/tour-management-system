@@ -208,7 +208,7 @@ export default function TourChatRoom({
     isLoading: isPushLoading,
     subscribe: subscribeToPush,
     unsubscribe: unsubscribeFromPush
-  } = usePushNotification(room?.id, undefined)
+  } = usePushNotification(room?.id, undefined, selectedLanguage)
   
   // 이미지 업로드
   const [uploading, setUploading] = useState(false)
@@ -903,14 +903,18 @@ export default function TourChatRoom({
 
   const loadMessages = async (roomId: string) => {
     try {
+      // 최근 200개 메시지만 로드하여 WebSocket 페이로드 크기 제한
       const { data, error } = await supabase
         .from('chat_messages')
         .select('*')
         .eq('room_id', roomId)
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
+        .limit(200)
 
       if (error) throw error
-      setMessages(data || [])
+      // 시간순으로 정렬하여 표시
+      const sortedMessages = (data || []).reverse()
+      setMessages(sortedMessages)
       scrollToBottom()
     } catch (error) {
       console.error('Error loading messages:', error)
@@ -1247,7 +1251,15 @@ export default function TourChatRoom({
             if (exists) {
               return prev
             }
-            return [...prev, newMessage]
+            // 메시지 배열 크기 제한 (최대 500개) - WebSocket 페이로드 크기 제한
+            const updated = [...prev, newMessage]
+            if (updated.length > 500) {
+              // 오래된 메시지 제거 (시간순으로 정렬 후 오래된 것부터 제거)
+              return updated.sort((a, b) => 
+                new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+              ).slice(-500)
+            }
+            return updated
           })
       scrollToBottom()
     }
@@ -1872,6 +1884,23 @@ export default function TourChatRoom({
                 >
                   <Users size={18} />
                 </button>
+                {/* 음성 통화 버튼 (고객용) */}
+                <button
+                  onClick={handleStartCall}
+                  disabled={!room || callStatus !== 'idle' || availableCallUsers.length === 0}
+                  className={`p-2 rounded border ${
+                    callStatus === 'connected'
+                      ? 'bg-green-100 text-green-800 border-green-200'
+                      : callStatus !== 'idle'
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                      : availableCallUsers.length === 0
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                      : 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200'
+                  }`}
+                  title={selectedLanguage === 'ko' ? '음성 통화' : 'Voice Call'}
+                >
+                  <Phone size={18} />
+                </button>
               </>
             )}
             {!isPublicView && (
@@ -2092,9 +2121,9 @@ export default function TourChatRoom({
                   </button>
                 </div>
                 
-                {/* 투어 사진, 가이드 정보: 2열 그리드 (고객용) */}
+                {/* 투어 사진, 가이드 정보, 음성 통화: 3열 그리드 (고객용) */}
                 {isPublicView && (
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     <button
                       onClick={() => setShowPhotoGallery(true)}
                       className="flex items-center gap-2 px-3 py-2 bg-violet-100 text-violet-800 rounded-lg border border-violet-200 hover:bg-violet-200 transition-colors"
@@ -2114,6 +2143,26 @@ export default function TourChatRoom({
                         <Users size={20} />
                       </div>
                       <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '가이드 정보' : 'Guide Info'}</span>
+                    </button>
+                    {/* 음성 통화 버튼 (고객용) */}
+                    <button
+                      onClick={handleStartCall}
+                      disabled={!room || callStatus !== 'idle' || availableCallUsers.length === 0}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
+                        callStatus === 'connected'
+                          ? 'bg-green-100 text-green-800 border-green-200'
+                          : callStatus !== 'idle'
+                          ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                          : availableCallUsers.length === 0
+                          ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                          : 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200'
+                      }`}
+                      title={selectedLanguage === 'ko' ? '음성 통화' : 'Voice Call'}
+                    >
+                      <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+                        <Phone size={20} />
+                      </div>
+                      <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '통화' : 'Call'}</span>
                     </button>
                   </div>
                 )}

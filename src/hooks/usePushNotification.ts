@@ -11,7 +11,7 @@ interface PushSubscriptionData {
   }
 }
 
-export function usePushNotification(roomId?: string, customerEmail?: string) {
+export function usePushNotification(roomId?: string, customerEmail?: string, language?: 'ko' | 'en') {
   const [isSupported, setIsSupported] = useState(false)
   const [isSubscribed, setIsSubscribed] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -115,6 +115,7 @@ export function usePushNotification(roomId?: string, customerEmail?: string) {
           endpoint: subscriptionData.endpoint,
           p256dh_key: subscriptionData.keys.p256dh,
           auth_key: subscriptionData.keys.auth,
+          language: language || 'ko',
           created_at: new Date().toISOString()
         }, {
           onConflict: 'endpoint'
@@ -134,7 +135,7 @@ export function usePushNotification(roomId?: string, customerEmail?: string) {
       setIsLoading(false)
       return false
     }
-  }, [isSupported, roomId, customerEmail, requestPermission])
+  }, [isSupported, roomId, customerEmail, language, requestPermission])
 
   const unsubscribe = useCallback(async (): Promise<boolean> => {
     if (!isSupported) return false

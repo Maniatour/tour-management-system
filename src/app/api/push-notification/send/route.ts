@@ -42,6 +42,24 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // favicon URL 가져오기 (channels 테이블에서 type='self'인 채널)
+    let faviconUrl = '/favicon.ico' // 기본값
+    try {
+      const { data: channels } = await supabase
+        .from('channels')
+        .select('favicon_url')
+        .eq('type', 'self')
+        .not('favicon_url', 'is', null)
+        .limit(1)
+        .single()
+      
+      if (channels?.favicon_url) {
+        faviconUrl = channels.favicon_url
+      }
+    } catch (error) {
+      console.warn('Error fetching favicon, using default:', error)
+    }
+
     // 해당 채팅방의 모든 구독 가져오기
     const { data: subscriptions, error } = await supabase
       .from('push_subscriptions')
@@ -74,11 +92,20 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        // 구독의 언어 정보 사용 (기본값: 'ko')
+        const language = (subscription as any).language || 'ko'
+        const isKorean = language === 'ko'
+        
+        // 절대 URL로 favicon 변환
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
+          (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://www.kovegas.com')
+        const iconUrl = faviconUrl.startsWith('http') ? faviconUrl : `${baseUrl}${faviconUrl}`
+
         const payload = JSON.stringify({
-          title: '새 메시지',
-          body: `${senderName || '가이드'}: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
-          icon: '/images/logo.png',
-          badge: '/images/logo.png',
+          title: isKorean ? '새 메시지' : 'New Message',
+          body: `${senderName || (isKorean ? '가이드' : 'Guide')}: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
+          icon: iconUrl,
+          badge: iconUrl,
           tag: `chat-${roomId}`,
           data: {
             url: `/chat/${room.room_code}`,
