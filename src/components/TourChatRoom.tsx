@@ -2,12 +2,12 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Phone, User, X } from 'lucide-react'
+import ReactCountryFlag from 'react-country-flag'
 import { useVoiceCall } from '@/hooks/useVoiceCall'
 import VoiceCallModal from './VoiceCallModal'
 import VoiceCallUserSelector from './VoiceCallUserSelector'
 import AvatarSelector from './AvatarSelector'
 import PickupHotelPhotoGallery from './PickupHotelPhotoGallery'
-// ReactCountryFlag는 ChatHeader에서 사용됨
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import ChatRoomShareModal from './ChatRoomShareModal'
@@ -180,9 +180,9 @@ export default function TourChatRoom({
   }>>([])
   const [showTeamInfo, setShowTeamInfo] = useState(false)
   const [teamInfo, setTeamInfo] = useState<{
-    guide?: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string }
-    assistant?: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string }
-    driver?: { name?: string; phone?: string; email?: string; position?: string }
+    guide?: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string; languages?: string[] }
+    assistant?: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string; languages?: string[] }
+    driver?: { name?: string; phone?: string; email?: string; position?: string; languages?: string[] }
   }>({})
   
   // 팀 멤버 상세 정보 (통화 선택용)
@@ -191,6 +191,7 @@ export default function TourChatRoom({
     name_en?: string
     position?: string
     email?: string
+    languages?: string[]
   }>>(new Map())
   const [internalMobileMenuOpen, setInternalMobileMenuOpen] = useState(true)
   
@@ -472,6 +473,7 @@ export default function TourChatRoom({
       email?: string
       position?: string
       language?: string
+      languages?: string[]
     }>()
     
     if (isPublicView) {
@@ -503,7 +505,8 @@ export default function TourChatRoom({
             type: 'guide',
             email: email,
             position: roleLabel,
-            language: selectedLanguage
+            language: selectedLanguage,
+            languages: memberInfo.languages
           })
         }
       })
@@ -542,7 +545,8 @@ export default function TourChatRoom({
               type: 'guide',
               email: email,
               position: roleLabel,
-              language: selectedLanguage
+              language: selectedLanguage,
+              languages: memberInfo?.languages
             })
           }
         }
@@ -1020,16 +1024,17 @@ export default function TourChatRoom({
       if (tour.tour_guide_id) {
         const { data: guideData } = await supabase
           .from('team')
-          .select('name_ko, name_en, phone, position')
+          .select('name_ko, name_en, phone, position, languages')
           .eq('email', tour.tour_guide_id)
-          .maybeSingle<{ name_ko: string | null; name_en: string | null; phone: string | null; position: string | null }>()
+          .maybeSingle<{ name_ko: string | null; name_en: string | null; phone: string | null; position: string | null; languages: string[] | null }>()
 
         if (guideData) {
-          const guide: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string } = {}
+          const guide: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string; languages?: string[] } = {}
           if (guideData.name_ko) guide.name_ko = guideData.name_ko
           if (guideData.name_en) guide.name_en = guideData.name_en
           if (guideData.phone) guide.phone = guideData.phone
           if (guideData.position) guide.position = guideData.position
+          if (guideData.languages) guide.languages = guideData.languages
           guide.email = tour.tour_guide_id
           teamData.guide = guide
           
@@ -1038,7 +1043,8 @@ export default function TourChatRoom({
             name_ko: guideData.name_ko || undefined,
             name_en: guideData.name_en || undefined,
             position: guideData.position || undefined,
-            email: tour.tour_guide_id
+            email: tour.tour_guide_id,
+            languages: guideData.languages || undefined
           })
         }
       }
@@ -1047,16 +1053,17 @@ export default function TourChatRoom({
       if (tour.assistant_id) {
         const { data: assistantData } = await supabase
           .from('team')
-          .select('name_ko, name_en, phone, position')
+          .select('name_ko, name_en, phone, position, languages')
           .eq('email', tour.assistant_id)
-          .maybeSingle<{ name_ko: string | null; name_en: string | null; phone: string | null; position: string | null }>()
+          .maybeSingle<{ name_ko: string | null; name_en: string | null; phone: string | null; position: string | null; languages: string[] | null }>()
 
         if (assistantData) {
-          const assistant: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string } = {}
+          const assistant: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string; languages?: string[] } = {}
           if (assistantData.name_ko) assistant.name_ko = assistantData.name_ko
           if (assistantData.name_en) assistant.name_en = assistantData.name_en
           if (assistantData.phone) assistant.phone = assistantData.phone
           if (assistantData.position) assistant.position = assistantData.position
+          if (assistantData.languages) assistant.languages = assistantData.languages
           assistant.email = tour.assistant_id
           teamData.assistant = assistant
           
@@ -1065,7 +1072,8 @@ export default function TourChatRoom({
             name_ko: assistantData.name_ko || undefined,
             name_en: assistantData.name_en || undefined,
             position: assistantData.position || undefined,
-            email: tour.assistant_id
+            email: tour.assistant_id,
+            languages: assistantData.languages || undefined
           })
         }
       }
@@ -1090,16 +1098,18 @@ export default function TourChatRoom({
           if (vehicleData.driver_email) {
             const { data: driverTeamData } = await supabase
               .from('team')
-              .select('name_ko, name_en, position')
+              .select('name_ko, name_en, position, languages')
               .eq('email', vehicleData.driver_email)
-              .maybeSingle<{ name_ko: string | null; name_en: string | null; position: string | null }>()
+              .maybeSingle<{ name_ko: string | null; name_en: string | null; position: string | null; languages: string[] | null }>()
             
             if (driverTeamData) {
+              if (driverTeamData.languages) driver.languages = driverTeamData.languages
               membersDetailMap.set(vehicleData.driver_email, {
                 name_ko: driverTeamData.name_ko || undefined,
                 name_en: driverTeamData.name_en || undefined,
                 position: driverTeamData.position || 'driver',
-                email: vehicleData.driver_email
+                email: vehicleData.driver_email,
+                languages: driverTeamData.languages || undefined
               })
             } else {
               // team 테이블에 없으면 차량 정보만 사용
@@ -1151,6 +1161,20 @@ export default function TourChatRoom({
   // 언어 플래그 함수
   const getLanguageFlag = () => {
     return selectedLanguage === 'ko' ? 'KR' : 'US'
+  }
+
+  // 언어 코드를 국기 코드로 변환하는 함수
+  const getLanguageCountryCode = (lang: string): string => {
+    const langUpper = lang.toUpperCase()
+    if (langUpper === 'KR' || langUpper === 'KO' || langUpper === '한국어') return 'KR'
+    if (langUpper === 'EN' || langUpper === 'US' || langUpper === '영어') return 'US'
+    if (langUpper === 'JP' || langUpper === 'JA' || langUpper === '일본어') return 'JP'
+    if (langUpper === 'CN' || langUpper === 'ZH' || langUpper === '중국어') return 'CN'
+    if (langUpper === 'ES' || langUpper === '스페인어') return 'ES'
+    if (langUpper === 'FR' || langUpper === '프랑스어') return 'FR'
+    if (langUpper === 'DE' || langUpper === '독일어') return 'DE'
+    if (langUpper === 'RU' || langUpper === '러시아어') return 'RU'
+    return 'US' // 기본값
   }
 
   // 투어 상세 페이지로 이동
@@ -2400,12 +2424,31 @@ export default function TourChatRoom({
                       {selectedLanguage === 'ko' ? '가이드' : 'Guide'}
                     </h5>
                   </div>
-                  <p className="text-sm font-medium text-gray-900 mb-1">
-                    {selectedLanguage === 'ko' 
-                      ? (teamInfo.guide.name_ko || teamInfo.guide.name_en || 'N/A')
-                      : (teamInfo.guide.name_en || teamInfo.guide.name_ko || 'N/A')
-                    }
-                  </p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-sm font-medium text-gray-900">
+                      {selectedLanguage === 'ko' 
+                        ? (teamInfo.guide.name_ko || teamInfo.guide.name_en || 'N/A')
+                        : (teamInfo.guide.name_en || teamInfo.guide.name_ko || 'N/A')
+                      }
+                    </p>
+                    {teamInfo.guide.languages && teamInfo.guide.languages.length > 0 && (
+                      <div className="flex gap-1">
+                        {teamInfo.guide.languages.map((lang, index) => (
+                          <ReactCountryFlag
+                            key={index}
+                            countryCode={getLanguageCountryCode(lang)}
+                            svg
+                            style={{
+                              width: '16px',
+                              height: '12px',
+                              borderRadius: '2px'
+                            }}
+                            title={lang}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   {teamInfo.guide.phone && (
                     <a 
                       href={`tel:${teamInfo.guide.phone}`}
@@ -2427,12 +2470,31 @@ export default function TourChatRoom({
                       {selectedLanguage === 'ko' ? '어시스턴트' : 'Assistant'}
                     </h5>
                   </div>
-                  <p className="text-sm font-medium text-gray-900 mb-1">
-                    {selectedLanguage === 'ko' 
-                      ? (teamInfo.assistant.name_ko || teamInfo.assistant.name_en || 'N/A')
-                      : (teamInfo.assistant.name_en || teamInfo.assistant.name_ko || 'N/A')
-                    }
-                  </p>
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-sm font-medium text-gray-900">
+                      {selectedLanguage === 'ko' 
+                        ? (teamInfo.assistant.name_ko || teamInfo.assistant.name_en || 'N/A')
+                        : (teamInfo.assistant.name_en || teamInfo.assistant.name_ko || 'N/A')
+                      }
+                    </p>
+                    {teamInfo.assistant.languages && teamInfo.assistant.languages.length > 0 && (
+                      <div className="flex gap-1">
+                        {teamInfo.assistant.languages.map((lang, index) => (
+                          <ReactCountryFlag
+                            key={index}
+                            countryCode={getLanguageCountryCode(lang)}
+                            svg
+                            style={{
+                              width: '16px',
+                              height: '12px',
+                              borderRadius: '2px'
+                            }}
+                            title={lang}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   {teamInfo.assistant.phone && (
                     <a 
                       href={`tel:${teamInfo.assistant.phone}`}
@@ -2455,9 +2517,28 @@ export default function TourChatRoom({
                     </h5>
                   </div>
                   {teamInfo.driver.name && (
-                    <p className="text-sm font-medium text-gray-900 mb-1">
-                      {teamInfo.driver.name}
-                    </p>
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="text-sm font-medium text-gray-900">
+                        {teamInfo.driver.name}
+                      </p>
+                      {teamInfo.driver.languages && teamInfo.driver.languages.length > 0 && (
+                        <div className="flex gap-1">
+                          {teamInfo.driver.languages.map((lang, index) => (
+                            <ReactCountryFlag
+                              key={index}
+                              countryCode={getLanguageCountryCode(lang)}
+                              svg
+                              style={{
+                                width: '16px',
+                                height: '12px',
+                                borderRadius: '2px'
+                              }}
+                              title={lang}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
                   {teamInfo.driver.phone && (
                     <a 

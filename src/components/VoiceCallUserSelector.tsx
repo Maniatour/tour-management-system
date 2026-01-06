@@ -1,6 +1,7 @@
 'use client'
 
 import { Phone, X, User } from 'lucide-react'
+import ReactCountryFlag from 'react-country-flag'
 
 interface VoiceCallUserSelectorProps {
   isOpen: boolean
@@ -14,6 +15,7 @@ interface VoiceCallUserSelectorProps {
     email?: string
     position?: string
     language?: string
+    languages?: string[]
   }>
   onSelectUser: (userId: string, userName: string) => void
   language?: 'ko' | 'en'
@@ -44,6 +46,20 @@ export default function VoiceCallUserSelector({
   }
 
   const t = texts[language]
+
+  // 언어 코드를 국기 코드로 변환하는 함수
+  const getLanguageCountryCode = (lang: string): string => {
+    const langUpper = lang.toUpperCase()
+    if (langUpper === 'KR' || langUpper === 'KO' || langUpper === '한국어') return 'KR'
+    if (langUpper === 'EN' || langUpper === 'US' || langUpper === '영어') return 'US'
+    if (langUpper === 'JP' || langUpper === 'JA' || langUpper === '일본어') return 'JP'
+    if (langUpper === 'CN' || langUpper === 'ZH' || langUpper === '중국어') return 'CN'
+    if (langUpper === 'ES' || langUpper === '스페인어') return 'ES'
+    if (langUpper === 'FR' || langUpper === '프랑스어') return 'FR'
+    if (langUpper === 'DE' || langUpper === '독일어') return 'DE'
+    if (langUpper === 'RU' || langUpper === '러시아어') return 'RU'
+    return 'US' // 기본값
+  }
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -82,11 +98,6 @@ export default function VoiceCallUserSelector({
                   ? (language === 'ko' ? '가이드' : 'Guide')
                   : (language === 'ko' ? '고객' : 'Customer'))
                 
-                // 언어 표시 (가이드/드라이버/어시스턴트인 경우)
-                const languageLabel = user.type === 'guide' && user.language
-                  ? (user.language === 'ko' ? '한국어' : 'English')
-                  : null
-                
                 return (
                   <button
                     key={user.id}
@@ -102,15 +113,28 @@ export default function VoiceCallUserSelector({
                       <User className="w-5 h-5 text-blue-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-900 truncate">{displayName}</p>
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="font-medium text-gray-900 truncate">{displayName}</p>
+                        {user.languages && user.languages.length > 0 && (
+                          <div className="flex gap-1">
+                            {user.languages.map((lang, index) => (
+                              <ReactCountryFlag
+                                key={index}
+                                countryCode={getLanguageCountryCode(lang)}
+                                svg
+                                style={{
+                                  width: '16px',
+                                  height: '12px',
+                                  borderRadius: '2px'
+                                }}
+                                title={lang}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2 text-sm text-gray-500">
                         <span>{positionLabel}</span>
-                        {languageLabel && (
-                          <>
-                            <span className="text-gray-300">•</span>
-                            <span>{languageLabel}</span>
-                          </>
-                        )}
                       </div>
                     </div>
                     <Phone className="w-5 h-5 text-green-600 flex-shrink-0" />
