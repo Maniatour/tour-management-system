@@ -214,11 +214,16 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       }
 
       // 표시 중단된 사진 정보 가져오기
-      const { data: hideRequests } = await supabase
+      const { data: hideRequests, error: hideRequestsError } = await supabase
         .from('tour_photo_hide_requests')
         .select('file_name, is_hidden')
         .eq('tour_id', tourId)
         .eq('is_hidden', true)
+
+      // 테이블이 없거나 에러가 발생해도 계속 진행 (에러 로그만 출력)
+      if (hideRequestsError) {
+        console.warn('Error loading hide requests (table may not exist yet):', hideRequestsError)
+      }
 
       const hiddenFileNames = new Set(
         (hideRequests || []).map((req: { file_name: string }) => req.file_name)

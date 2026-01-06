@@ -30,9 +30,17 @@ ALTER TABLE tour_photo_hide_requests ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Anyone can view photo hide requests" ON tour_photo_hide_requests
   FOR SELECT USING (true);
 
+-- RLS 정책: 익명 사용자도 조회 가능
+CREATE POLICY "Anonymous users can view photo hide requests" ON tour_photo_hide_requests
+  FOR SELECT TO anon USING (true);
+
 -- RLS 정책: 인증된 사용자가 삽입 가능 (고객이 요청)
 CREATE POLICY "Authenticated users can insert photo hide requests" ON tour_photo_hide_requests
   FOR INSERT WITH CHECK (true);
+
+-- RLS 정책: 익명 사용자도 삽입 가능 (고객이 요청)
+CREATE POLICY "Anonymous users can insert photo hide requests" ON tour_photo_hide_requests
+  FOR INSERT TO anon WITH CHECK (true);
 
 -- RLS 정책: 관리자가 업데이트 가능
 CREATE POLICY "Admins can update photo hide requests" ON tour_photo_hide_requests
