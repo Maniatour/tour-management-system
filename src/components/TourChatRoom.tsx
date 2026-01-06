@@ -500,13 +500,13 @@ export default function TourChatRoom({
           userMap.set(email, {
             id: email,
             name: displayName,
-            name_ko: memberInfo.name_ko,
-            name_en: memberInfo.name_en,
+            ...(memberInfo.name_ko ? { name_ko: memberInfo.name_ko } : {}),
+            ...(memberInfo.name_en ? { name_en: memberInfo.name_en } : {}),
             type: 'guide',
             email: email,
             position: roleLabel,
             language: selectedLanguage,
-            languages: memberInfo.languages
+            ...(memberInfo.languages ? { languages: memberInfo.languages } : {})
           })
         }
       })
@@ -540,13 +540,13 @@ export default function TourChatRoom({
             userMap.set(userKey, {
               id: userKey,
               name: displayName,
-              name_ko: memberInfo?.name_ko,
-              name_en: memberInfo?.name_en,
+              ...(memberInfo?.name_ko ? { name_ko: memberInfo.name_ko } : {}),
+              ...(memberInfo?.name_en ? { name_en: memberInfo.name_en } : {}),
               type: 'guide',
-              email: email,
+              ...(email ? { email } : {}),
               position: roleLabel,
               language: selectedLanguage,
-              languages: memberInfo?.languages
+              ...(memberInfo?.languages ? { languages: memberInfo.languages } : {})
             })
           }
         }
@@ -580,12 +580,13 @@ export default function TourChatRoom({
             userMap.set(userKey, {
               id: participant.email || participant.id,
               name: displayName,
-              name_ko: memberInfo?.name_ko,
-              name_en: memberInfo?.name_en,
+              ...(memberInfo?.name_ko ? { name_ko: memberInfo.name_ko } : {}),
+              ...(memberInfo?.name_en ? { name_en: memberInfo.name_en } : {}),
               type: participant.type,
-              email: email,
+              ...(email ? { email } : {}),
               position: roleLabel,
-              language: selectedLanguage
+              language: selectedLanguage,
+              ...(memberInfo?.languages ? { languages: memberInfo.languages } : {})
             })
           }
         }
@@ -1007,9 +1008,9 @@ export default function TourChatRoom({
       }
 
       const teamData: {
-        guide?: { name_ko?: string; name_en?: string; phone?: string }
-        assistant?: { name_ko?: string; name_en?: string; phone?: string }
-        driver?: { name?: string; phone?: string }
+        guide?: { name_ko?: string; name_en?: string; phone?: string; languages?: string[] }
+        assistant?: { name_ko?: string; name_en?: string; phone?: string; languages?: string[] }
+        driver?: { name?: string; phone?: string; languages?: string[] }
       } = {}
 
       // 팀 멤버 상세 정보 맵 생성
@@ -1018,6 +1019,7 @@ export default function TourChatRoom({
         name_en?: string
         position?: string
         email?: string
+        languages?: string[]
       }>()
 
       // 가이드 정보 가져오기
@@ -1040,11 +1042,11 @@ export default function TourChatRoom({
           
           // 상세 정보 맵에 추가
           membersDetailMap.set(tour.tour_guide_id, {
-            name_ko: guideData.name_ko || undefined,
-            name_en: guideData.name_en || undefined,
-            position: guideData.position || undefined,
+            ...(guideData.name_ko ? { name_ko: guideData.name_ko } : {}),
+            ...(guideData.name_en ? { name_en: guideData.name_en } : {}),
+            ...(guideData.position ? { position: guideData.position } : {}),
             email: tour.tour_guide_id,
-            languages: guideData.languages || undefined
+            ...(guideData.languages ? { languages: guideData.languages } : {})
           })
         }
       }
@@ -1069,11 +1071,11 @@ export default function TourChatRoom({
           
           // 상세 정보 맵에 추가
           membersDetailMap.set(tour.assistant_id, {
-            name_ko: assistantData.name_ko || undefined,
-            name_en: assistantData.name_en || undefined,
-            position: assistantData.position || undefined,
+            ...(assistantData.name_ko ? { name_ko: assistantData.name_ko } : {}),
+            ...(assistantData.name_en ? { name_en: assistantData.name_en } : {}),
+            ...(assistantData.position ? { position: assistantData.position } : {}),
             email: tour.assistant_id,
-            languages: assistantData.languages || undefined
+            ...(assistantData.languages ? { languages: assistantData.languages } : {})
           })
         }
       }
@@ -1087,7 +1089,7 @@ export default function TourChatRoom({
           .maybeSingle<{ driver_name: string | null; driver_phone: string | null; driver_email: string | null }>()
 
         if (vehicleData && vehicleData.driver_name) {
-          const driver: { name?: string; phone?: string; email?: string; position?: string } = {}
+          const driver: { name?: string; phone?: string; email?: string; position?: string; languages?: string[] } = {}
           if (vehicleData.driver_name) driver.name = vehicleData.driver_name
           if (vehicleData.driver_phone) driver.phone = vehicleData.driver_phone
           if (vehicleData.driver_email) driver.email = vehicleData.driver_email
@@ -1105,17 +1107,17 @@ export default function TourChatRoom({
             if (driverTeamData) {
               if (driverTeamData.languages) driver.languages = driverTeamData.languages
               membersDetailMap.set(vehicleData.driver_email, {
-                name_ko: driverTeamData.name_ko || undefined,
-                name_en: driverTeamData.name_en || undefined,
+                ...(driverTeamData.name_ko ? { name_ko: driverTeamData.name_ko } : {}),
+                ...(driverTeamData.name_en ? { name_en: driverTeamData.name_en } : {}),
                 position: driverTeamData.position || 'driver',
                 email: vehicleData.driver_email,
-                languages: driverTeamData.languages || undefined
+                ...(driverTeamData.languages ? { languages: driverTeamData.languages } : {})
               })
             } else {
               // team 테이블에 없으면 차량 정보만 사용
               membersDetailMap.set(vehicleData.driver_email, {
-                name_ko: vehicleData.driver_name || undefined,
-                name_en: vehicleData.driver_name || undefined,
+                ...(vehicleData.driver_name ? { name_ko: vehicleData.driver_name } : {}),
+                ...(vehicleData.driver_name ? { name_en: vehicleData.driver_name } : {}),
                 position: 'driver',
                 email: vehicleData.driver_email
               })
@@ -2286,7 +2288,7 @@ export default function TourChatRoom({
         messagesEndRef={messagesEndRef}
         showParticipantsList={showParticipantsList}
         isMobileMenuOpen={isMobileMenuOpen}
-        translateMessage={translateMessage}
+        {...(translateMessage ? { translateMessage } : {})}
         translating={translating}
       />
 

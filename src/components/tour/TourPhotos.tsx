@@ -52,14 +52,9 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
   }, [tour.id])
 
   // 환경 변수가 있으면 사용하고, 없으면 현재 origin 사용 (배포 환경에서는 자동으로 올바른 도메인 사용)
-  // locale을 포함한 경로 사용 (기본값: ko)
-  const getLocale = () => {
-    if (typeof window === 'undefined') return 'ko'
-    const pathSegments = window.location.pathname.split('/').filter(Boolean)
-    return pathSegments[0] === 'ko' || pathSegments[0] === 'en' ? pathSegments[0] : 'ko'
-  }
+  // 로케일 없는 경로 사용
   const shareUrl = typeof window !== 'undefined' 
-    ? `${process.env.NEXT_PUBLIC_SITE_URL || window.location.origin}/${getLocale()}/photos/${tour.id}`
+    ? `${process.env.NEXT_PUBLIC_SITE_URL || window.location.origin}/photos/${tour.id}`
     : ''
 
   const handleCopyLink = () => {

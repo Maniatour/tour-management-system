@@ -495,9 +495,8 @@ export default function TourPhotoUpload({
     const token = shareToken || tourId
     // 환경 변수가 있으면 사용하고, 없으면 현재 origin 사용 (배포 환경에서는 자동으로 올바른 도메인 사용)
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : '')
-    // locale을 포함한 경로 사용 (기본값: ko)
-    const locale = typeof window !== 'undefined' ? window.location.pathname.split('/')[1] || 'ko' : 'ko'
-    const shareUrl = `${baseUrl}/${locale}/photos/${token}`
+    // 로케일 없는 경로 사용
+    const shareUrl = `${baseUrl}/photos/${token}`
     navigator.clipboard.writeText(shareUrl)
     alert(t('shareLinkCopied'))
   }
@@ -508,9 +507,8 @@ export default function TourPhotoUpload({
     const token = photo.share_token || tourId
     // 환경 변수가 있으면 사용하고, 없으면 현재 origin 사용
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : '')
-    // locale을 포함한 경로 사용 (기본값: ko)
-    const locale = typeof window !== 'undefined' ? window.location.pathname.split('/')[1] || 'ko' : 'ko'
-    const shareUrl = `${baseUrl}/${locale}/photos/${token}`
+    // 로케일 없는 경로 사용
+    const shareUrl = `${baseUrl}/photos/${token}`
     window.open(shareUrl, '_blank')
   }
 
@@ -636,9 +634,8 @@ export default function TourPhotoUpload({
               onClick={() => {
                 // 환경 변수가 있으면 사용하고, 없으면 현재 origin 사용 (배포 환경에서는 자동으로 올바른 도메인 사용)
                 const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== 'undefined' ? window.location.origin : '')
-                // locale을 포함한 경로 사용 (기본값: ko)
-                const locale = typeof window !== 'undefined' ? window.location.pathname.split('/')[1] || 'ko' : 'ko'
-                const shareUrl = `${baseUrl}/${locale}/photos/${tourId}`
+                // 로케일 없는 경로 사용
+                const shareUrl = `${baseUrl}/photos/${tourId}`
                 navigator.clipboard.writeText(shareUrl)
                 alert('투어 전체 사진 공유 링크가 클립보드에 복사되었습니다.')
               }}

@@ -26,6 +26,13 @@ export async function middleware(req: NextRequest) {
     return response
   }
 
+  // /photos/ 경로는 로케일이 필요 없으므로 미들웨어를 건너뛰도록 처리
+  if (req.nextUrl.pathname.startsWith('/photos/')) {
+    const response = NextResponse.next()
+    response.headers.set('x-pathname', req.nextUrl.pathname)
+    return response
+  }
+
   // 개발 환경에서만 로그 출력
   if (process.env.NODE_ENV === 'development') {
     console.log('Middleware: Request to:', req.nextUrl.pathname)
