@@ -102,9 +102,9 @@ export async function POST(request: NextRequest) {
     } = body
 
     // 필수 필드 검증
-    if (!id || !method || !user_email) {
+    if (!id || !method) {
       return NextResponse.json(
-        { success: false, message: 'ID, method, and user_email are required' },
+        { success: false, message: 'ID and method are required' },
         { status: 400 }
       )
     }
@@ -129,17 +129,17 @@ export async function POST(request: NextRequest) {
         id,
         method,
         method_type,
-        user_email,
+        user_email: user_email || null,
         limit_amount: limit_amount ? parseFloat(limit_amount) : null,
         status,
-        card_number_last4,
-        card_type,
-        card_holder_name,
-        expiry_date,
+        card_number_last4: card_number_last4 || null,
+        card_type: card_type || null,
+        card_holder_name: card_holder_name || null,
+        expiry_date: expiry_date && expiry_date.trim() !== '' ? expiry_date : null,
         monthly_limit: monthly_limit ? parseFloat(monthly_limit) : null,
         daily_limit: daily_limit ? parseFloat(daily_limit) : null,
-        notes,
-        created_by
+        notes: notes || null,
+        created_by: created_by || null
       })
       .select()
       .single()
@@ -147,7 +147,12 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('Error creating payment method:', error)
       return NextResponse.json(
-        { success: false, message: 'Failed to create payment method' },
+        { 
+          success: false, 
+          message: 'Failed to create payment method',
+          error: error.message,
+          details: error
+        },
         { status: 500 }
       )
     }
@@ -159,8 +164,14 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Error in POST /api/payment-methods:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error'
     return NextResponse.json(
-      { success: false, message: 'Internal server error' },
+      { 
+        success: false, 
+        message: 'Internal server error',
+        error: errorMessage,
+        details: error instanceof Error ? error.stack : String(error)
+      },
       { status: 500 }
     )
   }

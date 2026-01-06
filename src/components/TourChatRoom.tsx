@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Send, Image as ImageIcon, Copy, Share2, Calendar, Megaphone, Trash2, ChevronDown, ChevronUp, MapPin, Camera, ExternalLink, Users, Play, Phone, User, X, Menu, UserCircle, Smile, Bell, BellOff } from 'lucide-react'
+import { Phone, User, X } from 'lucide-react'
 import { useVoiceCall } from '@/hooks/useVoiceCall'
 import VoiceCallModal from './VoiceCallModal'
 import VoiceCallUserSelector from './VoiceCallUserSelector'
@@ -19,7 +19,7 @@ import { usePushNotification } from '@/hooks/usePushNotification'
 import { useChatRoom } from '@/hooks/useChatRoom'
 import { useChatMessages } from '@/hooks/useChatMessages'
 import { useChatParticipants } from '@/hooks/useChatParticipants'
-import type { ChatMessage, ChatRoom, ChatAnnouncement } from '@/types/chat'
+import type { ChatMessage, ChatAnnouncement } from '@/types/chat'
 import ChatHeader from './chat/ChatHeader'
 import MessageList from './chat/MessageList'
 import MessageInput from './chat/MessageInput'
@@ -124,7 +124,7 @@ export default function TourChatRoom({
     setSelectedLanguage(customerLanguage)
   }, [customerLanguage])
   
-  const { room, setRoom, loading, setLoading, roomRef, loadRoom: loadRoomFromHook, loadRoomByCode: loadRoomByCodeFromHook } = useChatRoom({
+  const { room, setRoom, loading, setLoading, loadRoom: loadRoomFromHook, loadRoomByCode: loadRoomByCodeFromHook } = useChatRoom({
     tourId: tourId || undefined,
     isPublicView,
     roomCode: roomCode || undefined
@@ -152,7 +152,6 @@ export default function TourChatRoom({
   
   const {
     onlineParticipants,
-    setOnlineParticipants,
     loadChatParticipants
   } = useChatParticipants({
     roomId: room?.id || null,
@@ -168,7 +167,6 @@ export default function TourChatRoom({
   // const [participantCount, setParticipantCount] = useState(0) // 사용되지 않음
   const [showShareModal, setShowShareModal] = useState(false)
   const [showPickupScheduleModal, setShowPickupScheduleModal] = useState(false)
-  const [showPickupScheduleInline, setShowPickupScheduleInline] = useState(false)
   const [showPhotoGallery, setShowPhotoGallery] = useState(false)
   const [showPickupHotelPhotoGallery, setShowPickupHotelPhotoGallery] = useState(false)
   const [selectedPickupHotel, setSelectedPickupHotel] = useState<{name: string, mediaUrls: string[]} | null>(null)
@@ -334,7 +332,7 @@ export default function TourChatRoom({
 
         if (data) {
           const translations: { [key: string]: string } = {}
-          data.forEach(translation => {
+          data.forEach((translation: { message_id: string; translated_text: string }) => {
             translations[translation.message_id] = translation.translated_text
           })
           setTranslatedMessages(prev => ({ ...prev, ...translations }))
@@ -378,7 +376,7 @@ export default function TourChatRoom({
         .select('translated_text')
         .eq('message_id', messageId)
         .eq('target_language', selectedLanguage)
-        .maybeSingle()
+        .maybeSingle<{ translated_text: string }>()
 
       if (existingByMessageId) {
         // 이미 번역이 있으면 캐시에 추가
@@ -401,7 +399,7 @@ export default function TourChatRoom({
         .eq('target_language', selectedLanguage)
         .eq('source_language', sourceLanguage)
         .limit(1)
-        .maybeSingle()
+        .maybeSingle<{ translated_text: string }>()
 
       let translatedText: string
 
@@ -424,7 +422,7 @@ export default function TourChatRoom({
           translated_text: translatedText,
           source_language: sourceLanguage,
           message_text_hash: messageHash
-        })
+        } as any)
 
       if (insertError) {
         console.error('Error saving translation:', insertError)
@@ -466,28 +464,30 @@ export default function TourChatRoom({
       if (!isCurrentUser) {
         const userKey = message.sender_email || message.sender_name
         if (!userMap.has(userKey)) {
+          const email = message.sender_email
           userMap.set(userKey, {
             id: userKey,
             name: message.sender_name,
-            type: message.sender_type === 'system' ? 'guide' : message.sender_type,
-            email: message.sender_email || undefined
+            type: message.sender_type === 'guide' ? 'guide' : 'customer',
+            ...(email ? { email } : {})
           })
         }
       }
     })
     
     // 온라인 참여자에서 사용자 추가 (고객용 뷰에서는 가이드/어시스턴트만)
-    onlineParticipants.forEach((participant, key) => {
+    onlineParticipants.forEach((participant) => {
       if (isPublicView) {
         // 고객용 뷰: 가이드 타입만 통화 가능
         if (participant.type === 'guide') {
           const userKey = participant.email || participant.id
           if (!userMap.has(userKey)) {
+            const email = participant.email
             userMap.set(userKey, {
               id: participant.email || participant.id,
               name: participant.name,
               type: participant.type,
-              email: participant.email || undefined
+              ...(email ? { email } : {})
             })
           }
         }
@@ -496,11 +496,12 @@ export default function TourChatRoom({
         if (participant.type === 'customer') {
           const userKey = participant.id
           if (!userMap.has(userKey)) {
+            const email = participant.email
             userMap.set(userKey, {
               id: participant.id,
               name: participant.name,
               type: participant.type,
-              email: participant.email || undefined
+              ...(email ? { email } : {})
             })
           }
         }
@@ -527,8 +528,8 @@ export default function TourChatRoom({
     userId: userId,
     userName: userName,
     isPublicView: isPublicView,
-    targetUserId: selectedCallTarget?.id || undefined,
-    targetUserName: selectedCallTarget?.name || undefined
+    ...(selectedCallTarget?.id ? { targetUserId: selectedCallTarget.id } : {}),
+    ...(selectedCallTarget?.name ? { targetUserName: selectedCallTarget.name } : {})
   })
   
   // 통화 시작 (사용자 선택 후)
@@ -694,10 +695,13 @@ export default function TourChatRoom({
       }
 
       // 예약 데이터에 고객 정보 병합
-      const reservationsWithCustomers: Array<Reservation & { customers?: Customer }> = reservationsData?.map((reservation: Reservation) => ({
-        ...reservation,
-        customers: customersData.find((customer: Customer) => customer.id === reservation.customer_id) || undefined
-      })) || []
+      const reservationsWithCustomers: Array<Reservation & { customers?: Customer }> = reservationsData?.map((reservation: Reservation) => {
+        const customer = customersData.find((c: Customer) => c.id === reservation.customer_id)
+        return {
+          ...reservation,
+          ...(customer ? { customers: customer } : {})
+        }
+      }) || []
 
       console.log('Reservations for pickup schedule:', reservationsWithCustomers)
 
@@ -806,7 +810,13 @@ export default function TourChatRoom({
           if (!a || !b) return 0
           return a.time.localeCompare(b.time)
         })
-        .filter((item): item is { time: string; date: string; hotel: string; location: string; people: number } => item !== undefined)
+        .map(item => ({
+          time: item.time,
+          date: item.date,
+          hotel: item.hotel,
+          location: item.location,
+          people: item.people
+        }))
 
       console.log('Generated pickup schedule:', schedule)
       console.log('Final pickup schedule array length:', schedule.length)
@@ -889,11 +899,11 @@ export default function TourChatRoom({
           .maybeSingle<{ name_ko: string | null; name_en: string | null; phone: string | null }>()
 
         if (guideData) {
-          teamData.guide = {
-            name_ko: guideData.name_ko || undefined,
-            name_en: guideData.name_en || undefined,
-            phone: guideData.phone || undefined
-          }
+          const guide: { name_ko?: string; name_en?: string; phone?: string } = {}
+          if (guideData.name_ko) guide.name_ko = guideData.name_ko
+          if (guideData.name_en) guide.name_en = guideData.name_en
+          if (guideData.phone) guide.phone = guideData.phone
+          teamData.guide = guide
         }
       }
 
@@ -906,11 +916,11 @@ export default function TourChatRoom({
           .maybeSingle<{ name_ko: string | null; name_en: string | null; phone: string | null }>()
 
         if (assistantData) {
-          teamData.assistant = {
-            name_ko: assistantData.name_ko || undefined,
-            name_en: assistantData.name_en || undefined,
-            phone: assistantData.phone || undefined
-          }
+          const assistant: { name_ko?: string; name_en?: string; phone?: string } = {}
+          if (assistantData.name_ko) assistant.name_ko = assistantData.name_ko
+          if (assistantData.name_en) assistant.name_en = assistantData.name_en
+          if (assistantData.phone) assistant.phone = assistantData.phone
+          teamData.assistant = assistant
         }
       }
 
@@ -923,10 +933,10 @@ export default function TourChatRoom({
           .maybeSingle<{ driver_name: string | null; driver_phone: string | null }>()
 
         if (vehicleData) {
-          teamData.driver = {
-            name: vehicleData.driver_name || undefined,
-            phone: vehicleData.driver_phone || undefined
-          }
+          const driver: { name?: string; phone?: string } = {}
+          if (vehicleData.driver_name) driver.name = vehicleData.driver_name
+          if (vehicleData.driver_phone) driver.phone = vehicleData.driver_phone
+          teamData.driver = driver
         }
       }
 
@@ -1246,7 +1256,12 @@ export default function TourChatRoom({
     
     // 초기화 플래그 업데이트 (같은 키면 업데이트하지 않음)
     if (currentKey !== lastKey) {
-      initializationRef.current = { tourId, isPublicView, roomCode, initialized: false }
+      initializationRef.current = { 
+        ...(tourId ? { tourId } : {}),
+        ...(isPublicView !== undefined ? { isPublicView } : {}),
+        ...(roomCode ? { roomCode } : {}),
+        initialized: false 
+      }
     } else if (initializationRef.current.initialized) {
       return // 이미 초기화되었으므로 스킵
     }
@@ -1642,12 +1657,6 @@ export default function TourChatRoom({
     }
   }
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
-    }
-  }
 
   // 위치 공유 확인 후 메시지 전송
   const confirmLocationShare = async () => {
@@ -2044,7 +2053,7 @@ export default function TourChatRoom({
       <MessageList
         messages={messages}
         isPublicView={isPublicView}
-        customerName={customerName}
+        {...(customerName ? { customerName } : {})}
         selectedAvatar={selectedAvatar}
         selectedLanguage={selectedLanguage}
         translatedMessages={translatedMessages}
@@ -2085,7 +2094,7 @@ export default function TourChatRoom({
           onClose={() => setShowShareModal(false)}
           roomCode={room.room_code}
           roomName={room.room_name}
-          tourDate={tourDate || undefined}
+          {...(tourDate ? { tourDate } : {})}
           isPublicView={isPublicView}
           language={selectedLanguage as 'en' | 'ko'}
         />
@@ -2121,11 +2130,11 @@ export default function TourChatRoom({
       <VoiceCallModal
         isOpen={callStatus !== 'idle'}
         callStatus={callStatus}
-        callerName={callerName || selectedCallTarget?.name || undefined}
+        {...(callerName || selectedCallTarget?.name ? { callerName: callerName || selectedCallTarget?.name || '' } : {})}
         callDuration={callDuration}
         isMuted={isMuted}
         callError={callError}
-        onAccept={callStatus === 'ringing' ? acceptCall : undefined}
+        {...(callStatus === 'ringing' ? { onAccept: acceptCall } : {})}
         onReject={rejectCall}
         onEnd={endCall}
         onToggleMute={toggleMute}
@@ -2178,7 +2187,7 @@ export default function TourChatRoom({
         tourId={tourId || ''}
         language={convertToSupportedLanguage(locale)}
         allowUpload={isPublicView} // 고객용일 때만 업로드 허용
-        uploadedBy={isPublicView ? customerName : undefined}
+        {...(isPublicView && customerName ? { uploadedBy: customerName } : {})}
       />
 
       {/* 팀 정보 모달 (고객용) */}
@@ -2366,162 +2375,6 @@ export default function TourChatRoom({
           mediaUrls={selectedPickupHotel.mediaUrls}
           language={convertToSupportedLanguage(locale)}
         />
-      )}
-    </div>
-  )
-}
-
-// 픽업 스케줄 아코디언 컴포넌트
-function PickupScheduleAccordion({ 
-  schedule, 
-  onPhotoClick 
-}: { 
-  schedule: {
-    time: string;
-    date: string;
-    hotel: string;
-    location: string;
-    people: number;
-    customers?: Array<{ name: string; people: number }>;
-  }
-  onPhotoClick: (hotelName: string, mediaUrls: string[]) => void
-}) {
-  const [isExpanded, setIsExpanded] = useState(false)
-  const [hotelMediaUrls, setHotelMediaUrls] = useState<string[]>([])
-  const [googleMapsLink, setGoogleMapsLink] = useState<string | null>(null)
-  const [youtubeLink, setYoutubeLink] = useState<string | null>(null)
-
-  // 픽업 호텔 미디어 데이터, 구글맵 링크, 유튜브 링크 가져오기
-  useEffect(() => {
-    const fetchHotelData = async () => {
-      try {
-        const { data: hotelData, error } = await supabase
-          .from('pickup_hotels')
-          .select('media, link, youtube_link')
-          .eq('hotel', schedule.hotel)
-          .eq('pick_up_location', schedule.location)
-          .single()
-
-        if (error) {
-          console.error('Error fetching hotel data:', error)
-          return
-        }
-
-        const hotel = hotelData as PickupHotel
-        if (hotel?.media) {
-          setHotelMediaUrls(hotel.media)
-        }
-        
-        if (hotel?.link) {
-          setGoogleMapsLink(hotel.link)
-        }
-
-        if (hotel?.youtube_link) {
-          setYoutubeLink(hotel.youtube_link)
-        }
-      } catch (error) {
-        console.error('Error fetching hotel data:', error)
-      }
-    }
-
-    fetchHotelData()
-  }, [schedule.hotel, schedule.location])
-
-  const handlePhotoClick = () => {
-    onPhotoClick(schedule.hotel, hotelMediaUrls)
-  }
-
-  const handleMapClick = () => {
-    if (googleMapsLink) {
-      window.open(googleMapsLink, '_blank')
-    } else {
-      console.log('No Google Maps link available for:', schedule.hotel, schedule.location)
-    }
-  }
-
-  const handleYoutubeClick = () => {
-    if (youtubeLink) {
-      window.open(youtubeLink, '_blank')
-    } else {
-      console.log('No YouTube link available for:', schedule.hotel, schedule.location)
-    }
-  }
-
-  return (
-    <div className="bg-white border border-blue-200 rounded-lg overflow-hidden">
-      {/* 아코디언 헤더 */}
-      <div 
-        className="p-2 flex items-center justify-between cursor-pointer hover:bg-blue-50 transition-colors"
-        onClick={() => setIsExpanded(!isExpanded)}
-      >
-          <div className="flex items-center space-x-2 flex-1">
-            <div className="flex items-center space-x-2">
-              <span className="font-medium text-blue-900 text-xs">{schedule.time} {schedule.date}</span>
-              <span className="text-gray-400">•</span>
-              <span className="text-gray-700 text-xs">{schedule.hotel}</span>
-            </div>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="flex items-center space-x-1">
-              <Users className="h-3 w-3 text-blue-600" />
-              <span className="text-blue-600 font-medium text-xs">{schedule.people}</span>
-            </div>
-            {isExpanded ? 
-              <ChevronUp className="h-4 w-4 text-gray-500" /> : 
-              <ChevronDown className="h-4 w-4 text-gray-500" />
-            }
-          </div>
-      </div>
-
-      {/* 아코디언 컨텐츠 */}
-      {isExpanded && (
-        <div className="border-t border-blue-100 p-3 bg-blue-25">
-          <div className="flex items-center justify-between">
-            {/* 위치 정보 */}
-            <div className="flex items-center space-x-1">
-              <span className="text-gray-500 text-xs">📍</span>
-              <span className="text-gray-700 text-xs">{schedule.location}</span>
-            </div>
-
-            {/* 액션 버튼들 */}
-            <div className="flex items-center space-x-2">
-              {/* 사진 버튼 */}
-              <button 
-                onClick={handlePhotoClick}
-                className="flex items-center justify-center p-2 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
-                title="Photos"
-              >
-                <Camera className="h-4 w-4 text-gray-600" />
-              </button>
-
-              {/* 맵 버튼 */}
-              <button 
-                className="flex items-center justify-center p-2 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleMapClick()
-                }}
-                title="Open in Google Maps"
-              >
-                <MapPin className="h-4 w-4 text-gray-600" />
-              </button>
-
-              {/* 유튜브 버튼 */}
-              {youtubeLink && (
-                <button 
-                  className="flex items-center justify-center p-2 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleYoutubeClick()
-                  }}
-                  title="Watch Video"
-                >
-                  <Play className="h-4 w-4 text-gray-600" />
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
       )}
     </div>
   )

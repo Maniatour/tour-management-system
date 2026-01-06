@@ -349,10 +349,10 @@ export default function PricingSection({
 
   // Net 가격 계산
   const calculateNetPrice = () => {
-    // OTA 채널일 때는 단순 계산: OTA 판매가 - 쿠폰 할인 - 커미션
+    // OTA 채널일 때는 단순 계산: OTA 판매가 - 쿠폰 할인 + 추가비용 - 커미션
     if (isOTAChannel) {
       const otaSalePrice = formData.productPriceTotal // OTA 판매가 (초이스 포함)
-      const afterCoupon = otaSalePrice - formData.couponDiscount - formData.additionalDiscount
+      const afterCoupon = otaSalePrice - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
       
       let commissionAmount = 0
       if (formData.commission_amount > 0) {
@@ -408,8 +408,8 @@ export default function PricingSection({
     if (formData.commission_percent <= 0) return 0
     
     if (isOTAChannel) {
-      // OTA 채널: Grand Total (쿠폰 할인 적용 후)에 커미션 적용
-      const grandTotal = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
+      // OTA 채널: Grand Total (쿠폰 할인 적용 후, 추가비용 포함)에 커미션 적용
+      const grandTotal = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
       return grandTotal * (formData.commission_percent / 100)
     } else if (commissionBasePriceOnly) {
       // 판매가격에만 커미션 적용
@@ -961,11 +961,17 @@ export default function PricingSection({
                   </div>
                 )}
                 
+                {/* 추가비용 - 항상 표시 */}
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm text-gray-700">추가비용</span>
+                  <span className="text-sm font-medium text-gray-900">${formData.additionalCost.toFixed(2)}</span>
+                </div>
+                
                 {/* Grand Total */}
                 <div className="flex justify-between items-center mb-2 border-t border-gray-200 pt-2">
                   <span className="text-sm font-medium text-gray-700">Grand Total</span>
                   <span className="text-sm font-semibold text-gray-900">
-                    ${(formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount).toFixed(2)}
+                    ${(formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost).toFixed(2)}
                   </span>
                 </div>
               </>
@@ -977,8 +983,8 @@ export default function PricingSection({
                   <span className="text-sm font-medium text-gray-900">${formData.subtotal.toFixed(2)}</span>
                 </div>
                 
-                {/* 할인 및 추가 비용 */}
-                {(formData.couponDiscount > 0 || formData.additionalDiscount > 0 || formData.additionalCost > 0) && (
+                {/* 할인 */}
+                {(formData.couponDiscount > 0 || formData.additionalDiscount > 0) && (
                   <div className="space-y-1 mb-2">
                     {formData.couponDiscount > 0 && (
                       <div className="flex justify-between items-center">
@@ -992,14 +998,14 @@ export default function PricingSection({
                         <span className="text-xs text-green-600">-${formData.additionalDiscount.toFixed(2)}</span>
                       </div>
                     )}
-                    {formData.additionalCost > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-600">추가 비용</span>
-                        <span className="text-xs text-red-600">+${formData.additionalCost.toFixed(2)}</span>
-                      </div>
-                    )}
                   </div>
                 )}
+                
+                {/* 추가비용 - 항상 표시 */}
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm text-gray-700">추가비용</span>
+                  <span className="text-sm font-medium text-gray-900">${formData.additionalCost.toFixed(2)}</span>
+                </div>
                 
                 {/* Grand Total */}
                 <div className="flex justify-between items-center mb-2 border-t border-gray-200 pt-2">
@@ -1047,8 +1053,8 @@ export default function PricingSection({
                       
                       let calculatedAmount = 0
                       if (isOTAChannel) {
-                        // OTA 채널: Grand Total (쿠폰 할인 적용 후)에 커미션 적용
-                        const grandTotal = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
+                        // OTA 채널: Grand Total (쿠폰 할인 적용 후, 추가비용 포함)에 커미션 적용
+                        const grandTotal = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
                         calculatedAmount = grandTotal * (percent / 100)
                       } else if (commissionBasePriceOnly) {
                         // 판매가격에만 커미션 적용

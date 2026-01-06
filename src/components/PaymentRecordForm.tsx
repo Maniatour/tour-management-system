@@ -10,6 +10,7 @@ interface PaymentRecordFormProps {
   customerName: string
   onSuccess: () => void
   onCancel: () => void
+  editingRecord?: PaymentRecord | null
 }
 
 interface PaymentRecord {
@@ -27,7 +28,7 @@ interface PaymentRecord {
   amount_krw?: number
 }
 
-export default function PaymentRecordForm({ reservationId, customerName, onSuccess, onCancel }: PaymentRecordFormProps) {
+export default function PaymentRecordForm({ reservationId, customerName, onSuccess, onCancel, editingRecord }: PaymentRecordFormProps) {
   const [formData, setFormData] = useState({
     payment_status: 'pending' as 'pending' | 'confirmed' | 'rejected',
     amount: '',
@@ -44,7 +45,7 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
   const [loadingOptions, setLoadingOptions] = useState(true)
   const [validationError, setValidationError] = useState('')
 
-  // 결제 방법 옵션 로드
+  // 결제 방법 옵션 로드 및 수정 모드일 때 기존 데이터 로드
   useEffect(() => {
     const loadPaymentMethodOptions = async () => {
       try {
@@ -53,6 +54,40 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
         
         const options = await paymentMethodIntegration.getPaymentMethodOptions(userEmail || undefined)
         setPaymentMethodOptions(options)
+        
+        // 수정 모드일 때 기존 데이터 로드
+        if (editingRecord) {
+          // payment_method 문자열을 payment_method_id로 변환
+          let paymentMethodId = ''
+          if (editingRecord.payment_method) {
+            const matchedOption = options.find(opt => opt.method === editingRecord.payment_method)
+            if (matchedOption) {
+              paymentMethodId = matchedOption.id
+            } else {
+              // 정확한 매치가 없으면 resolvePaymentMethodId 사용
+              const resolvedId = await paymentMethodIntegration.resolvePaymentMethodId(
+                editingRecord.payment_method,
+                userEmail || undefined
+              )
+              if (resolvedId) {
+                paymentMethodId = resolvedId
+              }
+            }
+          }
+          
+          setFormData({
+            payment_status: editingRecord.payment_status,
+            amount: editingRecord.amount.toString(),
+            payment_method: editingRecord.payment_method,
+            payment_method_id: paymentMethodId,
+            note: editingRecord.note || '',
+            amount_krw: editingRecord.amount_krw?.toString() || ''
+          })
+          
+          if (editingRecord.image_file_url) {
+            setUploadedFile(editingRecord.image_file_url)
+          }
+        }
       } catch (error) {
         console.error('결제 방법 옵션 로드 오류:', error)
       } finally {
@@ -61,7 +96,7 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
     }
 
     loadPaymentMethodOptions()
-  }, [])
+  }, [editingRecord])
 
   // 결제 방법 변경 시 검증
   useEffect(() => {
@@ -142,8 +177,15 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
         throw new Error('인증이 필요합니다.')
       }
 
-      const response = await fetch('/api/payment-records', {
-        method: 'POST',
+      const isEditMode = !!editingRecord
+      const url = isEditMode 
+        ? `/api/payment-records/${editingRecord.id}`
+        : '/api/payment-records'
+      
+      const method = isEditMode ? 'PUT' : 'POST'
+
+      const response = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`
@@ -161,7 +203,7 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || '입금 내역 저장 중 오류가 발생했습니다.')
+        throw new Error(errorData.error || `입금 내역 ${isEditMode ? '수정' : '저장'} 중 오류가 발생했습니다.`)
       }
 
       // 결제 방법 사용량 업데이트 (확인된 결제만)
@@ -192,7 +234,9 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-gray-900">입금 내역 입력</h2>
+            <h2 className="text-xl font-semibold text-gray-900">
+              {editingRecord ? '입금 내역 수정' : '입금 내역 입력'}
+            </h2>
             <button
               onClick={onCancel}
               className="text-gray-400 hover:text-gray-600"
@@ -382,7 +426,7 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
                     저장 중...
                   </>
                 ) : (
-                  '저장'
+                  editingRecord ? '수정' : '저장'
                 )}
               </button>
             </div>

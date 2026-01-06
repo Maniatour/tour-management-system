@@ -324,6 +324,7 @@ export default function PaymentRecordsList({ reservationId, customerName }: Paym
         <PaymentRecordForm
           reservationId={reservationId}
           customerName={customerName}
+          editingRecord={editingRecord}
           onSuccess={() => {
             setEditingRecord(null)
             fetchPaymentRecords()

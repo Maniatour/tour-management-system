@@ -98,14 +98,26 @@ export default function SimpleChoiceSelector({
     }
   }, [initialSelections]);
   
-  // selections 상태 변경 추적 (디버깅용)
+  // selections 상태 변경 추적 및 부모 컴포넌트에 알림
   useEffect(() => {
     console.log('SimpleChoiceSelector: selections 상태 변경됨', {
       selections,
       selectionsCount: selections.length,
       selectionsDetails: selections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id }))
     });
-  }, [selections]);
+    
+    // initialSelections로 인한 변경이 아닌 사용자 액션으로 인한 변경인지 확인
+    const prevIds = prevSelectionsRef.current.map(s => `${s.choice_id}:${s.option_id}:${s.quantity}`).sort().join(',');
+    const currentIds = selections.map(s => `${s.choice_id}:${s.option_id}:${s.quantity}`).sort().join(',');
+    
+    // 이전 값과 다르면 사용자 액션으로 간주하고 부모에 알림
+    // (initialSelections로 인한 변경은 위의 useEffect에서 prevSelectionsRef를 업데이트하므로 구분 가능)
+    if (prevIds !== currentIds) {
+      // useEffect 내에서 호출하므로 렌더링 후에 실행됨 (안전함)
+      onSelectionChange(selections);
+      prevSelectionsRef.current = selections;
+    }
+  }, [selections, onSelectionChange]);
 
   // 선택사항 변경 핸들러
   const handleSelectionChange = useCallback((
@@ -130,13 +142,11 @@ export default function SimpleChoiceSelector({
         });
       }
       
-      // 사용자 액션이므로 즉시 부모에 알림
-      onSelectionChange(newSelections);
       prevSelectionsRef.current = newSelections;
       
       return newSelections;
     });
-  }, [onSelectionChange]);
+  }, []);
 
   // 가격 계산 함수
   const calculatePrice = useCallback((
@@ -288,9 +298,8 @@ export default function SimpleChoiceSelector({
                             total_price: calculatePrice(option, 1, adults, children, infants)
                           });
                         }
-                        // 사용자 액션이므로 즉시 부모에 알림
+                        // 상태 업데이트만 수행 (onSelectionChange는 useEffect에서 처리)
                         setSelections(newSelections);
-                        onSelectionChange(newSelections);
                         prevSelectionsRef.current = newSelections;
                       } else {
                         // multiple/quantity 타입: 현재 옵션 토글

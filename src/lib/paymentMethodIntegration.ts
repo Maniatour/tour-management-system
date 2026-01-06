@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 export class PaymentMethodIntegration {
   
   // 기존 payment_method 문자열을 payment_methods 테이블의 ID로 변환
-  static async resolvePaymentMethodId(paymentMethodString: string, userEmail?: string): Promise<string | null> {
+  async resolvePaymentMethodId(paymentMethodString: string, userEmail?: string): Promise<string | null> {
     try {
       if (!paymentMethodString) return null
 
@@ -54,7 +54,7 @@ export class PaymentMethodIntegration {
   }
 
   // payment_methods ID를 기존 문자열 형태로 변환
-  static async resolvePaymentMethodString(paymentMethodId: string): Promise<string | null> {
+  async resolvePaymentMethodString(paymentMethodId: string): Promise<string | null> {
     try {
       if (!paymentMethodId) return null
 
@@ -72,7 +72,7 @@ export class PaymentMethodIntegration {
   }
 
   // 결제 시 사용량 업데이트
-  static async updatePaymentUsage(paymentMethodId: string, amount: number): Promise<boolean> {
+  async updatePaymentUsage(paymentMethodId: string, amount: number): Promise<boolean> {
     try {
       const { error } = await supabase.rpc('update_payment_method_usage', {
         p_method_id: paymentMethodId,
@@ -88,7 +88,7 @@ export class PaymentMethodIntegration {
   }
 
   // 결제 방법 옵션 목록 가져오기 (드롭다운용)
-  static async getPaymentMethodOptions(userEmail?: string): Promise<Array<{id: string, method: string, method_type: string}>> {
+  async getPaymentMethodOptions(userEmail?: string): Promise<Array<{id: string, method: string, method_type: string}>> {
     try {
       let query = supabase
         .from('payment_methods')
@@ -111,7 +111,7 @@ export class PaymentMethodIntegration {
   }
 
   // 결제 방법 검증 (한도 체크)
-  static async validatePaymentMethod(paymentMethodId: string, amount: number): Promise<{
+  async validatePaymentMethod(paymentMethodId: string, amount: number): Promise<{
     isValid: boolean
     reason?: string
     remainingLimit?: number
@@ -166,7 +166,7 @@ export class PaymentMethodIntegration {
   }
 
   // 결제 방법 통계 가져오기
-  static async getPaymentMethodStats(paymentMethodId: string): Promise<{
+  async getPaymentMethodStats(paymentMethodId: string): Promise<{
     totalUsage: number
     monthlyUsage: number
     dailyUsage: number
@@ -198,7 +198,7 @@ export class PaymentMethodIntegration {
   }
 
   // 기존 payment_method 컬럼을 새로운 시스템으로 마이그레이션
-  static async migrateExistingPaymentMethods(): Promise<{
+  async migrateExistingPaymentMethods(): Promise<{
     success: boolean
     message: string
     migrated: number
@@ -271,7 +271,7 @@ export class PaymentMethodIntegration {
   }
 
   // 결제 방법 유형 자동 감지
-  private static detectMethodType(method: string): string {
+  private detectMethodType(method: string): string {
     const methodLower = method.toLowerCase()
     
     if (methodLower.includes('cc') || methodLower.includes('card') || /\d{4}/.test(method)) {

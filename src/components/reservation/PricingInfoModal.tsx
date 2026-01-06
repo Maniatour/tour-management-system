@@ -259,19 +259,36 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                     (updatedData.option_total || 0)
     updatedData.subtotal = subtotal
     
-    // 할인 및 추가 비용 계산
-    const discountAndCosts = (updatedData.coupon_discount || 0) + 
-                            (updatedData.additional_discount || 0) + 
-                            (updatedData.additional_cost || 0) + 
-                            (updatedData.card_fee || 0) + 
-                            (updatedData.tax || 0) + 
-                            (updatedData.prepayment_cost || 0) + 
-                            (updatedData.prepayment_tip || 0) + 
-                            (updatedData.private_tour_additional_cost || 0)
+    // 할인 계산 (할인은 빼야 함)
+    const totalDiscount = Math.abs(updatedData.coupon_discount || 0) + 
+                         (updatedData.additional_discount || 0)
     
-    // 총 가격 계산 (소계 + 할인 및 추가 비용)
-    const totalPrice = subtotal + discountAndCosts
+    // 추가 비용 계산 (추가 비용은 더해야 함) - additional_cost 포함 확인
+    const additionalCost = updatedData.additional_cost || 0
+    const cardFee = updatedData.card_fee || 0
+    const tax = updatedData.tax || 0
+    const prepaymentCost = updatedData.prepayment_cost || 0
+    const prepaymentTip = updatedData.prepayment_tip || 0
+    const privateTourCost = updatedData.private_tour_additional_cost || 0
+    
+    const totalAdditional = additionalCost + cardFee + tax + prepaymentCost + prepaymentTip + privateTourCost
+    
+    // 총 가격 계산 (소계 - 할인 + 추가 비용) - additional_cost가 포함되어야 함
+    const totalPrice = Math.max(0, subtotal - totalDiscount + totalAdditional)
     updatedData.total_price = totalPrice
+    
+    // 디버깅: additional_cost 변경 시 로그 출력
+    if (field === 'additional_cost') {
+      console.log('추가비용 변경:', {
+        field,
+        value,
+        additionalCost,
+        totalAdditional,
+        subtotal,
+        totalDiscount,
+        totalPrice
+      })
+    }
     
     setEditData(updatedData)
   }
@@ -297,16 +314,16 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                       (updatedData.option_total || 0)
       updatedData.subtotal = subtotal
       
-      const discountAndCosts = (updatedData.coupon_discount || 0) + 
-                              (updatedData.additional_discount || 0) + 
-                              (updatedData.additional_cost || 0) + 
-                              (updatedData.card_fee || 0) + 
-                              (updatedData.tax || 0) + 
-                              (updatedData.prepayment_cost || 0) + 
-                              (updatedData.prepayment_tip || 0) + 
-                              (updatedData.private_tour_additional_cost || 0)
+      const totalDiscount = Math.abs(updatedData.coupon_discount || 0) + 
+                           (updatedData.additional_discount || 0)
+      const totalAdditional = (updatedData.additional_cost || 0) + 
+                             (updatedData.card_fee || 0) + 
+                             (updatedData.tax || 0) + 
+                             (updatedData.prepayment_cost || 0) + 
+                             (updatedData.prepayment_tip || 0) + 
+                             (updatedData.private_tour_additional_cost || 0)
       
-      updatedData.total_price = subtotal + discountAndCosts
+      updatedData.total_price = Math.max(0, subtotal - totalDiscount + totalAdditional)
       setEditData(updatedData)
       return
     }
@@ -330,16 +347,16 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     }
     
     // 총 가격 재계산
-    const discountAndCosts = discountAmount + 
-                            (updatedData.additional_discount || 0) + 
-                            (updatedData.additional_cost || 0) + 
-                            (updatedData.card_fee || 0) + 
-                            (updatedData.tax || 0) + 
-                            (updatedData.prepayment_cost || 0) + 
-                            (updatedData.prepayment_tip || 0) + 
-                            (updatedData.private_tour_additional_cost || 0)
+    const totalDiscount = Math.abs(discountAmount) + 
+                         (updatedData.additional_discount || 0)
+    const totalAdditional = (updatedData.additional_cost || 0) + 
+                           (updatedData.card_fee || 0) + 
+                           (updatedData.tax || 0) + 
+                           (updatedData.prepayment_cost || 0) + 
+                           (updatedData.prepayment_tip || 0) + 
+                           (updatedData.private_tour_additional_cost || 0)
     
-    updatedData.total_price = subtotal + discountAndCosts
+    updatedData.total_price = Math.max(0, subtotal - totalDiscount + totalAdditional)
     setEditData(updatedData)
   }
 
@@ -358,16 +375,16 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                     (updatedData.option_total || 0)
     updatedData.subtotal = subtotal
     
-    const discountAndCosts = (updatedData.coupon_discount || 0) + 
-                            (updatedData.additional_discount || 0) + 
-                            (updatedData.additional_cost || 0) + 
-                            (updatedData.card_fee || 0) + 
-                            (updatedData.tax || 0) + 
-                            (updatedData.prepayment_cost || 0) + 
-                            (updatedData.prepayment_tip || 0) + 
-                            (updatedData.private_tour_additional_cost || 0)
+    const totalDiscount = Math.abs(updatedData.coupon_discount || 0) + 
+                         (updatedData.additional_discount || 0)
+    const totalAdditional = (updatedData.additional_cost || 0) + 
+                           (updatedData.card_fee || 0) + 
+                           (updatedData.tax || 0) + 
+                           (updatedData.prepayment_cost || 0) + 
+                           (updatedData.prepayment_tip || 0) + 
+                           (updatedData.private_tour_additional_cost || 0)
     
-    updatedData.total_price = subtotal + discountAndCosts
+    updatedData.total_price = Math.max(0, subtotal - totalDiscount + totalAdditional)
     setEditData(updatedData)
   }
 

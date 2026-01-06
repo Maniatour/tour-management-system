@@ -66,6 +66,8 @@ export default function PaymentMethodManager({
   const t = useTranslations('paymentMethod')
   const [methods, setMethods] = useState<PaymentMethod[]>([])
   const [teamMembers, setTeamMembers] = useState<Record<string, string>>({})
+  const [teamMembersWithStatus, setTeamMembersWithStatus] = useState<Array<{email: string, name_ko: string, is_active: boolean}>>([])
+  const [showAllUsers, setShowAllUsers] = useState(false)
   const [loading, setLoading] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingMethod, setEditingMethod] = useState<PaymentMethod | null>(null)
@@ -80,17 +82,36 @@ export default function PaymentMethodManager({
     id: '',
     method: '',
     method_type: 'card',
-    user_email: userEmail || '',
+    user_emails: userEmail ? [userEmail] : [] as string[],
     limit_amount: '',
     status: 'active',
     card_number_last4: '',
     card_type: '',
     card_holder_name: '',
-    expiry_date: '',
+    expiry_month: '',
+    expiry_year: '',
     monthly_limit: '',
     daily_limit: '',
     notes: ''
   })
+  
+  // 만료일을 YYYY-MM-01 형식으로 변환
+  const getExpiryDate = () => {
+    if (formData.expiry_month && formData.expiry_year) {
+      return `${formData.expiry_year}-${formData.expiry_month.padStart(2, '0')}-01`
+    }
+    return null
+  }
+  
+  // 만료일에서 월과 연도 추출
+  const parseExpiryDate = (dateString: string | null) => {
+    if (!dateString) return { month: '', year: '' }
+    const parts = dateString.split('-')
+    if (parts.length >= 2) {
+      return { month: parts[1], year: parts[0] }
+    }
+    return { month: '', year: '' }
+  }
 
   // 데이터 로드
   useEffect(() => {
@@ -134,15 +155,26 @@ export default function PaymentMethodManager({
     try {
       const { data, error } = await supabase
         .from('team')
-        .select('email, name_ko')
+        .select('email, name_ko, is_active')
+        .order('is_active', { ascending: false })
+        .order('name_ko', { ascending: true })
 
       if (error) throw error
       
       const membersMap: Record<string, string> = {}
+      const membersWithStatus: Array<{email: string, name_ko: string, is_active: boolean}> = []
+      
       data?.forEach(member => {
         membersMap[member.email] = member.name_ko
+        membersWithStatus.push({
+          email: member.email,
+          name_ko: member.name_ko,
+          is_active: member.is_active ?? true
+        })
       })
+      
       setTeamMembers(membersMap)
+      setTeamMembersWithStatus(membersWithStatus)
     } catch (error) {
       console.error('Error loading team members:', error)
     }
@@ -159,34 +191,143 @@ export default function PaymentMethodManager({
     }
     
     try {
-      // 고유 ID 생성 (구글 시트 ID 형식)
-      const id = formData.id || `PAYM${Date.now().toString().slice(-6)}`
+      const createdMethods: PaymentMethod[] = []
       
-      const response = await fetch('/api/payment-methods', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          ...formData,
-          id,
-          limit_amount: formData.limit_amount ? parseFloat(formData.limit_amount) : null,
-          monthly_limit: formData.monthly_limit ? parseFloat(formData.monthly_limit) : null,
-          daily_limit: formData.daily_limit ? parseFloat(formData.daily_limit) : null,
-          created_by: userEmail
-        })
-      })
+      // 방법명에서 공백과 특수문자 제거하여 ID 생성에 사용
+      const methodSlug = formData.method.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '').toUpperCase()
+      
+      // 사용자가 선택된 경우 각 사용자마다 레코드 생성, 없으면 하나만 생성
+      if (formData.user_emails.length > 0) {
+        // 선택한 각 사용자마다 결제 방법 레코드 생성
+        for (let i = 0; i < formData.user_emails.length; i++) {
+          const userEmail = formData.user_emails[i]
+          // 이메일에서 사용자명 부분 추출 (예: user@example.com -> user)
+          const emailPrefix = userEmail.split('@')[0]
+          
+          // 방법명과 사용자를 조합하여 ID 생성
+          // 형식: PAYM032-Cash-user 또는 사용자가 입력한 ID가 있으면 그것 사용
+          let id: string
+          if (formData.id && formData.id.trim() !== '') {
+            // 사용자가 ID를 입력한 경우, 방법명과 사용자 조합
+            id = `${formData.id}-${methodSlug}-${emailPrefix}`
+          } else {
+            // ID가 없으면 자동 생성
+            const baseId = `PAYM${Date.now().toString().slice(-6)}`
+            id = `${baseId}-${methodSlug}-${emailPrefix}`
+          }
+        
+        let retryCount = 0
+        const maxRetries = 5
+        
+        while (retryCount < maxRetries) {
+          const response = await fetch('/api/payment-methods', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              id,
+              method: formData.method,
+              method_type: formData.method_type,
+              user_email: userEmail,
+              limit_amount: formData.limit_amount ? parseFloat(formData.limit_amount) : null,
+              status: formData.status,
+              card_number_last4: formData.card_number_last4,
+              card_type: formData.card_type,
+              card_holder_name: formData.card_holder_name,
+              expiry_date: getExpiryDate(),
+              monthly_limit: formData.monthly_limit ? parseFloat(formData.monthly_limit) : null,
+              daily_limit: formData.daily_limit ? parseFloat(formData.daily_limit) : null,
+              notes: formData.notes,
+              created_by: userEmail
+            })
+          })
 
-      const result = await response.json()
-      if (!result.success) {
-        throw new Error(result.message)
+          const result = await response.json()
+          
+          // ID 중복 오류인 경우 새로운 ID로 재시도
+          if (!result.success && result.message?.includes('already exists')) {
+            retryCount++
+            if (retryCount < maxRetries) {
+              id = `PAYM${Date.now().toString().slice(-6)}${i}${Math.random().toString(36).substring(2, 4).toUpperCase()}`
+              continue
+            }
+          }
+          
+          if (!result.success) {
+            const errorMessage = result.error || result.message || '알 수 없는 오류'
+            console.error('API Error:', result)
+            throw new Error(errorMessage)
+          }
+          
+          createdMethods.push(result.data)
+          break
+        }
+        }
+      } else {
+        // 사용자가 선택되지 않은 경우 하나의 레코드만 생성
+        let id: string
+        if (formData.id && formData.id.trim() !== '') {
+          id = `${formData.id}-${methodSlug}`
+        } else {
+          const baseId = `PAYM${Date.now().toString().slice(-6)}`
+          id = `${baseId}-${methodSlug}`
+        }
+        
+        let retryCount = 0
+        const maxRetries = 5
+        
+        while (retryCount < maxRetries) {
+          const response = await fetch('/api/payment-methods', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              id,
+              method: formData.method,
+              method_type: formData.method_type,
+              user_email: null, // 사용자 없음
+              limit_amount: formData.limit_amount ? parseFloat(formData.limit_amount) : null,
+              status: formData.status,
+              card_number_last4: formData.card_number_last4,
+              card_type: formData.card_type,
+              card_holder_name: formData.card_holder_name,
+              expiry_date: getExpiryDate(),
+              monthly_limit: formData.monthly_limit ? parseFloat(formData.monthly_limit) : null,
+              daily_limit: formData.daily_limit ? parseFloat(formData.daily_limit) : null,
+              notes: formData.notes,
+              created_by: userEmail || null
+            })
+          })
+
+          const result = await response.json()
+          
+          // ID 중복 오류인 경우 새로운 ID로 재시도
+          if (!result.success && result.message?.includes('already exists')) {
+            retryCount++
+            if (retryCount < maxRetries) {
+              id = `PAYM${Date.now().toString().slice(-6)}${Math.random().toString(36).substring(2, 4).toUpperCase()}`
+              continue
+            }
+          }
+          
+          if (!result.success) {
+            const errorMessage = result.error || result.message || '알 수 없는 오류'
+            console.error('API Error:', result)
+            throw new Error(errorMessage)
+          }
+          
+          createdMethods.push(result.data)
+          break
+        }
       }
 
-      setMethods(prev => [result.data, ...prev])
+      setMethods(prev => [...createdMethods, ...prev])
       setShowAddForm(false)
       resetForm()
       onMethodUpdated?.()
-      alert('결제 방법이 등록되었습니다.')
+      alert(`결제 방법이 ${createdMethods.length}개 등록되었습니다.`)
     } catch (error) {
       console.error('Error adding payment method:', error)
       alert(`결제 방법 등록에 실패했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
@@ -200,16 +341,26 @@ export default function PaymentMethodManager({
     if (!editingMethod) return
     
     try {
+      // 수정 시에는 첫 번째 선택된 사용자만 사용 (기존 레코드 업데이트)
+      // 사용자가 선택되지 않은 경우 null로 설정
       const response = await fetch(`/api/payment-methods/${editingMethod.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          ...formData,
+          method: formData.method,
+          method_type: formData.method_type,
+          user_email: formData.user_emails.length > 0 ? formData.user_emails[0] : null,
           limit_amount: formData.limit_amount ? parseFloat(formData.limit_amount) : null,
           monthly_limit: formData.monthly_limit ? parseFloat(formData.monthly_limit) : null,
           daily_limit: formData.daily_limit ? parseFloat(formData.daily_limit) : null,
+          status: formData.status,
+          card_number_last4: formData.card_number_last4,
+          card_type: formData.card_type,
+          card_holder_name: formData.card_holder_name,
+          expiry_date: getExpiryDate(),
+          notes: formData.notes,
           updated_by: userEmail
         })
       })
@@ -260,17 +411,19 @@ export default function PaymentMethodManager({
   // 결제 방법 수정 모드로 전환
   const handleEditMethod = (method: PaymentMethod) => {
     setEditingMethod(method)
+    const { month, year } = parseExpiryDate(method.expiry_date)
     setFormData({
       id: method.id,
       method: method.method,
       method_type: method.method_type,
-      user_email: method.user_email,
+      user_emails: [method.user_email],
       limit_amount: method.limit_amount?.toString() || '',
       status: method.status,
       card_number_last4: method.card_number_last4 || '',
       card_type: method.card_type || '',
       card_holder_name: method.card_holder_name || '',
-      expiry_date: method.expiry_date || '',
+      expiry_month: month,
+      expiry_year: year,
       monthly_limit: method.monthly_limit?.toString() || '',
       daily_limit: method.daily_limit?.toString() || '',
       notes: method.notes || ''
@@ -284,16 +437,36 @@ export default function PaymentMethodManager({
       id: '',
       method: '',
       method_type: 'card',
-      user_email: userEmail || '',
+      user_emails: userEmail ? [userEmail] : [],
       limit_amount: '',
       status: 'active',
       card_number_last4: '',
       card_type: '',
       card_holder_name: '',
-      expiry_date: '',
+      expiry_month: '',
+      expiry_year: '',
       monthly_limit: '',
       daily_limit: '',
       notes: ''
+    })
+    setShowAllUsers(false)
+  }
+  
+  // 사용자 선택 토글
+  const toggleUserSelection = (email: string) => {
+    setFormData(prev => {
+      const isSelected = prev.user_emails.includes(email)
+      if (isSelected) {
+        return {
+          ...prev,
+          user_emails: prev.user_emails.filter(e => e !== email)
+        }
+      } else {
+        return {
+          ...prev,
+          user_emails: [...prev.user_emails, email]
+        }
+      }
     })
   }
 
@@ -365,17 +538,18 @@ export default function PaymentMethodManager({
           <h3 className="text-lg font-semibold text-gray-900">결제 방법 관리</h3>
         </div>
         <div className="flex items-center space-x-2">
-          <button
-            onClick={() => {
-              setShowAddForm(true)
-              setEditingMethod(null)
-              resetForm()
-            }}
-            className="flex items-center space-x-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Plus size={16} />
-            <span>결제 방법 추가</span>
-          </button>
+            <button
+              onClick={() => {
+                setShowAddForm(true)
+                setEditingMethod(null)
+                resetForm()
+                setShowAllUsers(false)
+              }}
+              className="flex items-center space-x-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus size={16} />
+              <span>결제 방법 추가</span>
+            </button>
         </div>
       </div>
 
@@ -447,6 +621,7 @@ export default function PaymentMethodManager({
                 setShowAddForm(false)
                 setEditingMethod(null)
                 resetForm()
+                setShowAllUsers(false)
               }}
               className="text-gray-400 hover:text-gray-600"
             >
@@ -465,10 +640,13 @@ export default function PaymentMethodManager({
                   type="text"
                   value={formData.id}
                   onChange={(e) => setFormData(prev => ({ ...prev, id: e.target.value }))}
-                  placeholder="PAYM012"
+                  placeholder="PAYM032"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  실제 ID는 "{formData.id || 'PAYM032'}-{formData.method || '방법명'}-사용자명" 형식으로 자동 생성됩니다.
+                </p>
               </div>
 
               {/* 방법명 */}
@@ -505,22 +683,94 @@ export default function PaymentMethodManager({
                 </select>
               </div>
 
-              {/* 사용자 */}
+              {/* 사용자 (다중 선택) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  사용자 <span className="text-red-500">*</span>
+                  사용자
+                  {formData.user_emails.length > 0 && (
+                    <span className="ml-2 text-sm text-gray-500">
+                      ({formData.user_emails.length}명 선택됨)
+                    </span>
+                  )}
                 </label>
-                <select
-                  value={formData.user_email}
-                  onChange={(e) => setFormData(prev => ({ ...prev, user_email: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                >
-                  <option value="">선택해주세요</option>
-                  {Object.entries(teamMembers).map(([email, name]) => (
-                    <option key={email} value={email}>{name} ({email})</option>
-                  ))}
-                </select>
+                <div className="border border-gray-300 rounded-lg p-3 max-h-48 overflow-y-auto">
+                  {teamMembersWithStatus.length === 0 ? (
+                    <p className="text-sm text-gray-500">팀 멤버를 불러오는 중...</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {/* 활성 사용자 먼저 표시 */}
+                      {teamMembersWithStatus
+                        .filter(member => member.is_active)
+                        .map(({ email, name_ko }) => {
+                          const isSelected = formData.user_emails.includes(email)
+                          return (
+                            <label
+                              key={email}
+                              className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleUserSelection(email)}
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              />
+                              <span className="text-sm text-gray-700">
+                                {name_ko} ({email})
+                              </span>
+                            </label>
+                          )
+                        })}
+                      
+                      {/* 비활성 사용자 (더보기 버튼으로 표시) */}
+                      {teamMembersWithStatus.filter(member => !member.is_active).length > 0 && (
+                        <>
+                          {!showAllUsers && (
+                            <button
+                              type="button"
+                              onClick={() => setShowAllUsers(true)}
+                              className="w-full text-left text-sm text-blue-600 hover:text-blue-800 py-2 px-2 rounded hover:bg-blue-50 transition-colors"
+                            >
+                              더보기 ({teamMembersWithStatus.filter(member => !member.is_active).length}명)
+                            </button>
+                          )}
+                          
+                          {showAllUsers && (
+                            <>
+                              {teamMembersWithStatus
+                                .filter(member => !member.is_active)
+                                .map(({ email, name_ko }) => {
+                                  const isSelected = formData.user_emails.includes(email)
+                                  return (
+                                    <label
+                                      key={email}
+                                      className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded opacity-75"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={() => toggleUserSelection(email)}
+                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                      />
+                                      <span className="text-sm text-gray-600">
+                                        {name_ko} ({email})
+                                      </span>
+                                    </label>
+                                  )
+                                })}
+                              <button
+                                type="button"
+                                onClick={() => setShowAllUsers(false)}
+                                className="w-full text-left text-sm text-gray-600 hover:text-gray-800 py-2 px-2 rounded hover:bg-gray-50 transition-colors"
+                              >
+                                접기
+                              </button>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* 한도 금액 */}
@@ -595,15 +845,41 @@ export default function PaymentMethodManager({
                 />
               </div>
 
-              {/* 만료일 */}
+              {/* 만료일 (월/년) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">만료일</label>
-                <input
-                  type="date"
-                  value={formData.expiry_date}
-                  onChange={(e) => setFormData(prev => ({ ...prev, expiry_date: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={formData.expiry_month}
+                    onChange={(e) => setFormData(prev => ({ ...prev, expiry_month: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">월 선택</option>
+                    {Array.from({ length: 12 }, (_, i) => {
+                      const month = (i + 1).toString().padStart(2, '0')
+                      return (
+                        <option key={month} value={month}>
+                          {month}월
+                        </option>
+                      )
+                    })}
+                  </select>
+                  <select
+                    value={formData.expiry_year}
+                    onChange={(e) => setFormData(prev => ({ ...prev, expiry_year: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">년 선택</option>
+                    {Array.from({ length: 20 }, (_, i) => {
+                      const year = (new Date().getFullYear() + i).toString()
+                      return (
+                        <option key={year} value={year}>
+                          {year}년
+                        </option>
+                      )
+                    })}
+                  </select>
+                </div>
               </div>
 
               {/* 월 한도 */}
@@ -655,6 +931,7 @@ export default function PaymentMethodManager({
                   setShowAddForm(false)
                   setEditingMethod(null)
                   resetForm()
+                  setShowAllUsers(false)
                 }}
                 className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
               >
@@ -774,9 +1051,12 @@ export default function PaymentMethodManager({
                   {method.card_holder_name && (
                     <div><span className="font-medium">소유자:</span> {method.card_holder_name}</div>
                   )}
-                  {method.expiry_date && (
-                    <div><span className="font-medium">만료일:</span> {method.expiry_date}</div>
-                  )}
+                  {method.expiry_date && (() => {
+                    const { month, year } = parseExpiryDate(method.expiry_date)
+                    return month && year ? (
+                      <div><span className="font-medium">만료일:</span> {year}년 {month}월</div>
+                    ) : null
+                  })()}
                   {method.last_used_date && (
                     <div><span className="font-medium">마지막 사용:</span> {new Date(method.last_used_date).toLocaleDateString('ko-KR')}</div>
                   )}

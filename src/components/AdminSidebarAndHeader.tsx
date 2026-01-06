@@ -211,24 +211,55 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         retries = 3
       ): Promise<{ data: T | null; error: any }> => {
         try {
-          return await queryFn()
+          const result = await queryFn()
+          // CORS 오류나 500 에러인 경우 처리
+          if (result.error) {
+            const errorMessage = result.error.message || String(result.error)
+            const errorCode = result.error.code || result.error.status
+            
+            // CORS 오류 또는 500 에러인 경우
+            if (
+              errorMessage.includes('CORS') ||
+              errorMessage.includes('Access-Control-Allow-Origin') ||
+              errorCode === 500 ||
+              errorCode === '500' ||
+              errorMessage.includes('ERR_FAILED')
+            ) {
+              console.warn('Supabase query error (CORS/500):', {
+                message: errorMessage,
+                code: errorCode,
+                retriesLeft: retries
+              })
+              
+              // 재시도 가능한 경우
+              if (retries > 0) {
+                await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries)))
+                return executeQueryWithRetry(queryFn, retries - 1)
+              }
+            }
+          }
+          return result
         } catch (error) {
           // 네트워크 오류인 경우 재시도
           if (retries > 0 && error instanceof Error && (
             error.message.includes('Failed to fetch') ||
             error.message.includes('ERR_CONNECTION_CLOSED') ||
             error.message.includes('ERR_QUIC_PROTOCOL_ERROR') ||
-            error.message.includes('network')
+            error.message.includes('network') ||
+            error.message.includes('CORS') ||
+            error.message.includes('Access-Control-Allow-Origin')
           )) {
             await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries)))
             return executeQueryWithRetry(queryFn, retries - 1)
           }
-          throw error
+          // 에러를 반환하되 데이터는 null로
+          return { data: null, error }
         }
       }
 
       // 내 포지션 조회 (공지 target_positions 매칭용)
-      const { data: me } = await executeQueryWithRetry(() => 
+      // 에러가 발생해도 앱이 중단되지 않도록 처리
+      const { data: me, error: meError } = await executeQueryWithRetry(() => 
         (supabase as any)
           .from('team' as any)
           .select('position, is_active')
@@ -236,6 +267,16 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
           .eq('is_active', true)
           .maybeSingle()
       )
+      
+      // 에러 로깅 (앱 중단 방지)
+      if (meError) {
+        console.error('Error fetching team position:', {
+          error: meError,
+          email: authUser.email,
+          message: meError.message || String(meError),
+          code: meError.code || meError.status
+        })
+      }
 
       const myPosition = (me?.position as string) || null
 
