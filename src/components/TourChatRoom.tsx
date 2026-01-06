@@ -1443,12 +1443,12 @@ export default function TourChatRoom({
     loadAnnouncementsRef.current = loadAnnouncements
   }, [loadAnnouncements])
 
-  // room이 로드되면 공지사항도 로드
+  // room이 로드되거나 언어가 변경되면 공지사항도 로드
   useEffect(() => {
     if (room?.id && loadAnnouncementsRef.current) {
       loadAnnouncementsRef.current(room.id)
     }
-  }, [room?.id])
+  }, [room?.id, selectedLanguage])
 
   // loadRoom은 useChatRoom 훅에서 제공됨
   
