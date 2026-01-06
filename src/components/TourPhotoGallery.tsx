@@ -677,6 +677,42 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                   {t.title} ({photos.length})
                 </h2>
                 
+                {/* 업로드 버튼 (고객용) - 제목줄에 배치 */}
+                {allowUpload && (
+                  <>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(e) => handleFileUpload(e.target.files)}
+                      className="hidden"
+                    />
+                    <button
+                      onClick={handleUploadClick}
+                      disabled={uploading}
+                      className={`px-2 py-1 rounded text-xs transition-colors flex items-center gap-1 ${
+                        uploading
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : 'bg-green-500 text-white hover:bg-green-600'
+                      }`}
+                      title={t.upload}
+                    >
+                      {uploading ? (
+                        <>
+                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                          <span>{t.uploadingPhotos} ({uploadProgress.current}/{uploadProgress.total})</span>
+                        </>
+                      ) : (
+                        <>
+                          <Plus size={14} />
+                          <span>{t.upload}</span>
+                        </>
+                      )}
+                    </button>
+                  </>
+                )}
+                
                 {/* 뷰 모드 토글 */}
                 <div className="flex border rounded">
                   <button
@@ -706,41 +742,6 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
 
             {/* 두 번째줄: 기능 버튼들 */}
             <div className="flex items-center space-x-2">
-              {/* 업로드 버튼 (고객용) */}
-              {allowUpload && (
-                <>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={(e) => handleFileUpload(e.target.files)}
-                    className="hidden"
-                  />
-                  <button
-                    onClick={handleUploadClick}
-                    disabled={uploading}
-                    className={`px-2 py-1 rounded text-xs transition-colors flex items-center gap-1 ${
-                      uploading
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-green-500 text-white hover:bg-green-600'
-                    }`}
-                    title={t.upload}
-                  >
-                    {uploading ? (
-                      <>
-                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
-                        <span>{t.uploadingPhotos} ({uploadProgress.current}/{uploadProgress.total})</span>
-                      </>
-                    ) : (
-                      <>
-                        <Plus size={14} />
-                        <span>{t.upload}</span>
-                      </>
-                    )}
-                  </button>
-                </>
-              )}
               
               {/* 일괄 다운로드 모드 토글 */}
               <button
