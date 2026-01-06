@@ -56,6 +56,10 @@ export default function MessageList({
         const needsTrans = false
         const hasTranslation = false
         
+        // 내 메시지인지 확인 (자신이 보낸 메시지) - 먼저 정의
+        const isMyMessage = (isPublicView && message.sender_type === 'customer' && message.sender_name === (customerName || '고객')) || 
+                           (!isPublicView && message.sender_type === 'guide' && message.sender_email === (guideEmail || ''))
+        
         // 아바타 URL 가져오기 (메시지에 저장된 아바타 우선 사용)
         // 1. 메시지에 저장된 sender_avatar가 있으면 사용
         // 2. 자신의 메시지이고 고객인 경우 selectedAvatar 사용
@@ -64,10 +68,6 @@ export default function MessageList({
           (isMyMessage && message.sender_type === 'customer' && isPublicView
             ? selectedAvatar 
             : undefined)
-        
-        // 내 메시지인지 확인 (자신이 보낸 메시지)
-        const isMyMessage = (isPublicView && message.sender_type === 'customer' && message.sender_name === (customerName || '고객')) || 
-                           (!isPublicView && message.sender_type === 'guide' && message.sender_email === (guideEmail || ''))
         
         return (
           <div
