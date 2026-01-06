@@ -13,7 +13,8 @@ import { supabase } from '@/lib/supabase'
 import ChatRoomShareModal from './ChatRoomShareModal'
 import PickupScheduleModal from './PickupScheduleModal'
 import TourPhotoGallery from './TourPhotoGallery'
-import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
+// import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
+import { SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
 import { formatTimeWithAMPM } from '@/lib/utils'
 import { usePushNotification } from '@/hooks/usePushNotification'
 import { useChatRoom } from '@/hooks/useChatRoom'
@@ -309,137 +310,141 @@ export default function TourChatRoom({
     }
   }
   
-  const [translatedMessages, setTranslatedMessages] = useState<{ [key: string]: string }>({})
-  const [translating, setTranslating] = useState<{ [key: string]: boolean }>({})
+  // 번역 기능 주석 처리
+  // const [translatedMessages, setTranslatedMessages] = useState<{ [key: string]: string }>({})
+  // const [translating, setTranslating] = useState<{ [key: string]: boolean }>({})
+  const translatedMessages: { [key: string]: string } = {}
+  const translating: { [key: string]: boolean } = {}
 
-  // 번역된 메시지 로드 (DB에서)
-  useEffect(() => {
-    if (!room || messages.length === 0) return
+  // 번역된 메시지 로드 (DB에서) - 주석 처리
+  // useEffect(() => {
+  //   if (!room || messages.length === 0) return
 
-    const loadTranslations = async () => {
-      try {
-        const messageIds = messages.map(msg => msg.id)
-        const { data, error } = await supabase
-          .from('message_translations')
-          .select('message_id, target_language, translated_text')
-          .in('message_id', messageIds)
-          .eq('target_language', selectedLanguage)
+  //   const loadTranslations = async () => {
+  //     try {
+  //       const messageIds = messages.map(msg => msg.id)
+  //       const { data, error } = await supabase
+  //         .from('message_translations')
+  //         .select('message_id, target_language, translated_text')
+  //         .in('message_id', messageIds)
+  //         .eq('target_language', selectedLanguage)
 
-        if (error) {
-          console.error('Error loading translations:', error)
-          return
-        }
+  //       if (error) {
+  //         console.error('Error loading translations:', error)
+  //         return
+  //       }
 
-        if (data) {
-          const translations: { [key: string]: string } = {}
-          data.forEach((translation: { message_id: string; translated_text: string }) => {
-            translations[translation.message_id] = translation.translated_text
-          })
-          setTranslatedMessages(prev => ({ ...prev, ...translations }))
-        }
-      } catch (error) {
-        console.error('Error loading translations:', error)
-      }
-    }
+  //       if (data) {
+  //         const translations: { [key: string]: string } = {}
+  //         data.forEach((translation: { message_id: string; translated_text: string }) => {
+  //           translations[translation.message_id] = translation.translated_text
+  //         })
+  //         setTranslatedMessages(prev => ({ ...prev, ...translations }))
+  //       }
+  //     } catch (error) {
+  //       console.error('Error loading translations:', error)
+  //     }
+  //   }
 
-    loadTranslations()
-  }, [messages, room, selectedLanguage])
+  //   loadTranslations()
+  // }, [messages, room, selectedLanguage])
 
-  // 메시지 텍스트 해시 생성 함수 (다른 투어방에서도 재사용하기 위해)
-  const generateMessageHash = useCallback((text: string): string => {
-    // 간단한 해시 함수 (실제로는 crypto API 사용 권장)
-    let hash = 0
-    const normalizedText = text.trim().toLowerCase()
-    for (let i = 0; i < normalizedText.length; i++) {
-      const char = normalizedText.charCodeAt(i)
-      hash = ((hash << 5) - hash) + char
-      hash = hash & hash // 32bit 정수로 변환
-    }
-    return Math.abs(hash).toString(36)
-  }, [])
+  // 메시지 텍스트 해시 생성 함수 (다른 투어방에서도 재사용하기 위해) - 주석 처리
+  // const generateMessageHash = useCallback((text: string): string => {
+  //   // 간단한 해시 함수 (실제로는 crypto API 사용 권장)
+  //   let hash = 0
+  //   const normalizedText = text.trim().toLowerCase()
+  //   for (let i = 0; i < normalizedText.length; i++) {
+  //     const char = normalizedText.charCodeAt(i)
+  //     hash = ((hash << 5) - hash) + char
+  //     hash = hash & hash // 32bit 정수로 변환
+  //   }
+  //   return Math.abs(hash).toString(36)
+  // }, [])
 
-  // 메시지 번역 함수 (사용자가 버튼 클릭 시 호출)
-  const translateMessage = useCallback(async (messageId: string, messageText: string) => {
-    if (translating[messageId]) return
+  // 메시지 번역 함수 (사용자가 버튼 클릭 시 호출) - 주석 처리
+  // const translateMessage = useCallback(async (messageId: string, messageText: string) => {
+  //   if (translating[messageId]) return
 
-    // 이미 번역된 메시지인지 확인
-    if (translatedMessages[messageId]) {
-      return
-    }
+  //   // 이미 번역된 메시지인지 확인
+  //   if (translatedMessages[messageId]) {
+  //     return
+  //   }
 
-    setTranslating(prev => ({ ...prev, [messageId]: true }))
+  //   setTranslating(prev => ({ ...prev, [messageId]: true }))
 
-    try {
-      // 1. 먼저 현재 메시지 ID로 번역 확인
-      const { data: existingByMessageId } = await supabase
-        .from('message_translations')
-        .select('translated_text')
-        .eq('message_id', messageId)
-        .eq('target_language', selectedLanguage)
-        .maybeSingle<{ translated_text: string }>()
+  //   try {
+  //     // 1. 먼저 현재 메시지 ID로 번역 확인
+  //     const { data: existingByMessageId } = await supabase
+  //       .from('message_translations')
+  //       .select('translated_text')
+  //       .eq('message_id', messageId)
+  //       .eq('target_language', selectedLanguage)
+  //       .maybeSingle<{ translated_text: string }>()
 
-      if (existingByMessageId) {
-        // 이미 번역이 있으면 캐시에 추가
-        setTranslatedMessages(prev => ({
-          ...prev,
-          [messageId]: existingByMessageId.translated_text
-        }))
-        setTranslating(prev => ({ ...prev, [messageId]: false }))
-        return
-      }
+  //     if (existingByMessageId) {
+  //       // 이미 번역이 있으면 캐시에 추가
+  //       setTranslatedMessages(prev => ({
+  //         ...prev,
+  //         [messageId]: existingByMessageId.translated_text
+  //       }))
+  //       setTranslating(prev => ({ ...prev, [messageId]: false }))
+  //       return
+  //     }
 
-      // 2. 같은 텍스트의 번역이 다른 투어방에 있는지 확인 (재사용)
-      const sourceLanguage = detectLanguage(messageText)
-      const messageHash = generateMessageHash(messageText)
+  //     // 2. 같은 텍스트의 번역이 다른 투어방에 있는지 확인 (재사용)
+  //     const sourceLanguage = detectLanguage(messageText)
+  //     const messageHash = generateMessageHash(messageText)
       
-      const { data: existingByText } = await supabase
-        .from('message_translations')
-        .select('translated_text')
-        .eq('message_text_hash', messageHash)
-        .eq('target_language', selectedLanguage)
-        .eq('source_language', sourceLanguage)
-        .limit(1)
-        .maybeSingle<{ translated_text: string }>()
+  //     const { data: existingByText } = await supabase
+  //       .from('message_translations')
+  //       .select('translated_text')
+  //       .eq('message_text_hash', messageHash)
+  //       .eq('target_language', selectedLanguage)
+  //       .eq('source_language', sourceLanguage)
+  //       .limit(1)
+  //       .maybeSingle<{ translated_text: string }>()
 
-      let translatedText: string
+  //     let translatedText: string
 
-      if (existingByText) {
-        // 다른 투어방에서 이미 번역된 텍스트 재사용
-        translatedText = existingByText.translated_text
-        console.log('재사용된 번역:', messageText.substring(0, 50))
-      } else {
-        // 3. 번역 API 호출 (새로운 번역)
-        const result = await translateText(messageText, sourceLanguage, selectedLanguage)
-        translatedText = result.translatedText
-      }
+  //     if (existingByText) {
+  //       // 다른 투어방에서 이미 번역된 텍스트 재사용
+  //       translatedText = existingByText.translated_text
+  //       console.log('재사용된 번역:', messageText.substring(0, 50))
+  //     } else {
+  //       // 3. 번역 API 호출 (새로운 번역)
+  //       const result = await translateText(messageText, sourceLanguage, selectedLanguage)
+  //       translatedText = result.translatedText
+  //     }
 
-      // 4. DB에 번역 저장 (현재 메시지 ID와 텍스트 해시 모두 저장)
-      const { error: insertError } = await supabase
-        .from('message_translations')
-        .insert({
-          message_id: messageId,
-          target_language: selectedLanguage,
-          translated_text: translatedText,
-          source_language: sourceLanguage,
-          message_text_hash: messageHash
-        } as any)
+  //     // 4. DB에 번역 저장 (현재 메시지 ID와 텍스트 해시 모두 저장)
+  //     const { error: insertError } = await supabase
+  //       .from('message_translations')
+  //       .insert({
+  //         message_id: messageId,
+  //         target_language: selectedLanguage,
+  //         translated_text: translatedText,
+  //         source_language: sourceLanguage,
+  //         message_text_hash: messageHash
+  //       } as any)
 
-      if (insertError) {
-        console.error('Error saving translation:', insertError)
-        // DB 저장 실패해도 번역 결과는 표시
-      }
+  //     if (insertError) {
+  //       console.error('Error saving translation:', insertError)
+  //       // DB 저장 실패해도 번역 결과는 표시
+  //     }
 
-      // 번역 결과를 상태에 저장
-      setTranslatedMessages(prev => ({
-        ...prev,
-        [messageId]: translatedText
-      }))
-    } catch (error) {
-      console.error('Translation error:', error)
-    } finally {
-      setTranslating(prev => ({ ...prev, [messageId]: false }))
-    }
-  }, [selectedLanguage, translating, translatedMessages, generateMessageHash])
+  //     // 번역 결과를 상태에 저장
+  //     setTranslatedMessages(prev => ({
+  //       ...prev,
+  //       [messageId]: translatedText
+  //     }))
+  //   } catch (error) {
+  //     console.error('Translation error:', error)
+  //   } finally {
+  //     setTranslating(prev => ({ ...prev, [messageId]: false }))
+  //   }
+  // }, [selectedLanguage, translating, translatedMessages, generateMessageHash])
+  const translateMessage = undefined
   
   // 공지사항 (모달용)
   const [announcements, setAnnouncements] = useState<ChatAnnouncement[]>([])
@@ -452,33 +457,29 @@ export default function TourChatRoom({
   const availableCallUsers = React.useMemo(() => {
     const userMap = new Map<string, { id: string; name: string; type: 'guide' | 'customer'; email?: string }>()
     
-    // 메시지에서 사용자 추출
-    messages.forEach(message => {
-      if (message.sender_type === 'system') return
-      
-      // 현재 사용자와 다른 타입의 사용자만 추가
-      const isCurrentUser = isPublicView 
-        ? message.sender_type === 'customer' && message.sender_name === (customerName || '고객')
-        : message.sender_type === 'guide' && message.sender_email === guideEmail
-      
-      if (!isCurrentUser) {
-        const userKey = message.sender_email || message.sender_name
-        if (!userMap.has(userKey)) {
-          const email = message.sender_email
-          userMap.set(userKey, {
-            id: userKey,
-            name: message.sender_name,
-            type: message.sender_type === 'guide' ? 'guide' : 'customer',
-            ...(email ? { email } : {})
-          })
+    if (isPublicView) {
+      // 고객용 뷰: 가이드 타입만 통화 가능 (다른 고객은 제외)
+      // 메시지에서 가이드만 추출
+      messages.forEach(message => {
+        if (message.sender_type === 'system') return
+        // 가이드 타입만 추가 (고객 타입은 제외)
+        if (message.sender_type === 'guide') {
+          const userKey = message.sender_email || message.sender_name
+          if (!userMap.has(userKey)) {
+            const email = message.sender_email
+            userMap.set(userKey, {
+              id: userKey,
+              name: message.sender_name,
+              type: 'guide',
+              ...(email ? { email } : {})
+            })
+          }
         }
-      }
-    })
-    
-    // 온라인 참여자에서 사용자 추가 (고객용 뷰에서는 가이드/어시스턴트만)
-    onlineParticipants.forEach((participant) => {
-      if (isPublicView) {
-        // 고객용 뷰: 가이드 타입만 통화 가능
+      })
+      
+      // 온라인 참여자에서 가이드 타입만 추가
+      onlineParticipants.forEach((participant) => {
+        // 고객용 뷰: 가이드 타입만 통화 가능 (드라이버도 guide 타입으로 표시될 수 있음)
         if (participant.type === 'guide') {
           const userKey = participant.email || participant.id
           if (!userMap.has(userKey)) {
@@ -491,8 +492,32 @@ export default function TourChatRoom({
             })
           }
         }
-      } else {
-        // 관리자/가이드 뷰: 고객 타입만 통화 가능
+      })
+    } else {
+      // 관리자/가이드 뷰: 고객 타입만 통화 가능
+      // 메시지에서 고객만 추출
+      messages.forEach(message => {
+        if (message.sender_type === 'system') return
+        
+        // 현재 사용자가 아닌 고객만 추가
+        const isCurrentUser = message.sender_type === 'guide' && message.sender_email === guideEmail
+        
+        if (!isCurrentUser && message.sender_type === 'customer') {
+          const userKey = message.sender_email || message.sender_name
+          if (!userMap.has(userKey)) {
+            const email = message.sender_email
+            userMap.set(userKey, {
+              id: userKey,
+              name: message.sender_name,
+              type: 'customer',
+              ...(email ? { email } : {})
+            })
+          }
+        }
+      })
+      
+      // 온라인 참여자에서 고객 타입만 추가
+      onlineParticipants.forEach((participant) => {
         if (participant.type === 'customer') {
           const userKey = participant.id
           if (!userMap.has(userKey)) {
@@ -505,8 +530,8 @@ export default function TourChatRoom({
             })
           }
         }
-      }
-    })
+      })
+    }
     
     return Array.from(userMap.values())
   }, [messages, isPublicView, customerName, guideEmail, onlineParticipants])
@@ -962,7 +987,7 @@ export default function TourChatRoom({
   const handleLanguageToggle = () => {
     const newLanguage = selectedLanguage === 'ko' ? 'en' : 'ko'
     setSelectedLanguage(newLanguage)
-    setTranslatedMessages({}) // 기존 번역 초기화
+    // setTranslatedMessages({}) // 기존 번역 초기화 - 주석 처리
   }
 
   // 언어 플래그 함수
@@ -1683,7 +1708,7 @@ export default function TourChatRoom({
       sender_email: isPublicView ? undefined : (guideEmail || undefined),
       sender_avatar: isPublicView ? selectedAvatar : undefined,
       message: messageText,
-      message_type: 'location' as const,
+      message_type: 'text' as const, // 위치 공유 메시지는 'text' 타입으로 저장
       is_read: false,
       created_at: new Date().toISOString()
     } as ChatMessage
@@ -1707,7 +1732,7 @@ export default function TourChatRoom({
             sender_type: 'customer',
             sender_avatar: selectedAvatar,
             message: messageText,
-            message_type: 'location'
+            message_type: 'text' // 위치 공유 메시지는 'text' 타입으로 저장
           })
         })
 
@@ -1743,7 +1768,7 @@ export default function TourChatRoom({
             sender_name: '가이드',
             sender_email: guideEmail || null,
             message: messageText,
-            message_type: 'location'
+            message_type: 'text' // 위치 공유 메시지는 'text' 타입으로 저장
           })
           .select()
           .single()
@@ -1913,14 +1938,15 @@ export default function TourChatRoom({
     return `${formattedTime} (PST)`
   }
 
-  // 메시지가 번역이 필요한지 확인
-  const needsTranslation = useCallback((message: ChatMessage) => {
-    if (message.sender_type === 'guide') {
-      const messageLanguage = detectLanguage(message.message)
-      return messageLanguage !== selectedLanguage
-    }
-    return false
-  }, [selectedLanguage])
+  // 메시지가 번역이 필요한지 확인 - 주석 처리
+  // const needsTranslation = useCallback((message: ChatMessage) => {
+  //   if (message.sender_type === 'guide') {
+  //     const messageLanguage = detectLanguage(message.message)
+  //     return messageLanguage !== selectedLanguage
+  //   }
+  //   return false
+  // }, [selectedLanguage])
+  const needsTranslation = () => false
 
   // 언어 설정이 변경될 때 기존 메시지들 다시 번역
   // 무한 로딩 문제로 인해 일시적으로 비활성화
@@ -2054,6 +2080,7 @@ export default function TourChatRoom({
         messages={messages}
         isPublicView={isPublicView}
         {...(customerName ? { customerName } : {})}
+        {...(guideEmail ? { guideEmail } : {})}
         selectedAvatar={selectedAvatar}
         selectedLanguage={selectedLanguage}
         translatedMessages={translatedMessages}

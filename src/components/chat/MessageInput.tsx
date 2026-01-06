@@ -84,21 +84,19 @@ export default function MessageInput({
           <Smile size={18} />
         </button>
         
-        {/* 위치 공유 버튼 (고객용만) */}
-        {isPublicView && (
-          <button
-            onClick={onShareLocation}
-            disabled={gettingLocation || sending || uploading}
-            className="flex-shrink-0 p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title={selectedLanguage === 'ko' ? '위치 공유' : 'Share Location'}
-          >
-            {gettingLocation ? (
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
-            ) : (
-              <MapPin size={18} />
-            )}
-          </button>
-        )}
+        {/* 위치 공유 버튼 (고객 및 가이드용) */}
+        <button
+          onClick={onShareLocation}
+          disabled={gettingLocation || sending || uploading}
+          className="flex-shrink-0 p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title={selectedLanguage === 'ko' ? '위치 공유' : 'Share Location'}
+        >
+          {gettingLocation ? (
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+          ) : (
+            <MapPin size={18} />
+          )}
+        </button>
         
         <input
           type="text"

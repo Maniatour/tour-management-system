@@ -857,7 +857,15 @@ export default function GuideDashboard() {
         })))
         
         const upcomingToursList = extendedTours.filter(tour => tour.tour_date >= today)
-        const pastToursList = extendedTours.filter(tour => tour.tour_date <= today)
+        // 지난 투어는 오늘 이전의 투어만 포함하고, 최신순으로 정렬
+        const pastToursList = extendedTours
+          .filter(tour => tour.tour_date < today)
+          .sort((a, b) => {
+            // 날짜 기준 내림차순 정렬 (최신 투어가 먼저)
+            if (a.tour_date > b.tour_date) return -1
+            if (a.tour_date < b.tour_date) return 1
+            return 0
+          })
         
         console.log('Filtered tours:', {
           today,

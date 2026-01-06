@@ -46,25 +46,46 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
     
     // 통화 요청 수신
     channel.on('broadcast', { event: 'call-offer' }, (payload) => {
-      const payloadData = payload.payload
-      // 현재 사용자에게 보낸 통화 요청인지 확인 (to가 없거나 현재 userId와 일치)
-      const isForMe = !payloadData.to || payloadData.to === userId
-      if (payloadData.from !== userId && callStatusRef.current === 'idle' && isForMe) {
-        setIncomingOffer(payloadData.offer)
-        setCallerName(payloadData.userName || '상대방')
-        setCallStatus('ringing')
+      try {
+        const payloadData = payload.payload
+        // 현재 사용자에게 보낸 통화 요청인지 확인 (to가 없거나 현재 userId와 일치)
+        const isForMe = !payloadData.to || payloadData.to === userId
+        if (payloadData.from !== userId && callStatusRef.current === 'idle' && isForMe) {
+          // offer가 올바른 형태인지 확인
+          if (payloadData.offer && payloadData.offer.type && payloadData.offer.sdp) {
+            setIncomingOffer(payloadData.offer as RTCSessionDescriptionInit)
+            setCallerName(payloadData.userName || '상대방')
+            setCallStatus('ringing')
+          } else {
+            console.error('Invalid offer received:', payloadData.offer)
+          }
+        }
+      } catch (error) {
+        console.error('Error handling call-offer:', error)
       }
     })
 
     // 통화 수락 수신
     channel.on('broadcast', { event: 'call-answer' }, async (payload) => {
-      if (payload.payload.from !== userId && callStatusRef.current === 'calling') {
-        const answer = payload.payload.answer
-        if (peerConnectionRef.current && answer) {
-          await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer))
-          setCallStatus('connected')
-          startCallTimer()
+      try {
+        if (payload.payload.from !== userId && callStatusRef.current === 'calling') {
+          const answer = payload.payload.answer
+          if (peerConnectionRef.current && answer && answer.type && answer.sdp) {
+            const answerDescription = new RTCSessionDescription({
+              type: answer.type as RTCSdpType,
+              sdp: answer.sdp
+            })
+            await peerConnectionRef.current.setRemoteDescription(answerDescription)
+            setCallStatus('connected')
+            startCallTimer()
+          } else {
+            console.error('Invalid answer received:', answer)
+          }
         }
+      } catch (error) {
+        console.error('Error handling call-answer:', error)
+        setCallStatus('error')
+        setCallError('통화 연결에 실패했습니다.')
       }
     })
 
@@ -84,11 +105,24 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
 
     // ICE candidate 수신
     channel.on('broadcast', { event: 'ice-candidate' }, async (payload) => {
-      if (payload.payload.from !== userId && peerConnectionRef.current) {
-        const candidate = payload.payload.candidate
-        if (candidate) {
-          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate))
+      try {
+        if (payload.payload.from !== userId && peerConnectionRef.current) {
+          const candidate = payload.payload.candidate
+          if (candidate && candidate.candidate) {
+            try {
+              await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate({
+                candidate: candidate.candidate,
+                sdpMLineIndex: candidate.sdpMLineIndex,
+                sdpMid: candidate.sdpMid
+              }))
+            } catch (iceError) {
+              // ICE candidate 추가 실패는 일반적으로 무시해도 됨 (이미 처리된 candidate일 수 있음)
+              console.warn('Error adding ICE candidate:', iceError)
+            }
+          }
         }
+      } catch (error) {
+        console.error('Error handling ice-candidate:', error)
       }
     })
 
@@ -144,8 +178,30 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
       })
     }
 
+    // 연결 상태 모니터링
+    pc.onconnectionstatechange = () => {
+      console.log('PeerConnection state:', pc.connectionState)
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        console.error('PeerConnection failed or disconnected')
+        if (callStatusRef.current === 'connected' || callStatusRef.current === 'calling') {
+          setCallError('연결이 끊어졌습니다.')
+          endCallRef.current?.()
+        }
+      }
+    }
+
+    // ICE 연결 상태 모니터링
+    pc.oniceconnectionstatechange = () => {
+      console.log('ICE connection state:', pc.iceConnectionState)
+      if (pc.iceConnectionState === 'failed') {
+        console.error('ICE connection failed')
+        setCallError('네트워크 연결에 실패했습니다.')
+      }
+    }
+
     // 원격 스트림 처리
     pc.ontrack = (event) => {
+      console.log('Received remote track:', event)
       const [remoteStream] = event.streams
       remoteStreamRef.current = remoteStream
       
@@ -153,12 +209,16 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
       const audio = new Audio()
       audio.srcObject = remoteStream
       audio.autoplay = true
+      audio.onerror = (error) => {
+        console.error('Audio playback error:', error)
+      }
       setRemoteAudio(audio)
     }
 
     // ICE candidate 전송
     pc.onicecandidate = (event) => {
       if (event.candidate && channelRef.current) {
+        console.log('Sending ICE candidate:', event.candidate)
         // candidate는 이미 객체 형태이므로 직접 사용
         channelRef.current.send({
           type: 'broadcast',
@@ -172,6 +232,8 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
             }
           }
         })
+      } else if (!event.candidate) {
+        console.log('All ICE candidates have been sent')
       }
     }
 
@@ -269,21 +331,47 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
   // 통화 수락
   const acceptCall = useCallback(async (offer: RTCSessionDescriptionInit) => {
     try {
+      if (!offer || !offer.sdp) {
+        console.error('Invalid offer received')
+        setCallStatus('idle')
+        return
+      }
+
       setCallStatus('connected')
 
       // 마이크 권한 요청 및 스트림 가져오기
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: true,
-        video: false 
-      })
+      let stream: MediaStream
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: true,
+          video: false 
+        })
+      } catch (mediaError: any) {
+        console.error('Error getting user media:', mediaError)
+        if (mediaError.name === 'NotAllowedError' || mediaError.name === 'PermissionDeniedError') {
+          alert('마이크 권한이 거부되었습니다. 브라우저 설정에서 마이크 권한을 허용해주세요.')
+        } else if (mediaError.name === 'NotFoundError' || mediaError.name === 'DevicesNotFoundError') {
+          alert('마이크를 찾을 수 없습니다. 마이크가 연결되어 있는지 확인해주세요.')
+        } else {
+          alert('마이크에 접근할 수 없습니다. 브라우저 설정을 확인해주세요.')
+        }
+        setCallStatus('idle')
+        return
+      }
+
       localStreamRef.current = stream
       setLocalStream(stream)
 
       // PeerConnection 설정
       const pc = await setupPeerConnection()
 
-      // Offer 설정
-      await pc.setRemoteDescription(new RTCSessionDescription(offer))
+      // Offer 설정 - offer가 { type, sdp } 형태이므로 RTCSessionDescription으로 변환
+      const offerDescription = new RTCSessionDescription({
+        type: offer.type as RTCSdpType,
+        sdp: offer.sdp
+      })
+      
+      await pc.setRemoteDescription(offerDescription)
 
       // Answer 생성 및 전송
       const answer = await pc.createAnswer()
@@ -306,9 +394,20 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
       }
 
       startCallTimer()
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error accepting call:', error)
-      alert('마이크 권한이 필요합니다.')
+      // 스트림 정리
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop())
+        localStreamRef.current = null
+        setLocalStream(null)
+      }
+      // PeerConnection 정리
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close()
+        peerConnectionRef.current = null
+      }
+      alert(error.message || '통화를 수락할 수 없습니다.')
       setCallStatus('idle')
     }
   }, [userId, userName, setupPeerConnection, startCallTimer])
@@ -398,9 +497,21 @@ export function useVoiceCall({ roomId, userId, userName, isPublicView, targetUse
 
   // 들어오는 통화 수락 (offer 사용)
   const acceptIncomingCall = useCallback(async () => {
-    if (incomingOffer) {
+    if (!incomingOffer) {
+      console.error('No incoming offer to accept')
+      setCallStatus('idle')
+      return
+    }
+    
+    // incomingOffer를 직접 사용 (이미 RTCSessionDescriptionInit 형태)
+    try {
       await acceptCall(incomingOffer)
+      // 성공적으로 수락한 후에만 incomingOffer를 null로 설정
       setIncomingOffer(null)
+    } catch (error) {
+      console.error('Error in acceptIncomingCall:', error)
+      // 에러가 발생하면 상태를 idle로 설정
+      setCallStatus('idle')
     }
   }, [incomingOffer, acceptCall])
 

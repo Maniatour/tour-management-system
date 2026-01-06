@@ -147,6 +147,22 @@ export default function ChatHeader({
               >
                 <ExternalLink size={18} />
               </button>
+              <button
+                onClick={onStartCall}
+                disabled={!room || callStatus !== 'idle' || availableCallUsersCount === 0}
+                className={`p-2 rounded border ${
+                  callStatus === 'connected'
+                    ? 'bg-green-100 text-green-800 border-green-200'
+                    : callStatus !== 'idle'
+                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                    : availableCallUsersCount === 0
+                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                    : 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200'
+                }`}
+                title={selectedLanguage === 'ko' ? '음성 통화' : 'Voice Call'}
+              >
+                <Phone size={18} />
+              </button>
             </>
           )}
           <button
@@ -325,6 +341,28 @@ export default function ChatHeader({
                     </div>
                     <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '가이드 정보' : 'Guide Info'}</span>
                   </button>
+                  <button
+                    onClick={onStartCall}
+                    disabled={!room || callStatus !== 'idle' || availableCallUsersCount === 0}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
+                      callStatus === 'connected'
+                        ? 'bg-green-100 text-green-800 border-green-200'
+                        : callStatus !== 'idle'
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                        : availableCallUsersCount === 0
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                        : 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200'
+                    }`}
+                  >
+                    <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+                      <Phone size={20} />
+                    </div>
+                    <span className="text-[10px] font-medium">{selectedLanguage === 'ko' ? '통화' : 'Call'}</span>
+                  </button>
+                </div>
+              )}
+              {!isPublicView && (
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={onStartCall}
                     disabled={!room || callStatus !== 'idle' || availableCallUsersCount === 0}

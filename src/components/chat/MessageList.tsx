@@ -9,6 +9,7 @@ interface MessageListProps {
   messages: ChatMessage[]
   isPublicView: boolean
   customerName?: string
+  guideEmail?: string
   selectedAvatar: string
   selectedLanguage: SupportedLanguage
   translatedMessages: { [key: string]: string }
@@ -28,6 +29,7 @@ export default function MessageList({
   messages,
   isPublicView,
   customerName,
+  guideEmail,
   selectedAvatar,
   selectedLanguage,
   translatedMessages,
@@ -48,29 +50,51 @@ export default function MessageList({
       style={{ touchAction: 'pan-x pan-y pinch-zoom' }}
     >
       {messages.map((message, index) => {
-        const needsTrans = needsTranslation(message)
-        const hasTranslation = translatedMessages[message.id]
+        // 번역 기능 주석 처리
+        // const needsTrans = needsTranslation(message)
+        // const hasTranslation = translatedMessages[message.id]
+        const needsTrans = false
+        const hasTranslation = false
         
-        // 아바타 URL 가져오기 (메시지에 저장된 아바타 또는 기본값)
+        // 아바타 URL 가져오기 (메시지에 저장된 아바타 우선 사용)
+        // 1. 메시지에 저장된 sender_avatar가 있으면 사용
+        // 2. 자신의 메시지이고 고객인 경우 selectedAvatar 사용
+        // 3. 그 외에는 undefined (기본 아이콘 표시)
         const avatarUrl = (message as any).sender_avatar || 
-          (message.sender_type === 'customer' 
-            ? (message.sender_name === (customerName || '고객') ? selectedAvatar : undefined)
+          (isMyMessage && message.sender_type === 'customer' && isPublicView
+            ? selectedAvatar 
             : undefined)
+        
+        // 내 메시지인지 확인 (자신이 보낸 메시지)
+        const isMyMessage = (isPublicView && message.sender_type === 'customer' && message.sender_name === (customerName || '고객')) || 
+                           (!isPublicView && message.sender_type === 'guide' && message.sender_email === (guideEmail || ''))
         
         return (
           <div
             key={`${message.id}-${index}`}
-            className={`flex items-start space-x-2 ${message.sender_type === 'guide' ? 'justify-end' : 'justify-start'}`}
+            className={`flex items-start space-x-2 ${isMyMessage ? 'justify-end' : 'justify-start'}`}
           >
-            {/* 아바타 (고객 메시지일 때만 왼쪽에 표시) */}
-            {message.sender_type === 'customer' && (
+            {/* 아바타 (다른 사람의 메시지일 때만 왼쪽에 표시) */}
+            {!isMyMessage && (
               <div className="flex-shrink-0">
-                <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200">
+                <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-gray-200 bg-white">
                   {avatarUrl ? (
                     <img
                       src={avatarUrl}
                       alt={message.sender_name}
                       className="w-full h-full object-cover"
+                      onError={(e) => {
+                        // 아바타 로드 실패 시 기본 아이콘 표시
+                        const target = e.target as HTMLImageElement
+                        target.style.display = 'none'
+                        const parent = target.parentElement
+                        if (parent && !parent.querySelector('.avatar-fallback')) {
+                          const fallback = document.createElement('div')
+                          fallback.className = 'avatar-fallback w-full h-full bg-gray-200 flex items-center justify-center'
+                          fallback.innerHTML = `<svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>`
+                          parent.appendChild(fallback)
+                        }
+                      }}
                     />
                   ) : (
                     <div className="w-full h-full bg-gray-200 flex items-center justify-center">
@@ -83,23 +107,20 @@ export default function MessageList({
             
             {/* 메시지 박스와 번역 뱃지를 감싸는 컨테이너 */}
             {(() => {
-              // 내 메시지인지 확인
-              const isMyMessage = (isPublicView && message.sender_type === 'customer') || 
-                                 (!isPublicView && message.sender_type === 'guide')
-              
-              // 번역 뱃지 표시 조건 (번역이 저장되어 있지 않을 때만 표시)
-              const showTranslateBadge = translateMessage && 
-                                        !hasTranslation &&
-                                        message.message_type === 'text' && 
-                                        message.message && 
-                                        typeof message.message === 'string' &&
-                                        message.message.trim().length > 0 &&
-                                        !message.message.startsWith('[EN] ')
+              // 번역 뱃지 표시 조건 (번역이 저장되어 있지 않을 때만 표시) - 주석 처리
+              // const showTranslateBadge = translateMessage && 
+              //                           !hasTranslation &&
+              //                           message.message_type === 'text' && 
+              //                           message.message && 
+              //                           typeof message.message === 'string' &&
+              //                           message.message.trim().length > 0 &&
+              //                           !message.message.startsWith('[EN] ')
+              const showTranslateBadge = false
               
               return (
                 <div className={`flex items-end gap-2 ${isMyMessage ? 'flex-row-reverse' : 'flex-row'}`}>
-                  {/* 번역 뱃지 (메시지 박스 옆) - 번역이 저장되어 있지 않을 때만 표시 */}
-                  {showTranslateBadge && (
+                  {/* 번역 뱃지 (메시지 박스 옆) - 번역이 저장되어 있지 않을 때만 표시 - 주석 처리 */}
+                  {/* {showTranslateBadge && (
                     <div className="flex-shrink-0 mb-1">
                       <button
                         onClick={() => translateMessage(message.id, message.message)}
@@ -133,12 +154,16 @@ export default function MessageList({
                         )}
                       </button>
                     </div>
-                  )}
+                  )} */}
                   
-                  <div className="flex flex-col max-w-xs lg:max-w-md">
-                    {/* 이름 (고객 메시지일 때만) */}
-                    {message.sender_type === 'customer' && (
-                      <div className="text-xs font-medium text-gray-700 mb-1 px-1">
+                  <div className={`flex flex-col max-w-xs lg:max-w-md ${isMyMessage ? 'items-end' : 'items-start'}`}>
+                    {/* 이름 (다른 사람의 메시지일 때만 표시) */}
+                    {!isMyMessage && (
+                      <div className={`text-xs font-medium mb-1 px-1 ${
+                        message.sender_type === 'guide' 
+                          ? 'text-white' 
+                          : 'text-gray-700'
+                      }`}>
                         {message.sender_name}
                       </div>
                     )}
@@ -147,16 +172,13 @@ export default function MessageList({
                 className={`px-3 lg:px-4 py-2 rounded-lg border shadow-sm ${
                   message.sender_type === 'system'
                     ? 'bg-gray-200 bg-opacity-80 backdrop-blur-sm text-gray-700 text-center'
+                    : isMyMessage
+                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-600'
                     : message.sender_type === 'guide'
                     ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white border-blue-600'
                     : 'bg-white bg-opacity-90 backdrop-blur-sm text-gray-900 border-gray-200'
                 }`}
               >
-                {message.sender_type === 'guide' && (
-                  <div className="text-xs font-medium mb-1 opacity-90">
-                    {message.sender_name}
-                  </div>
-                )}
                 
                 {/* 메시지 내용 */}
                 <div className="text-sm" style={{ touchAction: 'pan-x pan-y pinch-zoom' }}>
@@ -237,14 +259,14 @@ export default function MessageList({
                         })}
                       </div>
                       
-                      {/* 번역 결과 표시 (저장된 번역이 있을 때 본문 아래에 표시) */}
-                      {hasTranslation && message.message_type === 'text' && !message.message.startsWith('[EN] ') && (
+                      {/* 번역 결과 표시 (저장된 번역이 있을 때 본문 아래에 표시) - 주석 처리 */}
+                      {/* {hasTranslation && message.message_type === 'text' && !message.message.startsWith('[EN] ') && (
                         <div className="mt-2 pt-2 border-t border-gray-200">
                           <div className={`text-xs ${message.sender_type === 'guide' ? 'text-white opacity-90' : 'text-gray-600'}`}>
                             <span className="font-medium">{getLanguageDisplayName(selectedLanguage)}:</span> {hasTranslation}
                           </div>
                         </div>
-                      )}
+                      )} */}
                     </div>
                   )}
                 </div>
