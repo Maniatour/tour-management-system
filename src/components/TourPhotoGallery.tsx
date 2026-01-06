@@ -52,6 +52,8 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 })
   const [customers, setCustomers] = useState<Customer[]>([])
   const [showCustomerSelector, setShowCustomerSelector] = useState(false)
+  const [showDownloadCustomerSelector, setShowDownloadCustomerSelector] = useState(false)
+  const [showDownloadWarning, setShowDownloadWarning] = useState(false)
   const [loadingCustomers, setLoadingCustomers] = useState(false)
   const [hidingPhotos, setHidingPhotos] = useState(false)
   const [hiddenPhotoIds, setHiddenPhotoIds] = useState<Set<string>>(new Set())
@@ -92,7 +94,13 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       requestHide: '표시 중단 신청',
       hideSuccess: '표시 중단 요청이 완료되었습니다.',
       hideError: '표시 중단 요청 중 오류가 발생했습니다.',
-      requesting: '요청 중...'
+      requesting: '요청 중...',
+      downloadWarning: '다운로드 안내',
+      downloadWarningContent: '개인정보 보호를 위해 본인의 사진만 다운로드해 주시기 바랍니다. 타인의 사진을 저장하는 것은 금지되어 있습니다.\n\n또한, 모든 다운로드 기록은 저장되며, 추후 초상권 등의 문제가 발생할 경우 출처가 남겨집니다.',
+      downloadWarningConfirm: '동의하고 다운로드',
+      downloadWarningCancel: '취소',
+      downloadSuccess: '다운로드가 완료되었습니다.',
+      downloadError: '다운로드 중 오류가 발생했습니다.'
     },
     en: {
       title: 'Tour Photos',
@@ -132,7 +140,13 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       requestHide: 'Request Hide',
       hideSuccess: 'Hide request completed successfully.',
       hideError: 'An error occurred while requesting hide.',
-      requesting: 'Requesting...'
+      requesting: 'Requesting...',
+      downloadWarning: 'Download Notice',
+      downloadWarningContent: 'For privacy protection, please download only your own photos. Saving photos of others is prohibited.\n\nAll download records are stored, and in case of portrait rights issues, the source will be tracked.',
+      downloadWarningConfirm: 'Agree and Download',
+      downloadWarningCancel: 'Cancel',
+      downloadSuccess: 'Download completed successfully.',
+      downloadError: 'An error occurred during download.'
     }
   }
   
@@ -394,8 +408,22 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
     }
   }
 
-  // 일괄 다운로드
+  // 일괄 다운로드 (고객용일 때는 경고 표시 후 고객 선택)
   const handleBulkDownload = async () => {
+    if (selectedPhotos.size === 0) return
+    
+    // 고객용일 때는 경고 표시 후 고객 선택
+    if (allowUpload) {
+      setShowDownloadWarning(true)
+      return
+    }
+    
+    // 관리자/가이드용은 바로 다운로드
+    await executeDownload(null, '')
+  }
+
+  // 실제 다운로드 실행
+  const executeDownload = async (customerId: string | null, customerName: string) => {
     if (selectedPhotos.size === 0) return
     
     setDownloading(true)
@@ -416,6 +444,24 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
           document.body.removeChild(link)
           window.URL.revokeObjectURL(url)
           
+          // 다운로드 기록 저장 (고객용일 때만)
+          if (allowUpload && customerId) {
+            try {
+              await supabase
+                .from('tour_photo_download_logs')
+                .insert({
+                  tour_id: tourId,
+                  file_name: photo.file_name,
+                  file_path: `${tourId}/${photo.file_name}`,
+                  customer_id: customerId,
+                  customer_name: customerName
+                })
+            } catch (error) {
+              console.error('Error saving download log:', error)
+              // 다운로드 기록 저장 실패해도 다운로드는 계속 진행
+            }
+          }
+          
           // 다운로드 간격을 두어 브라우저 부하 방지
           if (i < selectedPhotoObjects.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 500))
@@ -424,13 +470,34 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
           console.error(`Failed to download ${photo.file_name}:`, error)
         }
       }
+      
+      if (allowUpload) {
+        alert(t.downloadSuccess)
+      }
     } catch (error) {
       console.error('Bulk download failed:', error)
+      if (allowUpload) {
+        alert(t.downloadError)
+      }
     } finally {
       setDownloading(false)
       setBulkDownloadMode(false)
       setSelectedPhotos(new Set())
+      setShowDownloadWarning(false)
+      setShowDownloadCustomerSelector(false)
     }
+  }
+
+  // 다운로드 경고 확인 후 고객 선택
+  const handleDownloadWarningConfirm = () => {
+    setShowDownloadWarning(false)
+    setShowDownloadCustomerSelector(true)
+  }
+
+  // 고객 선택 후 다운로드 실행
+  const handleDownloadWithCustomer = async (customerId: string, customerName: string) => {
+    setShowDownloadCustomerSelector(false)
+    await executeDownload(customerId, customerName)
   }
 
   // 이전/다음 사진 네비게이션
@@ -949,7 +1016,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
         </div>
       )}
 
-      {/* 고객 선택 모달 */}
+      {/* 고객 선택 모달 (표시 중단 요청용) */}
       {showCustomerSelector && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70] p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
@@ -999,6 +1066,242 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
             <div className="p-4 border-t flex justify-end">
               <button
                 onClick={() => setShowCustomerSelector(false)}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                {t.close}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 다운로드 경고 모달 */}
+      {showDownloadWarning && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70] p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Download className="w-5 h-5 text-yellow-600" />
+                {t.downloadWarning}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowDownloadWarning(false)
+                  setBulkDownloadMode(false)
+                  setSelectedPhotos(new Set())
+                }}
+                className="p-1 hover:bg-gray-100 rounded transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-4">
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                <p className="text-sm text-yellow-800 whitespace-pre-line">
+                  {t.downloadWarningContent}
+                </p>
+              </div>
+            </div>
+            
+            <div className="p-4 border-t flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setShowDownloadWarning(false)
+                  setBulkDownloadMode(false)
+                  setSelectedPhotos(new Set())
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                {t.downloadWarningCancel}
+              </button>
+              <button
+                onClick={handleDownloadWarningConfirm}
+                className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+              >
+                {t.downloadWarningConfirm}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 고객 선택 모달 (다운로드용) */}
+      {showDownloadCustomerSelector && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70] p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <User className="w-5 h-5" />
+                {t.selectCustomer}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowDownloadCustomerSelector(false)
+                  setBulkDownloadMode(false)
+                  setSelectedPhotos(new Set())
+                }}
+                className="p-1 hover:bg-gray-100 rounded transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-4 max-h-96 overflow-y-auto">
+              {loadingCustomers ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : customers.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  {language === 'ko' ? '고객 정보를 불러올 수 없습니다.' : 'Unable to load customer information.'}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {customers.map((customer) => (
+                    <button
+                      key={customer.id}
+                      onClick={() => handleDownloadWithCustomer(customer.id, customer.name)}
+                      disabled={downloading}
+                      className="w-full p-3 text-left border rounded-lg hover:bg-green-50 hover:border-green-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-gray-900">{customer.name}</span>
+                        {downloading && (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 border-t flex justify-end">
+              <button
+                onClick={() => {
+                  setShowDownloadCustomerSelector(false)
+                  setBulkDownloadMode(false)
+                  setSelectedPhotos(new Set())
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                {t.close}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 다운로드 경고 모달 */}
+      {showDownloadWarning && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70] p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <Download className="w-5 h-5 text-yellow-600" />
+                {t.downloadWarning}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowDownloadWarning(false)
+                  setBulkDownloadMode(false)
+                  setSelectedPhotos(new Set())
+                }}
+                className="p-1 hover:bg-gray-100 rounded transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-4">
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                <p className="text-sm text-yellow-800 whitespace-pre-line">
+                  {t.downloadWarningContent}
+                </p>
+              </div>
+            </div>
+            
+            <div className="p-4 border-t flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setShowDownloadWarning(false)
+                  setBulkDownloadMode(false)
+                  setSelectedPhotos(new Set())
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                {t.downloadWarningCancel}
+              </button>
+              <button
+                onClick={handleDownloadWarningConfirm}
+                className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+              >
+                {t.downloadWarningConfirm}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 고객 선택 모달 (다운로드용) */}
+      {showDownloadCustomerSelector && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70] p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <User className="w-5 h-5" />
+                {t.selectCustomer}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowDownloadCustomerSelector(false)
+                  setBulkDownloadMode(false)
+                  setSelectedPhotos(new Set())
+                }}
+                className="p-1 hover:bg-gray-100 rounded transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-4 max-h-96 overflow-y-auto">
+              {loadingCustomers ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : customers.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  {language === 'ko' ? '고객 정보를 불러올 수 없습니다.' : 'Unable to load customer information.'}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {customers.map((customer) => (
+                    <button
+                      key={customer.id}
+                      onClick={() => handleDownloadWithCustomer(customer.id, customer.name)}
+                      disabled={downloading}
+                      className="w-full p-3 text-left border rounded-lg hover:bg-green-50 hover:border-green-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-gray-900">{customer.name}</span>
+                        {downloading && (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 border-t flex justify-end">
+              <button
+                onClick={() => {
+                  setShowDownloadCustomerSelector(false)
+                  setBulkDownloadMode(false)
+                  setSelectedPhotos(new Set())
+                }}
                 className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
               >
                 {t.close}
