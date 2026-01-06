@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Image from 'next/image'
-import { X, ChevronLeft, ChevronRight, Download, Calendar, ImageIcon, Grid3X3, List, Check, CheckCircle, Plus, Upload } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, Download, Calendar, ImageIcon, Grid3X3, List, Check, CheckCircle, Plus, Upload, EyeOff, User } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface SupabaseFile {
@@ -20,6 +20,12 @@ interface TourPhoto {
   uploaded_at: string
   uploaded_by: string
   uploaded_by_name?: string
+  is_hidden?: boolean // 표시 중단 여부
+}
+
+interface Customer {
+  id: string
+  name: string
 }
 
 interface TourPhotoGalleryProps {
@@ -40,9 +46,15 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [selectedPhotos, setSelectedPhotos] = useState<Set<string>>(new Set())
   const [bulkDownloadMode, setBulkDownloadMode] = useState(false)
+  const [hideRequestMode, setHideRequestMode] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 })
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [showCustomerSelector, setShowCustomerSelector] = useState(false)
+  const [loadingCustomers, setLoadingCustomers] = useState(false)
+  const [hidingPhotos, setHidingPhotos] = useState(false)
+  const [hiddenPhotoIds, setHiddenPhotoIds] = useState<Set<string>>(new Set())
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 다국어 텍스트
@@ -73,7 +85,14 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       done: '완료',
       none: '해제',
       all: '전체',
-      selected: '개 선택됨'
+      selected: '개 선택됨',
+      hideRequest: '표시 중단 요청',
+      hideRequestMode: '표시 중단 모드',
+      selectCustomer: '고객 선택',
+      requestHide: '표시 중단 신청',
+      hideSuccess: '표시 중단 요청이 완료되었습니다.',
+      hideError: '표시 중단 요청 중 오류가 발생했습니다.',
+      requesting: '요청 중...'
     },
     en: {
       title: 'Tour Photos',
@@ -106,7 +125,14 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       uploadingPhotos: 'Uploading...',
       uploadSuccess: 'Upload Complete',
       uploadError: 'Upload Failed',
-      selectFiles: 'Select Files'
+      selectFiles: 'Select Files',
+      hideRequest: 'Request Hide',
+      hideRequestMode: 'Hide Request Mode',
+      selectCustomer: 'Select Customer',
+      requestHide: 'Request Hide',
+      hideSuccess: 'Hide request completed successfully.',
+      hideError: 'An error occurred while requesting hide.',
+      requesting: 'Requesting...'
     }
   }
   
@@ -178,28 +204,42 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
         return
       }
 
+      // 표시 중단된 사진 정보 가져오기
+      const { data: hideRequests } = await supabase
+        .from('tour_photo_hide_requests')
+        .select('file_name, is_hidden')
+        .eq('tour_id', tourId)
+        .eq('is_hidden', true)
+
+      const hiddenFileNames = new Set(
+        (hideRequests || []).map((req: { file_name: string }) => req.file_name)
+      )
+
       // Public URL 사용 (bucket이 public이므로 signed URL 불필요 - 훨씬 빠름)
       // Public URL 형식: https://{project-ref}.supabase.co/storage/v1/object/public/{bucket}/{path}
       // 파일 정보를 Photo 객체로 변환 (Public URL 직접 생성 - API 호출 없음)
       // 썸네일: 작은 크기로 표시 (브라우저가 자동으로 리사이즈)
       // 원본: 모달과 다운로드 시에만 사용
-      const photosWithUrls: TourPhoto[] = allFiles.map((file: SupabaseFile) => {
-        const filePath = `${tourId}/${file.name}`
-        const { data: { publicUrl } } = supabase.storage
-          .from('tour-photos')
-          .getPublicUrl(filePath)
-        
-        // 썸네일 URL 생성 (원본과 동일하지만, 표시 시 작은 크기로 제한)
-        // 실제로는 같은 URL을 사용하되, Image 컴포넌트의 width/height로 크기 제한
-        return {
-          id: file.id || file.name,
-          file_url: publicUrl, // 원본 URL (모달, 다운로드용)
-          thumbnail_url: publicUrl, // 썸네일 URL (같은 URL이지만 작은 크기로 표시)
-          file_name: file.name,
-          uploaded_at: file.updated_at || file.created_at || new Date().toISOString(),
-          uploaded_by: 'Unknown'
-        }
-      })
+      const photosWithUrls: TourPhoto[] = allFiles
+        .filter((file: SupabaseFile) => !hiddenFileNames.has(file.name)) // 표시 중단된 사진 필터링
+        .map((file: SupabaseFile) => {
+          const filePath = `${tourId}/${file.name}`
+          const { data: { publicUrl } } = supabase.storage
+            .from('tour-photos')
+            .getPublicUrl(filePath)
+          
+          // 썸네일 URL 생성 (원본과 동일하지만, 표시 시 작은 크기로 제한)
+          // 실제로는 같은 URL을 사용하되, Image 컴포넌트의 width/height로 크기 제한
+          return {
+            id: file.id || file.name,
+            file_url: publicUrl, // 원본 URL (모달, 다운로드용)
+            thumbnail_url: publicUrl, // 썸네일 URL (같은 URL이지만 작은 크기로 표시)
+            file_name: file.name,
+            uploaded_at: file.updated_at || file.created_at || new Date().toISOString(),
+            uploaded_by: 'Unknown',
+            is_hidden: false
+          }
+        })
 
       setPhotos(photosWithUrls)
     } catch (error) {
@@ -210,12 +250,79 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
     }
   }, [tourId])
 
+  // 투어 고객 목록 로드
+  const loadCustomers = useCallback(async () => {
+    if (!tourId) return
+    
+    try {
+      setLoadingCustomers(true)
+      
+      // 투어 정보 가져오기
+      const { data: tour, error: tourError } = await supabase
+        .from('tours')
+        .select('reservation_ids')
+        .eq('id', tourId)
+        .single<{ reservation_ids: string[] | null }>()
+
+      if (tourError || !tour || !tour.reservation_ids || tour.reservation_ids.length === 0) {
+        console.error('Error loading tour or no reservations:', tourError)
+        setCustomers([])
+        return
+      }
+
+      // 예약 정보 가져오기
+      const { data: reservations, error: reservationsError } = await supabase
+        .from('reservations')
+        .select('customer_id')
+        .in('id', tour.reservation_ids)
+
+      if (reservationsError || !reservations) {
+        console.error('Error loading reservations:', reservationsError)
+        setCustomers([])
+        return
+      }
+
+      // 고객 ID 목록 추출
+      const customerIds = [...new Set(
+        reservations
+          .map((r: { customer_id: string | null }) => r.customer_id)
+          .filter(Boolean)
+      )]
+
+      if (customerIds.length === 0) {
+        setCustomers([])
+        return
+      }
+
+      // 고객 정보 가져오기
+      const { data: customersData, error: customersError } = await supabase
+        .from('customers')
+        .select('id, name')
+        .in('id', customerIds)
+
+      if (customersError) {
+        console.error('Error loading customers:', customersError)
+        setCustomers([])
+      } else {
+        setCustomers((customersData || []) as Customer[])
+      }
+    } catch (error) {
+      console.error('Error loading customers:', error)
+      setCustomers([])
+    } finally {
+      setLoadingCustomers(false)
+    }
+  }, [tourId])
+
   // 컴포넌트 마운트 시 사진 로드
   useEffect(() => {
     if (isOpen && tourId) {
       loadPhotos()
+      if (allowUpload) {
+        loadCustomers() // 고객용일 때만 고객 목록 로드
+      }
     }
-  }, [isOpen, tourId, loadPhotos])
+  }, [isOpen, tourId, loadPhotos, allowUpload, loadCustomers])
 
   // 사진 모달 열기
   const openPhotoModal = (photo: TourPhoto, index: number) => {
@@ -233,6 +340,49 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       newSelected.add(photoId)
     }
     setSelectedPhotos(newSelected)
+  }
+
+  // 표시 중단 요청 처리
+  const handleHideRequest = async (customerId: string, customerName: string) => {
+    if (selectedPhotos.size === 0) {
+      alert(language === 'ko' ? '선택된 사진이 없습니다.' : 'No photos selected.')
+      return
+    }
+
+    setHidingPhotos(true)
+    try {
+      const selectedPhotoObjects = photos.filter(p => selectedPhotos.has(p.id))
+      const requests = selectedPhotoObjects.map(photo => ({
+        tour_id: tourId,
+        file_name: photo.file_name,
+        file_path: `${tourId}/${photo.file_name}`,
+        customer_id: customerId,
+        customer_name: customerName,
+        is_hidden: true
+      }))
+
+      // 일괄 삽입 (중복은 무시)
+      const { error } = await supabase
+        .from('tour_photo_hide_requests')
+        .upsert(requests, { onConflict: 'tour_id,file_name,customer_id' })
+
+      if (error) {
+        console.error('Error requesting hide:', error)
+        alert(t.hideError)
+      } else {
+        // 성공 시 사진 목록 새로고침
+        await loadPhotos()
+        setSelectedPhotos(new Set())
+        setHideRequestMode(false)
+        setShowCustomerSelector(false)
+        alert(t.hideSuccess)
+      }
+    } catch (error) {
+      console.error('Error in handleHideRequest:', error)
+      alert(t.hideError)
+    } finally {
+      setHidingPhotos(false)
+    }
   }
 
   // 전체 선택/해제
@@ -529,6 +679,7 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
               <button
                 onClick={() => {
                   setBulkDownloadMode(!bulkDownloadMode)
+                  setHideRequestMode(false)
                   if (bulkDownloadMode) {
                     setSelectedPhotos(new Set())
                   }
@@ -542,8 +693,29 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                   {bulkDownloadMode ? t.done : t.select}
                 </button>
 
-              {/* 선택 관리 (일괄 다운로드 모드에서만 표시) */}
-              {bulkDownloadMode && (
+              {/* 표시 중단 요청 모드 토글 (고객용만) */}
+              {allowUpload && (
+                <button
+                  onClick={() => {
+                    setHideRequestMode(!hideRequestMode)
+                    setBulkDownloadMode(false)
+                    if (hideRequestMode) {
+                      setSelectedPhotos(new Set())
+                    }
+                  }}
+                  className={`px-2 py-1 rounded text-xs transition-colors flex items-center gap-1 ${
+                    hideRequestMode 
+                      ? 'bg-red-500 text-white' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                  >
+                    <EyeOff className="w-3 h-3" />
+                    {hideRequestMode ? t.done : t.hideRequest}
+                  </button>
+              )}
+
+              {/* 선택 관리 (일괄 다운로드 모드 또는 표시 중단 모드에서 표시) */}
+              {(bulkDownloadMode || hideRequestMode) && (
                 <>
                   {/* 전체 선택/해제 버튼 */}
                   <button
@@ -558,14 +730,26 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                     {selectedPhotos.size} {t.selected}
                   </span>
 
-                  {/* 다운로드 실행 버튼 */}
-                  {selectedPhotos.size > 0 && (
+                  {/* 다운로드 실행 버튼 (일괄 다운로드 모드) */}
+                  {bulkDownloadMode && selectedPhotos.size > 0 && (
                     <button
                       onClick={handleBulkDownload}
                       disabled={downloading}
                       className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600 transition-colors disabled:opacity-50"
                       >
                         {downloading ? t.downloading : `${t.download}(${selectedPhotos.size})`}
+                      </button>
+                  )}
+
+                  {/* 표시 중단 요청 버튼 (표시 중단 모드) */}
+                  {hideRequestMode && selectedPhotos.size > 0 && (
+                    <button
+                      onClick={() => setShowCustomerSelector(true)}
+                      disabled={hidingPhotos || loadingCustomers}
+                      className="px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center gap-1"
+                      >
+                        <EyeOff className="w-3 h-3" />
+                        {t.requestHide} ({selectedPhotos.size})
                       </button>
                   )}
                 </>
@@ -596,15 +780,15 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                         : 'flex items-center space-x-3 p-2 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer'
                     }`}
                     onClick={() => {
-                      if (bulkDownloadMode) {
+                      if (bulkDownloadMode || hideRequestMode) {
                         handlePhotoSelect(photo.id)
                       } else {
                         openPhotoModal(photo, index)
                       }
                     }}
                   >
-                    {/* 선택 체크박스 (일괄 다운로드 모드에서만 표시) */}
-                    {bulkDownloadMode && (
+                    {/* 선택 체크박스 (일괄 다운로드 모드 또는 표시 중단 모드에서 표시) */}
+                    {(bulkDownloadMode || hideRequestMode) && (
                       <div className="absolute top-2 left-2 z-10">
                         <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
                           selectedPhotos.has(photo.id) 
@@ -760,6 +944,65 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
                   {t.download}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 고객 선택 모달 */}
+      {showCustomerSelector && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70] p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <User className="w-5 h-5" />
+                {t.selectCustomer}
+              </h3>
+              <button
+                onClick={() => setShowCustomerSelector(false)}
+                className="p-1 hover:bg-gray-100 rounded transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-4 max-h-96 overflow-y-auto">
+              {loadingCustomers ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : customers.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  {language === 'ko' ? '고객 정보를 불러올 수 없습니다.' : 'Unable to load customer information.'}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {customers.map((customer) => (
+                    <button
+                      key={customer.id}
+                      onClick={() => handleHideRequest(customer.id, customer.name)}
+                      disabled={hidingPhotos}
+                      className="w-full p-3 text-left border rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-gray-900">{customer.name}</span>
+                        {hidingPhotos && (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 border-t flex justify-end">
+              <button
+                onClick={() => setShowCustomerSelector(false)}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                {t.close}
+              </button>
             </div>
           </div>
         </div>
