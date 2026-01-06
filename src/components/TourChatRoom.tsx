@@ -1408,11 +1408,15 @@ export default function TourChatRoom({
   // 공지사항 로드 (loadRoom보다 먼저 정의되어야 함)
   const loadAnnouncements = useCallback(async (roomId: string) => {
     try {
+      // 선택된 언어에 맞는 공지사항만 로드
+      const currentLanguage = selectedLanguage === 'ko' ? 'ko' : 'en'
+      
       const { data: roomAnnouncements } = await supabase
         .from('chat_room_announcements')
         .select('*')
         .eq('room_id', roomId)
         .eq('is_active', true)
+        .eq('language', currentLanguage)
         .order('created_at', { ascending: false })
 
       const { data: tourAnnouncements } = await supabase
@@ -1420,6 +1424,7 @@ export default function TourChatRoom({
         .select('*')
         .eq('tour_id', tourId)
         .eq('is_active', true)
+        .eq('language', currentLanguage)
         .order('created_at', { ascending: false })
 
       const merged = [
@@ -1431,7 +1436,7 @@ export default function TourChatRoom({
     } catch (error) {
       console.error('Error loading announcements:', error)
     }
-  }, [tourId])
+  }, [tourId, selectedLanguage])
   
   // loadAnnouncements를 ref에 저장
   useEffect(() => {
