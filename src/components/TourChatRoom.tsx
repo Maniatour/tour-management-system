@@ -180,10 +180,18 @@ export default function TourChatRoom({
   }>>([])
   const [showTeamInfo, setShowTeamInfo] = useState(false)
   const [teamInfo, setTeamInfo] = useState<{
-    guide?: { name_ko?: string; name_en?: string; phone?: string }
-    assistant?: { name_ko?: string; name_en?: string; phone?: string }
-    driver?: { name?: string; phone?: string }
+    guide?: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string }
+    assistant?: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string }
+    driver?: { name?: string; phone?: string; email?: string; position?: string }
   }>({})
+  
+  // 팀 멤버 상세 정보 (통화 선택용)
+  const [teamMembersDetail, setTeamMembersDetail] = useState<Map<string, {
+    name_ko?: string
+    name_en?: string
+    position?: string
+    email?: string
+  }>>(new Map())
   const [internalMobileMenuOpen, setInternalMobileMenuOpen] = useState(true)
   
   const [showParticipantsList, setShowParticipantsList] = useState(false)
@@ -455,11 +463,52 @@ export default function TourChatRoom({
   
   // 메시지와 온라인 참여자에서 통화 가능한 사용자 목록 추출
   const availableCallUsers = React.useMemo(() => {
-    const userMap = new Map<string, { id: string; name: string; type: 'guide' | 'customer'; email?: string }>()
+    const userMap = new Map<string, { 
+      id: string
+      name: string
+      name_ko?: string
+      name_en?: string
+      type: 'guide' | 'customer'
+      email?: string
+      position?: string
+      language?: string
+    }>()
     
     if (isPublicView) {
-      // 고객용 뷰: 가이드 타입만 통화 가능 (다른 고객은 제외)
-      // 메시지에서 가이드만 추출
+      // 고객용 뷰: 가이드/드라이버/어시스턴트만 통화 가능
+      // 팀 멤버 정보에서 가져오기 (투어에 배정된 팀원)
+      teamMembersDetail.forEach((memberInfo, email) => {
+        if (email && !userMap.has(email)) {
+          const displayName = selectedLanguage === 'ko' 
+            ? (memberInfo.name_ko || memberInfo.name_en || email)
+            : (memberInfo.name_en || memberInfo.name_ko || email)
+          
+          // 직책 확인
+          let position = memberInfo.position || ''
+          const positionLower = position.toLowerCase()
+          let roleLabel = ''
+          if (positionLower.includes('driver') || positionLower.includes('드라이버') || positionLower.includes('운전')) {
+            roleLabel = selectedLanguage === 'ko' ? '드라이버' : 'Driver'
+          } else if (positionLower.includes('assistant') || positionLower.includes('어시스턴트')) {
+            roleLabel = selectedLanguage === 'ko' ? '어시스턴트' : 'Assistant'
+          } else {
+            roleLabel = selectedLanguage === 'ko' ? '가이드' : 'Guide'
+          }
+          
+          userMap.set(email, {
+            id: email,
+            name: displayName,
+            name_ko: memberInfo.name_ko,
+            name_en: memberInfo.name_en,
+            type: 'guide',
+            email: email,
+            position: roleLabel,
+            language: selectedLanguage
+          })
+        }
+      })
+      
+      // 메시지에서 가이드만 추출 (팀 멤버에 없는 경우 대비)
       messages.forEach(message => {
         if (message.sender_type === 'system') return
         // 가이드 타입만 추가 (고객 타입은 제외)
@@ -467,11 +516,33 @@ export default function TourChatRoom({
           const userKey = message.sender_email || message.sender_name
           if (!userMap.has(userKey)) {
             const email = message.sender_email
+            const memberInfo = email ? teamMembersDetail.get(email) : null
+            const displayName = memberInfo 
+              ? (selectedLanguage === 'ko' 
+                  ? (memberInfo.name_ko || memberInfo.name_en || message.sender_name)
+                  : (memberInfo.name_en || memberInfo.name_ko || message.sender_name))
+              : message.sender_name
+            
+            let position = memberInfo?.position || ''
+            const positionLower = position.toLowerCase()
+            let roleLabel = ''
+            if (positionLower.includes('driver') || positionLower.includes('드라이버') || positionLower.includes('운전')) {
+              roleLabel = selectedLanguage === 'ko' ? '드라이버' : 'Driver'
+            } else if (positionLower.includes('assistant') || positionLower.includes('어시스턴트')) {
+              roleLabel = selectedLanguage === 'ko' ? '어시스턴트' : 'Assistant'
+            } else {
+              roleLabel = selectedLanguage === 'ko' ? '가이드' : 'Guide'
+            }
+            
             userMap.set(userKey, {
               id: userKey,
-              name: message.sender_name,
+              name: displayName,
+              name_ko: memberInfo?.name_ko,
+              name_en: memberInfo?.name_en,
               type: 'guide',
-              ...(email ? { email } : {})
+              email: email,
+              position: roleLabel,
+              language: selectedLanguage
             })
           }
         }
@@ -484,11 +555,33 @@ export default function TourChatRoom({
           const userKey = participant.email || participant.id
           if (!userMap.has(userKey)) {
             const email = participant.email
+            const memberInfo = email ? teamMembersDetail.get(email) : null
+            const displayName = memberInfo 
+              ? (selectedLanguage === 'ko' 
+                  ? (memberInfo.name_ko || memberInfo.name_en || participant.name)
+                  : (memberInfo.name_en || memberInfo.name_ko || participant.name))
+              : participant.name
+            
+            let position = memberInfo?.position || ''
+            const positionLower = position.toLowerCase()
+            let roleLabel = ''
+            if (positionLower.includes('driver') || positionLower.includes('드라이버') || positionLower.includes('운전')) {
+              roleLabel = selectedLanguage === 'ko' ? '드라이버' : 'Driver'
+            } else if (positionLower.includes('assistant') || positionLower.includes('어시스턴트')) {
+              roleLabel = selectedLanguage === 'ko' ? '어시스턴트' : 'Assistant'
+            } else {
+              roleLabel = selectedLanguage === 'ko' ? '가이드' : 'Guide'
+            }
+            
             userMap.set(userKey, {
               id: participant.email || participant.id,
-              name: participant.name,
+              name: displayName,
+              name_ko: memberInfo?.name_ko,
+              name_en: memberInfo?.name_en,
               type: participant.type,
-              ...(email ? { email } : {})
+              email: email,
+              position: roleLabel,
+              language: selectedLanguage
             })
           }
         }
@@ -534,7 +627,7 @@ export default function TourChatRoom({
     }
     
     return Array.from(userMap.values())
-  }, [messages, isPublicView, customerName, guideEmail, onlineParticipants])
+  }, [messages, isPublicView, customerName, guideEmail, onlineParticipants, teamMembersDetail, selectedLanguage])
   
   const {
     callStatus,
@@ -915,20 +1008,38 @@ export default function TourChatRoom({
         driver?: { name?: string; phone?: string }
       } = {}
 
+      // 팀 멤버 상세 정보 맵 생성
+      const membersDetailMap = new Map<string, {
+        name_ko?: string
+        name_en?: string
+        position?: string
+        email?: string
+      }>()
+
       // 가이드 정보 가져오기
       if (tour.tour_guide_id) {
         const { data: guideData } = await supabase
           .from('team')
-          .select('name_ko, name_en, phone')
+          .select('name_ko, name_en, phone, position')
           .eq('email', tour.tour_guide_id)
-          .maybeSingle<{ name_ko: string | null; name_en: string | null; phone: string | null }>()
+          .maybeSingle<{ name_ko: string | null; name_en: string | null; phone: string | null; position: string | null }>()
 
         if (guideData) {
-          const guide: { name_ko?: string; name_en?: string; phone?: string } = {}
+          const guide: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string } = {}
           if (guideData.name_ko) guide.name_ko = guideData.name_ko
           if (guideData.name_en) guide.name_en = guideData.name_en
           if (guideData.phone) guide.phone = guideData.phone
+          if (guideData.position) guide.position = guideData.position
+          guide.email = tour.tour_guide_id
           teamData.guide = guide
+          
+          // 상세 정보 맵에 추가
+          membersDetailMap.set(tour.tour_guide_id, {
+            name_ko: guideData.name_ko || undefined,
+            name_en: guideData.name_en || undefined,
+            position: guideData.position || undefined,
+            email: tour.tour_guide_id
+          })
         }
       }
 
@@ -936,16 +1047,26 @@ export default function TourChatRoom({
       if (tour.assistant_id) {
         const { data: assistantData } = await supabase
           .from('team')
-          .select('name_ko, name_en, phone')
+          .select('name_ko, name_en, phone, position')
           .eq('email', tour.assistant_id)
-          .maybeSingle<{ name_ko: string | null; name_en: string | null; phone: string | null }>()
+          .maybeSingle<{ name_ko: string | null; name_en: string | null; phone: string | null; position: string | null }>()
 
         if (assistantData) {
-          const assistant: { name_ko?: string; name_en?: string; phone?: string } = {}
+          const assistant: { name_ko?: string; name_en?: string; phone?: string; email?: string; position?: string } = {}
           if (assistantData.name_ko) assistant.name_ko = assistantData.name_ko
           if (assistantData.name_en) assistant.name_en = assistantData.name_en
           if (assistantData.phone) assistant.phone = assistantData.phone
+          if (assistantData.position) assistant.position = assistantData.position
+          assistant.email = tour.assistant_id
           teamData.assistant = assistant
+          
+          // 상세 정보 맵에 추가
+          membersDetailMap.set(tour.assistant_id, {
+            name_ko: assistantData.name_ko || undefined,
+            name_en: assistantData.name_en || undefined,
+            position: assistantData.position || undefined,
+            email: tour.assistant_id
+          })
         }
       }
 
@@ -953,17 +1074,47 @@ export default function TourChatRoom({
       if (tour.tour_car_id) {
         const { data: vehicleData } = await supabase
           .from('vehicles')
-          .select('driver_name, driver_phone')
+          .select('driver_name, driver_phone, driver_email')
           .eq('id', tour.tour_car_id)
-          .maybeSingle<{ driver_name: string | null; driver_phone: string | null }>()
+          .maybeSingle<{ driver_name: string | null; driver_phone: string | null; driver_email: string | null }>()
 
-        if (vehicleData) {
-          const driver: { name?: string; phone?: string } = {}
+        if (vehicleData && vehicleData.driver_name) {
+          const driver: { name?: string; phone?: string; email?: string; position?: string } = {}
           if (vehicleData.driver_name) driver.name = vehicleData.driver_name
           if (vehicleData.driver_phone) driver.phone = vehicleData.driver_phone
+          if (vehicleData.driver_email) driver.email = vehicleData.driver_email
+          driver.position = 'driver'
           teamData.driver = driver
+          
+          // 드라이버도 team 테이블에서 정보 가져오기 시도
+          if (vehicleData.driver_email) {
+            const { data: driverTeamData } = await supabase
+              .from('team')
+              .select('name_ko, name_en, position')
+              .eq('email', vehicleData.driver_email)
+              .maybeSingle<{ name_ko: string | null; name_en: string | null; position: string | null }>()
+            
+            if (driverTeamData) {
+              membersDetailMap.set(vehicleData.driver_email, {
+                name_ko: driverTeamData.name_ko || undefined,
+                name_en: driverTeamData.name_en || undefined,
+                position: driverTeamData.position || 'driver',
+                email: vehicleData.driver_email
+              })
+            } else {
+              // team 테이블에 없으면 차량 정보만 사용
+              membersDetailMap.set(vehicleData.driver_email, {
+                name_ko: vehicleData.driver_name || undefined,
+                name_en: vehicleData.driver_name || undefined,
+                position: 'driver',
+                email: vehicleData.driver_email
+              })
+            }
+          }
         }
       }
+      
+      setTeamMembersDetail(membersDetailMap)
 
       setTeamInfo(teamData)
     } catch (error) {
@@ -975,6 +1126,13 @@ export default function TourChatRoom({
   useEffect(() => {
     loadTeamInfoRef.current = loadTeamInfo
   }, [loadTeamInfo])
+  
+  // 투어 정보가 로드되면 팀 정보도 로드
+  useEffect(() => {
+    if (tourId && room?.id) {
+      loadTeamInfo()
+    }
+  }, [tourId, room?.id, loadTeamInfo])
 
   // scrollToBottom은 useChatMessages 훅에서 제공됨
 

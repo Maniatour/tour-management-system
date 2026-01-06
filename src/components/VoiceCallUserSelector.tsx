@@ -8,8 +8,12 @@ interface VoiceCallUserSelectorProps {
   users: Array<{
     id: string
     name: string
+    name_ko?: string
+    name_en?: string
     type: 'guide' | 'customer'
     email?: string
+    position?: string
+    language?: string
   }>
   onSelectUser: (userId: string, userName: string) => void
   language?: 'ko' | 'en'
@@ -67,29 +71,52 @@ export default function VoiceCallUserSelector({
             </div>
           ) : (
             <div className="space-y-2">
-              {users.map((user) => (
-                <button
-                  key={user.id}
-                  onClick={async () => {
-                    await onSelectUser(user.id, user.name)
-                    // 통화가 성공적으로 시작된 경우에만 모달 닫기
-                    // (에러가 발생하면 모달을 열어둬서 에러 메시지를 볼 수 있도록)
-                    onClose()
-                  }}
-                  className="w-full flex items-center space-x-3 p-3 rounded-lg border border-gray-200 hover:bg-blue-50 hover:border-blue-300 transition-colors text-left"
-                >
-                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <User className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900 truncate">{user.name}</p>
-                    <p className="text-sm text-gray-500">
-                      {user.type === 'guide' ? (language === 'ko' ? '가이드' : 'Guide') : (language === 'ko' ? '고객' : 'Customer')}
-                    </p>
-                  </div>
-                  <Phone className="w-5 h-5 text-green-600 flex-shrink-0" />
-                </button>
-              ))}
+              {users.map((user) => {
+                // 이름 표시 (언어에 따라)
+                const displayName = user.language === 'ko' 
+                  ? (user.name_ko || user.name_en || user.name)
+                  : (user.name_en || user.name_ko || user.name)
+                
+                // 직책 표시
+                const positionLabel = user.position || (user.type === 'guide' 
+                  ? (language === 'ko' ? '가이드' : 'Guide')
+                  : (language === 'ko' ? '고객' : 'Customer'))
+                
+                // 언어 표시 (가이드/드라이버/어시스턴트인 경우)
+                const languageLabel = user.type === 'guide' && user.language
+                  ? (user.language === 'ko' ? '한국어' : 'English')
+                  : null
+                
+                return (
+                  <button
+                    key={user.id}
+                    onClick={async () => {
+                      await onSelectUser(user.id, user.name)
+                      // 통화가 성공적으로 시작된 경우에만 모달 닫기
+                      // (에러가 발생하면 모달을 열어둬서 에러 메시지를 볼 수 있도록)
+                      onClose()
+                    }}
+                    className="w-full flex items-center space-x-3 p-3 rounded-lg border border-gray-200 hover:bg-blue-50 hover:border-blue-300 transition-colors text-left"
+                  >
+                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <User className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-900 truncate">{displayName}</p>
+                      <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <span>{positionLabel}</span>
+                        {languageLabel && (
+                          <>
+                            <span className="text-gray-300">•</span>
+                            <span>{languageLabel}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <Phone className="w-5 h-5 text-green-600 flex-shrink-0" />
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
