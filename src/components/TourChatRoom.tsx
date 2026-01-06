@@ -1438,6 +1438,13 @@ export default function TourChatRoom({
     loadAnnouncementsRef.current = loadAnnouncements
   }, [loadAnnouncements])
 
+  // room이 로드되면 공지사항도 로드
+  useEffect(() => {
+    if (room?.id && loadAnnouncementsRef.current) {
+      loadAnnouncementsRef.current(room.id)
+    }
+  }, [room?.id])
+
   // loadRoom은 useChatRoom 훅에서 제공됨
   
   // loadRoom을 ref에 저장
@@ -2351,31 +2358,29 @@ export default function TourChatRoom({
       />
 
       {/* 공지사항 모달 */}
-      {!isPublicView && (
-        <div className={`${isAnnouncementsOpen ? 'fixed' : 'hidden'} inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4`}>
-          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h4 className="text-lg font-semibold text-gray-900">{selectedLanguage === 'ko' ? '공지사항' : 'Announcements'}</h4>
-              <button onClick={() => setIsAnnouncementsOpen(false)} className="px-2 py-1 rounded hover:bg-gray-100">{selectedLanguage === 'ko' ? '닫기' : 'Close'}</button>
-            </div>
-            <div className="p-4 space-y-3">
-              {announcements.length === 0 ? (
-                <div className="text-sm text-gray-500">{selectedLanguage === 'ko' ? '등록된 공지사항이 없습니다.' : 'No announcements available.'}</div>
-              ) : (
-                announcements.map((a) => (
-                  <div key={a.id} className="border rounded-lg p-3">
-                    <div className="text-sm font-medium text-gray-900 mb-1">{a.title}</div>
-                    <div className="text-sm text-gray-700 whitespace-pre-wrap">{a.content}</div>
-                  </div>
-                ))
-              )}
-            </div>
-            <div className="p-3 border-t text-right">
-              <button onClick={() => setIsAnnouncementsOpen(false)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">{selectedLanguage === 'ko' ? '닫기' : 'Close'}</button>
-            </div>
+      <div className={`${isAnnouncementsOpen ? 'fixed' : 'hidden'} inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4`}>
+        <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[80vh] overflow-y-auto">
+          <div className="flex items-center justify-between p-4 border-b">
+            <h4 className="text-lg font-semibold text-gray-900">{selectedLanguage === 'ko' ? '공지사항' : 'Announcements'}</h4>
+            <button onClick={() => setIsAnnouncementsOpen(false)} className="px-2 py-1 rounded hover:bg-gray-100">{selectedLanguage === 'ko' ? '닫기' : 'Close'}</button>
+          </div>
+          <div className="p-4 space-y-3">
+            {announcements.length === 0 ? (
+              <div className="text-sm text-gray-500">{selectedLanguage === 'ko' ? '등록된 공지사항이 없습니다.' : 'No announcements available.'}</div>
+            ) : (
+              announcements.map((a) => (
+                <div key={a.id} className="border rounded-lg p-3">
+                  <div className="text-sm font-medium text-gray-900 mb-1">{a.title}</div>
+                  <div className="text-sm text-gray-700 whitespace-pre-wrap">{a.content}</div>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="p-3 border-t text-right">
+            <button onClick={() => setIsAnnouncementsOpen(false)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">{selectedLanguage === 'ko' ? '닫기' : 'Close'}</button>
           </div>
         </div>
-      )}
+      </div>
 
       {/* 픽업 스케줄 모달 */}
       <PickupScheduleModal
