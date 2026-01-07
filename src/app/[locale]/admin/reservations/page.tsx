@@ -267,6 +267,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [groupByDate, setGroupByDate] = useState<boolean>(true) // 기본값을 true로 설정하여 날짜별 그룹화
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  const [isFiltersCollapsed, setIsFiltersCollapsed] = useState<boolean>(true) // 필터 접힘/펼침 상태 (기본 접힘)
 
   // 그룹 접기/펼치기 함수
   const toggleGroupCollapse = (date: string) => {
@@ -1911,8 +1912,19 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
       {/* 검색 및 필터 */}
       <div className="space-y-4">
+        {/* 필터 접기/펼치기 버튼 */}
+        <button
+          onClick={() => setIsFiltersCollapsed(!isFiltersCollapsed)}
+          className="flex items-center justify-between w-full px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+        >
+          <span className="text-sm font-medium text-gray-700">필터</span>
+          <ChevronDown 
+            className={`w-4 h-4 text-gray-600 transition-transform ${isFiltersCollapsed ? '' : 'rotate-180'}`}
+          />
+        </button>
 
         {/* 고급 필터 - 모바일 최적화 */}
+        {!isFiltersCollapsed && (
         <div className="space-y-3">
           {/* 첫 번째 줄: 상태, 채널, 시작일, 종료일 */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
@@ -2034,6 +2046,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             </button>
           </div>
         </div>
+        )}
         
         {/* 주간 페이지네이션 및 통계 통합 패널 - 날짜별 그룹화가 활성화된 경우에만 표시 */}
         {groupByDate && (
