@@ -55,6 +55,7 @@ interface AssignmentManagementProps {
   getChannelInfo?: (channelId: string) => Promise<{ name: string; favicon?: string } | null | undefined>
   safeJsonParse: (data: string | object | null | undefined, fallback?: unknown) => unknown
   pickupHotels?: Array<{ id: string; hotel: string; pick_up_location?: string }>
+  onRefresh?: () => Promise<void> | void
 }
 
 export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
@@ -78,7 +79,8 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   getCustomerLanguage,
   getChannelInfo,
   safeJsonParse,
-  pickupHotels = []
+  pickupHotels = [],
+  onRefresh
 }) => {
   const t = useTranslations('tours.assignmentManagement')
   const isExpanded = expandedSections.has('assignment-management')
@@ -181,11 +183,41 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
     return 'bg-gray-100 text-gray-800'
   }
 
-  // 배정된 예약을 픽업 시간으로 정렬
-  const sortedAssignedReservations = assignedReservations.sort((a, b) => {
-    const timeA = a.pickup_time ? a.pickup_time.substring(0, 5) : '08:00'
-    const timeB = b.pickup_time ? b.pickup_time.substring(0, 5) : '08:00'
-    return timeA.localeCompare(timeB)
+  // 배정된 예약을 픽업 시간으로 정렬 (오후 9시 이후 시간은 전날로 취급)
+  const sortedAssignedReservations = [...assignedReservations].sort((a, b) => {
+    const parseTime = (time: string | null) => {
+      if (!time) return 0
+      const [hours, minutes] = time.split(':').map(Number)
+      return hours * 60 + (minutes || 0)
+    }
+    
+    const parseDate = (dateStr: string) => {
+      const [year, month, day] = dateStr.split('-').map(Number)
+      return new Date(year, month - 1, day)
+    }
+    
+    const timeA = parseTime(a.pickup_time)
+    const timeB = parseTime(b.pickup_time)
+    const referenceTime = 21 * 60 // 오후 9시 (21:00) = 1260분
+    
+    // 오후 9시 이후 시간은 전날로 취급
+    let dateA = parseDate(a.tour_date)
+    let dateB = parseDate(b.tour_date)
+    
+    if (timeA >= referenceTime) {
+      dateA = new Date(dateA)
+      dateA.setDate(dateA.getDate() - 1)
+    }
+    if (timeB >= referenceTime) {
+      dateB = new Date(dateB)
+      dateB.setDate(dateB.getDate() - 1)
+    }
+    
+    // 날짜와 시간을 함께 고려하여 정렬
+    const dateTimeA = dateA.getTime() + timeA * 60 * 1000
+    const dateTimeB = dateB.getTime() + timeB * 60 * 1000
+    
+    return dateTimeA - dateTimeB
   })
 
   // 다른 투어에 배정된 예약을 투어 ID별로 그룹화
@@ -253,6 +285,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               {...(getChannelInfo && { getChannelInfo })}
               safeJsonParse={safeJsonParse}
               pickupHotels={pickupHotels}
+              {...(onRefresh && { onRefresh })}
             />
 
             {/* 2. 배정 대기 중인 예약 */}
@@ -271,6 +304,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               {...(getChannelInfo && { getChannelInfo })}
               safeJsonParse={safeJsonParse}
               pickupHotels={pickupHotels}
+              {...(onRefresh && { onRefresh })}
             />
 
             {/* 3. 다른 투어에 배정된 예약 - 투어 ID별 그룹화 */}
@@ -362,6 +396,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
                            {...(getChannelInfo && { getChannelInfo })}
                            safeJsonParse={safeJsonParse}
                            pickupHotels={pickupHotels}
+                           {...(onRefresh && { onRefresh })}
                          />
                        </div>
                      )
@@ -386,6 +421,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               {...(getChannelInfo && { getChannelInfo })}
               safeJsonParse={safeJsonParse}
               pickupHotels={pickupHotels}
+              {...(onRefresh && { onRefresh })}
             />
           </div>
         )}

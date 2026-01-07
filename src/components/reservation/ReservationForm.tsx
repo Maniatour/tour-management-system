@@ -2244,8 +2244,23 @@ export default function ReservationForm({
     }
     
     // 새로운 간결한 초이스 시스템에서 필수 초이스 검증
+    // 거주 상태별 인원 수가 설정되어 있으면 "미국 거주자 구분" 관련 초이스 검증 건너뛰기
+    const hasResidentStatusData = (formData.usResidentCount || 0) > 0 || 
+                                   (formData.nonResidentCount || 0) > 0 || 
+                                   (formData.nonResidentWithPassCount || 0) > 0
+    
     const missingRequiredChoices = formData.productChoices.filter(choice => {
       if (!choice.is_required) return false
+      
+      // "미국 거주자 구분" 관련 초이스이고 거주 상태별 인원 수가 설정되어 있으면 검증 건너뛰기
+      const isResidentStatusChoice = choice.choice_group_ko?.includes('거주자') || 
+                                     choice.choice_group_ko?.includes('거주') ||
+                                     choice.choice_group?.toLowerCase().includes('resident') ||
+                                     choice.choice_group?.toLowerCase().includes('거주')
+      
+      if (isResidentStatusChoice && hasResidentStatusData) {
+        return false // 거주 상태별 인원 수가 설정되어 있으면 검증 건너뛰기
+      }
       
       // 해당 초이스에서 선택된 옵션이 있는지 확인
       const hasSelection = formData.selectedChoices.some(selectedChoice => 

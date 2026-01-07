@@ -224,7 +224,11 @@ export default function PickupScheduleAutoGenerateModal({
   // 픽업 스케줄 자동 생성
   const generatePickupSchedule = useCallback(async () => {
     if (!assignedReservations.length || !pickupHotels.length) return
-    if (!window.google || !window.google.maps) return // Google Maps API가 로드되지 않았으면 대기
+    // Google Maps API가 완전히 로드되었는지 확인 (LatLng 생성자 포함)
+    if (!window.google || !window.google.maps || typeof window.google.maps.LatLng !== 'function') {
+      console.log('Google Maps API가 아직 로드되지 않았습니다. 대기 중...')
+      return // Google Maps API가 로드되지 않았으면 대기
+    }
 
     // 호텔별로 예약 그룹화
     const reservationsByHotel = assignedReservations.reduce((acc, reservation) => {
@@ -256,13 +260,19 @@ export default function PickupScheduleAutoGenerateModal({
               latitude = parseFloat(coords[0].trim())
               longitude = parseFloat(coords[1].trim())
               if (!isNaN(latitude) && !isNaN(longitude)) {
-                position = new window.google.maps.LatLng(latitude, longitude)
+                // LatLng 생성자가 사용 가능한지 확인
+                if (window.google && window.google.maps && typeof window.google.maps.LatLng === 'function') {
+                  position = new window.google.maps.LatLng(latitude, longitude)
+                } else {
+                  // LatLng 생성자를 사용할 수 없으면 객체 형태로 저장 (나중에 변환)
+                  position = { lat: latitude, lng: longitude } as any
+                }
               }
             }
           }
           
           // pin이 없으면 주소로 Geocoding
-          if (!position && hotel.address && window.google && window.google.maps) {
+          if (!position && hotel.address && window.google && window.google.maps && typeof window.google.maps.Geocoder === 'function') {
             try {
               const geocoder = new window.google.maps.Geocoder()
               const result = await Promise.race([
@@ -319,7 +329,7 @@ export default function PickupScheduleAutoGenerateModal({
     
     // 시작점 좌표 가져오기
     let currentPosition: google.maps.LatLng | null = null
-    if (window.google && window.google.maps) {
+    if (window.google && window.google.maps && typeof window.google.maps.Geocoder === 'function') {
       try {
         const geocoder = new window.google.maps.Geocoder()
         const startResult = await new Promise<google.maps.GeocoderResult[]>((resolve, reject) => {
@@ -337,7 +347,12 @@ export default function PickupScheduleAutoGenerateModal({
       } catch (error) {
         console.error('시작점 Geocoding 오류:', error)
         // 시작점 좌표를 가져오지 못하면 기본값 사용
-        currentPosition = new window.google.maps.LatLng(36.1304, -115.2003)
+        if (window.google && window.google.maps && typeof window.google.maps.LatLng === 'function') {
+          currentPosition = new window.google.maps.LatLng(36.1304, -115.2003)
+        } else {
+          // LatLng 생성자를 사용할 수 없으면 객체 형태로 저장
+          currentPosition = { lat: 36.1304, lng: -115.2003 } as any
+        }
       }
     }
 
@@ -724,12 +739,21 @@ export default function PickupScheduleAutoGenerateModal({
     }
   }, [customLastPickupTime, updatePickupTimesWithTravelTimes, travelTimes])
 
-  // 스케줄 생성 시 자동 실행
+  // 스케줄 생성 시 자동 실행 (Google Maps API가 로드된 후)
   useEffect(() => {
     if (isOpen && assignedReservations.length > 0 && pickupHotels.length > 0) {
-      generatePickupSchedule()
+      // Google Maps API가 완전히 로드되었는지 확인
+      const checkAndGenerate = () => {
+        if (window.google && window.google.maps && typeof window.google.maps.LatLng === 'function') {
+          generatePickupSchedule()
+        } else {
+          // Google Maps API가 아직 로드되지 않았으면 잠시 후 다시 시도
+          setTimeout(checkAndGenerate, 100)
+        }
+      }
+      checkAndGenerate()
     }
-  }, [isOpen, generatePickupSchedule])
+  }, [isOpen, generatePickupSchedule, assignedReservations.length, pickupHotels.length])
 
   // 모달이 열릴 때 routeCalculated 및 customLastPickupTime 초기화
   useEffect(() => {
@@ -766,8 +790,16 @@ export default function PickupScheduleAutoGenerateModal({
             const lat = parseFloat(coords[0].trim())
             const lng = parseFloat(coords[1].trim())
             if (!isNaN(lat) && !isNaN(lng)) {
+              // LatLng 생성자가 사용 가능한지 확인
+              let location: google.maps.LatLng | { lat: number; lng: number }
+              if (window.google && window.google.maps && typeof window.google.maps.LatLng === 'function') {
+                location = new window.google.maps.LatLng(lat, lng)
+              } else {
+                // LatLng 생성자를 사용할 수 없으면 객체 형태로 사용
+                location = { lat, lng }
+              }
               return {
-                location: new window.google.maps.LatLng(lat, lng),
+                location,
                 stopover: true
               }
             }
@@ -851,7 +883,18 @@ export default function PickupScheduleAutoGenerateModal({
           const newMarkers: google.maps.Marker[] = []
 
           // 시작점 마커 생성 (S) - 고정 좌표 사용
-          const startPosition = new window.google.maps.LatLng(36.1304, -115.2003) // 4525 W Spring Mountain Rd 근사치
+          let startPosition: google.maps.LatLng | { lat: number; lng: number }
+          if (window.google && window.google.maps && typeof window.google.maps.LatLng === 'function') {
+            startPosition = new window.google.maps.LatLng(36.1304, -115.2003) // 4525 W Spring Mountain Rd 근사치
+          } else {
+            startPosition = { lat: 36.1304, lng: -115.2003 }
+          }
+          
+          if (!window.google || !window.google.maps || typeof window.google.maps.Geocoder !== 'function') {
+            console.error('Google Maps API가 완전히 로드되지 않았습니다.')
+            return
+          }
+          
           const geocoder = new window.google.maps.Geocoder()
           
           // 시작점 geocoding
@@ -890,7 +933,13 @@ export default function PickupScheduleAutoGenerateModal({
                   const lat = parseFloat(coords[0].trim())
                   const lng = parseFloat(coords[1].trim())
                   if (!isNaN(lat) && !isNaN(lng)) {
-                    position = new window.google.maps.LatLng(lat, lng)
+                    // LatLng 생성자가 사용 가능한지 확인
+                    if (window.google && window.google.maps && typeof window.google.maps.LatLng === 'function') {
+                      position = new window.google.maps.LatLng(lat, lng)
+                    } else {
+                      // LatLng 생성자를 사용할 수 없으면 객체 형태로 저장 (나중에 변환)
+                      position = { lat, lng } as any
+                    }
                   }
                 }
               }

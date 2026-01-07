@@ -47,9 +47,51 @@ export default function PickupScheduleEmailPreviewModal({
     pickupLocation: string | null
   }>>({})
 
-  const reservationsWithPickupTime = reservations.filter(
-    (res) => res.pickup_time && res.pickup_time.trim() !== ''
-  )
+  // 픽업 시간별로 정렬 (오후 9시(21:00) 이후 시간은 전날로 취급)
+  const reservationsWithPickupTime = React.useMemo(() => {
+    const filtered = reservations.filter(
+      (res) => res.pickup_time && res.pickup_time.trim() !== ''
+    )
+    
+    // 오후 9시(21:00) 이후 시간은 전날로 취급하여 정렬
+    const sortByPickupTime = (a: typeof filtered[0], b: typeof filtered[0]) => {
+      const parseTime = (time: string) => {
+        const [hours, minutes] = time.split(':').map(Number)
+        return hours * 60 + (minutes || 0)
+      }
+      
+      const parseDate = (dateStr: string | null | undefined) => {
+        if (!dateStr) return new Date(tourDate)
+        const [year, month, day] = dateStr.split('-').map(Number)
+        return new Date(year, month - 1, day)
+      }
+      
+      const timeA = parseTime(a.pickup_time!)
+      const timeB = parseTime(b.pickup_time!)
+      const referenceTime = 21 * 60 // 오후 9시 (21:00) = 1260분
+      
+      // 오후 9시 이후 시간은 전날로 취급
+      let dateA = parseDate(a.tour_date)
+      let dateB = parseDate(b.tour_date)
+      
+      if (timeA >= referenceTime) {
+        dateA = new Date(dateA)
+        dateA.setDate(dateA.getDate() - 1)
+      }
+      if (timeB >= referenceTime) {
+        dateB = new Date(dateB)
+        dateB.setDate(dateB.getDate() - 1)
+      }
+      
+      // 날짜와 시간을 함께 고려하여 정렬
+      const dateTimeA = dateA.getTime() + timeA * 60 * 1000
+      const dateTimeB = dateB.getTime() + timeB * 60 * 1000
+      
+      return dateTimeA - dateTimeB
+    }
+    
+    return [...filtered].sort(sortByPickupTime)
+  }, [reservations, tourDate])
 
   // 예약 ID 배열 메모이제이션
   const reservationIds = React.useMemo(

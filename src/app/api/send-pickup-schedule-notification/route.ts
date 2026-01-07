@@ -80,15 +80,28 @@ export async function POST(request: NextRequest) {
     const customerLanguage = customer.language?.toLowerCase()
     const isEnglish = locale === 'en' || customerLanguage === 'en' || customerLanguage === 'english' || customerLanguage === '영어'
 
-    // All Pickup Schedule 조회 (같은 tour_id의 모든 예약)
+    // All Pickup Schedule 조회 (tours 테이블의 reservation_ids에 포함된 예약만)
     let allPickups: any[] = []
     if (reservation.tour_id) {
-      const { data: allReservations } = await supabase
-        .from('reservations')
-        .select('id, pickup_hotel, pickup_time, customer_id, total_people, tour_date')
-        .eq('tour_id', reservation.tour_id)
-        .not('pickup_time', 'is', null)
-        .not('pickup_hotel', 'is', null)
+      // tours 테이블에서 reservation_ids 가져오기
+      const { data: tourData } = await supabase
+        .from('tours')
+        .select('reservation_ids')
+        .eq('id', reservation.tour_id)
+        .maybeSingle()
+
+      if (!tourData || !tourData.reservation_ids || !Array.isArray(tourData.reservation_ids) || tourData.reservation_ids.length === 0) {
+        // reservation_ids가 없으면 빈 배열 반환
+        allPickups = []
+      } else {
+        // reservation_ids에 포함된 예약만 조회 (취소된 예약 제외)
+        const { data: allReservations } = await supabase
+          .from('reservations')
+          .select('id, pickup_hotel, pickup_time, customer_id, total_people, tour_date, status')
+          .in('id', tourData.reservation_ids)
+          .not('pickup_time', 'is', null)
+          .not('pickup_hotel', 'is', null)
+          .neq('status', 'cancelled')
 
       if (allReservations) {
         allPickups = await Promise.all(
@@ -119,8 +132,56 @@ export async function POST(request: NextRequest) {
             }
           })
         )
-        // 시간순으로 정렬
-        allPickups.sort((a, b) => a.pickup_time.localeCompare(b.pickup_time))
+        // 같은 시간과 같은 호텔을 가진 항목 중복 제거 (정렬 전에 먼저 제거)
+        const uniquePickups = new Map<string, any>()
+        allPickups.forEach(pickup => {
+          // 시간을 정규화 (HH:MM 형식으로 통일)
+          const normalizedTime = pickup.pickup_time ? pickup.pickup_time.substring(0, 5) : ''
+          // 호텔 이름으로 중복 확인 (같은 호텔이지만 ID가 다를 수 있으므로 이름으로 비교)
+          const key = `${normalizedTime}-${pickup.hotel_name}`
+          if (!uniquePickups.has(key)) {
+            uniquePickups.set(key, pickup)
+          }
+        })
+        allPickups = Array.from(uniquePickups.values())
+        
+        // 오후 9시(21:00) 이후 시간은 전날로 취급하여 정렬
+        allPickups.sort((a, b) => {
+          const parseTime = (time: string) => {
+            if (!time) return 0
+            const [hours, minutes] = time.split(':').map(Number)
+            return hours * 60 + (minutes || 0)
+          }
+          
+          const parseDate = (dateStr: string) => {
+            const [year, month, day] = dateStr.split('-').map(Number)
+            return new Date(year, month - 1, day)
+          }
+          
+          const timeA = parseTime(a.pickup_time)
+          const timeB = parseTime(b.pickup_time)
+          const referenceTime = 21 * 60 // 오후 9시 (21:00) = 1260분
+          
+          // 오후 9시 이후 시간은 전날로 취급
+          let dateA = parseDate(a.tour_date || tourDate)
+          let dateB = parseDate(b.tour_date || tourDate)
+          
+          if (timeA >= referenceTime) {
+            dateA = new Date(dateA)
+            dateA.setDate(dateA.getDate() - 1)
+          }
+          if (timeB >= referenceTime) {
+            dateB = new Date(dateB)
+            dateB.setDate(dateB.getDate() - 1)
+          }
+          
+          // 날짜와 시간을 함께 고려하여 정렬
+          const dateTimeA = dateA.getTime() + timeA * 60 * 1000
+          const dateTimeB = dateB.getTime() + timeB * 60 * 1000
+          
+          return dateTimeA - dateTimeB
+        })
+        }
       }
     }
 
@@ -389,6 +450,31 @@ export function generatePickupScheduleEmailContent(
     return `${displayHour}:${minutes || '00'} ${period}`
   }
 
+  // 픽업 시간과 날짜 포맷팅 (오후 9시 이후는 하루 마이너스)
+  const formatTimeWithDate = (time: string, baseDate: string) => {
+    if (!time) return time
+    
+    const [hours, minutes] = time.split(':')
+    const hour = parseInt(hours, 10)
+    const period = hour >= 12 ? 'PM' : 'AM'
+    const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour
+    const timeFormatted = `${displayHour}:${minutes || '00'} ${period}`
+    
+    // 오후 9시(21:00)보다 큰 시간은 하루를 마이너스
+    let displayDate = parseTourDate(baseDate)
+    if (hour >= 21) {
+      displayDate = new Date(displayDate)
+      displayDate.setDate(displayDate.getDate() - 1)
+    }
+    
+    const dateFormatted = displayDate.toLocaleDateString(isEnglish ? 'en-US' : 'ko-KR', {
+      month: 'short',
+      day: 'numeric'
+    })
+    
+    return `${timeFormatted} ${dateFormatted}`
+  }
+
   const formattedPickupTime = formatTime(pickupTime)
 
   const subject = isEnglish
@@ -515,7 +601,7 @@ export function generatePickupScheduleEmailContent(
             <div style="space-y: 10px;">
               ${allPickups.map((pickup: any) => {
                 const isMyReservation = pickup.reservation_id === reservation.id
-                const pickupTimeFormatted = formatTime(pickup.pickup_time)
+                const pickupTimeFormatted = formatTimeWithDate(pickup.pickup_time, pickup.tour_date || tourDate)
                 return `
                   <div style="padding: 15px; margin-bottom: 15px; border-left: 4px solid ${isMyReservation ? '#2563eb' : '#9ca3af'}; background: ${isMyReservation ? '#eff6ff' : '#f9fafb'}; border-radius: 4px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">

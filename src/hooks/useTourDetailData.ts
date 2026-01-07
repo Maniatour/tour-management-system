@@ -150,16 +150,21 @@ export function useTourDetailData() {
         setTourNote(tourData.tour_note || '')
         setProduct(tourData.products)
 
-        // 예약 데이터 가져오기 (고객 정보는 별도로 조인)
-        const { data: reservationsData, error: reservationsError } = await supabase
-          .from('reservations')
-          .select('*')
-          .eq('product_id', tourData.product_id)
-          .eq('tour_date', tourData.tour_date)
+        // 예약 데이터 가져오기 함수 (재사용 가능하도록 분리)
+        const fetchReservations = async () => {
+          if (!tourData) return null
+          
+          const { data: reservationsData, error: reservationsError } = await supabase
+            .from('reservations')
+            .select('*')
+            .eq('product_id', tourData.product_id)
+            .eq('tour_date', tourData.tour_date)
 
-        if (reservationsError) {
-          console.error('예약 데이터 가져오기 오류:', reservationsError)
-        } else {
+          if (reservationsError) {
+            console.error('예약 데이터 가져오기 오류:', reservationsError)
+            return null
+          }
+          
           console.log('예약 데이터 가져오기 성공:', reservationsData?.length || 0)
           
           // 예약 데이터에 고객 정보 매핑
@@ -174,32 +179,39 @@ export function useTourDetailData() {
               
               if (customersError) {
                 console.error('고객 정보 조회 오류:', customersError)
-              } else {
-                console.log('고객 정보 조회 성공:', customersData?.length || 0)
-                
-                // 예약 데이터에 고객 정보 매핑
-                const reservationsWithCustomers = reservationsData.map(reservation => {
-                  const customer = customersData?.find(customer => customer.id === reservation.customer_id)
-                  
-                  return {
-                    ...reservation,
-                    customers: customer,
-                    // 고객 정보를 직접 매핑 (customer.name은 NOT NULL이므로 항상 존재)
-                    customer_name: customer?.name || '정보 없음',
-                    customer_email: customer?.email || '',
-                    customer_language: customer?.language || 'Unknown'
-                  }
-                })
-                
-                setAllReservations(reservationsWithCustomers)
+                setAllReservations(reservationsData)
+                return reservationsData
               }
+              
+              console.log('고객 정보 조회 성공:', customersData?.length || 0)
+              
+              // 예약 데이터에 고객 정보 매핑
+              const reservationsWithCustomers = reservationsData.map(reservation => {
+                const customer = customersData?.find(customer => customer.id === reservation.customer_id)
+                
+                return {
+                  ...reservation,
+                  customers: customer,
+                  // 고객 정보를 직접 매핑 (customer.name은 NOT NULL이므로 항상 존재)
+                  customer_name: customer?.name || '정보 없음',
+                  customer_email: customer?.email || '',
+                  customer_language: customer?.language || 'Unknown'
+                }
+              })
+              
+              setAllReservations(reservationsWithCustomers)
+              return reservationsWithCustomers
             } else {
               setAllReservations(reservationsData)
+              return reservationsData
             }
           } else {
             setAllReservations(reservationsData || [])
+            return reservationsData || []
           }
         }
+        
+        const reservationsData = await fetchReservations()
 
         // 픽업 호텔 데이터 가져오기
         const { data: pickupHotelsData, error: pickupHotelsError } = await supabase
@@ -1005,6 +1017,54 @@ export function useTourDetailData() {
     getChannelInfo,
     getCountryCode,
     getTeamMemberName,
+    refreshReservations: async () => {
+      if (!tour) return
+      const { data: reservationsData, error: reservationsError } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('product_id', tour.product_id)
+        .eq('tour_date', tour.tour_date)
+
+      if (reservationsError) {
+        console.error('예약 데이터 새로고침 오류:', reservationsError)
+        return
+      }
+      
+      if (reservationsData && reservationsData.length > 0) {
+        const customerIds = [...new Set(reservationsData.map(r => r.customer_id).filter(Boolean))]
+        
+        if (customerIds.length > 0) {
+          const { data: customersData, error: customersError } = await supabase
+            .from('customers')
+            .select('*')
+            .in('id', customerIds)
+          
+          if (customersError) {
+            console.error('고객 정보 조회 오류:', customersError)
+            setAllReservations(reservationsData)
+            return
+          }
+          
+          const reservationsWithCustomers = reservationsData.map(reservation => {
+            const customer = customersData?.find(customer => customer.id === reservation.customer_id)
+            
+            return {
+              ...reservation,
+              customers: customer,
+              customer_name: customer?.name || '정보 없음',
+              customer_email: customer?.email || '',
+              customer_language: customer?.language || 'Unknown'
+            }
+          })
+          
+          setAllReservations(reservationsWithCustomers)
+        } else {
+          setAllReservations(reservationsData)
+        }
+      } else {
+        setAllReservations(reservationsData || [])
+      }
+    },
 
     // 파라미터
     params,

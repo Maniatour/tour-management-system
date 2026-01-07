@@ -1256,6 +1256,7 @@ export default function TourDetailPage() {
               onEditPickupHotel={handleEditReservationClick}
               getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || 'Unknown'}
               getCustomerLanguage={(customerId: string) => tourData.getCustomerLanguage(customerId) ?? 'Unknown'}
+              onRefresh={tourData.refreshReservations}
               getChannelInfo={getChannelInfo}
               safeJsonParse={safeJsonParse}
               pickupHotels={tourData.pickupHotels}

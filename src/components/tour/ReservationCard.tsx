@@ -67,6 +67,7 @@ interface ReservationCardProps {
   getChannelInfo?: (channelId: string) => Promise<{ name: string; favicon?: string } | null | undefined>
   safeJsonParse: (data: string | object | null | undefined, fallback?: unknown) => unknown
   pickupHotels?: Array<{ id: string; hotel: string; pick_up_location?: string }>
+  onRefresh?: () => Promise<void> | void
 }
 
 export const ReservationCard: React.FC<ReservationCardProps> = ({
@@ -82,7 +83,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   getCustomerLanguage,
   getChannelInfo,
   safeJsonParse,
-  pickupHotels = []
+  pickupHotels = [],
+  onRefresh
 }) => {
   const customerName = getCustomerName(reservation.customer_id || '')
   const customerLanguage = getCustomerLanguage(reservation.customer_id || '')
@@ -621,15 +623,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         throw new Error('픽업 정보 저장에 실패했습니다.')
       }
 
-      // 성공 시 로컬 상태 업데이트
-      const updatedReservation = {
-        ...reservation,
-        pickup_time: pickupTime,
-        pickup_hotel: pickupHotel
+      // 성공 시 부모 컴포넌트에 새로고침 요청
+      if (onRefresh) {
+        await onRefresh()
       }
       
-      // 부모 컴포넌트에 변경사항 알림 (필요시)
-      console.log('픽업 정보가 저장되었습니다:', updatedReservation)
+      console.log('픽업 정보가 저장되었습니다:', { reservationId, pickupTime, pickupHotel })
       
     } catch (error) {
       console.error('픽업 정보 저장 오류:', error)
