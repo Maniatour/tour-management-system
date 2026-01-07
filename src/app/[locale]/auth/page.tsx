@@ -18,13 +18,24 @@ export default function AuthPage() {
   const searchParams = useSearchParams()
   const pathname = usePathname()
   
-  // 현재 로케일 추출
+  // 현재 로케일 추출 (유효한 로케일만 허용)
   const currentLocale = (() => {
     const segments = (pathname || '/').split('/').filter(Boolean)
-    return segments[0] || 'ko'
+    const locale = segments[0]
+    // 'ko' 또는 'en'만 허용, 그 외는 기본값 'ko' 사용
+    return (locale === 'ko' || locale === 'en') ? locale : 'ko'
   })()
 
-  const redirectToParam = searchParams?.get('redirectTo') || `/${currentLocale}`
+  // redirectToParam 검증 및 기본값 설정
+  const redirectToParam = (() => {
+    const redirectTo = searchParams?.get('redirectTo')
+    // redirectTo가 있고 유효한 경로인 경우
+    if (redirectTo && redirectTo.startsWith('/') && !redirectTo.includes('undefined')) {
+      return redirectTo
+    }
+    // 기본값: 현재 로케일의 홈페이지
+    return `/${currentLocale}`
+  })()
 
   useEffect(() => {
     // 로딩이 완료되고 사용자가 있지만 userRole이 아직 없는 경우 잠시 대기
@@ -36,9 +47,16 @@ export default function AuthPage() {
     if (!loading && user && userRole) {
       console.log('Auth page: User logged in, role:', userRole, 'redirecting to:', redirectToParam)
       
-      // redirectToParam이 auth 페이지를 가리키는 경우 홈페이지로 리다이렉트
-      if (redirectToParam.includes('/auth')) {
-        console.log('Auth page: RedirectTo points to auth page, redirecting to home instead')
+      // redirectToParam 검증
+      if (!redirectToParam || redirectToParam.includes('undefined') || redirectToParam.includes('/auth')) {
+        console.log('Auth page: Invalid redirectToParam, redirecting to home instead')
+        router.replace(`/${currentLocale}`)
+        return
+      }
+      
+      // redirectToParam이 유효한 경로인지 확인
+      if (!redirectToParam.startsWith('/')) {
+        console.log('Auth page: Invalid redirectToParam format, redirecting to home instead')
         router.replace(`/${currentLocale}`)
         return
       }
@@ -62,7 +80,11 @@ export default function AuthPage() {
   }
 
   const handleSuccess = () => {
-    router.push(redirectToParam)
+    // redirectToParam 검증 후 리다이렉트
+    const targetPath = (redirectToParam && !redirectToParam.includes('undefined') && redirectToParam.startsWith('/')) 
+      ? redirectToParam 
+      : `/${currentLocale}`
+    router.push(targetPath)
   }
 
   const renderForm = () => {
