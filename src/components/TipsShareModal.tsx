@@ -745,71 +745,71 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
         {/* 헤더 */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+        <div className="flex items-center justify-between p-3 sm:p-6 border-b border-gray-200">
           <div className="flex items-center">
-            <DollarSign className="w-6 h-6 text-purple-600 mr-2" />
-            <h2 className="text-xl font-bold text-gray-900">Tips 쉐어 관리</h2>
+            <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600 mr-2" />
+            <h2 className="text-base sm:text-xl font-bold text-gray-900">Tips 쉐어 관리</h2>
           </div>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 transition-colors"
           >
-            <X className="w-6 h-6" />
+            <X className="w-5 h-5 sm:w-6 sm:h-6" />
           </button>
         </div>
 
         {/* 내용 */}
-        <div className="p-6">
+        <div className="p-3 sm:p-6">
           {/* 기간 선택 (단일 투어 모드가 아닐 때만 표시) */}
           {!isSingleTourMode && (
-            <div className="mb-6">
-              <div className="flex items-center space-x-4 mb-4">
+            <div className="mb-4 sm:mb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:space-x-4 mb-3 sm:mb-4">
               <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  <Calendar className="w-4 h-4 inline mr-1" />
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+                  <Calendar className="w-3 h-3 sm:w-4 sm:h-4 inline mr-1" />
                   시작일
                 </label>
                 <input
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                 />
               </div>
               <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  <Calendar className="w-4 h-4 inline mr-1" />
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+                  <Calendar className="w-3 h-3 sm:w-4 sm:h-4 inline mr-1" />
                   종료일
                 </label>
                 <input
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                 />
               </div>
-              <div className="flex items-end space-x-2">
+              <div className="flex items-end space-x-2 sm:flex-shrink-0">
                 <button
                   onClick={setCurrentPeriod}
-                  className="px-3 py-2 text-xs font-medium text-white bg-purple-600 border border-purple-600 rounded-md hover:bg-purple-700 transition-colors"
+                  className="px-2 sm:px-3 py-1.5 sm:py-2 text-xs font-medium text-white bg-purple-600 border border-purple-600 rounded-md hover:bg-purple-700 transition-colors"
                 >
                   이번
                 </button>
                 <button
                   onClick={setPreviousPeriod}
-                  className="px-3 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                  className="px-2 sm:px-3 py-1.5 sm:py-2 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
                 >
                   지난
                 </button>
                 <button
                   onClick={fetchToursWithTips}
                   disabled={loading}
-                  className="px-3 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50"
+                  className="px-2 sm:px-3 py-1.5 sm:py-2 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50"
                 >
-                  <RefreshCw className={`w-4 h-4 inline ${loading ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`w-3 h-3 sm:w-4 sm:h-4 inline ${loading ? 'animate-spin' : ''}`} />
                 </button>
               </div>
             </div>
@@ -818,15 +818,15 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
 
           {/* 투어 목록 */}
           {loading ? (
-            <div className="text-center py-8">
-              <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-purple-600" />
-              <p className="text-gray-600">투어를 불러오는 중...</p>
+            <div className="text-center py-6 sm:py-8">
+              <RefreshCw className="w-6 h-6 sm:w-8 sm:h-8 animate-spin mx-auto mb-3 sm:mb-4 text-purple-600" />
+              <p className="text-sm sm:text-base text-gray-600">투어를 불러오는 중...</p>
             </div>
           ) : toursWithTips.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <DollarSign className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p className="text-lg font-medium mb-2">prepaid 팁이 있는 투어가 없습니다</p>
-              <p className="text-sm">
+            <div className="text-center py-6 sm:py-8 text-gray-500">
+              <DollarSign className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-3 sm:mb-4 text-gray-300" />
+              <p className="text-base sm:text-lg font-medium mb-2">prepaid 팁이 있는 투어가 없습니다</p>
+              <p className="text-xs sm:text-sm">
                 {isSingleTourMode 
                   ? '이 투어에는 prepaid 팁이 없습니다.' 
                   : '선택한 기간에 prepaid 팁이 있는 투어가 없습니다.'}
@@ -837,20 +837,20 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
               {toursWithTips.map((tour) => {
                 const share = tipShares[tour.id] || initializeTipShare(tour)
                 return (
-                  <div key={tour.id} className="border border-gray-200 rounded-lg p-4">
-                    <div className="mb-4">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                  <div key={tour.id} className="border border-gray-200 rounded-lg p-3 sm:p-4">
+                    <div className="mb-3 sm:mb-4">
+                      <h3 className="text-sm sm:text-lg font-semibold text-gray-900 mb-1">
                         {tour.tour_name}
                       </h3>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-xs sm:text-sm text-gray-600">
                         {formatDate(tour.tour_date)} | 총 팁: ${formatCurrency(tour.total_prepaid_tip)}
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                       {/* 가이드 */}
                       <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">
+                        <label className="block text-xs sm:text-sm font-medium text-gray-700">
                           가이드 {tour.guide_name && `(${tour.guide_name})`}
                         </label>
                         <div className="flex space-x-2">
@@ -862,7 +862,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                               step="0.1"
                               value={share.guide_percent.toFixed(1)}
                               onChange={(e) => handlePercentChange(tour.id, 'guide', parseFloat(e.target.value) || 0)}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md"
+                              className="w-full px-2 py-1 text-xs sm:text-sm border border-gray-300 rounded-md"
                               placeholder="%"
                             />
                             <span className="text-xs text-gray-500">%</span>
@@ -876,7 +876,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                                 step="0.01"
                                 value={share.guide_amount.toFixed(2)}
                                 onChange={(e) => handleAmountChange(tour.id, 'guide', parseFloat(e.target.value) || 0)}
-                                className="w-full pl-4 pr-1 py-1 text-sm border border-gray-300 rounded-md"
+                                className="w-full pl-4 pr-1 py-1 text-xs sm:text-sm border border-gray-300 rounded-md"
                               />
                             </div>
                           </div>
@@ -885,7 +885,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
 
                       {/* 어시스턴트 */}
                       <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">
+                        <label className="block text-xs sm:text-sm font-medium text-gray-700">
                           어시스턴트 {tour.assistant_name && `(${tour.assistant_name})`}
                         </label>
                         {tour.assistant_id ? (
@@ -898,7 +898,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                                 step="0.1"
                                 value={share.assistant_percent.toFixed(1)}
                                 onChange={(e) => handlePercentChange(tour.id, 'assistant', parseFloat(e.target.value) || 0)}
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md"
+                                className="w-full px-2 py-1 text-xs sm:text-sm border border-gray-300 rounded-md"
                                 placeholder="%"
                               />
                               <span className="text-xs text-gray-500">%</span>
@@ -912,22 +912,22 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                                   step="0.01"
                                   value={share.assistant_amount.toFixed(2)}
                                   onChange={(e) => handleAmountChange(tour.id, 'assistant', parseFloat(e.target.value) || 0)}
-                                  className="w-full pl-4 pr-1 py-1 text-sm border border-gray-300 rounded-md"
+                                  className="w-full pl-4 pr-1 py-1 text-xs sm:text-sm border border-gray-300 rounded-md"
                                 />
                               </div>
                             </div>
                           </div>
                         ) : (
-                          <p className="text-sm text-gray-400">어시스턴트 없음</p>
+                          <p className="text-xs sm:text-sm text-gray-400">어시스턴트 없음</p>
                         )}
                       </div>
 
                       {/* OP */}
                       <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">
+                        <label className="block text-xs sm:text-sm font-medium text-gray-700">
                           OP 합계
                         </label>
-                        <div className="border border-gray-300 rounded-md p-2 max-h-48 overflow-y-auto">
+                        <div className="border border-gray-300 rounded-md p-2 max-h-32 sm:max-h-48 overflow-y-auto">
                           {opMembers.map((op) => {
                             const isSelected = share.op_emails.includes(op.email)
                             const opShare = share.op_shares.find(s => s.op_email === op.email)
@@ -939,11 +939,11 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                                   onChange={(e) => handleOpToggle(tour.id, op.email, e.target.checked)}
                                   className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
                                 />
-                                <label className="flex-1 text-sm text-gray-700">
+                                <label className="flex-1 text-xs sm:text-sm text-gray-700 truncate">
                                   {op.name_ko}
                                 </label>
                                 {isSelected && opShare && (
-                                  <div className="flex items-center space-x-1">
+                                  <div className="flex items-center space-x-1 flex-shrink-0">
                                     <input
                                       type="number"
                                       min="0"
@@ -951,18 +951,18 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                                       step="0.1"
                                       value={opShare.op_percent.toFixed(1)}
                                       onChange={(e) => handleOpPercentChange(tour.id, op.email, parseFloat(e.target.value) || 0)}
-                                      className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded"
+                                      className="w-12 sm:w-16 px-1 py-0.5 text-xs border border-gray-300 rounded"
                                     />
                                     <span className="text-xs text-gray-500">%</span>
                                     <div className="relative">
-                                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                                      <span className="absolute left-0.5 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
                                       <input
                                         type="number"
                                         min="0"
                                         step="0.01"
                                         value={opShare.op_amount.toFixed(2)}
                                         onChange={(e) => handleOpAmountChange(tour.id, op.email, parseFloat(e.target.value) || 0)}
-                                        className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded"
+                                        className="w-16 sm:w-20 pl-3 sm:pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded"
                                       />
                                     </div>
                                   </div>
@@ -1006,7 +1006,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                                   })
                                 }
                               }}
-                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md"
+                              className="w-full px-2 py-1 text-xs sm:text-sm border border-gray-300 rounded-md"
                               placeholder="%"
                             />
                             <span className="text-xs text-gray-500">% (총합)</span>
@@ -1046,7 +1046,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                                     })
                                   }
                                 }}
-                                className="w-full pl-4 pr-1 py-1 text-sm border border-gray-300 rounded-md"
+                                className="w-full pl-4 pr-1 py-1 text-xs sm:text-sm border border-gray-300 rounded-md"
                               />
                             </div>
                             <span className="text-xs text-gray-500">(총합)</span>
@@ -1057,9 +1057,9 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
 
                     {/* 총합 확인 */}
                     <div className="mt-3 pt-3 border-t border-gray-200">
-                      <div className="flex justify-between text-sm">
+                      <div className="flex flex-col sm:flex-row sm:justify-between gap-1 sm:gap-0 text-xs sm:text-sm">
                         <span className="text-gray-600">총합:</span>
-                        <span className={`font-semibold ${
+                        <span className={`font-semibold text-right ${
                           (share.guide_percent + share.assistant_percent + share.op_percent).toFixed(1) === '100.0' &&
                           (share.guide_amount + share.assistant_amount + share.op_amount).toFixed(2) === share.total_tip.toFixed(2)
                             ? 'text-green-600' : 'text-red-600'
@@ -1078,13 +1078,13 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
 
           {/* 저장 버튼 */}
           {toursWithTips.length > 0 && (
-            <div className="mt-6 flex justify-end">
+            <div className="mt-4 sm:mt-6 flex justify-end">
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 border border-purple-600 rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
+                className="flex items-center justify-center px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-white bg-purple-600 border border-purple-600 rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 w-full sm:w-auto"
               >
-                <Save className="w-4 h-4 mr-2" />
+                <Save className="w-3 h-3 sm:w-4 sm:h-4 mr-2" />
                 {saving ? '저장 중...' : '저장'}
               </button>
             </div>
