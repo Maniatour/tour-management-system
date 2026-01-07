@@ -2344,14 +2344,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               Object.entries(groupedReservations).map(([date, reservations]) => (
               <div key={date} className="space-y-4">
                 {/* 등록일 헤더 */}
-                <div className="bg-gray-50 px-4 py-3 rounded-lg border border-gray-200">
+                <div className="bg-gray-50 px-2 sm:px-4 py-2 sm:py-3 rounded-lg border border-gray-200">
                   <div 
-                    className="flex items-center justify-between cursor-pointer hover:bg-gray-100 rounded-lg p-2 -m-2 transition-colors"
+                    className="flex items-center justify-between cursor-pointer hover:bg-gray-100 rounded-lg p-1 sm:p-2 -m-1 sm:-m-2 transition-colors"
                     onClick={() => toggleGroupCollapse(date)}
                   >
-                    <div className="flex items-center space-x-3">
-                      <Calendar className="h-5 w-5 text-blue-600" />
-                      <h3 className="text-lg font-semibold text-gray-900">
+                    <div className="flex items-center space-x-1 sm:space-x-3 flex-1 min-w-0">
+                      <Calendar className="h-3 w-3 sm:h-5 sm:w-5 text-blue-600 flex-shrink-0" />
+                      <h3 className="text-xs sm:text-lg font-semibold text-gray-900 whitespace-nowrap">
                         {(() => {
                           // 날짜 문자열(YYYY-MM-DD)을 로컬 시간대 기준으로 파싱
                           const [year, month, day] = date.split('-').map(Number)
@@ -2364,18 +2364,18 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                           })
                         })()} {t('groupingLabels.registeredOn')}
                       </h3>
-                      <div className="flex items-center space-x-2">
-                        <span className="px-2 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
+                      <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
+                        <span className="px-1 sm:px-2 py-0.5 sm:py-1 bg-blue-100 text-blue-800 text-xs sm:text-sm font-medium rounded-full whitespace-nowrap">
                           {reservations.length}{t('stats.reservations')}
                         </span>
-                        <span className="px-2 py-1 bg-green-100 text-green-800 text-sm font-medium rounded-full">
+                        <span className="px-1 sm:px-2 py-0.5 sm:py-1 bg-green-100 text-green-800 text-xs sm:text-sm font-medium rounded-full whitespace-nowrap">
                           Total {reservations.reduce((total, reservation) => total + reservation.totalPeople, 0)} {t('stats.people')}
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 flex-shrink-0">
                       <svg 
-                        className={`w-5 h-5 text-gray-500 transition-transform ${collapsedGroups.has(date) ? 'rotate-180' : ''}`}
+                        className={`w-3 h-3 sm:w-5 sm:h-5 text-gray-500 transition-transform ${collapsedGroups.has(date) ? 'rotate-180' : ''}`}
                         fill="none" 
                         stroke="currentColor" 
                         viewBox="0 0 24 24"
