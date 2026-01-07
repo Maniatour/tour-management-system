@@ -607,12 +607,12 @@ export default function AdminTours() {
   }
 
   return (
-    <div className="-mx-4 sm:mx-0 px-0 sm:px-6 py-2 sm:py-6">
+    <div className="px-2 sm:px-6 py-3 sm:py-6">
       {/* 헤더 */}
-      <div className="mb-6">
+      <div className="mb-4 sm:mb-6">
         {/* 제목 + 뷰 전환 + 추가 버튼 (한 줄) */}
         <div className="flex items-center justify-between gap-2 mb-3">
-          <h1 className="text-lg sm:text-2xl font-bold text-gray-900 m-0">{t('title')}</h1>
+          <h1 className="text-base sm:text-2xl font-bold text-gray-900 m-0 truncate">{t('title')}</h1>
           <div className="flex items-center gap-1 sm:gap-2">
             <button
               onClick={() => setViewMode('list')}
