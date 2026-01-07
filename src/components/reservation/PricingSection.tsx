@@ -439,36 +439,93 @@ export default function PricingSection({
       {/* 구분선 */}
       <div className="border-t border-gray-300 mb-4"></div>
       
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-3 gap-2 md:gap-0">
-        <div className="flex flex-col md:flex-row md:items-center space-y-2 md:space-y-0 md:space-x-3">
-          <h3 className="text-base font-semibold text-gray-900">가격 정보</h3>
-          {/* 가격 타입 표시 (채널 정보에 따라 자동 결정) */}
-          <div className="flex items-center space-x-2">
-            <label className="text-xs text-gray-600">가격 타입:</label>
-            <select
-              value={formData.priceType || autoPriceType || 'dynamic'}
-              onChange={async (e) => {
-                const newPriceType = e.target.value as 'base' | 'dynamic'
-                setFormData({ ...formData, priceType: newPriceType })
-                // 가격 타입이 변경되면 가격을 다시 로드
-                if (formData.productId && formData.tourDate && formData.channelId) {
-                  // 부모 컴포넌트에 가격 타입 변경 알림 (ReservationForm에서 처리)
-                  // 실제 가격 로드는 ReservationForm의 useEffect에서 처리됨
+      <div className="space-y-2 mb-3">
+        {/* 첫 번째 줄: 가격 정보 제목, 가격 타입, 저장/초기화 버튼 */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="flex items-center space-x-3">
+            <h3 className="text-base font-semibold text-gray-900">가격 정보</h3>
+            {/* 가격 타입 표시 (채널 정보에 따라 자동 결정) */}
+            <div className="flex items-center space-x-2">
+              <label className="text-xs text-gray-600">가격 타입:</label>
+              <select
+                value={formData.priceType || autoPriceType || 'dynamic'}
+                onChange={async (e) => {
+                  const newPriceType = e.target.value as 'base' | 'dynamic'
+                  setFormData({ ...formData, priceType: newPriceType })
+                  // 가격 타입이 변경되면 가격을 다시 로드
+                  if (formData.productId && formData.tourDate && formData.channelId) {
+                    // 부모 컴포넌트에 가격 타입 변경 알림 (ReservationForm에서 처리)
+                    // 실제 가격 로드는 ReservationForm의 useEffect에서 처리됨
+                  }
+                }}
+                disabled={!!formData.channelId} // 채널이 선택되면 자동 결정되므로 비활성화
+                className={`px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 ${
+                  formData.channelId ? 'bg-gray-100 cursor-not-allowed' : ''
+                }`}
+                title={formData.channelId ? '채널 정보에 따라 자동으로 결정됩니다' : '가격 타입을 선택하세요'}
+              >
+                <option value="dynamic">불포함 있음</option>
+                <option value="base">불포함 없음</option>
+              </select>
+              {formData.channelId && (
+                <span className="text-xs text-gray-500">(자동)</span>
+              )}
+            </div>
+          </div>
+          {/* 저장, 초기화 버튼 */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const tempReservationId = `temp_${Date.now()}`
+                  await savePricingInfo(tempReservationId)
+                  alert('가격 정보가 저장되었습니다!')
+                } catch {
+                  alert('가격 정보 저장 중 오류가 발생했습니다.')
                 }
               }}
-              disabled={!!formData.channelId} // 채널이 선택되면 자동 결정되므로 비활성화
-              className={`px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 ${
-                formData.channelId ? 'bg-gray-100 cursor-not-allowed' : ''
-              }`}
-              title={formData.channelId ? '채널 정보에 따라 자동으로 결정됩니다' : '가격 타입을 선택하세요'}
+              className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
             >
-              <option value="dynamic">불포함 있음</option>
-              <option value="base">불포함 없음</option>
-            </select>
-            {formData.channelId && (
-              <span className="text-xs text-gray-500">(자동)</span>
-            )}
+              저장
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                // 가격 정보 초기화
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                setFormData((prev: any) => ({
+                  ...prev,
+                  adultProductPrice: 0,
+                  childProductPrice: 0,
+                  infantProductPrice: 0,
+                  selectedChoices: {},
+                  couponCode: '',
+                  couponDiscount: 0,
+                  additionalDiscount: 0,
+                  additionalCost: 0,
+                  cardFee: 0,
+                  tax: 0,
+                  prepaymentCost: 0,
+                  prepaymentTip: 0,
+                  selectedOptionalOptions: {},
+                  depositAmount: 0,
+                  isPrivateTour: false,
+                  privateTourAdditionalCost: 0,
+                  commission_percent: 0,
+                  commission_amount: 0,
+                  productChoices: []
+                }))
+              }}
+              className="px-2 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700"
+            >
+              초기화
+            </button>
           </div>
+        </div>
+        
+        {/* 두 번째 줄: 기존 가격 뱃지, 완료 뱃지, 단독 투어 체크박스 */}
+        <div className="flex flex-wrap items-center gap-2">
           {/* 기존 가격 정보 표시 */}
           {isExistingPricingLoaded && (
             <span className="px-2 py-1 bg-green-100 border border-green-300 rounded text-xs text-green-700">
@@ -498,8 +555,7 @@ export default function PricingSection({
               </div>
             )}
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+          {/* 단독 투어 체크박스 */}
           <label className="flex items-center">
             <input
               type="checkbox"
@@ -522,54 +578,6 @@ export default function PricingSection({
               />
             </div>
           )}
-          {/* 상품가에 초이스 포함 처리: 초이스 가격 입력칸을 0으로 입력하면 이중계산 없이 반영됩니다 */}
-          <button
-            type="button"
-            onClick={async () => {
-              try {
-                const tempReservationId = `temp_${Date.now()}`
-                await savePricingInfo(tempReservationId)
-                alert('가격 정보가 저장되었습니다!')
-              } catch {
-                alert('가격 정보 저장 중 오류가 발생했습니다.')
-              }
-            }}
-            className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
-          >
-            저장
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              // 가격 정보 초기화
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              setFormData((prev: any) => ({
-                ...prev,
-                adultProductPrice: 0,
-                childProductPrice: 0,
-                infantProductPrice: 0,
-                selectedChoices: {},
-                couponCode: '',
-                couponDiscount: 0,
-                additionalDiscount: 0,
-                additionalCost: 0,
-                cardFee: 0,
-                tax: 0,
-                prepaymentCost: 0,
-                prepaymentTip: 0,
-                selectedOptionalOptions: {},
-                depositAmount: 0,
-                isPrivateTour: false,
-                privateTourAdditionalCost: 0,
-                commission_percent: 0,
-                commission_amount: 0,
-                productChoices: []
-              }))
-            }}
-            className="px-2 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700"
-          >
-            초기화
-          </button>
         </div>
       </div>
 
