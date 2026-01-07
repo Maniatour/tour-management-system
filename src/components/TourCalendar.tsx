@@ -607,22 +607,25 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
         </div>
       </div>
 
-      {/* 요일 헤더 */}
-      <div className="grid grid-cols-7 gap-px mb-1">
-        {dayNames.map((day, index) => (
-          <div
-            key={day}
-            className={`p-1 text-center text-xs font-medium ${
-              index === 0 ? 'text-red-500' : index === 6 ? 'text-blue-500' : 'text-gray-700'
-            }`}
-          >
-            {day}
+      {/* 달력 컨테이너 - 모바일에서 가로 스크롤 가능 */}
+      <div className="overflow-x-auto -mx-2 sm:mx-0">
+        <div className="min-w-[600px] sm:min-w-0">
+          {/* 요일 헤더 */}
+          <div className="grid grid-cols-7 gap-px mb-1">
+            {dayNames.map((day, index) => (
+              <div
+                key={day}
+                className={`p-1 text-center text-xs font-medium ${
+                  index === 0 ? 'text-red-500' : index === 6 ? 'text-blue-500' : 'text-gray-700'
+                }`}
+              >
+                {day}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      {/* 달력 그리드 */}
-      <div className="grid grid-cols-7 gap-px">
+          {/* 달력 그리드 */}
+          <div className="grid grid-cols-7 gap-px">
         {calendarDays.map((date, index) => {
           const dayTours = getToursForDate(date)
           const dayOffSchedules = getOffSchedulesForDate(date)
@@ -839,6 +842,8 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
             </div>
           )
         })}
+          </div>
+        </div>
       </div>
 
       {/* 상품 색상 범례 (Mania Tour / Mania Service만) */}
