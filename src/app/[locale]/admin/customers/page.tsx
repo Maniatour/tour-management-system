@@ -765,21 +765,21 @@ export default function AdminCustomers() {
       {/* 페이지 헤더 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">{t('title')}</h1>
-          <p className="mt-2 text-gray-600">{t('subtitle')}</p>
+          <h1 className="text-xl md:text-3xl font-bold text-gray-900">{t('title')}</h1>
         </div>
         <button
-                          onClick={openForm}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+          onClick={openForm}
+          className="bg-blue-600 text-white px-2 py-1.5 md:px-4 md:py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-1 md:space-x-2 text-sm md:text-base"
         >
-          <Plus size={20} />
-          <span>{t('addCustomer')}</span>
+          <Plus size={16} className="md:w-5 md:h-5" />
+          <span className="hidden sm:inline">{t('addCustomer')}</span>
+          <span className="sm:hidden">추가</span>
         </button>
       </div>
 
       {/* 검색 및 필터 */}
-      <div className="flex items-center space-x-4">
-        <div className="relative flex-1 max-w-md">
+      <div className="flex flex-col md:flex-row md:items-center gap-3 md:space-x-4 md:gap-0">
+        <div className="relative flex-1 md:max-w-md">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
         <input
           type="text"
@@ -791,10 +791,10 @@ export default function AdminCustomers() {
         </div>
         
         {/* 상태 필터 버튼들 */}
-        <div className="flex space-x-2">
+        <div className="flex space-x-1 md:space-x-2">
           <button
             onClick={() => setStatusFilter('all')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-2 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-colors ${
               statusFilter === 'all'
                 ? 'bg-blue-600 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -804,7 +804,7 @@ export default function AdminCustomers() {
           </button>
           <button
             onClick={() => setStatusFilter('active')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-2 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-colors ${
               statusFilter === 'active'
                 ? 'bg-green-600 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -814,7 +814,7 @@ export default function AdminCustomers() {
           </button>
           <button
             onClick={() => setStatusFilter('inactive')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-2 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-colors ${
               statusFilter === 'inactive'
                 ? 'bg-red-600 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -826,7 +826,7 @@ export default function AdminCustomers() {
         
         {/* 정렬 버튼 */}
         <div className="flex items-center space-x-2">
-          <Filter className="h-4 w-4 text-gray-400" />
+          <Filter className="h-4 w-4 text-gray-400 hidden md:block" />
           <select
             value={`${String(sortField)}-${sortDirection}`}
             onChange={(e) => {
@@ -834,7 +834,7 @@ export default function AdminCustomers() {
               setSortField(field as keyof Customer)
               setSortDirection(direction as 'asc' | 'desc')
             }}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="px-2 py-1.5 md:px-3 md:py-2 border border-gray-300 rounded-lg text-xs md:text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-full md:w-auto"
           >
             <option value="created_at-desc">{t('sortOptions.newest')}</option>
             <option value="created_at-asc">{t('sortOptions.oldest')}</option>
