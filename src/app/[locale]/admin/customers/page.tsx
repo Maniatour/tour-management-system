@@ -790,59 +790,62 @@ export default function AdminCustomers() {
         />
         </div>
         
-        {/* 상태 필터 버튼들 */}
-        <div className="flex space-x-1 md:space-x-2">
-          <button
-            onClick={() => setStatusFilter('all')}
-            className={`px-2 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-colors ${
-              statusFilter === 'all'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            {t('filters.all')}
-          </button>
-          <button
-            onClick={() => setStatusFilter('active')}
-            className={`px-2 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-colors ${
-              statusFilter === 'active'
-                ? 'bg-green-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            {t('filters.active')}
-          </button>
-          <button
-            onClick={() => setStatusFilter('inactive')}
-            className={`px-2 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-colors ${
-              statusFilter === 'inactive'
-                ? 'bg-red-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            {t('filters.inactive')}
-          </button>
-        </div>
-        
-        {/* 정렬 버튼 */}
-        <div className="flex items-center space-x-2">
-          <Filter className="h-4 w-4 text-gray-400 hidden md:block" />
-          <select
-            value={`${String(sortField)}-${sortDirection}`}
-            onChange={(e) => {
-              const [field, direction] = e.target.value.split('-')
-              setSortField(field as keyof Customer)
-              setSortDirection(direction as 'asc' | 'desc')
-            }}
-            className="px-2 py-1.5 md:px-3 md:py-2 border border-gray-300 rounded-lg text-xs md:text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-full md:w-auto"
-          >
-            <option value="created_at-desc">{t('sortOptions.newest')}</option>
-            <option value="created_at-asc">{t('sortOptions.oldest')}</option>
-            <option value="name-asc">{t('sortOptions.nameAsc')}</option>
-            <option value="name-desc">{t('sortOptions.nameDesc')}</option>
-            <option value="language-asc">{t('sortOptions.languageAsc')}</option>
-            <option value="language-desc">{t('sortOptions.languageDesc')}</option>
-          </select>
+        {/* 상태 필터 버튼들과 정렬 버튼을 같은 줄에 배치 (모바일) */}
+        <div className="flex items-center space-x-1 md:space-x-2 flex-wrap md:flex-nowrap gap-2 md:gap-0">
+          {/* 상태 필터 버튼들 */}
+          <div className="flex space-x-1 md:space-x-2">
+            <button
+              onClick={() => setStatusFilter('all')}
+              className={`px-2 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-colors ${
+                statusFilter === 'all'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {t('filters.all')}
+            </button>
+            <button
+              onClick={() => setStatusFilter('active')}
+              className={`px-2 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-colors ${
+                statusFilter === 'active'
+                  ? 'bg-green-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {t('filters.active')}
+            </button>
+            <button
+              onClick={() => setStatusFilter('inactive')}
+              className={`px-2 py-1 md:px-4 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-colors ${
+                statusFilter === 'inactive'
+                  ? 'bg-red-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {t('filters.inactive')}
+            </button>
+          </div>
+          
+          {/* 정렬 버튼 */}
+          <div className="flex items-center space-x-2">
+            <Filter className="h-4 w-4 text-gray-400 hidden md:block" />
+            <select
+              value={`${String(sortField)}-${sortDirection}`}
+              onChange={(e) => {
+                const [field, direction] = e.target.value.split('-')
+                setSortField(field as keyof Customer)
+                setSortDirection(direction as 'asc' | 'desc')
+              }}
+              className="px-2 py-1.5 md:px-3 md:py-2 border border-gray-300 rounded-lg text-xs md:text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-auto md:w-auto"
+            >
+              <option value="created_at-desc">{t('sortOptions.newest')}</option>
+              <option value="created_at-asc">{t('sortOptions.oldest')}</option>
+              <option value="name-asc">{t('sortOptions.nameAsc')}</option>
+              <option value="name-desc">{t('sortOptions.nameDesc')}</option>
+              <option value="language-asc">{t('sortOptions.languageAsc')}</option>
+              <option value="language-desc">{t('sortOptions.languageDesc')}</option>
+            </select>
+          </div>
         </div>
       </div>
 
