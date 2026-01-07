@@ -17,6 +17,7 @@ interface TourPhoto {
   id: string
   file_name: string
   file_path: string
+  thumbnail_path?: string | null
   file_size: number
   mime_type: string
   description?: string
@@ -70,6 +71,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
   const [hidingPhotos, setHidingPhotos] = useState(false)
   const [isUploadSectionOpen, setIsUploadSectionOpen] = useState(false)
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null)
+  const [showPhotoGuideModal, setShowPhotoGuideModal] = useState(false)
 
   useEffect(() => {
     params.then(setResolvedParams)
@@ -99,6 +101,28 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
       loadPhotos()
     }
   }, [resolvedParams])
+
+  // 투어 사진 공유 페이지 안내 모달 표시 여부 확인
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const today = new Date().toDateString()
+      const dismissedDate = localStorage.getItem('tour_photos_guide_dismissed')
+      
+      // 오늘 날짜와 다르면 모달 표시
+      if (dismissedDate !== today) {
+        setShowPhotoGuideModal(true)
+      }
+    }
+  }, [])
+
+  // "오늘은 다시 보지 않기" 핸들러
+  const handleDismissPhotoGuide = () => {
+    if (typeof window !== 'undefined') {
+      const today = new Date().toDateString()
+      localStorage.setItem('tour_photos_guide_dismissed', today)
+      setShowPhotoGuideModal(false)
+    }
+  }
 
   // Announcement 로드
   useEffect(() => {
@@ -161,11 +185,23 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
       let tourInfoData: TourInfo | null = null
 
       // 1단계: share_token 또는 tour_id로 데이터베이스에서 조회 시도
-      // share_token으로 조회
+      // share_token으로 조회 (모든 사진 가져오기, limit 제거)
       const { data: tokenData, error: tokenError } = await supabase
         .from('tour_photos')
         .select(`
-          *,
+          id,
+          file_name,
+          file_path,
+          thumbnail_path,
+          file_size,
+          mime_type,
+          description,
+          created_at,
+          uploaded_by,
+          tour_id,
+          reservation_id,
+          share_token,
+          is_public,
           tours(
             id,
             product_id,
@@ -183,6 +219,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
         `)
         .eq('share_token', token)
         .order('created_at', { ascending: false })
+        .limit(10000) // 충분히 큰 값으로 설정
 
       if (tokenError) {
         console.warn('Error loading photos by share_token:', tokenError)
@@ -196,11 +233,23 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
         }
         tourIdToUse = tokenData[0].tour_id
       } else {
-        // share_token으로 찾지 못했으면 tour_id로 조회 시도
+        // share_token으로 찾지 못했으면 tour_id로 조회 시도 (모든 사진 가져오기)
         const { data: tourData, error: tourError } = await supabase
           .from('tour_photos')
           .select(`
-            *,
+            id,
+            file_name,
+            file_path,
+            thumbnail_path,
+            file_size,
+            mime_type,
+            description,
+            created_at,
+            uploaded_by,
+            tour_id,
+            reservation_id,
+            share_token,
+            is_public,
             tours(
               id,
               product_id,
@@ -218,6 +267,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
           `)
           .eq('tour_id', token)
           .order('created_at', { ascending: false })
+          .limit(10000) // 충분히 큰 값으로 설정
 
         if (tourError) {
           console.warn('Error loading photos by tour_id:', tourError)
@@ -232,20 +282,117 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
         }
       }
 
+      // 데이터베이스에서 조회한 경우에도 썸네일이 없으면 Storage에서 찾아서 매핑
+      if (photosData.length > 0 && tourIdToUse) {
+        // Storage에서 모든 썸네일 파일 목록 가져오기 (페이지네이션 처리)
+        let allStorageFiles: any[] = []
+        let hasMore = true
+        let offset = 0
+        const limit = 1000
+
+        while (hasMore) {
+          const { data: storageFiles, error: storageError } = await supabase.storage
+            .from('tour-photos')
+            .list(tourIdToUse, {
+              limit: limit,
+              offset: offset
+            })
+
+          if (storageError || !storageFiles) {
+            break
+          }
+
+          allStorageFiles = [...allStorageFiles, ...storageFiles]
+
+          if (storageFiles.length < limit) {
+            hasMore = false
+          } else {
+            offset += limit
+          }
+        }
+
+        if (allStorageFiles.length > 0) {
+          // 썸네일 파일 매핑 생성
+          const thumbnailFiles = allStorageFiles.filter((file: { name: string }) => 
+            file.name.includes('_thumb') &&
+            file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+          )
+
+          const thumbnailMap = new Map<string, string>()
+          thumbnailFiles.forEach((thumbFile: { name: string }) => {
+            const originalName = thumbFile.name.replace('_thumb', '')
+            thumbnailMap.set(originalName, `${tourIdToUse}/${thumbFile.name}`)
+          })
+
+          // 썸네일이 없는 사진에 대해 썸네일 경로 추가
+          photosData = photosData.map((photo: TourPhoto) => {
+            // thumbnail_path가 이미 있으면 그대로 사용
+            if (photo.thumbnail_path) {
+              // 전체 경로가 아니면 추가
+              if (!photo.thumbnail_path.includes('/')) {
+                return { ...photo, thumbnail_path: `${tourIdToUse}/${photo.thumbnail_path}` }
+              }
+              return photo
+            }
+
+            // file_path에서 파일명 추출
+            const fileName = photo.file_path.split('/').pop() || photo.file_name
+            const thumbnailPath = thumbnailMap.get(fileName)
+            if (thumbnailPath) {
+              return { ...photo, thumbnail_path: thumbnailPath }
+            }
+            return photo
+          })
+
+          // 디버깅: 썸네일 매핑 결과 확인
+          console.log('[PhotoDownloadPage] Thumbnail mapping:', {
+            totalPhotos: photosData.length,
+            withThumbnails: photosData.filter(p => p.thumbnail_path).length,
+            thumbnailFilesFound: thumbnailFiles.length
+          })
+        }
+      }
+
       // 2단계: 데이터베이스에서 찾지 못했거나 사진이 없으면 Storage에서 직접 조회
       if (photosData.length === 0) {
         console.log('No photos found in database, checking Storage...')
         
-        // Storage에서 투어별 폴더의 파일 목록 조회
-        const { data: files, error: storageError } = await supabase.storage
-          .from('tour-photos')
-          .list(tourIdToUse, {
-            sort: { column: 'created_at', order: 'desc' }
-          })
+        // Storage에서 투어별 폴더의 모든 파일 목록 조회 (페이지네이션 처리)
+        let allFiles: any[] = []
+        let hasMore = true
+        let offset = 0
+        const limit = 1000
 
-        if (storageError) {
-          console.error('Error loading photos from storage:', storageError)
-          // 투어 정보만 조회 시도
+        while (hasMore) {
+          const { data: files, error: storageError } = await supabase.storage
+            .from('tour-photos')
+            .list(tourIdToUse, {
+              limit: limit,
+              offset: offset,
+              sort: { column: 'created_at', order: 'desc' }
+            })
+
+          if (storageError) {
+            console.error('Error loading photos from storage:', storageError)
+            break
+          }
+
+          if (!files || files.length === 0) {
+            hasMore = false
+            break
+          }
+
+          allFiles = [...allFiles, ...files]
+
+          if (files.length < limit) {
+            hasMore = false
+          } else {
+            offset += limit
+          }
+        }
+
+        // 투어 정보 조회
+        if (allFiles.length === 0) {
           const { data: tourInfo, error: tourInfoError } = await supabase
             .from('tours')
             .select(`
@@ -269,28 +416,43 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
             tourInfoData = tourInfo
           }
 
-          if (!files || files.length === 0) {
-            setError('Photos not found. The link may have expired or is invalid.')
-            return
-          }
+          setError('Photos not found. The link may have expired or is invalid.')
+          return
         }
 
-        if (files && files.length > 0) {
-          // 실제 사진 파일만 필터링
+        if (allFiles.length > 0) {
+          const files = allFiles
+          // 실제 사진 파일만 필터링 (썸네일 제외)
           const photoFiles = files.filter((file: { name: string }) => 
             !file.name.includes('.folder_info.json') && 
             !file.name.includes('folder.info') &&
             !file.name.includes('.info') &&
             !file.name.includes('.README') &&
             !file.name.startsWith('.') &&
+            !file.name.includes('_thumb') && // 썸네일 파일 제외
             file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)
           )
+
+          // 썸네일 파일 찾기
+          const thumbnailFiles = files.filter((file: { name: string }) => 
+            file.name.includes('_thumb') &&
+            file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+          )
+
+          // 썸네일 매핑 생성
+          const thumbnailMap = new Map<string, string>()
+          thumbnailFiles.forEach((thumbFile: { name: string }) => {
+            // 원본 파일명 추출 (예: "123_thumb.jpg" -> "123.jpg")
+            const originalName = thumbFile.name.replace('_thumb', '')
+            thumbnailMap.set(originalName, `${tourIdToUse}/${thumbFile.name}`)
+          })
 
           // Storage 파일을 TourPhoto 형식으로 변환
           photosData = photoFiles.map((file: any) => ({
             id: file.id || file.name,
             file_name: file.name,
             file_path: `${tourIdToUse}/${file.name}`,
+            thumbnail_path: thumbnailMap.get(file.name) || null,
             file_size: file.metadata?.size || 0,
             mime_type: file.metadata?.mimetype || 'image/jpeg',
             created_at: file.created_at || file.updated_at || new Date().toISOString(),
@@ -335,6 +497,21 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
       setPhotos(photosData)
       if (tourInfoData) {
         setTourInfo(tourInfoData)
+        
+        // 투어 날짜로부터 7일 후 접속 제한 체크
+        if (tourInfoData.tour_date) {
+          const tourDate = new Date(tourInfoData.tour_date)
+          const today = new Date()
+          const daysDiff = Math.floor((today.getTime() - tourDate.getTime()) / (1000 * 60 * 60 * 24))
+          
+          if (daysDiff > 7) {
+            setError(language === 'ko' 
+              ? '투어 날짜로부터 7일이 지나 이 페이지에 접속할 수 없습니다.' 
+              : 'This page is no longer accessible 7 days after the tour date.')
+            setLoading(false)
+            return
+          }
+        }
       }
       setTourId(tourIdToUse)
     } catch (error) {
@@ -894,6 +1071,101 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
         </div>
       )}
 
+      {/* 투어 사진 공유 페이지 안내 모달 */}
+      {showPhotoGuideModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-gray-900 flex items-center">
+                <Info size={20} className="mr-2 text-blue-600" />
+                {language === 'ko' ? '투어 사진 공유 페이지 안내' : 'Tour Photo Sharing Guide'}
+              </h3>
+              <button
+                onClick={() => setShowPhotoGuideModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              {language === 'ko' ? (
+                <>
+                  <div className="space-y-3">
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2">• 사진 보관 안내</h4>
+                      <p className="text-sm text-gray-700">
+                        투어 날짜로부터 7일 뒤에는 이 페이지에 접속할 수 없으니, 그전에 다운로드 받아야 합니다. 원하는 사진이 있다면 미리 다운로드하여 보관하시기 바랍니다.
+                      </p>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2">• 그룹 투어 사진 안내</h4>
+                      <p className="text-sm text-gray-700">
+                        그룹 투어 특성상 여러 참가자의 사진이 함께 업로드될 수 있습니다. 사진을 다운로드한 후 표시에서 제거를 원하시면 "숨김 요청" 기능을 사용하여 직접 요청할 수 있습니다.
+                      </p>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2">• 개인정보 보호</h4>
+                      <p className="text-sm text-gray-700">
+                        개인정보 보호를 위해 본인의 사진만 다운로드하시기 바랍니다. 타인의 사진을 저장하는 것은 금지되어 있습니다.
+                      </p>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2">• 다운로드 기록</h4>
+                      <p className="text-sm text-gray-700">
+                        모든 다운로드 기록은 저장되며, 초상권 문제 발생 시 출처를 추적할 수 있습니다.
+                      </p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-3">
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2">• Photo Storage Notice</h4>
+                      <p className="text-sm text-gray-700">
+                        You will not be able to access this page 7 days after the tour date, so please download your photos before then. If you wish to keep any photos, please download them in advance.
+                      </p>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2">• Group Tour Photos</h4>
+                      <p className="text-sm text-gray-700">
+                        Due to the nature of group tours, photos of multiple participants may be uploaded together. If you download your photos and wish to request that they be removed from display, you can use the "Hide Photos" feature to request directly.
+                      </p>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2">• Privacy Protection</h4>
+                      <p className="text-sm text-gray-700">
+                        For privacy protection, please download only your own photos. Saving photos of others is prohibited.
+                      </p>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2">• Download Records</h4>
+                      <p className="text-sm text-gray-700">
+                        All download records are stored, and in case of portrait rights issues, the source will be tracked.
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="sticky bottom-0 bg-white border-t px-6 py-4 flex justify-between items-center">
+              <button
+                onClick={handleDismissPhotoGuide}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 underline"
+              >
+                {language === 'ko' ? '오늘은 다시 보지 않기' : "Don't show again today"}
+              </button>
+              <button
+                onClick={() => setShowPhotoGuideModal(false)}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                {language === 'ko' ? '확인' : 'OK'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 헤더 */}
       <div className="bg-white shadow-sm border-b sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-3 sm:py-4">
@@ -1198,7 +1470,22 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
                     }}
                   >
                     <img
-                      src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${photo.file_path}`}
+                      src={(() => {
+                        // 썸네일 경로가 있으면 썸네일 사용, 없으면 원본 사용
+                        const imagePath = photo.thumbnail_path || photo.file_path
+                        const imageUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${imagePath}`
+                        // 디버깅: 썸네일 사용 여부 확인
+                        if (process.env.NODE_ENV === 'development' && index === 0) {
+                          console.log('Photo image URL:', {
+                            fileName: photo.file_name,
+                            thumbnailPath: photo.thumbnail_path,
+                            filePath: photo.file_path,
+                            usingThumbnail: !!photo.thumbnail_path,
+                            imageUrl
+                          })
+                        }
+                        return imageUrl
+                      })()}
                       alt={photo.file_name}
                       className="w-full h-full object-cover"
                       draggable={false}

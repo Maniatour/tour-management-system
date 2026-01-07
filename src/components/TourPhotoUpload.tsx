@@ -8,11 +8,13 @@ import { useTranslations } from 'next-intl'
 import { createTourPhotosBucket, checkTourPhotosBucket, checkTourFolderExists, createTourFolderMarker } from '@/lib/tourPhotoBucket'
 import { useTourPhotoFolder } from '@/hooks/useTourPhotoFolder'
 import { useAuth } from '@/contexts/AuthContext'
+import { createThumbnail, getThumbnailFileName } from '@/lib/imageUtils'
 
 interface TourPhoto {
   id: string
   file_name: string
   file_path: string
+  thumbnail_path?: string | null
   file_size: number
   mime_type: string
   file_type?: string
@@ -21,6 +23,9 @@ interface TourPhoto {
   share_token?: string
   created_at: string
   uploaded_by: string
+  is_hidden?: boolean
+  hide_requested_by?: string | null
+  hide_requested_by_name?: string | null
 }
 
 interface TourPhotoUploadProps {
@@ -35,8 +40,9 @@ export default function TourPhotoUpload({
   uploadedBy, 
   onPhotosUpdated 
 }: TourPhotoUploadProps) {
-  const { user } = useAuth()
+  const { user, userRole, hasPermission } = useAuth()
   const t = useTranslations('tours.tourPhoto')
+  const isAdmin = userRole === 'admin' || userRole === 'manager' || hasPermission('canViewAdmin')
   const [photos, setPhotos] = useState<TourPhoto[]>([])
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -45,6 +51,8 @@ export default function TourPhotoUpload({
   const [showModal, setShowModal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  const [generatingThumbnails, setGeneratingThumbnails] = useState(false)
+  const [thumbnailProgress, setThumbnailProgress] = useState({ current: 0, total: 0 })
   
   // Hook으로 폴더 자동 관리
   const { folderStatus, isReady, retry } = useTourPhotoFolder(tourId)
@@ -58,6 +66,34 @@ export default function TourPhotoUpload({
     try {
       console.log('Loading photos for tour:', tourId)
       
+      // 먼저 데이터베이스에서 썸네일 경로가 있는 사진 조회
+      const { data: dbPhotos, error: dbError } = await supabase
+        .from('tour_photos')
+        .select('id, file_name, file_path, thumbnail_path, file_size, mime_type, created_at, uploaded_by')
+        .eq('tour_id', tourId)
+        .order('created_at', { ascending: false })
+
+      // 숨김 요청 정보 조회
+      const { data: hideRequests, error: hideRequestsError } = await supabase
+        .from('tour_photo_hide_requests')
+        .select('file_name, customer_name, customer_id, is_hidden, requested_at')
+        .eq('tour_id', tourId)
+        .eq('is_hidden', true)
+
+      // 숨김 요청 매핑 생성
+      const hideRequestMap = new Map<string, { customer_name: string; customer_id: string; requested_at: string }>()
+      if (hideRequests && !hideRequestsError) {
+        hideRequests.forEach((req: any) => {
+          if (req.file_name) {
+            hideRequestMap.set(req.file_name, {
+              customer_name: req.customer_name || 'Unknown',
+              customer_id: req.customer_id || '',
+              requested_at: req.requested_at || ''
+            })
+          }
+        })
+      }
+
       // Storage에서 투어별 폴더의 파일 목록 조회
       const { data: files, error } = await supabase.storage
         .from('tour-photos')
@@ -82,38 +118,107 @@ export default function TourPhotoUpload({
         return
       }
       
-      // 실제 사진 파일만 필터링 (마커 파일 제외)
-      const photoFiles = files?.filter((file: { name: string }) => 
-        !file.name.includes('.folder_info.json') && 
-        !file.name.includes('folder.info') &&
-        !file.name.includes('.info') &&
-        !file.name.includes('.README') &&
-        !file.name.startsWith('.') && // 숨김 파일 제외
+      // 실제 사진 파일만 필터링 (마커 파일 제외, 썸네일 제외)
+      // 관리자가 아닌 경우 숨김된 사진 제외
+      const photoFiles = files?.filter((file: { name: string }) => {
+        const isPhotoFile = !file.name.includes('.folder_info.json') && 
+          !file.name.includes('folder.info') &&
+          !file.name.includes('.info') &&
+          !file.name.includes('.README') &&
+          !file.name.startsWith('.') &&
+          !file.name.includes('_thumb') &&
+          file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+        
+        if (!isPhotoFile) return false
+        
+        // 관리자가 아니면 숨김된 사진 제외
+        if (!isAdmin) {
+          const hideRequest = hideRequestMap.get(file.name)
+          if (hideRequest) return false
+        }
+        
+        return true
+      }) || []
+
+      // 썸네일 파일 찾기
+      const thumbnailFiles = files?.filter((file: { name: string }) => 
+        file.name.includes('_thumb') &&
         file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)
       ) || []
+
+      // 썸네일 매핑 생성 (Storage 기반)
+      const thumbnailMap = new Map<string, string>()
+      thumbnailFiles.forEach((thumbFile: { name: string }) => {
+        const originalName = thumbFile.name.replace('_thumb', '')
+        thumbnailMap.set(originalName, `${tourId}/${thumbFile.name}`)
+      })
+
+      // 데이터베이스 썸네일 매핑 생성
+      const dbThumbnailMap = new Map<string, string>()
+      if (dbPhotos && !dbError) {
+        dbPhotos.forEach((photo: any) => {
+          if (photo.thumbnail_path && photo.file_name) {
+            dbThumbnailMap.set(photo.file_name, photo.thumbnail_path)
+          }
+        })
+      }
       
       // Storage 파일을 TourPhoto 형식으로 변환
-      const photos: TourPhoto[] = photoFiles.map((file: { id?: string; name: string; metadata?: { size?: number; mimetype?: string }; created_at?: string }) => ({
-        id: file.id || file.name,
-        file_name: file.name,
-        file_path: `${tourId}/${file.name}`,
-        file_size: file.metadata?.size || 0,
-        mime_type: file.metadata?.mimetype || 'image/jpeg',
-        file_type: file.metadata?.mimetype || 'image/jpeg',
-        description: undefined,
-        is_public: true,
-        share_token: undefined,
-        created_at: file.created_at || new Date().toISOString(),
-        uploaded_by: uploadedBy
-      }))
+      const photos: TourPhoto[] = photoFiles.map((file: { id?: string; name: string; metadata?: { size?: number; mimetype?: string }; created_at?: string }) => {
+        // 데이터베이스에서 썸네일 경로를 찾거나, Storage에서 찾기
+        let thumbnailPath = dbThumbnailMap.get(file.name) || thumbnailMap.get(file.name) || null
+        
+        // 썸네일 경로가 상대 경로인 경우 전체 경로로 변환
+        if (thumbnailPath && !thumbnailPath.includes('/')) {
+          thumbnailPath = `${tourId}/${thumbnailPath}`
+        }
+        
+        // 디버깅: 첫 번째 사진만 로그
+        if (photoFiles.indexOf(file) === 0) {
+          console.log('[TourPhotoUpload] Photo thumbnail mapping:', {
+            fileName: file.name,
+            dbThumbnail: dbThumbnailMap.get(file.name),
+            storageThumbnail: thumbnailMap.get(file.name),
+            finalThumbnail: thumbnailPath,
+            thumbnailFilesCount: thumbnailFiles.length,
+            dbPhotosCount: dbPhotos?.length || 0
+          })
+        }
+        
+        // 숨김 요청 정보 가져오기
+        const hideRequest = hideRequestMap.get(file.name)
+        
+        return {
+          id: file.id || file.name,
+          file_name: file.name,
+          file_path: `${tourId}/${file.name}`,
+          thumbnail_path: thumbnailPath,
+          file_size: file.metadata?.size || 0,
+          mime_type: file.metadata?.mimetype || 'image/jpeg',
+          file_type: file.metadata?.mimetype || 'image/jpeg',
+          description: undefined,
+          is_public: true,
+          share_token: undefined,
+          created_at: file.created_at || new Date().toISOString(),
+          uploaded_by: uploadedBy,
+          is_hidden: !!hideRequest,
+          hide_requested_by: hideRequest?.customer_id || null,
+          hide_requested_by_name: hideRequest?.customer_name || null
+        }
+      })
       
-      console.log('Loaded photos from storage:', photos)
+      console.log('[TourPhotoUpload] Loaded photos:', {
+        total: photos.length,
+        withThumbnails: photos.filter(p => p.thumbnail_path).length,
+        withoutThumbnails: photos.filter(p => !p.thumbnail_path).length,
+        hidden: photos.filter(p => p.is_hidden).length
+      })
       setPhotos(photos)
     } catch (error) {
       console.error('Error loading photos:', error)
       setPhotos([])
     }
-  }, [tourId, uploadedBy])
+  }, [tourId, uploadedBy, isAdmin])
 
   // Storage 버킷 확인 및 생성
   const ensureStorageBucket = async () => {
@@ -360,7 +465,7 @@ export default function TourPhotoUpload({
 
             console.log(`Uploading to storage: ${filePath}`)
 
-            // Supabase Storage에 업로드
+            // Supabase Storage에 원본 업로드
             const { data: uploadData, error: uploadError } = await supabase.storage
               .from('tour-photos')
               .upload(filePath, file, {
@@ -374,6 +479,34 @@ export default function TourPhotoUpload({
             }
 
             console.log('Storage upload successful:', uploadData)
+
+            // 썸네일 생성 및 업로드
+            let thumbnailPath: string | null = null
+            try {
+              console.log('Creating thumbnail for:', file.name)
+              const thumbnailBlob = await createThumbnail(file, 400, 400, 0.8)
+              const thumbnailFileName = getThumbnailFileName(fileName)
+              thumbnailPath = `${tourId}/${thumbnailFileName}`
+              
+              const thumbnailFile = new File([thumbnailBlob], thumbnailFileName, { type: 'image/jpeg' })
+              
+              const { error: thumbnailUploadError } = await supabase.storage
+                .from('tour-photos')
+                .upload(thumbnailPath, thumbnailFile, {
+                  cacheControl: '3600',
+                  upsert: false
+                })
+
+              if (thumbnailUploadError) {
+                console.warn('Thumbnail upload error (continuing anyway):', thumbnailUploadError)
+                // 썸네일 업로드 실패해도 계속 진행
+              } else {
+                console.log('Thumbnail uploaded successfully:', thumbnailPath)
+              }
+            } catch (thumbnailError) {
+              console.warn('Thumbnail creation error (continuing anyway):', thumbnailError)
+              // 썸네일 생성 실패해도 계속 진행
+            }
 
             // 공유 토큰 생성
             const shareToken = crypto.randomUUID()
@@ -390,7 +523,8 @@ export default function TourPhotoUpload({
                 file_size: file.size,
                 mime_type: file.type,
                 uploaded_by: user?.id,
-                share_token: shareToken
+                share_token: shareToken,
+                thumbnail_path: thumbnailPath // 썸네일 경로 저장
               })
               .select()
               .single()
@@ -399,6 +533,9 @@ export default function TourPhotoUpload({
               console.error('Database insert error:', dbError)
               // Storage에서 파일 삭제
               await supabase.storage.from('tour-photos').remove([uploadData.path])
+              if (thumbnailPath) {
+                await supabase.storage.from('tour-photos').remove([thumbnailPath])
+              }
               throw dbError
             }
 
@@ -457,6 +594,172 @@ export default function TourPhotoUpload({
       alert(`❌ 업로드 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       setUploading(false)
+    }
+  }
+
+  // 기존 사진들에 대한 썸네일 생성
+  const generateThumbnailsForExistingPhotos = async () => {
+    try {
+      setGeneratingThumbnails(true)
+      setThumbnailProgress({ current: 0, total: 0 })
+
+      // Storage에서 모든 파일 목록 가져오기
+      const { data: files, error } = await supabase.storage
+        .from('tour-photos')
+        .list(tourId, {
+          sort: { column: 'created_at', order: 'desc' }
+        })
+
+      if (error) {
+        throw error
+      }
+
+      // 원본 사진 파일만 필터링 (썸네일 제외)
+      const originalPhotos = files?.filter((file: { name: string }) => 
+        !file.name.includes('.folder_info.json') && 
+        !file.name.includes('folder.info') &&
+        !file.name.includes('.info') &&
+        !file.name.includes('.README') &&
+        !file.name.startsWith('.') &&
+        !file.name.includes('_thumb') && // 썸네일 제외
+        file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)
+      ) || []
+
+      // 썸네일이 있는지 확인
+      const thumbnailFiles = files?.filter((file: { name: string }) => 
+        file.name.includes('_thumb')
+      ) || []
+
+      const thumbnailMap = new Set(thumbnailFiles.map((f: { name: string }) => 
+        f.name.replace('_thumb', '')
+      ))
+
+      // 썸네일이 없는 사진들만 필터링
+      const photosWithoutThumbnails = originalPhotos.filter((file: { name: string }) => 
+        !thumbnailMap.has(file.name)
+      )
+
+      if (photosWithoutThumbnails.length === 0) {
+        alert('모든 사진에 썸네일이 이미 생성되어 있습니다.')
+        return
+      }
+
+      setThumbnailProgress({ current: 0, total: photosWithoutThumbnails.length })
+
+      let successCount = 0
+      let failCount = 0
+
+      // 각 사진에 대해 썸네일 생성
+      for (let i = 0; i < photosWithoutThumbnails.length; i++) {
+        const file = photosWithoutThumbnails[i]
+        const filePath = `${tourId}/${file.name}`
+
+        try {
+          setThumbnailProgress({ current: i + 1, total: photosWithoutThumbnails.length })
+
+          // 원본 이미지 다운로드
+          const { data: imageData, error: downloadError } = await supabase.storage
+            .from('tour-photos')
+            .download(filePath)
+
+          if (downloadError) {
+            throw downloadError
+          }
+
+          // File 객체로 변환
+          const fileBlob = new File([imageData], file.name, { 
+            type: file.metadata?.mimetype || 'image/jpeg' 
+          })
+
+          // 썸네일 생성
+          const thumbnailBlob = await createThumbnail(fileBlob, 400, 400, 0.8)
+          const thumbnailFileName = getThumbnailFileName(file.name)
+          const thumbnailPath = `${tourId}/${thumbnailFileName}`
+          
+          const thumbnailFile = new File([thumbnailBlob], thumbnailFileName, { type: 'image/jpeg' })
+          
+          // 썸네일 업로드
+          const { error: thumbnailUploadError } = await supabase.storage
+            .from('tour-photos')
+            .upload(thumbnailPath, thumbnailFile, {
+              cacheControl: '3600',
+              upsert: false
+            })
+
+          if (thumbnailUploadError) {
+            throw thumbnailUploadError
+          }
+
+          // 데이터베이스에서 해당 사진 찾기 및 업데이트
+          const { data: photoRecords, error: queryError } = await supabase
+            .from('tour_photos')
+            .select('id')
+            .eq('file_path', filePath)
+
+          if (!queryError && photoRecords && photoRecords.length > 0) {
+            // 데이터베이스 업데이트
+            for (const record of photoRecords) {
+              await supabase
+                .from('tour_photos')
+                .update({ thumbnail_path: thumbnailPath })
+                .eq('id', record.id)
+            }
+          }
+
+          successCount++
+        } catch (error) {
+          console.error(`Error generating thumbnail for ${file.name}:`, error)
+          failCount++
+        }
+      }
+
+      // 사진 목록 새로고침
+      await loadPhotos()
+      onPhotosUpdated?.()
+
+      if (successCount > 0) {
+        alert(`✅ 썸네일 생성 완료: ${successCount}개 성공${failCount > 0 ? `, ${failCount}개 실패` : ''}`)
+      } else {
+        alert(`❌ 썸네일 생성에 실패했습니다. (${failCount}개 파일)`)
+      }
+    } catch (error) {
+      console.error('Error generating thumbnails:', error)
+      alert(`❌ 썸네일 생성 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setGeneratingThumbnails(false)
+      setThumbnailProgress({ current: 0, total: 0 })
+    }
+  }
+
+  // 숨김 철회 (관리자만)
+  const handleUnhidePhoto = async (photo: TourPhoto) => {
+    if (!isAdmin) return
+    
+    if (!confirm(`이 사진의 숨김을 철회하시겠습니까?\n\n파일: ${photo.file_name}\n요청자: ${photo.hide_requested_by_name || 'Unknown'}`)) {
+      return
+    }
+
+    try {
+      // tour_photo_hide_requests 테이블에서 is_hidden을 false로 업데이트
+      const { error: updateError } = await supabase
+        .from('tour_photo_hide_requests')
+        .update({ is_hidden: false })
+        .eq('tour_id', tourId)
+        .eq('file_name', photo.file_name)
+        .eq('is_hidden', true)
+
+      if (updateError) {
+        throw updateError
+      }
+
+      // 사진 목록 새로고침
+      await loadPhotos()
+      onPhotosUpdated?.()
+      
+      alert('숨김이 철회되었습니다.')
+    } catch (error) {
+      console.error('Error unhiding photo:', error)
+      alert('숨김 철회 중 오류가 발생했습니다.')
     }
   }
 
@@ -628,6 +931,23 @@ export default function TourPhotoUpload({
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-900">{t('title')}</h3>
         <div className="flex space-x-2">
+          {photos.length > 0 && (
+            <button
+              onClick={generateThumbnailsForExistingPhotos}
+              disabled={generatingThumbnails}
+              className="flex items-center px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="기존 사진들에 대한 썸네일 생성"
+            >
+              {generatingThumbnails ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  썸네일 생성 중...
+                </>
+              ) : (
+                '기존 사진 썸네일 생성'
+              )}
+            </button>
+          )}
           {/* 투어 전체 사진 공유 링크 */}
           {photos.length > 0 && (
             <button
@@ -782,7 +1102,23 @@ export default function TourPhotoUpload({
                 onClick={() => openPhotoModal(photo)}
               >
                 <Image
-                  src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${photo.file_path}`}
+                  src={(() => {
+                    // 썸네일 경로가 있으면 썸네일 사용, 없으면 원본 사용
+                    const imagePath = photo.thumbnail_path || photo.file_path
+                    const imageUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-photos/${imagePath}`
+                    // 디버깅: 첫 번째 사진만 로그
+                    if (photos.indexOf(photo) === 0) {
+                      console.log('[TourPhotoUpload] Photo thumbnail check:', {
+                        fileName: photo.file_name,
+                        thumbnailPath: photo.thumbnail_path,
+                        filePath: photo.file_path,
+                        usingThumbnail: !!photo.thumbnail_path,
+                        imagePath,
+                        imageUrl
+                      })
+                    }
+                    return imageUrl
+                  })()}
                   alt={photo.file_name}
                   width={200}
                   height={200}
@@ -830,11 +1166,31 @@ export default function TourPhotoUpload({
                 </div>
               </div>
 
+              {/* 숨김 상태 표시 (관리자만, 클릭 가능) */}
+              {isAdmin && photo.is_hidden && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleUnhidePhoto(photo)
+                  }}
+                  className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs font-medium z-10 cursor-pointer transition-colors"
+                  title="클릭하여 숨김 철회"
+                >
+                  숨김
+                </button>
+              )}
+
               {/* 파일 정보 */}
               <div className="mt-2 text-xs text-gray-600">
                 <p className="truncate">{photo.file_name}</p>
                 <p>{formatFileSize(photo.file_size)}</p>
                 <p>{new Date(photo.created_at).toLocaleString()}</p>
+                {/* 숨김 요청자 정보 (관리자만) */}
+                {isAdmin && photo.is_hidden && photo.hide_requested_by_name && (
+                  <p className="text-red-600 font-medium mt-1">
+                    숨김 요청: {photo.hide_requested_by_name}
+                  </p>
+                )}
               </div>
             </div>
           ))}
@@ -868,6 +1224,32 @@ export default function TourPhotoUpload({
               </div>
               <p className="text-xs text-gray-500 mt-1">
                 {Math.round((uploadProgress.current / uploadProgress.total) * 100)}% 완료
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {generatingThumbnails && (
+        <div className="text-center py-8 text-gray-500">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4"></div>
+          <p>썸네일 생성 중...</p>
+          
+          {/* 썸네일 생성 진행 상황 */}
+          {thumbnailProgress.total > 0 && (
+            <div className="mt-4 max-w-md mx-auto">
+              <div className="flex justify-between text-sm text-gray-600 mb-2">
+                <span>{thumbnailProgress.current}/{thumbnailProgress.total} 사진</span>
+                <span>{Math.round((thumbnailProgress.current / thumbnailProgress.total) * 100)}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-green-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${(thumbnailProgress.current / thumbnailProgress.total) * 100}%` }}
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {Math.round((thumbnailProgress.current / thumbnailProgress.total) * 100)}% 완료
               </p>
             </div>
           )}

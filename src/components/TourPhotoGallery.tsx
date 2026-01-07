@@ -232,22 +232,44 @@ export default function TourPhotoGallery({ isOpen, onClose, tourId, language = '
       // Public URL 사용 (bucket이 public이므로 signed URL 불필요 - 훨씬 빠름)
       // Public URL 형식: https://{project-ref}.supabase.co/storage/v1/object/public/{bucket}/{path}
       // 파일 정보를 Photo 객체로 변환 (Public URL 직접 생성 - API 호출 없음)
-      // 썸네일: 작은 크기로 표시 (브라우저가 자동으로 리사이즈)
+      // 썸네일: 실제 썸네일 파일 사용
       // 원본: 모달과 다운로드 시에만 사용
-      const photosWithUrls: TourPhoto[] = allFiles
-        .filter((file: SupabaseFile) => !hiddenFileNames.has(file.name)) // 표시 중단된 사진 필터링
+      
+      // 썸네일 파일 필터링
+      const thumbnailFiles = allFiles.filter((file: SupabaseFile) => 
+        file.name.includes('_thumb')
+      )
+      
+      // 썸네일 매핑 생성
+      const thumbnailMap = new Map<string, string>()
+      thumbnailFiles.forEach((thumbFile: SupabaseFile) => {
+        const originalName = thumbFile.name.replace('_thumb', '')
+        const thumbPath = `${tourId}/${thumbFile.name}`
+        const { data: { publicUrl } } = supabase.storage
+          .from('tour-photos')
+          .getPublicUrl(thumbPath)
+        thumbnailMap.set(originalName, publicUrl)
+      })
+      
+      // 원본 파일만 필터링 (썸네일 제외)
+      const originalFiles = allFiles.filter((file: SupabaseFile) => 
+        !file.name.includes('_thumb') && !hiddenFileNames.has(file.name)
+      )
+      
+      const photosWithUrls: TourPhoto[] = originalFiles
         .map((file: SupabaseFile) => {
           const filePath = `${tourId}/${file.name}`
           const { data: { publicUrl } } = supabase.storage
             .from('tour-photos')
             .getPublicUrl(filePath)
           
-          // 썸네일 URL 생성 (원본과 동일하지만, 표시 시 작은 크기로 제한)
-          // 실제로는 같은 URL을 사용하되, Image 컴포넌트의 width/height로 크기 제한
+          // 썸네일 URL (있으면 사용, 없으면 원본 사용)
+          const thumbnailUrl = thumbnailMap.get(file.name) || publicUrl
+          
           return {
             id: file.id || file.name,
             file_url: publicUrl, // 원본 URL (모달, 다운로드용)
-            thumbnail_url: publicUrl, // 썸네일 URL (같은 URL이지만 작은 크기로 표시)
+            thumbnail_url: thumbnailUrl, // 썸네일 URL
             file_name: file.name,
             uploaded_at: file.updated_at || file.created_at || new Date().toISOString(),
             uploaded_by: 'Unknown',

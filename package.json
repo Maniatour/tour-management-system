@@ -12,7 +12,9 @@
     "lint:fix": "eslint . --ext .ts,.tsx,.js,.jsx --fix",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf .next out dist",
-    "clean:all": "rm -rf .next out dist node_modules package-lock.json && npm install"
+    "clean:all": "rm -rf .next out dist node_modules package-lock.json && npm install",
+    "generate-thumbnails": "node scripts/generate-thumbnails.js",
+    "generate-thumbnails:tour": "node scripts/generate-thumbnails.js"
   },
   "dependencies": {
     "@formatjs/intl": "^3.1.6",
@@ -37,6 +39,8 @@
     "csv-parser": "^3.2.0",
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.18",
+    "dotenv": "^16.4.5",
+    "sharp": "^0.33.5",
     "google-auth-library": "^10.3.0",
     "googleapis": "^159.0.0",
     "html2canvas": "^1.4.1",
