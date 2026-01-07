@@ -57,7 +57,9 @@ import {
   MessageSquare, 
   Camera, 
   DollarSign, 
-  FileText 
+  FileText,
+  Menu,
+  X
 } from 'lucide-react'
 
 // 로컬 폼 전달용 간략 타입
@@ -128,6 +130,7 @@ export default function TourDetailPage() {
   const [showEmailPreviewModal, setShowEmailPreviewModal] = useState<boolean>(false)
   const [showTourEditModal, setShowTourEditModal] = useState<boolean>(false)
   const [activeSection, setActiveSection] = useState<string>('')
+  const [showFloatingMenu, setShowFloatingMenu] = useState<boolean>(false)
   
   // 스크롤 감지로 현재 섹션 추적
   useEffect(() => {
@@ -1400,54 +1403,64 @@ export default function TourDetailPage() {
         </div>
       </div>
 
-      {/* 모바일 섹션 네비게이터 */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-40">
-        <div className="overflow-x-auto scrollbar-hide">
-          <div className="flex space-x-1 px-2 py-2 min-w-max">
-            {[
-              { id: 'tour-info', label: '기본정보', icon: Info },
-              { id: 'tour-weather', label: '날씨', icon: Cloud },
-              { id: 'pickup-schedule', label: '픽업', icon: MapPin },
-              { id: 'tour-schedule', label: '스케줄', icon: Calendar },
-              { id: 'option-management', label: '옵션', icon: Settings },
-              { id: 'team-vehicle', label: '팀/차량', icon: Users },
-              { id: 'assignment-management', label: '배정', icon: ClipboardList },
-              { id: 'booking-management', label: '부킹', icon: BookOpen },
-              { id: 'tour-chat', label: '채팅', icon: MessageSquare },
-              { id: 'tour-photos', label: '사진', icon: Camera },
-              ...(hasPermission && hasPermission('canViewFinance') ? [
-                { id: 'tour-finance', label: '정산', icon: DollarSign },
-                { id: 'tour-report', label: '리포트', icon: FileText }
-              ] : [])
-            ].map((section) => {
-              const Icon = section.icon
-              const isActive = activeSection === section.id
-              
-              return (
-                <button
-                  key={section.id}
-                  onClick={() => {
-                    const element = document.getElementById(section.id)
-                    if (element) {
-                      element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                      setActiveSection(section.id)
-                    }
-                  }}
-                  className={
-                    isActive
-                      ? 'flex flex-col items-center justify-center px-3 py-2 rounded-lg transition-colors whitespace-nowrap bg-blue-50 text-blue-600'
-                      : 'flex flex-col items-center justify-center px-3 py-2 rounded-lg transition-colors whitespace-nowrap text-gray-600 hover:bg-gray-50'
-                  }
-                >
-                  <Icon size={18} className={isActive ? 'text-blue-600' : 'text-gray-500'} />
-                  <span className={`text-xs mt-1 font-medium ${isActive ? 'text-blue-600' : 'text-gray-600'}`}>
-                    {section.label}
-                  </span>
-                </button>
-              )
-            })}
+      {/* 모바일 플로팅 메뉴 */}
+      <div className="lg:hidden fixed bottom-4 right-4 z-50">
+        {/* 플로팅 메뉴 버튼 */}
+        <button
+          onClick={() => setShowFloatingMenu(!showFloatingMenu)}
+          className="w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
+        >
+          {showFloatingMenu ? <X size={24} /> : <Menu size={24} />}
+        </button>
+
+        {/* 플로팅 메뉴 드롭다운 */}
+        {showFloatingMenu && (
+          <div className="absolute bottom-16 right-0 bg-white rounded-lg shadow-xl border border-gray-200 max-h-[70vh] overflow-y-auto w-48 mb-2">
+            <div className="p-2 space-y-1">
+              {[
+                { id: 'tour-info', label: '기본정보', icon: Info },
+                { id: 'tour-weather', label: '날씨', icon: Cloud },
+                { id: 'pickup-schedule', label: '픽업 스케줄', icon: MapPin },
+                { id: 'tour-schedule', label: '투어 스케줄', icon: Calendar },
+                { id: 'option-management', label: '옵션 관리', icon: Settings },
+                { id: 'team-vehicle', label: '팀/차량', icon: Users },
+                { id: 'assignment-management', label: '배정 관리', icon: ClipboardList },
+                { id: 'booking-management', label: '부킹 관리', icon: BookOpen },
+                { id: 'tour-chat', label: '투어 채팅', icon: MessageSquare },
+                { id: 'tour-photos', label: '투어 사진', icon: Camera },
+                ...(hasPermission && hasPermission('canViewFinance') ? [
+                  { id: 'tour-finance', label: '정산 관리', icon: DollarSign },
+                  { id: 'tour-report', label: '투어 리포트', icon: FileText }
+                ] : [])
+              ].map((section) => {
+                const Icon = section.icon
+                const isActive = activeSection === section.id
+                
+                return (
+                  <button
+                    key={section.id}
+                    onClick={() => {
+                      const element = document.getElementById(section.id)
+                      if (element) {
+                        element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                        setActiveSection(section.id)
+                        setShowFloatingMenu(false)
+                      }
+                    }}
+                    className={`w-full flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors text-sm ${
+                      isActive
+                        ? 'bg-blue-50 text-blue-600 font-medium'
+                        : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <Icon size={18} className={isActive ? 'text-blue-600' : 'text-gray-500'} />
+                    <span>{section.label}</span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* 모달들 */}
