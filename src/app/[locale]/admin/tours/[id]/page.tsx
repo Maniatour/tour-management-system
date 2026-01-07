@@ -1404,7 +1404,7 @@ export default function TourDetailPage() {
       </div>
 
       {/* 모바일 플로팅 메뉴 */}
-      <div className="lg:hidden fixed bottom-4 right-4 z-50">
+      <div className="lg:hidden fixed bottom-20 right-4 z-50">
         {/* 플로팅 메뉴 버튼 */}
         <button
           onClick={() => setShowFloatingMenu(!showFloatingMenu)}
@@ -1415,7 +1415,7 @@ export default function TourDetailPage() {
 
         {/* 플로팅 메뉴 드롭다운 */}
         {showFloatingMenu && (
-          <div className="absolute bottom-16 right-0 bg-white rounded-lg shadow-xl border border-gray-200 max-h-[70vh] overflow-y-auto w-48 mb-2">
+          <div className="absolute bottom-16 right-0 bg-white rounded-lg shadow-xl border border-gray-200 max-h-[calc(70vh-80px)] overflow-y-auto w-48 mb-2">
             <div className="p-2 space-y-1">
               {[
                 { id: 'tour-info', label: '기본정보', icon: Info },
