@@ -45,6 +45,20 @@ import {
   openGoogleMaps,
   safeJsonParse
 } from '@/utils/tourStatusUtils'
+import { 
+  Info, 
+  Cloud, 
+  MapPin, 
+  Calendar, 
+  Settings, 
+  Users, 
+  ClipboardList, 
+  BookOpen, 
+  MessageSquare, 
+  Camera, 
+  DollarSign, 
+  FileText 
+} from 'lucide-react'
 
 // 로컬 폼 전달용 간략 타입
 type LocalTicketBooking = {
@@ -113,6 +127,45 @@ export default function TourDetailPage() {
   const [showPickupScheduleModal, setShowPickupScheduleModal] = useState<boolean>(false)
   const [showEmailPreviewModal, setShowEmailPreviewModal] = useState<boolean>(false)
   const [showTourEditModal, setShowTourEditModal] = useState<boolean>(false)
+  const [activeSection, setActiveSection] = useState<string>('')
+  
+  // 스크롤 감지로 현재 섹션 추적
+  useEffect(() => {
+    const sections = [
+      'tour-info',
+      'tour-weather',
+      'pickup-schedule',
+      'tour-schedule',
+      'option-management',
+      'team-vehicle',
+      'assignment-management',
+      'booking-management',
+      'tour-chat',
+      'tour-photos',
+      'tour-finance',
+      'tour-report'
+    ]
+
+    const handleScroll = () => {
+      const scrollPosition = window.scrollY + 100 // 헤더 높이 고려
+
+      for (let i = sections.length - 1; i >= 0; i--) {
+        const section = document.getElementById(sections[i])
+        if (section) {
+          const offsetTop = section.offsetTop
+          if (scrollPosition >= offsetTop) {
+            setActiveSection(sections[i])
+            break
+          }
+        }
+      }
+    }
+
+    window.addEventListener('scroll', handleScroll)
+    handleScroll() // 초기 실행
+
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [hasPermission])
   
   // 마일리지 관련 상태
   const [startMileage, setStartMileage] = useState<number>(0)
@@ -1119,13 +1172,14 @@ export default function TourDetailPage() {
         onEditClick={() => setShowTourEditModal(true)}
       />
 
-      <div className="px-0 py-6">
+      <div className="px-0 py-6 pb-24 lg:pb-6">
         {/* 4열 그리드 레이아웃 */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* 1열: 기본 정보, 픽업 스케줄, 옵션 관리 */}
           <div className="space-y-6">
             {/* 기본 정보 */}
-            <TourInfo
+            <div id="tour-info" className="scroll-mt-20">
+              <TourInfo
               tour={tourData.tour}
               product={tourData.product}
               tourNote={tourData.tourNote}
@@ -1141,19 +1195,23 @@ export default function TourDetailPage() {
               getStatusText={getStatusText}
               assignedReservations={tourData.assignedReservations}
             />
+            </div>
 
         {/* 날씨 정보 섹션 */}
-        <div className="bg-white rounded-lg shadow-sm border">
-          <div className="p-4">
-            <TourWeather 
-                  tourDate={tourData.tour.tour_date} 
-                  {...(tourData.product?.id && { productId: tourData.product.id })}
-            />
+        <div id="tour-weather" className="scroll-mt-20">
+          <div className="bg-white rounded-lg shadow-sm border">
+            <div className="p-4">
+              <TourWeather 
+                    tourDate={tourData.tour.tour_date} 
+                    {...(tourData.product?.id && { productId: tourData.product.id })}
+              />
+            </div>
           </div>
         </div>
 
         {/* 픽업 스케줄 */}
-        <PickupSchedule
+        <div id="pickup-schedule" className="scroll-mt-20">
+          <PickupSchedule
               assignedReservations={tourData.assignedReservations.map((res: any) => ({
                 ...res,
                 tour_date: res.tour_date || tourData.tour?.tour_date
@@ -1173,23 +1231,29 @@ export default function TourDetailPage() {
               getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || 'Unknown'}
           openGoogleMaps={openGoogleMaps}
         />
+        </div>
 
         {/* 투어 스케줄 섹션 */}
-        <TourSchedule
+        <div id="tour-schedule" className="scroll-mt-20">
+          <TourSchedule
               tour={tourData.tour}
               expandedSections={tourData.expandedSections}
               onToggleSection={tourData.toggleSection}
               locale="ko"
         />
+        </div>
 
             {/* 옵션 관리 */}
-            <OptionManagement reservationIds={tourData.tour?.reservation_ids || []} />
+            <div id="option-management" className="scroll-mt-20">
+              <OptionManagement reservationIds={tourData.tour?.reservation_ids || []} />
+            </div>
           </div>
 
           {/* 2열: 팀 구성 & 차량 배정, 배정 관리 */}
           <div className="space-y-6">
             {/* 팀 구성 & 차량 배정 통합 */}
-            <TeamAndVehicleAssignment
+            <div id="team-vehicle" className="scroll-mt-20">
+              <TeamAndVehicleAssignment
               teamMembers={tourData.teamMembers.map(member => ({
                 id: member.email, // email을 id로 사용
                 name_ko: member.name_ko,
@@ -1233,9 +1297,11 @@ export default function TourDetailPage() {
               getTeamMemberName={tourData.getTeamMemberName}
               getVehicleName={getVehicleName}
             />
+            </div>
 
             {/* 배정 관리 */}
-            <AssignmentManagement
+            <div id="assignment-management" className="scroll-mt-20">
+              <AssignmentManagement
               assignedReservations={tourData.assignedReservations}
               pendingReservations={tourData.pendingReservations}
               otherToursAssignedReservations={tourData.otherToursAssignedReservations}
@@ -1261,12 +1327,14 @@ export default function TourDetailPage() {
               safeJsonParse={safeJsonParse}
               pickupHotels={tourData.pickupHotels}
             />
+            </div>
           </div>
 
           {/* 3열: 부킹 관리 */}
           <div className="space-y-6">
             {/* 부킹 관리 */}
-            <BookingManagement
+            <div id="booking-management" className="scroll-mt-20">
+              <BookingManagement
               ticketBookings={ticketBookings}
               tourHotelBookings={tourHotelBookings}
               filteredTicketBookings={filteredTicketBookings}
@@ -1280,27 +1348,33 @@ export default function TourDetailPage() {
               onEditTourHotelBooking={handleEditTourHotelBooking}
               onToggleTicketBookingDetails={() => setShowTicketBookingDetails(!showTicketBookingDetails)}
             />
+            </div>
 
             {/* 투어 채팅방 */}
-            <TourChat
+            <div id="tour-chat" className="scroll-mt-20">
+              <TourChat
               tour={tourData.tour}
               user={tourData.user}
               openChat={openChat}
             />
+            </div>
 
             {/* 투어 사진 */}
-            <TourPhotos
+            <div id="tour-photos" className="scroll-mt-20">
+              <TourPhotos
               tour={tourData.tour}
               onPhotosUpdated={() => {
                 console.log('Photos updated')
               }}
             />
+            </div>
           </div>
 
         {/* 4열: 정산 관리 (재무 권한 보유자만) */}
         {hasPermission && hasPermission('canViewFinance') && (
           <div className="space-y-6">
-            <TourFinance
+            <div id="tour-finance" className="scroll-mt-20">
+              <TourFinance
                  tour={tourData.tour}
                  connectionStatus={{ bookings: tourData.connectionStatus.bookings }}
                  userRole="admin"
@@ -1308,9 +1382,11 @@ export default function TourDetailPage() {
                  console.log('Expenses updated')
                }}
              />
+            </div>
 
              {/* 투어 리포트 섹션 */}
-            <TourReport
+            <div id="tour-report" className="scroll-mt-20">
+              <TourReport
                 tour={tourData.tour}
                 product={tourData.product}
                 connectionStatus={{ bookings: tourData.connectionStatus.bookings }}
@@ -1318,8 +1394,59 @@ export default function TourDetailPage() {
                 userRole="admin"
                 params={{ locale }}
             />
+            </div>
           </div>
         )}
+        </div>
+      </div>
+
+      {/* 모바일 섹션 네비게이터 */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-40">
+        <div className="overflow-x-auto scrollbar-hide">
+          <div className="flex space-x-1 px-2 py-2 min-w-max">
+            {[
+              { id: 'tour-info', label: '기본정보', icon: Info },
+              { id: 'tour-weather', label: '날씨', icon: Cloud },
+              { id: 'pickup-schedule', label: '픽업', icon: MapPin },
+              { id: 'tour-schedule', label: '스케줄', icon: Calendar },
+              { id: 'option-management', label: '옵션', icon: Settings },
+              { id: 'team-vehicle', label: '팀/차량', icon: Users },
+              { id: 'assignment-management', label: '배정', icon: ClipboardList },
+              { id: 'booking-management', label: '부킹', icon: BookOpen },
+              { id: 'tour-chat', label: '채팅', icon: MessageSquare },
+              { id: 'tour-photos', label: '사진', icon: Camera },
+              ...(hasPermission && hasPermission('canViewFinance') ? [
+                { id: 'tour-finance', label: '정산', icon: DollarSign },
+                { id: 'tour-report', label: '리포트', icon: FileText }
+              ] : [])
+            ].map((section) => {
+              const Icon = section.icon
+              const isActive = activeSection === section.id
+              
+              return (
+                <button
+                  key={section.id}
+                  onClick={() => {
+                    const element = document.getElementById(section.id)
+                    if (element) {
+                      element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                      setActiveSection(section.id)
+                    }
+                  }}
+                  className={
+                    isActive
+                      ? 'flex flex-col items-center justify-center px-3 py-2 rounded-lg transition-colors whitespace-nowrap bg-blue-50 text-blue-600'
+                      : 'flex flex-col items-center justify-center px-3 py-2 rounded-lg transition-colors whitespace-nowrap text-gray-600 hover:bg-gray-50'
+                  }
+                >
+                  <Icon size={18} className={isActive ? 'text-blue-600' : 'text-gray-500'} />
+                  <span className={`text-xs mt-1 font-medium ${isActive ? 'text-blue-600' : 'text-gray-600'}`}>
+                    {section.label}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
         </div>
       </div>
 
