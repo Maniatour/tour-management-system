@@ -27,6 +27,12 @@ export default function AuthPage() {
   const redirectToParam = searchParams?.get('redirectTo') || `/${currentLocale}`
 
   useEffect(() => {
+    // 로딩이 완료되고 사용자가 있지만 userRole이 아직 없는 경우 잠시 대기
+    if (!loading && user && !userRole) {
+      console.log('Auth page: User logged in but role not yet determined, waiting...')
+      return
+    }
+    
     if (!loading && user && userRole) {
       console.log('Auth page: User logged in, role:', userRole, 'redirecting to:', redirectToParam)
       
@@ -43,7 +49,7 @@ export default function AuthPage() {
     }
   }, [user, userRole, loading, router, redirectToParam, currentLocale])
 
-  if (loading) {
+  if (loading || (user && !userRole)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
@@ -51,7 +57,7 @@ export default function AuthPage() {
     )
   }
 
-  if (user) {
+  if (user && userRole) {
     return null
   }
 

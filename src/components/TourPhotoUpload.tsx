@@ -928,8 +928,7 @@ export default function TourPhotoUpload({
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-900">{t('title')}</h3>
+      <div className="flex items-center justify-end">
         <div className="flex space-x-2">
           {photos.length > 0 && (
             <button
@@ -1094,7 +1093,8 @@ export default function TourPhotoUpload({
 
       {/* 사진 목록 */}
       {photos.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="max-h-[600px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {photos.map((photo) => (
             <div key={photo.id} className="relative group cursor-pointer">
               <div 
@@ -1194,6 +1194,7 @@ export default function TourPhotoUpload({
               </div>
             </div>
           ))}
+          </div>
         </div>
       )}
 

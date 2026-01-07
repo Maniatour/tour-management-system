@@ -26,7 +26,7 @@ interface Reservation {
 interface PaymentRecord {
   id: string
   reservation_id: string
-  payment_status: 'pending' | 'confirmed' | 'rejected'
+  payment_status: string
   amount: number
   payment_method: string
   note?: string
@@ -824,29 +824,61 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
 
   // 입금 내역 관련 유틸리티 함수들
   const getStatusColor = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case 'confirmed':
-        return 'bg-green-100 text-green-800'
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800'
-      case 'rejected':
-        return 'bg-red-100 text-red-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
+    if (!status) return 'bg-gray-100 text-gray-800'
+    
+    const normalizedStatus = status.toLowerCase()
+    
+    // 수령/완료 상태 (녹색)
+    if (normalizedStatus.includes('received') || normalizedStatus.includes('charged')) {
+      return 'bg-green-100 text-green-800'
     }
+    
+    // 환불/삭제 상태 (빨간색)
+    if (normalizedStatus.includes('refund') || normalizedStatus.includes('returned') || normalizedStatus.includes('deleted')) {
+      return 'bg-red-100 text-red-800'
+    }
+    
+    // 요청 상태 (노란색)
+    if (normalizedStatus.includes('requested')) {
+      return 'bg-yellow-100 text-yellow-800'
+    }
+    
+    // 기존 값들
+    if (normalizedStatus === 'confirmed') {
+      return 'bg-green-100 text-green-800'
+    }
+    if (normalizedStatus === 'rejected') {
+      return 'bg-red-100 text-red-800'
+    }
+    if (normalizedStatus === 'pending') {
+      return 'bg-yellow-100 text-yellow-800'
+    }
+    
+    return 'bg-gray-100 text-gray-800'
   }
 
   const getStatusText = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case 'confirmed':
-        return '확인됨'
-      case 'pending':
-        return '대기중'
-      case 'rejected':
-        return '거부됨'
-      default:
-        return status
+    if (!status) return '알 수 없음'
+    
+    const statusMap: Record<string, string> = {
+      'partner received': '파트너 수령',
+      'deposit requested': '보증금 요청',
+      'deposit received': '보증금 수령',
+      'balance received': '잔금 수령',
+      'refunded': '환불됨 (우리)',
+      "customer's cc charged": '고객 CC 청구 (대행)',
+      'deleted': '삭제됨',
+      'refund requested': '환불 요청',
+      'returned': '환불됨 (파트너)',
+      'balance requested': '잔금 요청',
+      'commission received !': '수수료 수령 !',
+      // 기존 값들도 유지
+      'pending': '대기중',
+      'confirmed': '확인됨',
+      'rejected': '거부됨'
     }
+    
+    return statusMap[status.toLowerCase()] || status
   }
 
   const getPaymentMethodText = (method: string) => {
@@ -889,27 +921,27 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     
     if (!reservationPricing || !isStaff) return
     
-    // balance_amount 계산
-    const hasNotIncludedPrice = channelInfo?.has_not_included_price || false
-    const commissionBasePriceOnly = channelInfo?.commission_base_price_only || false
-    const shouldShowBalanceAmount = hasNotIncludedPrice || commissionBasePriceOnly
-    
     let balanceAmount = 0
     
-    if (shouldShowBalanceAmount && reservationPricing.balance_amount) {
-      // 불포함 있음 채널인 경우 balance_amount 사용
+    // reservation_pricing의 balance_amount가 0보다 크면 우선적으로 사용
+    if (reservationPricing.balance_amount) {
       balanceAmount = typeof reservationPricing.balance_amount === 'string'
         ? parseFloat(reservationPricing.balance_amount) || 0
         : (reservationPricing.balance_amount || 0)
-    } else {
-      // 일반 채널인 경우 계산된 잔금 사용
+    }
+    
+    // balance_amount가 없거나 0인 경우 계산된 잔금 사용
+    if (balanceAmount <= 0) {
       const totalPrice = reservationPricing 
         ? (typeof reservationPricing.total_price === 'string'
             ? parseFloat(reservationPricing.total_price) || 0
             : (reservationPricing.total_price || 0))
         : 0
       
+      // 수령된 상태의 레코드만 계산
+      const receivedStatuses = ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !']
       const totalPaid = paymentRecords
+        .filter(record => receivedStatuses.includes(record.payment_status))
         .reduce((sum, record) => {
           const amount = typeof record.amount === 'string'
             ? parseFloat(record.amount) || 0
@@ -945,7 +977,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         },
         body: JSON.stringify({
           reservation_id: reservation.id,
-          payment_status: 'confirmed',
+          payment_status: 'Balance Received',
           amount: balanceAmount,
           payment_method: 'cash',
           note: 'Balance 수령 (관리자)'
@@ -957,8 +989,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         throw new Error(errorData.error || '입금 내역 생성에 실패했습니다.')
       }
 
-      // 2. reservation_pricing의 balance_amount 업데이트 (불포함 있음 채널인 경우만)
-      if (shouldShowBalanceAmount) {
+      // 2. reservation_pricing의 balance_amount 업데이트
+      // balance_amount가 있었던 경우 0으로 업데이트
+      if (reservationPricing.balance_amount && 
+          (typeof reservationPricing.balance_amount === 'string' 
+            ? parseFloat(reservationPricing.balance_amount) > 0 
+            : reservationPricing.balance_amount > 0)) {
         // 먼저 reservation_pricing 레코드 찾기
         const { data: existingPricing, error: pricingFetchError } = await supabase
           .from('reservation_pricing')
@@ -988,8 +1024,6 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           }
         }
       }
-      // 일반 채널의 경우 balance_amount를 업데이트할 필요가 없음
-      // (잔금은 total_price - totalPaid로 자동 계산되므로 입금 내역 추가 시 자동으로 조정됨)
 
       // 3. 입금 내역 및 가격 정보 새로고침
       await fetchPaymentRecords()
@@ -1363,13 +1397,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             
             {/* 잔액 뱃지 및 수령 버튼 - 잔금이 있을 때만 표시 */}
             {isStaff && (() => {
-              // 불포함 있음 채널 확인
-              const hasNotIncludedPrice = channelInfo?.has_not_included_price || false
-              const commissionBasePriceOnly = channelInfo?.commission_base_price_only || false
-              const shouldShowBalanceAmount = hasNotIncludedPrice || commissionBasePriceOnly
-              
-              // 불포함 있음 채널인 경우 balance_amount 사용
-              if (shouldShowBalanceAmount && reservationPricing?.balance_amount) {
+              // reservation_pricing의 balance_amount가 0보다 크면 우선적으로 사용
+              if (reservationPricing?.balance_amount) {
                 const balanceAmount = typeof reservationPricing.balance_amount === 'string'
                   ? parseFloat(reservationPricing.balance_amount) || 0
                   : (reservationPricing.balance_amount || 0)
@@ -1393,7 +1422,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                 }
               }
               
-              // 일반 채널인 경우 기존 로직 사용
+              // balance_amount가 없거나 0인 경우 계산된 잔금 사용
               // reservation_pricing에서 total_price 가져오기
               const totalPrice = reservationPricing 
                 ? (typeof reservationPricing.total_price === 'string'
@@ -1401,8 +1430,10 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                     : (reservationPricing.total_price || 0))
                 : 0
               
-              // payment_records 테이블에서 입금 내역 합계 계산 (모든 상태 합산)
+              // payment_records 테이블에서 입금 내역 합계 계산 (수령된 상태만 합산)
+              const receivedStatuses = ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !']
               const totalPaid = paymentRecords
+                .filter(record => receivedStatuses.includes(record.payment_status))
                 .reduce((sum, record) => {
                   const amount = typeof record.amount === 'string'
                     ? parseFloat(record.amount) || 0

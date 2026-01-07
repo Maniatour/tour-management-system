@@ -381,6 +381,7 @@ export default function GuideDashboard() {
             .from('reservations')
             .select('id, total_people')
             .in('id', reservationIds)
+            .not('status', 'ilike', 'cancelled')
           
           reservationMap = new Map((reservationsData || []).map(r => [r.id, r.total_people || 0]))
         }

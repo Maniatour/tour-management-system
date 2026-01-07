@@ -9,7 +9,7 @@ import { paymentMethodIntegration } from '@/lib/paymentMethodIntegration'
 interface PaymentRecord {
   id: string
   reservation_id: string
-  payment_status: 'pending' | 'confirmed' | 'rejected'
+  payment_status: string
   amount: number
   payment_method: string
   note?: string
@@ -99,7 +99,7 @@ export default function PaymentRecordsList({ reservationId, customerName }: Paym
     }
   }
 
-  const handleStatusUpdate = async (recordId: string, newStatus: 'pending' | 'confirmed' | 'rejected') => {
+  const handleStatusUpdate = async (recordId: string, newStatus: string) => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) {
@@ -127,36 +127,75 @@ export default function PaymentRecordsList({ reservationId, customerName }: Paym
   }
 
   const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'confirmed':
-        return <CheckCircle size={16} className="text-green-500" />
-      case 'rejected':
-        return <XCircle size={16} className="text-red-500" />
-      default:
-        return <Clock size={16} className="text-yellow-500" />
+    const normalizedStatus = status?.toLowerCase()
+    if (normalizedStatus?.includes('received') || normalizedStatus?.includes('charged')) {
+      return <CheckCircle size={16} className="text-green-500" />
     }
+    if (normalizedStatus?.includes('refund') || normalizedStatus?.includes('returned') || normalizedStatus?.includes('deleted')) {
+      return <XCircle size={16} className="text-red-500" />
+    }
+    if (normalizedStatus?.includes('requested')) {
+      return <Clock size={16} className="text-yellow-500" />
+    }
+    return <Clock size={16} className="text-gray-500" />
   }
 
   const getStatusText = (status: string) => {
-    switch (status) {
-      case 'confirmed':
-        return '확인됨'
-      case 'rejected':
-        return '거부됨'
-      default:
-        return '대기중'
+    if (!status) return '알 수 없음'
+    
+    const statusMap: Record<string, string> = {
+      'partner received': '파트너 수령',
+      'deposit requested': '보증금 요청',
+      'deposit received': '보증금 수령',
+      'balance received': '잔금 수령',
+      'refunded': '환불됨 (우리)',
+      "customer's cc charged": '고객 CC 청구 (대행)',
+      'deleted': '삭제됨',
+      'refund requested': '환불 요청',
+      'returned': '환불됨 (파트너)',
+      'balance requested': '잔금 요청',
+      'commission received !': '수수료 수령 !',
+      // 기존 값들도 유지
+      'pending': '대기중',
+      'confirmed': '확인됨',
+      'rejected': '거부됨'
     }
+    
+    return statusMap[status.toLowerCase()] || status
   }
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'confirmed':
-        return 'bg-green-100 text-green-800'
-      case 'rejected':
-        return 'bg-red-100 text-red-800'
-      default:
-        return 'bg-yellow-100 text-yellow-800'
+    if (!status) return 'bg-gray-100 text-gray-800'
+    
+    const normalizedStatus = status.toLowerCase()
+    
+    // 수령/완료 상태 (녹색)
+    if (normalizedStatus.includes('received') || normalizedStatus.includes('charged')) {
+      return 'bg-green-100 text-green-800'
     }
+    
+    // 환불/삭제 상태 (빨간색)
+    if (normalizedStatus.includes('refund') || normalizedStatus.includes('returned') || normalizedStatus.includes('deleted')) {
+      return 'bg-red-100 text-red-800'
+    }
+    
+    // 요청 상태 (노란색)
+    if (normalizedStatus.includes('requested')) {
+      return 'bg-yellow-100 text-yellow-800'
+    }
+    
+    // 기존 값들
+    if (normalizedStatus === 'confirmed') {
+      return 'bg-green-100 text-green-800'
+    }
+    if (normalizedStatus === 'rejected') {
+      return 'bg-red-100 text-red-800'
+    }
+    if (normalizedStatus === 'pending') {
+      return 'bg-yellow-100 text-yellow-800'
+    }
+    
+    return 'bg-gray-100 text-gray-800'
   }
 
   const getPaymentMethodText = (method: string) => {
@@ -269,24 +308,6 @@ export default function PaymentRecordsList({ reservationId, customerName }: Paym
                 </div>
 
                 <div className="flex items-center space-x-1 ml-2">
-                  {record.payment_status === 'pending' && (
-                    <>
-                      <button
-                        onClick={() => handleStatusUpdate(record.id, 'confirmed')}
-                        className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded"
-                        title="확인"
-                      >
-                        <CheckCircle size={14} />
-                      </button>
-                      <button
-                        onClick={() => handleStatusUpdate(record.id, 'rejected')}
-                        className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
-                        title="거부"
-                      >
-                        <XCircle size={14} />
-                      </button>
-                    </>
-                  )}
                   <button
                     onClick={() => setEditingRecord(record)}
                     className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded"

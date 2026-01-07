@@ -241,13 +241,15 @@ export default function FloatingChat({ chatInfo, onClose, index = 0 }: FloatingC
         }
 
         // 투어에 배정된 예약 정보로 배정 인원 calcular (정확한 필터링)
+        // 취소된 예약은 제외
         let assignedPeople = 0
         
         if (tourData.reservation_ids && tourData.reservation_ids.length > 0) {
           const { data: reservationsData, error: reservationsError } = await supabase
             .from('reservations')
-            .select('adults, child, infant')
+            .select('adults, child, infant, status')
             .in('id', tourData.reservation_ids)
+            .not('status', 'ilike', 'cancelled')
           
           if (reservationsError) {
             console.error('Error fetching reservations:', reservationsError)

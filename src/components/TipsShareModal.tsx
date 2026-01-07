@@ -8,6 +8,7 @@ interface TipsShareModalProps {
   isOpen: boolean
   onClose: () => void
   locale?: string
+  tourId?: string // 단일 투어 모드: 특정 투어 ID가 있으면 해당 투어만 표시
 }
 
 interface TourWithTip {
@@ -37,7 +38,7 @@ interface TipShare {
   total_tip: number
 }
 
-export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsShareModalProps) {
+export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId }: TipsShareModalProps) {
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
   const [toursWithTips, setToursWithTips] = useState<TourWithTip[]>([])
@@ -45,6 +46,9 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsS
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [opMembers, setOpMembers] = useState<Array<{email: string, name_ko: string}>>([])
+  
+  // 단일 투어 모드인지 확인
+  const isSingleTourMode = !!tourId
 
   // 현재 날짜 기준으로 기본값 설정
   const getDefaultDates = () => {
@@ -134,17 +138,17 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsS
     }
   }
 
-  // 해당 기간의 투어와 prepaid 팁 조회
+  // 해당 기간의 투어와 prepaid 팁 조회 (또는 단일 투어)
   const fetchToursWithTips = async () => {
-    if (!startDate || !endDate) {
+    // 단일 투어 모드가 아닐 때는 날짜 체크
+    if (!isSingleTourMode && (!startDate || !endDate)) {
       setToursWithTips([])
       return
     }
 
     setLoading(true)
     try {
-      // 해당 기간의 투어 조회
-      const { data: toursData, error: toursError } = await supabase
+      let query = supabase
         .from('tours')
         .select(`
           id,
@@ -154,9 +158,19 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsS
           reservation_ids,
           products!inner(name_ko)
         `)
-        .gte('tour_date', startDate)
-        .lte('tour_date', endDate)
-        .order('tour_date', { ascending: true })
+      
+      // 단일 투어 모드면 해당 투어만 조회
+      if (isSingleTourMode && tourId) {
+        query = query.eq('id', tourId)
+      } else {
+        // 기간별 조회
+        query = query
+          .gte('tour_date', startDate)
+          .lte('tour_date', endDate)
+          .order('tour_date', { ascending: true })
+      }
+      
+      const { data: toursData, error: toursError } = await query
 
       if (toursError) {
         console.error('투어 조회 오류:', toursError)
@@ -336,7 +350,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsS
     }
   }
 
-  // 비율 변경 핸들러
+  // 비율 변경 핸들러 (자동 정규화 제거 - 사용자가 직접 입력한 값 유지)
   const handlePercentChange = (tourId: string, role: 'guide' | 'assistant' | 'op', value: number) => {
     const tour = toursWithTips.find(t => t.id === tourId)
     if (!tour) return
@@ -356,17 +370,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsS
       newOpPercent = Math.max(0, Math.min(100, value))
     }
 
-    // 총합이 100%가 되도록 조정
-    const total = newGuidePercent + newAssistantPercent + newOpPercent
-    if (total !== 100) {
-      // 비율을 정규화
-      if (total > 0) {
-        newGuidePercent = (newGuidePercent / total) * 100
-        newAssistantPercent = (newAssistantPercent / total) * 100
-        newOpPercent = (newOpPercent / total) * 100
-      }
-    }
-
+    // 비율에 따라 금액 계산 (자동 정규화 없이 사용자 입력값 그대로 사용)
     const guideAmount = (totalTip * newGuidePercent) / 100
     const assistantAmount = (totalTip * newAssistantPercent) / 100
     const opAmount = (totalTip * newOpPercent) / 100
@@ -406,16 +410,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsS
       newOpAmount = Math.max(0, Math.min(totalTip, value))
     }
 
-    // 총합이 totalTip을 넘지 않도록 조정
-    const total = newGuideAmount + newAssistantAmount + newOpAmount
-    if (total > totalTip) {
-      const ratio = totalTip / total
-      newGuideAmount = newGuideAmount * ratio
-      newAssistantAmount = newAssistantAmount * ratio
-      newOpAmount = newOpAmount * ratio
-    }
-
-    // 비율 재계산
+    // 비율 재계산 (자동 정규화 없이 사용자 입력값 그대로 사용)
     const guidePercent = totalTip > 0 ? (newGuideAmount / totalTip) * 100 : 0
     const assistantPercent = totalTip > 0 ? (newAssistantAmount / totalTip) * 100 : 0
     const opPercent = totalTip > 0 ? (newOpAmount / totalTip) * 100 : 0
@@ -442,7 +437,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsS
 
     const currentShare = tipShares[tourId] || initializeTipShare(tour)
     const totalTip = tour.total_prepaid_tip
-    const opTotalPercent = currentShare.op_percent // 10% 고정
+    const opTotalPercent = currentShare.op_percent // 사용자가 입력한 값 사용
     const opTotalAmount = (totalTip * opTotalPercent) / 100
 
     let newOpShares = [...currentShare.op_shares]
@@ -503,7 +498,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsS
     if (!currentShare) return
 
     const totalTip = tour.total_prepaid_tip
-    const opTotalPercent = currentShare.op_percent // 10% 고정
+    const opTotalPercent = currentShare.op_percent // 사용자가 입력한 값 사용
     const opTotalAmount = (totalTip * opTotalPercent) / 100
 
     // 해당 OP의 퍼센테이지 업데이트 (0 ~ opTotalPercent 사이로 제한)
@@ -553,7 +548,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsS
     if (!currentShare) return
 
     const totalTip = tour.total_prepaid_tip
-    const opTotalPercent = currentShare.op_percent // 10% 고정
+    const opTotalPercent = currentShare.op_percent // 사용자가 입력한 값 사용
     const opTotalAmount = (totalTip * opTotalPercent) / 100
 
     // 해당 OP의 금액 업데이트 (0 ~ opTotalAmount 사이로 제한)
@@ -705,19 +700,27 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsS
   // 모달 열릴 때 초기화
   useEffect(() => {
     if (isOpen) {
-      const defaultDates = getDefaultDates()
-      setStartDate(defaultDates.start)
-      setEndDate(defaultDates.end)
-      fetchOpMembers()
+      if (isSingleTourMode) {
+        // 단일 투어 모드: 바로 투어 조회
+        fetchOpMembers()
+        fetchToursWithTips()
+      } else {
+        // 기간별 모드: 날짜 설정 후 조회
+        const defaultDates = getDefaultDates()
+        setStartDate(defaultDates.start)
+        setEndDate(defaultDates.end)
+        fetchOpMembers()
+      }
     }
-  }, [isOpen])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, isSingleTourMode, tourId])
 
-  // 날짜 변경 시 투어 조회
+  // 날짜 변경 시 투어 조회 (기간별 모드만)
   useEffect(() => {
-    if (isOpen && startDate && endDate) {
+    if (isOpen && !isSingleTourMode && startDate && endDate) {
       fetchToursWithTips()
     }
-  }, [isOpen, startDate, endDate])
+  }, [isOpen, isSingleTourMode, startDate, endDate])
 
   // 숫자 포맷팅
   const formatCurrency = (amount: number) => {
@@ -760,9 +763,10 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsS
 
         {/* 내용 */}
         <div className="p-6">
-          {/* 기간 선택 */}
-          <div className="mb-6">
-            <div className="flex items-center space-x-4 mb-4">
+          {/* 기간 선택 (단일 투어 모드가 아닐 때만 표시) */}
+          {!isSingleTourMode && (
+            <div className="mb-6">
+              <div className="flex items-center space-x-4 mb-4">
               <div className="flex-1">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   <Calendar className="w-4 h-4 inline mr-1" />
@@ -810,6 +814,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsS
               </div>
             </div>
           </div>
+          )}
 
           {/* 투어 목록 */}
           {loading ? (
@@ -821,7 +826,11 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsS
             <div className="text-center py-8 text-gray-500">
               <DollarSign className="w-12 h-12 mx-auto mb-4 text-gray-300" />
               <p className="text-lg font-medium mb-2">prepaid 팁이 있는 투어가 없습니다</p>
-              <p className="text-sm">선택한 기간에 prepaid 팁이 있는 투어가 없습니다.</p>
+              <p className="text-sm">
+                {isSingleTourMode 
+                  ? '이 투어에는 prepaid 팁이 없습니다.' 
+                  : '선택한 기간에 prepaid 팁이 있는 투어가 없습니다.'}
+              </p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -916,7 +925,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsS
                       {/* OP */}
                       <div className="space-y-2">
                         <label className="block text-sm font-medium text-gray-700">
-                          OP (10% 합계)
+                          OP 합계
                         </label>
                         <div className="border border-gray-300 rounded-md p-2 max-h-48 overflow-y-auto">
                           {opMembers.map((op) => {
@@ -970,10 +979,35 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsS
                               max="100"
                               step="0.1"
                               value={share.op_percent.toFixed(1)}
-                              onChange={(e) => handlePercentChange(tour.id, 'op', parseFloat(e.target.value) || 0)}
+                              onChange={(e) => {
+                                const newOpPercent = parseFloat(e.target.value) || 0
+                                handlePercentChange(tour.id, 'op', newOpPercent)
+                                // OP 합계 비율이 변경되면 OP별 비율도 재계산
+                                if (share.op_shares.length > 0) {
+                                  const totalTip = tour.total_prepaid_tip
+                                  const newOpTotalAmount = (totalTip * newOpPercent) / 100
+                                  const defaultOpPercent = newOpPercent / share.op_shares.length
+                                  const defaultOpAmount = newOpTotalAmount / share.op_shares.length
+                                  
+                                  const updatedOpShares = share.op_shares.map(op => ({
+                                    ...op,
+                                    op_percent: defaultOpPercent,
+                                    op_amount: defaultOpAmount
+                                  }))
+                                  
+                                  setTipShares({
+                                    ...tipShares,
+                                    [tour.id]: {
+                                      ...share,
+                                      op_percent: newOpPercent,
+                                      op_amount: newOpTotalAmount,
+                                      op_shares: updatedOpShares
+                                    }
+                                  })
+                                }
+                              }}
                               className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md"
                               placeholder="%"
-                              readOnly
                             />
                             <span className="text-xs text-gray-500">% (총합)</span>
                           </div>
@@ -985,9 +1019,34 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko' }: TipsS
                                 min="0"
                                 step="0.01"
                                 value={share.op_amount.toFixed(2)}
-                                onChange={(e) => handleAmountChange(tour.id, 'op', parseFloat(e.target.value) || 0)}
+                                onChange={(e) => {
+                                  const newOpAmount = parseFloat(e.target.value) || 0
+                                  const totalTip = tour.total_prepaid_tip
+                                  const newOpPercent = totalTip > 0 ? (newOpAmount / totalTip) * 100 : 0
+                                  handleAmountChange(tour.id, 'op', newOpAmount)
+                                  // OP 합계 금액이 변경되면 OP별 금액도 재계산
+                                  if (share.op_shares.length > 0) {
+                                    const defaultOpAmount = newOpAmount / share.op_shares.length
+                                    const defaultOpPercent = newOpPercent / share.op_shares.length
+                                    
+                                    const updatedOpShares = share.op_shares.map(op => ({
+                                      ...op,
+                                      op_percent: defaultOpPercent,
+                                      op_amount: defaultOpAmount
+                                    }))
+                                    
+                                    setTipShares({
+                                      ...tipShares,
+                                      [tour.id]: {
+                                        ...share,
+                                        op_percent: newOpPercent,
+                                        op_amount: newOpAmount,
+                                        op_shares: updatedOpShares
+                                      }
+                                    })
+                                  }
+                                }}
                                 className="w-full pl-4 pr-1 py-1 text-sm border border-gray-300 rounded-md"
-                                readOnly
                               />
                             </div>
                             <span className="text-xs text-gray-500">(총합)</span>

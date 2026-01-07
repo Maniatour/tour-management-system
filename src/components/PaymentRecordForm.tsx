@@ -16,7 +16,7 @@ interface PaymentRecordFormProps {
 interface PaymentRecord {
   id: string
   reservation_id: string
-  payment_status: 'pending' | 'confirmed' | 'rejected'
+  payment_status: string
   amount: number
   payment_method: string
   note?: string
@@ -30,7 +30,7 @@ interface PaymentRecord {
 
 export default function PaymentRecordForm({ reservationId, customerName, onSuccess, onCancel, editingRecord }: PaymentRecordFormProps) {
   const [formData, setFormData] = useState({
-    payment_status: 'pending' as 'pending' | 'confirmed' | 'rejected',
+    payment_status: 'Deposit Requested',
     amount: '',
     payment_method: '',
     payment_method_id: '', // 새로운 결제 방법 ID
@@ -206,8 +206,9 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
         throw new Error(errorData.error || `입금 내역 ${isEditMode ? '수정' : '저장'} 중 오류가 발생했습니다.`)
       }
 
-      // 결제 방법 사용량 업데이트 (확인된 결제만)
-      if (formData.payment_status === 'confirmed' && formData.payment_method_id) {
+      // 결제 방법 사용량 업데이트 (수령된 결제만)
+      const receivedStatuses = ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !']
+      if (receivedStatuses.includes(formData.payment_status) && formData.payment_method_id) {
         try {
           await paymentMethodIntegration.updatePaymentUsage(formData.payment_method_id, parseFloat(formData.amount))
         } catch (usageError) {
@@ -272,9 +273,17 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
                   onChange={(e) => handleInputChange('payment_status', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="pending">대기중</option>
-                  <option value="confirmed">확인됨</option>
-                  <option value="rejected">거부됨</option>
+                  <option value="Partner Received">파트너 수령</option>
+                  <option value="Deposit Requested">보증금 요청</option>
+                  <option value="Deposit Received">보증금 수령</option>
+                  <option value="Balance Received">잔금 수령</option>
+                  <option value="Refunded">환불됨 (우리)</option>
+                  <option value="Customer's CC Charged">고객 CC 청구 (대행)</option>
+                  <option value="Deleted">삭제됨</option>
+                  <option value="Refund Requested">환불 요청</option>
+                  <option value="Returned">환불됨 (파트너)</option>
+                  <option value="Balance Requested">잔금 요청</option>
+                  <option value="Commission Received !">수수료 수령 !</option>
                 </select>
               </div>
 

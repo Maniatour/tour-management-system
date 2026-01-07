@@ -555,6 +555,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   setUserRole('customer')
                   setUserPosition(null)
                   setPermissions(null)
+                  setLoading(false)
+                  setIsInitialized(true)
                 })
                 
                 // setLoading(false) 제거 - checkUserRole에서 처리
@@ -616,6 +618,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setUserRole('customer')
                 setUserPosition(null)
                 setPermissions(null)
+                setLoading(false)
+                setIsInitialized(true)
               })
             } else {
               console.error('AuthContext: No email in session user')
@@ -678,6 +682,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   setUserRole('customer')
                   setUserPosition(null)
                   setPermissions(null)
+                  setLoading(false)
+                  setIsInitialized(true)
                 })
                 return
               }
@@ -753,6 +759,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUserRole('customer')
             setUserPosition(null)
             setPermissions(null)
+            setLoading(false)
+            setIsInitialized(true)
           })
         } else if (event === 'TOKEN_REFRESHED' && session?.user?.email) {
           console.log('AuthContext: Token refreshed')
@@ -797,6 +805,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setUserRole('customer')
               setUserPosition(null)
               setPermissions(null)
+              setLoading(false)
+              setIsInitialized(true)
             })
           } else {
             console.log('AuthContext: No initial session in INITIAL_SESSION event')

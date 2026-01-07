@@ -38,8 +38,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     if (image_file_url !== undefined) updateData.image_file_url = image_file_url
     if (amount_krw !== undefined) updateData.amount_krw = amount_krw ? parseFloat(amount_krw) : null
 
-    // 결제 상태가 'confirmed'로 변경될 때 확인 정보 추가
-    if (payment_status === 'confirmed') {
+    // 결제 상태가 수령 상태로 변경될 때 확인 정보 추가
+    const receivedStatuses = ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !']
+    if (payment_status && receivedStatuses.includes(payment_status)) {
       updateData.confirmed_on = new Date().toISOString()
       updateData.confirmed_by = user.email!
     }
