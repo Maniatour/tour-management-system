@@ -107,7 +107,7 @@ export default function ParticipantsSection({
         <label className="block text-sm font-medium text-gray-700 mb-3">
           거주 상태별 인원 수
         </label>
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-xs text-gray-600 mb-1">
               <span className="inline-flex items-center">

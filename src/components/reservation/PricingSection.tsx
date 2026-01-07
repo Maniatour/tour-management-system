@@ -439,8 +439,8 @@ export default function PricingSection({
       {/* 구분선 */}
       <div className="border-t border-gray-300 mb-4"></div>
       
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center space-x-3">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-3 gap-2 md:gap-0">
+        <div className="flex flex-col md:flex-row md:items-center space-y-2 md:space-y-0 md:space-x-3">
           <h3 className="text-base font-semibold text-gray-900">가격 정보</h3>
           {/* 가격 타입 표시 (채널 정보에 따라 자동 결정) */}
           <div className="flex items-center space-x-2">
@@ -499,7 +499,7 @@ export default function PricingSection({
             )}
           </div>
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
           <label className="flex items-center">
             <input
               type="checkbox"
@@ -573,7 +573,7 @@ export default function PricingSection({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {/* 왼쪽 열: 상품 가격 + 초이스 (위) + 할인/추가 비용 (아래) */}
         <div className="space-y-3">
           {/* 상품 가격 */}
