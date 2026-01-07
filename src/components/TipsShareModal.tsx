@@ -853,7 +853,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                         <label className="block text-xs sm:text-sm font-medium text-gray-700">
                           가이드 {tour.guide_name && `(${tour.guide_name})`}
                         </label>
-                        <div className="flex space-x-2">
+                        <div className="flex flex-col sm:flex-row sm:space-x-2 space-y-2 sm:space-y-0">
                           <div className="flex-1">
                             <input
                               type="number"
@@ -889,7 +889,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                           어시스턴트 {tour.assistant_name && `(${tour.assistant_name})`}
                         </label>
                         {tour.assistant_id ? (
-                          <div className="flex space-x-2">
+                          <div className="flex flex-col sm:flex-row sm:space-x-2 space-y-2 sm:space-y-0">
                             <div className="flex-1">
                               <input
                                 type="number"
@@ -971,7 +971,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                             )
                           })}
                         </div>
-                        <div className="flex space-x-2">
+                        <div className="flex flex-col sm:flex-row sm:space-x-2 space-y-2 sm:space-y-0">
                           <div className="flex-1">
                             <input
                               type="number"
