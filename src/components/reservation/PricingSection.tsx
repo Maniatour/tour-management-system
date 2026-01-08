@@ -189,12 +189,54 @@ export default function PricingSection({
     return undefined
   }, [expenseUpdateTrigger, fetchReservationExpenses])
 
+  // 고객 총 결제금액 계산
+  const calculateTotalCustomerPayment = useCallback(() => {
+    return (
+      (formData.productPriceTotal - formData.couponDiscount) + 
+      reservationOptionsTotalPrice + 
+      (formData.additionalCost - formData.additionalDiscount) + 
+      formData.cardFee + 
+      formData.prepaymentTip
+    )
+  }, [
+    formData.productPriceTotal,
+    formData.couponDiscount,
+    formData.additionalCost,
+    formData.additionalDiscount,
+    formData.cardFee,
+    formData.prepaymentTip,
+    reservationOptionsTotalPrice
+  ])
+
+  // 잔액 자동 계산 (고객 총 결제금액 - 고객 실제 지불액)
+  // depositAmount나 고객 총 결제금액이 변경될 때 잔액을 자동으로 업데이트
+  useEffect(() => {
+    const totalCustomerPayment = calculateTotalCustomerPayment()
+    const calculatedBalance = Math.max(0, totalCustomerPayment - formData.depositAmount)
+    
+    // 잔액이 설정되지 않았을 때만 초기값 설정
+    if (formData.onSiteBalanceAmount === undefined || formData.onSiteBalanceAmount === null) {
+      setFormData((prev: typeof formData) => ({ 
+        ...prev, 
+        onSiteBalanceAmount: calculatedBalance,
+        balanceAmount: calculatedBalance
+      }))
+    }
+  }, [calculateTotalCustomerPayment, formData.depositAmount, formData.onSiteBalanceAmount, setFormData])
+
   // 선택된 채널 정보 가져오기
   const selectedChannel = channels?.find(ch => ch.id === formData.channelId)
   const commissionBasePriceOnly = selectedChannel?.commission_base_price_only || false
   const isOTAChannel = selectedChannel && (
     selectedChannel.type?.toLowerCase() === 'ota' || 
     selectedChannel.category === 'OTA'
+  )
+  // 홈페이지 채널 확인 (ID가 'M00001'이거나 type이 'Website'인 경우)
+  const isHomepageChannel = selectedChannel && (
+    selectedChannel.id === 'M00001' ||
+    selectedChannel.type?.toLowerCase() === 'website' ||
+    selectedChannel.name?.toLowerCase().includes('홈페이지') ||
+    selectedChannel.name?.toLowerCase().includes('homepage')
   )
   // 채널의 pricing_type 확인 (단일 가격 모드 체크)
   const pricingType = selectedChannel?.pricing_type || 'separate'
@@ -462,6 +504,61 @@ export default function PricingSection({
     formData.commission_base_price
   ])
 
+  // 자체 채널: 채널 결제 금액 변경 시 카드 수수료 기본값 자동 업데이트
+  useEffect(() => {
+    if (isOTAChannel) return // OTA 채널은 제외
+    
+    // 채널 결제 금액 계산 (잔금 제외)
+    const channelPaymentAmount = (
+      (formData.productPriceTotal - formData.couponDiscount) + 
+      reservationOptionsTotalPrice + 
+      (formData.additionalCost - formData.additionalDiscount) + 
+      formData.tax + 
+      formData.cardFee +
+      formData.prepaymentTip -
+      (formData.onSiteBalanceAmount || 0)
+    )
+    
+    // 고객 실제 지불액 기준으로 카드 수수료 계산
+    const customerPaymentAmount = formData.depositAmount || 0
+    const defaultCommissionPercent = 2.9
+    const defaultCommissionAmount = customerPaymentAmount * 0.029 + 0.15
+    
+    // 채널 결제 금액이 변경되면 카드 수수료 기준값도 자동 업데이트
+    // 단, 사용자가 수동으로 입력한 경우는 유지 (현재 값과 계산된 값이 다르면 수동 입력으로 간주)
+    if (channelPaymentAmount > 0 && customerPaymentAmount > 0) {
+      const currentBasePrice = formData.commission_base_price || 0
+      const currentCommissionAmount = formData.commission_amount || 0
+      
+      // 현재 값이 기본값과 같거나, commission_base_price가 설정되지 않았으면 자동 업데이트
+      if (formData.commission_base_price === undefined || 
+          Math.abs(currentBasePrice - customerPaymentAmount) < 0.01 ||
+          Math.abs(currentCommissionAmount - defaultCommissionAmount) < 0.01) {
+        setFormData((prev: typeof formData) => ({ 
+          ...prev, 
+          commission_base_price: customerPaymentAmount,
+          commission_percent: prev.commission_percent > 0 ? prev.commission_percent : defaultCommissionPercent,
+          commission_amount: defaultCommissionAmount
+        }))
+      }
+    }
+  }, [
+    isOTAChannel,
+    formData.productPriceTotal,
+    formData.couponDiscount,
+    formData.additionalCost,
+    formData.additionalDiscount,
+    formData.tax,
+    formData.cardFee,
+    formData.prepaymentTip,
+    formData.onSiteBalanceAmount,
+    formData.depositAmount,
+    reservationOptionsTotalPrice,
+    formData.commission_base_price,
+    formData.commission_amount,
+    setFormData
+  ])
+
   return (
     <div>
       {/* 구분선 */}
@@ -637,20 +734,26 @@ export default function PricingSection({
                       onChange={(e) => {
                         const salePrice = Number(e.target.value) || 0
                         const notIncluded = formData.not_included_price || 0
-                        const totalPrice = salePrice + notIncluded
-                        const updatedChildPrice = isSinglePrice ? totalPrice : formData.childProductPrice
-                        const updatedInfantPrice = isSinglePrice ? totalPrice : formData.infantProductPrice
-                        // 상품 가격 총합 계산
-                        const newProductPriceTotal = (totalPrice * formData.adults) + 
-                                                     (updatedChildPrice * formData.child) + 
-                                                     (updatedInfantPrice * formData.infant)
+                        const adultTotalPrice = salePrice + notIncluded
+                        
+                        // 단일 가격 모드일 때는 모든 가격이 동일
+                        // 단일 가격 모드가 아닐 때는 각각의 판매가에 불포함 가격을 더함
+                        const childSalePrice = formData.childProductPrice || 0
+                        const infantSalePrice = formData.infantProductPrice || 0
+                        const childTotalPrice = isSinglePrice ? adultTotalPrice : (childSalePrice + notIncluded)
+                        const infantTotalPrice = isSinglePrice ? adultTotalPrice : (infantSalePrice + notIncluded)
+                        
+                        // 상품 가격 총합 계산 (불포함 가격 포함)
+                        const newProductPriceTotal = (adultTotalPrice * formData.adults) + 
+                                                     (childTotalPrice * formData.child) + 
+                                                     (infantTotalPrice * formData.infant)
                         setFormData({ 
                           ...formData, 
                           adultProductPrice: salePrice,
                           // 단일 가격 모드일 때는 아동/유아 가격도 동일하게 설정
                           ...(isSinglePrice ? {
-                            childProductPrice: totalPrice,
-                            infantProductPrice: totalPrice
+                            childProductPrice: adultTotalPrice,
+                            infantProductPrice: adultTotalPrice
                           } : {}),
                           productPriceTotal: newProductPriceTotal
                         })
@@ -670,20 +773,26 @@ export default function PricingSection({
                       onChange={(e) => {
                         const notIncluded = Number(e.target.value) || 0
                         const salePrice = formData.adultProductPrice || 0
-                        const totalPrice = salePrice + notIncluded
-                        const updatedChildPrice = isSinglePrice ? totalPrice : formData.childProductPrice
-                        const updatedInfantPrice = isSinglePrice ? totalPrice : formData.infantProductPrice
-                        // 상품 가격 총합 계산
-                        const newProductPriceTotal = (totalPrice * formData.adults) + 
-                                                     (updatedChildPrice * formData.child) + 
-                                                     (updatedInfantPrice * formData.infant)
+                        const adultTotalPrice = salePrice + notIncluded
+                        
+                        // 단일 가격 모드일 때는 모든 가격이 동일
+                        // 단일 가격 모드가 아닐 때는 각각의 판매가에 불포함 가격을 더함
+                        const childSalePrice = formData.childProductPrice || 0
+                        const infantSalePrice = formData.infantProductPrice || 0
+                        const childTotalPrice = isSinglePrice ? adultTotalPrice : (childSalePrice + notIncluded)
+                        const infantTotalPrice = isSinglePrice ? adultTotalPrice : (infantSalePrice + notIncluded)
+                        
+                        // 상품 가격 총합 계산 (불포함 가격 포함)
+                        const newProductPriceTotal = (adultTotalPrice * formData.adults) + 
+                                                     (childTotalPrice * formData.child) + 
+                                                     (infantTotalPrice * formData.infant)
                         setFormData({ 
                           ...formData, 
                           not_included_price: notIncluded,
                           // 단일 가격 모드일 때는 아동/유아 가격도 동일하게 설정
                           ...(isSinglePrice ? {
-                            childProductPrice: totalPrice,
-                            infantProductPrice: totalPrice
+                            childProductPrice: adultTotalPrice,
+                            infantProductPrice: adultTotalPrice
                           } : {}),
                           productPriceTotal: newProductPriceTotal
                         })
@@ -739,10 +848,11 @@ export default function PricingSection({
                         onChange={(e) => {
                           const newPrice = Number(e.target.value) || 0
                           const adultTotalPrice = (formData.adultProductPrice || 0) + (formData.not_included_price || 0)
+                          const childTotalPrice = newPrice + (formData.not_included_price || 0)
                           const infantTotalPrice = (formData.infantProductPrice || 0) + (formData.not_included_price || 0)
                           // 상품 가격 총합 계산 (불포함 가격 포함)
                           const newProductPriceTotal = (adultTotalPrice * formData.adults) + 
-                                                       (newPrice * formData.child) + 
+                                                       (childTotalPrice * formData.child) + 
                                                        (infantTotalPrice * formData.infant)
                           setFormData({ 
                             ...formData, 
@@ -755,7 +865,7 @@ export default function PricingSection({
                         placeholder="0"
                       />
                       <span className="text-gray-500">x{formData.child}</span>
-                      <span className="font-medium">${(formData.childProductPrice * formData.child).toFixed(2)}</span>
+                      <span className="font-medium">${(((formData.childProductPrice || 0) + (formData.not_included_price || 0)) * formData.child).toFixed(2)}</span>
                     </div>
                   </div>
                   <div className="flex items-center justify-between text-xs">
@@ -769,10 +879,11 @@ export default function PricingSection({
                           const newPrice = Number(e.target.value) || 0
                           const adultTotalPrice = (formData.adultProductPrice || 0) + (formData.not_included_price || 0)
                           const childTotalPrice = (formData.childProductPrice || 0) + (formData.not_included_price || 0)
+                          const infantTotalPrice = newPrice + (formData.not_included_price || 0)
                           // 상품 가격 총합 계산 (불포함 가격 포함)
                           const newProductPriceTotal = (adultTotalPrice * formData.adults) + 
                                                        (childTotalPrice * formData.child) + 
-                                                       (newPrice * formData.infant)
+                                                       (infantTotalPrice * formData.infant)
                           setFormData({ 
                             ...formData, 
                             infantProductPrice: newPrice,
@@ -784,7 +895,7 @@ export default function PricingSection({
                         placeholder="0"
                       />
                       <span className="text-gray-500">x{formData.infant}</span>
-                      <span className="font-medium">${(formData.infantProductPrice * formData.infant).toFixed(2)}</span>
+                      <span className="font-medium">${(((formData.infantProductPrice || 0) + (formData.not_included_price || 0)) * formData.infant).toFixed(2)}</span>
                     </div>
                   </div>
                 </>
@@ -1184,7 +1295,17 @@ export default function PricingSection({
                   <input
                     type="number"
                     value={formData.depositAmount}
-                    onChange={(e) => setFormData({ ...formData, depositAmount: Number(e.target.value) || 0 })}
+                    onChange={(e) => {
+                      const newDepositAmount = Number(e.target.value) || 0
+                      const totalCustomerPayment = calculateTotalCustomerPayment()
+                      const calculatedBalance = Math.max(0, totalCustomerPayment - newDepositAmount)
+                      setFormData({ 
+                        ...formData, 
+                        depositAmount: newDepositAmount,
+                        onSiteBalanceAmount: calculatedBalance,
+                        balanceAmount: calculatedBalance
+                      })
+                    }}
                     className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
                     step="0.01"
                     min="0"
@@ -1200,7 +1321,9 @@ export default function PricingSection({
                   <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
                   <input
                     type="number"
-                    value={formData.onSiteBalanceAmount || 0}
+                    value={formData.onSiteBalanceAmount !== undefined && formData.onSiteBalanceAmount !== null 
+                      ? formData.onSiteBalanceAmount 
+                      : Math.max(0, calculateTotalCustomerPayment() - formData.depositAmount)}
                     onChange={(e) => {
                       const newBalance = Number(e.target.value) || 0
                       setFormData({ ...formData, onSiteBalanceAmount: newBalance, balanceAmount: newBalance })
@@ -1272,83 +1395,181 @@ export default function PricingSection({
                       (formData.additionalCost - formData.additionalDiscount) + 
                       formData.tax + 
                       formData.cardFee +
-                      formData.prepaymentTip
+                      formData.prepaymentTip -
+                      (formData.onSiteBalanceAmount || 0)
                     ).toFixed(2)}
                   </span>
                 )}
               </div>
               
-              {/* 채널 수수료 (커미션) */}
-              {isOTAChannel && (
-                <>
-                  <div className="space-y-2 mb-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-700">{isKorean ? '- 채널 수수료' : '- Channel Commission'}</span>
+              {/* 채널 수수료 (커미션) / 카드 수수료 (자체 채널) */}
+              <div className="space-y-2 mb-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">
+                    {isOTAChannel 
+                      ? (isKorean ? '- 채널 수수료' : '- Channel Commission')
+                      : (isKorean ? '- 카드 수수료' : '- Card Processing Fee')
+                    }
+                  </span>
+                </div>
+                {isOTAChannel ? (
+                  // OTA 채널: 기존 채널 수수료 입력 방식
+                  <div className="flex items-center space-x-2">
+                    <div className="relative flex-1">
+                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">$</span>
+                      <input
+                        type="number"
+                        value={formData.commission_base_price !== undefined ? formData.commission_base_price.toFixed(2) : (formData.onlinePaymentAmount || formData.subtotal).toFixed(2)}
+                        onChange={(e) => {
+                          const basePrice = Number(e.target.value) || 0
+                          const calculatedAmount = basePrice * (formData.commission_percent / 100)
+                          setFormData({ 
+                            ...formData, 
+                            commission_base_price: basePrice,
+                            commission_amount: calculatedAmount
+                          })
+                        }}
+                        className="w-full pl-5 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
+                        step="0.01"
+                        min="0"
+                        placeholder="0"
+                      />
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <div className="relative flex-1">
-                        <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">$</span>
-                        <input
-                          type="number"
-                          value={formData.commission_base_price !== undefined ? formData.commission_base_price.toFixed(2) : (formData.onlinePaymentAmount || formData.subtotal).toFixed(2)}
-                          onChange={(e) => {
-                            const basePrice = Number(e.target.value) || 0
-                            const calculatedAmount = basePrice * (formData.commission_percent / 100)
-                            setFormData({ 
-                              ...formData, 
-                              commission_base_price: basePrice,
-                              commission_amount: calculatedAmount
-                            })
-                          }}
-                          className="w-full pl-5 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
-                          step="0.01"
-                          min="0"
-                          placeholder="0"
-                        />
-                      </div>
-                      <span className="text-xs text-gray-500">×</span>
-                      <div className="flex items-center space-x-1">
-                        <input
-                          type="number"
-                          value={formData.commission_percent}
-                          onChange={(e) => {
-                            const percent = Number(e.target.value) || 0
-                            const basePrice = formData.commission_base_price !== undefined ? formData.commission_base_price : (formData.onlinePaymentAmount || formData.subtotal)
-                            const calculatedAmount = basePrice * (percent / 100)
-                            setFormData({ 
-                              ...formData, 
-                              commission_percent: percent,
-                              commission_amount: calculatedAmount
-                            })
-                          }}
-                          className="w-12 px-1 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                          step="0.01"
-                          min="0"
-                          max="100"
-                          placeholder="0"
-                        />
-                        <span className="text-xs text-gray-500">%</span>
-                      </div>
-                      <span className="text-xs text-gray-500">=</span>
-                      <div className="relative">
-                        <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">$</span>
-                        <input
-                          type="number"
-                          value={formData.commission_amount.toFixed(2)}
-                          onChange={(e) => {
-                            const newAmount = Number(e.target.value) || 0
-                            setFormData({ ...formData, commission_amount: newAmount })
-                          }}
-                          className="w-20 pl-5 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
-                          step="0.01"
-                          min="0"
-                          placeholder="0"
-                        />
-                      </div>
+                    <span className="text-xs text-gray-500">×</span>
+                    <div className="flex items-center space-x-1">
+                      <input
+                        type="number"
+                        value={formData.commission_percent}
+                        onChange={(e) => {
+                          const percent = Number(e.target.value) || 0
+                          const basePrice = formData.commission_base_price !== undefined ? formData.commission_base_price : (formData.onlinePaymentAmount || formData.subtotal)
+                          const calculatedAmount = basePrice * (percent / 100)
+                          setFormData({ 
+                            ...formData, 
+                            commission_percent: percent,
+                            commission_amount: calculatedAmount
+                          })
+                        }}
+                        className="w-12 px-1 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        placeholder="0"
+                      />
+                      <span className="text-xs text-gray-500">%</span>
+                    </div>
+                    <span className="text-xs text-gray-500">=</span>
+                    <div className="relative">
+                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">$</span>
+                      <input
+                        type="number"
+                        value={formData.commission_amount.toFixed(2)}
+                        onChange={(e) => {
+                          const newAmount = Number(e.target.value) || 0
+                          setFormData({ ...formData, commission_amount: newAmount })
+                        }}
+                        className="w-20 pl-5 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
+                        step="0.01"
+                        min="0"
+                        placeholder="0"
+                      />
                     </div>
                   </div>
-                </>
-              )}
+                ) : (
+                  // 자체 채널: 카드 수수료 입력 방식 (고객 실제 지불액 × 2.9% + $0.15)
+                  (() => {
+                    const customerPaymentAmount = formData.depositAmount || 0
+                    const defaultBasePrice = customerPaymentAmount
+                    const defaultCommissionPercent = 2.9
+                    const defaultCommissionAmount = customerPaymentAmount * 0.029 + 0.15
+                    
+                    const basePrice = formData.commission_base_price !== undefined 
+                      ? formData.commission_base_price 
+                      : defaultBasePrice
+                    const commissionPercent = formData.commission_percent > 0 
+                      ? formData.commission_percent 
+                      : defaultCommissionPercent
+                    const commissionAmount = formData.commission_amount > 0 
+                      ? formData.commission_amount 
+                      : defaultCommissionAmount
+                    
+                    return (
+                      <div className="space-y-2">
+                        <div className="flex items-center space-x-2">
+                          <div className="relative flex-1">
+                            <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">$</span>
+                            <input
+                              type="number"
+                              value={basePrice || ''}
+                              onChange={(e) => {
+                                const newBasePrice = Number(e.target.value) || 0
+                                const newAmount = newBasePrice * (commissionPercent / 100) + 0.15
+                                setFormData({ 
+                                  ...formData, 
+                                  commission_base_price: newBasePrice,
+                                  commission_percent: commissionPercent,
+                                  commission_amount: newAmount
+                                })
+                              }}
+                              className="w-full pl-5 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
+                              step="0.01"
+                              min="0"
+                              placeholder="0"
+                            />
+                          </div>
+                          <span className="text-xs text-gray-500">×</span>
+                          <div className="flex items-center space-x-1">
+                            <input
+                              type="number"
+                              value={commissionPercent || ''}
+                              onChange={(e) => {
+                                const newPercent = Number(e.target.value) || 0
+                                const newAmount = basePrice * (newPercent / 100) + 0.15
+                                setFormData({ 
+                                  ...formData, 
+                                  commission_base_price: basePrice,
+                                  commission_percent: newPercent,
+                                  commission_amount: newAmount
+                                })
+                              }}
+                              className="w-12 px-1 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                              step="0.1"
+                              min="0"
+                              max="100"
+                              placeholder="2.9"
+                            />
+                            <span className="text-xs text-gray-500">%</span>
+                          </div>
+                          <span className="text-xs text-gray-500">+</span>
+                          <span className="text-xs text-gray-600">15¢</span>
+                          <span className="text-xs text-gray-500">=</span>
+                          <div className="relative">
+                            <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">$</span>
+                            <input
+                              type="number"
+                              value={commissionAmount || ''}
+                              onChange={(e) => {
+                                const newAmount = Number(e.target.value) || 0
+                                setFormData({ ...formData, commission_amount: newAmount })
+                              }}
+                              className="w-20 pl-5 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
+                              step="0.01"
+                              min="0"
+                              placeholder="0"
+                            />
+                          </div>
+                        </div>
+                        <div className="text-xs text-gray-500 pl-1">
+                          {isKorean 
+                            ? `기본값: 고객 실제 지불액 $${customerPaymentAmount.toFixed(2)} × 2.9% + $0.15 = $${defaultCommissionAmount.toFixed(2)}`
+                            : `Default: Customer Payment $${customerPaymentAmount.toFixed(2)} × 2.9% + $0.15 = $${defaultCommissionAmount.toFixed(2)}`
+                          }
+                        </div>
+                      </div>
+                    )
+                  })()
+                )}
+              </div>
               
               <div className="border-t border-gray-200 my-2"></div>
               
@@ -1358,13 +1579,22 @@ export default function PricingSection({
                 <span className="text-lg font-bold text-blue-600">
                   ${isOTAChannel 
                     ? ((formData.onlinePaymentAmount || 0) - formData.commission_amount).toFixed(2)
-                    : (
-                      (formData.productPriceTotal - formData.couponDiscount) + 
-                      reservationOptionsTotalPrice
-                    ).toFixed(2)}
+                    : (() => {
+                        // 자체 채널: 채널 결제 금액(잔금 제외) - 카드수수료 (commission_amount에 저장됨)
+                        const channelPaymentAmount = (
+                          (formData.productPriceTotal - formData.couponDiscount) + 
+                          reservationOptionsTotalPrice + 
+                          (formData.additionalCost - formData.additionalDiscount) + 
+                          formData.tax + 
+                          formData.cardFee +
+                          formData.prepaymentTip -
+                          (formData.onSiteBalanceAmount || 0)
+                        )
+                        return (channelPaymentAmount - formData.commission_amount).toFixed(2)
+                      })()}
                 </span>
               </div>
-              <p className="text-xs text-gray-500 mt-1">✔️ 이 금액은 회사 계좌로 들어오는 돈 | ✔️ 고객 추가 현금, 팁 포함 ❌</p>
+              <p className="text-xs text-gray-500 mt-1">✔️ 이 금액은 회사 계좌로 들어오는 돈 | ✔️ 고객 추가 현금, 잔금, 팁 포함 ❌</p>
             </div>
 
             {/* 4️⃣ 최종 매출 & 운영 이익 (Company View) */}
@@ -1382,10 +1612,19 @@ export default function PricingSection({
                 <span className="text-sm font-medium text-gray-900">
                   ${isOTAChannel 
                     ? ((formData.onlinePaymentAmount || 0) - formData.commission_amount).toFixed(2)
-                    : (
-                      (formData.productPriceTotal - formData.couponDiscount) + 
-                      reservationOptionsTotalPrice
-                    ).toFixed(2)}
+                    : (() => {
+                        // 자체 채널: 채널 결제 금액(잔금 제외) - 카드수수료 (commission_amount에 저장됨)
+                        const channelPaymentAmount = (
+                          (formData.productPriceTotal - formData.couponDiscount) + 
+                          reservationOptionsTotalPrice + 
+                          (formData.additionalCost - formData.additionalDiscount) + 
+                          formData.tax + 
+                          formData.cardFee +
+                          formData.prepaymentTip -
+                          (formData.onSiteBalanceAmount || 0)
+                        )
+                        return (channelPaymentAmount - formData.commission_amount).toFixed(2)
+                      })()}
                 </span>
               </div>
               
@@ -1406,7 +1645,19 @@ export default function PricingSection({
                   ${(
                     (isOTAChannel 
                       ? ((formData.onlinePaymentAmount || 0) - formData.commission_amount)
-                      : ((formData.productPriceTotal - formData.couponDiscount) + reservationOptionsTotalPrice)
+                      : (() => {
+                          // 자체 채널: 채널 결제 금액(잔금 제외) - 카드수수료 (commission_amount에 저장됨)
+                          const channelPaymentAmount = (
+                            (formData.productPriceTotal - formData.couponDiscount) + 
+                            reservationOptionsTotalPrice + 
+                            (formData.additionalCost - formData.additionalDiscount) + 
+                            formData.tax + 
+                            formData.cardFee +
+                            formData.prepaymentTip -
+                            (formData.onSiteBalanceAmount || 0)
+                          )
+                          return channelPaymentAmount - formData.commission_amount
+                        })()
                     ) + 
                     (formData.onSiteBalanceAmount || 0)
                   ).toFixed(2)}
@@ -1433,7 +1684,19 @@ export default function PricingSection({
                   ${(
                     (isOTAChannel 
                       ? ((formData.onlinePaymentAmount || 0) - formData.commission_amount)
-                      : ((formData.productPriceTotal - formData.couponDiscount) + reservationOptionsTotalPrice)
+                      : (() => {
+                          // 자체 채널: 채널 결제 금액(잔금 제외) - 카드수수료 (commission_amount에 저장됨)
+                          const channelPaymentAmount = (
+                            (formData.productPriceTotal - formData.couponDiscount) + 
+                            reservationOptionsTotalPrice + 
+                            (formData.additionalCost - formData.additionalDiscount) + 
+                            formData.tax + 
+                            formData.cardFee +
+                            formData.prepaymentTip -
+                            (formData.onSiteBalanceAmount || 0)
+                          )
+                          return channelPaymentAmount - formData.commission_amount
+                        })()
                     ) + 
                     (formData.onSiteBalanceAmount || 0) - 
                     formData.prepaymentTip
