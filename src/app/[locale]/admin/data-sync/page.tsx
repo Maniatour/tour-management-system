@@ -1333,10 +1333,10 @@ export default function DataSyncPage() {
   // }
 
   return (
-    <div className="max-w-6xl mx-auto p-6">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">데이터 동기화</h1>
-        <p className="text-gray-600">
+    <div className="max-w-full mx-auto px-2 sm:px-4 py-4 sm:py-6">
+      <div className="mb-6 sm:mb-8">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">데이터 동기화</h1>
+        <p className="text-sm sm:text-base text-gray-600">
           구글 시트 데이터 동기화 및 날씨 데이터 수집을 관리합니다.
         </p>
       </div>
@@ -1347,13 +1347,13 @@ export default function DataSyncPage() {
       </div>
 
       {/* 예약 데이터 정리 섹션 */}
-      <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-          <Database className="h-5 w-5 mr-2" />
+      <div className="bg-white rounded-lg shadow-sm border p-3 sm:p-4 mb-4 sm:mb-6">
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center">
+          <Database className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
           예약 데이터 정리
         </h2>
         
-        <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+        <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
           <h3 className="text-sm font-medium text-yellow-800 mb-2">정리 규칙:</h3>
           <ul className="text-sm text-yellow-700 space-y-1">
             <li>• <strong>MDGCSUNRISE_X</strong> → <strong>MDGCSUNRISE</strong>로 변경하고 <strong>Antelope X Canyon</strong> 옵션 추가</li>
@@ -1365,7 +1365,7 @@ export default function DataSyncPage() {
 
         {/* 현재 상태 표시 */}
         {cleanupStatus && (
-          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
             <h4 className="text-sm font-medium text-blue-800 mb-2">현재 상태:</h4>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
               <div className="bg-white p-2 rounded text-center">
@@ -1390,11 +1390,11 @@ export default function DataSyncPage() {
           </div>
         )}
 
-        <div className="flex space-x-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <button
             onClick={handleReservationCleanup}
             disabled={cleanupLoading}
-            className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            className="w-full sm:w-auto px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center sm:justify-start"
           >
             <Database className="h-4 w-4 mr-2" />
             {cleanupLoading ? '정리 중...' : '예약 데이터 정리 실행'}
@@ -1402,7 +1402,7 @@ export default function DataSyncPage() {
           <button
             onClick={checkCleanupStatus}
             disabled={cleanupLoading}
-            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            className="w-full sm:w-auto px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center sm:justify-start"
           >
             <RefreshCw className="h-4 w-4 mr-2" />
             상태 새로고침
@@ -1482,13 +1482,13 @@ export default function DataSyncPage() {
       </div>
 
       {/* selected_options → reservation_choices 마이그레이션 섹션 */}
-      <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-          <Zap className="h-5 w-5 mr-2" />
-          선택사항 마이그레이션 (reservation_choices)
+      <div className="bg-white rounded-lg shadow-sm border p-3 sm:p-4 mb-4 sm:mb-6">
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center">
+          <Zap className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
+          <span className="text-sm sm:text-base">선택사항 마이그레이션 (reservation_choices)</span>
         </h2>
         
-        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <h3 className="text-sm font-medium text-blue-800 mb-2">마이그레이션 설명:</h3>
           <ul className="text-sm text-blue-700 space-y-1">
             <li>• <code className="bg-blue-100 px-1 rounded">reservations.selected_options</code> 컬럼의 데이터를 <code className="bg-blue-100 px-1 rounded">reservation_choices</code> 테이블로 변환합니다.</li>
@@ -1502,7 +1502,7 @@ export default function DataSyncPage() {
 
         {/* 마이그레이션 현재 상태 */}
         {migrationStatus && (
-          <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+          <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
             <h4 className="text-sm font-medium text-gray-700 mb-2">현재 상태:</h4>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
               <div className="bg-white p-2 rounded text-center">
@@ -1526,19 +1526,19 @@ export default function DataSyncPage() {
           </div>
         )}
 
-        <div className="flex space-x-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <button
             onClick={handleSelectedOptionsMigration}
             disabled={migrationLoading}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center sm:justify-start"
           >
             <Zap className="h-4 w-4 mr-2" />
-            {migrationLoading ? '마이그레이션 중...' : 'reservation_choices 마이그레이션'}
+            <span className="text-sm sm:text-base">{migrationLoading ? '마이그레이션 중...' : 'reservation_choices 마이그레이션'}</span>
           </button>
           <button
             onClick={checkMigrationStatus}
             disabled={migrationLoading}
-            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            className="w-full sm:w-auto px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center sm:justify-start"
           >
             <RefreshCw className="h-4 w-4 mr-2" />
             상태 새로고침
@@ -1612,68 +1612,11 @@ export default function DataSyncPage() {
       </div>
 
       {/* 설정 섹션 */}
-      <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-          <FileSpreadsheet className="h-5 w-5 mr-2" />
+      <div className="bg-white rounded-lg shadow-sm border p-3 sm:p-4 mb-4 sm:mb-6">
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center">
+          <FileSpreadsheet className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
           구글 시트 설정
         </h2>
-        
-        {/* 환경 변수 설정 안내 */}
-        <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <h3 className="text-sm font-medium text-yellow-800 mb-2">⚠️ Google Sheets API 설정 필요</h3>
-          <p className="text-sm text-yellow-700 mb-2">
-            최적화된 동기화를 사용하려면 다음 환경 변수들이 설정되어야 합니다:
-          </p>
-          <ul className="text-xs text-yellow-600 space-y-1 ml-4">
-            <li>• <code>GOOGLE_PROJECT_ID</code> - Google Cloud 프로젝트 ID</li>
-            <li>• <code>GOOGLE_PRIVATE_KEY_ID</code> - 서비스 계정 개인 키 ID</li>
-            <li>• <code>GOOGLE_PRIVATE_KEY</code> - 서비스 계정 개인 키</li>
-            <li>• <code>GOOGLE_CLIENT_EMAIL</code> - 서비스 계정 이메일</li>
-            <li>• <code>GOOGLE_CLIENT_ID</code> - 서비스 계정 클라이언트 ID</li>
-          </ul>
-          <p className="text-xs text-yellow-600 mt-2">
-            이 변수들을 <code>.env.local</code> 파일에 설정하고 서버를 재시작하세요.
-          </p>
-          <div className="mt-3">
-            <button
-              onClick={async () => {
-                try {
-                  const response = await fetch('/api/debug/env-check')
-                  const result = await response.json()
-                  if (result.success) {
-                    if (result.data.allConfigured) {
-                      alert('✅ 모든 Google Sheets API 환경 변수가 올바르게 설정되어 있습니다!')
-                    } else {
-                      const missing = result.data.missingVars.join(', ')
-                      alert(`❌ 다음 환경 변수가 누락되었습니다: ${missing}\n\n.env.local 파일에 설정하고 서버를 재시작해주세요.`)
-                    }
-                  } else {
-                    alert(`❌ 환경 변수 확인 실패: ${result.message}`)
-                  }
-                } catch (error) {
-                  alert(`❌ 환경 변수 확인 중 오류: ${error}`)
-                }
-              }}
-              className="px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
-            >
-              환경 변수 상태 확인
-            </button>
-          </div>
-        </div>
-        
-        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-sm text-blue-800">
-            <strong>📋 필터링:</strong> 첫 글자가 &apos;S&apos;로 시작하는 시트만 표시됩니다.
-          </p>
-        </div>
-        
-        {sheetInfo.length === 0 && (
-          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <p className="text-sm text-yellow-800">
-              <strong>💡 안내:</strong> 시트 정보를 가져오려면 아래 버튼을 클릭하세요.
-            </p>
-          </div>
-        )}
         
         {sheetInfo.length > 0 && (
           <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
@@ -1706,29 +1649,29 @@ export default function DataSyncPage() {
           </p>
         </div>
 
-        <div className="flex space-x-3">
+        <div className="flex flex-col sm:flex-row gap-3">
           <button
             onClick={() => getSheetInfo()}
             disabled={loading}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center text-lg font-medium"
+            className="w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center sm:justify-start text-base sm:text-lg font-medium"
           >
-            <FileSpreadsheet className="h-5 w-5 mr-2" />
+            <FileSpreadsheet className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
             {loading ? '로딩 중...' : '시트 정보 가져오기'}
           </button>
           {loading && (
             <button
               onClick={cancelRequest}
-              className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center text-lg font-medium"
+              className="w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center justify-center sm:justify-start text-base sm:text-lg font-medium"
             >
-              <X className="h-5 w-5 mr-2" />
+              <X className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
               취소
             </button>
           )}
           <button
             onClick={openGoogleSheets}
-            className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center text-lg font-medium"
+            className="w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center justify-center sm:justify-start text-base sm:text-lg font-medium"
           >
-            <ExternalLink className="h-5 w-5 mr-2" />
+            <ExternalLink className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
             구글 시트 열기
           </button>
         </div>
@@ -1736,14 +1679,14 @@ export default function DataSyncPage() {
 
       {/* 테이블 선택 및 컬럼 매핑 */}
       {sheetInfo.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <Settings className="h-5 w-5 mr-2" />
+        <div className="bg-white rounded-lg shadow-sm border p-3 sm:p-4 mb-4 sm:mb-6">
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center">
+            <Settings className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
             동기화 설정
           </h3>
           
           {/* 동기화 옵션 (초기화 후 전체 동기화) */}
-          <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+          <div className="mb-4 p-3 bg-gray-50 rounded-lg">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <label className="flex items-center space-x-3">
                 <input
@@ -1775,10 +1718,10 @@ export default function DataSyncPage() {
             )}
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
             {/* 테이블 선택 */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                 대상 테이블
               </label>
               <select
@@ -1819,7 +1762,7 @@ export default function DataSyncPage() {
 
             {/* 시트 선택 */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
                 시트 선택 ({sheetInfo.length}개 시트 발견)
               </label>
               <select
@@ -1871,14 +1814,14 @@ export default function DataSyncPage() {
 
           {/* 현재 매핑 상태 표시 */}
           {Object.keys(columnMapping).length > 0 && (
-            <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-              <h4 className="text-sm font-medium text-gray-700 mb-2">현재 매핑:</h4>
-              <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="mt-3 sm:mt-4 p-3 bg-gray-50 rounded-lg">
+              <h4 className="text-xs sm:text-sm font-medium text-gray-700 mb-2">현재 매핑:</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs sm:text-sm">
                 {Object.entries(columnMapping).map(([sheetCol, dbCol]) => (
-                  <div key={sheetCol} className="flex items-center">
-                    <span className="text-gray-600">{dbCol}</span>
-                    <ArrowRight className="h-3 w-3 mx-2 text-gray-400" />
-                    <span className="text-gray-900 font-medium">{sheetCol}</span>
+                  <div key={sheetCol} className="flex items-center min-w-0">
+                    <span className="text-gray-600 truncate">{dbCol}</span>
+                    <ArrowRight className="h-3 w-3 mx-1 sm:mx-2 text-gray-400 flex-shrink-0" />
+                    <span className="text-gray-900 font-medium truncate">{sheetCol}</span>
                   </div>
                 ))}
               </div>
@@ -1889,13 +1832,13 @@ export default function DataSyncPage() {
 
       {/* 동기화 실행 */}
       {selectedSheet && selectedTable && (
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">동기화 실행</h3>
+        <div className="bg-white rounded-lg shadow-sm border p-3 sm:p-4 mb-4 sm:mb-6">
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">동기화 실행</h3>
           
           {/* 동기화 설정 요약 */}
-          <div className="mb-4 p-4 bg-blue-50 rounded-lg">
-            <h4 className="text-sm font-medium text-blue-800 mb-2">동기화 설정 요약</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+          <div className="mb-3 sm:mb-4 p-2 sm:p-3 bg-blue-50 rounded-lg">
+            <h4 className="text-xs sm:text-sm font-medium text-blue-800 mb-2">동기화 설정 요약</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs sm:text-sm">
               <div>
                 <span className="text-blue-700 font-medium">대상 테이블:</span>
                 <span className="ml-2 text-blue-600">{selectedTable}</span>
@@ -1921,17 +1864,17 @@ export default function DataSyncPage() {
             <button
               onClick={handleSync}
               disabled={loading || Object.keys(columnMapping).length === 0}
-              className="w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-green-600 text-white rounded-lg hover:from-blue-700 hover:to-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center font-semibold text-lg shadow-lg transition-all"
+              className="w-full px-4 sm:px-6 py-2 sm:py-3 bg-gradient-to-r from-blue-600 to-green-600 text-white rounded-lg hover:from-blue-700 hover:to-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center font-semibold text-base sm:text-lg shadow-lg transition-all"
             >
               {loading ? (
                 <>
-                  <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
-                  동기화 진행 중...
+                  <RefreshCw className="h-4 w-4 sm:h-5 sm:w-5 mr-2 animate-spin" />
+                  <span className="text-sm sm:text-base">동기화 진행 중...</span>
                 </>
               ) : (
                 <>
-                  <Zap className="h-5 w-5 mr-2" />
-                  {truncateTable ? '데이터 삭제 후 동기화 실행' : '🚀 동기화 실행'}
+                  <Zap className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
+                  <span className="text-sm sm:text-base">{truncateTable ? '데이터 삭제 후 동기화 실행' : '🚀 동기화 실행'}</span>
                 </>
               )}
             </button>
@@ -1956,9 +1899,9 @@ export default function DataSyncPage() {
 
       {/* 실시간 동기화 진행 상황 */}
       {loading && (
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
+        <div className="bg-white rounded-lg shadow-sm border p-3 sm:p-4 mb-4 sm:mb-6">
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center">
+            <RefreshCw className="h-4 w-4 sm:h-5 sm:w-5 mr-2 animate-spin" />
             동기화 진행 중...
           </h3>
           
@@ -1982,27 +1925,27 @@ export default function DataSyncPage() {
           </div>
 
           {/* 실시간 통계 */}
-          <div className="grid grid-cols-4 gap-4 mb-4">
-            <div className="bg-blue-50 p-3 rounded-lg text-center">
-              <div className="text-2xl font-bold text-blue-600">{realTimeStats.processed}</div>
-              <div className="text-sm text-blue-800">처리됨</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 mb-3 sm:mb-4">
+            <div className="bg-blue-50 p-2 sm:p-3 rounded-lg text-center">
+              <div className="text-xl sm:text-2xl font-bold text-blue-600">{realTimeStats.processed}</div>
+              <div className="text-xs sm:text-sm text-blue-800">처리됨</div>
             </div>
-            <div className="bg-green-50 p-3 rounded-lg text-center">
-              <div className="text-2xl font-bold text-green-600">{realTimeStats.inserted}</div>
-              <div className="text-sm text-green-800">삽입됨</div>
+            <div className="bg-green-50 p-2 sm:p-3 rounded-lg text-center">
+              <div className="text-xl sm:text-2xl font-bold text-green-600">{realTimeStats.inserted}</div>
+              <div className="text-xs sm:text-sm text-green-800">삽입됨</div>
             </div>
-            <div className="bg-yellow-50 p-3 rounded-lg text-center">
-              <div className="text-2xl font-bold text-yellow-600">{realTimeStats.updated}</div>
-              <div className="text-sm text-yellow-800">업데이트됨</div>
+            <div className="bg-yellow-50 p-2 sm:p-3 rounded-lg text-center">
+              <div className="text-xl sm:text-2xl font-bold text-yellow-600">{realTimeStats.updated}</div>
+              <div className="text-xs sm:text-sm text-yellow-800">업데이트됨</div>
             </div>
-            <div className="bg-red-50 p-3 rounded-lg text-center">
-              <div className="text-2xl font-bold text-red-600">{realTimeStats.errors}</div>
-              <div className="text-sm text-red-800">오류</div>
+            <div className="bg-red-50 p-2 sm:p-3 rounded-lg text-center">
+              <div className="text-xl sm:text-2xl font-bold text-red-600">{realTimeStats.errors}</div>
+              <div className="text-xs sm:text-sm text-red-800">오류</div>
             </div>
           </div>
 
           {/* 실시간 로그 */}
-          <div className="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm max-h-64 overflow-y-auto">
+          <div className="bg-gray-900 text-green-400 p-3 sm:p-4 rounded-lg font-mono text-xs sm:text-sm max-h-48 sm:max-h-64 overflow-y-auto">
             <div className="text-gray-400 text-xs mb-2">실시간 로그:</div>
             {syncLogs.length === 0 ? (
               <div className="text-gray-500">로그를 기다리는 중...</div>
@@ -2020,12 +1963,12 @@ export default function DataSyncPage() {
 
       {/* 컬럼 매핑 모달 */}
       {showMappingModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[80vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-lg p-3 sm:p-4 w-full max-w-full sm:max-w-4xl max-h-[90vh] sm:max-h-[80vh] overflow-y-auto">
+            <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">
               컬럼 매핑 설정
               {selectedTable && (
-                <span className="text-sm text-gray-500 ml-2">
+                <span className="text-xs sm:text-sm text-gray-500 ml-2">
                   ({selectedTable} 테이블)
                 </span>
               )}
@@ -2039,11 +1982,11 @@ export default function DataSyncPage() {
             ) : (
               <div className="space-y-6">
                 {/* 헤더 정보 */}
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="bg-blue-50 p-3 sm:p-4 rounded-lg">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 text-xs sm:text-sm">
                     <div>
                       <span className="font-medium text-blue-800">선택된 테이블:</span>
-                      <span className="ml-2 text-blue-600">{selectedTable}</span>
+                      <span className="ml-2 text-blue-600 break-words">{selectedTable}</span>
                     </div>
                     <div>
                       <span className="font-medium text-blue-800">데이터베이스 컬럼 수:</span>
@@ -2067,23 +2010,24 @@ export default function DataSyncPage() {
 
                 {/* 컬럼 매핑 테이블 */}
                 <div className="border border-gray-200 rounded-lg overflow-hidden">
-                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                    <div className="grid grid-cols-12 gap-4 text-sm font-medium text-gray-700">
+                  <div className="bg-gray-50 px-2 sm:px-4 py-2 sm:py-3 border-b border-gray-200">
+                    <div className="hidden sm:grid grid-cols-12 gap-4 text-xs sm:text-sm font-medium text-gray-700">
                       <div className="col-span-4">데이터베이스 컬럼</div>
                       <div className="col-span-1 text-center">→</div>
                       <div className="col-span-7">구글 시트 컬럼</div>
                     </div>
+                    <div className="sm:hidden text-xs font-medium text-gray-700">컬럼 매핑</div>
                   </div>
                   
                   <div className="divide-y divide-gray-200">
                     {tableColumns.map((dbColumn, index) => (
-                      <div key={`${dbColumn.name}-${index}`} className="px-4 py-3 hover:bg-gray-50">
-                        <div className="grid grid-cols-12 gap-4 items-center">
-                          <div className="col-span-4">
+                      <div key={`${dbColumn.name}-${index}`} className="px-2 sm:px-4 py-2 sm:py-3 hover:bg-gray-50">
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 sm:gap-4 items-center">
+                          <div className="col-span-1 sm:col-span-4">
                             <div className="flex items-center">
-                              <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                              <div className="flex flex-col">
-                                <span className="text-sm font-medium text-gray-900">{dbColumn.name}</span>
+                              <div className="w-2 h-2 bg-blue-500 rounded-full mr-2 flex-shrink-0"></div>
+                              <div className="flex flex-col min-w-0">
+                                <span className="text-xs sm:text-sm font-medium text-gray-900 truncate">{dbColumn.name}</span>
                                 <span className="text-xs text-gray-500">
                                   {dbColumn.type}
                                   {!dbColumn.nullable && ' *'}
@@ -2092,10 +2036,10 @@ export default function DataSyncPage() {
                               </div>
                             </div>
                           </div>
-                          <div className="col-span-1 text-center">
+                          <div className="hidden sm:block col-span-1 text-center">
                             <ArrowRight className="h-4 w-4 text-gray-400 mx-auto" />
                           </div>
-                          <div className="col-span-7">
+                          <div className="col-span-1 sm:col-span-7">
                             <div className="relative">
                               <select
                                 value={(() => {
@@ -2176,14 +2120,14 @@ export default function DataSyncPage() {
 
                 {/* 매핑 요약 */}
                 {Object.keys(columnMapping).length > 0 && (
-                  <div className="bg-green-50 p-4 rounded-lg">
-                    <h4 className="text-sm font-medium text-green-800 mb-2">매핑 요약</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                  <div className="bg-green-50 p-3 sm:p-4 rounded-lg">
+                    <h4 className="text-xs sm:text-sm font-medium text-green-800 mb-2">매핑 요약</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs sm:text-sm">
                       {Object.entries(columnMapping).map(([sheetCol, dbCol]) => (
-                        <div key={`${sheetCol}-${dbCol}`} className="flex items-center">
-                          <span className="text-green-700 font-medium">{dbCol}</span>
-                          <ArrowRight className="h-3 w-3 text-green-500 mx-2" />
-                          <span className="text-green-600">{sheetCol}</span>
+                        <div key={`${sheetCol}-${dbCol}`} className="flex items-center min-w-0">
+                          <span className="text-green-700 font-medium truncate">{dbCol}</span>
+                          <ArrowRight className="h-3 w-3 text-green-500 mx-1 sm:mx-2 flex-shrink-0" />
+                          <span className="text-green-600 truncate">{sheetCol}</span>
                         </div>
                       ))}
                     </div>
@@ -2192,7 +2136,7 @@ export default function DataSyncPage() {
               </div>
             )}
 
-            <div className="flex justify-between mt-6">
+            <div className="flex flex-col sm:flex-row justify-between gap-3 mt-4 sm:mt-6">
               <button
                 onClick={() => {
                   // 자동 매핑 적용
@@ -2203,16 +2147,16 @@ export default function DataSyncPage() {
                     setColumnMapping(autoMapping)
                   }
                 }}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center"
+                className="w-full sm:w-auto px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center justify-center sm:justify-start"
               >
                 <RefreshCw className="h-4 w-4 mr-2" />
                 자동 매핑
               </button>
               
-              <div className="flex space-x-3">
+              <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
                 <button
                   onClick={() => setShowMappingModal(false)}
-                  className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  className="w-full sm:w-auto px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
                 >
                   취소
                 </button>
@@ -2224,7 +2168,7 @@ export default function DataSyncPage() {
                     }
                     setShowMappingModal(false)
                   }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
                   저장
                 </button>
@@ -2236,13 +2180,13 @@ export default function DataSyncPage() {
 
       {/* 결과 표시 */}
       {syncResult && (
-        <div className="bg-white rounded-lg shadow-sm border p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+        <div className="bg-white rounded-lg shadow-sm border p-3 sm:p-4">
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <h3 className="text-base sm:text-lg font-semibold text-gray-900 flex items-center">
               {syncResult.success ? (
-                <CheckCircle className="h-5 w-5 text-green-500 mr-2" />
+                <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 text-green-500 mr-2" />
               ) : (
-                <XCircle className="h-5 w-5 text-red-500 mr-2" />
+                <XCircle className="h-4 w-4 sm:h-5 sm:w-5 text-red-500 mr-2" />
               )}
               동기화 결과
             </h3>
@@ -2272,24 +2216,24 @@ export default function DataSyncPage() {
 
           {/* 상세 통계 */}
           {syncResult.data && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-              <div className="bg-blue-50 p-4 rounded-lg text-center">
-                <div className="text-2xl font-bold text-blue-600">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 mb-3 sm:mb-4">
+              <div className="bg-blue-50 p-3 sm:p-4 rounded-lg text-center">
+                <div className="text-xl sm:text-2xl font-bold text-blue-600">
                   {(syncResult.data.inserted || 0) + (syncResult.data.updated || 0)}
                 </div>
-                <div className="text-sm text-blue-800">총 처리</div>
+                <div className="text-xs sm:text-sm text-blue-800">총 처리</div>
               </div>
-              <div className="bg-green-50 p-4 rounded-lg text-center">
-                <div className="text-2xl font-bold text-green-600">{syncResult.data.inserted || 0}</div>
-                <div className="text-sm text-green-800">삽입됨</div>
+              <div className="bg-green-50 p-3 sm:p-4 rounded-lg text-center">
+                <div className="text-xl sm:text-2xl font-bold text-green-600">{syncResult.data.inserted || 0}</div>
+                <div className="text-xs sm:text-sm text-green-800">삽입됨</div>
               </div>
-              <div className="bg-yellow-50 p-4 rounded-lg text-center">
-                <div className="text-2xl font-bold text-yellow-600">{syncResult.data.updated || 0}</div>
-                <div className="text-sm text-yellow-800">업데이트됨</div>
+              <div className="bg-yellow-50 p-3 sm:p-4 rounded-lg text-center">
+                <div className="text-xl sm:text-2xl font-bold text-yellow-600">{syncResult.data.updated || 0}</div>
+                <div className="text-xs sm:text-sm text-yellow-800">업데이트됨</div>
               </div>
-              <div className="bg-red-50 p-4 rounded-lg text-center">
-                <div className="text-2xl font-bold text-red-600">{syncResult.data.errors || 0}</div>
-                <div className="text-sm text-red-800">오류</div>
+              <div className="bg-red-50 p-3 sm:p-4 rounded-lg text-center">
+                <div className="text-xl sm:text-2xl font-bold text-red-600">{syncResult.data.errors || 0}</div>
+                <div className="text-xs sm:text-sm text-red-800">오류</div>
               </div>
             </div>
           )}

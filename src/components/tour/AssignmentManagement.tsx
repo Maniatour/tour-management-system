@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { ReservationSection } from './ReservationSection'
 import { supabase } from '@/lib/supabase'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 
 interface Reservation {
   id: string
@@ -242,9 +243,11 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
             {loadingStates.reservations && (
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
             )}
-            <span className={`transform transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
-              ▼
-            </span>
+            {isExpanded ? (
+              <ChevronUp className="w-5 h-5 text-gray-500" />
+            ) : (
+              <ChevronDown className="w-5 h-5 text-gray-500" />
+            )}
           </div>
         </div>
 

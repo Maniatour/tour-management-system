@@ -607,25 +607,6 @@ export default function PickupScheduleEmailPreviewModal({
             >
               닫기
             </button>
-            {onSend && (
-              <button
-                onClick={handleSend}
-                disabled={sending}
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                {sending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>발송 중...</span>
-                  </>
-                ) : (
-                  <>
-                    <Mail className="w-4 h-4" />
-                    <span>일괄 발송 ({reservationsWithPickupTime.length}건)</span>
-                  </>
-                )}
-              </button>
-            )}
           </div>
         </div>
       </div>

@@ -780,6 +780,31 @@ export default function PickupScheduleAutoGenerateModal({
     // 이미 경로가 계산되었으면 다시 계산하지 않음 (핀 깜빡임 방지)
     if (routeCalculated) return
 
+    // 좌표 검증 및 수정 함수 (라스베가스 지역 좌표 자동 수정)
+    const validateAndFixCoordinates = (lat: number, lng: number, hotelName?: string): { lat: number; lng: number } | null => {
+      // 라스베가스 지역 범위: 위도 36.0-36.3, 경도 -115.3 ~ -115.0
+      const lasVegasLatRange = { min: 36.0, max: 36.3 }
+      const lasVegasLngRange = { min: -115.3, max: -115.0 }
+      
+      // 위도가 라스베가스 범위 내에 있는지 확인
+      const isInLasVegasLatRange = lat >= lasVegasLatRange.min && lat <= lasVegasLatRange.max
+      
+      // 경도가 양수인데 위도가 라스베가스 범위 내에 있으면 자동으로 음수로 변환
+      if (isInLasVegasLatRange && lng > 0 && lng >= 115.0 && lng <= 115.3) {
+        console.warn(`좌표 자동 수정: 경도 ${lng} → ${-lng}${hotelName ? ` (호텔: ${hotelName})` : ''}`)
+        lng = -lng
+      }
+      
+      // 최종 검증: 라스베가스 범위 내에 있는지 확인
+      if (isInLasVegasLatRange && lng >= lasVegasLngRange.min && lng <= lasVegasLngRange.max) {
+        return { lat, lng }
+      }
+      
+      // 범위를 벗어나면 null 반환 (주소 사용)
+      console.warn(`좌표가 라스베가스 범위를 벗어남: ${lat}, ${lng}${hotelName ? ` (호텔: ${hotelName})` : ''}`)
+      return null
+    }
+
     const waypoints = pickupSchedule
       .map(item => {
         const hotel = item.hotel
@@ -790,18 +815,23 @@ export default function PickupScheduleAutoGenerateModal({
             const lat = parseFloat(coords[0].trim())
             const lng = parseFloat(coords[1].trim())
             if (!isNaN(lat) && !isNaN(lng)) {
-              // LatLng 생성자가 사용 가능한지 확인
-              let location: google.maps.LatLng | { lat: number; lng: number }
-              if (window.google && window.google.maps && typeof window.google.maps.LatLng === 'function') {
-                location = new window.google.maps.LatLng(lat, lng)
-              } else {
-                // LatLng 생성자를 사용할 수 없으면 객체 형태로 사용
-                location = { lat, lng }
+              // 좌표 검증 및 수정
+              const validatedCoords = validateAndFixCoordinates(lat, lng, hotel.hotel)
+              if (validatedCoords) {
+                // LatLng 생성자가 사용 가능한지 확인
+                let location: google.maps.LatLng | { lat: number; lng: number }
+                if (window.google && window.google.maps && typeof window.google.maps.LatLng === 'function') {
+                  location = new window.google.maps.LatLng(validatedCoords.lat, validatedCoords.lng)
+                } else {
+                  // LatLng 생성자를 사용할 수 없으면 객체 형태로 사용
+                  location = { lat: validatedCoords.lat, lng: validatedCoords.lng }
+                }
+                return {
+                  location,
+                  stopover: true
+                }
               }
-              return {
-                location,
-                stopover: true
-              }
+              // 좌표가 유효하지 않으면 주소 사용 (아래 코드로 계속)
             }
           }
         }
@@ -828,6 +858,26 @@ export default function PickupScheduleAutoGenerateModal({
     const origin = startPointInfo.address
     const destination = waypoints[waypoints.length - 1].location
     const intermediateWaypoints = waypoints // 모든 호텔을 경유지로 설정
+
+    // 경로 계산 요청 정보를 문자열로 변환하는 헬퍼 함수
+    const formatLocation = (loc: string | google.maps.LatLng | { lat: number; lng: number }): string => {
+      if (typeof loc === 'string') return loc
+      if (loc instanceof google.maps.LatLng) return `${loc.lat()}, ${loc.lng()}`
+      if (typeof loc === 'object' && 'lat' in loc && 'lng' in loc) return `${loc.lat}, ${loc.lng}`
+      return String(loc)
+    }
+
+    // 경유지 정보를 문자열로 변환
+    const waypointsInfo = intermediateWaypoints.map((wp, idx) => {
+      const hotel = pickupSchedule[idx]?.hotel
+      return {
+        order: idx + 1,
+        hotelName: hotel?.hotel || 'Unknown',
+        location: formatLocation(wp.location),
+        hasPin: !!hotel?.pin,
+        address: hotel?.address || hotel?.pick_up_location || 'N/A'
+      }
+    })
 
     // 타임아웃 설정
     const routeTimeout = setTimeout(() => {
@@ -1000,16 +1050,99 @@ export default function PickupScheduleAutoGenerateModal({
             }
           })
         } else {
-          console.error('경로 계산 실패:', status)
           clearTimeout(routeTimeout) // 타임아웃 클리어
           if (status === 'ZERO_RESULTS') {
-            alert('경로를 찾을 수 없습니다. 주소를 확인해주세요.')
+            // ZERO_RESULTS는 조용히 처리 (주소 문제일 수 있으므로 경고만)
+            const destinationHotel = pickupSchedule[pickupSchedule.length - 1]?.hotel
+            const destinationPin = destinationHotel?.pin
+            let destinationCoordsIssue = ''
+            const possibleCauses: string[] = []
+            
+            // 목적지 좌표 문제 확인
+            if (destinationPin) {
+              const coords = destinationPin.split(',')
+              if (coords.length >= 2) {
+                const lat = parseFloat(coords[0].trim())
+                const lng = parseFloat(coords[1].trim())
+                if (!isNaN(lat) && !isNaN(lng)) {
+                  // 라스베가스 지역인데 경도가 양수인 경우
+                  if (lat >= 36.0 && lat <= 36.3 && lng > 0 && lng >= 115.0 && lng <= 115.3) {
+                    destinationCoordsIssue = `⚠️ 경도가 양수(${lng})로 저장되어 있습니다. 라스베가스는 서경이므로 음수(-${lng})여야 합니다.`
+                    possibleCauses.push(destinationCoordsIssue)
+                  } else if (lat < 36.0 || lat > 36.3 || lng < -115.3 || lng > -115.0) {
+                    destinationCoordsIssue = `⚠️ 좌표가 라스베가스 범위를 벗어남: 위도 ${lat}, 경도 ${lng}`
+                    possibleCauses.push(destinationCoordsIssue)
+                  }
+                }
+              }
+            }
+            
+            // 경유지 좌표 문제 확인
+            waypointsInfo.forEach((wp, idx) => {
+              if (wp.hasPin && wp.location.includes(',')) {
+                const coords = wp.location.split(',')
+                if (coords.length >= 2) {
+                  const lat = parseFloat(coords[0].trim())
+                  const lng = parseFloat(coords[1].trim())
+                  if (!isNaN(lat) && !isNaN(lng)) {
+                    // 라스베가스 지역인데 경도가 양수인 경우
+                    if (lat >= 36.0 && lat <= 36.3 && lng > 0 && lng >= 115.0 && lng <= 115.3) {
+                      possibleCauses.push(`⚠️ 경유지 ${wp.order} (${wp.hotelName}): 경도가 양수(${lng})로 저장되어 있습니다. 음수(-${lng})여야 합니다.`)
+                    } else if (lat < 36.0 || lat > 36.3 || lng < -115.3 || lng > -115.0) {
+                      possibleCauses.push(`⚠️ 경유지 ${wp.order} (${wp.hotelName}): 좌표가 라스베가스 범위를 벗어남 (${lat}, ${lng})`)
+                    }
+                  }
+                }
+              }
+            })
+            
+            // 일반적인 원인 추가
+            if (possibleCauses.length === 0) {
+              possibleCauses.push('주소가 정확하지 않거나', '경로가 존재하지 않는 경우 (예: 섬이나 접근 불가능한 지역)', 'Google Maps API가 해당 경로를 계산할 수 없는 경우')
+            }
+            
+            const errorDetails = {
+              status: 'ZERO_RESULTS',
+              message: '경로를 찾을 수 없습니다',
+              possibleCauses,
+              origin: {
+                address: startPointInfo.address,
+                formatted: formatLocation(origin)
+              },
+              destination: {
+                hotel: destinationHotel?.hotel || 'Unknown',
+                location: formatLocation(destination),
+                pin: destinationPin || 'N/A',
+                hasPin: !!destinationPin,
+                address: destinationHotel?.address || 
+                         destinationHotel?.pick_up_location || 'N/A',
+                coordsIssue: destinationCoordsIssue || null
+              },
+              waypoints: waypointsInfo,
+              totalWaypoints: intermediateWaypoints.length,
+              requestDetails: {
+                travelMode: 'DRIVING',
+                optimizeWaypoints: false
+              }
+            }
+            console.warn('경로 계산 실패: ZERO_RESULTS', errorDetails)
+            console.warn('가능한 원인:', errorDetails.possibleCauses)
+            console.warn('시작점:', errorDetails.origin)
+            console.warn('목적지:', errorDetails.destination)
+            if (destinationCoordsIssue) {
+              console.error('목적지 좌표 문제:', destinationCoordsIssue)
+            }
+            console.warn('경유지 목록:', errorDetails.waypoints)
+            // alert는 표시하지 않음 (사용자 경험 개선 - 경로가 없어도 수동으로 시간 설정 가능)
           } else if (status === 'OVER_QUERY_LIMIT') {
+            console.error('Google Maps API 할당량 초과:', status)
             alert('Google Maps API 할당량을 초과했습니다. 잠시 후 다시 시도해주세요.')
           } else if (status === 'REQUEST_DENIED') {
+            console.error('Google Maps API 요청 거부:', status)
             alert('Google Maps API 요청이 거부되었습니다. API 키를 확인해주세요.')
           } else if (status !== 'OK') {
-            alert(`경로 계산 실패: ${status}`)
+            console.warn('경로 계산 실패:', status)
+            // 다른 오류도 조용히 처리 (필요시에만 alert 표시)
           }
         }
       }

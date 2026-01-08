@@ -1096,7 +1096,9 @@
         "ticketBookingEdit": "Edit Ticket Booking",
         "ticketBookingAdd": "Add Ticket Booking",
         "tourHotelBookingEdit": "Edit Tour Hotel Booking",
-        "tourHotelBookingAdd": "Add Tour Hotel Booking"
+        "tourHotelBookingAdd": "Add Tour Hotel Booking",
+        "saveSuccess": "Saved successfully.",
+        "saveError": "An error occurred while saving."
       },
       "teamAndVehicle": {
       "title": "Team Composition & Vehicle Assignment",

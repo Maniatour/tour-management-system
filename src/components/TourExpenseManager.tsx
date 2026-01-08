@@ -1290,18 +1290,38 @@ export default function TourExpenseManager({
         <div className="space-y-2">
           {expenses.map((expense) => (
             <div key={expense.id} className="border rounded-lg p-3 hover:bg-gray-50">
-              {/* 상단: 지출명, 금액, 상태 뱃지, 수정/삭제 버튼 (오른쪽 끝 정렬) */}
+              {/* 상단: 지출명, 금액, 상태 뱃지, 수정/삭제/승인/거부 버튼 (오른쪽 끝 정렬) */}
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center space-x-2">
                   <span className="font-medium text-gray-900">{expense.paid_for}</span>
-                  <span className="text-lg font-bold text-green-600">
-                    {formatCurrency(expense.amount)}
+                  <span className="text-sm font-bold text-green-600">
+                    ${expense.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                   <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(expense.status)}`}>
                     {getStatusText(expense.status)}
                   </span>
                 </div>
                 <div className="flex items-center space-x-1">
+                  {/* 승인/거부 버튼 - pending 상태일 때만 표시 */}
+                  {expense.status === 'pending' && (
+                    <>
+                      <button
+                        onClick={() => handleStatusUpdate(expense.id, 'approved')}
+                        className="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded"
+                        title="승인"
+                      >
+                        <Check size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleStatusUpdate(expense.id, 'rejected')}
+                        className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded"
+                        title="거부"
+                      >
+                        <X size={14} />
+                      </button>
+                    </>
+                  )}
+                  
                   {/* 수정 버튼 */}
                   <button
                     onClick={() => handleEditExpense(expense)}
@@ -1323,8 +1343,8 @@ export default function TourExpenseManager({
               </div>
               
               {/* 하단: 결제처, 제출자, 제출일, 결제방법 */}
-              <div className="flex items-center justify-between text-sm text-gray-600">
-                <div className="flex items-center space-x-3">
+              <div className="flex items-center justify-between text-xs text-gray-600">
+                <div className="flex items-center space-x-2">
                   <span>{expense.paid_to}</span>
                   <span>•</span>
                   <span>{teamMembers[expense.submitted_by] || expense.submitted_by}</span>
@@ -1333,12 +1353,12 @@ export default function TourExpenseManager({
                 </div>
                 <div className="flex items-center space-x-2">
                   {expense.payment_method && (
-                    <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                    <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs">
                       {expense.payment_method}
                     </span>
                   )}
                   
-                  {/* 액션 버튼들 (영수증 보기, 승인/거부) */}
+                  {/* 액션 버튼들 (영수증 보기) */}
                   <div className="flex items-center space-x-1">
                     {expense.image_url && expense.image_url.trim() !== '' ? (
                       <button
@@ -1354,39 +1374,18 @@ export default function TourExpenseManager({
                             paidFor: expense.paid_for 
                           })
                         }}
-                        className="p-1 text-gray-600 hover:text-blue-600 flex items-center gap-1"
+                        className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded"
                         title="영수증 보기"
                       >
                         <Receipt size={14} />
-                        <span className="text-xs">영수증</span>
                       </button>
                     ) : (
                       <span 
-                        className="text-xs text-gray-400 flex items-center gap-1 cursor-help" 
-                        title={`이미지 URL: ${expense.image_url || 'null'}, 파일 경로: ${expense.file_path || 'null'}`}
+                        className="text-gray-400 cursor-help" 
+                        title={`영수증 없음 - 이미지 URL: ${expense.image_url || 'null'}, 파일 경로: ${expense.file_path || 'null'}`}
                       >
                         <Receipt size={14} />
-                        <span>영수증 없음</span>
                       </span>
-                    )}
-                    
-                    {expense.status === 'pending' && (
-                      <>
-                        <button
-                          onClick={() => handleStatusUpdate(expense.id, 'approved')}
-                          className="p-1 text-green-600 hover:text-green-800"
-                          title="승인"
-                        >
-                          <Check size={14} />
-                        </button>
-                        <button
-                          onClick={() => handleStatusUpdate(expense.id, 'rejected')}
-                          className="p-1 text-red-600 hover:text-red-800"
-                          title="거부"
-                        >
-                          <X size={14} />
-                        </button>
-                      </>
                     )}
                   </div>
                 </div>

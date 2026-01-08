@@ -599,8 +599,8 @@ export default function ChatManagementPage() {
           id: (vehicleData as Record<string, unknown>).id as string,
           vehicle_number: (vehicleData as Record<string, unknown>).vehicle_number as string,
           vehicle_category: (vehicleData as Record<string, unknown>).vehicle_category as string,
-          driver_name: (vehicleData as Record<string, unknown>).driver_name as string,
-          driver_phone: (vehicleData as Record<string, unknown>).driver_phone as string
+          driver_name: undefined, // tours 테이블에 car_driver_name 컬럼이 없음
+          driver_phone: undefined // vehicles 테이블에 driver_phone 컬럼이 없음
         } : undefined,
         reservations: combinedReservations
       } as TourInfo

@@ -1115,7 +1115,9 @@
       "ticketBookingEdit": "입장권 부킹 수정",
       "ticketBookingAdd": "입장권 부킹 추가",
       "tourHotelBookingEdit": "투어 호텔 부킹 수정",
-      "tourHotelBookingAdd": "투어 호텔 부킹 추가"
+      "tourHotelBookingAdd": "투어 호텔 부킹 추가",
+      "saveSuccess": "저장되었습니다.",
+      "saveError": "저장 중 오류가 발생했습니다."
     },
     "teamAndVehicle": {
       "title": "팀 구성 & 차량 배정",

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Check, X, Users, Clock, Building, DollarSign, Wallet, Home, Plane, PlaneTakeoff, HelpCircle } from 'lucide-react'
+import { Check, X, Users, Clock, Building, DollarSign, Wallet, Home, Plane, PlaneTakeoff, HelpCircle, CheckCircle2, AlertCircle, XCircle, Circle } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
@@ -667,6 +667,40 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }
   }
 
+  const getStatusIcon = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'confirmed':
+        return <CheckCircle2 className="w-4 h-4 text-green-600" />
+      case 'recruiting':
+        return <Circle className="w-4 h-4 text-blue-600" />
+      case 'cancelled':
+        return <XCircle className="w-4 h-4 text-red-600" />
+      case 'completed':
+        return <CheckCircle2 className="w-4 h-4 text-gray-600" />
+      case 'pending':
+        return <AlertCircle className="w-4 h-4 text-yellow-600" />
+      default:
+        return <Circle className="w-4 h-4 text-gray-600" />
+    }
+  }
+
+  const getReservationStatusText = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'confirmed':
+        return '확인됨'
+      case 'recruiting':
+        return '모집 중'
+      case 'cancelled':
+        return '취소됨'
+      case 'completed':
+        return '완료됨'
+      case 'pending':
+        return '대기 중'
+      default:
+        return status || '알 수 없음'
+    }
+  }
+
   const getChoiceColor = (choiceName: string) => {
     if (!choiceName) return 'bg-gray-100 text-gray-600'
     
@@ -1107,7 +1141,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           {/* 고객 이름 */}
           <p className="font-medium text-sm text-gray-900">{customerName}</p>
           
-          {/* 총 인원수 뱃지 - 성인/아동/유아 구분 표시 */}
+          {/* 총 인원수 뱃지 - 숫자만 표시 */}
           <div className="flex items-center space-x-1 bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-medium">
             <Users size={12} />
             <span>
@@ -1118,21 +1152,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                 const infants = (reservation.infants || (reservation as any).infant || 0) as number
                 const total = adults + children + infants
                 
-                // 성인만 있는 경우
-                if (children === 0 && infants === 0) {
-                  return `${total}명`
-                }
-                
-                // 아동이나 유아가 있는 경우: "총 인원, 아동X, 유아Y" 형식
-                const detailParts: string[] = []
-                if (children > 0) {
-                  detailParts.push(`아동${children}`)
-                }
-                if (infants > 0) {
-                  detailParts.push(`유아${infants}`)
-                }
-                
-                return `총 ${total}명, ${detailParts.join(', ')}`
+                return `${total}`
               })()}
             </span>
           </div>
@@ -1147,10 +1167,16 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
 
         {/* 오른쪽 상단 - 상태 뱃지 */}
         <div className="flex items-center space-x-2">
-          {/* 상태 뱃지 - 첫 번째 줄 오른쪽 끝 */}
+          {/* 상태 뱃지 - 아이콘으로 표시하고 호버시 텍스트 */}
           {showStatus && reservation.status && (
-            <div className={`px-2 py-1 rounded-full text-xs font-medium ${getReservationStatusColor(reservation.status)}`}>
-              {reservation.status}
+            <div className="relative group">
+              <div className="p-1 rounded-full hover:bg-gray-100 rounded transition-colors">
+                {getStatusIcon(reservation.status)}
+              </div>
+              <div className="absolute bottom-full right-0 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                {getReservationStatusText(reservation.status)}
+                <div className="absolute top-full right-2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+              </div>
             </div>
           )}
           
@@ -1174,7 +1200,17 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                  <Clock size={12} />
                </button>
              )}
-             <span>{getPickupTime()}</span>
+             <span 
+               onClick={(e) => {
+                 if (isStaff) {
+                   e.stopPropagation()
+                   setShowSimplePickupModal(true)
+                 }
+               }}
+               className={isStaff ? "cursor-pointer hover:text-blue-700" : ""}
+             >
+               {getPickupTime()}
+             </span>
              {/* 픽업 호텔 수정 버튼 */}
              {isStaff && (
                <button
@@ -1188,7 +1224,17 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                  <Building size={12} />
                </button>
              )}
-            <span>{getPickupHotelName()}</span>
+            <span 
+              onClick={(e) => {
+                if (isStaff) {
+                  e.stopPropagation()
+                  setShowSimplePickupModal(true)
+                }
+              }}
+              className={isStaff ? "cursor-pointer hover:text-green-700" : ""}
+            >
+              {getPickupHotelName()}
+            </span>
           </div>
           
           {/* 채널 정보 - 두 번째 줄 오른쪽 끝 */}

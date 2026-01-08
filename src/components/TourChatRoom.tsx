@@ -984,6 +984,22 @@ export default function TourChatRoom({
     loadPickupScheduleRef.current = loadPickupSchedule
   }, [loadPickupSchedule])
 
+  // 모달이 열릴 때 픽업 스케줄 로드
+  useEffect(() => {
+    if (showPickupScheduleModal && tourId) {
+      console.log('모달이 열렸으므로 픽업 스케줄 로드 시작')
+      loadPickupSchedule()
+    }
+  }, [showPickupScheduleModal, tourId, loadPickupSchedule])
+
+  // 초기 로드 시에도 픽업 스케줄 로드 (tourId가 준비되면)
+  useEffect(() => {
+    if (tourId && !isPublicView) {
+      console.log('초기 로드: 픽업 스케줄 로드 시작')
+      loadPickupSchedule()
+    }
+  }, [tourId, isPublicView, loadPickupSchedule])
+
   // loadChatParticipants와 Presence 채널은 useChatParticipants 훅에서 처리됨
   // ref로 접근하기 위해 저장
   useEffect(() => {
@@ -1080,51 +1096,8 @@ export default function TourChatRoom({
         }
       }
 
-      // 드라이버 정보 가져오기 (차량 정보에서)
-      if (tour.tour_car_id) {
-        const { data: vehicleData } = await supabase
-          .from('vehicles')
-          .select('driver_name, driver_phone, driver_email')
-          .eq('id', tour.tour_car_id)
-          .maybeSingle<{ driver_name: string | null; driver_phone: string | null; driver_email: string | null }>()
-
-        if (vehicleData && vehicleData.driver_name) {
-          const driver: { name?: string; phone?: string; email?: string; position?: string; languages?: string[] } = {}
-          if (vehicleData.driver_name) driver.name = vehicleData.driver_name
-          if (vehicleData.driver_phone) driver.phone = vehicleData.driver_phone
-          if (vehicleData.driver_email) driver.email = vehicleData.driver_email
-          driver.position = 'driver'
-          teamData.driver = driver
-          
-          // 드라이버도 team 테이블에서 정보 가져오기 시도
-          if (vehicleData.driver_email) {
-            const { data: driverTeamData } = await supabase
-              .from('team')
-              .select('name_ko, name_en, position, languages')
-              .eq('email', vehicleData.driver_email)
-              .maybeSingle<{ name_ko: string | null; name_en: string | null; position: string | null; languages: string[] | null }>()
-            
-            if (driverTeamData) {
-              if (driverTeamData.languages) driver.languages = driverTeamData.languages
-              membersDetailMap.set(vehicleData.driver_email, {
-                ...(driverTeamData.name_ko ? { name_ko: driverTeamData.name_ko } : {}),
-                ...(driverTeamData.name_en ? { name_en: driverTeamData.name_en } : {}),
-                position: driverTeamData.position || 'driver',
-                email: vehicleData.driver_email,
-                ...(driverTeamData.languages ? { languages: driverTeamData.languages } : {})
-              })
-            } else {
-              // team 테이블에 없으면 차량 정보만 사용
-              membersDetailMap.set(vehicleData.driver_email, {
-                ...(vehicleData.driver_name ? { name_ko: vehicleData.driver_name } : {}),
-                ...(vehicleData.driver_name ? { name_en: vehicleData.driver_name } : {}),
-                position: 'driver',
-                email: vehicleData.driver_email
-              })
-            }
-          }
-        }
-      }
+      // 드라이버 정보는 tours 테이블에 저장되지 않으므로 차량 정보만 사용
+      // 드라이버 정보가 필요한 경우 team 테이블에서 position이 'driver'인 사람을 찾아야 함
       
       setTeamMembersDetail(membersDetailMap)
 
@@ -1256,19 +1229,7 @@ export default function TourChatRoom({
         assignedTeamMemberIds.add(tour.assistant_id)
       }
       
-      // 드라이버 ID 추가 (차량 정보에서)
-      if (tour.tour_car_id) {
-        const { data: vehicleData } = await supabase
-          .from('vehicles')
-          .select('driver_name, driver_email')
-          .eq('id', tour.tour_car_id)
-          .maybeSingle<{ driver_name: string | null; driver_email: string | null }>()
-
-        if (vehicleData && vehicleData.driver_name) {
-          const driverId = vehicleData.driver_email || `driver_${tour.tour_car_id}`
-          assignedTeamMemberIds.add(driverId)
-        }
-      }
+      // 드라이버 정보는 tours 테이블에 저장되지 않으므로 스킵
 
       // 현재 참여자 목록 가져오기 (가이드 타입만)
       const { data: existingParticipants, error: participantsError } = await supabase
@@ -1334,28 +1295,7 @@ export default function TourChatRoom({
         }
       }
 
-      // 드라이버 추가 (차량 정보에서)
-      if (tour.tour_car_id) {
-        const { data: vehicleData } = await supabase
-          .from('vehicles')
-          .select('driver_name, driver_email')
-          .eq('id', tour.tour_car_id)
-          .maybeSingle<{ driver_name: string | null; driver_email: string | null }>()
-
-        if (vehicleData && vehicleData.driver_name) {
-          const driverId = vehicleData.driver_email || `driver_${tour.tour_car_id}`
-          
-          if (!existingParticipantIds.has(driverId)) {
-            participantsToAdd.push({
-              room_id: roomId,
-              participant_type: 'guide',
-              participant_id: driverId,
-              participant_name: vehicleData.driver_name,
-              is_active: true
-            })
-          }
-        }
-      }
+      // 드라이버 정보는 tours 테이블에 저장되지 않으므로 스킵
 
       // 더 이상 배정되지 않은 사람 제거 (is_active = false로 설정)
       const participantsToDeactivate: string[] = []

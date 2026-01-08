@@ -1,18 +1,13 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-interface AuthCallbackPageProps {
-  params: {
-    locale: string
-  }
-}
-
-export default function AuthCallbackPage({ params }: AuthCallbackPageProps) {
+export default function AuthCallbackPage() {
   const router = useRouter()
-  const { locale } = params
+  const params = useParams()
+  const locale = params.locale as string
 
   // locale 검증 (유효한 로케일만 허용)
   const validLocale = (locale === 'ko' || locale === 'en') ? locale : 'ko'

@@ -552,6 +552,7 @@ export function useTourDetailData() {
           }
           
           // 2. 다른 투어에 배정된 예약 (같은 상품/날짜의 다른 투어들의 reservation_ids에 있는 예약들)
+          // 단, 현재 투어의 reservation_ids에 있는 예약은 제외
           const otherToursAssignedReservations = await (async () => {
             try {
               // 같은 상품/날짜의 다른 투어들 조회
@@ -576,14 +577,22 @@ export function useTourDetailData() {
               })
 
               console.log('📊 Other tours reservation IDs:', otherReservationIds)
+              console.log('📊 Current tour reservation IDs (to exclude):', assignedReservationIds)
 
-              if (otherReservationIds.length === 0) return []
+              // 현재 투어의 reservation_ids에 있는 예약은 제외
+              const filteredOtherReservationIds = otherReservationIds.filter(
+                id => !assignedReservationIds.includes(id)
+              )
+
+              console.log('📊 Filtered other tours reservation IDs (after excluding current tour):', filteredOtherReservationIds)
+
+              if (filteredOtherReservationIds.length === 0) return []
 
               // 해당 예약들을 직접 조회
               const { data: otherReservationsData, error: otherReservationsError } = await supabase
                 .from('reservations')
                 .select('*')
-                .in('id', otherReservationIds)
+                .in('id', filteredOtherReservationIds)
 
               if (otherReservationsError) {
                 console.error('❌ Error loading other tours reservations:', otherReservationsError)
