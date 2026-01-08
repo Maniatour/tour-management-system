@@ -623,47 +623,107 @@ export default function PricingSection({
               )}
             </div>
             <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-600">성인</span>
-                <div className="flex items-center space-x-1">
-                  <span className="font-medium">$</span>
-                  <input
-                    type="number"
-                    value={formData.adultProductPrice || ''}
-                    onChange={(e) => {
-                      const newPrice = Number(e.target.value) || 0
-                      const updatedChildPrice = isSinglePrice ? newPrice : formData.childProductPrice
-                      const updatedInfantPrice = isSinglePrice ? newPrice : formData.infantProductPrice
-                      // 상품 가격 총합 계산
-                      const newProductPriceTotal = (newPrice * formData.adults) + 
-                                                   (updatedChildPrice * formData.child) + 
-                                                   (updatedInfantPrice * formData.infant)
-                      setFormData({ 
-                        ...formData, 
-                        adultProductPrice: newPrice,
-                        // 단일 가격 모드일 때는 아동/유아 가격도 동일하게 설정
-                        ...(isSinglePrice ? {
-                          childProductPrice: newPrice,
-                          infantProductPrice: newPrice
-                        } : {}),
-                        productPriceTotal: newProductPriceTotal
-                      })
-                    }}
-                    className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                    step="0.01"
-                    placeholder="0"
-                  />
-                  {isSinglePrice ? (
-                    <span className="text-gray-500">x{formData.adults + formData.child + formData.infant}</span>
-                  ) : (
-                    <span className="text-gray-500">x{formData.adults}</span>
-                  )}
-                  <span className="font-medium">
-                    {isSinglePrice 
-                      ? `$${((formData.adultProductPrice || 0) * (formData.adults + formData.child + formData.infant)).toFixed(2)}`
-                      : `$${((formData.adultProductPrice || 0) * formData.adults).toFixed(2)}`
-                    }
+              <div className="space-y-2">
+                <div className="text-xs text-gray-600 mb-1">성인</div>
+                {/* 판매가 + 불포함 가격 입력 */}
+                <div className="space-y-2 mb-2">
+                  {/* 판매가 */}
+                  <div className="flex items-center space-x-1">
+                    <span className="text-xs text-gray-500 w-16">판매가</span>
+                    <span className="font-medium text-xs">$</span>
+                    <input
+                      type="number"
+                      value={formData.adultProductPrice || ''}
+                      onChange={(e) => {
+                        const salePrice = Number(e.target.value) || 0
+                        const notIncluded = formData.not_included_price || 0
+                        const totalPrice = salePrice + notIncluded
+                        const updatedChildPrice = isSinglePrice ? totalPrice : formData.childProductPrice
+                        const updatedInfantPrice = isSinglePrice ? totalPrice : formData.infantProductPrice
+                        // 상품 가격 총합 계산
+                        const newProductPriceTotal = (totalPrice * formData.adults) + 
+                                                     (updatedChildPrice * formData.child) + 
+                                                     (updatedInfantPrice * formData.infant)
+                        setFormData({ 
+                          ...formData, 
+                          adultProductPrice: salePrice,
+                          // 단일 가격 모드일 때는 아동/유아 가격도 동일하게 설정
+                          ...(isSinglePrice ? {
+                            childProductPrice: totalPrice,
+                            infantProductPrice: totalPrice
+                          } : {}),
+                          productPriceTotal: newProductPriceTotal
+                        })
+                      }}
+                      className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                      step="0.01"
+                      placeholder="0"
+                    />
+                  </div>
+                  {/* 불포함 가격 */}
+                  <div className="flex items-center space-x-1">
+                    <span className="text-xs text-gray-500 w-16">불포함</span>
+                    <span className="font-medium text-xs">$</span>
+                    <input
+                      type="number"
+                      value={formData.not_included_price || ''}
+                      onChange={(e) => {
+                        const notIncluded = Number(e.target.value) || 0
+                        const salePrice = formData.adultProductPrice || 0
+                        const totalPrice = salePrice + notIncluded
+                        const updatedChildPrice = isSinglePrice ? totalPrice : formData.childProductPrice
+                        const updatedInfantPrice = isSinglePrice ? totalPrice : formData.infantProductPrice
+                        // 상품 가격 총합 계산
+                        const newProductPriceTotal = (totalPrice * formData.adults) + 
+                                                     (updatedChildPrice * formData.child) + 
+                                                     (updatedInfantPrice * formData.infant)
+                        setFormData({ 
+                          ...formData, 
+                          not_included_price: notIncluded,
+                          // 단일 가격 모드일 때는 아동/유아 가격도 동일하게 설정
+                          ...(isSinglePrice ? {
+                            childProductPrice: totalPrice,
+                            infantProductPrice: totalPrice
+                          } : {}),
+                          productPriceTotal: newProductPriceTotal
+                        })
+                      }}
+                      className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                      step="0.01"
+                      placeholder="0"
+                    />
+                  </div>
+                  {/* 합계 */}
+                  <div className="flex items-center space-x-1">
+                    <span className="text-xs text-gray-500 w-16"></span>
+                    <span className="text-xs text-gray-500">=</span>
+                    <span className="font-medium text-xs text-blue-600">
+                      ${((formData.adultProductPrice || 0) + (formData.not_included_price || 0)).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+                {/* 성인 가격 x 인원수 */}
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-600">
+                    성인 [${((formData.adultProductPrice || 0) + (formData.not_included_price || 0)).toFixed(2)}]
                   </span>
+                  <div className="flex items-center space-x-1">
+                    {isSinglePrice ? (
+                      <>
+                        <span className="text-gray-500">x{formData.adults + formData.child + formData.infant}</span>
+                        <span className="font-medium">
+                          = ${(((formData.adultProductPrice || 0) + (formData.not_included_price || 0)) * (formData.adults + formData.child + formData.infant)).toFixed(2)}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-gray-500">x{formData.adults}</span>
+                        <span className="font-medium">
+                          = ${(((formData.adultProductPrice || 0) + (formData.not_included_price || 0)) * formData.adults).toFixed(2)}
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
               {/* 단일 가격 모드일 때는 아동/유아 필드 숨김 */}
@@ -678,10 +738,12 @@ export default function PricingSection({
                         value={formData.childProductPrice || ''}
                         onChange={(e) => {
                           const newPrice = Number(e.target.value) || 0
-                          // 상품 가격 총합 계산
-                          const newProductPriceTotal = (formData.adultProductPrice * formData.adults) + 
+                          const adultTotalPrice = (formData.adultProductPrice || 0) + (formData.not_included_price || 0)
+                          const infantTotalPrice = (formData.infantProductPrice || 0) + (formData.not_included_price || 0)
+                          // 상품 가격 총합 계산 (불포함 가격 포함)
+                          const newProductPriceTotal = (adultTotalPrice * formData.adults) + 
                                                        (newPrice * formData.child) + 
-                                                       (formData.infantProductPrice * formData.infant)
+                                                       (infantTotalPrice * formData.infant)
                           setFormData({ 
                             ...formData, 
                             childProductPrice: newPrice,
@@ -705,9 +767,11 @@ export default function PricingSection({
                         value={formData.infantProductPrice || ''}
                         onChange={(e) => {
                           const newPrice = Number(e.target.value) || 0
-                          // 상품 가격 총합 계산
-                          const newProductPriceTotal = (formData.adultProductPrice * formData.adults) + 
-                                                       (formData.childProductPrice * formData.child) + 
+                          const adultTotalPrice = (formData.adultProductPrice || 0) + (formData.not_included_price || 0)
+                          const childTotalPrice = (formData.childProductPrice || 0) + (formData.not_included_price || 0)
+                          // 상품 가격 총합 계산 (불포함 가격 포함)
+                          const newProductPriceTotal = (adultTotalPrice * formData.adults) + 
+                                                       (childTotalPrice * formData.child) + 
                                                        (newPrice * formData.infant)
                           setFormData({ 
                             ...formData, 
@@ -1303,48 +1367,10 @@ export default function PricingSection({
               <p className="text-xs text-gray-500 mt-1">✔️ 이 금액은 회사 계좌로 들어오는 돈 | ✔️ 고객 추가 현금, 팁 포함 ❌</p>
             </div>
 
-            {/* 4️⃣ 현장 직접 수령 금액 (On-site Cash) */}
-            <div className="mb-6 pb-4 border-b-2 border-gray-300">
-              <div className="flex items-center mb-3">
-                <span className="text-lg mr-2">4️⃣</span>
-                <h5 className="text-sm font-semibold text-gray-800">현장 직접 수령 금액</h5>
-                <span className="ml-2 text-xs text-gray-500">(On-site Cash)</span>
-              </div>
-              <p className="text-xs text-gray-600 mb-3">👉 가이드 / 현장에서 받은 돈</p>
-              
-              <div className="text-xs text-gray-600 mb-2">{isKorean ? '현장 추가 수령' : 'On-site Additional Collection'}</div>
-              
-              {/* 추가 비용 */}
-              {(formData.additionalCost - formData.additionalDiscount) > 0 && (
-                <div className="flex justify-between items-center mb-2 ml-4">
-                  <span className="text-xs text-gray-600">- {isKorean ? '추가 비용' : 'Additional Costs'}</span>
-                  <span className="text-xs text-gray-700">${(formData.additionalCost - formData.additionalDiscount).toFixed(2)}</span>
-                </div>
-              )}
-              
-              {/* 현장 결제 수수료 등 */}
-              {(formData.tax > 0 || formData.cardFee > 0) && (
-                <div className="flex justify-between items-center mb-2 ml-4">
-                  <span className="text-xs text-gray-600">- {isKorean ? '현장 결제 수수료 등' : 'On-site Payment Fees'}</span>
-                  <span className="text-xs text-gray-700">${(formData.tax + formData.cardFee).toFixed(2)}</span>
-                </div>
-              )}
-              
-              <div className="border-t border-gray-200 my-2"></div>
-              
-              {/* 현장 수령 합계 */}
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-semibold text-gray-900">{isKorean ? '현장 수령 합계' : 'Total On-site Collection'}</span>
-                <span className="text-sm font-bold text-gray-900">
-                  ${((formData.additionalCost - formData.additionalDiscount) + formData.tax + formData.cardFee).toFixed(2)}
-                </span>
-              </div>
-            </div>
-
-            {/* 5️⃣ 최종 매출 & 운영 이익 (Company View) */}
+            {/* 4️⃣ 최종 매출 & 운영 이익 (Company View) */}
             <div className="mb-4">
               <div className="flex items-center mb-3">
-                <span className="text-lg mr-2">5️⃣</span>
+                <span className="text-lg mr-2">4️⃣</span>
                 <h5 className="text-sm font-semibold text-gray-800">최종 매출 & 운영 이익</h5>
                 <span className="ml-2 text-xs text-gray-500">(Company View)</span>
               </div>
@@ -1363,11 +1389,11 @@ export default function PricingSection({
                 </span>
               </div>
               
-              {/* 현장 직접 수령 */}
+              {/* 잔액 (투어 당일 지불) */}
               <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-gray-700">+ {isKorean ? '현장 직접 수령' : 'On-site Collection'}</span>
+                <span className="text-sm font-medium text-gray-700">+ {isKorean ? '잔액 (투어 당일 지불)' : 'Remaining Balance (On-site)'}</span>
                 <span className="text-sm font-medium text-gray-900">
-                  +${((formData.additionalCost - formData.additionalDiscount) + formData.tax + formData.cardFee).toFixed(2)}
+                  +${(formData.onSiteBalanceAmount || 0).toFixed(2)}
                 </span>
               </div>
               
@@ -1377,12 +1403,13 @@ export default function PricingSection({
               <div className="flex justify-between items-center mb-2">
                 <span className="text-base font-bold text-green-800">{isKorean ? '총 매출' : 'Total Revenue'}</span>
                 <span className="text-lg font-bold text-green-600">
-                  ${isOTAChannel
-                    ? (((formData.onlinePaymentAmount || 0) - formData.commission_amount) + (formData.additionalCost - formData.additionalDiscount) + formData.tax + formData.cardFee).toFixed(2)
-                    : (
-                      ((formData.productPriceTotal - formData.couponDiscount) + reservationOptionsTotalPrice) + 
-                      ((formData.additionalCost - formData.additionalDiscount) + formData.tax + formData.cardFee)
-                    ).toFixed(2)}
+                  ${(
+                    (isOTAChannel 
+                      ? ((formData.onlinePaymentAmount || 0) - formData.commission_amount)
+                      : ((formData.productPriceTotal - formData.couponDiscount) + reservationOptionsTotalPrice)
+                    ) + 
+                    (formData.onSiteBalanceAmount || 0)
+                  ).toFixed(2)}
                 </span>
               </div>
               
@@ -1403,13 +1430,14 @@ export default function PricingSection({
               <div className="flex justify-between items-center mb-2">
                 <span className="text-base font-bold text-purple-800">{isKorean ? '운영 이익' : 'Operating Profit'}</span>
                 <span className="text-lg font-bold text-purple-600">
-                  ${isOTAChannel
-                    ? ((((formData.onlinePaymentAmount || 0) - formData.commission_amount) + (formData.additionalCost - formData.additionalDiscount) + formData.tax + formData.cardFee) - formData.prepaymentTip).toFixed(2)
-                    : (
-                      (((formData.productPriceTotal - formData.couponDiscount) + reservationOptionsTotalPrice) + 
-                       ((formData.additionalCost - formData.additionalDiscount) + formData.tax + formData.cardFee)) - 
-                      formData.prepaymentTip
-                    ).toFixed(2)}
+                  ${(
+                    (isOTAChannel 
+                      ? ((formData.onlinePaymentAmount || 0) - formData.commission_amount)
+                      : ((formData.productPriceTotal - formData.couponDiscount) + reservationOptionsTotalPrice)
+                    ) + 
+                    (formData.onSiteBalanceAmount || 0) - 
+                    formData.prepaymentTip
+                  ).toFixed(2)}
                 </span>
               </div>
             </div>
