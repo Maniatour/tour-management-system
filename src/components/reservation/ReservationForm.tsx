@@ -209,6 +209,7 @@ export default function ReservationForm({
     privateTourAdditionalCost: number
     commission_percent: number
     commission_amount: number
+    commission_base_price?: number
     not_included_price?: number
     // OTA/현장 결제 분리
     onlinePaymentAmount: number
@@ -379,6 +380,7 @@ export default function ReservationForm({
     privateTourAdditionalCost: 0,
     commission_percent: 0,
     commission_amount: 0,
+    commission_base_price: undefined,
     not_included_price: 0,
     onlinePaymentAmount: 0,
     onSiteBalanceAmount: 0,
@@ -1448,6 +1450,9 @@ export default function ReservationForm({
               privateTourAdditionalCost: Number(existingPricing.private_tour_additional_cost) || 0,
               commission_percent: Number((existingPricing as any).commission_percent) || 0,
               commission_amount: Number((existingPricing as any).commission_amount) || 0,
+              commission_base_price: (existingPricing as any).commission_base_price !== undefined && (existingPricing as any).commission_base_price !== null
+                ? Number((existingPricing as any).commission_base_price) 
+                : undefined,
               onSiteBalanceAmount: onSiteBalanceAmount
             }
             
@@ -1857,6 +1862,7 @@ export default function ReservationForm({
   const calculateTotalPrice = useCallback(() => {
     const subtotal = calculateSubtotal()
     const totalDiscount = formData.couponDiscount + formData.additionalDiscount
+    // Grand Total에는 추가비용, 세금, 카드 수수료, 선결제 지출, 선결제 팁이 모두 포함됨
     const totalAdditional = formData.additionalCost + formData.cardFee + formData.tax +
       formData.prepaymentCost + formData.prepaymentTip +
       (formData.isPrivateTour ? formData.privateTourAdditionalCost : 0) +
@@ -2090,6 +2096,39 @@ export default function ReservationForm({
   }, [reservationOptionsTotalPrice])
   */
 
+  // 상품 가격 또는 인원 수가 변경될 때 productPriceTotal 및 subtotal 자동 업데이트
+  useEffect(() => {
+    const newProductPriceTotal = (formData.adultProductPrice * formData.adults) + 
+                                 (formData.childProductPrice * formData.child) + 
+                                 (formData.infantProductPrice * formData.infant)
+    
+    // productPriceTotal이 다를 때만 업데이트 (무한 루프 방지)
+    if (Math.abs(newProductPriceTotal - formData.productPriceTotal) > 0.01) {
+      // 새로운 간결한 초이스 시스템 사용
+      const choicesTotal = formData.choicesTotal || 0;
+      const requiredOptionTotal = calculateRequiredOptionTotal();
+      
+      // 우선순위: 새로운 초이스 시스템 > 기존 requiredOptions
+      const optionTotal = choicesTotal > 0 ? choicesTotal : requiredOptionTotal;
+      
+      // 선택 옵션(optional options)도 포함
+      const optionalOptionTotal = calculateOptionTotal();
+      
+      // Dynamic Price 타입일 때만 초이스별 불포함 금액 포함
+      const notIncludedTotal = formData.priceType === 'dynamic' 
+        ? (formData.choiceNotIncludedTotal || 0)
+        : 0
+      
+      const newSubtotal = newProductPriceTotal + optionTotal + optionalOptionTotal + notIncludedTotal
+      
+      setFormData(prev => ({
+        ...prev,
+        productPriceTotal: newProductPriceTotal,
+        subtotal: newSubtotal
+      }))
+    }
+  }, [formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.adults, formData.child, formData.infant, formData.choicesTotal, formData.priceType, formData.choiceNotIncludedTotal, calculateRequiredOptionTotal, calculateOptionTotal])
+
   // 예약 옵션 총 가격이 변경될 때 가격 재계산 (편집 모드에서는 자동 저장 방지)
   useEffect(() => {
     // 편집 모드에서는 자동으로 가격을 업데이트하지 않음
@@ -2232,17 +2271,6 @@ export default function ReservationForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    // 고객 정보 검증
-    if (!formData.customerId) {
-      alert('고객을 선택해주세요.')
-      return
-    }
-    
-    if (!formData.customerName) {
-      alert('고객 이름을 입력해주세요.')
-      return
-    }
-    
     // 새로운 간결한 초이스 시스템에서 필수 초이스 검증
     // 거주 상태별 인원 수가 설정되어 있으면 "미국 거주자 구분" 관련 초이스 검증 건너뛰기
     const hasResidentStatusData = (formData.usResidentCount || 0) > 0 || 
@@ -2279,7 +2307,7 @@ export default function ReservationForm({
     const totalPeople = formData.adults + formData.child + formData.infant
     
     try {
-      // 고객 정보 저장/업데이트 또는 생성
+      // 고객 정보 저장/업데이트 또는 생성 (새 고객 생성 로직을 먼저 처리)
       let finalCustomerId = formData.customerId
       
       if (!formData.customerId || showNewCustomerForm) {
@@ -2352,6 +2380,13 @@ export default function ReservationForm({
         // 고객 목록 새로고침
         await onRefreshCustomers()
       }
+      
+      // 고객 ID 최종 검증 (새 고객 생성 후에도 고객 ID가 없으면 오류)
+      if (!finalCustomerId) {
+        alert('고객을 선택해주세요.')
+        return
+      }
+      
       // 새로운 간결한 초이스 시스템 사용
       const choicesData: any = {
         required: []

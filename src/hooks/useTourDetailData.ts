@@ -568,14 +568,29 @@ export function useTourDetailData() {
                 return []
               }
 
-              // 다른 투어들의 reservation_ids 수집
-              const otherReservationIds: string[] = []
-              otherTours?.forEach(tour => {
+              if (!otherTours || otherTours.length === 0) {
+                console.log('📊 No other tours found with same product_id and tour_date')
+                return []
+              }
+
+              // 예약 ID를 투어 ID에 매핑 (예약이 어느 투어에 속하는지 추적)
+              const reservationToTourMap = new Map<string, string>()
+              const otherReservationIdsSet = new Set<string>()
+              
+              otherTours.forEach(tour => {
                 if (tour.reservation_ids && Array.isArray(tour.reservation_ids)) {
-                  otherReservationIds.push(...tour.reservation_ids)
+                  tour.reservation_ids.forEach(id => {
+                    const reservationId = String(id).trim()
+                    if (reservationId) {
+                      otherReservationIdsSet.add(reservationId)
+                      // 예약 ID를 해당 투어 ID에 매핑
+                      reservationToTourMap.set(reservationId, tour.id)
+                    }
+                  })
                 }
               })
 
+              const otherReservationIds = Array.from(otherReservationIdsSet)
               console.log('📊 Other tours reservation IDs:', otherReservationIds)
               console.log('📊 Current tour reservation IDs (to exclude):', assignedReservationIds)
 
@@ -586,9 +601,12 @@ export function useTourDetailData() {
 
               console.log('📊 Filtered other tours reservation IDs (after excluding current tour):', filteredOtherReservationIds)
 
-              if (filteredOtherReservationIds.length === 0) return []
+              if (filteredOtherReservationIds.length === 0) {
+                console.log('📊 No reservations to show after filtering')
+                return []
+              }
 
-              // 해당 예약들을 직접 조회
+              // 해당 예약들을 직접 조회 (reservation_ids에 있는 예약만, 다른 조건 없음)
               const { data: otherReservationsData, error: otherReservationsError } = await supabase
                 .from('reservations')
                 .select('*')
@@ -601,7 +619,7 @@ export function useTourDetailData() {
 
               let filteredReservations = otherReservationsData || []
               
-              // 고객 정보 매핑
+              // 고객 정보 매핑 및 assigned_tour_id 설정
               if (filteredReservations.length > 0) {
                 const customerIds = [...new Set(filteredReservations.map(r => r.customer_id).filter(Boolean))]
                 
@@ -614,9 +632,10 @@ export function useTourDetailData() {
                   if (otherCustomersError) {
                     console.error('다른 투어 예약의 고객 정보 조회 오류:', otherCustomersError)
                   } else {
-                    // 다른 투어 예약 데이터에 고객 정보 매핑
+                    // 다른 투어 예약 데이터에 고객 정보 매핑 및 assigned_tour_id 설정
                     filteredReservations = filteredReservations.map(reservation => {
                       const customer = otherCustomersData?.find(customer => customer.id === reservation.customer_id)
+                      const assignedTourId = reservationToTourMap.get(reservation.id) || null
                       
                       return {
                         ...reservation,
@@ -624,10 +643,21 @@ export function useTourDetailData() {
                         // 고객 정보를 직접 매핑 (customer.name은 NOT NULL이므로 항상 존재)
                         customer_name: customer?.name || '정보 없음',
                         customer_email: customer?.email || '',
-                        customer_language: customer?.language || 'Unknown'
+                        customer_language: customer?.language || 'Unknown',
+                        // 어느 투어에 배정되어 있는지 표시
+                        assigned_tour_id: assignedTourId
                       }
                     })
                   }
+                } else {
+                  // 고객 정보가 없어도 assigned_tour_id는 설정
+                  filteredReservations = filteredReservations.map(reservation => {
+                    const assignedTourId = reservationToTourMap.get(reservation.id) || null
+                    return {
+                      ...reservation,
+                      assigned_tour_id: assignedTourId
+                    }
+                  })
                 }
               }
 
@@ -660,9 +690,8 @@ export function useTourDetailData() {
           const cancelledFromAssigned = assignedReservations.filter(r => isCancelled(r.status))
           const activeAssignedReservations = assignedReservations.filter(r => !isCancelled(r.status))
 
-          // otherToursAssignedReservations에서 cancelled 상태 제외
-          const cancelledFromOtherTours = otherToursAssignedReservations.filter(r => isCancelled(r.status))
-          const activeOtherToursAssignedReservations = otherToursAssignedReservations.filter(r => !isCancelled(r.status))
+          // otherToursAssignedReservations는 필터링 없이 그대로 사용 (reservation_ids에 있는 모든 예약)
+          const activeOtherToursAssignedReservations = otherToursAssignedReservations
 
           // 4. 다른 상태의 예약 (tour_date와 product_id가 같고, status가 confirmed 또는 recruiting이 아닌 예약)
           // cancelled 상태의 예약도 포함 (assigned와 otherTours에서 제외된 cancelled 포함)
@@ -677,7 +706,7 @@ export function useTourDetailData() {
           )
 
           // cancelled 상태의 예약들을 otherStatusReservations에 추가 (중복 제거)
-          const allCancelledReservations = [...cancelledFromAssigned, ...cancelledFromOtherTours]
+          const allCancelledReservations = [...cancelledFromAssigned]
           const otherStatusReservationIds = new Set(otherStatusReservations.map(r => r.id))
           const cancelledToAdd = allCancelledReservations.filter(r => !otherStatusReservationIds.has(r.id))
           const allOtherStatusReservations = [...otherStatusReservations, ...cancelledToAdd]
@@ -693,7 +722,6 @@ export function useTourDetailData() {
             assigned: assignedReservations.length,
             cancelledFromAssigned: cancelledFromAssigned.length,
             otherToursAssigned: otherToursAssignedReservations.length,
-            cancelledFromOtherTours: cancelledFromOtherTours.length,
             pending: pendingReservations.length,
             otherStatus: allOtherStatusReservations.length
           })

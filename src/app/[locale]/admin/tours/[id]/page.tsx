@@ -1319,7 +1319,7 @@ export default function TourDetailPage() {
               onUnassignReservation={handleUnassignReservation}
               onReassignFromOtherTour={() => {}}
               onNavigateToTour={(tourId: string) => {
-                router.push(`/admin/tours/${tourId}`)
+                router.push(`/${locale}/admin/tours/${tourId}`)
               }}
               onEditPickupTime={handleEditReservationClick}
               onEditPickupHotel={handleEditReservationClick}

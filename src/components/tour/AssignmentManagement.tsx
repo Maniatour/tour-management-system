@@ -334,6 +334,14 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
                        return acc
                      }, { status: {} as Record<string, number>, assignmentStatus: {} as Record<string, number> })
                      
+                     // 총 인원 계산
+                     const totalPeople = reservations.reduce((sum, reservation) => {
+                       const adults = reservation.adults || 0
+                       const children = reservation.children || 0
+                       const infants = reservation.infants || 0
+                       return sum + adults + children + infants
+                     }, 0)
+                     
                      return (
                        <div key={tourId} className="border rounded-lg p-3 bg-gray-50">
                          <div className="flex items-center justify-between mb-3">
@@ -371,6 +379,18 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
                              <span className="text-xs text-gray-500">
                                {reservations.length} {t('reservations')}
                              </span>
+                             {totalPeople > 0 && (
+                               <div className="flex items-center space-x-1">
+                                 <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                   👥 <span>{totalPeople}</span>
+                                 </span>
+                                 {tourId !== 'unknown' && (
+                                   <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 font-mono">
+                                     {tourId.substring(0, 8)}
+                                   </span>
+                                 )}
+                               </div>
+                             )}
                              {onNavigateToTour && tourId !== 'unknown' && (
                                <button
                                  onClick={() => onNavigateToTour(tourId)}

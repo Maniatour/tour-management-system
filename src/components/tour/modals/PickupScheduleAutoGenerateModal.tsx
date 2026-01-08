@@ -818,18 +818,18 @@ export default function PickupScheduleAutoGenerateModal({
               // 좌표 검증 및 수정
               const validatedCoords = validateAndFixCoordinates(lat, lng, hotel.hotel)
               if (validatedCoords) {
-                // LatLng 생성자가 사용 가능한지 확인
-                let location: google.maps.LatLng | { lat: number; lng: number }
-                if (window.google && window.google.maps && typeof window.google.maps.LatLng === 'function') {
+              // LatLng 생성자가 사용 가능한지 확인
+              let location: google.maps.LatLng | { lat: number; lng: number }
+              if (window.google && window.google.maps && typeof window.google.maps.LatLng === 'function') {
                   location = new window.google.maps.LatLng(validatedCoords.lat, validatedCoords.lng)
-                } else {
-                  // LatLng 생성자를 사용할 수 없으면 객체 형태로 사용
+              } else {
+                // LatLng 생성자를 사용할 수 없으면 객체 형태로 사용
                   location = { lat: validatedCoords.lat, lng: validatedCoords.lng }
-                }
-                return {
-                  location,
-                  stopover: true
-                }
+              }
+              return {
+                location,
+                stopover: true
+              }
               }
               // 좌표가 유효하지 않으면 주소 사용 (아래 코드로 계속)
             }
