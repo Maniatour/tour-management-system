@@ -3,6 +3,7 @@ import { useTranslations } from 'next-intl'
 import { ConnectionStatusLabel } from './TourUIComponents'
 import { Edit2, Check, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { TourStatusModal } from './modals/TourStatusModal'
 
 interface TourInfoProps {
   tour: any
@@ -17,7 +18,11 @@ interface TourInfoProps {
   onTourTimeChange?: (datetime: string) => Promise<void>
   onProductChange?: (productId: string) => Promise<void>
   getStatusColor: (status: string | null) => string
-  getStatusText: (status: string | null) => string
+  getStatusText: (status: string | null, locale: string) => string
+  getAssignmentStatusColor: (tour: any) => string
+  getAssignmentStatusText: (tour: any, locale: string) => string
+  onUpdateTourStatus?: (status: string) => Promise<void>
+  onUpdateAssignmentStatus?: (status: string) => Promise<void>
   assignedReservations?: Array<{ id: string }>
 }
 
@@ -42,6 +47,10 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   onProductChange,
   getStatusColor,
   getStatusText,
+  getAssignmentStatusColor,
+  getAssignmentStatusText,
+  onUpdateTourStatus,
+  onUpdateAssignmentStatus,
   assignedReservations = []
 }) => {
   const t = useTranslations('tours.tourInfo')
@@ -51,6 +60,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   
   // 편집 상태 관리
   const [editingProduct, setEditingProduct] = useState(false)
+  const [showStatusModal, setShowStatusModal] = useState(false)
   const [residentStatusSummary, setResidentStatusSummary] = useState({
     usResident: 0,
     nonResident: 0,
@@ -357,10 +367,30 @@ export const TourInfo: React.FC<TourInfoProps> = ({
           </div>
           <div className="flex justify-between items-center gap-2">
             <span className="text-gray-600 text-sm flex-shrink-0">{t('status')}:</span>
-            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(tour.tour_status)}`}>
-              {getStatusText(tour.tour_status, params.locale)}
-            </span>
+            {onUpdateTourStatus ? (
+              <button
+                onClick={() => setShowStatusModal(true)}
+                className={`px-3 py-1 rounded-full text-xs font-medium cursor-pointer hover:opacity-80 transition-opacity ${getStatusColor(tour.tour_status)}`}
+              >
+                {getStatusText(tour.tour_status, params.locale)}
+              </button>
+            ) : (
+              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(tour.tour_status)}`}>
+                {getStatusText(tour.tour_status, params.locale)}
+              </span>
+            )}
           </div>
+          {onUpdateAssignmentStatus && (
+            <div className="flex justify-between items-center gap-2">
+              <span className="text-gray-600 text-sm flex-shrink-0">{params.locale === 'ko' ? '배정 상태' : 'Assignment Status'}:</span>
+              <button
+                onClick={() => setShowStatusModal(true)}
+                className={`px-3 py-1 rounded-full text-xs font-medium cursor-pointer hover:opacity-80 transition-opacity ${getAssignmentStatusColor(tour)}`}
+              >
+                {getAssignmentStatusText(tour, params.locale)}
+              </button>
+            </div>
+          )}
           <div className="flex justify-between items-center gap-2">
             <span className="text-gray-600 text-sm flex-shrink-0">{t('tourType')}:</span>
             <button
@@ -440,6 +470,24 @@ export const TourInfo: React.FC<TourInfoProps> = ({
           />
         </div>
       </div>
+
+      {/* 상태 변경 모달 */}
+      {onUpdateTourStatus && onUpdateAssignmentStatus && (
+        <TourStatusModal
+          isOpen={showStatusModal}
+          tour={tour}
+          currentTourStatus={tour.tour_status}
+          currentAssignmentStatus={tour.assignment_status}
+          locale={params.locale}
+          onClose={() => setShowStatusModal(false)}
+          onUpdateTourStatus={onUpdateTourStatus}
+          onUpdateAssignmentStatus={onUpdateAssignmentStatus}
+          getStatusColor={getStatusColor}
+          getStatusText={getStatusText}
+          getAssignmentStatusColor={getAssignmentStatusColor}
+          getAssignmentStatusText={getAssignmentStatusText}
+        />
+      )}
     </div>
   )
 }

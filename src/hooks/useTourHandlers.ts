@@ -29,44 +29,51 @@ export function useTourHandlers() {
   }, [])
 
   // 투어 상태 변경 함수
-  const updateTourStatus = useCallback(async (tour: { id: string }, newStatus: string, isStaff: boolean) => {
+  const updateTourStatus = useCallback(async (tour: { id: string }, newStatus: string, isStaff: boolean): Promise<boolean> => {
     try {
       if (!tour || !tour.id) {
         alert('투어 정보를 찾을 수 없습니다.')
-        return
+        return false
       }
       
       if (!isStaff) {
         alert('투어 상태를 변경할 권한이 없습니다.')
-        return
+        return false
       }
       
-      const { error } = await (supabase as any)
+      console.log('데이터베이스 업데이트 시작:', { tourId: tour.id, newStatus })
+      const { data, error } = await (supabase as any)
         .from('tours')
         .update({ tour_status: newStatus })
         .eq('id', tour.id)
+        .select()
 
       if (error) {
+        console.error('데이터베이스 업데이트 오류:', error)
         throw error
       }
+      
+      console.log('투어 상태 업데이트 성공:', { tourId: tour.id, newStatus, updatedData: data })
+      return true
       
     } catch (error) {
       console.error('투어 상태 업데이트 실패:', error)
       alert(`투어 상태 업데이트에 실패했습니다: ${(error as Error).message}`)
+      return false
     }
   }, [])
 
   // 배정 상태 변경 함수
-  const updateAssignmentStatus = useCallback(async (tour: { id: string }, newStatus: string, isStaff: boolean) => {
+  const updateAssignmentStatus = useCallback(async (tour: { id: string }, newStatus: string, isStaff: boolean): Promise<boolean> => {
     try {
       if (!tour || !tour.id) {
         alert('투어 정보를 찾을 수 없습니다.')
-        return
+        return false
       }
       
       if (!isStaff) {
         alert('배정 상태를 변경할 권한이 없습니다.')
-        return
+        return false
       }
       
       const { error } = await (supabase as any)
@@ -89,9 +96,13 @@ export function useTourHandlers() {
         }
       }
       
+      console.log('배정 상태 업데이트 성공:', { tourId: tour.id, newStatus })
+      return true
+      
     } catch (error) {
       console.error('배정 상태 업데이트 실패:', error)
       alert(`배정 상태 업데이트에 실패했습니다: ${(error as Error).message}`)
+      return false
     }
   }, [])
 

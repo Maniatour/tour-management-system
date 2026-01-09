@@ -170,6 +170,8 @@ export default function TourDetailPage() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [hasPermission])
   
+  // 외부 클릭 감지 로직 제거 - backdrop에서 직접 처리
+  
   // 마일리지 관련 상태
   const [startMileage, setStartMileage] = useState<number>(0)
   const [endMileage, setEndMileage] = useState<number>(0)
@@ -199,18 +201,149 @@ export default function TourDetailPage() {
     }
   }
 
-  const handleTourStatusUpdate = (status: string) => {
-    if (!tourData.tour) return
-    tourHandlers.updateTourStatus(tourData.tour, status, tourData.isStaff)
-    tourData.setTour(prev => prev ? { ...prev, tour_status: status } : null)
-    tourData.setShowTourStatusDropdown(false)
+  const handleTourStatusUpdate = async (status: string) => {
+    console.log('=== handleTourStatusUpdate 호출 ===', status)
+    
+    if (!tourData.tour) {
+      console.error('투어 데이터가 없습니다.')
+      return
+    }
+    
+    // 현재 상태와 새 상태 비교 (대소문자 무시, 공백 제거)
+    const currentStatus = (tourData.tour.tour_status || '').toLowerCase().trim()
+    const newStatus = (status || '').toLowerCase().trim()
+    
+    console.log('상태 비교:', { 
+      currentStatus: currentStatus, 
+      newStatus: newStatus, 
+      currentStatusRaw: tourData.tour.tour_status,
+      newStatusRaw: status
+    })
+    
+    if (currentStatus === newStatus) {
+      console.log('이미 같은 상태입니다. 업데이트를 건너뜁니다.')
+      return
+    }
+    
+    console.log('=== 투어 상태 업데이트 시작 ===')
+    console.log('현재 상태:', tourData.tour.tour_status)
+    console.log('새 상태:', status)
+    console.log('투어 ID:', tourData.tour.id)
+    
+    // 이전 투어 데이터 저장
+    const previousTour = { ...tourData.tour }
+    
+    // 먼저 로컬 상태를 즉시 업데이트 (낙관적 업데이트)
+    tourData.setTour(prev => {
+      if (!prev) return null
+      console.log('로컬 상태 업데이트:', { 이전: prev.tour_status, 새: status })
+      return { ...prev, tour_status: status }
+    })
+    
+    // 데이터베이스 업데이트
+    try {
+      const success = await tourHandlers.updateTourStatus(previousTour, status, tourData.isStaff)
+      console.log('데이터베이스 업데이트 결과:', success)
+      
+      if (success) {
+        // 데이터베이스에서 최신 투어 데이터 다시 불러오기
+        const { data: updatedTour, error } = await supabase
+          .from('tours')
+          .select(`
+            *,
+            products (*)
+          `)
+          .eq('id', previousTour.id)
+          .single()
+        
+        if (error) {
+          console.error('투어 데이터 다시 불러오기 실패:', error)
+          // 에러가 발생해도 로컬 상태는 이미 업데이트됨
+        } else if (updatedTour) {
+          console.log('✅ 투어 데이터 다시 불러오기 성공:', updatedTour.tour_status)
+          // 실제 DB 값으로 업데이트
+          tourData.setTour(updatedTour)
+          tourData.setIsPrivateTour((updatedTour as any)?.is_private_tour || false)
+        }
+      } else {
+        console.error('데이터베이스 업데이트 실패 - 이전 상태로 복원')
+        // 실패 시 이전 상태로 복원
+        tourData.setTour(previousTour)
+        alert('상태 업데이트에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('투어 상태 업데이트 중 오류:', error)
+      // 오류 발생 시 이전 상태로 복원
+      tourData.setTour(previousTour)
+      alert('상태 업데이트 중 오류가 발생했습니다.')
+    }
   }
 
-  const handleAssignmentStatusUpdate = (status: string) => {
-    if (!tourData.tour) return
-    tourHandlers.updateAssignmentStatus(tourData.tour, status, tourData.isStaff)
-    tourData.setTour(prev => prev ? { ...prev, assignment_status: status } : null)
-    tourData.setShowAssignmentStatusDropdown(false)
+  const handleAssignmentStatusUpdate = async (status: string) => {
+    console.log('=== handleAssignmentStatusUpdate 호출 ===', status)
+    
+    if (!tourData.tour) {
+      console.error('투어 데이터가 없습니다.')
+      return
+    }
+    
+    // 이미 같은 상태면 업데이트하지 않음
+    if (tourData.tour.assignment_status === status) {
+      console.log('이미 같은 배정 상태입니다:', status)
+      return
+    }
+    
+    console.log('=== 배정 상태 업데이트 시작 ===')
+    console.log('현재 상태:', tourData.tour.assignment_status)
+    console.log('새 상태:', status)
+    console.log('투어 ID:', tourData.tour.id)
+    
+    // 이전 투어 데이터 저장
+    const previousTour = tourData.tour
+    
+    // 먼저 로컬 상태를 즉시 업데이트 (낙관적 업데이트)
+    tourData.setTour(prev => {
+      if (!prev) return null
+      return { ...prev, assignment_status: status }
+    })
+    
+    // 데이터베이스 업데이트
+    try {
+      const success = await tourHandlers.updateAssignmentStatus(previousTour, status, tourData.isStaff)
+      console.log('데이터베이스 업데이트 결과:', success)
+      
+      if (success) {
+        // 데이터베이스에서 최신 투어 데이터 다시 불러오기
+        const { data: updatedTour, error } = await supabase
+          .from('tours')
+          .select(`
+            *,
+            products (*)
+          `)
+          .eq('id', previousTour.id)
+          .single()
+        
+        if (error) {
+          console.error('투어 데이터 다시 불러오기 실패:', error)
+          // 에러가 발생해도 로컬 상태는 이미 업데이트됨
+        } else if (updatedTour) {
+          console.log('✅ 배정 상태 업데이트 완료:', updatedTour.assignment_status)
+          // 실제 DB 값으로 업데이트
+          tourData.setTour(updatedTour)
+          tourData.setIsPrivateTour((updatedTour as any)?.is_private_tour || false)
+        }
+      } else {
+        console.error('데이터베이스 업데이트 실패 - 이전 상태로 복원')
+        // 실패 시 이전 상태로 복원
+        tourData.setTour(previousTour)
+        alert('배정 상태 업데이트에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('배정 상태 업데이트 중 오류:', error)
+      // 오류 발생 시 이전 상태로 복원
+      tourData.setTour(previousTour)
+      alert('배정 상태 업데이트 중 오류가 발생했습니다.')
+    }
   }
 
   const handleTeamTypeChange = async (type: '1guide' | '2guide' | 'guide+driver') => {
@@ -1169,9 +1302,9 @@ export default function TourDetailPage() {
         onUpdateTourStatus={handleTourStatusUpdate}
         onUpdateAssignmentStatus={handleAssignmentStatusUpdate}
               getStatusColor={getStatusColor}
-              getStatusText={(status) => getStatusText(status, locale)}
-        getAssignmentStatusColor={() => getAssignmentStatusColor(tourData.tour)}
-        getAssignmentStatusText={() => getAssignmentStatusText(tourData.tour, locale)}
+        getStatusText={getStatusText}
+        getAssignmentStatusColor={getAssignmentStatusColor}
+        getAssignmentStatusText={getAssignmentStatusText}
         onEditClick={() => setShowTourEditModal(true)}
       />
 
@@ -1196,6 +1329,10 @@ export default function TourDetailPage() {
               onProductChange={handleTourProductUpdate}
               getStatusColor={getStatusColor}
               getStatusText={getStatusText}
+              getAssignmentStatusColor={getAssignmentStatusColor}
+              getAssignmentStatusText={getAssignmentStatusText}
+              onUpdateTourStatus={handleTourStatusUpdate}
+              onUpdateAssignmentStatus={handleAssignmentStatusUpdate}
               assignedReservations={tourData.assignedReservations}
             />
             </div>

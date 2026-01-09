@@ -1,7 +1,9 @@
 import { ArrowLeft, Edit, Trash2, Copy } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 import TourSunriseTime from '@/components/TourSunriseTime'
 import { StatusManagement } from '@/components/tour/StatusManagement'
+import { TourStatusModal } from './modals/TourStatusModal'
 import { useTranslations } from 'next-intl'
 
 interface TourHeaderProps {
@@ -17,12 +19,12 @@ interface TourHeaderProps {
   getTotalPeopleAll: number
   onToggleTourStatusDropdown: () => void
   onToggleAssignmentStatusDropdown: () => void
-  onUpdateTourStatus: (status: string) => void
-  onUpdateAssignmentStatus: (status: string) => void
+  onUpdateTourStatus: (status: string) => Promise<void>
+  onUpdateAssignmentStatus: (status: string) => Promise<void>
   getStatusColor: (status: string | null) => string
   getStatusText: (status: string | null, locale: string) => string
-  getAssignmentStatusColor: () => string
-  getAssignmentStatusText: () => string
+  getAssignmentStatusColor: (tour: any) => string
+  getAssignmentStatusText: (tour: any, locale: string) => string
   onEditClick?: () => void
 }
 
@@ -51,6 +53,9 @@ export default function TourHeader({
   const t = useTranslations('tours.tourHeader')
   const productName = params.locale === 'ko' ? product?.name_ko : product?.name_en
   const dateLocale = params.locale === 'ko' ? 'ko-KR' : 'en-US'
+  
+  // 모달 상태 관리
+  const [showStatusModal, setShowStatusModal] = useState(false)
 
   return (
     <div className="bg-white shadow-sm border-b">
@@ -77,7 +82,7 @@ export default function TourHeader({
                 <span>{params.locale === 'ko' ? '날짜' : 'Date'}: {tour.tour_date || ''}</span>
                 <span className="hidden sm:inline">|</span>
                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(tour.tour_status)}`}>
-                  {getStatusText(tour.tour_status)}
+                  {getStatusText(tour.tour_status, params.locale)}
                 </span>
               </div>
             </div>
@@ -101,6 +106,7 @@ export default function TourHeader({
             getStatusText={getStatusText}
             getAssignmentStatusColor={getAssignmentStatusColor}
             getAssignmentStatusText={getAssignmentStatusText}
+            locale={params.locale}
             onEditClick={onEditClick}
           />
 
@@ -108,72 +114,23 @@ export default function TourHeader({
           <div className="hidden sm:flex items-center space-x-6">
             {/* 투어 상태 버튼들 - 왼쪽 배치 */}
             <div className="flex space-x-3">
-              {/* 투어 Status 드롭다운 */}
-              <div className="relative">
-                <button 
-                  onClick={onToggleTourStatusDropdown}
-                  className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center justify-center min-w-[120px] ${getStatusColor(tour.tour_status)} hover:opacity-80 transition-opacity`}
-                >
-                  {t('tour')}: {getStatusText(tour.tour_status, params.locale)}
-                  <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                
-                {showTourStatusDropdown && (
-                  <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-                    {tourStatusOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          onUpdateTourStatus(option.value)
-                        }}
-                        className={`w-full px-4 py-2 text-sm text-left hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg ${option.color}`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              {/* 투어 Status 버튼 */}
+              <button 
+                type="button"
+                onClick={() => setShowStatusModal(true)}
+                className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center justify-center min-w-[120px] ${getStatusColor(tour.tour_status)} hover:opacity-80 transition-opacity cursor-pointer`}
+              >
+                {t('tour')}: {getStatusText(tour.tour_status, params.locale)}
+              </button>
               
-              {/* 투어 배정 Status 드롭다운 */}
-              <div className="relative">
-                <button 
-                  onClick={onToggleAssignmentStatusDropdown}
-                  className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center justify-center min-w-[120px] ${getAssignmentStatusColor()} hover:opacity-80 transition-opacity`}
-                >
-                  {t('assignment')}: {getAssignmentStatusText()}
-                  <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                
-                {showAssignmentStatusDropdown && (
-                  <div className="absolute top-full left-0 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-                    {assignmentStatusOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        onMouseDown={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          onUpdateAssignmentStatus(option.value)
-                        }}
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          onUpdateAssignmentStatus(option.value)
-                        }}
-                        className={`w-full px-4 py-2 text-sm text-left hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg ${option.color}`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              {/* 배정 Status 버튼 */}
+              <button 
+                type="button"
+                onClick={() => setShowStatusModal(true)}
+                className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center justify-center min-w-[120px] ${getAssignmentStatusColor(tour)} hover:opacity-80 transition-opacity cursor-pointer`}
+              >
+                {t('assignment')}: {getAssignmentStatusText(tour, params.locale)}
+              </button>
             </div>
             
             {/* 총 배정 인원 표시 */}
@@ -206,6 +163,22 @@ export default function TourHeader({
           </div>
         </div>
       </div>
+
+      {/* 상태 변경 모달 */}
+      <TourStatusModal
+        isOpen={showStatusModal}
+        tour={tour}
+        currentTourStatus={tour.tour_status}
+        currentAssignmentStatus={tour.assignment_status}
+        locale={params.locale}
+        onClose={() => setShowStatusModal(false)}
+        onUpdateTourStatus={onUpdateTourStatus}
+        onUpdateAssignmentStatus={onUpdateAssignmentStatus}
+        getStatusColor={getStatusColor}
+        getStatusText={getStatusText}
+        getAssignmentStatusColor={getAssignmentStatusColor}
+        getAssignmentStatusText={getAssignmentStatusText}
+      />
     </div>
   )
 }
