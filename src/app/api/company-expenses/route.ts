@@ -6,17 +6,63 @@ type CompanyExpense = Database['public']['Tables']['company_expenses']['Row']
 type CompanyExpenseInsert = Database['public']['Tables']['company_expenses']['Insert']
 type CompanyExpenseUpdate = Database['public']['Tables']['company_expenses']['Update']
 
-export async function GET() {
-  return Response.json({
-    data: [],
-    pagination: {
-      page: 1,
-      limit: 50,
-      total: 0,
-      totalPages: 1
-    },
-    message: 'company_expenses API는 아직 구현 중입니다.'
-  })
+export async function GET(request: NextRequest) {
+  try {
+    const supabase = createClient()
+    const { searchParams } = new URL(request.url)
+    
+    // 쿼리 파라미터 추출
+    const search = searchParams.get('search')
+    const category = searchParams.get('category')
+    const status = searchParams.get('status')
+    const vehicleId = searchParams.get('vehicle_id')
+    
+    // 기본 쿼리 생성
+    let query = supabase
+      .from('company_expenses')
+      .select('*')
+      .order('submit_on', { ascending: false })
+    
+    // 검색 필터 적용
+    if (search) {
+      query = query.or(`paid_to.ilike.%${search}%,paid_for.ilike.%${search}%,description.ilike.%${search}%`)
+    }
+    
+    // 카테고리 필터
+    if (category && category !== 'all') {
+      query = query.eq('category', category)
+    }
+    
+    // 상태 필터
+    if (status && status !== 'all') {
+      query = query.eq('status', status)
+    }
+    
+    // 차량 필터
+    if (vehicleId && vehicleId !== 'all') {
+      query = query.eq('vehicle_id', vehicleId)
+    }
+    
+    const { data, error } = await query
+    
+    if (error) {
+      console.error('회사 지출 조회 오류:', error)
+      return NextResponse.json({ error: '회사 지출을 조회할 수 없습니다.' }, { status: 500 })
+    }
+    
+    return NextResponse.json({
+      data: data || [],
+      pagination: {
+        page: 1,
+        limit: 50,
+        total: data?.length || 0,
+        totalPages: 1
+      }
+    })
+  } catch (error) {
+    console.error('회사 지출 조회 오류:', error)
+    return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -43,13 +89,14 @@ export async function POST(request: NextRequest) {
       tax_deductible
     } = body
     
-    // 필수 필드 검증
-    if (!id || !paid_to || !paid_for || !amount || !submit_by) {
+    // 필수 필드 검증 (ID는 자동 생성되므로 제외)
+    if (!paid_to || !paid_for || !amount || !submit_by) {
       return NextResponse.json({ error: '필수 필드가 누락되었습니다.' }, { status: 400 })
     }
     
     const expenseData: CompanyExpenseInsert = {
-      id,
+      // ID는 자동 생성되므로 제공되지 않은 경우 undefined로 설정
+      ...(id && { id }),
       paid_to,
       paid_for,
       description: description || null,

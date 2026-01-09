@@ -34,7 +34,7 @@ export default function ExpensesManagementPage() {
   ]
 
   return (
-    <div className="container mx-auto px-4 py-6 max-w-7xl">
+    <div className="container mx-auto px-2 py-6 max-w-full">
       {/* 헤더 */}
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-2">
@@ -77,7 +77,7 @@ export default function ExpensesManagementPage() {
       {/* 탭 컨텐츠 */}
       <div className="bg-white rounded-lg shadow-sm border">
         {activeTab === 'reservation' && (
-          <div className="p-6">
+          <div className="p-3">
             <div className="mb-4">
               <h2 className="text-xl font-semibold text-gray-900 mb-2">예약 지출 관리</h2>
               <p className="text-sm text-gray-600">
@@ -101,7 +101,7 @@ export default function ExpensesManagementPage() {
         )}
 
         {activeTab === 'tour' && (
-          <div className="p-6">
+          <div className="p-3">
             <div className="mb-4">
               <h2 className="text-xl font-semibold text-gray-900 mb-2">투어 지출 관리</h2>
               <p className="text-sm text-gray-600">

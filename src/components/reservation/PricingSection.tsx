@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Calculator, DollarSign, TrendingUp, TrendingDown, AlertCircle, RefreshCw } from 'lucide-react'
 import { useLocale } from 'next-intl'
@@ -87,6 +87,9 @@ interface PricingSectionProps {
     commission_base_price_only?: boolean
     has_not_included_price?: boolean
     not_included_type?: 'none' | 'amount_only' | 'amount_and_choice'
+    commission_percent?: number
+    commission?: number
+    commission_rate?: number
     [key: string]: unknown
   }>
   reservationId?: string
@@ -133,6 +136,10 @@ export default function PricingSection({
   const [showHelp, setShowHelp] = useState(false)
   const [reservationExpensesTotal, setReservationExpensesTotal] = useState(0)
   const [loadingExpenses, setLoadingExpenses] = useState(false)
+  // 카드 수수료 수동 입력 여부 추적
+  const isCardFeeManuallyEdited = useRef(false)
+  // 채널 수수료 기본가격 입력 중 포맷팅 방지
+  const [commissionBasePriceInput, setCommissionBasePriceInput] = useState<string | null>(null)
 
   // 예약 지출 총합 조회 함수
   const fetchReservationExpenses = useCallback(async () => {
@@ -214,8 +221,9 @@ export default function PricingSection({
     const totalCustomerPayment = calculateTotalCustomerPayment()
     const calculatedBalance = Math.max(0, totalCustomerPayment - formData.depositAmount)
     
-    // 잔액이 설정되지 않았을 때만 초기값 설정
-    if (formData.onSiteBalanceAmount === undefined || formData.onSiteBalanceAmount === null) {
+    // 잔액이 설정되지 않았거나 0일 때 기본값으로 설정
+    // 기본값 = 고객 총 결제 금액 - 고객 실제 지불액 (보증금)
+    if (formData.onSiteBalanceAmount === undefined || formData.onSiteBalanceAmount === null || formData.onSiteBalanceAmount === 0) {
       setFormData((prev: typeof formData) => ({ 
         ...prev, 
         onSiteBalanceAmount: calculatedBalance,
@@ -231,6 +239,34 @@ export default function PricingSection({
     selectedChannel.type?.toLowerCase() === 'ota' || 
     selectedChannel.category === 'OTA'
   )
+  // 채널의 commission_percent 가져오기 (여러 필드명 지원)
+  // channels 테이블에는 commission 컬럼이 있음 (commission_percent는 없을 수 있음)
+  const channelCommissionPercent = selectedChannel 
+    ? (() => {
+        // commission_percent, commission_rate, commission 순서로 확인
+        const percent = selectedChannel.commission_percent ?? selectedChannel.commission_rate ?? selectedChannel.commission
+        return percent ? Number(percent) : 0
+      })()
+    : 0
+  
+  // 채널 변경 시 commission_percent 초기화 (채널이 변경되면 새로운 채널의 commission_percent를 사용)
+  const prevChannelIdRef = useRef<string | undefined>(undefined)
+  
+  // 디버깅: 채널 정보 확인
+  useEffect(() => {
+    if (selectedChannel && isOTAChannel) {
+      console.log('Selected Channel Commission Info:', {
+        id: selectedChannel.id,
+        name: selectedChannel.name,
+        commission_percent: selectedChannel.commission_percent,
+        commission_rate: selectedChannel.commission_rate,
+        commission: selectedChannel.commission,
+        channelCommissionPercent,
+        formDataCommissionPercent: formData.commission_percent,
+        isOTAChannel
+      })
+    }
+  }, [selectedChannel, isOTAChannel, channelCommissionPercent, formData.commission_percent])
   // 홈페이지 채널 확인 (ID가 'M00001'이거나 type이 'Website'인 경우)
   const isHomepageChannel = selectedChannel && (
     selectedChannel.id === 'M00001' ||
@@ -469,12 +505,74 @@ export default function PricingSection({
     }
   }, [formData.commission_percent, formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.additionalCost, formData.subtotal, formData.optionTotal, isOTAChannel, commissionBasePriceOnly, calculateProductPriceTotal])
 
-  // 커미션 기본값 설정 및 자동 업데이트 (OTA 판매가 우선, 없으면 소계)
+  // 커미션 기본값 설정 및 자동 업데이트 (할인 후 상품가 우선, 없으면 OTA 판매가, 없으면 소계)
   const otaSalePrice = formData.onlinePaymentAmount ?? 0
   const currentCommissionBase = formData.commission_base_price ?? 0
+  // 할인 후 상품가 = 상품가격 - 쿠폰할인 - 추가할인
+  const discountedProductPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
+  
+  // 채널 결제 금액이 0일 때 할인 후 상품가로 자동 설정
+  useEffect(() => {
+    if (isOTAChannel && (!formData.onlinePaymentAmount || formData.onlinePaymentAmount === 0)) {
+      if (discountedProductPrice > 0) {
+        setFormData((prev: typeof formData) => ({
+          ...prev,
+          onlinePaymentAmount: discountedProductPrice
+        }))
+      }
+    }
+  }, [isOTAChannel, discountedProductPrice, formData.onlinePaymentAmount, setFormData])
+
+  // 채널 변경 감지
+  useEffect(() => {
+    if (formData.channelId !== prevChannelIdRef.current) {
+      prevChannelIdRef.current = formData.channelId
+      // 채널이 변경되면 commission_percent를 초기화하여 새 채널의 값을 사용하도록 함
+      if (isOTAChannel && channelCommissionPercent > 0) {
+        const basePrice = formData.commission_base_price !== undefined 
+          ? formData.commission_base_price 
+          : (discountedProductPrice > 0 ? discountedProductPrice : (otaSalePrice > 0 ? otaSalePrice : formData.subtotal))
+        const calculatedAmount = basePrice * (channelCommissionPercent / 100)
+        console.log('Channel changed - Setting commission_percent from new channel:', {
+          channelId: formData.channelId,
+          channelCommissionPercent,
+          basePrice,
+          calculatedAmount
+        })
+        setFormData((prev: typeof formData) => ({
+          ...prev,
+          commission_percent: channelCommissionPercent,
+          commission_amount: calculatedAmount
+        }))
+      }
+    }
+  }, [formData.channelId, isOTAChannel, channelCommissionPercent, formData.commission_base_price, discountedProductPrice, otaSalePrice, formData.subtotal, setFormData])
+
+  // 채널의 commission_percent를 기본값으로 설정 (초기 로딩 시 또는 commission_percent가 0일 때)
+  useEffect(() => {
+    if (isOTAChannel && channelCommissionPercent > 0) {
+      // commission_percent가 0이거나 없을 때만 설정
+      if (!formData.commission_percent || formData.commission_percent === 0) {
+        const basePrice = formData.commission_base_price !== undefined 
+          ? formData.commission_base_price 
+          : (discountedProductPrice > 0 ? discountedProductPrice : (otaSalePrice > 0 ? otaSalePrice : formData.subtotal))
+        const calculatedAmount = basePrice * (channelCommissionPercent / 100)
+        console.log('Setting commission_percent from channel (initial load):', {
+          channelCommissionPercent,
+          basePrice,
+          calculatedAmount
+        })
+        setFormData((prev: typeof formData) => ({
+          ...prev,
+          commission_percent: channelCommissionPercent,
+          commission_amount: calculatedAmount
+        }))
+      }
+    }
+  }, [isOTAChannel, channelCommissionPercent, formData.commission_percent, formData.commission_base_price, discountedProductPrice, otaSalePrice, formData.subtotal, setFormData])
   
   useEffect(() => {
-    const basePrice = otaSalePrice > 0 ? otaSalePrice : formData.subtotal
+    const basePrice = discountedProductPrice > 0 ? discountedProductPrice : (otaSalePrice > 0 ? otaSalePrice : formData.subtotal)
     
     if (basePrice > 0) {
       // commission_base_price가 설정되지 않았거나, basePrice와 같으면 자동 업데이트
@@ -497,16 +595,21 @@ export default function PricingSection({
       }
     }
   }, [
+    discountedProductPrice,
     otaSalePrice, 
     formData.subtotal, 
     currentCommissionBase, 
     formData.commission_percent,
-    formData.commission_base_price
+    formData.commission_base_price,
+    formData.productPriceTotal,
+    formData.couponDiscount,
+    formData.additionalDiscount
   ])
 
   // 자체 채널: 채널 결제 금액 변경 시 카드 수수료 기본값 자동 업데이트
   useEffect(() => {
     if (isOTAChannel) return // OTA 채널은 제외
+    if (isCardFeeManuallyEdited.current) return // 사용자가 수동으로 입력한 경우 자동 업데이트 안 함
     
     // 채널 결제 금액 계산 (잔금 제외)
     const channelPaymentAmount = (
@@ -1321,9 +1424,14 @@ export default function PricingSection({
                   <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
                   <input
                     type="number"
-                    value={formData.onSiteBalanceAmount !== undefined && formData.onSiteBalanceAmount !== null 
-                      ? formData.onSiteBalanceAmount 
-                      : Math.max(0, calculateTotalCustomerPayment() - formData.depositAmount)}
+                    value={(() => {
+                      // 기본값 = 고객 총 결제 금액 - 고객 실제 지불액 (보증금)
+                      const totalCustomerPayment = calculateTotalCustomerPayment()
+                      const defaultBalance = Math.max(0, totalCustomerPayment - formData.depositAmount)
+                      return formData.onSiteBalanceAmount !== undefined && formData.onSiteBalanceAmount !== null 
+                        ? formData.onSiteBalanceAmount 
+                        : defaultBalance
+                    })()}
                     onChange={(e) => {
                       const newBalance = Number(e.target.value) || 0
                       setFormData({ ...formData, onSiteBalanceAmount: newBalance, balanceAmount: newBalance })
@@ -1357,17 +1465,26 @@ export default function PricingSection({
               
               {/* 채널 결제 금액 */}
               <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-gray-700">{isKorean ? '채널 결제 금액' : 'Channel Payment Amount'}</span>
+                <span className="text-xs font-medium text-gray-700">{isKorean ? '채널 결제 금액' : 'Channel Payment Amount'}</span>
                 {isOTAChannel ? (
                   <div className="flex items-center space-x-2">
+                    <span className="text-xs text-gray-500">:</span>
                     <div className="relative">
                       <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
                       <input
                         type="number"
-                        value={formData.onlinePaymentAmount || 0}
+                        value={formData.onlinePaymentAmount || (() => {
+                          const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
+                          return discountedPrice > 0 ? discountedPrice : 0
+                        })()}
                         onChange={(e) => {
                           const otaSalePrice = Number(e.target.value) || 0
-                          const commissionBasePrice = formData.commission_base_price !== undefined ? formData.commission_base_price : otaSalePrice
+                          // 할인 후 상품가 계산
+                          const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
+                          const defaultBasePrice = discountedPrice > 0 ? discountedPrice : formData.subtotal
+                          const commissionBasePrice = formData.commission_base_price !== undefined 
+                            ? formData.commission_base_price 
+                            : (otaSalePrice > 0 ? otaSalePrice : defaultBasePrice)
                           const calculatedCommission = commissionBasePrice * (formData.commission_percent / 100)
                           setFormData({ 
                             ...formData, 
@@ -1383,7 +1500,10 @@ export default function PricingSection({
                     </div>
                     {formData.prepaymentTip > 0 && (
                       <span className="text-xs text-gray-500">
-                        (+ 팁 ${formData.prepaymentTip.toFixed(2)}) = ${((formData.onlinePaymentAmount || 0) + formData.prepaymentTip).toFixed(2)}
+                        (+ 팁 ${formData.prepaymentTip.toFixed(2)}) = ${((formData.onlinePaymentAmount || (() => {
+                          const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
+                          return discountedPrice > 0 ? discountedPrice : 0
+                        })()) + formData.prepaymentTip).toFixed(2)}
                       </span>
                     )}
                   </div>
@@ -1403,62 +1523,53 @@ export default function PricingSection({
               </div>
               
               {/* 채널 수수료 (커미션) / 카드 수수료 (자체 채널) */}
-              <div className="space-y-2 mb-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-700">
-                    {isOTAChannel 
-                      ? (isKorean ? '- 채널 수수료' : '- Channel Commission')
-                      : (isKorean ? '- 카드 수수료' : '- Card Processing Fee')
-                    }
-                  </span>
-                </div>
-                {isOTAChannel ? (
-                  // OTA 채널: 기존 채널 수수료 입력 방식
-                  <div className="flex items-center space-x-2">
-                    <div className="relative flex-1">
-                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">$</span>
-                      <input
-                        type="number"
-                        value={formData.commission_base_price !== undefined ? formData.commission_base_price.toFixed(2) : (formData.onlinePaymentAmount || formData.subtotal).toFixed(2)}
-                        onChange={(e) => {
-                          const basePrice = Number(e.target.value) || 0
-                          const calculatedAmount = basePrice * (formData.commission_percent / 100)
-                          setFormData({ 
-                            ...formData, 
-                            commission_base_price: basePrice,
-                            commission_amount: calculatedAmount
-                          })
-                        }}
-                        className="w-full pl-5 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
-                        step="0.01"
-                        min="0"
-                        placeholder="0"
-                      />
+              {isOTAChannel ? (
+                <div className="space-y-2 mb-2">
+                  {/* 채널 수수료 % */}
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-medium text-gray-700">
+                      {isKorean ? '채널 수수료 %' : 'Channel Commission %'}
+                    </span>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs text-gray-500">x</span>
+                      <div className="flex items-center space-x-1">
+                        <input
+                          type="number"
+                          value={formData.commission_percent || channelCommissionPercent || 0}
+                          onChange={(e) => {
+                            const percent = Number(e.target.value) || 0
+                            const basePrice = formData.commission_base_price !== undefined 
+                              ? formData.commission_base_price 
+                              : (formData.onlinePaymentAmount || (() => {
+                                  const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
+                                  return discountedPrice > 0 ? discountedPrice : formData.subtotal
+                                })())
+                            const calculatedAmount = basePrice * (percent / 100)
+                            setFormData({ 
+                              ...formData, 
+                              commission_percent: percent,
+                              commission_amount: calculatedAmount
+                            })
+                          }}
+                          className="w-16 px-1 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          placeholder={channelCommissionPercent > 0 ? channelCommissionPercent.toString() : "0"}
+                        />
+                        <span className="text-xs text-gray-500">%</span>
+                      </div>
                     </div>
-                    <span className="text-xs text-gray-500">×</span>
-                    <div className="flex items-center space-x-1">
-                      <input
-                        type="number"
-                        value={formData.commission_percent}
-                        onChange={(e) => {
-                          const percent = Number(e.target.value) || 0
-                          const basePrice = formData.commission_base_price !== undefined ? formData.commission_base_price : (formData.onlinePaymentAmount || formData.subtotal)
-                          const calculatedAmount = basePrice * (percent / 100)
-                          setFormData({ 
-                            ...formData, 
-                            commission_percent: percent,
-                            commission_amount: calculatedAmount
-                          })
-                        }}
-                        className="w-12 px-1 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                        step="0.01"
-                        min="0"
-                        max="100"
-                        placeholder="0"
-                      />
-                      <span className="text-xs text-gray-500">%</span>
-                    </div>
-                    <span className="text-xs text-gray-500">=</span>
+                  </div>
+                  
+                  {/* 구분선 */}
+                  <div className="border-t border-gray-200 my-2"></div>
+                  
+                  {/* 채널 수수료 $ */}
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium text-gray-700">
+                      {isKorean ? '채널 수수료 $' : 'Channel Commission $'}
+                    </span>
                     <div className="relative">
                       <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-xs text-gray-500">$</span>
                       <input
@@ -1468,32 +1579,39 @@ export default function PricingSection({
                           const newAmount = Number(e.target.value) || 0
                           setFormData({ ...formData, commission_amount: newAmount })
                         }}
-                        className="w-20 pl-5 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
+                        className="w-24 pl-5 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
                         step="0.01"
                         min="0"
                         placeholder="0"
                       />
                     </div>
                   </div>
-                ) : (
-                  // 자체 채널: 카드 수수료 입력 방식 (고객 실제 지불액 × 2.9% + $0.15)
-                  (() => {
-                    const customerPaymentAmount = formData.depositAmount || 0
-                    const defaultBasePrice = customerPaymentAmount
-                    const defaultCommissionPercent = 2.9
-                    const defaultCommissionAmount = customerPaymentAmount * 0.029 + 0.15
-                    
-                    const basePrice = formData.commission_base_price !== undefined 
-                      ? formData.commission_base_price 
-                      : defaultBasePrice
-                    const commissionPercent = formData.commission_percent > 0 
-                      ? formData.commission_percent 
-                      : defaultCommissionPercent
-                    const commissionAmount = formData.commission_amount > 0 
-                      ? formData.commission_amount 
-                      : defaultCommissionAmount
-                    
-                    return (
+                </div>
+              ) : (
+                /* 자체 채널: 카드 수수료 입력 방식 (고객 실제 지불액 × 2.9% + $0.15) */
+                (() => {
+                  const customerPaymentAmount = formData.depositAmount || 0
+                  const defaultBasePrice = customerPaymentAmount
+                  const defaultCommissionPercent = 2.9
+                  const defaultCommissionAmount = customerPaymentAmount * 0.029 + 0.15
+                  
+                  const basePrice = formData.commission_base_price !== undefined 
+                    ? formData.commission_base_price 
+                    : defaultBasePrice
+                  const commissionPercent = formData.commission_percent > 0 
+                    ? formData.commission_percent 
+                    : defaultCommissionPercent
+                  const commissionAmount = formData.commission_amount > 0 
+                    ? formData.commission_amount 
+                    : defaultCommissionAmount
+                  
+                  return (
+                    <div className="space-y-2 mb-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-gray-700">
+                          {isKorean ? '- 카드 수수료' : '- Card Processing Fee'}
+                        </span>
+                      </div>
                       <div className="space-y-2">
                         <div className="flex items-center space-x-2">
                           <div className="relative flex-1">
@@ -1502,6 +1620,7 @@ export default function PricingSection({
                               type="number"
                               value={basePrice || ''}
                               onChange={(e) => {
+                                isCardFeeManuallyEdited.current = true
                                 const newBasePrice = Number(e.target.value) || 0
                                 const newAmount = newBasePrice * (commissionPercent / 100) + 0.15
                                 setFormData({ 
@@ -1523,6 +1642,7 @@ export default function PricingSection({
                               type="number"
                               value={commissionPercent || ''}
                               onChange={(e) => {
+                                isCardFeeManuallyEdited.current = true
                                 const newPercent = Number(e.target.value) || 0
                                 const newAmount = basePrice * (newPercent / 100) + 0.15
                                 setFormData({ 
@@ -1549,6 +1669,7 @@ export default function PricingSection({
                               type="number"
                               value={commissionAmount || ''}
                               onChange={(e) => {
+                                isCardFeeManuallyEdited.current = true
                                 const newAmount = Number(e.target.value) || 0
                                 setFormData({ ...formData, commission_amount: newAmount })
                               }}
@@ -1566,17 +1687,16 @@ export default function PricingSection({
                           }
                         </div>
                       </div>
-                    )
-                  })()
-                )}
-              </div>
-              
-              <div className="border-t border-gray-200 my-2"></div>
+                    </div>
+                  )
+                })()
+              )}
               
               {/* 채널 정산금액 */}
+              {isOTAChannel && <div className="border-t border-gray-200 my-2"></div>}
               <div className="flex justify-between items-center mb-2">
-                <span className="text-base font-bold text-blue-800">{isKorean ? '채널 정산금액' : 'Channel Settlement Amount'}</span>
-                <span className="text-lg font-bold text-blue-600">
+                <span className="text-xs font-medium text-gray-700">{isKorean ? '채널 정산 금액' : 'Channel Settlement Amount'}</span>
+                <span className="text-sm font-bold text-blue-600">
                   ${isOTAChannel 
                     ? ((formData.onlinePaymentAmount || 0) - formData.commission_amount).toFixed(2)
                     : (() => {

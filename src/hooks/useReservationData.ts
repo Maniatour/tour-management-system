@@ -90,7 +90,7 @@ export function useReservationData() {
     fetchFn: async () => {
       const { data, error } = await supabase
         .from('channels')
-        .select('id, name, type, favicon_url, pricing_type, commission_base_price_only, category, has_not_included_price, not_included_type, not_included_price')
+        .select('id, name, type, favicon_url, pricing_type, commission_base_price_only, category, has_not_included_price, not_included_type, not_included_price, commission_percent, commission')
         .order('name', { ascending: true })
 
       if (error) {

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { Database } from '@/lib/database.types'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -20,6 +20,7 @@ import { toast } from 'sonner'
 
 type CompanyExpense = Database['public']['Tables']['company_expenses']['Row']
 type Vehicle = Database['public']['Tables']['vehicles']['Row']
+type TeamMember = Database['public']['Tables']['team']['Row']
 
 interface CompanyExpenseFormData {
   id: string
@@ -42,9 +43,16 @@ interface CompanyExpenseFormData {
 
 export default function CompanyExpenseManager() {
   const t = useTranslations('companyExpense')
+  let locale = 'ko'
+  try {
+    locale = useLocale()
+  } catch (error) {
+    console.warn('로케일을 가져올 수 없습니다. 기본값(ko)을 사용합니다.', error)
+  }
   const { user } = useAuth()
   const [expenses, setExpenses] = useState<CompanyExpense[]>([])
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
+  const [teamMembers, setTeamMembers] = useState<Map<string, TeamMember>>(new Map())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -115,10 +123,39 @@ export default function CompanyExpenseManager() {
     }
   }, [supabase])
 
+  const loadTeamMembers = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('team')
+        .select('email, name_ko, name_en')
+      
+      if (error) {
+        console.error('팀 멤버 조회 오류:', error)
+        return
+      }
+      
+      // 이메일을 키로 하는 Map 생성
+      const memberMap = new Map<string, TeamMember>()
+      if (data) {
+        data.forEach(member => {
+          if (member && member.email) {
+            memberMap.set(member.email.toLowerCase(), member)
+          }
+        })
+      }
+      setTeamMembers(memberMap)
+    } catch (error) {
+      console.error('팀 멤버 목록 로드 오류:', error)
+      // 에러가 발생해도 빈 Map으로 설정하여 앱이 계속 작동하도록 함
+      setTeamMembers(new Map())
+    }
+  }, [])
+
   useEffect(() => {
     loadExpenses()
     loadVehicles()
-  }, [loadExpenses, loadVehicles])
+    loadTeamMembers()
+  }, [loadExpenses, loadVehicles, loadTeamMembers])
 
   // 파일 업로드 핸들러
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -208,7 +245,8 @@ export default function CompanyExpenseManager() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!formData.id || !formData.paid_to || !formData.paid_for || !formData.amount) {
+    // ID는 자동 생성되므로 검증에서 제외
+    if (!formData.paid_to || !formData.paid_for || !formData.amount) {
       toast.error('필수 필드를 모두 입력해주세요.')
       return
     }
@@ -347,7 +385,11 @@ export default function CompanyExpenseManager() {
     })
   }
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string | null) => {
+    if (!status) {
+      status = 'pending'
+    }
+    
     const statusConfig = {
       pending: { color: 'bg-yellow-100 text-yellow-800', icon: Clock },
       approved: { color: 'bg-green-100 text-green-800', icon: CheckCircle },
@@ -419,16 +461,6 @@ export default function CompanyExpenseManager() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="id">{t('form.id')} *</Label>
-                  <Input
-                    id="id"
-                    value={formData.id}
-                    onChange={(e) => setFormData({ ...formData, id: e.target.value })}
-                    required
-                  />
-                </div>
-                
-                <div>
                   <Label htmlFor="amount">{t('form.amount')} *</Label>
                   <Input
                     id="amount"
@@ -439,6 +471,18 @@ export default function CompanyExpenseManager() {
                     required
                   />
                 </div>
+                
+                {editingExpense && (
+                  <div>
+                    <Label htmlFor="id">{t('form.id')}</Label>
+                    <Input
+                      id="id"
+                      value={formData.id}
+                      disabled
+                      className="bg-gray-100"
+                    />
+                  </div>
+                )}
               </div>
               
               <div className="grid grid-cols-2 gap-4">
@@ -669,13 +713,52 @@ export default function CompanyExpenseManager() {
                 </div>
               </div>
               
-              <div className="flex justify-end space-x-2">
-                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                  {t('buttons.cancel')}
-                </Button>
-                <Button type="submit" disabled={saving}>
-                  {saving ? '저장 중...' : t('buttons.save')}
-                </Button>
+              <div className="flex justify-between items-center">
+                {editingExpense && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button 
+                        type="button" 
+                        variant="destructive"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        삭제
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>지출 삭제</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {t('messages.confirmDelete')}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>취소</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => {
+                            if (editingExpense) {
+                              handleDelete(editingExpense.id)
+                              setIsDialogOpen(false)
+                              setEditingExpense(null)
+                            }
+                          }}
+                          className="bg-red-600 hover:bg-red-700"
+                        >
+                          삭제
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+                <div className="flex justify-end space-x-2 ml-auto">
+                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                    {t('buttons.cancel')}
+                  </Button>
+                  <Button type="submit" disabled={saving}>
+                    {saving ? '저장 중...' : t('buttons.save')}
+                  </Button>
+                </div>
               </div>
             </form>
           </DialogContent>
@@ -790,72 +873,55 @@ export default function CompanyExpenseManager() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>ID</TableHead>
-                    <TableHead>결제처</TableHead>
-                    <TableHead>결제내용</TableHead>
-                    <TableHead>금액</TableHead>
-                    <TableHead>카테고리</TableHead>
-                    <TableHead>상태</TableHead>
-                    <TableHead>제출자</TableHead>
-                    <TableHead>제출일</TableHead>
-                    <TableHead>작업</TableHead>
+                    <TableHead className="py-2">제출일</TableHead>
+                    <TableHead className="py-2">결제처</TableHead>
+                    <TableHead className="py-2">결제내용</TableHead>
+                    <TableHead className="py-2">설명</TableHead>
+                    <TableHead className="py-2">금액</TableHead>
+                    <TableHead className="py-2">결제방법</TableHead>
+                    <TableHead className="w-32 py-2">카테고리</TableHead>
+                    <TableHead className="w-28 py-2">상태</TableHead>
+                    <TableHead className="py-2">제출자</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {expenses.map((expense) => (
-                    <TableRow key={expense.id}>
-                      <TableCell className="font-mono text-sm">{expense.id}</TableCell>
-                      <TableCell>{expense.paid_to}</TableCell>
-                      <TableCell className="max-w-xs truncate">{expense.paid_for}</TableCell>
-                      <TableCell className="font-medium">
-                        ₩{parseFloat(expense.amount.toString()).toLocaleString()}
+                    <TableRow 
+                      key={expense.id}
+                      onClick={() => handleEdit(expense)}
+                      className="cursor-pointer hover:bg-gray-50"
+                    >
+                      <TableCell className="py-2">
+                        {expense.submit_on ? new Date(expense.submit_on).toLocaleDateString() : '-'}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="py-2">{expense.paid_to}</TableCell>
+                      <TableCell className="max-w-xs truncate py-2">{expense.paid_for}</TableCell>
+                      <TableCell className="max-w-xs truncate py-2">{expense.description || '-'}</TableCell>
+                      <TableCell className="font-medium py-2">
+                        ${expense.amount ? parseFloat(expense.amount.toString()).toLocaleString() : '0'}
+                      </TableCell>
+                      <TableCell className="py-2">{expense.payment_method || '-'}</TableCell>
+                      <TableCell className="w-32 py-2">
                         {expense.category && (
                           <Badge variant="outline">
                             {t(`categories.${expense.category}`)}
                           </Badge>
                         )}
                       </TableCell>
-                      <TableCell>{getStatusBadge(expense.status)}</TableCell>
-                      <TableCell>{expense.submit_by}</TableCell>
-                      <TableCell>
-                        {new Date(expense.submit_on).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex space-x-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleEdit(expense)}
-                          >
-                            <Edit className="w-3 h-3" />
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button size="sm" variant="outline">
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>지출 삭제</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  {t('messages.confirmDelete')}
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>취소</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => handleDelete(expense.id)}
-                                  className="bg-red-600 hover:bg-red-700"
-                                >
-                                  삭제
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
+                      <TableCell className="w-28 py-2">{getStatusBadge(expense.status || 'pending')}</TableCell>
+                      <TableCell className="py-2">
+                        {(() => {
+                          if (!expense.submit_by) return '-'
+                          try {
+                            const member = teamMembers.get(expense.submit_by.toLowerCase())
+                            if (member) {
+                              return locale === 'ko' ? member.name_ko : (member.name_en || member.name_ko)
+                            }
+                            return expense.submit_by
+                          } catch (error) {
+                            return expense.submit_by
+                          }
+                        })()}
                       </TableCell>
                     </TableRow>
                   ))}

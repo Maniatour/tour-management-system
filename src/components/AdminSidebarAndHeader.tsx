@@ -30,7 +30,6 @@ import {
   Camera,
   Calculator,
   UserCheck,
-  HelpCircle,
   CreditCard,
   Wrench,
   Tag
@@ -206,7 +205,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       const myEmail = authUser.email.toLowerCase()
       
       // 재시도 로직이 포함된 쿼리 실행 함수
-      const executeQueryWithRetry = async <T>(
+      const executeQueryWithRetry = async <T,>(
         queryFn: () => Promise<{ data: T | null; error: any }>,
         retries = 3
       ): Promise<{ data: T | null; error: any }> => {
@@ -278,7 +277,9 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         })
       }
 
-      const myPosition = (me?.position as string) || null
+      const myPosition = me && typeof me === 'object' && me !== null && 'position' in me 
+        ? (me as { position: string }).position 
+        : null
 
       // 내가 확인한 공지 목록
       const { data: myAcks } = await executeQueryWithRetry(() =>
@@ -445,10 +446,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('pickupHotels'), href: `/${locale}/admin/pickup-hotels`, icon: Building },
     { name: t('vehicles'), href: `/${locale}/admin/vehicles`, icon: Car },
     { name: t('coupons'), href: `/${locale}/admin/coupons`, icon: Ticket },
-    { name: t('consultation'), href: `/${locale}/admin/consultation`, icon: HelpCircle },
     // 예약 통계는 Super 권한만 표시
     ...(isSuper ? [{ name: t('reservationStats'), href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 }] : []),
-    { name: t('documentTemplates'), href: `/${locale}/admin/reservations/templates`, icon: FileText },
     { name: t('team'), href: `/${locale}/admin/team`, icon: Users },
     { name: t('teamChat'), href: `/${locale}/admin/team-chat`, icon: MessageCircle },
     { name: t('attendance'), href: `/${locale}/admin/attendance`, icon: Clock },
@@ -461,7 +460,6 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     // { name: tAdmin('companyExpenseManagement'), href: `/${locale}/admin/company-expenses`, icon: DollarSign },
     { name: tAdmin('vehicleMaintenanceManagement'), href: `/${locale}/admin/vehicle-maintenance`, icon: Wrench },
     { name: tAdmin('paymentMethodManagement'), href: `/${locale}/admin/payment-methods`, icon: CreditCard },
-    { name: t('teamBoard'), href: `/${locale}/admin/team-board`, icon: BookOpen },
     { name: t('tourMaterials'), href: `/${locale}/admin/tour-materials`, icon: FileText },
     { name: t('tourPhotoBuckets'), href: `/${locale}/admin/tour-photo-buckets`, icon: Camera },
     { name: t('dataSync'), href: `/${locale}/admin/data-sync`, icon: FileSpreadsheet },
@@ -496,6 +494,16 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
               
               {/* 데스크톱 전용 빠른 이동 */}
               <div className="hidden lg:flex items-center space-x-2">
+                <Link
+                  href={`/${locale}/admin/team-board`}
+                  className="px-3 py-1.5 text-sm border rounded-md text-orange-600 border-orange-600 hover:bg-orange-600 hover:text-white transition-colors cursor-pointer relative z-10"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    router.push(`/${locale}/admin/team-board`)
+                  }}
+                >
+                  {t('teamBoard')}
+                </Link>
                 <Link
                   href={`/${locale}/admin/consultation`}
                   className="px-3 py-1.5 text-sm border rounded-md text-purple-600 border-purple-600 hover:bg-purple-600 hover:text-white transition-colors cursor-pointer relative z-10"
@@ -556,19 +564,6 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 >
                   {t('chatManagement')}
                 </Link>
-                {/* 개발자 도구 (관리자만 표시) */}
-                {(userRole === 'admin' || (userRole === 'team_member' && isSimulating)) && (
-                  <Link
-                    href={`/${locale}/admin/dev-tools`}
-                    className="px-3 py-1.5 text-sm border rounded-md text-orange-600 border-orange-600 hover:bg-orange-600 hover:text-white transition-colors cursor-pointer relative z-10"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      router.push(`/${locale}/admin/dev-tools`)
-                    }}
-                  >
-                    {tAdmin('developerTools')}
-                  </Link>
-                )}
               </div>
               
             </div>
@@ -745,23 +740,6 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                             </Link>
                           )}
                         </div>
-                        
-                        {/* 개발자 도구 (관리자만 표시) */}
-                        {(userRole === 'admin' || (userRole === 'team_member' && isSimulating)) && (
-                          <div className="px-4 py-2 border-t border-gray-100">
-                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
-                              {t('adminTools')}
-                            </p>
-                            <Link
-                              href={`/${locale}/admin/dev-tools`}
-                              onClick={handleUserMenuClick}
-                              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
-                            >
-                              <Settings className="w-4 h-4 mr-2" />
-                              {tAdmin('developerTools')}
-                            </Link>
-                          </div>
-                        )}
                         
                         {/* 시뮬레이션 메뉴 (관리자만) */}
                         {userRole === 'admin' && (

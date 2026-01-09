@@ -2078,6 +2078,7 @@
     "title": "차량 정비 관리",
     "addMaintenance": "정비 추가",
     "maintenanceList": "정비 목록",
+    "loading": "로딩 중...",
     "noMaintenance": "등록된 정비 기록이 없습니다.",
     "form": {
       "id": "ID",
@@ -2251,5 +2252,16 @@
     "loginRequired": "로그인이 필요합니다.",
     "goToDashboard": "대시보드로 이동",
     "currentStatus": "현재 상태:"
+  },
+  "teamBoard": {
+    "tasks": "업무",
+    "newTodo": "새 ToDo",
+    "checklist": "체크리스트",
+    "noTodos": "등록된 ToDo가 없습니다.",
+    "filters": {
+      "catDaily": "Daily",
+      "catMonthly": "Monthly",
+      "catYearly": "Yearly"
+    }
   }
 }

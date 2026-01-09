@@ -1968,6 +1968,7 @@
     "title": "Vehicle Maintenance Management",
     "addMaintenance": "Add Maintenance",
     "maintenanceList": "Maintenance List",
+    "loading": "Loading...",
     "noMaintenance": "No maintenance records registered.",
     "form": {
       "id": "ID",
@@ -2141,5 +2142,16 @@
     "loginRequired": "Login required.",
     "goToDashboard": "Go to Dashboard",
     "currentStatus": "Current Status:"
+  },
+  "teamBoard": {
+    "tasks": "Tasks",
+    "newTodo": "New Todo",
+    "checklist": "Checklist",
+    "noTodos": "No todos registered.",
+    "filters": {
+      "catDaily": "Daily",
+      "catMonthly": "Monthly",
+      "catYearly": "Yearly"
+    }
   }
 }
