@@ -5,9 +5,10 @@ import { useTranslations } from 'next-intl'
 import ReservationExpenseManager from '@/components/ReservationExpenseManager'
 import CompanyExpenseManager from '@/components/CompanyExpenseManager'
 import AllTourExpensesManager from '@/components/AllTourExpensesManager'
-import { Receipt, Calendar, Building2, MapPin } from 'lucide-react'
+import CashManagement from '@/components/CashManagement'
+import { Receipt, Calendar, Building2, MapPin, Wallet } from 'lucide-react'
 
-type ExpenseTab = 'reservation' | 'company' | 'tour'
+type ExpenseTab = 'reservation' | 'company' | 'tour' | 'cash'
 
 export default function ExpensesManagementPage() {
   const [activeTab, setActiveTab] = useState<ExpenseTab>('tour')
@@ -30,6 +31,12 @@ export default function ExpensesManagementPage() {
       label: '투어 지출',
       icon: MapPin,
       description: '투어 관련 지출 관리'
+    },
+    {
+      id: 'cash' as ExpenseTab,
+      label: '현금 관리',
+      icon: Wallet,
+      description: '현금 입출금 및 잔액 관리'
     }
   ]
 
@@ -109,6 +116,18 @@ export default function ExpensesManagementPage() {
               </p>
             </div>
             <AllTourExpensesManager />
+          </div>
+        )}
+
+        {activeTab === 'cash' && (
+          <div className="p-6">
+            <div className="mb-4">
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">현금 관리</h2>
+              <p className="text-sm text-gray-600">
+                현금 입출금 내역을 관리하고 현재 현금 잔액을 확인할 수 있습니다.
+              </p>
+            </div>
+            <CashManagement />
           </div>
         )}
       </div>
