@@ -380,7 +380,7 @@ export default function ReservationForm({
     privateTourAdditionalCost: 0,
     commission_percent: 0,
     commission_amount: 0,
-    commission_base_price: undefined,
+    commission_base_price: 0,
     not_included_price: 0,
     onlinePaymentAmount: 0,
     onSiteBalanceAmount: 0,
@@ -1074,7 +1074,7 @@ export default function ReservationForm({
   }, [])
 
   // 기존 choices 데이터 처리 함수
-  const processExistingChoicesData = useCallback((choicesData: any) => {
+  const _processExistingChoicesData = useCallback((choicesData: any) => {
     console.log('ReservationForm: 기존 choices 데이터 처리 시작:', choicesData)
     
     if (choicesData.required && Array.isArray(choicesData.required)) {
@@ -1452,7 +1452,7 @@ export default function ReservationForm({
               commission_amount: Number((existingPricing as any).commission_amount) || 0,
               commission_base_price: (existingPricing as any).commission_base_price !== undefined && (existingPricing as any).commission_base_price !== null
                 ? Number((existingPricing as any).commission_base_price) 
-                : undefined,
+                : 0,
               onSiteBalanceAmount: onSiteBalanceAmount
             }
             
@@ -2430,11 +2430,6 @@ export default function ReservationForm({
         totalPeople,
         choices: choicesData,
         selectedChoices: formData.selectedChoices as any,
-        // 거주 상태별 인원 수 정보 전달
-        usResidentCount: formData.usResidentCount || 0,
-        nonResidentCount: formData.nonResidentCount || 0,
-        nonResidentWithPassCount: formData.nonResidentWithPassCount || 0,
-        passCoveredCount: formData.passCoveredCount || 0,
         // 가격 정보를 포함하여 전달
         pricingInfo: {
           adultProductPrice: formData.adultProductPrice,
@@ -2592,12 +2587,14 @@ export default function ReservationForm({
                   setShowCustomerForm={(show) => {
                     if (show) {
                       // + 버튼을 누르면 새 고객 입력 모드 활성화
+                      // 입력된 고객 이름은 유지하고, customerId만 초기화
+                      const currentSearch = formData.customerSearch || ''
                       setShowNewCustomerForm(true)
                       setFormData(prev => ({
                         ...prev,
                         customerId: '',
-                        customerSearch: '',
-                        customerName: '',
+                        customerSearch: currentSearch, // 입력된 검색어 유지
+                        customerName: currentSearch, // 이름 필드에도 입력된 값 설정
                         customerPhone: '',
                         customerEmail: '',
                         customerAddress: '',
