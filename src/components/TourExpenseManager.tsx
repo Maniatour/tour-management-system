@@ -46,6 +46,17 @@ interface ReservationPricing {
   adult_product_price: number
   child_product_price: number
   infant_product_price: number
+  commission_amount?: number
+  commission_percent?: number
+  coupon_discount?: number
+  additional_discount?: number
+  additional_cost?: number
+  product_price_total?: number
+  option_total?: number
+  subtotal?: number
+  card_fee?: number
+  prepayment_tip?: number
+  choices_total?: number
 }
 
 interface Reservation {
@@ -108,6 +119,10 @@ export default function TourExpenseManager({
   const [ticketBookings, setTicketBookings] = useState<any[]>([])
   const [hotelBookings, setHotelBookings] = useState<any[]>([])
   const [isLoadingBookings, setIsLoadingBookings] = useState(false)
+  
+  // 예약별 지출 데이터 상태
+  const [reservationExpenses, setReservationExpenses] = useState<Record<string, number>>({})
+  const [reservationChannels, setReservationChannels] = useState<Record<string, any>>({})
 
   // 폼 데이터
   const [formData, setFormData] = useState({
@@ -223,7 +238,7 @@ export default function TourExpenseManager({
       
       const { data, error } = await supabase
         .from('reservation_pricing')
-        .select('id, reservation_id, total_price, adult_product_price, child_product_price, infant_product_price')
+        .select('id, reservation_id, total_price, adult_product_price, child_product_price, infant_product_price, commission_amount, commission_percent, coupon_discount, additional_discount, additional_cost, product_price_total, option_total, subtotal, card_fee, prepayment_tip, choices_total')
         .in('reservation_id', targetReservationIds)
 
       if (error) {
@@ -233,9 +248,81 @@ export default function TourExpenseManager({
       
       console.log('✅ Reservation pricing data:', data)
       setReservationPricing(data || [])
+      
+      // 예약별 채널 정보 가져오기
+      const { data: reservationsData, error: reservationsError } = await supabase
+        .from('reservations')
+        .select('id, channel_id')
+        .in('id', targetReservationIds)
+      
+      if (!reservationsError && reservationsData) {
+        const channelIds = reservationsData
+          .map(r => r.channel_id)
+          .filter(id => id !== null)
+        
+        if (channelIds.length > 0) {
+          const { data: channelsData, error: channelsError } = await supabase
+            .from('channels')
+            .select('id, commission_base_price_only')
+            .in('id', channelIds)
+          
+          if (!channelsError && channelsData) {
+            const channelMap: Record<string, any> = {}
+            reservationsData.forEach(reservation => {
+              if (reservation.channel_id) {
+                const channel = channelsData.find(c => c.id === reservation.channel_id)
+                if (channel) {
+                  channelMap[reservation.id] = channel
+                }
+              }
+            })
+            setReservationChannels(channelMap)
+          }
+        }
+      }
     } catch (error) {
       console.error('❌ Error loading reservation pricing:', error)
       setReservationPricing([])
+    }
+  }, [reservations, reservationIds])
+  
+  // 예약별 지출 정보 로드
+  const loadReservationExpenses = useCallback(async () => {
+    try {
+      const targetReservationIds = reservationIds && reservationIds.length > 0 
+        ? reservationIds 
+        : reservations.map(r => r.id)
+      
+      if (targetReservationIds.length === 0) {
+        setReservationExpenses({})
+        return
+      }
+      
+      const { data, error } = await supabase
+        .from('reservation_expenses')
+        .select('reservation_id, amount, status')
+        .in('reservation_id', targetReservationIds)
+        .not('status', 'eq', 'rejected')
+      
+      if (error) {
+        console.error('❌ Reservation expenses error:', error)
+        setReservationExpenses({})
+        return
+      }
+      
+      // 예약별 지출 총합 계산
+      const expensesMap: Record<string, number> = {}
+      data?.forEach(expense => {
+        if (!expensesMap[expense.reservation_id]) {
+          expensesMap[expense.reservation_id] = 0
+        }
+        expensesMap[expense.reservation_id] += expense.amount || 0
+      })
+      
+      setReservationExpenses(expensesMap)
+    } catch (error) {
+      console.error('❌ Error loading reservation expenses:', error)
+      setReservationExpenses({})
     }
   }, [reservations, reservationIds])
 
@@ -945,6 +1032,80 @@ export default function TourExpenseManager({
     }))
   }
 
+  // Net Price 계산 함수
+  const calculateNetPrice = (pricing: ReservationPricing, reservationId: string): number => {
+    if (!pricing || !pricing.total_price) return 0
+    
+    const grandTotal = pricing.total_price
+    const channel = reservationChannels[reservationId]
+    const commissionBasePriceOnly = channel?.commission_base_price_only || false
+    
+    let commissionAmount = 0
+    if (pricing.commission_amount && pricing.commission_amount > 0) {
+      commissionAmount = pricing.commission_amount
+    } else if (pricing.commission_percent && pricing.commission_percent > 0) {
+      if (commissionBasePriceOnly) {
+        // 판매가격에만 커미션 적용
+        const productPriceTotal = pricing.product_price_total || 0
+        const couponDiscount = pricing.coupon_discount || 0
+        const additionalDiscount = pricing.additional_discount || 0
+        const additionalCost = pricing.additional_cost || 0
+        const basePriceForCommission = productPriceTotal - couponDiscount - additionalDiscount + additionalCost
+        commissionAmount = basePriceForCommission * (pricing.commission_percent / 100)
+      } else {
+        // 전체 가격에 커미션 적용
+        commissionAmount = grandTotal * (pricing.commission_percent / 100)
+      }
+    }
+    
+    return grandTotal - commissionAmount
+  }
+  
+  // 고객 총 결제 금액 계산
+  const calculateTotalCustomerPayment = (pricing: ReservationPricing): number => {
+    // total_price가 고객 총 결제 금액을 포함하고 있을 수 있지만,
+    // 정확한 계산을 위해 명시적으로 계산
+    const productPriceTotal = pricing.product_price_total || 0
+    const couponDiscount = pricing.coupon_discount || 0
+    const additionalDiscount = pricing.additional_discount || 0
+    const additionalCost = pricing.additional_cost || 0
+    const optionTotal = pricing.option_total || 0
+    const choicesTotal = pricing.choices_total || 0
+    const cardFee = pricing.card_fee || 0
+    const prepaymentTip = pricing.prepayment_tip || 0
+    
+    // 고객 총 결제 금액 = (상품가격 - 할인) + 옵션 + 추가비용 + 카드수수료 + 팁
+    return (
+      (productPriceTotal - couponDiscount - additionalDiscount) +
+      optionTotal +
+      choicesTotal +
+      additionalCost +
+      cardFee +
+      prepaymentTip
+    )
+  }
+  
+  // 추가 결제금 계산 (고객 총 결제 금액 - 채널 수수료$ - 채널 정산 금액)
+  const calculateAdditionalPayment = (pricing: ReservationPricing, reservationId: string): number => {
+    const totalCustomerPayment = calculateTotalCustomerPayment(pricing)
+    const commissionAmount = pricing.commission_amount || 0
+    const netPrice = calculateNetPrice(pricing, reservationId)
+    
+    // 추가 결제금 = 고객 총 결제 금액 - 채널 수수료$ - 채널 정산 금액 (Net Price)
+    const additionalPayment = totalCustomerPayment - commissionAmount - netPrice
+    return Math.max(0, additionalPayment) // 음수는 0으로 처리
+  }
+  
+  // Operating Profit 계산 함수 (Net Price - Reservation Expenses + 추가 결제금)
+  const calculateOperatingProfit = (pricing: ReservationPricing, reservationId: string): number => {
+    const netPrice = calculateNetPrice(pricing, reservationId)
+    const reservationExpense = reservationExpenses[reservationId] || 0
+    const additionalPayment = calculateAdditionalPayment(pricing, reservationId)
+    
+    // Operating Profit = Net Price - Reservation Expenses + 추가 결제금
+    return netPrice - reservationExpense + additionalPayment
+  }
+
   // 통계 계산
   const calculateFinancialStats = () => {
     console.log('💰 Financial stats calculation:', {
@@ -964,6 +1125,11 @@ export default function TourExpenseManager({
       : reservationPricing
     const totalPayments = filteredPricing.reduce((sum, pricing) => sum + pricing.total_price, 0)
     
+    // 총 Operating Profit 계산 (각 예약의 Operating Profit 합산)
+    const totalOperatingProfit = filteredPricing.reduce((sum, pricing) => {
+      return sum + calculateOperatingProfit(pricing, pricing.reservation_id)
+    }, 0)
+    
     // 총 지출 계산 (기존 지출 + 가이드/드라이버 수수료 + 부킹 비용)
     const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0)
     const totalFees = guideFee + assistantFee
@@ -975,11 +1141,12 @@ export default function TourExpenseManager({
     
     const totalExpensesWithFeesAndBookings = totalExpenses + totalFees + totalBookingCosts
     
-    // 수익 계산 (수수료와 부킹 비용을 지출에 포함)
-    const profit = totalPayments - totalExpensesWithFeesAndBookings
+    // 수익 계산 (Operating Profit 총합 - 투어 지출 - 수수료 - 부킹 비용)
+    const profit = totalOperatingProfit - totalExpensesWithFeesAndBookings
     
     console.log('💰 Calculated stats:', {
       totalPayments,
+      totalOperatingProfit,
       totalExpenses,
       totalFees,
       totalTicketCosts,
@@ -993,6 +1160,7 @@ export default function TourExpenseManager({
     
     return {
       totalPayments,
+      totalOperatingProfit,
       totalExpenses,
       totalFees,
       totalTicketCosts,
@@ -1036,8 +1204,9 @@ export default function TourExpenseManager({
   useEffect(() => {
     if (reservations.length > 0) {
       loadReservationPricing()
+      loadReservationExpenses()
     }
-  }, [reservations, loadReservationPricing])
+  }, [reservations, loadReservationPricing, loadReservationExpenses])
 
   return (
     <div className="space-y-4">
@@ -1065,7 +1234,7 @@ export default function TourExpenseManager({
       <div className="bg-gray-50 rounded-lg p-4 space-y-4">
         <h4 className="text-lg font-semibold text-gray-900">{t('settlementStats')}</h4>
         
-        {/* 입금액 총합 - 어드민만 표시 */}
+        {/* Operating Profit 총합 - 어드민만 표시 */}
         {userRole === 'admin' && (
           <div className="bg-white rounded-lg border">
           <button
@@ -1074,9 +1243,9 @@ export default function TourExpenseManager({
           >
             <div className="flex items-center space-x-3">
               <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-              <span className="font-medium text-gray-900">{t('totalDeposits')}</span>
+              <span className="font-medium text-gray-900">Operating Profit 총합</span>
               <span className="text-lg font-bold text-green-600">
-                {formatCurrency(financialStats.totalPayments)}
+                {formatCurrency(financialStats.totalOperatingProfit)}
               </span>
             </div>
             {expandedSections.payments ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
@@ -1093,11 +1262,12 @@ export default function TourExpenseManager({
                   .map((reservation) => {
                     const pricing = reservationPricing.find(p => p.reservation_id === reservation.id)
                     const totalPeople = reservation.adults + reservation.children + reservation.infants
-                    console.log('💰 Payment display:', {
+                    const operatingProfit = pricing ? calculateOperatingProfit(pricing, reservation.id) : 0
+                    console.log('💰 Operating Profit display:', {
                       reservationId: reservation.id,
                       customerName: reservation.customer_name,
                       totalPeople,
-                      pricing: pricing?.total_price || 0
+                      operatingProfit
                     })
                     return (
                       <div key={reservation.id} className="flex items-center justify-between text-sm">
@@ -1106,7 +1276,7 @@ export default function TourExpenseManager({
                           <span className="text-gray-500">({totalPeople}명)</span>
                         </div>
                         <span className="font-medium text-green-600">
-                          {pricing ? formatCurrency(pricing.total_price) : '$0'}
+                          {formatCurrency(operatingProfit)}
                         </span>
                       </div>
                     )
@@ -1233,8 +1403,8 @@ export default function TourExpenseManager({
             <div className="border-t p-4 bg-gray-50">
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">
-                  <span>{t('totalDeposits')}</span>
-                  <span className="text-green-600 font-medium">{formatCurrency(financialStats.totalPayments)}</span>
+                  <span>Operating Profit 총합</span>
+                  <span className="text-green-600 font-medium">{formatCurrency(financialStats.totalOperatingProfit)}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>{t('totalExpensesWithFeesAndBookings')}</span>
@@ -1247,6 +1417,72 @@ export default function TourExpenseManager({
                     {formatCurrency(financialStats.profit)}
                   </span>
                 </div>
+              </div>
+            </div>
+          )}
+          </div>
+        )}
+
+        {/* 추가비용 합산 - 어드민만 표시 */}
+        {userRole === 'admin' && (
+          <div className="bg-white rounded-lg border">
+          <button
+            onClick={() => toggleSection('additionalCosts')}
+            className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50"
+          >
+            <div className="flex items-center space-x-3">
+              <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
+              <span className="font-medium text-gray-900">추가비용 합산</span>
+              <span className="text-lg font-bold text-purple-600">
+                {formatCurrency((() => {
+                  const filteredPricing = reservationIds && reservationIds.length > 0
+                    ? reservationPricing.filter(p => reservationIds.includes(p.reservation_id))
+                    : reservationPricing
+                  const totalAdditionalCost = filteredPricing.reduce((sum, pricing) => {
+                    const additionalCost = pricing.additional_cost || 0
+                    // $100 단위로 내림
+                    return sum + Math.floor(additionalCost / 100) * 100
+                  }, 0)
+                  return totalAdditionalCost
+                })())}
+              </span>
+            </div>
+            {expandedSections.additionalCosts ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+          </button>
+          
+          {expandedSections.additionalCosts && (
+            <div className="border-t p-4 bg-gray-50">
+              <div className="mb-2 text-xs text-gray-500">
+                📋 표시된 예약: {reservations.filter(r => reservationIds?.includes(r.id)).length}팀 (배정된 예약만)
+              </div>
+              <div className="space-y-2">
+                {reservations
+                  .filter(reservation => reservationIds?.includes(reservation.id))
+                  .map((reservation) => {
+                    const pricing = reservationPricing.find(p => p.reservation_id === reservation.id)
+                    const totalPeople = reservation.adults + reservation.children + reservation.infants
+                    const additionalCost = pricing?.additional_cost || 0
+                    // $100 단위로 내림
+                    const roundedAdditionalCost = Math.floor(additionalCost / 100) * 100
+                    console.log('💰 Additional Cost display:', {
+                      reservationId: reservation.id,
+                      customerName: reservation.customer_name,
+                      totalPeople,
+                      additionalCost,
+                      roundedAdditionalCost
+                    })
+                    return (
+                      <div key={reservation.id} className="flex items-center justify-between text-sm">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-medium">{reservation.customer_name}</span>
+                          <span className="text-gray-500">({totalPeople}명)</span>
+                        </div>
+                        <span className="font-medium text-purple-600">
+                          {formatCurrency(roundedAdditionalCost)}
+                        </span>
+                      </div>
+                    )
+                  })}
               </div>
             </div>
           )}

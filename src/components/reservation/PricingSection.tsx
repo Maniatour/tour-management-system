@@ -1756,14 +1756,50 @@ export default function PricingSection({
                 </span>
               </div>
               
+              {/* 추가 결제금 */}
+              {(() => {
+                // 채널 정산금액 계산
+                const channelSettlementAmount = isOTAChannel 
+                  ? ((formData.onlinePaymentAmount || 0) - formData.commission_amount)
+                  : (() => {
+                      // 자체 채널: 채널 결제 금액(잔금 제외) - 카드수수료 (commission_amount에 저장됨)
+                      const channelPaymentAmount = (
+                        (formData.productPriceTotal - formData.couponDiscount) + 
+                        reservationOptionsTotalPrice + 
+                        (formData.additionalCost - formData.additionalDiscount) + 
+                        formData.tax + 
+                        formData.cardFee +
+                        formData.prepaymentTip -
+                        (formData.onSiteBalanceAmount || 0)
+                      )
+                      return channelPaymentAmount - formData.commission_amount
+                    })()
+                
+                // 고객 총 결제 금액
+                const totalCustomerPayment = calculateTotalCustomerPayment()
+                
+                // 추가 결제금 = 고객 총 결제 금액 - 채널 수수료$ - 채널 정산 금액
+                const additionalPayment = totalCustomerPayment - formData.commission_amount - channelSettlementAmount
+                
+                return additionalPayment > 0 ? (
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium text-gray-700">+ {isKorean ? '추가 결제금' : 'Additional Payment'}</span>
+                    <span className="text-sm font-medium text-gray-900">
+                      +${additionalPayment.toFixed(2)}
+                    </span>
+                  </div>
+                ) : null
+              })()}
+              
               <div className="border-t border-gray-200 my-2"></div>
               
               {/* 총 매출 */}
               <div className="flex justify-between items-center mb-2">
                 <span className="text-base font-bold text-green-800">{isKorean ? '총 매출' : 'Total Revenue'}</span>
                 <span className="text-lg font-bold text-green-600">
-                  ${(
-                    (isOTAChannel 
+                  ${(() => {
+                    // 채널 정산금액 계산
+                    const channelSettlementAmount = isOTAChannel 
                       ? ((formData.onlinePaymentAmount || 0) - formData.commission_amount)
                       : (() => {
                           // 자체 채널: 채널 결제 금액(잔금 제외) - 카드수수료 (commission_amount에 저장됨)
@@ -1778,9 +1814,20 @@ export default function PricingSection({
                           )
                           return channelPaymentAmount - formData.commission_amount
                         })()
-                    ) + 
-                    (formData.onSiteBalanceAmount || 0)
-                  ).toFixed(2)}
+                    
+                    // 고객 총 결제 금액
+                    const totalCustomerPayment = calculateTotalCustomerPayment()
+                    
+                    // 추가 결제금 = 고객 총 결제 금액 - 채널 수수료$ - 채널 정산 금액
+                    const additionalPayment = totalCustomerPayment - formData.commission_amount - channelSettlementAmount
+                    
+                    // 총 매출 = 채널 정산금액 + 잔액 + 추가 결제금
+                    return (
+                      channelSettlementAmount + 
+                      (formData.onSiteBalanceAmount || 0) + 
+                      (additionalPayment > 0 ? additionalPayment : 0)
+                    ).toFixed(2)
+                  })()}
                 </span>
               </div>
               
@@ -1801,8 +1848,9 @@ export default function PricingSection({
               <div className="flex justify-between items-center mb-2">
                 <span className="text-base font-bold text-purple-800">{isKorean ? '운영 이익' : 'Operating Profit'}</span>
                 <span className="text-lg font-bold text-purple-600">
-                  ${(
-                    (isOTAChannel 
+                  ${(() => {
+                    // 채널 정산금액 계산
+                    const channelSettlementAmount = isOTAChannel 
                       ? ((formData.onlinePaymentAmount || 0) - formData.commission_amount)
                       : (() => {
                           // 자체 채널: 채널 결제 금액(잔금 제외) - 카드수수료 (commission_amount에 저장됨)
@@ -1817,10 +1865,23 @@ export default function PricingSection({
                           )
                           return channelPaymentAmount - formData.commission_amount
                         })()
-                    ) + 
-                    (formData.onSiteBalanceAmount || 0) - 
-                    formData.prepaymentTip
-                  ).toFixed(2)}
+                    
+                    // 고객 총 결제 금액
+                    const totalCustomerPayment = calculateTotalCustomerPayment()
+                    
+                    // 추가 결제금 = 고객 총 결제 금액 - 채널 수수료$ - 채널 정산 금액
+                    const additionalPayment = totalCustomerPayment - formData.commission_amount - channelSettlementAmount
+                    
+                    // 총 매출 = 채널 정산금액 + 잔액 + 추가 결제금
+                    const totalRevenue = (
+                      channelSettlementAmount + 
+                      (formData.onSiteBalanceAmount || 0) + 
+                      (additionalPayment > 0 ? additionalPayment : 0)
+                    )
+                    
+                    // 운영 이익 = 총 매출 - 선결제 팁
+                    return (totalRevenue - (formData.prepaymentTip || 0)).toFixed(2)
+                  })()}
                 </span>
               </div>
             </div>

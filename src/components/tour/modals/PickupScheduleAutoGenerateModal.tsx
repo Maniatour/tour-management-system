@@ -588,12 +588,10 @@ export default function PickupScheduleAutoGenerateModal({
     })
 
     setPickupSchedule(schedule)
-  }, [assignedReservations, pickupHotels, isSunriseTour, sunriseTime, mapLoaded, customLastPickupTime])
+  }, [assignedReservations, pickupHotels, isSunriseTour, sunriseTime, mapLoaded])
 
   // 실제 이동 시간을 기반으로 픽업 시간 업데이트
   const updatePickupTimesWithTravelTimes = useCallback((travelTimes: number[]) => {
-    if (travelTimes.length === 0) return
-
     setPickupSchedule(prevSchedule => {
       if (prevSchedule.length === 0) return prevSchedule
 
@@ -619,7 +617,7 @@ export default function PickupScheduleAutoGenerateModal({
       }
 
       // 역순으로 시간 계산 (마지막 픽업부터)
-      const updatedSchedule = [...prevSchedule]
+      const updatedSchedule = prevSchedule.map(item => ({ ...item })) // 깊은 복사로 기존 정보 유지
       const totalHotels = updatedSchedule.length
       
       // 마지막 호텔의 픽업 시간 설정
@@ -639,18 +637,37 @@ export default function PickupScheduleAutoGenerateModal({
         // - travelTimes[1]: 호텔0 → 호텔1 (두 번째 호텔)
         // - travelTimes[i]: 호텔(i-1) → 호텔i
         // 따라서 호텔 i의 travelTimeFromPrevious = travelTimes[i]
-        const travelTimeSeconds = travelTimes[i] || 0
-        const travelTimeMinutes = Math.ceil(travelTimeSeconds / 60) // 초를 분으로 변환 (올림)
+        // 기존 값이 있으면 유지하고, 없으면 travelTimes에서 계산
+        let roundedTime = 0
         
-        // 원본 이동 시간 저장 (대기시간 제외)
-        updatedSchedule[i].rawTravelTime = travelTimeMinutes
-        
-        // 이동 시간 + 대기 시간(5분)을 합쳐서 5분 단위로 반올림
-        const totalTimeWithWait = travelTimeMinutes + 5 // 이동 시간 + 대기 시간
-        const roundedTime = Math.round(totalTimeWithWait / 5) * 5 // 5분 단위로 반올림
-        
-        // 이동 시간을 스케줄에 저장 (분 단위)
-        updatedSchedule[i].travelTimeFromPrevious = roundedTime
+        if (travelTimes.length > i && travelTimes[i] > 0) {
+          // travelTimes에서 실제 이동 시간 가져오기
+          const travelTimeSeconds = travelTimes[i]
+          const travelTimeMinutes = Math.ceil(travelTimeSeconds / 60) // 초를 분으로 변환 (올림)
+          
+          // 원본 이동 시간 저장 (대기시간 제외)
+          updatedSchedule[i].rawTravelTime = travelTimeMinutes
+          
+          // 이동 시간 + 대기 시간(5분)을 합쳐서 5분 단위로 반올림
+          const totalTimeWithWait = travelTimeMinutes + 5 // 이동 시간 + 대기 시간
+          roundedTime = Math.round(totalTimeWithWait / 5) * 5 // 5분 단위로 반올림
+          
+          // 이동 시간을 스케줄에 저장 (분 단위)
+          updatedSchedule[i].travelTimeFromPrevious = roundedTime
+        } else {
+          // travelTimes가 없거나 0이면 기존 값 유지 (중요!)
+          // 기존 스케줄에서 travelTimeFromPrevious와 rawTravelTime 유지
+          if (prevSchedule[i]?.travelTimeFromPrevious) {
+            roundedTime = prevSchedule[i].travelTimeFromPrevious
+            updatedSchedule[i].travelTimeFromPrevious = prevSchedule[i].travelTimeFromPrevious
+            updatedSchedule[i].rawTravelTime = prevSchedule[i].rawTravelTime || 0
+          } else {
+            // 기존 값도 없으면 기본값 10분 사용 (하지만 이 경우는 거의 없어야 함)
+            roundedTime = 10
+            updatedSchedule[i].travelTimeFromPrevious = roundedTime
+            updatedSchedule[i].rawTravelTime = 5
+          }
+        }
         
         // 이전 호텔의 픽업 시간 계산 (역순)
         if (i > 0) {
@@ -734,10 +751,11 @@ export default function PickupScheduleAutoGenerateModal({
 
   // 사용자 정의 마지막 픽업 시간이 변경되면 재계산
   useEffect(() => {
-    if (customLastPickupTime && travelTimes.length > 0) {
+    if (customLastPickupTime && pickupSchedule.length > 0) {
+      // travelTimes가 있으면 사용하고, 없으면 기존 스케줄의 이동 시간 정보를 유지
       updatePickupTimesWithTravelTimes(travelTimes)
     }
-  }, [customLastPickupTime, updatePickupTimesWithTravelTimes, travelTimes])
+  }, [customLastPickupTime, updatePickupTimesWithTravelTimes, travelTimes, pickupSchedule.length])
 
   // 스케줄 생성 시 자동 실행 (Google Maps API가 로드된 후)
   useEffect(() => {

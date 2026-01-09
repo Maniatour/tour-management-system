@@ -30,6 +30,7 @@ interface TourStatisticsData {
   totalExpenses: number
   netProfit: number
   averageProfitPerTour: number
+  totalAdditionalCostRounded: number
   tourStats: Array<{
     tourId: string
     tourDate: string
@@ -38,6 +39,7 @@ interface TourStatisticsData {
     revenue: number
     expenses: number
     netProfit: number
+    additionalCostRounded: number
     vehicleType?: string
     gasCost?: number
     ticketBookingsCost?: number
@@ -105,12 +107,12 @@ async function getTourFinancialStats(tourId: string) {
     console.log(`투어 ${tourId}의 전체 지출 (상태 무관):`, allExpenses)
     console.log(`투어 ${tourId}의 전체 지출 개수:`, allExpenses?.length || 0)
 
-    // 예약 데이터 가져오기: tour.reservation_ids 기준으로 합산
+    // 예약 데이터 가져오기: tour.reservation_ids 기준으로 합산 (취소 여부 무관, 모든 예약 포함)
     let reservations: any[] = []
     if (tourRow?.reservation_ids && Array.isArray(tourRow.reservation_ids) && tourRow.reservation_ids.length > 0) {
       const { data: reservationsData, error: reservationsError } = await supabase
         .from('reservations')
-        .select('id, customer_id, total_people, adults, child, infant')
+        .select('id, customer_id, total_people')
         .in('id', tourRow.reservation_ids)
 
       if (reservationsError) {
@@ -146,18 +148,49 @@ async function getTourFinancialStats(tourId: string) {
 
     // 예약 가격 정보 및 실입금 정보 가져오기
     const reservationIds = reservations?.map(r => r.id) || []
-    let reservationPricing = []
+    let reservationPricing: any[] = []
     let paymentRecords: Array<{ reservation_id: string; amount: number; payment_status?: string | null }> = []
+    let reservationExpenses: Record<string, number> = {}
+    let reservationChannels: Record<string, any> = {}
     
     if (reservationIds.length > 0) {
-      const [{ data: pricingData, error: pricingError }, { data: paymentsData, error: paymentsError }] = await Promise.all([
+      // 예약 정보에서 channel_id 가져오기
+      const { data: reservationsWithChannel } = await supabase
+        .from('reservations')
+        .select('id, channel_id')
+        .in('id', reservationIds)
+      
+      if (reservationsWithChannel) {
+        const channelIds = [...new Set(reservationsWithChannel.map(r => r.channel_id).filter(Boolean))]
+        if (channelIds.length > 0) {
+          const { data: channelsData } = await supabase
+            .from('channels')
+            .select('id, commission_base_price_only')
+            .in('id', channelIds)
+          
+          if (channelsData) {
+            const channelMap = new Map(channelsData.map(c => [c.id, c]))
+            reservationsWithChannel.forEach(r => {
+              if (r.channel_id) {
+                reservationChannels[r.id] = channelMap.get(r.channel_id) || {}
+              }
+            })
+          }
+        }
+      }
+      
+      const [{ data: pricingData, error: pricingError }, { data: paymentsData, error: paymentsError }, { data: expensesData, error: expensesError }] = await Promise.all([
         supabase
           .from('reservation_pricing')
-          .select('reservation_id, total_price')
+          .select('reservation_id, total_price, product_price_total, option_total, choices_total, coupon_discount, additional_discount, additional_cost, card_fee, prepayment_tip, commission_amount, commission_percent')
           .in('reservation_id', reservationIds),
         supabase
           .from('payment_records')
           .select('reservation_id, amount, payment_status')
+          .in('reservation_id', reservationIds),
+        supabase
+          .from('reservation_expenses')
+          .select('reservation_id, amount')
           .in('reservation_id', reservationIds)
       ])
 
@@ -171,10 +204,89 @@ async function getTourFinancialStats(tourId: string) {
       } else {
         paymentRecords = paymentsData || []
       }
+      if (expensesError) {
+        console.error('예약 지출 정보 조회 오류:', expensesError)
+      } else {
+        // 예약별 지출 합산
+        expensesData?.forEach((expense: any) => {
+          if (!reservationExpenses[expense.reservation_id]) {
+            reservationExpenses[expense.reservation_id] = 0
+          }
+          reservationExpenses[expense.reservation_id] += expense.amount || 0
+        })
+      }
     }
 
     console.log('예약 가격 정보:', reservationPricing)
     console.log('실입금 레코드:', paymentRecords)
+    console.log('예약 지출:', reservationExpenses)
+    console.log('예약 채널:', reservationChannels)
+
+    // Operating Profit 계산 함수들 (TourExpenseManager 로직 재사용)
+    const calculateNetPrice = (pricing: any, reservationId: string): number => {
+      if (!pricing || !pricing.total_price) return 0
+      
+      const grandTotal = pricing.total_price
+      const channel = reservationChannels[reservationId]
+      const commissionBasePriceOnly = channel?.commission_base_price_only || false
+      
+      let commissionAmount = 0
+      if (pricing.commission_amount && pricing.commission_amount > 0) {
+        commissionAmount = pricing.commission_amount
+      } else if (pricing.commission_percent && pricing.commission_percent > 0) {
+        if (commissionBasePriceOnly) {
+          // 판매가격에만 커미션 적용
+          const productPriceTotal = pricing.product_price_total || 0
+          const couponDiscount = pricing.coupon_discount || 0
+          const additionalDiscount = pricing.additional_discount || 0
+          const additionalCost = pricing.additional_cost || 0
+          const basePriceForCommission = productPriceTotal - couponDiscount - additionalDiscount + additionalCost
+          commissionAmount = basePriceForCommission * (pricing.commission_percent / 100)
+        } else {
+          // 전체 가격에 커미션 적용
+          commissionAmount = grandTotal * (pricing.commission_percent / 100)
+        }
+      }
+      
+      return grandTotal - commissionAmount
+    }
+    
+    const calculateTotalCustomerPayment = (pricing: any): number => {
+      const productPriceTotal = pricing.product_price_total || 0
+      const couponDiscount = pricing.coupon_discount || 0
+      const additionalDiscount = pricing.additional_discount || 0
+      const additionalCost = pricing.additional_cost || 0
+      const optionTotal = pricing.option_total || 0
+      const choicesTotal = pricing.choices_total || 0
+      const cardFee = pricing.card_fee || 0
+      const prepaymentTip = pricing.prepayment_tip || 0
+      
+      return (
+        (productPriceTotal - couponDiscount - additionalDiscount) +
+        optionTotal +
+        choicesTotal +
+        additionalCost +
+        cardFee +
+        prepaymentTip
+      )
+    }
+    
+    const calculateAdditionalPayment = (pricing: any, reservationId: string): number => {
+      const totalCustomerPayment = calculateTotalCustomerPayment(pricing)
+      const commissionAmount = pricing.commission_amount || 0
+      const netPrice = calculateNetPrice(pricing, reservationId)
+      
+      const additionalPayment = totalCustomerPayment - commissionAmount - netPrice
+      return Math.max(0, additionalPayment)
+    }
+    
+    const calculateOperatingProfit = (pricing: any, reservationId: string): number => {
+      const netPrice = calculateNetPrice(pricing, reservationId)
+      const reservationExpense = reservationExpenses[reservationId] || 0
+      const additionalPayment = calculateAdditionalPayment(pricing, reservationId)
+      
+      return netPrice - reservationExpense + additionalPayment
+    }
 
     // 투어 지출 가져오기 (모든 상태의 지출 포함)
     const { data: expenses, error: expensesError } = await supabase
@@ -222,7 +334,18 @@ async function getTourFinancialStats(tourId: string) {
     const tour = tourRow
     console.log('투어 수수료:', { guide_fee: tour?.guide_fee, assistant_fee: tour?.assistant_fee })
 
-    // 입금 내역 총합 사용 (상세 내역과 동일한 로직)
+    // 총 Operating Profit 계산 (각 예약의 Operating Profit 합산)
+    const totalOperatingProfit = reservationPricing.reduce((sum, pricing) => {
+      return sum + calculateOperatingProfit(pricing, pricing.reservation_id)
+    }, 0)
+    
+    // 추가비용 계산 ($100 단위로 내림한 후 합산)
+    const totalAdditionalCostRounded = reservationPricing.reduce((sum, pricing) => {
+      const additionalCost = pricing.additional_cost || 0
+      const rounded = Math.floor(additionalCost / 100) * 100
+      return sum + rounded
+    }, 0)
+    
     const totalPayments = reservationPricing?.reduce((sum, pricing) => sum + (pricing.total_price || 0), 0) || 0
     const totalExpenses = expenses?.reduce((sum, expense) => sum + (expense.amount || 0), 0) || 0
     const totalFees = (tour?.guide_fee || 0) + (tour?.assistant_fee || 0)
@@ -230,10 +353,12 @@ async function getTourFinancialStats(tourId: string) {
     const totalHotelCosts = hotelBookings?.reduce((sum, booking) => sum + (booking.total_price || 0), 0) || 0
     const totalBookingCosts = totalTicketCosts + totalHotelCosts
     const totalExpensesWithFeesAndBookings = totalExpenses + totalFees + totalBookingCosts
-    const profit = totalPayments - totalExpensesWithFeesAndBookings
+    const profit = totalOperatingProfit - totalExpensesWithFeesAndBookings
 
     console.log(`투어 ${tourId} 계산 결과:`, {
       totalPayments,
+      totalOperatingProfit,
+      totalAdditionalCostRounded,
       totalExpenses,
       totalFees,
       totalTicketCosts,
@@ -246,14 +371,16 @@ async function getTourFinancialStats(tourId: string) {
       hotelBookingsCount: hotelBookings?.length || 0
     })
 
+    // reservation_ids에 있는 예약들의 total_people만 합산 (다른 조건 없음)
     const totalPeopleFromReservations = reservations?.reduce((sum, r) => {
-      const val = (r.total_people ?? (r.adults + r.child + r.infant)) || 0
-      return sum + val
+      return sum + (r.total_people || 0)
     }, 0) || 0
 
     const result = {
       tourId,
       totalPayments,
+      totalOperatingProfit,
+      totalAdditionalCostRounded,
       totalExpenses,
       totalFees,
       totalTicketCosts,
@@ -278,6 +405,8 @@ async function getTourFinancialStats(tourId: string) {
     return {
       tourId,
       totalPayments: 0,
+      totalOperatingProfit: 0,
+      totalAdditionalCostRounded: 0,
       totalExpenses: 0,
       totalFees: 0,
       totalTicketCosts: 0,
@@ -415,7 +544,9 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
           reservations: [],
           customers: [],
           reservationPricing: [],
-          paymentRecords: []
+          paymentRecords: [],
+          reservationExpenses: [],
+          reservationIds: []
         }
       }
 
@@ -442,7 +573,9 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
             tourFees: { guide_fee: 0, assistant_fee: 0, guide_name: '', assistant_name: '' },
             reservations: [],
             customers: [],
-            reservationPricing: []
+            reservationPricing: [],
+            reservationExpenses: [],
+            reservationIds: []
           }
         }
       }
@@ -466,21 +599,44 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
       // 예약 가격/실입금 정보 조회
       let reservationPricing: any[] = []
       let paymentRecords: any[] = []
+      let reservationExpenses: any[] = []
       if (reservations && reservations.length > 0) {
-        const reservationIds = reservations.map(r => r.id)
-        const [{ data: pricingData }, { data: paymentsData }] = await Promise.all([
-          supabase
-            .from('reservation_pricing')
-            .select('reservation_id, total_price')
-            .in('reservation_id', reservationIds),
-          supabase
-            .from('payment_records')
-            .select('id, reservation_id, amount, payment_status, submit_on, payment_method')
-            .in('reservation_id', reservationIds)
-        ])
+        const reservationIds = reservations.map(r => r.id).filter(Boolean)
+        
+        if (reservationIds.length > 0) {
+          const queries = [
+            supabase
+              .from('reservation_pricing')
+              .select('reservation_id, total_price, additional_cost')
+              .in('reservation_id', reservationIds),
+            supabase
+              .from('payment_records')
+              .select('id, reservation_id, amount, payment_status, submit_on, payment_method')
+              .in('reservation_id', reservationIds)
+          ]
+          
+          // reservation_expenses 조회 추가 (에러 처리 포함)
+          queries.push(
+            supabase
+              .from('reservation_expenses')
+              .select('reservation_id, amount, paid_for')
+              .in('reservation_id', reservationIds)
+          )
+          
+          const results = await Promise.all(queries)
+          const [pricingResult, paymentsResult, expensesResult] = results
 
-        reservationPricing = pricingData || []
-        paymentRecords = paymentsData || []
+          reservationPricing = pricingResult.data || []
+          paymentRecords = paymentsResult.data || []
+          
+          // reservation_expenses 조회 에러 처리
+          if (expensesResult.error) {
+            console.error('예약 지출 정보 조회 오류:', expensesResult.error)
+            reservationExpenses = []
+          } else {
+            reservationExpenses = expensesResult.data || []
+          }
+        }
       }
 
       return {
@@ -496,7 +652,9 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
         reservations: reservations || [],
         customers: customers || [],
         reservationPricing: reservationPricing || [],
-        paymentRecords: paymentRecords || []
+        paymentRecords: paymentRecords || [],
+        reservationExpenses: reservationExpenses || [],
+        reservationIds: tourForReservations?.reservation_ids || []
       }
     } catch (error) {
       console.error('상세 내역 조회 오류:', error)
@@ -514,7 +672,9 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
         },
         reservations: [],
         customers: [],
-        reservationPricing: []
+        reservationPricing: [],
+        reservationExpenses: [],
+        reservationIds: []
       }
     }
   }
@@ -529,6 +689,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
           totalExpenses: 0,
           netProfit: 0,
           averageProfitPerTour: 0,
+          totalAdditionalCostRounded: 0,
           tourStats: [],
           expenseBreakdown: [],
           vehicleStats: []
@@ -625,6 +786,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
               revenue: 0,
               expenses: 0,
               netProfit: 0,
+              additionalCostRounded: 0,
               vehicleType: tour.totalPeople > 10 ? '대형버스' : '소형버스',
               gasCost: 0,
               ticketBookingsCost: 0,
@@ -643,9 +805,10 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
             tourDate: tour.tourDate,
             productName: products.find(p => p.id === tour.productId)?.name_ko || 'Unknown',
             totalPeople: financialStats.totalPeople,
-            revenue: financialStats.totalPayments,
+            revenue: financialStats.totalOperatingProfit, // Operating Profit 사용
             expenses: financialStats.totalExpensesWithFeesAndBookings,
             netProfit: financialStats.profit,
+            additionalCostRounded: financialStats.totalAdditionalCostRounded,
             vehicleType: financialStats.totalPeople > 10 ? '대형버스' : '소형버스',
             gasCost: financialStats.totalExpenses,
             ticketBookingsCost: financialStats.totalTicketCosts,
@@ -665,6 +828,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
         const totalExpenses = resolvedTourStats.reduce((sum, tour) => sum + tour.expenses, 0)
         const netProfit = totalRevenue - totalExpenses
         const averageProfitPerTour = totalTours > 0 ? netProfit / totalTours : 0
+        const totalAdditionalCostRounded = resolvedTourStats.reduce((sum, tour) => sum + (tour.additionalCostRounded || 0), 0)
 
         // 지출 분석 (실제 데이터 기반)
         const totalTourExpenses = resolvedTourStats.reduce((sum, tour) => sum + tour.gasCost, 0)
@@ -715,6 +879,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
           totalExpenses,
           netProfit,
           averageProfitPerTour,
+          totalAdditionalCostRounded,
           tourStats: resolvedTourStats,
           expenseBreakdown,
           vehicleStats
@@ -823,7 +988,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
   return (
     <div className="space-y-6">
       {/* 요약 통계 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <div className="flex items-center">
             <div className="p-2 bg-blue-100 rounded-lg">
@@ -869,6 +1034,20 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
               <p className="text-sm font-medium text-gray-600">순수익</p>
               <p className={`text-2xl font-bold ${tourStatisticsData.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 ${tourStatisticsData.netProfit.toLocaleString()}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center">
+            <div className="p-2 bg-orange-100 rounded-lg">
+              <Users className="h-6 w-6 text-orange-600" />
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">비거주자비용</p>
+              <p className="text-2xl font-bold text-orange-600">
+                ${tourStatisticsData.totalAdditionalCostRounded.toLocaleString()}
               </p>
             </div>
           </div>
@@ -1314,6 +1493,10 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                   1인당 순수익
                   <div className="text-[10px] text-gray-400 mt-0.5">전체 평균: ${perPersonAverages.overall.profitPer.toFixed(2)}</div>
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  추가비용 합산
+                  <div className="text-[10px] text-gray-400 mt-0.5">$100 단위 내림</div>
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">상세</th>
               </tr>
             </thead>
@@ -1384,6 +1567,9 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                               ${profitPer.toFixed(2)}
                             </span>
                           </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-600 font-medium">
+                            ${(tour.additionalCostRounded || 0).toLocaleString()}
+                          </td>
                         </>
                       )
                     })()}
@@ -1402,12 +1588,12 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                   {/* 지출 상세 내역 */}
                   {expandedExpenses[tour.tourId] && (
                     <tr>
-                      <td colSpan={11} className="px-6 py-4 bg-gray-50">
+                      <td colSpan={12} className="px-6 py-4 bg-gray-50">
                         <div className="space-y-4">
                           <h4 className="font-semibold text-gray-900">상세 내역</h4>
                           
                           {expenseDetails[tour.tourId] ? (
-                            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                               {/* 요약 컬럼 */}
                               <div className="bg-white p-3 rounded border">
                                 <h5 className="font-medium text-gray-900 mb-2">요약</h5>
@@ -1530,37 +1716,6 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                                 </div>
                               )}
                               
-                              {/* 입장권 부킹 */}
-                              {expenseDetails[tour.tourId].ticketBookings.length > 0 && (
-                                <div className="bg-white p-3 rounded border">
-                                  <h5 className="font-medium text-gray-900 mb-2">입장권 부킹</h5>
-                                  <div className="space-y-1">
-                                    {expenseDetails[tour.tourId].ticketBookings.map((booking: any, idx: number) => {
-                                      const totalPeople = expenseDetails[tour.tourId].reservations.reduce((sum: number, r: any) => sum + r.adults + r.child + r.infant, 0)
-                                      const perPersonPrice = totalPeople > 0 ? (booking.expense || 0) / totalPeople : 0
-                                      
-                                      return (
-                                        <div key={idx} className="flex justify-between text-sm">
-                                          <div className="flex flex-col">
-                                            <span className="text-gray-600">{booking.ticket_name || '입장권'}</span>
-                                            <span className="text-xs text-gray-500">
-                                              {booking.company && `${booking.company}`}
-                                              {booking.company && booking.ea && ' · '}
-                                              {booking.ea && `${booking.ea}매`}
-                                              {(!booking.company && !booking.ea) && `총 ${totalPeople}명`}
-                                            </span>
-                                          </div>
-                                          <div className="flex flex-col text-right">
-                                            <span className="font-medium">${booking.expense?.toLocaleString() || 0}</span>
-                                            <span className="text-xs text-gray-500">1인당: ${perPersonPrice.toFixed(2)}</span>
-                                          </div>
-                                        </div>
-                                      )
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-                              
                               {/* 호텔 부킹 */}
                               {expenseDetails[tour.tourId].hotelBookings.length > 0 && (
                                 <div className="bg-white p-3 rounded border">
@@ -1576,57 +1731,190 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                                 </div>
                               )}
                               
-                              {/* 가이드/어시스턴트 수수료 */}
-                              {(expenseDetails[tour.tourId].tourFees.guide_fee > 0 || expenseDetails[tour.tourId].tourFees.assistant_fee > 0) && (
+                              {/* 입장권 부킹 및 가이드/어시스턴트 수수료 (통합) */}
+                              {(expenseDetails[tour.tourId].ticketBookings.length > 0 || expenseDetails[tour.tourId].tourFees.guide_fee > 0 || expenseDetails[tour.tourId].tourFees.assistant_fee > 0) && (
                                 <div className="bg-white p-3 rounded border">
-                                  <h5 className="font-medium text-gray-900 mb-2">가이드/어시스턴트 수수료</h5>
-                                  <div className="space-y-1">
-                                    {expenseDetails[tour.tourId].tourFees.guide_fee > 0 && (
-                                      <div className="flex justify-between text-sm">
-                                        <span className="text-gray-600">
-                                          가이드 수수료 {expenseDetails[tour.tourId].tourFees.guide_name ? `(${expenseDetails[tour.tourId].tourFees.guide_name})` : ''}
-                                        </span>
-                                        <span className="font-medium">${expenseDetails[tour.tourId].tourFees.guide_fee.toLocaleString()}</span>
+                                  {/* 입장권 부킹 */}
+                                  {expenseDetails[tour.tourId].ticketBookings.length > 0 && (
+                                    <>
+                                      <h5 className="font-medium text-gray-900 mb-2">입장권 부킹</h5>
+                                      <div className="space-y-1 mb-3">
+                                        {expenseDetails[tour.tourId].ticketBookings.map((booking: any, idx: number) => {
+                                          const totalPeople = expenseDetails[tour.tourId].reservations.reduce((sum: number, r: any) => sum + r.adults + r.child + r.infant, 0)
+                                          const perPersonPrice = totalPeople > 0 ? (booking.expense || 0) / totalPeople : 0
+                                          
+                                          return (
+                                            <div key={idx} className="flex justify-between text-sm">
+                                              <div className="flex flex-col">
+                                                <span className="text-gray-600">{booking.ticket_name || '입장권'}</span>
+                                                <span className="text-xs text-gray-500">
+                                                  {booking.company && `${booking.company}`}
+                                                  {booking.company && booking.ea && ' · '}
+                                                  {booking.ea && `${booking.ea}매`}
+                                                  {(!booking.company && !booking.ea) && `총 ${totalPeople}명`}
+                                                </span>
+                                              </div>
+                                              <div className="flex flex-col text-right">
+                                                <span className="font-medium">${booking.expense?.toLocaleString() || 0}</span>
+                                                <span className="text-xs text-gray-500">1인당: ${perPersonPrice.toFixed(2)}</span>
+                                              </div>
+                                            </div>
+                                          )
+                                        })}
                                       </div>
-                                    )}
-                                    {expenseDetails[tour.tourId].tourFees.assistant_fee > 0 && (
-                                      <div className="flex justify-between text-sm">
-                                        <span className="text-gray-600">
-                                          어시스턴트 수수료 {expenseDetails[tour.tourId].tourFees.assistant_name ? `(${expenseDetails[tour.tourId].tourFees.assistant_name})` : ''}
-                                        </span>
-                                        <span className="font-medium">${expenseDetails[tour.tourId].tourFees.assistant_fee.toLocaleString()}</span>
+                                    </>
+                                  )}
+                                  
+                                  {/* 가이드/어시스턴트 수수료 */}
+                                  {(expenseDetails[tour.tourId].tourFees.guide_fee > 0 || expenseDetails[tour.tourId].tourFees.assistant_fee > 0) && (
+                                    <>
+                                      {expenseDetails[tour.tourId].ticketBookings.length > 0 && (
+                                        <div className="border-t border-gray-200 my-2"></div>
+                                      )}
+                                      <h5 className="font-medium text-gray-900 mb-2">가이드/어시스턴트 수수료</h5>
+                                      <div className="space-y-1">
+                                        {expenseDetails[tour.tourId].tourFees.guide_fee > 0 && (
+                                          <div className="flex justify-between text-sm">
+                                            <span className="text-gray-600">
+                                              가이드 수수료 {expenseDetails[tour.tourId].tourFees.guide_name ? `(${expenseDetails[tour.tourId].tourFees.guide_name})` : ''}
+                                            </span>
+                                            <span className="font-medium">${expenseDetails[tour.tourId].tourFees.guide_fee.toLocaleString()}</span>
+                                          </div>
+                                        )}
+                                        {expenseDetails[tour.tourId].tourFees.assistant_fee > 0 && (
+                                          <div className="flex justify-between text-sm">
+                                            <span className="text-gray-600">
+                                              어시스턴트 수수료 {expenseDetails[tour.tourId].tourFees.assistant_name ? `(${expenseDetails[tour.tourId].tourFees.assistant_name})` : ''}
+                                            </span>
+                                            <span className="font-medium">${expenseDetails[tour.tourId].tourFees.assistant_fee.toLocaleString()}</span>
+                                          </div>
+                                        )}
                                       </div>
-                                    )}
-                                  </div>
+                                    </>
+                                  )}
                                 </div>
                               )}
 
-                              {/* 입금 내역 */}
-                              {expenseDetails[tour.tourId].reservations.length > 0 && (
+                              {/* 입금 내역 - reservation_ids로 필터링 */}
+                              {expenseDetails[tour.tourId].reservations.length > 0 && expenseDetails[tour.tourId].reservationIds && (
                                 <div className="bg-white p-3 rounded border">
                                   <h5 className="font-medium text-gray-900 mb-2">입금 내역</h5>
                                   <div className="space-y-1">
-                                    {expenseDetails[tour.tourId].reservations.map((reservation: any, idx: number) => {
-                                      const customer = expenseDetails[tour.tourId].customers.find((c: any) => c.id === reservation.customer_id)
-                                      const pricing = expenseDetails[tour.tourId].reservationPricing.find((p: any) => p.reservation_id === reservation.id)
-                                      const totalPeople = reservation.adults + reservation.child + reservation.infant
-                                      const perPersonPrice = totalPeople > 0 ? (pricing?.total_price || 0) / totalPeople : 0
-                                      
-                                      return (
-                                        <div key={idx} className="flex justify-between text-sm">
-                                          <div className="flex flex-col">
-                                            <span className="text-gray-600 font-medium">{customer?.name || '고객'}</span>
-                                            <span className="text-xs text-gray-500">
-                                              성인 {reservation.adults}명, 아동 {reservation.child}명, 유아 {reservation.infant}명
-                                            </span>
+                                    {expenseDetails[tour.tourId].reservations
+                                      .filter((reservation: any) => expenseDetails[tour.tourId].reservationIds?.includes(reservation.id))
+                                      .map((reservation: any, idx: number) => {
+                                        const customer = expenseDetails[tour.tourId].customers.find((c: any) => c.id === reservation.customer_id)
+                                        const pricing = expenseDetails[tour.tourId].reservationPricing.find((p: any) => p.reservation_id === reservation.id)
+                                        const totalPeople = reservation.adults + reservation.child + reservation.infant
+                                        const perPersonPrice = totalPeople > 0 ? (pricing?.total_price || 0) / totalPeople : 0
+                                        
+                                        return (
+                                          <div key={idx} className="flex justify-between text-sm">
+                                            <div className="flex flex-col">
+                                              <span className="text-gray-600 font-medium">{customer?.name || '고객'}</span>
+                                              <span className="text-xs text-gray-500">
+                                                성인 {reservation.adults}명, 아동 {reservation.child}명, 유아 {reservation.infant}명
+                                              </span>
+                                            </div>
+                                            <div className="flex flex-col text-right">
+                                              <span className="font-medium text-green-600">${pricing?.total_price?.toLocaleString() || 0}</span>
+                                              <span className="text-xs text-gray-500">1인당: ${perPersonPrice.toFixed(2)}</span>
+                                            </div>
                                           </div>
-                                          <div className="flex flex-col text-right">
-                                            <span className="font-medium text-green-600">${pricing?.total_price?.toLocaleString() || 0}</span>
-                                            <span className="text-xs text-gray-500">1인당: ${perPersonPrice.toFixed(2)}</span>
+                                        )
+                                      })}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* 추가 비용 - reservation_ids로 필터링하고 additional_cost가 있는 예약만 표시 */}
+                              {expenseDetails[tour.tourId].reservations.length > 0 && expenseDetails[tour.tourId].reservationIds && (() => {
+                                const reservationsWithAdditionalCost = expenseDetails[tour.tourId].reservations
+                                  .filter((reservation: any) => {
+                                    if (!expenseDetails[tour.tourId].reservationIds?.includes(reservation.id)) return false
+                                    const pricing = expenseDetails[tour.tourId].reservationPricing.find((p: any) => p.reservation_id === reservation.id)
+                                    return pricing && pricing.additional_cost && pricing.additional_cost > 0
+                                  })
+                                
+                                if (reservationsWithAdditionalCost.length === 0) return null
+                                
+                                return (
+                                  <div className="bg-white p-3 rounded border">
+                                    <h5 className="font-medium text-gray-900 mb-2">추가 비용</h5>
+                                    <div className="space-y-1">
+                                      {reservationsWithAdditionalCost.map((reservation: any, idx: number) => {
+                                        const customer = expenseDetails[tour.tourId].customers.find((c: any) => c.id === reservation.customer_id)
+                                        const pricing = expenseDetails[tour.tourId].reservationPricing.find((p: any) => p.reservation_id === reservation.id)
+                                        const totalPeople = reservation.adults + reservation.child + reservation.infant
+                                        const additionalCost = pricing?.additional_cost || 0
+                                        const perPersonAdditionalCost = totalPeople > 0 ? additionalCost / totalPeople : 0
+                                        
+                                        return (
+                                          <div key={idx} className="flex justify-between text-sm">
+                                            <div className="flex flex-col">
+                                              <span className="text-gray-600 font-medium">{customer?.name || '고객'}</span>
+                                              <span className="text-xs text-gray-500">
+                                                성인 {reservation.adults}명, 아동 {reservation.child}명, 유아 {reservation.infant}명
+                                              </span>
+                                            </div>
+                                            <div className="flex flex-col text-right">
+                                              <span className="font-medium text-purple-600">${additionalCost.toLocaleString()}</span>
+                                              <span className="text-xs text-gray-500">1인당: ${perPersonAdditionalCost.toFixed(2)}</span>
+                                            </div>
                                           </div>
-                                        </div>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                )
+                              })()}
+                              
+                              {/* 추가 지출 통계 */}
+                              {expenseDetails[tour.tourId].reservationExpenses && expenseDetails[tour.tourId].reservationExpenses.length > 0 && (
+                                <div className="bg-white p-3 rounded border">
+                                  <h5 className="font-medium text-gray-900 mb-2">추가 지출</h5>
+                                  <div className="space-y-1">
+                                    {(() => {
+                                      // reservation_ids로 필터링하고 예약별로 그룹화
+                                      const filteredExpenses = expenseDetails[tour.tourId].reservationExpenses.filter((exp: any) => 
+                                        expenseDetails[tour.tourId].reservationIds?.includes(exp.reservation_id)
                                       )
-                                    })}
+                                      
+                                      // 예약별로 그룹화
+                                      const expensesByReservation = filteredExpenses.reduce((groups: any, exp: any) => {
+                                        if (!groups[exp.reservation_id]) {
+                                          groups[exp.reservation_id] = []
+                                        }
+                                        groups[exp.reservation_id].push(exp)
+                                        return groups
+                                      }, {})
+                                      
+                                      return Object.entries(expensesByReservation).map(([reservationId, expenses]: [string, any]) => {
+                                        const reservation = expenseDetails[tour.tourId].reservations.find((r: any) => r.id === reservationId)
+                                        const customer = expenseDetails[tour.tourId].customers.find((c: any) => c.id === reservation?.customer_id)
+                                        const totalExpense = expenses.reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0)
+                                        
+                                        return (
+                                          <div key={reservationId} className="flex justify-between text-sm">
+                                            <div className="flex flex-col">
+                                              <span className="text-gray-600 font-medium">{customer?.name || '고객'}</span>
+                                              <span className="text-xs text-gray-500">
+                                                {expenses.map((exp: any, idx: number) => (
+                                                  <span key={idx}>
+                                                    {exp.paid_for || '추가 지출'}
+                                                    {idx < expenses.length - 1 && ', '}
+                                                  </span>
+                                                ))}
+                                              </span>
+                                            </div>
+                                            <div className="flex flex-col text-right">
+                                              <span className="font-medium text-red-600">${totalExpense.toLocaleString()}</span>
+                                              <span className="text-xs text-gray-500">{expenses.length}건</span>
+                                            </div>
+                                          </div>
+                                        )
+                                      })
+                                    })()}
                                   </div>
                                 </div>
                               )}
