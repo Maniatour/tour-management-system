@@ -455,6 +455,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('suppliers'), href: `/${locale}/admin/suppliers`, icon: Truck },
     { name: t('supplierSettlement'), href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
     { name: '지출 관리', href: `/${locale}/admin/expenses`, icon: DollarSign },
+    // 파트너 자금 관리 (info@maniatour.com만 표시)
+    ...(authUser?.email?.toLowerCase() === 'info@maniatour.com' ? [{ name: '파트너 자금 관리', href: `/${locale}/admin/partner-funds`, icon: Users }] : []),
     // 기존 개별 페이지는 유지 (하위 메뉴로 사용 가능)
     // { name: tAdmin('reservationExpenseManagement'), href: `/${locale}/admin/reservation-expenses`, icon: DollarSign },
     // { name: tAdmin('companyExpenseManagement'), href: `/${locale}/admin/company-expenses`, icon: DollarSign },

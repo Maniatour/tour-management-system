@@ -1122,7 +1122,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         .from('reservations')
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .insert(reservationData as any)
-        .select()
+        .select('*')
         .single()
 
       if (error) {
@@ -1774,7 +1774,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         .from('customers')
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .insert(customerData as any)
-        .select()
+        .select('*')
 
       if (error) {
         console.error('Error adding customer:', error)

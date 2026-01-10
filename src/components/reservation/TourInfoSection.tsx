@@ -39,7 +39,7 @@ export default function TourInfoSection({
           <input
             type="date"
             value={formData.tourDate}
-            onChange={(e) => setFormData({ ...formData, tourDate: e.target.value })}
+            onChange={(e) => setFormData((prev: any) => ({ ...prev, tourDate: e.target.value }))}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             required
           />
@@ -50,7 +50,7 @@ export default function TourInfoSection({
           <input
             type="time"
             value={formData.tourTime}
-            onChange={(e) => setFormData({ ...formData, tourTime: sanitizeTimeInput(e.target.value) })}
+            onChange={(e) => setFormData((prev: any) => ({ ...prev, tourTime: sanitizeTimeInput(e.target.value) }))}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
@@ -65,9 +65,9 @@ export default function TourInfoSection({
               type="text"
               value={formData.pickUpHotelSearch}
               onChange={(e) => {
-                setFormData({ ...formData, pickUpHotelSearch: e.target.value, showPickupHotelDropdown: true })
+                setFormData((prev: any) => ({ ...prev, pickUpHotelSearch: e.target.value, showPickupHotelDropdown: true }))
               }}
-              onFocus={() => setFormData({ ...formData, showPickupHotelDropdown: true })}
+              onFocus={() => setFormData((prev: any) => ({ ...prev, showPickupHotelDropdown: true }))}
               placeholder="픽업 호텔을 검색하세요"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
@@ -94,12 +94,12 @@ export default function TourInfoSection({
                       key={hotel.id}
                       className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
                       onClick={() => {
-                        setFormData({
-                          ...formData,
+                        setFormData((prev: any) => ({
+                          ...prev,
                           pickUpHotel: hotel.id,
                           pickUpHotelSearch: `${hotel.hotel} - ${hotel.pick_up_location}`,
                           showPickupHotelDropdown: false
-                        })
+                        }))
                       }}
                     >
                       <div className="font-medium text-gray-900">{hotel.hotel}</div>
@@ -126,7 +126,7 @@ export default function TourInfoSection({
           <input
             type="time"
             value={formData.pickUpTime}
-            onChange={(e) => setFormData({ ...formData, pickUpTime: sanitizeTimeInput(e.target.value) })}
+            onChange={(e) => setFormData((prev: any) => ({ ...prev, pickUpTime: sanitizeTimeInput(e.target.value) }))}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>

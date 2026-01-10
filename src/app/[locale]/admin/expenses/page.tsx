@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import ReservationExpenseManager from '@/components/ReservationExpenseManager'
 import CompanyExpenseManager from '@/components/CompanyExpenseManager'
@@ -11,7 +12,26 @@ import { Receipt, Calendar, Building2, MapPin, Wallet } from 'lucide-react'
 type ExpenseTab = 'reservation' | 'company' | 'tour' | 'cash'
 
 export default function ExpensesManagementPage() {
-  const [activeTab, setActiveTab] = useState<ExpenseTab>('tour')
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const tabFromUrl = searchParams.get('tab') as ExpenseTab | null
+  const [activeTab, setActiveTab] = useState<ExpenseTab>(tabFromUrl || 'tour')
+  
+  // URL 쿼리 파라미터와 동기화
+  useEffect(() => {
+    if (tabFromUrl && ['reservation', 'company', 'tour', 'cash'].includes(tabFromUrl)) {
+      setActiveTab(tabFromUrl)
+    }
+  }, [tabFromUrl])
+  
+  // 탭 변경 시 URL 업데이트
+  const handleTabChange = (tab: ExpenseTab) => {
+    setActiveTab(tab)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('tab', tab)
+    router.push(`${pathname}?${params.toString()}`, { scroll: false })
+  }
 
   const tabs = [
     {
@@ -62,7 +82,7 @@ export default function ExpensesManagementPage() {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => handleTabChange(tab.id)}
                   className={`
                     flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium rounded-lg transition-colors
                     ${isActive

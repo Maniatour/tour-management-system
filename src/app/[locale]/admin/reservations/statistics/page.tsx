@@ -111,17 +111,32 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   const [activeTab, setActiveTab] = useState<TabType>('reservations')
   const [timeRange, setTimeRange] = useState<TimeRange>('daily')
   const [selectedChart, setSelectedChart] = useState<ChartType>('channel')
-  const [dateRange, setDateRange] = useState<{start: string, end: string}>({
-    start: new Date().toISOString().split('T')[0],
-    end: new Date().toISOString().split('T')[0]
+  // 기본 날짜 범위를 최근 30일로 설정
+  const [dateRange, setDateRange] = useState<{start: string, end: string}>(() => {
+    const today = new Date()
+    const thirtyDaysAgo = new Date(today)
+    thirtyDaysAgo.setDate(today.getDate() - 30)
+    return {
+      start: thirtyDaysAgo.toISOString().split('T')[0],
+      end: today.toISOString().split('T')[0]
+    }
   })
   const [selectedChannelId, setSelectedChannelId] = useState<string>('') // 모든 탭용 단일 선택
-  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(['Pending', 'Confirmed', 'Completed'])
+  // 상태 필터를 소문자로 변경 (데이터베이스와 일치)
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(['pending', 'confirmed', 'completed'])
   const [searchQuery, setSearchQuery] = useState<string>('')
 
   // 통계 데이터 계산
   const statisticsData = useMemo((): StatisticsData => {
+    console.log('통계 데이터 계산 시작:', {
+      totalReservations: reservations.length,
+      dateRange,
+      selectedStatuses,
+      selectedChannelId
+    })
+
     if (!reservations.length) {
+      console.log('예약 데이터가 없습니다.')
       return {
         totalReservations: 0,
         totalPeople: 0,
@@ -138,8 +153,14 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
       const reservationDate = new Date(reservation.addedTime)
       const startDate = new Date(dateRange.start)
       const endDate = new Date(dateRange.end)
+      // 날짜 비교 시 시간 부분을 무시하고 날짜만 비교
+      startDate.setHours(0, 0, 0, 0)
+      endDate.setHours(23, 59, 59, 999)
+      reservationDate.setHours(0, 0, 0, 0)
       return reservationDate >= startDate && reservationDate <= endDate
     })
+
+    console.log('날짜 필터링 후:', filteredReservations.length, '개')
 
     // 채널 필터링
     if (selectedChannelId) {
@@ -148,11 +169,15 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
       )
     }
 
-    // 상태 필터링 (대소문자 구분)
+    // 상태 필터링 (대소문자 구분 없이 비교)
     if (selectedStatuses.length > 0) {
+      const beforeStatusFilter = filteredReservations.length
       filteredReservations = filteredReservations.filter(reservation =>
-        selectedStatuses.includes(reservation.status)
+        selectedStatuses.some(selectedStatus => 
+          reservation.status?.toLowerCase() === selectedStatus.toLowerCase()
+        )
       )
+      console.log('상태 필터링 후:', filteredReservations.length, '개 (필터링 전:', beforeStatusFilter, '개)')
     }
 
     // 검색 필터링
@@ -286,6 +311,16 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
         .map(([period, data]) => ({ period, ...data }))
         .sort((a, b) => a.period.localeCompare(b.period))
     })()
+
+    console.log('최종 통계 데이터:', {
+      totalReservations,
+      totalPeople,
+      totalRevenue,
+      channelStatsCount: channelStats.length,
+      productStatsCount: productStats.length,
+      statusStatsCount: statusStats.length,
+      trendDataCount: trendData.length
+    })
 
     return {
       totalReservations,
@@ -434,15 +469,15 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
           <div className="flex items-center space-x-2 flex-shrink-0">
             <label className="text-sm font-medium text-gray-700 whitespace-nowrap">상태 선택:</label>
             <div className="flex space-x-1">
-              {(['Pending', 'Confirmed', 'Completed', 'Canceled', 'Recruiting'] as const).map((status) => {
-                const isSelected = selectedStatuses.includes(status)
+              {(['pending', 'confirmed', 'completed', 'cancelled', 'recruiting'] as const).map((status) => {
+                const isSelected = selectedStatuses.some(s => s.toLowerCase() === status.toLowerCase())
                 return (
                   <button
                     key={status}
                     type="button"
                     onClick={() => {
                       if (isSelected) {
-                        setSelectedStatuses(selectedStatuses.filter(s => s !== status))
+                        setSelectedStatuses(selectedStatuses.filter(s => s.toLowerCase() !== status.toLowerCase()))
                       } else {
                         setSelectedStatuses([...selectedStatuses, status])
                       }
@@ -453,7 +488,11 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
-                    {status}
+                    {status === 'pending' ? '대기' : 
+                     status === 'confirmed' ? '확정' : 
+                     status === 'completed' ? '완료' : 
+                     status === 'cancelled' ? '취소' : 
+                     status === 'recruiting' ? '모집중' : status}
                   </button>
                 )
               })}
@@ -573,7 +612,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">확정 예약</p>
               <p className="text-2xl font-bold text-gray-900">
-                {statisticsData.statusStats.find(s => s.status === 'confirmed')?.count || 0}
+                {statisticsData.statusStats.find(s => s.status?.toLowerCase() === 'confirmed')?.count || 0}
               </p>
             </div>
           </div>

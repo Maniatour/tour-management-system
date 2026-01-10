@@ -339,7 +339,13 @@ export default function PickupScheduleEmailPreviewModal({
 
   const handleSendIndividual = async (reservationId: string) => {
     const reservation = reservations.find(r => r.id === reservationId)
-    if (!reservation || !reservation.pickup_time) {
+    if (!reservation) {
+      console.error('예약을 찾을 수 없습니다:', { reservationId, reservations: reservations.map(r => r.id) })
+      alert('예약을 찾을 수 없습니다.')
+      return
+    }
+
+    if (!reservation.pickup_time) {
       alert('픽업 시간이 설정되지 않은 예약입니다.')
       return
     }
@@ -351,6 +357,12 @@ export default function PickupScheduleEmailPreviewModal({
         alert('투어 날짜를 찾을 수 없습니다.')
         return
       }
+
+      console.log('개별 발송 요청:', {
+        reservationId: reservation.id,
+        pickupTime: reservation.pickup_time,
+        tourDate: reservationTourDate
+      })
 
       const response = await fetch('/api/send-pickup-schedule-notification', {
         method: 'POST',
@@ -368,13 +380,20 @@ export default function PickupScheduleEmailPreviewModal({
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.error || '이메일 발송에 실패했습니다.')
+        const errorMessage = errorData.error || '이메일 발송에 실패했습니다.'
+        const errorDetails = errorData.details ? `\n\n상세: ${errorData.details}` : ''
+        const errorType = errorData.errorType ? `\n\n오류 유형: ${errorData.errorType}` : ''
+        throw new Error(`${errorMessage}${errorDetails}${errorType}`)
       }
 
       setSentReservations(prev => new Set(prev).add(reservationId))
       alert('이메일이 성공적으로 발송되었습니다.')
     } catch (error) {
       console.error('개별 발송 오류:', error)
+      console.error('에러 상세:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      })
       alert(error instanceof Error ? error.message : '이메일 발송 중 오류가 발생했습니다.')
     } finally {
       setSendingReservationId(null)

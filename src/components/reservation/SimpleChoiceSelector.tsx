@@ -103,19 +103,31 @@ export default function SimpleChoiceSelector({
     console.log('SimpleChoiceSelector: selections 상태 변경됨', {
       selections,
       selectionsCount: selections.length,
-      selectionsDetails: selections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id }))
+      selectionsDetails: selections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, quantity: s.quantity }))
     });
     
     // initialSelections로 인한 변경이 아닌 사용자 액션으로 인한 변경인지 확인
     const prevIds = prevSelectionsRef.current.map(s => `${s.choice_id}:${s.option_id}:${s.quantity}`).sort().join(',');
     const currentIds = selections.map(s => `${s.choice_id}:${s.option_id}:${s.quantity}`).sort().join(',');
     
+    console.log('SimpleChoiceSelector: 변경 감지 체크', {
+      prevIds,
+      currentIds,
+      isDifferent: prevIds !== currentIds
+    });
+    
     // 이전 값과 다르면 사용자 액션으로 간주하고 부모에 알림
     // (initialSelections로 인한 변경은 위의 useEffect에서 prevSelectionsRef를 업데이트하므로 구분 가능)
     if (prevIds !== currentIds) {
+      console.log('SimpleChoiceSelector: 변경 감지됨, onSelectionChange 호출', {
+        selectionsCount: selections.length,
+        selections: selections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id }))
+      });
       // useEffect 내에서 호출하므로 렌더링 후에 실행됨 (안전함)
       onSelectionChange(selections);
       prevSelectionsRef.current = selections;
+    } else {
+      console.log('SimpleChoiceSelector: 변경 없음, onSelectionChange 호출 안 함');
     }
   }, [selections, onSelectionChange]);
 
@@ -142,7 +154,11 @@ export default function SimpleChoiceSelector({
         });
       }
       
-      prevSelectionsRef.current = newSelections;
+      console.log('SimpleChoiceSelector: handleSelectionChange - 새로운 selections 계산됨', {
+        newSelectionsCount: newSelections.length,
+        newSelections: newSelections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, quantity: s.quantity })),
+        prevCount: prev.length
+      });
       
       return newSelections;
     });

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Calculator, DollarSign, TrendingUp, TrendingDown, AlertCircle, RefreshCw } from 'lucide-react'
 import { useLocale } from 'next-intl'
@@ -267,13 +267,6 @@ export default function PricingSection({
       })
     }
   }, [selectedChannel, isOTAChannel, channelCommissionPercent, formData.commission_percent])
-  // 홈페이지 채널 확인 (ID가 'M00001'이거나 type이 'Website'인 경우)
-  const isHomepageChannel = selectedChannel && (
-    selectedChannel.id === 'M00001' ||
-    selectedChannel.type?.toLowerCase() === 'website' ||
-    selectedChannel.name?.toLowerCase().includes('홈페이지') ||
-    selectedChannel.name?.toLowerCase().includes('homepage')
-  )
   // 채널의 pricing_type 확인 (단일 가격 모드 체크)
   const pricingType = selectedChannel?.pricing_type || 'separate'
   const isSinglePrice = pricingType === 'single'
@@ -480,30 +473,10 @@ export default function PricingSection({
   }
 
   // 수익 계산 (Net 가격 - 예약 지출 총합)
-  const calculateProfit = () => {
+  const calculateProfit = useCallback(() => {
     const netPrice = calculateNetPrice()
     return netPrice - reservationExpensesTotal
-  }
-
-  // 커미션 금액 자동 계산
-  const calculateCommissionAmount = useCallback(() => {
-    if (formData.commission_percent <= 0) return 0
-    
-    if (isOTAChannel) {
-      // OTA 채널: Grand Total (쿠폰 할인 적용 후, 추가비용 포함)에 커미션 적용
-      const grandTotal = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
-      return grandTotal * (formData.commission_percent / 100)
-    } else if (commissionBasePriceOnly) {
-      // 판매가격에만 커미션 적용
-      const baseProductPrice = calculateProductPriceTotal()
-      const basePriceForCommission = baseProductPrice - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
-      return basePriceForCommission * (formData.commission_percent / 100)
-    } else {
-      // 전체 가격에 커미션 적용
-      const totalPrice = formData.subtotal - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost + formData.optionTotal
-      return totalPrice * (formData.commission_percent / 100)
-    }
-  }, [formData.commission_percent, formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.additionalCost, formData.subtotal, formData.optionTotal, isOTAChannel, commissionBasePriceOnly, calculateProductPriceTotal])
+  }, [calculateNetPrice, reservationExpensesTotal])
 
   // 커미션 기본값 설정 및 자동 업데이트 (할인 후 상품가 우선, 없으면 OTA 판매가, 없으면 소계)
   const otaSalePrice = formData.onlinePaymentAmount ?? 0

@@ -132,6 +132,15 @@ export default function TourDetailPage() {
   const [activeSection, setActiveSection] = useState<string>('')
   const [showFloatingMenu, setShowFloatingMenu] = useState<boolean>(false)
   
+  // 예약 편집 모달용 데이터
+  const [reservationFormData, setReservationFormData] = useState<{
+    productOptions: any[]
+    options: any[]
+  }>({
+    productOptions: [],
+    options: []
+  })
+  
   // 스크롤 감지로 현재 섹션 추적
   useEffect(() => {
     const sections = [
@@ -1074,10 +1083,71 @@ export default function TourDetailPage() {
     )
   })
 
+  // 예약 데이터를 Reservation 타입으로 변환
+  const convertReservationToFormType = (reservation: any): any => {
+    return {
+      id: reservation.id,
+      customerId: reservation.customer_id || '',
+      productId: reservation.product_id || '',
+      tourDate: reservation.tour_date || '',
+      tourTime: reservation.tour_time || '',
+      eventNote: reservation.event_note || '',
+      pickUpHotel: reservation.pickup_hotel || '',
+      pickUpTime: reservation.pickup_time || '',
+      adults: reservation.adults || 0,
+      child: reservation.child || 0,
+      infant: reservation.infant || 0,
+      totalPeople: reservation.total_people || 0,
+      channelId: reservation.channel_id || '',
+      channelRN: reservation.channel_rn || '',
+      addedBy: reservation.added_by || '',
+      addedTime: reservation.created_at || '',
+      tourId: reservation.tour_id || '',
+      status: (reservation.status as 'pending' | 'confirmed' | 'completed' | 'cancelled') || 'pending',
+      selectedOptions: (typeof reservation.selected_options === 'string'
+        ? (() => { try { return JSON.parse(reservation.selected_options) } catch { return {} } })()
+        : (reservation.selected_options as { [optionId: string]: string[] }) || {}),
+      selectedOptionPrices: (typeof reservation.selected_option_prices === 'string'
+        ? (() => { try { return JSON.parse(reservation.selected_option_prices) } catch { return {} } })()
+        : (reservation.selected_option_prices as { [key: string]: number }) || {}),
+      isPrivateTour: reservation.is_private_tour || false
+    }
+  }
+
+  // 예약 편집 모달용 데이터 로드
+  const loadReservationFormData = useCallback(async (productId: string) => {
+    try {
+      // productOptions 로드
+      const { data: productOptionsData } = await supabase
+        .from('product_options')
+        .select('*')
+        .eq('product_id', productId)
+
+      // options 로드
+      const { data: optionsData } = await supabase
+        .from('options')
+        .select('*')
+        .order('name', { ascending: true })
+
+      setReservationFormData({
+        productOptions: productOptionsData || [],
+        options: optionsData || []
+      })
+    } catch (error) {
+      console.error('Error loading reservation form data:', error)
+    }
+  }, [])
+
   // 예약 편집 모달 열기
   const handleEditReservationClick = async (reservation: any) => {
     if (!tourData.isStaff) return
-    setEditingReservation(reservation)
+    const convertedReservation = convertReservationToFormType(reservation)
+    setEditingReservation(convertedReservation)
+    
+    // 예약의 상품 ID로 필요한 데이터 로드
+    if (reservation.product_id) {
+      await loadReservationFormData(reservation.product_id)
+    }
   }
 
   // 예약 편집 모달 닫기
@@ -1641,20 +1711,80 @@ export default function TourDetailPage() {
           customers={tourData.customers}
           products={tourData.allProducts}
           channels={tourData.channels}
-          productOptions={[]}
-          optionChoices={[]}
-          options={[]}
+          productOptions={reservationFormData.productOptions}
+          options={reservationFormData.options}
           pickupHotels={tourData.pickupHotels}
           coupons={[]}
           onSubmit={async (reservationData: any) => {
-            console.log('Reservation updated:', reservationData)
-            handleCloseEditModal()
+            try {
+              // camelCase를 snake_case로 변환
+              const dbReservationData = {
+                customer_id: reservationData.customerId,
+                product_id: reservationData.productId,
+                tour_date: reservationData.tourDate,
+                tour_time: reservationData.tourTime || null,
+                event_note: reservationData.eventNote,
+                pickup_hotel: reservationData.pickUpHotel,
+                pickup_time: reservationData.pickUpTime || null,
+                adults: reservationData.adults,
+                child: reservationData.child,
+                infant: reservationData.infant,
+                total_people: reservationData.totalPeople,
+                channel_id: reservationData.channelId,
+                channel_rn: reservationData.channelRN,
+                added_by: reservationData.addedBy,
+                tour_id: reservationData.tourId || editingReservation.tourId || null,
+                status: reservationData.status,
+                selected_options: reservationData.selectedOptions,
+                selected_option_prices: reservationData.selectedOptionPrices,
+                is_private_tour: reservationData.isPrivateTour || false
+              }
+
+              const { error } = await supabase
+                .from('reservations')
+                .update(dbReservationData)
+                .eq('id', editingReservation.id)
+
+              if (error) {
+                console.error('Error updating reservation:', error)
+                alert('예약 수정 중 오류가 발생했습니다: ' + error.message)
+                return
+              }
+
+              // 예약 목록 새로고침
+              await tourData.refreshReservations()
+              handleCloseEditModal()
+              alert('예약이 성공적으로 수정되었습니다!')
+            } catch (error) {
+              console.error('Error updating reservation:', error)
+              alert('예약 수정 중 오류가 발생했습니다.')
+            }
           }}
           onCancel={handleCloseEditModal}
           onRefreshCustomers={async () => {}}
           onDelete={async () => {
-            console.log('Reservation deleted')
-            handleCloseEditModal()
+            if (confirm('정말 이 예약을 삭제하시겠습니까?')) {
+              try {
+                const { error } = await supabase
+                  .from('reservations')
+                  .delete()
+                  .eq('id', editingReservation.id)
+
+                if (error) {
+                  console.error('Error deleting reservation:', error)
+                  alert('예약 삭제 중 오류가 발생했습니다: ' + error.message)
+                  return
+                }
+
+                // 예약 목록 새로고침
+                await tourData.refreshReservations()
+                handleCloseEditModal()
+                alert('예약이 성공적으로 삭제되었습니다!')
+              } catch (error) {
+                console.error('Error deleting reservation:', error)
+                alert('예약 삭제 중 오류가 발생했습니다.')
+              }
+            }
           }}
           />
       )}

@@ -276,13 +276,29 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
 
   // 초이스 선택 변경 핸들러 - useCallback으로 최적화
   const handleSelectionChange = useCallback((selections: any[]) => {
-    const choicesTotal = selections.reduce((sum, selection) => sum + selection.total_price, 0);
-    setFormData(prev => ({
-      ...prev,
-      selectedChoices: selections,
-      choicesTotal
-    }));
-  }, []);
+    console.log('ProductSelectionSectionNew: handleSelectionChange 호출됨', {
+      selectionsCount: selections.length,
+      selections: selections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, quantity: s.quantity })),
+    });
+    
+    const choicesTotal = selections.reduce((sum, selection) => sum + (selection.total_price || 0), 0);
+    
+    setFormData(prev => {
+      console.log('ProductSelectionSectionNew: setFormData 실행', {
+        prevSelectedChoicesCount: Array.isArray(prev.selectedChoices) ? prev.selectedChoices.length : 0,
+        prevSelectedChoicesType: Array.isArray(prev.selectedChoices) ? 'array' : typeof prev.selectedChoices,
+        newSelectionsCount: selections.length,
+        choicesTotal,
+        newSelections: selections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id }))
+      });
+      
+      return {
+        ...prev,
+        selectedChoices: selections,
+        choicesTotal
+      };
+    });
+  }, [setFormData]);
   
   // 상품이 변경될 때 choice 데이터 로드 (편집 모드에서는 기존 데이터 보존)
   useEffect(() => {

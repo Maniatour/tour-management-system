@@ -410,9 +410,33 @@ export default function AdminCustomers() {
   // 예약 저장 함수
   const handleSaveReservation = useCallback(async (reservationData: Omit<Reservation, 'id'>) => {
     try {
-      const { error } = await (supabase as unknown as { from: (table: string) => { insert: (data: unknown[]) => Promise<{ error: unknown }> } })
+      // camelCase를 snake_case로 변환
+      const dbReservationData = {
+        customer_id: reservationData.customerId,
+        product_id: reservationData.productId,
+        tour_date: reservationData.tourDate,
+        tour_time: reservationData.tourTime || null,
+        event_note: reservationData.eventNote,
+        pickup_hotel: reservationData.pickUpHotel,
+        pickup_time: reservationData.pickUpTime || null,
+        adults: reservationData.adults,
+        child: reservationData.child,
+        infant: reservationData.infant,
+        total_people: reservationData.totalPeople,
+        channel_id: reservationData.channelId,
+        channel_rn: reservationData.channelRN,
+        added_by: reservationData.addedBy,
+        tour_id: reservationData.tourId || null,
+        status: reservationData.status,
+        selected_options: reservationData.selectedOptions,
+        selected_option_prices: reservationData.selectedOptionPrices,
+        is_private_tour: reservationData.isPrivateTour || false
+      }
+
+      const { error } = await supabase
         .from('reservations')
-        .insert([reservationData])
+        .insert([dbReservationData])
+        .select('*')
 
       if (error) {
         console.error('Error saving reservation:', error)
@@ -429,7 +453,7 @@ export default function AdminCustomers() {
       console.error('Error saving reservation:', error)
       alert(t('messages.errorSavingReservation'))
     }
-  }, [fetchReservationInfo])
+  }, [fetchReservationInfo, t])
 
   // 예약 삭제 함수
   const handleDeleteReservation = useCallback(async (reservationId: string) => {

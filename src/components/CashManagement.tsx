@@ -48,7 +48,7 @@ interface TransactionHistory {
 
 interface CashTransactionFormData {
   transaction_date: string
-  transaction_type: 'deposit' | 'withdrawal'
+  transaction_type: 'deposit' | 'withdrawal' | 'bank_deposit'
   amount: string
   description: string
   category: string
@@ -81,7 +81,7 @@ export default function CashManagement() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingTransaction, setEditingTransaction] = useState<CashTransaction | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const [typeFilter, setTypeFilter] = useState<'all' | 'deposit' | 'withdrawal'>('all')
+  const [typeFilter, setTypeFilter] = useState<'all' | 'deposit' | 'withdrawal' | 'bank_deposit'>('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
@@ -168,7 +168,8 @@ export default function CashManagement() {
         cashTransactionsQuery = cashTransactionsQuery.or(`description.ilike.%${searchTerm}%,notes.ilike.%${searchTerm}%`)
       }
 
-      if (typeFilter !== 'all') {
+      if (typeFilter !== 'all' && typeFilter !== 'bank_deposit') {
+        // bank_deposit은 클라이언트 측에서 description으로 필터링
         cashTransactionsQuery = cashTransactionsQuery.eq('transaction_type', typeFilter)
       }
 
@@ -317,7 +318,15 @@ export default function CashManagement() {
       // 타입 필터 적용
       let filtered = allTransactions
       if (typeFilter !== 'all') {
-        filtered = filtered.filter(t => t.transaction_type === typeFilter)
+        if (typeFilter === 'bank_deposit') {
+          // 은행 Deposit 필터: description에 "은행 Deposit"이 포함된 거래만
+          filtered = filtered.filter(t => 
+            t.transaction_type === 'withdrawal' && 
+            (t.description?.includes('은행 Deposit') || t.description === '은행 Deposit')
+          )
+        } else {
+          filtered = filtered.filter(t => t.transaction_type === typeFilter)
+        }
       }
 
       setTransactions(filtered)
@@ -395,10 +404,15 @@ export default function CashManagement() {
           notes: editingTransaction.notes
         }
 
-        // 새 값
+        // 새 값 (bank_deposit은 withdrawal로 변환)
+        const dbTransactionType = formData.transaction_type === 'bank_deposit' ? 'withdrawal' : formData.transaction_type
+        // 날짜 형식 변환: YYYY-MM-DD를 로컬 시간대의 00:00:00으로 설정 후 ISO 형식으로 변환
+        // 시간대 문제를 방지하기 위해 로컬 시간대의 날짜를 그대로 유지
+        const [year, month, day] = formData.transaction_date.split('-').map(Number)
+        const transactionDate = new Date(year, month - 1, day, 0, 0, 0, 0) // 로컬 시간대의 00:00:00
         const newValues = {
-          transaction_date: new Date(formData.transaction_date).toISOString(),
-          transaction_type: formData.transaction_type,
+          transaction_date: transactionDate.toISOString(),
+          transaction_type: dbTransactionType,
           amount: parseFloat(formData.amount),
           description: formData.description || null,
           category: formData.category || null,
@@ -407,7 +421,8 @@ export default function CashManagement() {
 
         // 출처별로 수정
         if (editingTransaction.source === 'cash_transactions') {
-          const { error } = await supabase
+          console.log('현금 거래 수정 시작:', { id: editingTransaction.id, newValues })
+          const { data: updatedData, error } = await supabase
             .from('cash_transactions')
             .update({
               transaction_date: newValues.transaction_date,
@@ -419,8 +434,14 @@ export default function CashManagement() {
               updated_at: new Date().toISOString()
             })
             .eq('id', editingTransaction.id)
+            .select()
 
-          if (error) throw error
+          if (error) {
+            console.error('현금 거래 수정 오류:', error)
+            throw error
+          }
+          
+          console.log('현금 거래 수정 완료:', updatedData)
           
           // 히스토리 저장
           await saveHistory(editingTransaction.id, 'cash_transactions', 'updated', oldValues, newValues)
@@ -460,10 +481,15 @@ export default function CashManagement() {
 
         toast.success('현금 거래가 수정되었습니다.')
       } else {
-        // 추가
+        // 추가 (bank_deposit은 withdrawal로 변환)
+        const dbTransactionType = formData.transaction_type === 'bank_deposit' ? 'withdrawal' : formData.transaction_type
+        // 날짜 형식 변환: YYYY-MM-DD를 로컬 시간대의 00:00:00으로 설정 후 ISO 형식으로 변환
+        // 시간대 문제를 방지하기 위해 로컬 시간대의 날짜를 그대로 유지
+        const [year, month, day] = formData.transaction_date.split('-').map(Number)
+        const transactionDate = new Date(year, month - 1, day, 0, 0, 0, 0) // 로컬 시간대의 00:00:00
         const newValues = {
-          transaction_date: new Date(formData.transaction_date).toISOString(),
-          transaction_type: formData.transaction_type,
+          transaction_date: transactionDate.toISOString(),
+          transaction_type: dbTransactionType,
           amount: parseFloat(formData.amount),
           description: formData.description || null,
           category: formData.category || null,
@@ -494,6 +520,13 @@ export default function CashManagement() {
         toast.success('현금 거래가 추가되었습니다.')
       }
 
+      // 데이터 다시 로드 (DB 업데이트가 완료되도록 약간의 지연 후 로드)
+      console.log('데이터 리로드 시작')
+      await new Promise(resolve => setTimeout(resolve, 300))
+      await loadTransactions()
+      console.log('데이터 리로드 완료')
+      
+      // 모달 닫기 및 상태 초기화 (데이터 로드 완료 후)
       setIsDialogOpen(false)
       setEditingTransaction(null)
       setFormData({
@@ -504,7 +537,6 @@ export default function CashManagement() {
         category: '',
         notes: ''
       })
-      loadTransactions()
     } catch (error) {
       console.error('현금 거래 저장 오류:', error)
       toast.error('현금 거래를 저장하는 중 오류가 발생했습니다.')
@@ -549,9 +581,11 @@ export default function CashManagement() {
     } else {
       // cash_transactions는 기존 모달 사용
       setEditingTransaction(transaction)
+      // description이 "은행 Deposit"인 경우 bank_deposit으로 설정
+      const isBankDeposit = transaction.description?.includes('은행 Deposit') || transaction.description === '은행 Deposit'
       setFormData({
         transaction_date: new Date(transaction.transaction_date).toISOString().split('T')[0],
-        transaction_type: transaction.transaction_type,
+        transaction_type: isBankDeposit ? 'bank_deposit' : transaction.transaction_type,
         amount: transaction.amount.toString(),
         description: transaction.description || '',
         category: transaction.category || '',
@@ -861,9 +895,30 @@ export default function CashManagement() {
                       <Label htmlFor="transaction_type">거래 유형 *</Label>
                       <Select
                         value={formData.transaction_type}
-                        onValueChange={(value: 'deposit' | 'withdrawal') => 
-                          setFormData({ ...formData, transaction_type: value })
-                        }
+                        onValueChange={(value: 'deposit' | 'withdrawal' | 'bank_deposit') => {
+                          // 은행 Deposit 선택 시 description에 "은행 Deposit"이 포함되도록 보장
+                          let newDescription = formData.description
+                          if (value === 'bank_deposit') {
+                            // description에 "은행 Deposit"이 없으면 추가
+                            if (!formData.description || !formData.description.includes('은행 Deposit')) {
+                              newDescription = formData.description 
+                                ? `은행 Deposit - ${formData.description}` 
+                                : '은행 Deposit'
+                            }
+                          } else {
+                            // 다른 유형 선택 시 description에서 "은행 Deposit - " 제거
+                            if (formData.description && formData.description.startsWith('은행 Deposit - ')) {
+                              newDescription = formData.description.replace('은행 Deposit - ', '')
+                            } else if (formData.description === '은행 Deposit') {
+                              newDescription = ''
+                            }
+                          }
+                          setFormData({ 
+                            ...formData, 
+                            transaction_type: value,
+                            description: newDescription
+                          })
+                        }}
                       >
                         <SelectTrigger>
                           <SelectValue />
@@ -871,6 +926,7 @@ export default function CashManagement() {
                         <SelectContent>
                           <SelectItem value="deposit">입금</SelectItem>
                           <SelectItem value="withdrawal">출금</SelectItem>
+                          <SelectItem value="bank_deposit">은행 Deposit</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -965,7 +1021,7 @@ export default function CashManagement() {
                   />
                 </div>
               </div>
-              <Select value={typeFilter} onValueChange={(value: 'all' | 'deposit' | 'withdrawal') => setTypeFilter(value)}>
+              <Select value={typeFilter} onValueChange={(value: 'all' | 'deposit' | 'withdrawal' | 'bank_deposit') => setTypeFilter(value)}>
                 <SelectTrigger className="w-[150px]">
                   <SelectValue placeholder="거래 유형" />
                 </SelectTrigger>
@@ -973,6 +1029,7 @@ export default function CashManagement() {
                   <SelectItem value="all">전체</SelectItem>
                   <SelectItem value="deposit">입금</SelectItem>
                   <SelectItem value="withdrawal">출금</SelectItem>
+                  <SelectItem value="bank_deposit">은행 Deposit</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
@@ -1022,24 +1079,34 @@ export default function CashManagement() {
                       return (
                         <TableRow key={transaction.id} className="h-10">
                           <TableCell className="py-1 w-48">
-                            {new Date(transaction.transaction_date).toLocaleDateString('ko-KR', {
-                              year: 'numeric',
-                              month: '2-digit',
-                              day: '2-digit'
-                            })}
+                            {(() => {
+                              // ISO 형식의 날짜를 로컬 시간대로 변환하여 날짜만 표시
+                              const date = new Date(transaction.transaction_date)
+                              // 로컬 시간대의 날짜 부분만 추출
+                              const year = date.getFullYear()
+                              const month = String(date.getMonth() + 1).padStart(2, '0')
+                              const day = String(date.getDate()).padStart(2, '0')
+                              return `${year}. ${month}. ${day}.`
+                            })()}
                           </TableCell>
                           <TableCell className="w-32 py-1">
-                            <Badge
-                              variant={transaction.transaction_type === 'deposit' ? 'default' : 'destructive'}
-                              className="flex items-center gap-1 w-fit text-xs"
-                            >
-                              {transaction.transaction_type === 'deposit' ? (
-                                <ArrowDownCircle className="w-3 h-3" />
-                              ) : (
-                                <ArrowUpCircle className="w-3 h-3" />
-                              )}
-                              {transaction.transaction_type === 'deposit' ? '입금' : '출금'}
-                            </Badge>
+                            {(() => {
+                              const isBankDeposit = transaction.description?.includes('은행 Deposit') || transaction.description === '은행 Deposit'
+                              const displayType = isBankDeposit ? '은행 Deposit' : (transaction.transaction_type === 'deposit' ? '입금' : '출금')
+                              return (
+                                <Badge
+                                  variant={transaction.transaction_type === 'deposit' ? 'default' : 'destructive'}
+                                  className="flex items-center gap-1 w-fit text-xs"
+                                >
+                                  {transaction.transaction_type === 'deposit' ? (
+                                    <ArrowDownCircle className="w-3 h-3" />
+                                  ) : (
+                                    <ArrowUpCircle className="w-3 h-3" />
+                                  )}
+                                  {displayType}
+                                </Badge>
+                              )
+                            })()}
                           </TableCell>
                           <TableCell className="font-medium py-1 text-sm">
                             <span className={transaction.transaction_type === 'deposit' ? 'text-blue-600' : 'text-red-600'}>
@@ -1221,7 +1288,10 @@ export default function CashManagement() {
                               <div className="font-semibold text-red-600 mb-2">변경 전</div>
                               <div className="space-y-1">
                                 <div>날짜: {new Date(history.old_values.transaction_date).toLocaleDateString('ko-KR')}</div>
-                                <div>유형: {history.old_values.transaction_type === 'deposit' ? '입금' : '출금'}</div>
+                                <div>유형: {(() => {
+                                  const isBankDeposit = history.old_values.description?.includes('은행 Deposit') || history.old_values.description === '은행 Deposit'
+                                  return isBankDeposit ? '은행 Deposit' : (history.old_values.transaction_type === 'deposit' ? '입금' : '출금')
+                                })()}</div>
                                 <div>금액: ${Number(history.old_values.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
                                 <div>설명: {history.old_values.description || '-'}</div>
                                 <div>카테고리: {history.old_values.category || '-'}</div>
@@ -1232,7 +1302,10 @@ export default function CashManagement() {
                               <div className="font-semibold text-green-600 mb-2">변경 후</div>
                               <div className="space-y-1">
                                 <div>날짜: {new Date(history.new_values.transaction_date).toLocaleDateString('ko-KR')}</div>
-                                <div>유형: {history.new_values.transaction_type === 'deposit' ? '입금' : '출금'}</div>
+                                <div>유형: {(() => {
+                                  const isBankDeposit = history.new_values.description?.includes('은행 Deposit') || history.new_values.description === '은행 Deposit'
+                                  return isBankDeposit ? '은행 Deposit' : (history.new_values.transaction_type === 'deposit' ? '입금' : '출금')
+                                })()}</div>
                                 <div>금액: ${Number(history.new_values.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
                                 <div>설명: {history.new_values.description || '-'}</div>
                                 <div>카테고리: {history.new_values.category || '-'}</div>
@@ -1245,7 +1318,10 @@ export default function CashManagement() {
                       {history.change_type === 'created' && history.new_values && (
                         <div className="text-sm space-y-1">
                           <div>날짜: {new Date(history.new_values.transaction_date).toLocaleDateString('ko-KR')}</div>
-                          <div>유형: {history.new_values.transaction_type === 'deposit' ? '입금' : '출금'}</div>
+                          <div>유형: {(() => {
+                            const isBankDeposit = history.new_values.description?.includes('은행 Deposit') || history.new_values.description === '은행 Deposit'
+                            return isBankDeposit ? '은행 Deposit' : (history.new_values.transaction_type === 'deposit' ? '입금' : '출금')
+                          })()}</div>
                           <div>금액: ${Number(history.new_values.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
                           <div>설명: {history.new_values.description || '-'}</div>
                         </div>
@@ -1253,7 +1329,10 @@ export default function CashManagement() {
                       {history.change_type === 'deleted' && history.old_values && (
                         <div className="text-sm space-y-1 text-red-600">
                           <div>날짜: {new Date(history.old_values.transaction_date).toLocaleDateString('ko-KR')}</div>
-                          <div>유형: {history.old_values.transaction_type === 'deposit' ? '입금' : '출금'}</div>
+                          <div>유형: {(() => {
+                            const isBankDeposit = history.old_values.description?.includes('은행 Deposit') || history.old_values.description === '은행 Deposit'
+                            return isBankDeposit ? '은행 Deposit' : (history.old_values.transaction_type === 'deposit' ? '입금' : '출금')
+                          })()}</div>
                           <div>금액: ${Number(history.old_values.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
                           <div>설명: {history.old_values.description || '-'}</div>
                         </div>

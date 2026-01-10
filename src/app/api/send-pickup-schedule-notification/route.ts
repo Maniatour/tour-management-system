@@ -27,49 +27,102 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 예약 정보 조회 (고객 정보 포함)
+    // 예약 정보 조회
+    console.log('[send-pickup-schedule-notification] 예약 조회 시작:', { reservationId })
     const { data: reservation, error: reservationError } = await supabase
       .from('reservations')
-      .select(`
-        *,
-        customers (
-          id,
-          name,
-          email,
-          language
-        ),
-        products (
-          id,
-          name,
-          name_ko,
-          name_en,
-          customer_name_ko,
-          customer_name_en
-        ),
-        pickup_hotels (
-          id,
-          hotel,
-          pick_up_location,
-          address,
-          link,
-          media
-        )
-      `)
+      .select('*')
       .eq('id', reservationId)
       .single()
 
-    if (reservationError || !reservation) {
+    if (reservationError) {
+      console.error('[send-pickup-schedule-notification] 예약 조회 오류:', reservationError)
+      return NextResponse.json(
+        { error: '예약을 찾을 수 없습니다.', details: reservationError.message },
+        { status: 404 }
+      )
+    }
+
+    if (!reservation) {
+      console.error('[send-pickup-schedule-notification] 예약을 찾을 수 없음:', reservationId)
       return NextResponse.json(
         { error: '예약을 찾을 수 없습니다.' },
         { status: 404 }
       )
     }
 
-    const customer = (reservation.customers as any)
-    const product = (reservation.products as any)
-    const pickupHotel = (reservation.pickup_hotels as any)
+    console.log('[send-pickup-schedule-notification] 예약 조회 성공:', { 
+      reservationId: reservation.id,
+      customerId: reservation.customer_id,
+      productId: reservation.product_id,
+      pickupHotel: reservation.pickup_hotel
+    })
 
-    if (!customer || !customer.email) {
+    // 고객 정보 별도 조회
+    let customer = null
+    if (reservation.customer_id) {
+      const { data: customerData, error: customerError } = await supabase
+        .from('customers')
+        .select('id, name, email, language')
+        .eq('id', reservation.customer_id)
+        .single()
+
+      if (customerError) {
+        console.error('[send-pickup-schedule-notification] 고객 조회 오류:', customerError)
+      } else {
+        customer = customerData
+      }
+    }
+
+    // 상품 정보 별도 조회
+    let product = null
+    if (reservation.product_id) {
+      const { data: productData, error: productError } = await supabase
+        .from('products')
+        .select('id, name, name_ko, name_en, customer_name_ko, customer_name_en')
+        .eq('id', reservation.product_id)
+        .single()
+
+      if (productError) {
+        console.error('[send-pickup-schedule-notification] 상품 조회 오류:', productError)
+      } else {
+        product = productData
+      }
+    }
+
+    // 픽업 호텔 정보 별도 조회
+    let pickupHotel = null
+    if (reservation.pickup_hotel) {
+      const { data: hotelData, error: hotelError } = await supabase
+        .from('pickup_hotels')
+        .select('id, hotel, pick_up_location, address, link, media')
+        .eq('id', reservation.pickup_hotel)
+        .single()
+
+      if (hotelError) {
+        console.error('[send-pickup-schedule-notification] 픽업 호텔 조회 오류:', hotelError)
+      } else {
+        pickupHotel = hotelData
+      }
+    }
+
+    if (!customer) {
+      console.error('[send-pickup-schedule-notification] 고객 정보 없음:', { 
+        reservationId, 
+        customerId: reservation.customer_id 
+      })
+      return NextResponse.json(
+        { error: '고객 정보를 찾을 수 없습니다.' },
+        { status: 404 }
+      )
+    }
+
+    if (!customer.email) {
+      console.error('[send-pickup-schedule-notification] 고객 이메일 없음:', { 
+        reservationId, 
+        customerId: reservation.customer_id,
+        customerName: customer.name
+      })
       return NextResponse.json(
         { error: '고객 이메일을 찾을 수 없습니다.' },
         { status: 404 }
@@ -296,18 +349,83 @@ export async function POST(request: NextRequest) {
 
     // Resend를 사용한 이메일 발송
     const resendApiKey = process.env.RESEND_API_KEY
+    const isDevelopment = process.env.NODE_ENV === 'development'
+    const skipEmailInDev = process.env.SKIP_EMAIL_IN_DEV === 'true'
+    
+    // 환경 변수 상세 디버깅
+    const allResendKeys = Object.keys(process.env).filter(key => 
+      key.toUpperCase().includes('RESEND') || key.toLowerCase().includes('resend')
+    )
+    
     if (!resendApiKey) {
-      console.error('RESEND_API_KEY 환경 변수가 설정되지 않았습니다.')
+      console.error('[send-pickup-schedule-notification] RESEND_API_KEY 환경 변수가 설정되지 않았습니다.')
+      console.error('[send-pickup-schedule-notification] 환경 변수 확인:', {
+        hasResendApiKey: !!process.env.RESEND_API_KEY,
+        nodeEnv: process.env.NODE_ENV,
+        skipEmailInDev,
+        allResendKeys,
+        resendKeysDetails: allResendKeys.map(key => ({
+          key,
+          exists: !!process.env[key],
+          hasValue: !!(process.env[key] && process.env[key]!.trim().length > 0),
+          length: process.env[key]?.length || 0
+        })),
+        // 모든 환경 변수 키 목록 (디버깅용, 처음 50개만)
+        sampleEnvKeys: Object.keys(process.env).slice(0, 50)
+      })
+      
+      // 개발 환경에서 이메일 발송을 건너뛰는 옵션이 활성화되어 있으면 성공으로 처리
+      if (isDevelopment && skipEmailInDev) {
+        console.log('[send-pickup-schedule-notification] 개발 환경에서 이메일 발송 건너뛰기 (SKIP_EMAIL_IN_DEV=true)')
+        
+        // 예약 상태만 업데이트
+        try {
+          await supabase
+            .from('reservations')
+            .update({ pickup_notification_sent: true })
+            .eq('id', reservationId)
+        } catch (error) {
+          console.error('pickup_notification_sent 업데이트 오류:', error)
+        }
+        
+        return NextResponse.json({
+          success: true,
+          message: '개발 환경: 이메일 발송이 건너뛰어졌습니다. (RESEND_API_KEY 미설정)',
+          skipped: true
+        })
+      }
+      
       return NextResponse.json(
-        { error: '이메일 서비스 설정 오류입니다.' },
+        { 
+          error: '이메일 서비스 설정 오류입니다. RESEND_API_KEY 환경 변수가 설정되지 않았습니다.',
+          details: '개발 환경에서는 .env.local 파일에 RESEND_API_KEY를 설정하거나, SKIP_EMAIL_IN_DEV=true로 설정하여 이메일 발송을 건너뛸 수 있습니다.'
+        },
         { status: 500 }
       )
     }
 
     const resend = new Resend(resendApiKey)
+    // RESEND_FROM_EMAIL이 설정되어 있으면 사용, 없으면 기본값 사용
+    // updates.kovegas.com 도메인이 Verified 상태이므로 개발/운영 모두에서 사용 가능
     const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'
+    
+    console.log('[send-pickup-schedule-notification] 발신자 이메일:', {
+      fromEmail,
+      isDevelopment,
+      hasConfiguredEmail: !!process.env.RESEND_FROM_EMAIL
+    })
+    
+    console.log('[send-pickup-schedule-notification] 이메일 발송 준비:', {
+      fromEmail,
+      to: customer.email,
+      hasApiKey: !!resendApiKey,
+      apiKeyLength: resendApiKey?.length || 0,
+      subject: emailContent.subject,
+      htmlLength: emailContent.html?.length || 0
+    })
 
     try {
+      console.log('[send-pickup-schedule-notification] Resend API 호출 시작...')
       const { data: emailResult, error: emailError } = await resend.emails.send({
         from: fromEmail,
         to: customer.email,
@@ -316,14 +434,29 @@ export async function POST(request: NextRequest) {
       })
 
       if (emailError) {
-        console.error('Resend 이메일 발송 오류:', emailError)
+        console.error('[send-pickup-schedule-notification] Resend 이메일 발송 오류:', emailError)
+        console.error('[send-pickup-schedule-notification] Resend 에러 상세:', {
+          message: emailError.message,
+          name: emailError.name,
+          statusCode: (emailError as any).statusCode,
+          response: (emailError as any).response
+        })
         return NextResponse.json(
-          { error: '이메일 발송에 실패했습니다.', details: emailError.message },
+          { 
+            error: '이메일 발송에 실패했습니다.', 
+            details: emailError.message || 'Resend API 오류',
+            errorType: emailError.name || 'ResendError'
+          },
           { status: 500 }
         )
       }
+      
+      console.log('[send-pickup-schedule-notification] Resend API 호출 성공:', {
+        emailId: emailResult?.id,
+        to: customer.email
+      })
 
-      console.log('픽업 스케줄 알림 이메일 발송 성공:', {
+      console.log('[send-pickup-schedule-notification] 픽업 스케줄 알림 이메일 발송 성공:', {
         to: customer.email,
         subject: emailContent.subject,
         reservationId,
@@ -368,7 +501,14 @@ export async function POST(request: NextRequest) {
         console.log('이메일 로그 테이블이 없습니다. (무시됨)')
       }
     } catch (error) {
-      console.error('이메일 발송 오류:', error)
+      console.error('[send-pickup-schedule-notification] 이메일 발송 오류:', error)
+      console.error('[send-pickup-schedule-notification] 에러 상세:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        name: error instanceof Error ? error.name : undefined,
+        errorType: typeof error,
+        errorString: String(error)
+      })
       
       // 실패 기록 저장
       try {
@@ -389,8 +529,13 @@ export async function POST(request: NextRequest) {
         // 무시
       }
       
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       return NextResponse.json(
-        { error: '이메일 발송 중 오류가 발생했습니다.' },
+        { 
+          error: '이메일 발송에 실패했습니다.',
+          details: errorMessage,
+          errorType: error instanceof Error ? error.name : 'Unknown'
+        },
         { status: 500 }
       )
     }
@@ -401,9 +546,20 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('픽업 스케줄 알림 발송 오류:', error)
+    console.error('[send-pickup-schedule-notification] 픽업 스케줄 알림 발송 오류:', error)
+    console.error('[send-pickup-schedule-notification] 최상위 에러 상세:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : undefined,
+      errorType: typeof error,
+      errorString: String(error)
+    })
     return NextResponse.json(
-      { error: '서버 오류가 발생했습니다.' },
+      { 
+        error: '서버 오류가 발생했습니다.',
+        details: error instanceof Error ? error.message : 'Unknown error',
+        errorType: error instanceof Error ? error.name : 'Unknown'
+      },
       { status: 500 }
     )
   }

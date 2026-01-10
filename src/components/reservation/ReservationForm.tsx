@@ -2281,6 +2281,26 @@ export default function ReservationForm({
                                    (formData.nonResidentCount || 0) > 0 || 
                                    (formData.nonResidentWithPassCount || 0) > 0
     
+    // selectedChoices가 배열인지 확인하고, 배열이 아니면 빈 배열로 처리
+    const selectedChoicesArray = Array.isArray(formData.selectedChoices) 
+      ? formData.selectedChoices 
+      : (formData.selectedChoices && typeof formData.selectedChoices === 'object' 
+          ? Object.entries(formData.selectedChoices).map(([choiceId, choiceData]: [string, any]) => ({
+              choice_id: choiceId,
+              option_id: choiceData?.selected || choiceData?.option_id || '',
+              quantity: choiceData?.quantity || 1,
+              total_price: choiceData?.total_price || 0
+            }))
+          : [])
+    
+    console.log('ReservationForm: handleSubmit 검증 시작', {
+      productChoicesCount: formData.productChoices?.length || 0,
+      selectedChoicesArrayCount: selectedChoicesArray.length,
+      selectedChoicesArray: selectedChoicesArray.map(c => ({ choice_id: c.choice_id, option_id: c.option_id })),
+      formDataSelectedChoicesType: Array.isArray(formData.selectedChoices) ? 'array' : typeof formData.selectedChoices,
+      formDataSelectedChoices: formData.selectedChoices
+    })
+    
     const missingRequiredChoices = formData.productChoices.filter(choice => {
       if (!choice.is_required) return false
       
@@ -2295,9 +2315,16 @@ export default function ReservationForm({
       }
       
       // 해당 초이스에서 선택된 옵션이 있는지 확인
-      const hasSelection = formData.selectedChoices.some(selectedChoice => 
+      const hasSelection = selectedChoicesArray.some(selectedChoice => 
         selectedChoice.choice_id === choice.id
       )
+      
+      console.log(`ReservationForm: 초이스 검증 - ${choice.choice_group_ko || choice.choice_group}`, {
+        choiceId: choice.id,
+        isRequired: choice.is_required,
+        hasSelection,
+        selectedChoicesArray: selectedChoicesArray.map(c => c.choice_id)
+      })
       
       return !hasSelection
     })
@@ -2342,7 +2369,7 @@ export default function ReservationForm({
         const { data: newCustomer, error: customerError } = await (supabase as any)
           .from('customers')
           .insert(customerData)
-          .select()
+          .select('*')
           .single()
         
         if (customerError) {
@@ -2476,7 +2503,7 @@ export default function ReservationForm({
       const { data, error } = await (supabase as any)
         .from('customers')
         .insert(customerData as Database['public']['Tables']['customers']['Insert'])
-        .select()
+        .select('*')
 
       if (error) {
         console.error('Error adding customer:', error)
@@ -2540,7 +2567,7 @@ export default function ReservationForm({
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.status')}</label>
               <select
                 value={formData.status}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value as 'pending' | 'confirmed' | 'completed' | 'cancelled' })}
+                onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as 'pending' | 'confirmed' | 'completed' | 'cancelled' }))}
                 className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
               >
                 <option value="pending">{t('status.pending')}</option>
