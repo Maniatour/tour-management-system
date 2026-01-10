@@ -439,13 +439,32 @@ export async function POST(request: NextRequest) {
           message: emailError.message,
           name: emailError.name,
           statusCode: (emailError as any).statusCode,
-          response: (emailError as any).response
+          response: (emailError as any).response,
+          fromEmail,
+          to: customer.email
         })
+        
+        // 도메인 인증 오류인 경우 더 자세한 안내 제공
+        const errorMessage = emailError.message || 'Resend API 오류'
+        let details = errorMessage
+        let suggestion = ''
+        
+        if (errorMessage.includes('domain is not verified') || errorMessage.includes('domain')) {
+          suggestion = `도메인 인증이 필요합니다. Resend 대시보드(https://resend.com/domains)에서 다음을 확인하세요:
+1. ${fromEmail.split('@')[1]} 도메인이 추가되어 있는지 확인
+2. DNS 레코드(DKIM, SPF, MX)가 모두 "Verified" 상태인지 확인
+3. DNS 전파가 완료되었는지 확인 (1-2시간 소요 가능)
+4. 서브도메인(${fromEmail.split('@')[1]})을 사용하는 경우, 해당 서브도메인을 별도로 추가해야 할 수 있습니다.`
+        }
+        
         return NextResponse.json(
           { 
             error: '이메일 발송에 실패했습니다.', 
-            details: emailError.message || 'Resend API 오류',
-            errorType: emailError.name || 'ResendError'
+            details,
+            suggestion,
+            errorType: emailError.name || 'ResendError',
+            fromEmail,
+            domain: fromEmail.split('@')[1]
           },
           { status: 500 }
         )
