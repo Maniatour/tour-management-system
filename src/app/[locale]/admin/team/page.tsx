@@ -16,7 +16,8 @@ import {
   Shield,
   FileText,
   Grid,
-  List
+  List,
+  Download
 } from 'lucide-react'
 import type { Database } from '@/lib/supabase'
 
@@ -37,6 +38,7 @@ export default function AdminTeam() {
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null)
   const [viewMode, setViewMode] = useState<'table' | 'card'>('card')
+  const [memberDocuments, setMemberDocuments] = useState<{[email: string]: {[type: string]: Array<{id: string, name: string, url: string, path: string, size: number, uploadedAt: string}>}}>({})
 
   // 팀원 목록 불러오기
   const fetchTeamMembers = async () => {
@@ -214,6 +216,62 @@ export default function AdminTeam() {
   useEffect(() => {
     fetchTeamMembers()
   }, [])
+
+  // 팀원 문서 목록 불러오기
+  const fetchMemberDocuments = async (email: string) => {
+    if (memberDocuments[email]) return // 이미 로드된 경우 스킵
+    
+    try {
+      const documentTypes = ['contract', 'id_copy', 'bank_info', 'other']
+      const allDocuments: {[key: string]: Array<{id: string, name: string, url: string, path: string, size: number, uploadedAt: string}>} = {}
+      
+      for (const docType of documentTypes) {
+        const prefix = `team-documents/${email}/${docType}/`
+        const { data: files, error } = await supabase.storage
+          .from('documents')
+          .list(prefix, {
+            limit: 100,
+            offset: 0,
+            sortBy: { column: 'created_at', order: 'desc' }
+          })
+        
+        if (error) {
+          console.error(`${docType} 문서 목록 조회 오류:`, error)
+          allDocuments[docType] = []
+          continue
+        }
+        
+        if (files && files.length > 0) {
+          allDocuments[docType] = files
+            .filter(file => file.name !== '.emptyFolderPlaceholder')
+            .map(file => {
+              const filePath = `${prefix}${file.name}`
+              const { data: { publicUrl } } = supabase.storage
+                .from('documents')
+                .getPublicUrl(filePath)
+              
+              return {
+                id: file.id || `${docType}-${file.name}`,
+                name: file.name,
+                url: publicUrl,
+                path: filePath,
+                size: file.metadata?.size || 0,
+                uploadedAt: file.created_at || new Date().toISOString()
+              }
+            })
+        } else {
+          allDocuments[docType] = []
+        }
+      }
+      
+      setMemberDocuments(prev => ({
+        ...prev,
+        [email]: allDocuments
+      }))
+    } catch (error) {
+      console.error('문서 목록 불러오기 오류:', error)
+    }
+  }
 
   // 검색된 팀원 목록
   const filteredMembers = teamMembers.filter(member => {
@@ -669,6 +727,13 @@ export default function AdminTeam() {
                         </div>
                       </div>
 
+                      {/* 문서 목록 */}
+                      <TeamMemberDocuments 
+                        memberEmail={member.email}
+                        onLoadDocuments={() => fetchMemberDocuments(member.email)}
+                        documents={memberDocuments[member.email] || {}}
+                      />
+
                     </div>
 
                   </div>
@@ -691,6 +756,12 @@ export default function AdminTeam() {
             setShowForm(false)
             setEditingMember(null)
           }}
+          onDocumentChange={(email) => {
+            // 문서 변경 시 해당 팀원의 문서 목록 다시 로드
+            if (email) {
+              fetchMemberDocuments(email)
+            }
+          }}
         />
       )}
 
@@ -712,48 +783,261 @@ export default function AdminTeam() {
 function TeamMemberForm({ 
   member, 
   onSubmit, 
-  onCancel 
+  onCancel,
+  onDocumentChange
 }: { 
   member: TeamMember | null
   onSubmit: (data: TeamMemberInsert) => void
   onCancel: () => void
+  onDocumentChange?: (email: string) => void
 }) {
-  const [uploadedDocuments, setUploadedDocuments] = useState<{[key: string]: string}>({})
-  const [uploading, setUploading] = useState(false)
+  // 문서 타입별 문서 목록을 관리
+  type DocumentItem = {
+    id: string
+    name: string
+    url: string
+    path: string
+    size: number
+    uploadedAt: string
+  }
   
-  // 문서 업로드 함수
-  const handleDocumentUpload = async (file: File, documentType: string) => {
-    setUploading(true)
+  const [uploadedDocuments, setUploadedDocuments] = useState<{[key: string]: DocumentItem[]}>({})
+  const [uploading, setUploading] = useState<{[key: string]: boolean}>({})
+  
+  // 컴포넌트 마운트 시 기존 문서 불러오기
+  useEffect(() => {
+    if (member?.email) {
+      loadExistingDocuments()
+    }
+  }, [member?.email])
+
+  // 기존 문서 불러오기
+  const loadExistingDocuments = async () => {
+    if (!member?.email) return
+    
     try {
+      const documentTypes = ['contract', 'id_copy', 'bank_info', 'other']
+      const allDocuments: {[key: string]: DocumentItem[]} = {}
+      
+      for (const docType of documentTypes) {
+        const prefix = `team-documents/${member.email}/${docType}/`
+        const { data: files, error } = await supabase.storage
+          .from('documents')
+          .list(prefix, {
+            limit: 100,
+            offset: 0,
+            sortBy: { column: 'created_at', order: 'desc' }
+          })
+        
+        if (error) {
+          console.error(`${docType} 문서 목록 조회 오류:`, error)
+          allDocuments[docType] = []
+          continue
+        }
+        
+        if (files && files.length > 0) {
+          allDocuments[docType] = files
+            .filter(file => file.name !== '.emptyFolderPlaceholder')
+            .map(file => {
+              const filePath = `${prefix}${file.name}`
+              const { data: { publicUrl } } = supabase.storage
+                .from('documents')
+                .getPublicUrl(filePath)
+              
+              return {
+                id: file.id || `${docType}-${file.name}`,
+                name: file.name,
+                url: publicUrl,
+                path: filePath,
+                size: file.metadata?.size || 0,
+                uploadedAt: file.created_at || new Date().toISOString()
+              }
+            })
+        } else {
+          allDocuments[docType] = []
+        }
+      }
+      
+      setUploadedDocuments(allDocuments)
+    } catch (error) {
+      console.error('문서 목록 불러오기 오류:', error)
+    }
+  }
+  
+  // 문서 업로드 함수 (여러 개 업로드 가능)
+  const handleDocumentUpload = async (files: FileList | null, documentType: string) => {
+    if (!files || files.length === 0) return
+    
+    if (!member?.email) {
+      alert('팀원 이메일이 필요합니다. 먼저 이메일을 입력해주세요.')
+      return
+    }
+    
+    setUploading(prev => ({ ...prev, [documentType]: true }))
+    
+    try {
+      const uploadPromises = Array.from(files).map(async (file) => {
+        // 파일 크기 체크 (10MB 제한)
+        if (file.size > 10 * 1024 * 1024) {
+          throw new Error(`파일 "${file.name}"의 크기가 너무 큽니다. 최대 10MB까지 업로드 가능합니다.`)
+        }
+
+        const fileExt = file.name.split('.').pop()
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
+        const filePath = `team-documents/${member.email}/${documentType}/${fileName}`
+
+        const { error: uploadError } = await supabase.storage
+          .from('documents')
+          .upload(filePath, file)
+
+        if (uploadError) {
+          throw new Error(`파일 "${file.name}" 업로드 실패: ${uploadError.message}`)
+        }
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('documents')
+          .getPublicUrl(filePath)
+
+        return {
+          id: `${documentType}-${fileName}`,
+          name: file.name,
+          url: publicUrl,
+          path: filePath,
+          size: file.size,
+          uploadedAt: new Date().toISOString()
+        }
+      })
+      
+      const uploadedDocs = await Promise.all(uploadPromises)
+      
+      setUploadedDocuments(prev => ({
+        ...prev,
+        [documentType]: [...(prev[documentType] || []), ...uploadedDocs]
+      }))
+      
+      // 부모 컴포넌트에 문서 변경 알림
+      if (member?.email && onDocumentChange) {
+        onDocumentChange(member.email)
+      }
+      
+      alert(`${uploadedDocs.length}개의 문서가 성공적으로 업로드되었습니다!`)
+    } catch (error: any) {
+      console.error('문서 업로드 오류:', error)
+      
+      // 버킷이 없는 경우 명확한 에러 메시지
+      if (error?.message?.includes('Bucket not found') || error?.message?.includes('not found')) {
+        alert('문서 저장소가 설정되지 않았습니다. 관리자에게 문의해주세요.\n\n에러: ' + error.message)
+      } else {
+        alert('문서 업로드 중 오류가 발생했습니다.\n\n에러: ' + (error?.message || '알 수 없는 오류'))
+      }
+    } finally {
+      setUploading(prev => ({ ...prev, [documentType]: false }))
+    }
+  }
+  
+  // 문서 삭제 함수
+  const handleDocumentDelete = async (e: React.MouseEvent, documentType: string, documentId: string, filePath: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    if (!confirm('이 문서를 삭제하시겠습니까?')) return
+    
+    try {
+      const { error } = await supabase.storage
+        .from('documents')
+        .remove([filePath])
+      
+      if (error) {
+        throw error
+      }
+      
+      setUploadedDocuments(prev => ({
+        ...prev,
+        [documentType]: (prev[documentType] || []).filter(doc => doc.id !== documentId)
+      }))
+      
+      // 부모 컴포넌트에 문서 변경 알림
+      if (member?.email && onDocumentChange) {
+        onDocumentChange(member.email)
+      }
+      
+      alert('문서가 삭제되었습니다.')
+    } catch (error: any) {
+      console.error('문서 삭제 오류:', error)
+      alert('문서 삭제 중 오류가 발생했습니다.\n\n에러: ' + (error?.message || '알 수 없는 오류'))
+    }
+  }
+  
+  // 문서 교체 함수 (수정)
+  const handleDocumentReplace = async (file: File, documentType: string, oldDocumentId: string, oldFilePath: string) => {
+    if (!member?.email) {
+      alert('팀원 이메일이 필요합니다.')
+      return
+    }
+    
+    // 파일 크기 체크
+    if (file.size > 10 * 1024 * 1024) {
+      alert('파일 크기가 너무 큽니다. 최대 10MB까지 업로드 가능합니다.')
+      return
+    }
+    
+    setUploading(prev => ({ ...prev, [documentType]: true }))
+    
+    try {
+      // 새 파일 업로드
       const fileExt = file.name.split('.').pop()
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
-      const filePath = `team-documents/${member?.email || 'new'}/${documentType}/${fileName}`
+      const newFilePath = `team-documents/${member.email}/${documentType}/${fileName}`
 
       const { error: uploadError } = await supabase.storage
         .from('documents')
-        .upload(filePath, file)
+        .upload(newFilePath, file)
 
       if (uploadError) {
-        console.error('파일 업로드 오류:', uploadError)
-        alert('파일 업로드 중 오류가 발생했습니다.')
-        return
+        throw uploadError
       }
 
       const { data: { publicUrl } } = supabase.storage
         .from('documents')
-        .getPublicUrl(filePath)
+        .getPublicUrl(newFilePath)
 
+      // 기존 파일 삭제
+      try {
+        await supabase.storage
+          .from('documents')
+          .remove([oldFilePath])
+      } catch (deleteError) {
+        console.warn('기존 파일 삭제 실패 (무시):', deleteError)
+      }
+
+      // 문서 목록 업데이트
       setUploadedDocuments(prev => ({
         ...prev,
-        [documentType]: publicUrl
+        [documentType]: (prev[documentType] || []).map(doc => 
+          doc.id === oldDocumentId 
+            ? {
+                id: oldDocumentId,
+                name: file.name,
+                url: publicUrl,
+                path: newFilePath,
+                size: file.size,
+                uploadedAt: new Date().toISOString()
+              }
+            : doc
+        )
       }))
-
-      alert('문서가 성공적으로 업로드되었습니다!')
-    } catch (error) {
-      console.error('문서 업로드 오류:', error)
-      alert('문서 업로드 중 오류가 발생했습니다.')
+      
+      // 부모 컴포넌트에 문서 변경 알림
+      if (member?.email && onDocumentChange) {
+        onDocumentChange(member.email)
+      }
+      
+      alert('문서가 성공적으로 교체되었습니다!')
+    } catch (error: any) {
+      console.error('문서 교체 오류:', error)
+      alert('문서 교체 중 오류가 발생했습니다.\n\n에러: ' + (error?.message || '알 수 없는 오류'))
     } finally {
-      setUploading(false)
+      setUploading(prev => ({ ...prev, [documentType]: false }))
     }
   }
   
@@ -1223,165 +1507,109 @@ function TeamMemberForm({
           <div className="border-t pt-4">
             <h3 className="text-base font-medium mb-3 flex items-center">
               <FileText className="w-5 h-5 mr-2" />
-              문서 업로드
+              문서 관리
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* 계약서 */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  계약서
-                </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+            
+            {/* 문서 타입별 섹션 */}
+            {[
+              { type: 'contract', label: '계약서', accept: '.pdf,.doc,.docx' },
+              { type: 'id_copy', label: '신분증 사본', accept: '.pdf,.jpg,.jpeg,.png' },
+              { type: 'bank_info', label: '은행 계좌 정보', accept: '.pdf,.jpg,.jpeg,.png' },
+              { type: 'other', label: '기타 문서', accept: '.pdf,.doc,.docx,.jpg,.jpeg,.png' }
+            ].map(({ type, label, accept }) => (
+              <div key={type} className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    {label}
+                  </label>
+                  <span className="text-xs text-gray-500">
+                    {(uploadedDocuments[type] || []).length}개 업로드됨
+                  </span>
+                </div>
+                
+                {/* 업로드 영역 */}
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-3 mb-2">
                   <input
                     type="file"
-                    accept=".pdf,.doc,.docx"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) handleDocumentUpload(file, 'contract')
-                    }}
+                    accept={accept}
+                    multiple
+                    onChange={(e) => handleDocumentUpload(e.target.files, type)}
                     className="hidden"
-                    id="contract-upload"
-                    disabled={uploading}
+                    id={`${type}-upload`}
+                    disabled={uploading[type]}
                   />
                   <label
-                    htmlFor="contract-upload"
-                    className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    htmlFor={`${type}-upload`}
+                    className={`flex items-center justify-center cursor-pointer ${uploading[type] ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'} rounded p-2`}
                   >
-                    <FileText className="w-8 h-8 mx-auto text-gray-400 mb-2" />
-                    <p className="text-sm text-gray-600">
-                      {uploadedDocuments.contract ? '계약서 업로드됨' : '계약서 업로드'}
-                    </p>
-                    {uploadedDocuments.contract && (
-                      <a
-                        href={uploadedDocuments.contract}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 text-sm hover:underline"
-                      >
-                        문서 보기
-                      </a>
-                    )}
+                    <Plus className="w-4 h-4 mr-2 text-gray-400" />
+                    <span className="text-sm text-gray-600">
+                      {uploading[type] ? '업로드 중...' : '문서 추가'}
+                    </span>
                   </label>
                 </div>
-              </div>
-
-              {/* 신분증 사본 */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  신분증 사본
-                </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
-                  <input
-                    type="file"
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) handleDocumentUpload(file, 'id_copy')
-                    }}
-                    className="hidden"
-                    id="id-upload"
-                    disabled={uploading}
-                  />
-                  <label
-                    htmlFor="id-upload"
-                    className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <FileText className="w-8 h-8 mx-auto text-gray-400 mb-2" />
-                    <p className="text-sm text-gray-600">
-                      {uploadedDocuments.id_copy ? '신분증 사본 업로드됨' : '신분증 사본 업로드'}
-                    </p>
-                    {uploadedDocuments.id_copy && (
-                      <a
-                        href={uploadedDocuments.id_copy}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 text-sm hover:underline"
+                
+                {/* 업로드된 문서 목록 */}
+                {(uploadedDocuments[type] || []).length > 0 && (
+                  <div className="space-y-2">
+                    {uploadedDocuments[type].map((doc) => (
+                      <div
+                        key={doc.id}
+                        className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200"
                       >
-                        문서 보기
-                      </a>
-                    )}
-                  </label>
-                </div>
+                        <div className="flex items-center flex-1 min-w-0">
+                          <FileText className="w-4 h-4 mr-2 text-gray-400 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-gray-700 truncate" title={doc.name}>
+                              {doc.name}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {(doc.size / 1024).toFixed(1)} KB
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2 ml-2">
+                          <a
+                            href={doc.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                            title="다운로드"
+                          >
+                            <Download className="w-4 h-4" />
+                          </a>
+                          <label className="p-1.5 text-green-600 hover:bg-green-50 rounded cursor-pointer" title="교체">
+                            <Edit className="w-4 h-4" />
+                            <input
+                              type="file"
+                              accept={accept}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0]
+                                if (file) {
+                                  handleDocumentReplace(file, type, doc.id, doc.path)
+                                  e.target.value = '' // 같은 파일을 다시 선택할 수 있도록
+                                }
+                              }}
+                              className="hidden"
+                              disabled={uploading[type]}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDocumentDelete(e, type, doc.id, doc.path)}
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                            title="삭제"
+                            disabled={uploading[type]}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-
-              {/* 은행 계좌 정보 */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  은행 계좌 정보
-                </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
-                  <input
-                    type="file"
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) handleDocumentUpload(file, 'bank_info')
-                    }}
-                    className="hidden"
-                    id="bank-upload"
-                    disabled={uploading}
-                  />
-                  <label
-                    htmlFor="bank-upload"
-                    className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <FileText className="w-8 h-8 mx-auto text-gray-400 mb-2" />
-                    <p className="text-sm text-gray-600">
-                      {uploadedDocuments.bank_info ? '은행 정보 업로드됨' : '은행 정보 업로드'}
-                    </p>
-                    {uploadedDocuments.bank_info && (
-                      <a
-                        href={uploadedDocuments.bank_info}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 text-sm hover:underline"
-                      >
-                        문서 보기
-                      </a>
-                    )}
-                  </label>
-                </div>
-              </div>
-
-              {/* 기타 문서 */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  기타 문서
-                </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
-                  <input
-                    type="file"
-                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) handleDocumentUpload(file, 'other')
-                    }}
-                    className="hidden"
-                    id="other-upload"
-                    disabled={uploading}
-                  />
-                  <label
-                    htmlFor="other-upload"
-                    className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <FileText className="w-8 h-8 mx-auto text-gray-400 mb-2" />
-                    <p className="text-sm text-gray-600">
-                      {uploadedDocuments.other ? '기타 문서 업로드됨' : '기타 문서 업로드'}
-                    </p>
-                    {uploadedDocuments.other && (
-                      <a
-                        href={uploadedDocuments.other}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 text-sm hover:underline"
-                      >
-                        문서 보기
-                      </a>
-                    )}
-                  </label>
-                </div>
-              </div>
-            </div>
+            ))}
           </div>
 
           {/* 버튼 */}
@@ -1402,6 +1630,119 @@ function TeamMemberForm({
           </div>
         </form>
       </div>
+    </div>
+  )
+}
+
+// 팀원 문서 컴포넌트
+function TeamMemberDocuments({
+  memberEmail,
+  onLoadDocuments,
+  documents
+}: {
+  memberEmail: string
+  onLoadDocuments: () => void
+  documents: {[type: string]: Array<{id: string, name: string, url: string, path: string, size: number, uploadedAt: string}>}
+}) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+
+  useEffect(() => {
+    if (isExpanded && Object.keys(documents).length === 0) {
+      setIsLoading(true)
+      onLoadDocuments()
+      setTimeout(() => setIsLoading(false), 500)
+    }
+  }, [isExpanded, documents, onLoadDocuments])
+
+  const documentTypeLabels: {[key: string]: string} = {
+    contract: '계약서',
+    id_copy: '신분증 사본',
+    bank_info: '은행 계좌 정보',
+    other: '기타 문서'
+  }
+
+  const totalDocuments = Object.values(documents).reduce((sum, docs) => sum + docs.length, 0)
+
+  if (totalDocuments === 0 && !isExpanded) {
+    return (
+      <div className="border-t pt-3">
+        <button
+          onClick={() => setIsExpanded(true)}
+          className="flex items-center justify-between w-full text-sm text-gray-600 hover:text-gray-900"
+        >
+          <span className="flex items-center">
+            <FileText size={14} className="mr-2" />
+            문서 보기
+          </span>
+          <span className="text-xs text-gray-400">클릭하여 로드</span>
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="border-t pt-3">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="flex items-center justify-between w-full text-sm text-gray-700 hover:text-gray-900 mb-2"
+      >
+        <span className="flex items-center">
+          <FileText size={14} className="mr-2" />
+          문서 ({totalDocuments}개)
+        </span>
+        <span className="text-xs text-gray-400">
+          {isExpanded ? '접기' : '펼치기'}
+        </span>
+      </button>
+
+      {isExpanded && (
+        <div className="space-y-2 max-h-48 overflow-y-auto">
+          {isLoading ? (
+            <div className="text-center py-4 text-sm text-gray-500">
+              문서를 불러오는 중...
+            </div>
+          ) : totalDocuments === 0 ? (
+            <div className="text-center py-4 text-sm text-gray-500">
+              업로드된 문서가 없습니다.
+            </div>
+          ) : (
+            Object.entries(documents).map(([type, docs]) => {
+              if (docs.length === 0) return null
+              return (
+                <div key={type} className="space-y-1">
+                  <div className="text-xs font-medium text-gray-500 px-1">
+                    {documentTypeLabels[type] || type}
+                  </div>
+                  {docs.map((doc) => (
+                    <a
+                      key={doc.id}
+                      href={doc.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 hover:border-blue-300 transition-colors group"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center flex-1 min-w-0">
+                        <FileText className="w-3 h-3 mr-2 text-gray-400 group-hover:text-blue-600 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-gray-700 truncate group-hover:text-blue-600" title={doc.name}>
+                            {doc.name}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {(doc.size / 1024).toFixed(1)} KB
+                          </p>
+                        </div>
+                      </div>
+                      <Download className="w-3 h-3 text-gray-400 group-hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </a>
+                  ))}
+                </div>
+              )
+            })
+          )}
+        </div>
+      )}
     </div>
   )
 }
