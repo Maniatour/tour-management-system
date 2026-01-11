@@ -212,82 +212,188 @@ export async function POST(request: NextRequest) {
 
     // Tour Details 조회
     let tourDetails: any = null
+    let tourData = null
+    
+    // 먼저 reservation.tour_id로 조회 시도
     if (reservation.tour_id) {
-      const { data: tourData } = await supabase
+      console.log('[preview-pickup-schedule-notification] tour_id로 투어 조회:', reservation.tour_id)
+      const { data: tourDataById, error: tourError } = await supabase
         .from('tours')
         .select('*')
         .eq('id', reservation.tour_id)
         .maybeSingle()
 
-      if (tourData) {
-        let tourGuideInfo = null
-        let assistantInfo = null
-        let vehicleInfo = null
+      if (tourError) {
+        console.error('[preview-pickup-schedule-notification] 투어 조회 오류:', tourError)
+      } else {
+        tourData = tourDataById
+        console.log('[preview-pickup-schedule-notification] tour_id로 조회된 투어:', tourData ? '있음' : '없음')
+      }
+    }
+    
+    // tour_id가 없거나 조회 실패 시, reservation_ids 배열에 예약 ID가 포함된 투어 찾기
+    if (!tourData && reservation.product_id && tourDate) {
+      console.log('[preview-pickup-schedule-notification] reservation_ids로 투어 조회 시도:', {
+        reservationId,
+        product_id: reservation.product_id,
+        tour_date: tourDate
+      })
+      
+      // product_id와 tour_date로 먼저 필터링한 후, reservation_ids 배열에서 확인
+      const { data: toursByProduct, error: tourError } = await supabase
+        .from('tours')
+        .select('*')
+        .eq('product_id', reservation.product_id)
+        .eq('tour_date', tourDate)
 
-        if (tourData.tour_guide_id) {
-          const { data: guideData } = await supabase
-            .from('team')
-            .select('name_ko, name_en, phone, email, languages')
-            .eq('email', tourData.tour_guide_id)
-            .maybeSingle()
-          tourGuideInfo = guideData
-        }
-
-        if (tourData.assistant_id) {
-          const { data: assistantData } = await supabase
-            .from('team')
-            .select('name_ko, name_en, phone, email')
-            .eq('email', tourData.assistant_id)
-            .maybeSingle()
-          assistantInfo = assistantData
-        }
-
-        if (tourData.tour_car_id) {
-          const { data: vehicleData } = await supabase
-            .from('vehicles')
-            .select('vehicle_type, capacity, color')
-            .eq('id', tourData.tour_car_id)
-            .maybeSingle()
-
-          if (vehicleData?.vehicle_type) {
-            const { data: vehicleTypeData } = await supabase
-              .from('vehicle_types')
-              .select('id, name, brand, model, passenger_capacity, description')
-              .eq('name', vehicleData.vehicle_type)
-              .maybeSingle()
-
-            const { data: photosData } = await supabase
-              .from('vehicle_type_photos')
-              .select('photo_url, photo_name, description, is_primary, display_order')
-              .eq('vehicle_type_id', vehicleTypeData?.id || '')
-              .order('display_order', { ascending: true })
-              .order('is_primary', { ascending: false })
-
-            vehicleInfo = {
-              vehicle_type: vehicleData.vehicle_type,
-              color: vehicleData.color,
-              vehicle_type_info: vehicleTypeData ? {
-                name: vehicleTypeData.name,
-                brand: vehicleTypeData.brand,
-                model: vehicleTypeData.model,
-                passenger_capacity: vehicleTypeData.passenger_capacity || vehicleData.capacity,
-                description: vehicleTypeData.description
-              } : {
-                name: vehicleData.vehicle_type,
-                passenger_capacity: vehicleData.capacity
-              },
-              vehicle_type_photos: photosData || []
+      if (tourError) {
+        console.error('[preview-pickup-schedule-notification] 투어 조회 오류:', tourError)
+      } else if (toursByProduct && toursByProduct.length > 0) {
+        // reservation_ids 배열에 예약 ID가 포함된 투어 찾기
+        const normalizeIds = (value: unknown): string[] => {
+          if (!value) return []
+          if (Array.isArray(value)) return value.map(v => String(v).trim()).filter(v => v.length > 0)
+          if (typeof value === 'string') {
+            const trimmed = value.trim()
+            if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+              try {
+                const parsed = JSON.parse(trimmed)
+                return Array.isArray(parsed) ? parsed.map((v: unknown) => String(v).trim()).filter((v: string) => v.length > 0) : []
+              } catch { return [] }
             }
+            if (trimmed.includes(',')) return trimmed.split(',').map(s => s.trim()).filter(s => s.length > 0)
+            return trimmed.length > 0 ? [trimmed] : []
+          }
+          return []
+        }
+
+        // reservation_ids 배열에 예약 ID가 포함된 투어 찾기
+        for (const tour of toursByProduct) {
+          const reservationIds = normalizeIds((tour as any).reservation_ids)
+          if (reservationIds.includes(reservationId)) {
+            tourData = tour
+            console.log('[preview-pickup-schedule-notification] reservation_ids로 조회된 투어:', tourData.id)
+            break
           }
         }
 
-        tourDetails = {
-          ...tourData,
-          tour_guide: tourGuideInfo,
-          assistant: assistantInfo,
-          vehicle: vehicleInfo
+        if (!tourData) {
+          console.log('[preview-pickup-schedule-notification] reservation_ids에 예약 ID가 포함된 투어를 찾지 못함')
+        }
+      } else {
+        console.log('[preview-pickup-schedule-notification] product_id/tour_date로 조회된 투어가 없음')
+      }
+    }
+
+    if (tourData) {
+      console.log('[preview-pickup-schedule-notification] 투어 데이터:', {
+        id: tourData.id,
+        tour_guide_id: tourData.tour_guide_id,
+        assistant_id: tourData.assistant_id,
+        tour_car_id: tourData.tour_car_id
+      })
+      
+      let tourGuideInfo = null
+      let assistantInfo = null
+      let vehicleInfo = null
+
+      if (tourData.tour_guide_id) {
+        console.log('[preview-pickup-schedule-notification] 가이드 조회:', tourData.tour_guide_id)
+        const { data: guideData, error: guideError } = await supabase
+          .from('team')
+          .select('name_ko, name_en, phone, email, languages')
+          .eq('email', tourData.tour_guide_id)
+          .maybeSingle()
+        
+        if (guideError) {
+          console.error('[preview-pickup-schedule-notification] 가이드 조회 오류:', guideError)
+        } else {
+          tourGuideInfo = guideData
+          console.log('[preview-pickup-schedule-notification] 가이드 정보:', tourGuideInfo ? '있음' : '없음')
         }
       }
+
+      if (tourData.assistant_id) {
+        console.log('[preview-pickup-schedule-notification] 어시스턴트 조회:', tourData.assistant_id)
+        const { data: assistantData, error: assistantError } = await supabase
+          .from('team')
+          .select('name_ko, name_en, phone, email')
+          .eq('email', tourData.assistant_id)
+          .maybeSingle()
+        
+        if (assistantError) {
+          console.error('[preview-pickup-schedule-notification] 어시스턴트 조회 오류:', assistantError)
+        } else {
+          assistantInfo = assistantData
+          console.log('[preview-pickup-schedule-notification] 어시스턴트 정보:', assistantInfo ? '있음' : '없음')
+        }
+      }
+
+      if (tourData.tour_car_id) {
+        console.log('[preview-pickup-schedule-notification] 차량 조회:', tourData.tour_car_id)
+        const { data: vehicleData, error: vehicleError } = await supabase
+          .from('vehicles')
+          .select('vehicle_type, capacity, color')
+          .eq('id', tourData.tour_car_id)
+          .maybeSingle()
+
+        if (vehicleError) {
+          console.error('[preview-pickup-schedule-notification] 차량 조회 오류:', vehicleError)
+        } else if (vehicleData?.vehicle_type) {
+          const { data: vehicleTypeData, error: vehicleTypeError } = await supabase
+            .from('vehicle_types')
+            .select('id, name, brand, model, passenger_capacity, description')
+            .eq('name', vehicleData.vehicle_type)
+            .maybeSingle()
+
+          if (vehicleTypeError) {
+            console.error('[preview-pickup-schedule-notification] 차량 타입 조회 오류:', vehicleTypeError)
+          }
+
+          const { data: photosData, error: photosError } = await supabase
+            .from('vehicle_type_photos')
+            .select('photo_url, photo_name, description, is_primary, display_order')
+            .eq('vehicle_type_id', vehicleTypeData?.id || '')
+            .order('display_order', { ascending: true })
+            .order('is_primary', { ascending: false })
+
+          if (photosError) {
+            console.error('[preview-pickup-schedule-notification] 차량 사진 조회 오류:', photosError)
+          }
+
+          vehicleInfo = {
+            vehicle_type: vehicleData.vehicle_type,
+            color: vehicleData.color,
+            vehicle_type_info: vehicleTypeData ? {
+              name: vehicleTypeData.name,
+              brand: vehicleTypeData.brand,
+              model: vehicleTypeData.model,
+              passenger_capacity: vehicleTypeData.passenger_capacity || vehicleData.capacity,
+              description: vehicleTypeData.description
+            } : {
+              name: vehicleData.vehicle_type,
+              passenger_capacity: vehicleData.capacity
+            },
+            vehicle_type_photos: photosData || []
+          }
+          console.log('[preview-pickup-schedule-notification] 차량 정보:', vehicleInfo ? '있음' : '없음')
+        }
+      }
+
+      tourDetails = {
+        ...tourData,
+        tour_guide: tourGuideInfo,
+        assistant: assistantInfo,
+        vehicle: vehicleInfo
+      }
+      
+      console.log('[preview-pickup-schedule-notification] 최종 tourDetails:', {
+        hasTourGuide: !!tourDetails.tour_guide,
+        hasAssistant: !!tourDetails.assistant,
+        hasVehicle: !!tourDetails.vehicle
+      })
+    } else {
+      console.log('[preview-pickup-schedule-notification] 투어 데이터를 찾을 수 없음')
     }
 
     // Chat Room 정보 조회

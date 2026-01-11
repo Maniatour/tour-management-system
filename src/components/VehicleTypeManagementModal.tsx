@@ -76,20 +76,63 @@ export default function VehicleTypeManagementModal({
   const fetchVehicleTypes = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
+      
+      // 먼저 vehicle_types만 가져오기
+      const { data: typesData, error: typesError } = await supabase
         .from('vehicle_types')
-        .select(`
-          *,
-          photos:vehicle_type_photos(*)
-        `)
+        .select('*')
         .order('display_order', { ascending: true })
         .order('created_at', { ascending: true })
 
-      if (error) throw error
-      setVehicleTypes(data || [])
+      if (typesError) {
+        console.error('차종 목록 조회 오류:', typesError)
+        throw typesError
+      }
+
+      if (!typesData || typesData.length === 0) {
+        setVehicleTypes([])
+        return
+      }
+
+      // 각 차종의 사진을 별도로 가져오기
+      const typesWithPhotos = await Promise.all(
+        typesData.map(async (vehicleType) => {
+          let photos: any[] = []
+          
+          // vehicle_type_photos 조회는 현재 500 에러가 발생하여 임시로 비활성화
+          // 데이터베이스 문제 해결 후 아래 코드를 활성화할 수 있음
+          /*
+          try {
+            const { data: typePhotos, error: photosError } = await supabase
+              .from('vehicle_type_photos')
+              .select('*')
+              .eq('vehicle_type_id', vehicleType.id)
+
+            if (!photosError && typePhotos && typePhotos.length > 0) {
+              photos = typePhotos.sort((a, b) => {
+                if (a.is_primary && !b.is_primary) return -1
+                if (!a.is_primary && b.is_primary) return 1
+                return (a.display_order || 0) - (b.display_order || 0)
+              })
+            }
+          } catch (photoError) {
+            // 에러는 조용히 무시
+          }
+          */
+
+          return {
+            ...vehicleType,
+            photos: photos || []
+          }
+        })
+      )
+
+      setVehicleTypes(typesWithPhotos)
     } catch (error) {
       console.error('차종 목록 조회 오류:', error)
       alert('차종 목록을 불러오는데 실패했습니다.')
+      // 에러가 발생해도 빈 배열로 설정하여 UI가 깨지지 않도록 함
+      setVehicleTypes([])
     } finally {
       setLoading(false)
     }
@@ -270,11 +313,16 @@ export default function VehicleTypeManagementModal({
 
       // 새로 추가된 사진들 저장
       if (imageFiles.length > 0) {
+        // 기존에 is_primary = true인 사진이 있는지 확인
+        const hasPrimaryPhoto = vehicleTypePhotos.some(photo => photo.is_primary)
+        
         const photoData = imageFiles.map((file, index) => ({
           vehicle_type_id: vehicleTypeId,
           photo_url: imagePreviews[index],
           photo_name: file.name,
-          is_primary: vehicleTypePhotos.length === 0 && index === 0, // 첫 번째 사진이면 대표 사진으로 설정
+          // 기존에 is_primary 사진이 없고, 첫 번째 새 사진이면 대표 사진으로 설정
+          // 그 외의 경우는 모두 false로 설정하여 unique constraint 위반 방지
+          is_primary: !hasPrimaryPhoto && vehicleTypePhotos.length === 0 && index === 0,
           display_order: vehicleTypePhotos.length + index
         }))
 
@@ -282,7 +330,10 @@ export default function VehicleTypeManagementModal({
           .from('vehicle_type_photos')
           .insert(photoData)
 
-        if (photoError) throw photoError
+        if (photoError) {
+          console.error('사진 저장 오류:', photoError)
+          throw photoError
+        }
       }
 
       alert(editingType ? '차종이 수정되었습니다.' : '차종이 추가되었습니다.')

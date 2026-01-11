@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { X, Mail, Eye, Loader2, Users, Clock, Building } from 'lucide-react'
+import { X, Mail, Eye, Loader2, Users, Clock, Building, Copy, Check } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface PickupScheduleEmailPreviewModalProps {
@@ -38,6 +38,7 @@ export default function PickupScheduleEmailPreviewModal({
   const [sending, setSending] = useState(false)
   const [sendingReservationId, setSendingReservationId] = useState<string | null>(null)
   const [sentReservations, setSentReservations] = useState<Set<string>>(new Set())
+  const [copied, setCopied] = useState(false)
   const [reservationDetails, setReservationDetails] = useState<Record<string, {
     customerName: string
     adults: number | null
@@ -337,6 +338,54 @@ export default function PickupScheduleEmailPreviewModal({
     }
   }
 
+  const handleCopyEmail = async () => {
+    if (!emailContent) return
+
+    try {
+      // HTML을 클립보드에 복사 (text/html 형식으로)
+      const htmlBlob = new Blob([emailContent.html], { type: 'text/html' })
+      const textBlob = new Blob([emailContent.html], { type: 'text/plain' })
+      
+      const clipboardItem = new ClipboardItem({
+        'text/html': htmlBlob,
+        'text/plain': textBlob
+      })
+      
+      await navigator.clipboard.write([clipboardItem])
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (error) {
+      console.error('HTML 형식 복사 실패, 텍스트로 복사 시도:', error)
+      try {
+        // 폴백: 일반 텍스트로 복사
+        await navigator.clipboard.writeText(emailContent.html)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+        // Gmail 사용 안내 표시
+        alert('HTML이 복사되었습니다.\n\nGmail에서 사용하려면:\n1. Gmail 작성 화면에서 "..." 메뉴 클릭\n2. "HTML 편집" 선택\n3. 붙여넣기 (Ctrl+V 또는 Cmd+V)')
+      } catch (err) {
+        console.error('복사 실패:', err)
+        // 최종 폴백: 텍스트 영역 사용
+        const textArea = document.createElement('textarea')
+        textArea.value = emailContent.html
+        textArea.style.position = 'fixed'
+        textArea.style.opacity = '0'
+        document.body.appendChild(textArea)
+        textArea.select()
+        try {
+          document.execCommand('copy')
+          setCopied(true)
+          setTimeout(() => setCopied(false), 2000)
+          alert('HTML이 복사되었습니다.\n\nGmail에서 사용하려면:\n1. Gmail 작성 화면에서 "..." 메뉴 클릭\n2. "HTML 편집" 선택\n3. 붙여넣기 (Ctrl+V 또는 Cmd+V)')
+        } catch (finalErr) {
+          console.error('복사 실패:', finalErr)
+          alert('이메일 내용 복사에 실패했습니다.')
+        }
+        document.body.removeChild(textArea)
+      }
+    }
+  }
+
   const handleSendIndividual = async (reservationId: string) => {
     const reservation = reservations.find(r => r.id === reservationId)
     if (!reservation) {
@@ -586,9 +635,31 @@ export default function PickupScheduleEmailPreviewModal({
                 {/* 이메일 내용 미리보기 */}
                 <div className="border rounded-lg overflow-hidden bg-white">
                   <div className="bg-gray-100 px-4 py-2 border-b">
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Mail className="w-4 h-4" />
-                      <span>이메일 미리보기</span>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <Mail className="w-4 h-4" />
+                        <span>이메일 미리보기</span>
+                      </div>
+                      <button
+                        onClick={handleCopyEmail}
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                        title="이메일 내용 복사"
+                      >
+                        {copied ? (
+                          <>
+                            <Check className="w-4 h-4" />
+                            <span>복사됨</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-4 h-4" />
+                            <span>복사</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <div className="text-xs text-gray-500 bg-yellow-50 border border-yellow-200 rounded p-2">
+                      💡 <strong>Gmail 사용 안내:</strong> 복사 후 Gmail 작성 화면에서 "..." 메뉴 → "HTML 편집"을 선택한 후 붙여넣으세요.
                     </div>
                   </div>
                   <div 

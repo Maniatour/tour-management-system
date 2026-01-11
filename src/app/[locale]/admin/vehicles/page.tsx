@@ -1,8 +1,9 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Plus, Search, Calendar, Car, Wrench, DollarSign, Edit, Trash2, Eye, Copy } from 'lucide-react'
+import { Plus, Search, Calendar, Car, Wrench, DollarSign, Edit, Trash2, Eye, Copy, Settings } from 'lucide-react'
 import VehicleEditModal from '@/components/VehicleEditModal'
+import VehicleTypeManagementModal from '@/components/VehicleTypeManagementModal'
 // 렌터카 관리 모달은 더 이상 필요하지 않음
 import { supabase } from '@/lib/supabase'
 
@@ -69,8 +70,9 @@ export default function VehiclesPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<'company' | 'rental_active' | 'rental_returned'>('company')
+  const [activeTab, setActiveTab] = useState<'company' | 'rental_active' | 'rental_returned' | 'vehicle_types'>('company')
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null)
+  const [isVehicleTypeModalOpen, setIsVehicleTypeModalOpen] = useState(false)
   // 렌터카 관리 모달 상태 제거
 
 
@@ -81,23 +83,55 @@ export default function VehiclesPage() {
   const fetchVehicles = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
+      
+      // 먼저 vehicles만 가져오기
+      const { data: vehiclesData, error: vehiclesError } = await supabase
         .from('vehicles')
-        .select(`
-          *,
-          photos:vehicle_photos(*)
-        `)
+        .select('*')
         .order('created_at', { ascending: false })
 
-      if (error) throw error
+      if (vehiclesError) {
+        console.error('차량 목록 조회 오류:', vehiclesError)
+        throw vehiclesError
+      }
+
+      if (!vehiclesData || vehiclesData.length === 0) {
+        setVehicles([])
+        return
+      }
       
-      // 차량 타입별 사진도 함께 가져오기
-      const vehiclesWithTypePhotos = await Promise.all(
-        (data || []).map(async (vehicle) => {
-          // vehicle_photos가 없으면 vehicle_type_photos에서 가져오기
-          if (!vehicle.photos || vehicle.photos.length === 0) {
+      // 각 차량의 사진을 별도로 가져오기
+      const vehiclesWithPhotos = await Promise.all(
+        vehiclesData.map(async (vehicle) => {
+          let photos: any[] = []
+          
+          try {
+            // vehicle_photos에서 사진 가져오기
+            const { data: vehiclePhotos, error: photosError } = await supabase
+              .from('vehicle_photos')
+              .select('*')
+              .eq('vehicle_id', vehicle.id)
+              .order('is_primary', { ascending: false })
+              .order('display_order', { ascending: true })
+
+            if (photosError) {
+              console.error(`차량 사진 조회 오류 (${vehicle.vehicle_number}):`, photosError)
+            } else {
+              photos = vehiclePhotos || []
+            }
+          } catch (photoError) {
+            console.error(`차량 사진 조회 오류 (${vehicle.vehicle_number}):`, photoError)
+          }
+
+          // vehicle_photos가 없으면 vehicle_type_photos에서 가져오기 시도
+          // 주의: vehicle_type_photos 테이블에서 500 에러가 발생할 수 있으므로 조용히 처리
+          if (!photos || photos.length === 0) {
+            // vehicle_type_photos 조회는 선택적이므로 에러가 발생해도 무시
+            // 차량별 사진이 없어도 차량 정보는 정상적으로 표시됨
+            // 현재 vehicle_type_photos 테이블에서 500 에러가 발생하여 임시로 비활성화
+            // 데이터베이스 문제 해결 후 아래 코드를 활성화할 수 있음
+            /*
             try {
-              // vehicle_types 테이블에서 vehicle_type_id 찾기
               const { data: vehicleTypeData } = await supabase
                 .from('vehicle_types')
                 .select('id')
@@ -105,37 +139,44 @@ export default function VehiclesPage() {
                 .maybeSingle()
               
               if (vehicleTypeData?.id) {
-                // vehicle_type_photos에서 사진 가져오기
                 const { data: typePhotos } = await supabase
                   .from('vehicle_type_photos')
                   .select('photo_url, photo_name, description, is_primary, display_order')
                   .eq('vehicle_type_id', vehicleTypeData.id)
-                  .order('is_primary', { ascending: false })
-                  .order('display_order', { ascending: true })
-                  .limit(1)
                 
                 if (typePhotos && typePhotos.length > 0) {
-                  // vehicle_type_photos를 vehicle_photos 형식으로 변환
-                  return {
-                    ...vehicle,
-                    photos: typePhotos.map(photo => ({
-                      ...photo,
-                      vehicle_id: vehicle.id
-                    }))
-                  }
+                  const sortedPhotos = typePhotos
+                    .sort((a, b) => {
+                      if (a.is_primary && !b.is_primary) return -1
+                      if (!a.is_primary && b.is_primary) return 1
+                      return (a.display_order || 0) - (b.display_order || 0)
+                    })
+                    .slice(0, 1)
+                  
+                  photos = sortedPhotos.map(photo => ({
+                    ...photo,
+                    vehicle_id: vehicle.id
+                  }))
                 }
               }
-            } catch (typePhotoError) {
-              console.error(`차량 타입 사진 조회 오류 (${vehicle.vehicle_number}):`, typePhotoError)
+            } catch (error) {
+              // 에러는 조용히 무시
             }
+            */
           }
-          return vehicle
+          
+          return {
+            ...vehicle,
+            photos: photos || []
+          }
         })
       )
       
-      setVehicles(vehiclesWithTypePhotos)
+      setVehicles(vehiclesWithPhotos)
     } catch (error) {
       console.error('차량 목록을 불러오는 중 오류가 발생했습니다:', error)
+      // 에러가 발생해도 빈 배열로 설정하여 UI가 깨지지 않도록 함
+      setVehicles([])
     } finally {
       setLoading(false)
     }
@@ -239,6 +280,9 @@ export default function VehiclesPage() {
     } else if (activeTab === 'rental_returned') {
       matchesTab = vehicle.vehicle_category === 'rental' && 
                    vehicle.rental_status === 'returned'
+    } else if (activeTab === 'vehicle_types') {
+      // 차종 관리 탭에서는 차량 목록을 표시하지 않음
+      matchesTab = false
     }
     
     return matchesSearch && matchesTab
@@ -493,6 +537,20 @@ export default function VehiclesPage() {
             >
               렌터카 (종료) ({vehicles.filter(v => v.vehicle_category === 'rental' && v.rental_status === 'returned').length})
             </button>
+            <button
+              onClick={() => {
+                setActiveTab('vehicle_types')
+                setIsVehicleTypeModalOpen(true)
+              }}
+              className={`px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 ${
+                activeTab === 'vehicle_types'
+                  ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              <Settings className="w-4 h-4" />
+              차종 관리
+            </button>
           </div>
 
           {/* 검색 */}
@@ -510,6 +568,7 @@ export default function VehiclesPage() {
       </div>
 
       {/* 차량 목록 */}
+      {activeTab !== 'vehicle_types' && (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {filteredVehicles.map((vehicle) => {
           // 대표사진 찾기
@@ -653,12 +712,29 @@ export default function VehiclesPage() {
           )
         })}
       </div>
+      )}
 
-      {filteredVehicles.length === 0 && (
+      {filteredVehicles.length === 0 && activeTab !== 'vehicle_types' && (
         <div className="text-center py-12">
           <Car className="mx-auto h-12 w-12 text-gray-400" />
           <h3 className="mt-2 text-sm font-medium text-gray-900">차량이 없습니다</h3>
           <p className="mt-1 text-sm text-gray-500">새 차량을 추가해보세요.</p>
+        </div>
+      )}
+
+      {/* 차종 관리 탭일 때 안내 메시지 */}
+      {activeTab === 'vehicle_types' && !isVehicleTypeModalOpen && (
+        <div className="text-center py-12 bg-white rounded-lg shadow-sm border">
+          <Settings className="mx-auto h-12 w-12 text-gray-400" />
+          <h3 className="mt-2 text-sm font-medium text-gray-900">차종 관리</h3>
+          <p className="mt-1 text-sm text-gray-500 mb-4">차종을 관리하려면 위의 "차종 관리" 버튼을 클릭하세요.</p>
+          <button
+            onClick={() => setIsVehicleTypeModalOpen(true)}
+            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+          >
+            <Settings className="w-4 h-4 mr-2" />
+            차종 관리 열기
+          </button>
         </div>
       )}
 
@@ -673,6 +749,18 @@ export default function VehiclesPage() {
           }}
         />
       )}
+
+      {/* 차종 관리 모달 */}
+      <VehicleTypeManagementModal
+        isOpen={isVehicleTypeModalOpen}
+        onClose={() => {
+          setIsVehicleTypeModalOpen(false)
+          // 차종 관리 모달을 닫을 때는 company 탭으로 돌아가기
+          if (activeTab === 'vehicle_types') {
+            setActiveTab('company')
+          }
+        }}
+      />
 
       {/* 렌터카 관리 모달 제거됨 */}
 
