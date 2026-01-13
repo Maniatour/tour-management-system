@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Plus, Upload, X, Check, Eye, DollarSign, Edit, Trash2, Settings, Receipt, Image as ImageIcon, Folder, Search, Calendar, Filter, Download } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
 import GoogleDriveReceiptImporter from './GoogleDriveReceiptImporter'
 
@@ -43,6 +43,7 @@ interface TourExpense {
 
 export default function AllTourExpensesManager() {
   const t = useTranslations('tours.tourExpense')
+  const locale = useLocale()
   const { user, simulatedUser, isSimulating } = useAuth()
   const currentUserEmail = isSimulating && simulatedUser ? simulatedUser.email : user?.email
 
@@ -123,16 +124,21 @@ export default function AllTourExpensesManager() {
         
         toursData?.forEach(tour => {
           toursMap.set(tour.id, tour)
+          // 투어의 product_id도 productIds에 추가 (expense.product_id가 없을 때 사용)
+          if (tour.product_id) {
+            productIds.push(tour.product_id)
+          }
         })
       }
       
-      // 상품 정보 조회
+      // 상품 정보 조회 (중복 제거)
+      const uniqueProductIds = [...new Set(productIds.filter(Boolean))]
       const productsMap = new Map()
-      if (productIds.length > 0) {
+      if (uniqueProductIds.length > 0) {
         const { data: productsData } = await supabase
           .from('products')
           .select('id, name, name_en, name_ko')
-          .in('id', productIds)
+          .in('id', uniqueProductIds)
         
         productsData?.forEach(product => {
           productsMap.set(product.id, product)
@@ -142,7 +148,10 @@ export default function AllTourExpensesManager() {
       // file_path가 있지만 image_url이 없는 경우 공개 URL 생성 및 관련 데이터 병합
       const processedExpenses = await Promise.all((data || []).map(async (expense: any) => {
         const tour = toursMap.get(expense.tour_id)
-        const product = expense.product_id ? productsMap.get(expense.product_id) : null
+        
+        // product_id 우선순위: expense.product_id > tour.product_id
+        const finalProductId = expense.product_id || tour?.product_id || null
+        const product = finalProductId ? productsMap.get(finalProductId) : null
         
         let finalExpense = {
           ...expense,
@@ -405,7 +414,7 @@ export default function AllTourExpensesManager() {
                   <td className="px-4 py-3 whitespace-nowrap text-center">
                     <div className="flex items-center justify-center gap-1">
                       <a
-                        href={`/admin/tours/${expense.tour_id}`}
+                        href={`/${locale}/admin/tours/${expense.tour_id}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="p-1 text-gray-600 hover:text-blue-600"

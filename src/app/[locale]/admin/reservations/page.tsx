@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, DollarSign, Eye, X, GripVertical, Clock, Mail, ChevronDown, Edit, Home, Plane, PlaneTakeoff, HelpCircle } from 'lucide-react'
+import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, DollarSign, Eye, X, GripVertical, Clock, Mail, ChevronDown, Edit } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
@@ -309,20 +309,20 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
   // 이메일 드롭다운 외부 클릭 시 닫기
   useEffect(() => {
+    if (!emailDropdownOpen) {
+      return undefined
+    }
+
     const handleClickOutside = (event: MouseEvent) => {
-      if (emailDropdownOpen) {
-        const target = event.target as HTMLElement
-        if (!target.closest('.relative')) {
-          setEmailDropdownOpen(null)
-        }
+      const target = event.target as HTMLElement
+      if (!target.closest('.relative')) {
+        setEmailDropdownOpen(null)
       }
     }
 
-    if (emailDropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside)
-      return () => {
-        document.removeEventListener('mousedown', handleClickOutside)
-      }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [emailDropdownOpen])
 
@@ -801,49 +801,53 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   
   const filteredReservations = filteredAndSortedReservations
   
-  // 주간 페이지네이션을 위한 유틸리티 함수들
+  // 7일 단위 페이지네이션을 위한 유틸리티 함수들 (오늘 기준)
   const getWeekStartDate = useCallback((weekOffset: number) => {
-    const now = new Date()
-    const currentDay = now.getDay() // 0 = 일요일, 1 = 월요일, ..., 6 = 토요일
-    const daysToSubtract = currentDay // 일요일부터 시작하므로 현재 요일만큼 빼기
-    const weekStart = new Date(now)
-    weekStart.setDate(now.getDate() - daysToSubtract + (weekOffset * 7))
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    // weekOffset이 0이면 오늘부터 6일 전까지 (총 7일)
+    // weekOffset이 1이면 7일 전부터 13일 전까지
+    // weekOffset이 -1이면 7일 후부터 13일 후까지
+    const daysToSubtract = (weekOffset * 7) + 6 // 오늘 포함 7일이므로 6일 전부터 시작
+    const weekStart = new Date(today)
+    weekStart.setDate(today.getDate() - daysToSubtract)
     weekStart.setHours(0, 0, 0, 0)
     return weekStart
   }, [])
 
   const getWeekEndDate = useCallback((weekOffset: number) => {
-    const weekStart = getWeekStartDate(weekOffset)
-    const weekEnd = new Date(weekStart)
-    weekEnd.setDate(weekStart.getDate() + 6)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    // weekOffset이 0이면 오늘까지
+    // weekOffset이 1이면 7일 전까지
+    // weekOffset이 -1이면 7일 후까지
+    const daysToAdd = weekOffset * 7
+    const weekEnd = new Date(today)
+    weekEnd.setDate(today.getDate() + daysToAdd)
     weekEnd.setHours(23, 59, 59, 999)
     return weekEnd
-  }, [getWeekStartDate])
+  }, [])
 
   const formatWeekRange = useCallback((weekOffset: number) => {
-    // 초기 로딩 시 오늘부터 과거 7일 표시
-    if (isInitialLoad && weekOffset === 0) {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const weekStart = new Date(today)
-      weekStart.setDate(today.getDate() - 6) // 오늘부터 과거 7일 (오늘 포함)
-      const weekEnd = new Date(today)
-      weekEnd.setHours(23, 59, 59, 999)
-      return {
-        start: weekStart.toISOString().split('T')[0],
-        end: weekEnd.toISOString().split('T')[0],
-        display: `${weekStart.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}`
-      }
-    }
-    
     const weekStart = getWeekStartDate(weekOffset)
     const weekEnd = getWeekEndDate(weekOffset)
+    
+    // 로컬 시간대 기준으로 YYYY-MM-DD 형식 변환
+    const formatDate = (date: Date) => {
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+    
     return {
-      start: weekStart.toISOString().split('T')[0],
-      end: weekEnd.toISOString().split('T')[0],
+      start: formatDate(weekStart),
+      end: formatDate(weekEnd),
       display: `${weekStart.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}`
     }
-  }, [getWeekStartDate, getWeekEndDate, isInitialLoad])
+  }, [getWeekStartDate, getWeekEndDate])
 
   // 날짜별 그룹화 로직 (created_at 기준) - 주간 페이지네이션 적용
   const groupedReservations = useMemo(() => {
@@ -1192,7 +1196,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           if (reservationCustomers.length > 0) {
             const { error: rcError } = await supabase
               .from('reservation_customers')
-              .insert(reservationCustomers)
+              .insert(reservationCustomers as any)
 
             if (rcError) {
               console.error('Error saving reservation_customers:', rcError)
@@ -1342,7 +1346,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           if (reservationCustomers.length > 0) {
             const { error: rcError } = await supabase
               .from('reservation_customers')
-              .insert(reservationCustomers)
+              .insert(reservationCustomers as any)
 
             if (rcError) {
               console.error('Error saving reservation_customers:', rcError)
@@ -1438,10 +1442,6 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
   }, [editingReservation, refreshReservations, t])
 
-  // 예약 편집 모달 열기
-  const handleEditReservationClick = useCallback((reservation: Reservation) => {
-    setEditingReservation(reservation)
-  }, [])
 
 
   // 투어 존재 여부 확인 함수
@@ -2058,9 +2058,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center space-x-2 sm:space-x-4">
                     <h3 className="text-sm sm:text-lg font-semibold text-blue-900 whitespace-nowrap">
-                      {currentWeek === 0 ? '이번 주' : 
-                       currentWeek < 0 ? `${Math.abs(currentWeek)}주 전` : 
-                       `${currentWeek}주 후`}
+                      {currentWeek === 0 ? '최근 7일' : 
+                       currentWeek < 0 ? `${Math.abs(currentWeek) * 7}일 전` : 
+                       `${currentWeek * 7}일 후`}
                     </h3>
                     <div className="text-xs sm:text-sm text-blue-700 whitespace-nowrap">
                       {formatWeekRange(currentWeek).display}
@@ -3142,7 +3142,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       <ResidentStatusIcon
                         reservationId={reservation.id}
                         customerId={reservation.customerId}
-                        totalPeople={(reservation.adults || 0) + (reservation.children || 0) + (reservation.infants || 0)}
+                        totalPeople={(reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)}
                         onUpdate={() => {
                           // 예약 목록 새로고침
                           refreshReservations()

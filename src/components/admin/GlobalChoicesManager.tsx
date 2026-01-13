@@ -1849,18 +1849,6 @@ function GroupAddModal({ onSubmit, onClose }: GroupAddModalProps) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                설명 (한국어)
-              </label>
-              <textarea
-                value={formData.template_group_description_ko}
-                onChange={(e) => setFormData({ ...formData, template_group_description_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                placeholder="초이스 그룹에 대한 설명을 입력하세요 (한국어)"
-                rows={3}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
                 설명 (영어)
               </label>
               <textarea
@@ -1868,6 +1856,18 @@ function GroupAddModal({ onSubmit, onClose }: GroupAddModalProps) {
                 onChange={(e) => setFormData({ ...formData, template_group_description_en: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                 placeholder="Enter description for this choice group (English)"
+                rows={3}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                설명 (한국어)
+              </label>
+              <textarea
+                value={formData.template_group_description_ko}
+                onChange={(e) => setFormData({ ...formData, template_group_description_ko: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                placeholder="초이스 그룹에 대한 설명을 입력하세요 (한국어)"
                 rows={3}
               />
             </div>
@@ -2035,18 +2035,6 @@ function GroupEditModal({ group, onSubmit, onClose }: GroupEditModalProps) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                설명 (한국어)
-              </label>
-              <textarea
-                value={formData.template_group_description_ko}
-                onChange={(e) => setFormData({ ...formData, template_group_description_ko: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                placeholder="초이스 그룹에 대한 설명을 입력하세요 (한국어)"
-                rows={3}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
                 설명 (영어)
               </label>
               <textarea
@@ -2054,6 +2042,18 @@ function GroupEditModal({ group, onSubmit, onClose }: GroupEditModalProps) {
                 onChange={(e) => setFormData({ ...formData, template_group_description_en: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                 placeholder="Enter description for this choice group (English)"
+                rows={3}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                설명 (한국어)
+              </label>
+              <textarea
+                value={formData.template_group_description_ko}
+                onChange={(e) => setFormData({ ...formData, template_group_description_ko: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                placeholder="초이스 그룹에 대한 설명을 입력하세요 (한국어)"
                 rows={3}
               />
             </div>

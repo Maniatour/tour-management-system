@@ -2146,10 +2146,92 @@ export default function TourChatRoom({
     )
   }
 
-  if (!room) {
+  if (!room && !loading) {
+    // 공개 뷰에서는 채팅방 생성 버튼을 표시하지 않음
+    if (isPublicView) {
+      return (
+        <div className="flex items-center justify-center h-64">
+          <div className="text-gray-500">
+            {selectedLanguage === 'ko' ? '채팅방을 찾을 수 없습니다.' : 'Chat room not found.'}
+          </div>
+        </div>
+      )
+    }
+
+    // 관리자 뷰에서만 채팅방 생성 버튼 표시
+    return (
+      <div className="flex flex-col items-center justify-center h-64 bg-gray-50 rounded-lg">
+        <div className="text-gray-500 mb-4">
+          {selectedLanguage === 'ko' ? '채팅방이 생성되지 않았습니다.' : 'Chat room not created.'}
+        </div>
+        <button
+          onClick={async () => {
+            if (!tourId) return
+            
+            try {
+              setLoading(true)
+              
+              // 투어 정보 가져오기
+              const { data: tourData } = await supabase
+                .from('tours')
+                .select('product_id, tour_date')
+                .eq('id', tourId)
+                .maybeSingle<{ product_id: string | null; tour_date: string | null }>()
+
+              const response = await fetch('/api/chat-rooms/create', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  tourId,
+                  productId: tourData?.product_id || null,
+                  tourDate: tourData?.tour_date || tourDate || null
+                })
+              })
+
+              const result = await response.json()
+
+              if (response.ok && result.room) {
+                setRoom(result.room)
+                if (selectedLanguage === 'ko') {
+                  alert('채팅방이 생성되었습니다.')
+                } else {
+                  alert('Chat room created successfully.')
+                }
+              } else {
+                console.error('채팅방 생성 실패:', result.error)
+                alert(selectedLanguage === 'ko' 
+                  ? `채팅방 생성 실패: ${result.error || '알 수 없는 오류'}` 
+                  : `Failed to create chat room: ${result.error || 'Unknown error'}`)
+              }
+            } catch (error) {
+              console.error('채팅방 생성 오류:', error)
+              alert(selectedLanguage === 'ko' 
+                ? '채팅방 생성 중 오류가 발생했습니다.' 
+                : 'An error occurred while creating the chat room.')
+            } finally {
+              setLoading(false)
+            }
+          }}
+          disabled={loading}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+        >
+          {loading 
+            ? (selectedLanguage === 'ko' ? '생성 중...' : 'Creating...')
+            : (selectedLanguage === 'ko' ? '채팅방 생성' : 'Create Chat Room')
+          }
+        </button>
+      </div>
+    )
+  }
+
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">Chat room not found.</div>
+        <div className="text-gray-500">
+          {selectedLanguage === 'ko' ? '로딩 중...' : 'Loading...'}
+        </div>
       </div>
     )
   }

@@ -125,9 +125,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     try {
       // reservation_customers 테이블에서 예약의 거주 상태 정보 가져오기
       const { data: reservationCustomers, error } = await supabase
-        .from('reservation_customers')
+        .from('reservation_customers' as any)
         .select('resident_status, pass_covered_count')
-        .eq('reservation_id', reservation.id)
+        .eq('reservation_id', reservation.id) as { data: Array<{ resident_status: string | null; pass_covered_count: number | null }> | null; error: any }
       
       if (error) {
         console.error('예약 고객 정보 조회 오류:', error)
@@ -472,8 +472,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       // reservation_customers 데이터 삽입
       if (reservationCustomers.length > 0) {
         const { error: rcError } = await supabase
-          .from('reservation_customers')
-          .insert(reservationCustomers)
+          .from('reservation_customers' as any)
+          .insert(reservationCustomers as any)
 
         if (rcError) {
           console.error('Error saving reservation_customers:', rcError)
@@ -493,27 +493,28 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   }
 
   // 거주 상태 업데이트 핸들러 (reservation_customers 테이블 업데이트) - 기존 함수는 유지 (하위 호환성)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleUpdateResidentStatus = async (reservationId: string, newStatus: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null) => {
     try {
       // reservation_customers 테이블에서 해당 예약의 모든 레코드 가져오기
       const { data: existingRecords, error: fetchError } = await supabase
-        .from('reservation_customers')
+        .from('reservation_customers' as any)
         .select('id, customer_id, pass_covered_count')
-        .eq('reservation_id', reservationId)
+        .eq('reservation_id', reservationId) as { data: Array<{ id: string; customer_id: string | null; pass_covered_count: number | null }> | null; error: any }
       
       if (fetchError) {
         console.error('Error fetching reservation_customers:', fetchError)
         // reservation_customers에 데이터가 없으면 새로 생성
         if (reservation.customer_id) {
           const { error: insertError } = await supabase
-            .from('reservation_customers')
+            .from('reservation_customers' as any)
             .insert({
               reservation_id: reservationId,
               customer_id: reservation.customer_id,
               resident_status: newStatus,
               pass_covered_count: 0,
               order_index: 0
-            })
+            } as any)
           
           if (insertError) {
             console.error('Error creating reservation_customer:', insertError)
@@ -525,12 +526,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         // 기존 레코드가 있으면 모든 레코드의 상태를 업데이트
         const updatePromises = existingRecords.map((record: any) => 
           supabase
-            .from('reservation_customers')
+            .from('reservation_customers' as any)
             .update({ 
               resident_status: newStatus,
               // 패스 보유 상태가 아니면 pass_covered_count를 0으로 설정
               pass_covered_count: newStatus === 'non_resident_with_pass' ? (record.pass_covered_count || 0) : 0
-            })
+            } as any)
             .eq('id', record.id)
         )
         
@@ -546,14 +547,14 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         // reservation_customers에 데이터가 없으면 새로 생성
         if (reservation.customer_id) {
           const { error: insertError } = await supabase
-            .from('reservation_customers')
+            .from('reservation_customers' as any)
             .insert({
               reservation_id: reservationId,
               customer_id: reservation.customer_id,
               resident_status: newStatus,
               pass_covered_count: 0,
               order_index: 0
-            })
+            } as any)
           
           if (insertError) {
             console.error('Error creating reservation_customer:', insertError)
@@ -638,11 +639,6 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }
   }
 
-  // 총 인원수 계산 (필드명이 child/infant일 수도 있고 children/infants일 수도 있음)
-  const totalPeople = (reservation.adults || 0) + 
-    ((reservation.children || (reservation as any).child || 0) as number) + 
-    ((reservation.infants || (reservation as any).infant || 0) as number)
-  
   // 언어에 따른 국기 코드 결정
   const getFlagCode = (language: string) => {
     if (!language) return 'US' // 기본값은 미국 국기
@@ -1030,7 +1026,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         .from('reservation_pricing')
         .select('id, deposit_amount')
         .eq('reservation_id', reservation.id)
-        .single()
+        .single() as { data: { id: string; deposit_amount?: number | string | null } | null; error: any }
 
       if (pricingFetchError && pricingFetchError.code !== 'PGRST116') {
         console.error('reservation_pricing 조회 오류:', pricingFetchError)
@@ -1051,7 +1047,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             deposit_amount: currentDepositAmount + balanceAmount,
             balance_amount: 0,
             updated_at: new Date().toISOString()
-          })
+          } as any)
           .eq('id', existingPricing.id)
 
         if (updateError) {
@@ -1099,7 +1095,6 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             <span className="flex-shrink-0 relative resident-status-dropdown">
               {(() => {
                 const residentStatus = customerData.resident_status
-                const isDropdownOpen = residentStatusDropdownOpen === reservation.id
                 
                 const getStatusIcon = () => {
                   if (residentStatus === 'us_resident') {
@@ -1443,14 +1438,15 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               {getPickupLocation() || ''}
             </div>
             
-            {/* 잔액 뱃지 및 수령 버튼 - 잔금이 있을 때만 표시 */}
+            {/* 잔액 뱃지 및 수령 버튼 - balance_amount가 0보다 클 때만 보라색으로 표시 */}
             {isStaff && (() => {
-              // reservation_pricing의 balance_amount가 0보다 크면 우선적으로 사용
-              if (reservationPricing?.balance_amount) {
+              // reservation_pricing의 balance_amount가 0보다 클 때만 표시
+              if (reservationPricing?.balance_amount !== null && reservationPricing?.balance_amount !== undefined) {
                 const balanceAmount = typeof reservationPricing.balance_amount === 'string'
                   ? parseFloat(reservationPricing.balance_amount) || 0
                   : (reservationPricing.balance_amount || 0)
                 
+                // balance_amount가 0보다 클 때만 보라색 뱃지와 보라색 수령 버튼 표시
                 if (balanceAmount > 0) {
                   return (
                     <div className="flex items-center space-x-2">
@@ -1470,46 +1466,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                 }
               }
               
-              // balance_amount가 없거나 0인 경우 계산된 잔금 사용
-              // reservation_pricing에서 total_price 가져오기
-              const totalPrice = reservationPricing 
-                ? (typeof reservationPricing.total_price === 'string'
-                    ? parseFloat(reservationPricing.total_price) || 0
-                    : (reservationPricing.total_price || 0))
-                : 0
-              
-              // payment_records 테이블에서 입금 내역 합계 계산 (수령된 상태만 합산)
-              const receivedStatuses = ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !']
-              const totalPaid = paymentRecords
-                .filter(record => receivedStatuses.includes(record.payment_status))
-                .reduce((sum, record) => {
-                  const amount = typeof record.amount === 'string'
-                    ? parseFloat(record.amount) || 0
-                    : (record.amount || 0)
-                  return sum + amount
-                }, 0)
-              
-              // 잔금 계산: total_price - 입금 내역 합계
-              const calculatedBalance = totalPrice - totalPaid
-              
-              // 잔금이 0보다 크면 표시
-              if (calculatedBalance > 0) {
-                return (
-                  <div className="flex items-center space-x-2">
-                    <div className="px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">
-                      {formatCurrency(calculatedBalance, reservationPricing?.currency || 'USD')}
-                    </div>
-                    <button
-                      onClick={handleReceiveBalance}
-                      className="px-2 py-1 text-xs font-medium bg-red-600 text-white rounded hover:bg-red-700 transition-colors flex items-center space-x-1"
-                      title="Balance 수령"
-                    >
-                      <Wallet size={12} />
-                      <span>수령</span>
-                    </button>
-                  </div>
-                )
-              }
+              // balance_amount가 0이거나 null/undefined이면 아무것도 표시하지 않음
               return null
             })()}
           </div>

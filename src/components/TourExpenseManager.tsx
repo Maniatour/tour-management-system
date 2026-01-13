@@ -609,6 +609,13 @@ export default function TourExpenseManager({
         }
       }
       
+      // product_id가 없으면 투어의 product_id 사용
+      let finalProductId = productId
+      if (!finalProductId && tourData?.product_id) {
+        finalProductId = tourData.product_id
+        console.log('투어의 product_id 사용:', finalProductId)
+      }
+      
       const { data, error } = await supabase
         .from('tour_expenses')
         .insert({
@@ -619,7 +626,7 @@ export default function TourExpenseManager({
           payment_method: formData.payment_method || null,
           note: formData.note || null,
           tour_date: tourDate,
-          product_id: productId,
+          product_id: finalProductId,
           submitted_by: submittedBy,
           image_url: formData.image_url || null,
           file_path: formData.file_path || null,
