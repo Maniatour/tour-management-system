@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { MessageCircle, Calendar, Search, RefreshCw, Languages, ChevronDown, Cast } from 'lucide-react'
+import { MessageCircle, Calendar, Search, RefreshCw, Languages, ChevronDown, Cast, Power, PowerOff } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES } from '@/lib/translation'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
@@ -96,12 +96,13 @@ interface TourInfo {
       hotel: string
       pick_up_location: string
     }
-    customer?: {
-      id?: string
-      name: string
-      email: string
-      phone?: string
-    }
+          customer?: {
+            id?: string
+            name: string
+            email: string
+            phone?: string
+            language?: string
+          }
   }>
   vehicle?: {
     id: string
@@ -116,6 +117,19 @@ export default function ChatManagementPage() {
   const router = useRouter()
   const { openChat } = useFloatingChat()
   const { user } = useAuth()
+  
+  // 페이지 스크롤 방지
+  useEffect(() => {
+    // body와 html의 overflow를 hidden으로 설정
+    document.body.style.overflow = 'hidden'
+    document.documentElement.style.overflow = 'hidden'
+    
+    return () => {
+      // 컴포넌트 언마운트 시 원래대로 복원
+      document.body.style.overflow = ''
+      document.documentElement.style.overflow = ''
+    }
+  }, [])
   const [selectedRoom, setSelectedRoom] = useState<ChatRoom | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
@@ -124,19 +138,295 @@ export default function ChatManagementPage() {
   const [filterStatus, setFilterStatus] = useState('all')
   const [tourInfo, setTourInfo] = useState<TourInfo | null>(null)
   const [refreshing, setRefreshing] = useState(false)
-  const [activeTab, setActiveTab] = useState<'past' | 'upcoming'>('upcoming')
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'inactive'>('upcoming')
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['pickup-schedule']))
-  const [pickupHotels, setPickupHotels] = useState<Array<{ id: string; hotel: string; pick_up_location?: string; google_maps_link?: string }>>([])
+  const [pickupHotels, setPickupHotels] = useState<Array<{ id: string; hotel: string; pick_up_location?: string; google_maps_link?: string; link?: string }>>([])
+  const [loadingMessages, setLoadingMessages] = useState(false)
+  const [loadingTourInfo, setLoadingTourInfo] = useState(false)
+  const [inactiveRoomsData, setInactiveRoomsData] = useState<ChatRoom[]>([])
+  const [loadingInactiveRooms, setLoadingInactiveRooms] = useState(false)
 
-  // 최적화된 채팅방 데이터 로딩
+  // 비활성화된 채팅방 로딩 함수
+  const fetchInactiveRooms = useCallback(async () => {
+    if (inactiveRoomsData.length > 0) {
+      // 이미 로드된 경우 스킵
+      return
+    }
+    
+    setLoadingInactiveRooms(true)
+    try {
+      // 비활성화된 채팅방만 가져오기
+      const { data: inactiveRooms, error } = await supabase
+        .from('chat_rooms')
+        .select('*')
+        .eq('is_active', false)
+        .order('created_at', { ascending: false })
+      
+      if (error) throw error
+      
+      if (!inactiveRooms || inactiveRooms.length === 0) {
+        setInactiveRoomsData([])
+        setLoadingInactiveRooms(false)
+        return
+      }
+
+      // 투어 정보 가져오기 (활성화된 채팅방과 동일한 로직, 간소화 버전)
+      const tourIds = (inactiveRooms as ChatRoom[]).map(room => room.tour_id).filter(Boolean) as string[]
+      const tourMap = new Map<string, any>()
+      
+      if (tourIds.length > 0) {
+        const TOUR_BATCH_SIZE = 50
+        for (let i = 0; i < tourIds.length; i += TOUR_BATCH_SIZE) {
+          const batchIds = tourIds.slice(i, i + TOUR_BATCH_SIZE)
+          const { data: toursData, error: toursError } = await supabase
+            .from('tours')
+            .select(`
+              id,
+              product_id,
+              tour_date,
+              tour_guide_id,
+              assistant_id,
+              tour_car_id,
+              tour_status,
+              reservation_ids,
+              product:products(
+                name_ko,
+                name_en,
+                description
+              )
+            `)
+            .in('id', batchIds)
+          
+          if (!toursError && toursData) {
+            toursData.forEach((tour: any) => {
+              tourMap.set(tour.id, tour)
+            })
+          }
+        }
+      }
+
+      // 예약 정보 가져오기 (간단한 버전)
+      const allReservationIds = new Set<string>()
+      tourMap.forEach((tour: any) => {
+        if (tour.reservation_ids) {
+          const ids = Array.isArray(tour.reservation_ids) 
+            ? tour.reservation_ids 
+            : String(tour.reservation_ids).split(',').map((id: string) => id.trim()).filter((id: string) => id)
+          ids.forEach((id: string) => allReservationIds.add(id))
+        }
+      })
+
+      const reservationsMap = new Map<string, any>()
+      if (allReservationIds.size > 0) {
+        const reservationIdsArray = Array.from(allReservationIds)
+        const RESERVATION_BATCH_SIZE = 50
+        for (let i = 0; i < reservationIdsArray.length; i += RESERVATION_BATCH_SIZE) {
+          const batchIds = reservationIdsArray.slice(i, i + RESERVATION_BATCH_SIZE)
+          const { data: reservationsData } = await supabase
+            .from('reservations')
+            .select('id, adults, child, infant, total_people, status, pickup_hotel, pickup_time, customer_id')
+            .in('id', batchIds)
+            .neq('status', 'cancelled')
+          
+          if (reservationsData) {
+            reservationsData.forEach((reservation: any) => {
+              reservationsMap.set(reservation.id, reservation)
+            })
+          }
+        }
+      }
+
+      // 픽업 호텔 정보 가져오기
+      const pickupHotelsMap = new Map<string, any>()
+      try {
+        const { data: allHotelsData } = await supabase
+          .from('pickup_hotels')
+          .select('id, hotel, pick_up_location, address, link')
+          .order('hotel')
+        
+        if (allHotelsData) {
+          allHotelsData.forEach((hotel: any) => {
+            if (hotel && hotel.id) {
+              const trimmedId = String(hotel.id).trim()
+              pickupHotelsMap.set(trimmedId, {
+                ...hotel,
+                id: trimmedId
+              })
+            }
+          })
+        }
+      } catch (error) {
+        console.error('[ChatManagement] 비활성화 채팅방 - 픽업 호텔 데이터 가져오기 예외:', error)
+      }
+
+      // 고객 정보 가져오기
+      const customerIds = new Set<string>()
+      reservationsMap.forEach((reservation: any) => {
+        if (reservation.customer_id) {
+          customerIds.add(reservation.customer_id)
+        }
+      })
+      const customersMap = new Map<string, any>()
+      if (customerIds.size > 0) {
+        const customerIdsArray = Array.from(customerIds)
+        const CUSTOMER_BATCH_SIZE = 50
+        for (let i = 0; i < customerIdsArray.length; i += CUSTOMER_BATCH_SIZE) {
+          const batchIds = customerIdsArray.slice(i, i + CUSTOMER_BATCH_SIZE)
+          const { data: customersData } = await supabase
+            .from('customers')
+            .select('*')
+            .in('id', batchIds)
+          
+          if (customersData) {
+            customersData.forEach((customer: any) => {
+              customersMap.set(customer.id, customer)
+            })
+          }
+        }
+      }
+
+      // 안읽은 메시지 수 계산
+      const roomIds = (inactiveRooms as ChatRoom[]).map(room => room.id)
+      const unreadCountMap = new Map<string, number>()
+      if (roomIds.length > 0) {
+        const BATCH_SIZE = 50
+        for (let i = 0; i < roomIds.length; i += BATCH_SIZE) {
+          const batchIds = roomIds.slice(i, i + BATCH_SIZE)
+          const { data: unreadMessages } = await supabase
+            .from('chat_messages')
+            .select('room_id')
+            .in('room_id', batchIds)
+            .eq('sender_type', 'customer')
+            .eq('is_read', false)
+          
+          if (unreadMessages) {
+            unreadMessages.forEach((msg: { room_id: string }) => {
+              const currentCount = unreadCountMap.get(msg.room_id) || 0
+              unreadCountMap.set(msg.room_id, currentCount + 1)
+            })
+          }
+        }
+      }
+
+      // 채팅방에 투어 정보 매핑
+      const roomsWithTour = inactiveRooms.map((room: ChatRoom) => {
+        const tourData = tourMap.get(room.tour_id)
+        if (!tourData) {
+          return {
+            ...room,
+            tour: {
+              id: room.tour_id,
+              status: null,
+              reservations: []
+            },
+            unread_count: unreadCountMap.get(room.id) || 0
+          }
+        }
+
+        const assignedReservationIds = tourData.reservation_ids || []
+        const tourReservationIds = Array.isArray(assignedReservationIds)
+          ? assignedReservationIds.map((id: any) => String(id).trim()).filter((id: string) => id)
+          : String(assignedReservationIds).split(',').map((id: string) => id.trim()).filter((id: string) => id)
+
+        const reservations = tourReservationIds
+          .map((reservationId: string) => {
+            const reservation = reservationsMap.get(reservationId)
+            if (!reservation) return null
+
+            const pickupHotelId = reservation.pickup_hotel
+            const trimmedHotelId = (pickupHotelId && typeof pickupHotelId === 'string' && pickupHotelId.trim() !== '') 
+              ? pickupHotelId.trim() 
+              : null
+            
+            let hotel = null
+            if (trimmedHotelId) {
+              hotel = pickupHotelsMap.get(trimmedHotelId)
+              if (!hotel) {
+                for (const [hotelId, hotelData] of pickupHotelsMap.entries()) {
+                  if (String(hotelId).trim().toLowerCase() === trimmedHotelId.toLowerCase()) {
+                    hotel = hotelData
+                    break
+                  }
+                }
+              }
+            }
+            
+            const customer = reservation.customer_id ? customersMap.get(reservation.customer_id) : null
+            const totalPeople = reservation.total_people 
+              ? Number(reservation.total_people)
+              : ((Number(reservation.adults) || 0) + (Number(reservation.child) || 0) + (Number(reservation.infant) || 0))
+
+            return {
+              id: reservation.id,
+              adults: Number(reservation.adults) || 0,
+              child: Number(reservation.child) || 0,
+              infant: Number(reservation.infant) || 0,
+              total_people: totalPeople,
+              status: reservation.status || 'pending',
+              pickup_hotel: trimmedHotelId || undefined,
+              pickup_time: reservation.pickup_time ? String(reservation.pickup_time).trim() : undefined,
+              pickup_hotel_info: hotel ? {
+                hotel: hotel.hotel,
+                pick_up_location: hotel.pick_up_location
+              } : undefined,
+            customer: customer ? {
+              id: customer.id,
+              name: customer.name,
+              email: customer.email,
+              phone: customer.phone,
+              language: customer.language
+            } : undefined
+            }
+          })
+          .filter(Boolean)
+
+        const totalPeople = reservations.reduce((sum, r) => sum + (r?.total_people || 0), 0)
+
+        return {
+          ...room,
+          tour: {
+            id: tourData.id,
+            product_id: tourData.product_id,
+            tour_date: tourData.tour_date,
+            tour_guide_id: tourData.tour_guide_id,
+            assistant_id: tourData.assistant_id,
+            tour_car_id: tourData.tour_car_id,
+            status: tourData.tour_status || 'pending',
+            total_people: totalPeople,
+            product: tourData.product,
+            reservations: reservations
+          },
+          unread_count: unreadCountMap.get(room.id) || 0
+        }
+      })
+
+      setInactiveRoomsData(roomsWithTour as ChatRoom[])
+    } catch (error) {
+      console.error('[ChatManagement] 비활성화 채팅방 로딩 오류:', error)
+      setInactiveRoomsData([])
+    } finally {
+      setLoadingInactiveRooms(false)
+    }
+  }, [inactiveRoomsData.length])
+
+  // 비활성화 탭 클릭 시 채팅방 로딩
+  useEffect(() => {
+    if (activeTab === 'inactive') {
+      fetchInactiveRooms()
+    }
+  }, [activeTab, fetchInactiveRooms])
+
+  // 최적화된 채팅방 데이터 로딩 (활성화된 채팅방만 - 예정/지난 탭용)
   const { data: chatRoomsData, loading, refetch: refetchChatRooms, invalidateCache } = useOptimizedData({
     fetchFn: async () => {
-      // 먼저 기본 채팅방 정보만 가져오기
+      // 활성화된 채팅방만 가져오기 (예정/지난 탭용)
       const { data: chatRoomsData, error: chatRoomsError } = await supabase
         .from('chat_rooms')
         .select('*')
         .eq('is_active', true)
         .order('created_at', { ascending: false })
+      
+      // 투어 정보를 가져온 후 tour_date 기준으로 비활성화하므로 여기서는 스킵
 
       if (chatRoomsError) throw chatRoomsError
 
@@ -196,6 +486,61 @@ export default function ChatManagementPage() {
         }
       }
 
+      // tour_date 기준으로 14일이 지난 채팅방 자동 비활성화
+      try {
+        if (chatRoomsData && chatRoomsData.length > 0 && tourMap.size > 0) {
+          // 현재 라스베가스 날짜를 기준으로 14일 전 날짜 계산
+          const now = new Date()
+          const lasVegasNow = new Date(now.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+          
+          // 14일 전 날짜 계산 (YYYY-MM-DD 형식)
+          const fourteenDaysAgo = new Date(lasVegasNow)
+          fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
+          const fourteenDaysAgoStr = fourteenDaysAgo.toISOString().split('T')[0] // YYYY-MM-DD 형식
+          
+          const roomsToDeactivate = chatRoomsData.filter((room: any) => {
+            if (!room.is_active) return false // 이미 비활성화된 것은 제외
+            
+            const tourData = tourMap.get(room.tour_id)
+            if (!tourData || !tourData.tour_date) return false // 투어 정보가 없거나 tour_date가 없으면 제외
+            
+            // tour_date는 YYYY-MM-DD 형식이므로 직접 문자열 비교
+            const tourDateStr = tourData.tour_date
+            
+            // tour_date가 14일 전 날짜보다 이전이면 비활성화 대상
+            return tourDateStr < fourteenDaysAgoStr
+          })
+          
+          if (roomsToDeactivate.length > 0) {
+            const roomIdsToDeactivate = roomsToDeactivate.map((room: any) => room.id)
+            
+            try {
+              const updateQuery = (supabase.from('chat_rooms') as any).update({ is_active: false } as any)
+              const { error: updateError } = await updateQuery.in('id', roomIdsToDeactivate)
+              
+              if (updateError) {
+                console.warn('[ChatManagement] 채팅방 비활성화 중 오류:', updateError)
+              } else {
+                // 비활성화된 채팅방의 is_active 상태 업데이트
+                chatRoomsData.forEach((room: any) => {
+                  if (roomIdsToDeactivate.includes(room.id)) {
+                    room.is_active = false
+                  }
+                })
+                
+                console.log(`[ChatManagement] ${roomsToDeactivate.length}개의 채팅방이 자동으로 비활성화되었습니다. (tour_date 기준 14일 경과)`)
+              }
+            } catch (updateError) {
+              console.warn('[ChatManagement] 채팅방 비활성화 중 예외:', updateError)
+              // 에러가 발생해도 계속 진행
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('[ChatManagement] 채팅방 자동 비활성화 로직 실행 중 오류:', error)
+        // 에러가 발생해도 계속 진행
+      }
+
       // 모든 투어의 reservation_ids 수집
       const allReservationIds = new Set<string>()
       tourMap.forEach((tour: any) => {
@@ -252,43 +597,36 @@ export default function ChatManagementPage() {
         }
       }
 
-      // 픽업 호텔 정보 가져오기
-      const pickupHotelIds = new Set<string>()
-      reservationsMap.forEach((reservation: any) => {
-        if (reservation.pickup_hotel) {
-          pickupHotelIds.add(reservation.pickup_hotel)
-        }
-      })
-
+      // 픽업 호텔 정보 가져오기 (투어 상세 페이지와 동일하게 모든 호텔을 한 번에 조회)
       const pickupHotelsMap = new Map<string, any>()
-      if (pickupHotelIds.size > 0) {
-        const hotelIdsArray = Array.from(pickupHotelIds)
-        const HOTEL_BATCH_SIZE = 50
-        
-        for (let i = 0; i < hotelIdsArray.length; i += HOTEL_BATCH_SIZE) {
-          const batchIds = hotelIdsArray.slice(i, i + HOTEL_BATCH_SIZE)
-          
-          try {
-            const { data: hotelsData, error: hotelsError } = await supabase
-              .from('pickup_hotels')
-              .select('id, hotel, pick_up_location, address, link')
-              .in('id', batchIds)
+      try {
+        // 투어 상세 페이지와 동일한 방식: 모든 호텔을 한 번에 가져오기
+        // pickup_hotels 테이블에는 'link' 컬럼이 있음 (google_maps_link 아님)
+        const { data: allHotelsData, error: hotelsError } = await supabase
+          .from('pickup_hotels')
+          .select('id, hotel, pick_up_location, address, link')
+          .order('hotel')
 
-            if (hotelsError) {
-              console.warn(`Error fetching pickup hotels (batch ${Math.floor(i / HOTEL_BATCH_SIZE) + 1}):`, hotelsError)
-              continue
-            }
-
-            if (hotelsData) {
-              hotelsData.forEach((hotel: any) => {
-                pickupHotelsMap.set(hotel.id, hotel)
+        if (hotelsError) {
+          console.error('[ChatManagement] 픽업 호텔 데이터 가져오기 오류:', hotelsError)
+        } else if (allHotelsData && allHotelsData.length > 0) {
+          // 모든 호텔을 Map에 저장 (ID를 trim하여 저장)
+          allHotelsData.forEach((hotel: any) => {
+            if (hotel && hotel.id) {
+              const trimmedId = String(hotel.id).trim()
+              pickupHotelsMap.set(trimmedId, {
+                ...hotel,
+                id: trimmedId
               })
             }
-          } catch (error) {
-            console.warn(`Error processing hotels batch ${Math.floor(i / HOTEL_BATCH_SIZE) + 1}:`, error)
-            continue
-          }
+          })
+          console.log('[ChatManagement] 픽업 호텔 데이터 가져오기 성공:', {
+            totalHotels: allHotelsData.length,
+            mapSize: pickupHotelsMap.size
+          })
         }
+      } catch (error) {
+        console.error('[ChatManagement] 픽업 호텔 데이터 가져오기 예외:', error)
       }
 
       // 고객 정보 가져오기
@@ -356,9 +694,67 @@ export default function ChatManagementPage() {
         const reservations = tourReservationIds
           .map((reservationId: string) => {
             const reservation = reservationsMap.get(reservationId)
-            if (!reservation) return null
+            if (!reservation) {
+              console.debug(`[ChatManagement] 예약을 찾을 수 없음:`, {
+                reservationId,
+                availableReservationIds: Array.from(reservationsMap.keys())
+              })
+              return null
+            }
 
-            const hotel = reservation.pickup_hotel ? pickupHotelsMap.get(reservation.pickup_hotel) : null
+            // pickup_hotel 값이 유효한 경우에만 호텔 정보 찾기
+            const pickupHotelId = reservation.pickup_hotel
+            const trimmedHotelId = (pickupHotelId && typeof pickupHotelId === 'string' && pickupHotelId.trim() !== '') 
+              ? pickupHotelId.trim() 
+              : null
+            
+            // 호텔 정보 찾기
+            let hotel = null
+            if (trimmedHotelId) {
+              // 정확한 ID 매칭 시도
+              hotel = pickupHotelsMap.get(trimmedHotelId)
+              
+              // 정확한 매칭이 실패하면 대소문자 무시하고 찾기
+              if (!hotel) {
+                for (const [hotelId, hotelData] of pickupHotelsMap.entries()) {
+                  if (String(hotelId).trim().toLowerCase() === trimmedHotelId.toLowerCase()) {
+                    hotel = hotelData
+                    console.log(`[ChatManagement] 대소문자 무시 매칭 성공:`, {
+                      requested: trimmedHotelId,
+                      found: hotelId
+                    })
+                    break
+                  }
+                }
+              }
+            }
+            
+            // 디버깅: 호텔 정보를 찾지 못한 경우
+            if (trimmedHotelId && !hotel) {
+              const availableHotelIds = Array.from(pickupHotelsMap.keys())
+              const isInAvailableIds = availableHotelIds.includes(trimmedHotelId)
+              const caseInsensitiveMatch = availableHotelIds.find(id => String(id).trim().toLowerCase() === trimmedHotelId.toLowerCase())
+              
+              // 실제로 해당 ID가 있는지 확인
+              const exactMatch = availableHotelIds.find(id => String(id).trim() === trimmedHotelId)
+              const similarMatches = availableHotelIds.filter(id => String(id).trim().includes(trimmedHotelId) || trimmedHotelId.includes(String(id).trim()))
+              
+              console.warn(`[ChatManagement] 호텔 정보를 찾을 수 없음:`, {
+                reservationId: reservation.id,
+                pickupHotelId: trimmedHotelId,
+                reservationPickupHotel: reservation.pickup_hotel,
+                pickupHotelsMapSize: pickupHotelsMap.size,
+                isInAvailableIds,
+                exactMatch: exactMatch || null,
+                caseInsensitiveMatch: caseInsensitiveMatch || null,
+                similarMatches: similarMatches.slice(0, 5),
+                first10AvailableIds: availableHotelIds.slice(0, 10),
+                requestedHotelIdType: typeof trimmedHotelId,
+                requestedHotelIdLength: trimmedHotelId.length,
+                requestedHotelIdChars: trimmedHotelId.split('').map(c => `${c}(${c.charCodeAt(0)})`).join(' ')
+              })
+            }
+            
             const customer = reservation.customer_id ? customersMap.get(reservation.customer_id) : null
 
             // 인원 계산 (투어 상세 페이지와 동일한 방식)
@@ -373,19 +769,21 @@ export default function ChatManagementPage() {
               infant: Number(reservation.infant) || 0,
               total_people: totalPeople,
               status: reservation.status,
-              pickup_hotel: reservation.pickup_hotel,
-              pickup_time: reservation.pickup_time,
+              pickup_hotel: trimmedHotelId || undefined,
+              pickup_time: (reservation.pickup_time && typeof reservation.pickup_time === 'string') ? reservation.pickup_time.trim() : undefined,
               pickup_hotel_info: hotel ? {
                 hotel: hotel.hotel,
                 pick_up_location: hotel.pick_up_location,
                 address: hotel.address,
                 link: hotel.link
               } : undefined,
-              customer: customer ? {
-                name: customer.name,
-                email: customer.email,
-                phone: customer.phone
-              } : undefined
+            customer: customer ? {
+              id: customer.id,
+              name: customer.name,
+              email: customer.email,
+              phone: customer.phone,
+              language: customer.language
+            } : undefined
             }
           })
           .filter((r: any) => r !== null)
@@ -539,6 +937,13 @@ export default function ChatManagementPage() {
     }
   }, [refetchChatRooms, invalidateCache, loading])
 
+  // 비활성화 탭 클릭 시 채팅방 로딩
+  useEffect(() => {
+    if (activeTab === 'inactive') {
+      fetchInactiveRooms()
+    }
+  }, [activeTab, fetchInactiveRooms])
+
   // 번역 관련 함수들
   const needsTranslation = useCallback((message: ChatMessage) => {
     return message.sender_type === 'guide' && 
@@ -623,6 +1028,7 @@ export default function ChatManagementPage() {
 
   // 선택된 채팅방의 메시지 가져오기
   const fetchMessages = useCallback(async (roomId: string) => {
+    setLoadingMessages(true)
     try {
       const { data, error } = await supabase
         .from('chat_messages')
@@ -634,11 +1040,14 @@ export default function ChatManagementPage() {
       setMessages(data || [])
     } catch (error) {
       console.error('Error fetching messages:', error)
+    } finally {
+      setLoadingMessages(false)
     }
   }, [])
 
   // 투어 정보 가져오기 (투어 상세 페이지와 동일한 구조 사용)
   const fetchTourInfo = useCallback(async (tourId: string) => {
+    setLoadingTourInfo(true)
     try {
       // 1단계: 투어 기본 정보 가져오기
       const { data: tourData, error: tourError } = await supabase
@@ -769,18 +1178,29 @@ export default function ChatManagementPage() {
         ? assignedReservationIds.map((id: any) => String(id).trim()).filter((id: string) => id)
         : String(assignedReservationIds).split(',').map((id: string) => id.trim()).filter((id: string) => id)
 
-      let reservationsData: any[] = []
+      let reservationsData: Array<Record<string, unknown>> = []
       if (reservationIdsArray.length > 0) {
         const { data: assignedReservations, error: reservationsError } = await supabase
           .from('reservations')
           .select('*, pickup_notification_sent')
           .in('id', reservationIdsArray)
-
+        
         if (reservationsError) {
           console.warn('Error fetching assigned reservations:', reservationsError)
         } else {
-          reservationsData = assignedReservations || []
+          reservationsData = (assignedReservations || []) as Array<Record<string, unknown>>
         }
+        
+        console.log('[ChatManagement] fetchTourInfo - 예약 데이터 조회:', {
+          requestedIds: reservationIdsArray.length,
+          foundReservations: reservationsData.length,
+          sampleReservation: reservationsData[0] ? {
+            id: reservationsData[0].id,
+            pickup_hotel: reservationsData[0].pickup_hotel,
+            pickup_time: reservationsData[0].pickup_time,
+            customer_id: reservationsData[0].customer_id
+          } : null
+        })
       }
 
       // 4단계: 고객 정보 가져오기 (예약이 있는 경우에만)
@@ -815,52 +1235,121 @@ export default function ChatManagementPage() {
       }
 
       // 5.5단계: 픽업 호텔 정보 가져오기 (PickupSchedule 컴포넌트용)
-      let pickupHotelsData: Array<{ id: string; hotel: string; pick_up_location?: string; google_maps_link?: string }> = []
-      if (reservationsData && reservationsData.length > 0) {
-        const pickupHotelIds = reservationsData
-          .map((r: Record<string, unknown>) => r.pickup_hotel as string)
-          .filter(Boolean)
-          .filter((value, index, self) => self.indexOf(value) === index) as string[]
-        
-        if (pickupHotelIds.length > 0) {
-          const { data: pickupHotels, error: pickupHotelsError } = await supabase
-            .from('pickup_hotels')
-            .select('id, hotel, pick_up_location, google_maps_link')
-            .in('id', pickupHotelIds)
-            .eq('is_active', true)
+      // 투어 상세 페이지와 동일한 방식: 모든 호텔을 한 번에 가져오기
+      let pickupHotelsData: Array<{ id: string; hotel: string; pick_up_location?: string; google_maps_link?: string; link?: string }> = []
+      try {
+        // pickup_hotels 테이블에는 'link' 컬럼이 있음 (google_maps_link 아님)
+        const { data: allHotelsData, error: pickupHotelsError } = await supabase
+          .from('pickup_hotels')
+          .select('id, hotel, pick_up_location, link')
+          .order('hotel')
 
-          if (!pickupHotelsError) {
-            pickupHotelsData = pickupHotels || []
-            setPickupHotels(pickupHotelsData)
-          }
+        if (pickupHotelsError) {
+          console.error('[ChatManagement] fetchTourInfo - 픽업 호텔 데이터 가져오기 오류:', pickupHotelsError)
+        } else if (allHotelsData && allHotelsData.length > 0) {
+          // ID를 trim하여 저장하고, link를 google_maps_link로 매핑 (PickupSchedule 컴포넌트 호환성)
+          pickupHotelsData = allHotelsData.map((h: any) => ({
+            ...h,
+            id: String(h.id).trim(),
+            google_maps_link: h.link || undefined // link를 google_maps_link로 매핑
+          }))
+          setPickupHotels(pickupHotelsData)
+          
+          console.log('[ChatManagement] fetchTourInfo - 픽업 호텔 정보 조회 완료:', {
+            totalHotels: pickupHotelsData.length,
+            hotelIds: pickupHotelsData.slice(0, 10).map((h: any) => h.id) // 처음 10개만 표시
+          })
         }
+      } catch (error) {
+        console.error('[ChatManagement] fetchTourInfo - 픽업 호텔 데이터 가져오기 예외:', error)
       }
 
       // 6단계: 데이터 결합 (투어 상세 페이지와 동일한 구조)
       const combinedReservations = (reservationsData || []).map((reservation: Record<string, unknown>) => {
         const customer = customersData.find((c) => c.id === reservation.customer_id as string)
-        const pickupHotel = pickupHotelsData.find((h) => h.id === reservation.pickup_hotel as string)
-        return {
+        
+        // pickup_hotel 값이 유효한 경우에만 호텔 정보 찾기
+        const pickupHotelId = reservation.pickup_hotel
+        const trimmedHotelId = (pickupHotelId && typeof pickupHotelId === 'string' && pickupHotelId.trim() !== '') 
+          ? pickupHotelId.trim() 
+          : null
+        
+        // 호텔 정보 찾기
+        let pickupHotel = null
+        if (trimmedHotelId) {
+          // 정확한 ID 매칭 시도 (trim된 ID로 비교)
+          pickupHotel = pickupHotelsData.find((h) => String(h.id).trim() === trimmedHotelId)
+          
+          // 정확한 매칭이 실패하면 대소문자 무시하고 찾기
+          if (!pickupHotel) {
+            pickupHotel = pickupHotelsData.find((h) => String(h.id).trim().toLowerCase() === trimmedHotelId.toLowerCase())
+            if (pickupHotel) {
+              console.log(`[ChatManagement] fetchTourInfo - 대소문자 무시 매칭 성공:`, {
+                requested: trimmedHotelId,
+                found: pickupHotel.id
+              })
+            }
+          }
+        }
+        
+        // 디버깅: 호텔 정보를 찾지 못한 경우
+        if (trimmedHotelId && !pickupHotel) {
+          const availableHotelIds = pickupHotelsData.map((h: any) => String(h.id).trim())
+          const isInAvailableIds = availableHotelIds.includes(trimmedHotelId)
+          const exactMatch = availableHotelIds.find((id: string) => id === trimmedHotelId)
+          const caseInsensitiveMatch = availableHotelIds.find((id: string) => id.toLowerCase() === trimmedHotelId.toLowerCase())
+          const similarMatches = availableHotelIds.filter((id: string) => id.includes(trimmedHotelId) || trimmedHotelId.includes(id))
+          
+          console.warn(`[ChatManagement] fetchTourInfo - 호텔 정보를 찾을 수 없음:`, {
+            reservationId: reservation.id,
+            pickupHotelId: trimmedHotelId,
+            reservationPickupHotel: reservation.pickup_hotel,
+            pickupHotelsDataCount: pickupHotelsData.length,
+            isInAvailableIds,
+            exactMatch: exactMatch || null,
+            caseInsensitiveMatch: caseInsensitiveMatch || null,
+            similarMatches: similarMatches.slice(0, 5),
+            first10AvailableIds: availableHotelIds.slice(0, 10),
+            requestedHotelIdType: typeof trimmedHotelId,
+            requestedHotelIdLength: trimmedHotelId.length,
+            requestedHotelIdChars: trimmedHotelId.split('').map(c => `${c}(${c.charCodeAt(0)})`).join(' ')
+          })
+        }
+        
+        const result = {
           id: reservation.id as string,
           adults: (reservation.adults as number) || 0,
           child: (reservation.child as number) || 0,
           infant: (reservation.infant as number) || 0,
           total_people: (reservation.total_people as number) || ((reservation.adults as number) || 0) + ((reservation.child as number) || 0) + ((reservation.infant as number) || 0),
           status: (reservation.status as string) || 'pending',
-          pickup_hotel: reservation.pickup_hotel as string,
-          pickup_time: reservation.pickup_time as string,
+          pickup_hotel: trimmedHotelId || undefined,
+          pickup_time: (reservation.pickup_time && typeof reservation.pickup_time === 'string') ? reservation.pickup_time.trim() : undefined,
           pickup_notification_sent: reservation.pickup_notification_sent as boolean || false,
           pickup_hotel_info: pickupHotel ? {
             hotel: pickupHotel.hotel,
             pick_up_location: pickupHotel.pick_up_location
           } : undefined,
-          customer: customer ? {
-            id: customer.id,
-            name: customer.name,
-            email: customer.email,
-            phone: customer.phone
-          } : undefined
+            customer: customer ? {
+              id: customer.id,
+              name: customer.name,
+              email: customer.email,
+              phone: customer.phone,
+              language: (customer as any).language
+            } : undefined
         }
+        
+        // 디버깅: 호텔 정보가 없는 경우
+        if (trimmedHotelId && !pickupHotel) {
+          console.warn(`[ChatManagement] fetchTourInfo - 호텔 정보 매핑 실패:`, {
+            reservationId: result.id,
+            pickupHotelId: trimmedHotelId,
+            hasPickupHotelsData: pickupHotelsData.length > 0,
+            availableHotelIds: pickupHotelsData.map((h: any) => h.id)
+          })
+        }
+        
+        return result
       })
 
       const combinedData: TourInfo = {
@@ -889,6 +1378,8 @@ export default function ChatManagementPage() {
       setTourInfo(combinedData)
     } catch (error) {
       console.error('Error fetching tour info:', error)
+    } finally {
+      setLoadingTourInfo(false)
     }
   }, [])
 
@@ -948,32 +1439,71 @@ export default function ChatManagementPage() {
     }
   }
 
-  // 채팅방 선택
-  const selectRoom = async (room: ChatRoom) => {
-    setSelectedRoom(room)
-    await fetchMessages(room.id)
-    if (room.tour) {
-      await fetchTourInfo(room.tour.id)
-    }
+  // 채팅방 활성화/비활성화 토글
+  const toggleRoomActive = async (roomId: string, currentStatus: boolean, event: React.MouseEvent) => {
+    event.stopPropagation() // 채팅방 선택 이벤트 방지
     
-    // 읽지 않은 메시지를 읽음 처리
     try {
-      await (supabase as unknown as { from: (table: string) => { update: (data: unknown) => { eq: (column: string, value: unknown) => { eq: (column: string, value: unknown) => { eq: (column: string, value: unknown) => Promise<unknown> } } } } })
+      const updateQuery = (supabase.from('chat_rooms') as any).update({ is_active: !currentStatus })
+      const { error } = await updateQuery.eq('id', roomId)
+      
+      if (error) throw error
+      
+      // 채팅방 목록 새로고침
+      await refetchChatRooms()
+      
+      // 현재 선택된 채팅방이면 상태 업데이트
+      if (selectedRoom?.id === roomId) {
+        setSelectedRoom({ ...selectedRoom, is_active: !currentStatus } as ChatRoom)
+      }
+    } catch (error) {
+      console.error('Error toggling room active status:', error)
+      alert('채팅방 상태 변경 중 오류가 발생했습니다.')
+    }
+  }
+
+  // 채팅방 선택 (비동기, 블로킹하지 않음)
+  const selectRoom = (room: ChatRoom) => {
+    // 즉시 채팅방 선택 (UI 반응성 향상)
+    setSelectedRoom(room)
+    setMessages([]) // 이전 메시지 초기화
+    setTourInfo(null) // 이전 투어 정보 초기화
+    
+    // 메시지와 투어 정보를 병렬로 로딩 (비동기, 블로킹하지 않음)
+    // await를 사용하지 않고 Promise만 사용하여 즉시 반환
+    Promise.all([
+      // 메시지 로딩
+      fetchMessages(room.id).catch(error => {
+        console.error('Error loading messages:', error)
+      }),
+      // 투어 정보 로딩 (room.tour가 있으면)
+      room.tour ? fetchTourInfo(room.tour.id).catch(error => {
+        console.error('Error loading tour info:', error)
+      }) : Promise.resolve()
+    ]).then(() => {
+      // 읽지 않은 메시지를 읽음 처리 (비동기, 블로킹하지 않음)
+      (supabase as unknown as { from: (table: string) => { update: (data: unknown) => { eq: (column: string, value: unknown) => { eq: (column: string, value: unknown) => { eq: (column: string, value: unknown) => Promise<unknown> } } } } })
         .from('chat_messages')
         .update({ is_read: true })
         .eq('room_id', room.id)
         .eq('sender_type', 'customer')
         .eq('is_read', false)
-      
-      // 채팅방 목록 새로고침 (캐시된 데이터 업데이트)
-      await refetchChatRooms()
-    } catch (error) {
-      console.error('Error marking messages as read:', error)
-    }
+        .then(() => {
+          // 채팅방 목록 새로고침 (비동기, 블로킹하지 않음)
+          refetchChatRooms().catch(error => {
+            console.error('Error refreshing chat rooms:', error)
+          })
+        })
+        .catch(error => {
+          console.error('Error marking messages as read:', error)
+        })
+    }).catch(error => {
+      console.error('Error loading room data:', error)
+    })
   }
 
-  // 안전한 채팅방 데이터
-  const chatRooms = chatRoomsData || []
+  // 안전한 채팅방 데이터 (탭에 따라 다른 데이터 소스 사용)
+  const chatRooms = activeTab === 'inactive' ? inactiveRoomsData : (chatRoomsData || [])
 
   // 탭별 필터링된 채팅방 목록
   const filteredRooms = chatRooms
@@ -983,6 +1513,14 @@ export default function ChatManagementPage() {
                            (((room.tour as Record<string, unknown>)?.product as Record<string, unknown>)?.name as string)?.toLowerCase().includes(searchTerm.toLowerCase())
       
       if (!matchesSearch) return false
+      
+      // 비활성화 탭: is_active가 false인 채팅방만 (이미 inactiveRoomsData에서 필터링됨)
+      if (activeTab === 'inactive') {
+        return true // inactiveRoomsData는 이미 비활성화된 것만 포함
+      }
+      
+      // 예정/지난 탭: is_active가 true인 채팅방만 (이미 chatRoomsData에서 필터링됨)
+      // chatRoomsData는 이미 활성화된 것만 포함하므로 추가 필터링 불필요
       
       // 탭별 필터링 (라스베가스 현지 시간 기준)
       if ((room.tour as Record<string, unknown>)?.tour_date) {
@@ -996,7 +1534,7 @@ export default function ChatManagementPage() {
         
         if (activeTab === 'past') {
           return tourDateStr < todayStr
-        } else {
+        } else if (activeTab === 'upcoming') {
           return tourDateStr >= todayStr
         }
       }
@@ -1021,6 +1559,11 @@ export default function ChatManagementPage() {
       if (activeTab === 'past') {
         // 지난 투어는 최근 날짜순
         return dateB.getTime() - dateA.getTime()
+      } else if (activeTab === 'inactive') {
+        // 비활성화된 채팅방은 최근 생성일순
+        const createdA = new Date(a.created_at).getTime()
+        const createdB = new Date(b.created_at).getTime()
+        return createdB - createdA
       } else {
         // 진행 예정 투어는 가까운 날짜순
         return dateA.getTime() - dateB.getTime()
@@ -1127,18 +1670,22 @@ export default function ChatManagementPage() {
   }
 
 
-  if (loading) {
+  // 초기 로딩만 전체 페이지 블로킹 (채팅방 목록이 없을 때만)
+  if (loading && !chatRoomsData) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-gray-500">채팅방을 불러오는 중...</div>
+      <div className="flex items-center justify-center h-[calc(100vh-64px-12px-50px)]">
+        <div className="text-center">
+          <div className="text-gray-500 mb-2">채팅방 목록을 불러오는 중...</div>
+          <div className="text-xs text-gray-400">잠시만 기다려주세요</div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+    <div className="flex h-[calc(100vh-64px-12px-50px)] -mx-1 sm:-mx-2 lg:-mx-3 -mb-6 overflow-hidden bg-gradient-to-br from-blue-50 via-white to-purple-50" style={{ maxHeight: 'calc(100vh - 64px - 12px - 50px)' }}>
       {/* 왼쪽: 채팅방 목록 - 모바일에서는 숨김/표시 토글 */}
-      <div className={`${selectedRoom ? 'hidden lg:flex' : 'flex'} lg:w-80 w-full bg-white/80 backdrop-blur-sm border-r border-gray-200 flex-col shadow-lg`}>
+      <div className={`${selectedRoom ? 'hidden lg:flex' : 'flex'} lg:w-96 w-full bg-white/80 backdrop-blur-sm border-r border-gray-200 flex-col shadow-lg`}>
         {/* 헤더 */}
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-4">
@@ -1164,37 +1711,49 @@ export default function ChatManagementPage() {
           <div className="flex space-x-1 mb-4">
             <button
               onClick={() => setActiveTab('upcoming')}
-              className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+              className={`flex-1 px-2 py-2 text-xs font-medium rounded-lg transition-colors ${
                 activeTab === 'upcoming'
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
               예정 ({chatRooms.filter(room => {
+                if (!room.is_active) return false
                 if (!(room.tour as Record<string, unknown>)?.tour_date) return true
-                const tourDate = new Date((room.tour as Record<string, unknown>).tour_date as string)
-                const today = new Date()
-                today.setHours(0, 0, 0, 0)
-                tourDate.setHours(0, 0, 0, 0)
-                return tourDate >= today
+                const tourDateStr = (room.tour as Record<string, unknown>).tour_date as string
+                const now = new Date()
+                const lasVegasNow = new Date(now.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+                const todayStr = lasVegasNow.toISOString().split('T')[0]
+                return tourDateStr >= todayStr
               }).length})
             </button>
             <button
               onClick={() => setActiveTab('past')}
-              className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+              className={`flex-1 px-2 py-2 text-xs font-medium rounded-lg transition-colors ${
                 activeTab === 'past'
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
               지난 ({chatRooms.filter(room => {
+                if (!room.is_active) return false
                 if (!(room.tour as Record<string, unknown>)?.tour_date) return false
-                const tourDate = new Date((room.tour as Record<string, unknown>).tour_date as string)
-                const today = new Date()
-                today.setHours(0, 0, 0, 0)
-                tourDate.setHours(0, 0, 0, 0)
-                return tourDate < today
+                const tourDateStr = (room.tour as Record<string, unknown>).tour_date as string
+                const now = new Date()
+                const lasVegasNow = new Date(now.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+                const todayStr = lasVegasNow.toISOString().split('T')[0]
+                return tourDateStr < todayStr
               }).length})
+            </button>
+            <button
+              onClick={() => setActiveTab('inactive')}
+              className={`flex-1 px-2 py-2 text-xs font-medium rounded-lg transition-colors ${
+                activeTab === 'inactive'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              비활성화 ({activeTab === 'inactive' ? inactiveRoomsData.length : '...'})
             </button>
           </div>
           
@@ -1225,12 +1784,20 @@ export default function ChatManagementPage() {
 
         {/* 채팅방 목록 */}
         <div className="flex-1 overflow-y-auto">
-          {filteredRooms.length === 0 ? (
+          {activeTab === 'inactive' && loadingInactiveRooms ? (
+            <div className="flex-1 flex items-center justify-center p-8">
+              <div className="text-center text-gray-500">
+                <div className="text-sm">비활성화된 채팅방을 불러오는 중...</div>
+              </div>
+            </div>
+          ) : filteredRooms.length === 0 ? (
             <div className="flex-1 flex items-center justify-center p-8">
               <div className="text-center text-gray-500">
                 <MessageCircle size={48} className="mx-auto mb-4 text-gray-300" />
                 <p className="text-sm">
-                  {activeTab === 'past' ? '지난 투어가 없습니다' : '예정 투어가 없습니다'}
+                  {activeTab === 'past' ? '지난 투어가 없습니다' : 
+                   activeTab === 'inactive' ? '비활성화된 채팅방이 없습니다' : 
+                   '예정 투어가 없습니다'}
                 </p>
               </div>
             </div>
@@ -1291,8 +1858,19 @@ export default function ChatManagementPage() {
                   </div>
                 </div>
                 
-                {/* 플로팅 버튼과 읽지 않은 메시지 수 */}
+                {/* 활성화/비활성화 토글, 플로팅 버튼과 읽지 않은 메시지 수 */}
                 <div className="flex items-center gap-1 ml-2">
+                  <button
+                    onClick={(e) => toggleRoomActive(room.id, room.is_active, e)}
+                    className={`p-1 rounded transition-colors ${
+                      room.is_active
+                        ? 'text-green-600 hover:text-green-700 hover:bg-green-50'
+                        : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                    }`}
+                    title={room.is_active ? '비활성화' : '활성화'}
+                  >
+                    {room.is_active ? <Power size={14} /> : <PowerOff size={14} />}
+                  </button>
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
@@ -1418,7 +1996,17 @@ export default function ChatManagementPage() {
 
             {/* 메시지 목록 */}
             <div className="flex-1 overflow-y-auto p-2 lg:p-4 space-y-3 lg:space-y-4 bg-gradient-to-b from-transparent to-blue-50/30">
-              {messages.map((message) => {
+              {loadingMessages && (
+                <div className="flex items-center justify-center py-8">
+                  <div className="text-sm text-gray-500">메시지를 불러오는 중...</div>
+                </div>
+              )}
+              {!loadingMessages && messages.length === 0 && (
+                <div className="flex items-center justify-center py-8">
+                  <div className="text-sm text-gray-500">메시지가 없습니다.</div>
+                </div>
+              )}
+              {!loadingMessages && messages.map((message) => {
                 const hasTranslation = translatedMessages[message.id]
                 const isTranslating = translating[message.id]
                 const needsTrans = needsTranslation(message)
@@ -1525,7 +2113,14 @@ export default function ChatManagementPage() {
 
        {/* 오른쪽: 투어 정보 - 모바일에서는 숨김 */}
        <div className="hidden lg:block lg:w-[28rem] bg-white/80 backdrop-blur-sm border-l border-gray-200 overflow-y-auto shadow-lg">
-        {tourInfo ? (
+        {loadingTourInfo ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center">
+              <div className="text-gray-500 mb-2">투어 정보를 불러오는 중...</div>
+              <div className="text-xs text-gray-400">잠시만 기다려주세요</div>
+            </div>
+          </div>
+        ) : tourInfo ? (
           <div className="p-4 space-y-4">
             {/* 헤더 */}
             <div className="border-b border-gray-200 pb-3">
@@ -1574,17 +2169,22 @@ export default function ChatManagementPage() {
             {/* 픽업스케줄 - 투어 상세 페이지 컴포넌트 사용 */}
             <div className="bg-white rounded-lg shadow-sm border">
               <PickupSchedule
-                assignedReservations={tourInfo.reservations?.map((res: any) => ({
-                  id: res.id,
-                  customer_id: res.customer?.id || null,
-                  pickup_hotel: res.pickup_hotel || null,
-                  pickup_time: res.pickup_time || null,
-                  adults: res.adults || 0,
-                  children: res.child || 0,
-                  infants: res.infant || 0,
-                  tour_date: tourInfo.tour_date || null,
-                  pickup_notification_sent: res.pickup_notification_sent || false
-                })) || []}
+                assignedReservations={tourInfo.reservations?.map((res: any) => {
+                  // customer_id는 customer 객체에서 가져오거나 reservation의 customer_id 사용
+                  const customerId = res.customer?.id || null
+                  
+                  return {
+                    id: res.id,
+                    customer_id: customerId,
+                    pickup_hotel: res.pickup_hotel || null,
+                    pickup_time: res.pickup_time || null,
+                    adults: res.adults || 0,
+                    children: res.child || 0,
+                    infants: res.infant || 0,
+                    tour_date: tourInfo.tour_date || null,
+                    pickup_notification_sent: res.pickup_notification_sent || false
+                  }
+                }) || []}
                 pickupHotels={pickupHotels}
                 expandedSections={expandedSections}
                 connectionStatus={{ reservations: true }}
@@ -1612,6 +2212,10 @@ export default function ChatManagementPage() {
                 getCustomerName={(customerId: string) => {
                   const reservation = tourInfo.reservations?.find((r: any) => r.customer?.id === customerId)
                   return reservation?.customer?.name || '고객 정보 없음'
+                }}
+                getCustomerLanguage={(customerId: string) => {
+                  const reservation = tourInfo.reservations?.find((r: any) => r.customer?.id === customerId)
+                  return reservation?.customer?.language || ''
                 }}
                 openGoogleMaps={(link: string) => {
                   window.open(link, '_blank')
@@ -1692,7 +2296,7 @@ export default function ChatManagementPage() {
           <div className="p-4">
             <div className="text-center text-gray-500">
               <Calendar size={48} className="mx-auto mb-4 text-gray-300" />
-              <p>투어 정보를 불러오는 중...</p>
+              <p className="text-sm">채팅방을 선택하면 투어 정보가 표시됩니다</p>
             </div>
           </div>
         )}

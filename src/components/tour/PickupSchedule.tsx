@@ -4,6 +4,8 @@ import { FaEnvelope, FaEye, FaCheckCircle, FaExclamationCircle, FaTimesCircle, F
 import { useTranslations, useLocale } from 'next-intl'
 import { ConnectionStatusLabel } from './TourUIComponents'
 import { supabase } from '@/lib/supabase'
+// @ts-expect-error - react-country-flag 라이브러리의 타입 정의가 없음
+import ReactCountryFlag from 'react-country-flag'
 
 interface PickupScheduleProps {
   assignedReservations: Array<{
@@ -31,6 +33,7 @@ interface PickupScheduleProps {
   onPreviewEmail?: () => void
   getPickupHotelNameOnly: (hotelId: string) => string
   getCustomerName: (customerId: string) => string
+  getCustomerLanguage?: (customerId: string) => string
   openGoogleMaps: (link: string) => void
 }
 
@@ -45,6 +48,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
   onPreviewEmail,
   getPickupHotelNameOnly,
   getCustomerName,
+  getCustomerLanguage,
   openGoogleMaps
 }) => {
   const t = useTranslations('tours.pickupSchedule')
@@ -64,6 +68,28 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
     bounce_reason?: string | null
   }>>({})
   const [showEmailStatusHelpModal, setShowEmailStatusHelpModal] = useState(false)
+
+  // 언어를 국가 코드로 변환하는 함수
+  const getLanguageFlag = (language: string | null | undefined): string => {
+    if (!language) return 'US'
+    const lang = language.toLowerCase()
+    if (lang === 'kr' || lang === 'ko' || lang === '한국어') return 'KR'
+    if (lang === 'en' || lang === '영어') return 'US'
+    if (lang === 'jp' || lang === '일본어') return 'JP'
+    if (lang === 'cn' || lang === '중국어') return 'CN'
+    if (lang === 'es' || lang === '스페인어') return 'ES'
+    if (lang === 'fr' || lang === '프랑스어') return 'FR'
+    if (lang === 'de' || lang === '독일어') return 'DE'
+    if (lang === 'it' || lang === '이탈리아어') return 'IT'
+    if (lang === 'pt' || lang === '포르투갈어') return 'PT'
+    if (lang === 'ru' || lang === '러시아어') return 'RU'
+    if (lang === 'th' || lang === '태국어') return 'TH'
+    if (lang === 'vi' || lang === '베트남어') return 'VN'
+    if (lang === 'id' || lang === '인도네시아어') return 'ID'
+    if (lang === 'ms' || lang === '말레이어') return 'MY'
+    if (lang === 'ph' || lang === '필리핀어') return 'PH'
+    return 'US' // 기본값
+  }
 
   // 예약별 거주 상태 정보 가져오기
   useEffect(() => {
@@ -523,6 +549,22 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                         {statusIcon}
                       </span>
                     )}
+                    {reservation.customer_id && getCustomerLanguage && (() => {
+                      const customerLanguage = getCustomerLanguage(reservation.customer_id)
+                      const flagCode = getLanguageFlag(customerLanguage)
+                      return (
+                        <ReactCountryFlag
+                          countryCode={flagCode}
+                          svg
+                          style={{
+                            width: '16px',
+                            height: '12px',
+                            borderRadius: '2px',
+                            marginRight: '6px'
+                          }}
+                        />
+                      )
+                    })()}
                     <span className="text-gray-700 font-medium">{getCustomerName(reservation.customer_id || '')}</span>
                   </div>
                   <div className="flex items-center space-x-1 text-xs text-gray-500">

@@ -1458,6 +1458,7 @@ export default function TourDetailPage() {
           }}
               getPickupHotelNameOnly={tourData.getPickupHotelNameOnly}
               getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || 'Unknown'}
+              getCustomerLanguage={(customerId: string) => tourData.getCustomerLanguage(customerId) || ''}
           openGoogleMaps={openGoogleMaps}
         />
         </div>
