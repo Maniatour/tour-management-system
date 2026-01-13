@@ -737,15 +737,12 @@ export function useTourDetailData() {
           
           // 4. 다른 상태의 예약
           // 같은 tour_date와 product_id를 가진 모든 예약 중에서
-          // 어느 투어의 reservation_ids에도 포함되지 않고
           // status가 confirmed 또는 recruiting이 아닌 예약
           let otherStatusReservations = allSameDateProductReservationsList.filter(r => {
-            const reservationId = String(r.id).trim()
-            const isInAnyTour = allAssignedReservationIdsSet.has(reservationId)
             const status = r.status ? String(r.status).toLowerCase().trim() : ''
             const isConfirmedOrRecruiting = status === 'confirmed' || status === 'recruiting'
             
-            return !isInAnyTour && !isConfirmedOrRecruiting
+            return !isConfirmedOrRecruiting
           })
 
           // otherStatusReservations에 고객 정보 매핑
@@ -895,13 +892,13 @@ export function useTourDetailData() {
           })
           
           // 4. 다른 상태의 예약
+          // 같은 tour_date와 product_id를 가진 모든 예약 중에서
+          // status가 confirmed 또는 recruiting이 아닌 예약
           const otherStatusReservations = allSameDateProductReservationsList.filter(r => {
-            const reservationId = String(r.id).trim()
-            const isInAnyTour = allAssignedReservationIdsSet.has(reservationId)
             const status = r.status ? String(r.status).toLowerCase().trim() : ''
             const isConfirmedOrRecruiting = status === 'confirmed' || status === 'recruiting'
             
-            return !isInAnyTour && !isConfirmedOrRecruiting
+            return !isConfirmedOrRecruiting
           })
           
           setAssignedReservations(activeAssignedReservations)
