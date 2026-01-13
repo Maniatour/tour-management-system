@@ -523,13 +523,13 @@ export default function ReservationFormNew({
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">초이스 총액</label>
             <div className="text-lg font-semibold text-blue-600">
-              ₩{choicesTotal.toLocaleString()}
+              ${choicesTotal.toLocaleString()}
             </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">최종 총액</label>
             <div className="text-lg font-semibold text-green-600">
-              ₩{choicesTotal.toLocaleString()}
+              ${choicesTotal.toLocaleString()}
             </div>
           </div>
         </div>

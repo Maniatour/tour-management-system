@@ -171,6 +171,12 @@ export default function HybridChoiceSelector({
     choices.forEach(choice => {
       const choiceSelections = selectedChoices.filter(c => c.choice_id === choice.id);
       
+      // "미국 거주자 구분" 관련 초이스인지 확인
+      const isResidentStatusChoice = choice.choice_name_ko?.includes('거주자') || 
+                                     choice.choice_name_ko?.includes('거주') ||
+                                     choice.choice_name?.toLowerCase().includes('resident') ||
+                                     choice.choice_name?.toLowerCase().includes('거주')
+      
       if (choice.is_required && choiceSelections.length === 0) {
         newErrors.push(`${choice.choice_name_ko} 선택이 필수입니다.`);
       }
@@ -179,8 +185,20 @@ export default function HybridChoiceSelector({
         newErrors.push(`${choice.choice_name_ko}는 최소 ${choice.min_selections}개 선택해야 합니다.`);
       }
       
-      if (choiceSelections.length > choice.max_selections) {
-        newErrors.push(`${choice.choice_name_ko}는 최대 ${choice.max_selections}개까지만 선택할 수 있습니다.`);
+      // 미국 거주자 구분 초이스의 경우, max_selections 검증을 건너뛰고 대신 수량 합계로 검증
+      if (isResidentStatusChoice) {
+        // 거주자 구분 초이스는 여러 옵션을 선택할 수 있고, 각 옵션의 수량 합이 총 인원 수와 일치해야 함
+        const totalQuantity = choiceSelections.reduce((sum, selection) => sum + selection.quantity, 0);
+        
+        // 수량이 총 인원 수와 일치하는지 확인 (선택된 경우에만)
+        if (choiceSelections.length > 0 && totalQuantity !== totalPeople) {
+          newErrors.push(`${choice.choice_name_ko} 선택 수량(${totalQuantity}명)이 총 인원 수(${totalPeople}명)와 일치하지 않습니다.`);
+        }
+      } else {
+        // 일반 초이스는 기존 max_selections 검증 유지
+        if (choiceSelections.length > choice.max_selections) {
+          newErrors.push(`${choice.choice_name_ko}는 최대 ${choice.max_selections}개까지만 선택할 수 있습니다.`);
+        }
       }
       
       // 수용 인원 검사 (quantity 타입인 경우)
@@ -266,9 +284,9 @@ export default function HybridChoiceSelector({
                         </div>
                         
                         <div className="text-sm text-gray-600 mb-3">
-                          <div>성인: ₩{option.adult_price.toLocaleString()}</div>
-                          <div>아동: ₩{option.child_price.toLocaleString()}</div>
-                          <div>유아: ₩{option.infant_price.toLocaleString()}</div>
+                          <div>성인: ${option.adult_price.toLocaleString()}</div>
+                          <div>아동: ${option.child_price.toLocaleString()}</div>
+                          <div>유아: ${option.infant_price.toLocaleString()}</div>
                         </div>
                         
                         {choice.choice_type === 'quantity' ? (
@@ -309,7 +327,7 @@ export default function HybridChoiceSelector({
                             </div>
                             <div className="text-right">
                               <div className="text-sm font-medium">
-                                ₩{totalPrice.toLocaleString()}
+                                ${totalPrice.toLocaleString()}
                               </div>
                             </div>
                           </div>
@@ -374,7 +392,7 @@ export default function HybridChoiceSelector({
                   </div>
                   <div className="text-right">
                     <div className="text-sm font-medium">
-                      ₩{totalPrice.toLocaleString()}
+                      ${totalPrice.toLocaleString()}
                     </div>
                     <div className="text-xs text-gray-500">
                       {option.is_multiple ? '다중 선택 가능' : '단일 선택'}
@@ -383,9 +401,9 @@ export default function HybridChoiceSelector({
                 </div>
                 
                 <div className="text-sm text-gray-600 mb-3">
-                  <div>성인 추가: ₩{option.adult_price_adjustment.toLocaleString()}</div>
-                  <div>아동 추가: ₩{option.child_price_adjustment.toLocaleString()}</div>
-                  <div>유아 추가: ₩{option.infant_price_adjustment.toLocaleString()}</div>
+                  <div>성인 추가: ${option.adult_price_adjustment.toLocaleString()}</div>
+                  <div>아동 추가: ${option.child_price_adjustment.toLocaleString()}</div>
+                  <div>유아 추가: ${option.infant_price_adjustment.toLocaleString()}</div>
                 </div>
                 
                 <div className="flex items-center justify-between">
@@ -462,7 +480,7 @@ export default function HybridChoiceSelector({
                 {selectedChoices.map((choice, index) => (
                   <div key={index} className="flex justify-between text-sm">
                     <span>{choice.option_name_ko} × {choice.quantity}</span>
-                    <span>₩{choice.total_price.toLocaleString()}</span>
+                    <span>${choice.total_price.toLocaleString()}</span>
                   </div>
                 ))}
               </div>
@@ -476,7 +494,7 @@ export default function HybridChoiceSelector({
                 {selectedOptions.map((option, index) => (
                   <div key={index} className="flex justify-between text-sm">
                     <span>{option.option_name} × {option.quantity}</span>
-                    <span>₩{option.total_price.toLocaleString()}</span>
+                    <span>${option.total_price.toLocaleString()}</span>
                   </div>
                 ))}
               </div>
@@ -485,7 +503,7 @@ export default function HybridChoiceSelector({
           
           <div className="border-t border-gray-200 mt-2 pt-2 flex justify-between font-medium">
             <span>총 가격</span>
-            <span>₩{[
+            <span>${[
               ...selectedChoices.map(c => c.total_price),
               ...selectedOptions.map(o => o.total_price)
             ].reduce((total, price) => total + price, 0).toLocaleString()}</span>

@@ -422,7 +422,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
               />
               <div className="mt-4 text-right">
                 <span className="text-lg font-semibold text-gray-900">
-                  초이스 총액: ₩{formData.choicesTotal.toLocaleString()}
+                  초이스 총액: ${formData.choicesTotal.toLocaleString()}
                 </span>
               </div>
             </>

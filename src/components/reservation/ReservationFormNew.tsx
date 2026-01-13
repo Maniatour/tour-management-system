@@ -394,7 +394,7 @@ export default function ReservationFormNew({
           />
           <div className="mt-4 text-right">
             <span className="text-lg font-semibold">
-              초이스 총액: ₩{choicesTotal.toLocaleString()}
+              초이스 총액: ${choicesTotal.toLocaleString()}
             </span>
           </div>
         </div>
