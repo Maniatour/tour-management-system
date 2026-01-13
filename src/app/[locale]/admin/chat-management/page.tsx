@@ -2223,33 +2223,6 @@ export default function ChatManagementPage() {
               />
             </div>
 
-            {/* 배정 (예약 데이터) */}
-            <div className="bg-green-50 rounded-lg p-3">
-              <h4 className="text-sm font-medium text-gray-900 mb-2">배정</h4>
-              <div className="space-y-1 text-xs">
-                {tourInfo.reservations?.map((reservation) => (
-                  <div 
-                    key={reservation.id} 
-                    className="flex justify-between items-center py-1 cursor-pointer hover:bg-green-100 rounded px-2"
-                    onClick={() => router.push(`/ko/admin/reservations/${reservation.id}`)}
-                  >
-                    <div className="flex-1">
-                      <div className="text-gray-900 font-medium">{reservation.customer?.name || '고객 정보 없음'}</div>
-                      <div className="text-gray-500 text-xs">
-                        {reservation.pickup_hotel_info?.hotel || '호텔 정보 없음'}
-                      </div>
-                    </div>
-                    <span className="text-gray-500 font-medium">
-                      {reservation.total_people}명
-                    </span>
-                  </div>
-                ))}
-                {(!tourInfo.reservations || tourInfo.reservations.length === 0) && (
-                  <div className="text-gray-500 text-center py-2">예약 없음</div>
-                )}
-              </div>
-            </div>
-
             {/* 팀구성 (가이드, 어시스턴트, 차량) */}
             <div className="bg-purple-50 rounded-lg p-3">
               <h4 className="text-sm font-medium text-gray-900 mb-2">팀구성</h4>
