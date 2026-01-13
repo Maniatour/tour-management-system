@@ -60,6 +60,7 @@ interface ReservationCardProps {
   showStatus?: boolean
   showTourInfo?: boolean
   onEdit?: (reservation: Reservation) => void
+  onAssign?: (reservationId: string) => void
   onUnassign?: (reservationId: string) => void
   onReassign?: (reservationId: string, fromTourId: string) => void
   getCustomerName: (customerId: string) => string
@@ -77,6 +78,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   showStatus = true,
   showTourInfo = false,
   onEdit,
+  onAssign,
   onUnassign,
   onReassign,
   getCustomerName,
@@ -1022,39 +1024,40 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         throw new Error(errorData.error || '입금 내역 생성에 실패했습니다.')
       }
 
-      // 2. reservation_pricing의 balance_amount 업데이트
-      // balance_amount가 있었던 경우 0으로 업데이트
-      if (reservationPricing.balance_amount && 
-          (typeof reservationPricing.balance_amount === 'string' 
-            ? parseFloat(reservationPricing.balance_amount) > 0 
-            : reservationPricing.balance_amount > 0)) {
-        // 먼저 reservation_pricing 레코드 찾기
-        const { data: existingPricing, error: pricingFetchError } = await supabase
+      // 2. reservation_pricing의 deposit_amount와 balance_amount 업데이트
+      // 먼저 reservation_pricing 레코드 찾기
+      const { data: existingPricing, error: pricingFetchError } = await supabase
+        .from('reservation_pricing')
+        .select('id, deposit_amount')
+        .eq('reservation_id', reservation.id)
+        .single()
+
+      if (pricingFetchError && pricingFetchError.code !== 'PGRST116') {
+        console.error('reservation_pricing 조회 오류:', pricingFetchError)
+        // 에러가 발생해도 계속 진행 (레코드가 없을 수도 있음)
+      }
+
+      if (existingPricing) {
+        // 현재 deposit_amount 값 가져오기
+        const currentDepositAmount = typeof existingPricing.deposit_amount === 'string'
+          ? parseFloat(existingPricing.deposit_amount) || 0
+          : (existingPricing.deposit_amount || 0)
+        
+        // deposit_amount를 현재 값 + balanceAmount로 업데이트
+        // balance_amount를 0으로 업데이트
+        const { error: updateError } = await supabase
           .from('reservation_pricing')
-          .select('id')
-          .eq('reservation_id', reservation.id)
-          .single()
+          .update({ 
+            deposit_amount: currentDepositAmount + balanceAmount,
+            balance_amount: 0,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingPricing.id)
 
-        if (pricingFetchError && pricingFetchError.code !== 'PGRST116') {
-          console.error('reservation_pricing 조회 오류:', pricingFetchError)
-          // 에러가 발생해도 계속 진행 (레코드가 없을 수도 있음)
-        }
-
-        if (existingPricing) {
-          // balance_amount를 0으로 업데이트
-          const { error: updateError } = await supabase
-            .from('reservation_pricing')
-            .update({ 
-              balance_amount: 0,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', existingPricing.id)
-
-          if (updateError) {
-            console.error('balance_amount 업데이트 오류:', updateError)
-            // 업데이트 실패해도 입금 내역은 생성되었으므로 경고만 표시
-            alert('입금 내역은 생성되었지만 잔액 업데이트에 실패했습니다. 페이지를 새로고침해주세요.')
-          }
+        if (updateError) {
+          console.error('가격 정보 업데이트 오류:', updateError)
+          // 업데이트 실패해도 입금 내역은 생성되었으므로 경고만 표시
+          alert('입금 내역은 생성되었지만 가격 정보 업데이트에 실패했습니다. 페이지를 새로고침해주세요.')
         }
       }
 
@@ -1530,6 +1533,19 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             {/* 액션 버튼들 */}
             {showActions && isStaff && (
               <>
+                {onAssign && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onAssign(reservation.id)
+                    }}
+                    className="p-1 text-green-600 hover:bg-green-50 rounded"
+                    title="이 투어로 배정"
+                  >
+                    <Check size={14} />
+                  </button>
+                )}
+                
                 {onUnassign && (
                   <button
                     onClick={(e) => {

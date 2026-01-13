@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { ReservationSection } from './ReservationSection'
 import { supabase } from '@/lib/supabase'
 import { ChevronDown, ChevronUp } from 'lucide-react'
+import { getStatusColor, getStatusText, getAssignmentStatusColor, getAssignmentStatusText } from '@/utils/tourStatusUtils'
 
 interface Reservation {
   id: string
@@ -26,6 +27,8 @@ interface TourInfo {
   id: string
   tour_guide_id: string | null
   assistant_id: string | null
+  tour_status: string | null
+  assignment_status: string | null
 }
 
 interface TeamMember {
@@ -46,6 +49,7 @@ interface AssignmentManagementProps {
   onAssignAllReservations: () => void
   onUnassignAllReservations: () => void
   onEditReservationClick: (reservation: Reservation) => void
+  onAssignReservation?: (reservationId: string) => void
   onUnassignReservation: (reservationId: string) => void
   onReassignFromOtherTour: (reservationId: string, fromTourId: string) => void
   onNavigateToTour?: (tourId: string) => void
@@ -71,6 +75,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   onAssignAllReservations,
   onUnassignAllReservations,
   onEditReservationClick,
+  onAssignReservation,
   onUnassignReservation,
   onReassignFromOtherTour,
   onNavigateToTour,
@@ -84,6 +89,8 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   onRefresh
 }) => {
   const t = useTranslations('tours.assignmentManagement')
+  const tHeader = useTranslations('tours.tourHeader')
+  const locale = useLocale()
   const isExpanded = expandedSections.has('assignment-management')
   const [tourInfos, setTourInfos] = useState<Record<string, TourInfo>>({})
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
@@ -106,7 +113,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
         // 투어 정보 가져오기
         const { data: toursData, error: toursError } = await supabase
           .from('tours')
-          .select('id, tour_guide_id, assistant_id')
+          .select('id, tour_guide_id, assistant_id, tour_status, assignment_status')
           .in('id', uniqueTourIds)
 
         if (toursError) {
@@ -222,8 +229,10 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   })
 
   // 다른 투어에 배정된 예약을 투어 ID별로 그룹화
+  // assigned_tour_id를 사용하여 그룹화 (각 투어의 reservation_ids에 있는 예약만 표시)
   const groupedOtherToursReservations = otherToursAssignedReservations.reduce((groups, reservation) => {
-    const tourId = reservation.tour_id || 'unknown'
+    // assigned_tour_id가 있으면 사용하고, 없으면 reservation의 tour_id 사용
+    const tourId = (reservation as any).assigned_tour_id || reservation.tour_id || 'unknown'
     if (!groups[tourId]) {
       groups[tourId] = []
     }
@@ -296,10 +305,11 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               title={t('pendingAssignments')}
               reservations={pendingReservations}
               isStaff={isStaff}
-              showActions={false}
+              showActions={true}
               showStatus={true}
               emptyMessage={t('noPendingReservations')}
               onEditReservation={onEditReservationClick}
+              {...(onAssignReservation && { onAssignReservation })}
               {...(onEditPickupTime && { onEditPickupTime })}
               {...(onEditPickupHotel && { onEditPickupHotel })}
               getCustomerName={getCustomerName}
@@ -323,6 +333,8 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
                      const tourInfo = tourInfos[tourId]
                      const guideName = tourInfo ? getTeamMemberName(tourInfo.tour_guide_id) : t('unknown')
                      const assistantName = tourInfo ? getTeamMemberName(tourInfo.assistant_id) : t('unassigned')
+                     const tourStatus = tourInfo?.tour_status || null
+                     const assignmentStatus = tourInfo?.assignment_status || null
                      
                      // 예약들의 상태 뱃지들
                      const statusCounts = reservations.reduce((acc, reservation) => {
@@ -344,57 +356,74 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
                      
                      return (
                        <div key={tourId} className="border rounded-lg p-3 bg-gray-50">
-                         <div className="flex items-center justify-between mb-3">
-                           <div className="flex-1">
-                             <div className="flex items-center space-x-4 mb-2">
-                               <div>
-                                 <h4 className="text-sm font-medium text-gray-900">
-                                   {t('guide')}: {guideName}
-                                 </h4>
-                                 <p className="text-xs text-gray-600">
-                                   {t('assistant')}: {assistantName}
-                                 </p>
-                               </div>
-                               <div className="flex flex-wrap gap-1">
-                                 {Object.entries(statusCounts.status).map(([status, count]) => (
-                                   <span
-                                     key={status}
-                                     className={`text-xs px-2 py-1 rounded-full ${getStatusBadgeColor(status)}`}
-                                   >
-                                     {status} ({count})
-                                   </span>
-                                 ))}
-                                 {Object.entries(statusCounts.assignmentStatus).map(([assignmentStatus, count]) => (
-                                   <span
-                                     key={`assignment-${assignmentStatus}`}
-                                     className={`text-xs px-2 py-1 rounded-full ${getAssignmentStatusBadgeColor(assignmentStatus)}`}
-                                   >
-                                     {assignmentStatus} ({count})
-                                   </span>
-                                 ))}
-                               </div>
+                         {/* 헤더: 모바일 최적화 - 여러 줄로 배치 */}
+                         <div className="mb-3 space-y-2">
+                           {/* 1행: 가이드 및 어시스턴트 정보 + 투어 ID (오른쪽 상단) */}
+                           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                             <div>
+                               <h4 className="text-sm font-medium text-gray-900">
+                                 {t('guide')}: {guideName}
+                               </h4>
+                               <p className="text-xs text-gray-600">
+                                 {t('assistant')}: {assistantName}
+                               </p>
+                             </div>
+                             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                               {/* 투어 상태 및 배정 상태 */}
+                               {tourStatus && (
+                                 <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(tourStatus)}`}>
+                                   {tHeader('tour')}: {getStatusText(tourStatus, locale)}
+                                 </span>
+                               )}
+                               {assignmentStatus && (
+                                 <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getAssignmentStatusColor({ assignment_status: assignmentStatus })}`}>
+                                   {tHeader('assignment')}: {getAssignmentStatusText({ assignment_status: assignmentStatus }, locale)}
+                                 </span>
+                               )}
+                               {tourId !== 'unknown' && (
+                                 <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 font-mono self-start sm:self-auto">
+                                   {tourId.substring(0, 8)}
+                                 </span>
+                               )}
                              </div>
                            </div>
-                           <div className="flex items-center space-x-2">
-                             <span className="text-xs text-gray-500">
-                               {reservations.length} {t('reservations')}
-                             </span>
-                             {totalPeople > 0 && (
-                               <div className="flex items-center space-x-1">
+                           
+                           {/* 2행: 예약 상태 뱃지들 */}
+                           <div className="flex flex-wrap gap-1">
+                             {Object.entries(statusCounts.status).map(([status, count]) => (
+                               <span
+                                 key={status}
+                                 className={`text-xs px-2 py-1 rounded-full ${getStatusBadgeColor(status)}`}
+                               >
+                                 {status} ({count})
+                               </span>
+                             ))}
+                             {Object.entries(statusCounts.assignmentStatus).map(([assignmentStatus, count]) => (
+                               <span
+                                 key={`assignment-${assignmentStatus}`}
+                                 className={`text-xs px-2 py-1 rounded-full ${getAssignmentStatusBadgeColor(assignmentStatus)}`}
+                               >
+                                 {assignmentStatus} ({count})
+                               </span>
+                             ))}
+                           </div>
+                           
+                           {/* 3행: 예약 건수, 인원, 버튼 */}
+                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
+                             <div className="flex flex-wrap items-center gap-2">
+                               <span className="text-xs text-gray-500">
+                                 {reservations.length} {t('reservations')}
+                               </span>
+                               {totalPeople > 0 && (
                                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                    👥 <span>{totalPeople}</span>
                                  </span>
-                                 {tourId !== 'unknown' && (
-                                   <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 font-mono">
-                                     {tourId.substring(0, 8)}
-                                   </span>
-                                 )}
-                               </div>
-                             )}
+                               )}
+                             </div>
                              {onNavigateToTour && tourId !== 'unknown' && (
                                <button
                                  onClick={() => onNavigateToTour(tourId)}
-                                 className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                                 className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors w-full sm:w-auto"
                                  title={t('tourNavigate')}
                                >
                                  {t('tourNavigate')}

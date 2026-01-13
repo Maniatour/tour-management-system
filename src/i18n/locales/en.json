@@ -1391,8 +1391,11 @@
           "other": "Other"
         },
         "buttons": {
-          "register": "Register"
+          "register": "Register",
+          "registering": "Registering..."
         },
+        "expenseRegistered": "Expense registered successfully",
+        "expenseRegistrationError": "Failed to register expense",
         "status": {
           "pending": "Pending",
           "confirmed": "Confirmed",

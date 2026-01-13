@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
-import { X, Mail, CheckCircle, XCircle, Clock, Calendar } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { X, Mail, CheckCircle, XCircle, Clock, Calendar, Eye, EyeOff, Send, AlertCircle, MousePointerClick } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface EmailLog {
@@ -10,10 +10,18 @@ interface EmailLog {
   email: string
   email_type: string
   subject: string
-  status: 'sent' | 'failed'
+  status: 'sent' | 'failed' | 'delivered' | 'bounced'
   sent_at: string
   error_message?: string | null
   sent_by?: string | null
+  resend_email_id?: string | null
+  opened_at?: string | null
+  opened_count?: number | null
+  delivered_at?: string | null
+  bounced_at?: string | null
+  bounce_reason?: string | null
+  clicked_at?: string | null
+  clicked_count?: number | null
 }
 
 interface TeamMember {
@@ -165,11 +173,16 @@ export default function EmailLogsModal({ isOpen, onClose, reservationId }: Email
                       </div>
                     </div>
                     <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-                      log.status === 'sent'
+                      log.status === 'delivered' || log.status === 'sent'
                         ? 'bg-green-100 text-green-800'
+                        : log.status === 'bounced'
+                        ? 'bg-orange-100 text-orange-800'
                         : 'bg-red-100 text-red-800'
                     }`}>
-                      {log.status === 'sent' ? '발송 완료' : '발송 실패'}
+                      {log.status === 'delivered' ? '전달 완료' : 
+                       log.status === 'sent' ? '발송 완료' : 
+                       log.status === 'bounced' ? '반송됨' : 
+                       '발송 실패'}
                     </div>
                   </div>
 
@@ -193,9 +206,70 @@ export default function EmailLogsModal({ isOpen, onClose, reservationId }: Email
                         </span>
                       </div>
                     )}
+                    {/* 발송 상태 정보 */}
+                    {log.delivered_at && (
+                      <div className="flex items-start space-x-2 text-sm text-green-700">
+                        <Send className="w-4 h-4 text-gray-400 mt-0.5" />
+                        <span>
+                          <strong>전달됨:</strong> {formatDate(log.delivered_at)}
+                        </span>
+                      </div>
+                    )}
+                    {log.bounced_at && (
+                      <div className="mt-2 p-2 bg-orange-100 rounded text-sm text-orange-700">
+                        <div className="flex items-center gap-2 mb-1">
+                          <AlertCircle className="w-4 h-4" />
+                          <strong>반송됨:</strong> {formatDate(log.bounced_at)}
+                        </div>
+                        {log.bounce_reason && (
+                          <div className="mt-1 text-xs">
+                            <strong>사유:</strong> {log.bounce_reason}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {log.error_message && (
                       <div className="mt-2 p-2 bg-red-100 rounded text-sm text-red-700">
                         <strong>오류:</strong> {log.error_message}
+                      </div>
+                    )}
+                    
+                    {/* 읽음 및 클릭 추적 정보 */}
+                    {(log.status === 'sent' || log.status === 'delivered') && (
+                      <div className="mt-2 space-y-2">
+                        <div className="flex items-center gap-4 text-sm">
+                          {log.opened_at ? (
+                            <div className="flex items-center gap-2 text-green-700">
+                              <Eye className="w-4 h-4" />
+                              <span>
+                                <strong>읽음:</strong> {formatDate(log.opened_at)}
+                                {log.opened_count && log.opened_count > 1 && (
+                                  <span className="ml-1 text-gray-600">
+                                    ({log.opened_count}회)
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 text-gray-500">
+                              <EyeOff className="w-4 h-4" />
+                              <span>읽지 않음</span>
+                            </div>
+                          )}
+                        </div>
+                        {log.clicked_at && (
+                          <div className="flex items-center gap-2 text-sm text-blue-700">
+                            <MousePointerClick className="w-4 h-4" />
+                            <span>
+                              <strong>링크 클릭:</strong> {formatDate(log.clicked_at)}
+                              {log.clicked_count && log.clicked_count > 1 && (
+                                <span className="ml-1 text-gray-600">
+                                  ({log.clicked_count}회)
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

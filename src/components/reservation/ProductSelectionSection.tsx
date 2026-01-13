@@ -2,6 +2,7 @@
 
 import { useEffect, memo, useCallback } from 'react'
 import ProductSelector from '@/components/common/ProductSelector';
+import SimpleChoiceSelector from '@/components/reservation/SimpleChoiceSelector';
 
 interface Product {
   id: string
@@ -23,18 +24,40 @@ interface ProductSelectionSectionProps {
     selectedOptionPrices: Record<string, number>
     tourDate: string
     channelId: string
+    adults: number
+    child: number
+    infant: number
     // Choice 관련 필드 추가
     productChoices: Array<{
       id: string
-      name: string
-      name_ko?: string
-      description?: string
-      adult_price: number
-      child_price: number
-      infant_price: number
-      is_default?: boolean
+      choice_group: string
+      choice_group_ko: string
+      choice_type: 'single' | 'multiple' | 'quantity'
+      is_required: boolean
+      min_selections: number
+      max_selections: number
+      sort_order: number
+      options: Array<{
+        id: string
+        option_key: string
+        option_name: string
+        option_name_ko: string
+        adult_price: number
+        child_price: number
+        infant_price: number
+        capacity: number
+        is_default: boolean
+        is_active: boolean
+        sort_order: number
+      }>
     }>
-    selectedChoices: Record<string, { selected: string; timestamp: string }>
+    selectedChoices: Array<{
+      choice_id: string
+      option_id: string
+      quantity: number
+      total_price: number
+    }>
+    choicesTotal: number
     choiceTotal: number
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -57,8 +80,8 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
   // 상품 선택 핸들러
   const handleProductSelect = useCallback((product: any) => {
     if (product) {
-      setFormData({
-        ...formData,
+      setFormData((prev: any) => ({
+        ...prev,
         productId: product.id,
         selectedProductCategory: product.category || '',
         selectedProductSubCategory: product.sub_category || '',
@@ -67,12 +90,13 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
         requiredOptions: {},
         selectedOptionPrices: {},
         productChoices: [],
-        selectedChoices: {},
+        selectedChoices: [],
+        choicesTotal: 0,
         choiceTotal: 0
-      });
+      }));
     } else {
-      setFormData({
-        ...formData,
+      setFormData((prev: any) => ({
+        ...prev,
         productId: '',
         selectedProductCategory: '',
         selectedProductSubCategory: '',
@@ -81,30 +105,43 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
         requiredOptions: {},
         selectedOptionPrices: {},
         productChoices: [],
-        selectedChoices: {},
+        selectedChoices: [],
+        choicesTotal: 0,
         choiceTotal: 0
-      });
+      }));
     }
-  }, [formData, setFormData]);
+  }, [setFormData]);
 
-  // Choice 선택 핸들러
-  const handleChoiceSelect = useCallback((choice: any, choiceGroupId?: string) => {
-    if (choice && choiceGroupId) {
-      const newSelectedChoices = {
-        ...formData.selectedChoices,
-        [choiceGroupId]: {
-          selected: choice.id,
-          timestamp: new Date().toISOString()
-        }
-      };
-      
-      setFormData({
-        ...formData,
-        selectedChoices: newSelectedChoices,
-        choiceTotal: choice.adult_price + choice.child_price + choice.infant_price
+  // 초이스 선택 변경 핸들러
+  const handleSelectionChange = useCallback((selectedChoices: Array<{
+    choice_id: string
+    option_id: string
+    quantity: number
+    total_price: number
+  }>) => {
+    console.log('ProductSelectionSection: handleSelectionChange 호출됨', {
+      selectedChoicesCount: selectedChoices.length,
+      selectedChoices: selectedChoices.map(c => ({ choice_id: c.choice_id, option_id: c.option_id, quantity: c.quantity }))
+    });
+    
+    const choicesTotal = selectedChoices.reduce((sum, choice) => sum + (choice.total_price || 0), 0);
+    
+    setFormData((prev: any) => {
+      console.log('ProductSelectionSection: setFormData 실행', {
+        prevSelectedChoicesCount: Array.isArray(prev.selectedChoices) ? prev.selectedChoices.length : 0,
+        prevSelectedChoicesType: Array.isArray(prev.selectedChoices) ? 'array' : typeof prev.selectedChoices,
+        newSelectedChoicesCount: selectedChoices.length,
+        choicesTotal
       });
-    }
-  }, [formData, setFormData]);
+      
+      return {
+        ...prev,
+        selectedChoices: selectedChoices,
+        choicesTotal: choicesTotal,
+        choiceTotal: choicesTotal
+      };
+    });
+  }, [setFormData]);
   
   // 상품이 변경될 때 choice 데이터 로드
   useEffect(() => {
@@ -130,65 +167,18 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
         />
       </div>
       
-      {/* 선택된 상품 정보 표시 - ProductSelector에서 이미 표시하므로 제거 */}
-      
-      {/* 선택된 상품의 초이스 표시 */}
+      {/* 초이스 선택 */}
       {formData.productId && formData.productChoices && formData.productChoices.length > 0 && (
         <div className="mt-4">
-          <div className="space-y-4">
-            <div className="space-y-3">
-              {formData.productChoices.map((choice) => {
-                // choiceGroupId를 동적으로 찾기 (reservation.choices.required에서)
-                const choiceGroupId = Object.keys(formData.selectedChoices || {}).find(key => 
-                  formData.selectedChoices[key]?.selected === choice.id
-                );
-                
-                const isSelected = choiceGroupId ? formData.selectedChoices[choiceGroupId]?.selected === choice.id : false;
-                
-                return (
-                  <div
-                    key={choice.id}
-                    className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                      isSelected
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                    }`}
-                    onClick={() => {
-                      if (choiceGroupId) {
-                        handleChoiceSelect(choice, choiceGroupId);
-                      }
-                    }}
-                  >
-                    <div className="flex items-center space-x-3 mb-2">
-                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                        isSelected
-                          ? 'border-blue-500 bg-blue-500'
-                          : 'border-gray-300'
-                      }`}>
-                        {isSelected && (
-                          <div className="w-2 h-2 bg-white rounded-full"></div>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <div className="text-sm font-medium text-gray-900">
-                          {choice.name_ko || choice.name}
-                        </div>
-                        {choice.description && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            {choice.description}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="text-xs text-gray-500 mt-2">
-                      성인: ${choice.adult_price} | 아동: ${choice.child_price} | 유아: ${choice.infant_price}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
+          <h4 className="text-md font-semibold text-gray-900 mb-3">초이스 선택</h4>
+          <SimpleChoiceSelector
+            choices={formData.productChoices}
+            adults={formData.adults || 0}
+            children={formData.child || 0}
+            infants={formData.infant || 0}
+            onSelectionChange={handleSelectionChange}
+            initialSelections={formData.selectedChoices || []}
+          />
         </div>
       )}
       

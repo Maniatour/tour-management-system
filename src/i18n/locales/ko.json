@@ -1435,8 +1435,11 @@
           "other": "기타"
         },
         "buttons": {
-          "register": "등록"
+          "register": "등록",
+          "registering": "등록 중..."
         },
+        "expenseRegistered": "비용이 등록되었습니다",
+        "expenseRegistrationError": "비용 등록에 실패했습니다",
         "status": {
           "pending": "대기중",
           "confirmed": "확정",

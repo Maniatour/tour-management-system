@@ -27,6 +27,7 @@ interface ReservationSectionProps {
   showTourInfo?: boolean
   emptyMessage?: string
   onEditReservation?: (reservation: Reservation) => void
+  onAssignReservation?: (reservationId: string) => void
   onUnassignReservation?: (reservationId: string) => void
   onReassignFromOtherTour?: (reservationId: string, fromTourId: string) => void
   onEditPickupTime?: (reservation: Reservation) => void
@@ -48,6 +49,7 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
   showTourInfo = false,
   emptyMessage = '예약이 없습니다.',
   onEditReservation,
+  onAssignReservation,
   onUnassignReservation,
   onReassignFromOtherTour,
   onEditPickupTime,
@@ -82,16 +84,19 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
 
   return (
     <div className="mb-4">
-      <div className="flex items-center gap-2 mb-2">
-        <h3 className="text-sm font-medium text-gray-700">
-          {title} ({uniqueReservations.length})
-        </h3>
-        {totalPeople > 0 && (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-            👥 <span>{totalPeople}</span>
-          </span>
-        )}
-      </div>
+      {/* title이 있을 때만 헤더 표시 (중복 방지) */}
+      {title && (
+        <div className="flex items-center gap-2 mb-2">
+          <h3 className="text-sm font-medium text-gray-700">
+            {title} ({uniqueReservations.length})
+          </h3>
+          {totalPeople > 0 && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+              👥 <span>{totalPeople}</span>
+            </span>
+          )}
+        </div>
+      )}
       <div className="space-y-2">
         {uniqueReservations.length === 0 ? (
           <div className="text-center py-4 text-gray-500">
@@ -107,6 +112,7 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
               showStatus={showStatus}
               showTourInfo={showTourInfo}
               onEdit={onEditReservation}
+              onAssign={onAssignReservation}
               onUnassign={onUnassignReservation}
               onReassign={onReassignFromOtherTour}
               onEditPickupTime={onEditPickupTime}

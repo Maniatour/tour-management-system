@@ -869,6 +869,25 @@ export default function TourDetailPage() {
   }, [tourData.tour?.product_id, tourData.teamType, tourData.tour?.team_type, loadGuideCosts, isGuideFeeFromTour, isAssistantFeeFromTour])
 
 
+  const handleAssignReservation = async (reservationId: string) => {
+    if (!tourData.tour) return
+    const updatedReservationIds = await tourHandlers.handleAssignReservation({
+      ...tourData.tour
+    }, reservationId)
+    if (updatedReservationIds) {
+      const reservation = tourData.pendingReservations.find((r: any) => r.id === reservationId)
+      if (reservation) {
+        tourData.setAssignedReservations([...tourData.assignedReservations, reservation])
+        tourData.setPendingReservations(tourData.pendingReservations.filter((r: any) => r.id !== reservationId))
+        tourData.setTour(prev => prev ? { ...prev, reservation_ids: updatedReservationIds } : null)
+        // 예약 목록 새로고침
+        if (tourData.refreshReservations) {
+          await tourData.refreshReservations()
+        }
+      }
+    }
+  }
+
   const handleUnassignReservation = async (reservationId: string) => {
     if (!tourData.tour) return
     const updatedReservationIds = await tourHandlers.handleUnassignReservation({
@@ -1523,6 +1542,7 @@ export default function TourDetailPage() {
               onAssignAllReservations={handleAssignAllReservations}
               onUnassignAllReservations={handleUnassignAllReservations}
               onEditReservationClick={handleEditReservationClick}
+              onAssignReservation={handleAssignReservation}
               onUnassignReservation={handleUnassignReservation}
               onReassignFromOtherTour={() => {}}
               onNavigateToTour={(tourId: string) => {

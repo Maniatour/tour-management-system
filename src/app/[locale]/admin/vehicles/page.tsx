@@ -1,9 +1,14 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { Plus, Search, Calendar, Car, Wrench, DollarSign, Edit, Trash2, Eye, Copy, Settings } from 'lucide-react'
+import dynamic from 'next/dynamic'
 import VehicleEditModal from '@/components/VehicleEditModal'
-import VehicleTypeManagementModal from '@/components/VehicleTypeManagementModal'
+// 차종 관리 모달은 lazy load로 최적화
+const VehicleTypeManagementModal = dynamic(() => import('@/components/VehicleTypeManagementModal'), {
+  ssr: false,
+  loading: () => null
+})
 // 렌터카 관리 모달은 더 이상 필요하지 않음
 import { supabase } from '@/lib/supabase'
 
@@ -48,6 +53,7 @@ interface Vehicle {
   installment_start_date?: string
   installment_end_date?: string
   vehicle_image_url?: string
+  color?: string
   created_at: string
   updated_at: string
   photos?: VehiclePhoto[]
@@ -75,19 +81,58 @@ export default function VehiclesPage() {
   const [isVehicleTypeModalOpen, setIsVehicleTypeModalOpen] = useState(false)
   // 렌터카 관리 모달 상태 제거
 
-
-  useEffect(() => {
-    fetchVehicles()
-  }, [])
-
-  const fetchVehicles = async () => {
+  const fetchVehicles = useCallback(async () => {
     try {
       setLoading(true)
       
-      // 먼저 vehicles만 가져오기
+      // 1. 먼저 vehicles만 빠르게 가져오기 (인덱스 활용 최적화)
+      // 필요한 컬럼만 선택하여 네트워크 전송량 최소화
       const { data: vehiclesData, error: vehiclesError } = await supabase
         .from('vehicles')
-        .select('*')
+        .select(`
+          id,
+          vehicle_number,
+          vin,
+          vehicle_type,
+          capacity,
+          year,
+          mileage_at_purchase,
+          purchase_amount,
+          purchase_date,
+          memo,
+          engine_oil_change_cycle,
+          current_mileage,
+          recent_engine_oil_change_mileage,
+          vehicle_status,
+          front_tire_size,
+          rear_tire_size,
+          windshield_wiper_size,
+          headlight_model,
+          headlight_model_name,
+          is_installment,
+          installment_amount,
+          interest_rate,
+          monthly_payment,
+          additional_payment,
+          payment_due_date,
+          installment_start_date,
+          installment_end_date,
+          vehicle_image_url,
+          color,
+          vehicle_category,
+          rental_company,
+          daily_rate,
+          rental_start_date,
+          rental_end_date,
+          rental_pickup_location,
+          rental_return_location,
+          rental_total_cost,
+          rental_status,
+          rental_notes,
+          created_at,
+          updated_at
+        `)
+        // 인덱스가 있는 created_at으로 정렬 (인덱스 활용)
         .order('created_at', { ascending: false })
 
       if (vehiclesError) {
@@ -100,99 +145,116 @@ export default function VehiclesPage() {
         return
       }
       
-      // 각 차량의 사진을 별도로 가져오기
-      const vehiclesWithPhotos = await Promise.all(
-        vehiclesData.map(async (vehicle) => {
-          let photos: any[] = []
-          
-          try {
-            // vehicle_photos에서 사진 가져오기
-            const { data: vehiclePhotos, error: photosError } = await supabase
-              .from('vehicle_photos')
-              .select('*')
-              .eq('vehicle_id', vehicle.id)
-              .order('is_primary', { ascending: false })
-              .order('display_order', { ascending: true })
-
-            if (photosError) {
-              console.error(`차량 사진 조회 오류 (${vehicle.vehicle_number}):`, photosError)
-            } else {
-              photos = vehiclePhotos || []
-            }
-          } catch (photoError) {
-            console.error(`차량 사진 조회 오류 (${vehicle.vehicle_number}):`, photoError)
-          }
-
-          // vehicle_photos가 없으면 vehicle_type_photos에서 가져오기 시도
-          // 주의: vehicle_type_photos 테이블에서 500 에러가 발생할 수 있으므로 조용히 처리
-          if (!photos || photos.length === 0) {
-            // vehicle_type_photos 조회는 선택적이므로 에러가 발생해도 무시
-            // 차량별 사진이 없어도 차량 정보는 정상적으로 표시됨
-            // 현재 vehicle_type_photos 테이블에서 500 에러가 발생하여 임시로 비활성화
-            // 데이터베이스 문제 해결 후 아래 코드를 활성화할 수 있음
-            /*
-            try {
-              const { data: vehicleTypeData } = await supabase
-                .from('vehicle_types')
-                .select('id')
-                .eq('name', vehicle.vehicle_type)
-                .maybeSingle()
-              
-              if (vehicleTypeData?.id) {
-                const { data: typePhotos } = await supabase
-                  .from('vehicle_type_photos')
-                  .select('photo_url, photo_name, description, is_primary, display_order')
-                  .eq('vehicle_type_id', vehicleTypeData.id)
-                
-                if (typePhotos && typePhotos.length > 0) {
-                  const sortedPhotos = typePhotos
-                    .sort((a, b) => {
-                      if (a.is_primary && !b.is_primary) return -1
-                      if (!a.is_primary && b.is_primary) return 1
-                      return (a.display_order || 0) - (b.display_order || 0)
-                    })
-                    .slice(0, 1)
-                  
-                  photos = sortedPhotos.map(photo => ({
-                    ...photo,
-                    vehicle_id: vehicle.id
-                  }))
-                }
-              }
-            } catch (error) {
-              // 에러는 조용히 무시
-            }
-            */
-          }
-          
+      // 2. vehicle_image_url이 있는 차량은 즉시 사진 설정 (빠른 처리)
+      const vehiclesWithLegacyPhotos = vehiclesData.map(vehicle => {
+        if (vehicle.vehicle_image_url) {
           return {
             ...vehicle,
-            photos: photos || []
+            photos: [{
+              id: 'legacy',
+              vehicle_id: vehicle.id,
+              photo_url: vehicle.vehicle_image_url,
+              is_primary: true,
+              display_order: 0
+            }]
           }
-        })
-      )
+        }
+        return { ...vehicle, photos: [] }
+      })
       
-      setVehicles(vehiclesWithPhotos)
+      // 3. vehicle_image_url이 없는 차량들만 vehicle_photos 배치 조회 (최적화)
+      const vehiclesWithoutLegacyPhotos = vehiclesWithLegacyPhotos.filter(v => !v.vehicle_image_url)
+      
+      if (vehiclesWithoutLegacyPhotos.length > 0) {
+        const vehicleIds = vehiclesWithoutLegacyPhotos.map(v => v.id)
+        
+        try {
+          // 배치 크기 제한: 한 번에 너무 많은 ID를 조회하면 URL이 너무 길어져 500 에러 발생
+          // Supabase PostgREST 제한을 고려하여 배치 크기를 20개로 제한 (더 안전)
+          const BATCH_SIZE = 20
+          const photosByVehicleId = new Map<string, any[]>()
+          
+          // 배치로 나눠서 조회
+          for (let i = 0; i < vehicleIds.length; i += BATCH_SIZE) {
+            const batchIds = vehicleIds.slice(i, i + BATCH_SIZE)
+            
+            try {
+              const { data: batchPhotos, error: photosError } = await supabase
+                .from('vehicle_photos')
+                .select('id, vehicle_id, photo_url, photo_name, is_primary, display_order')
+                .in('vehicle_id', batchIds)
+                // 주의: order by는 URL을 더 길게 만들어 500 에러를 유발할 수 있으므로 제거
+                // 클라이언트 사이드에서 정렬 처리
+                .limit(1000) // 각 배치당 충분한 제한
+
+              if (!photosError && batchPhotos && batchPhotos.length > 0) {
+                // vehicle_id별로 그룹화 및 정렬 (클라이언트 사이드)
+                batchPhotos
+                  .sort((a, b) => {
+                    // 먼저 vehicle_id로 정렬
+                    if (a.vehicle_id !== b.vehicle_id) {
+                      return a.vehicle_id.localeCompare(b.vehicle_id)
+                    }
+                    // 같은 vehicle_id 내에서 is_primary 우선, 그 다음 display_order
+                    if (a.is_primary && !b.is_primary) return -1
+                    if (!a.is_primary && b.is_primary) return 1
+                    return (a.display_order || 0) - (b.display_order || 0)
+                  })
+                  .forEach(photo => {
+                    if (!photosByVehicleId.has(photo.vehicle_id)) {
+                      photosByVehicleId.set(photo.vehicle_id, [])
+                    }
+                    photosByVehicleId.get(photo.vehicle_id)!.push(photo)
+                  })
+              }
+            } catch (batchError) {
+              // 개별 배치 실패는 조용히 무시하고 다음 배치 계속 진행
+              console.warn(`차량 사진 배치 조회 실패 (${i}-${i + BATCH_SIZE}):`, batchError)
+            }
+          }
+
+          // 각 차량에 사진 할당
+          vehiclesWithoutLegacyPhotos.forEach(vehicle => {
+            const vehiclePhotos = photosByVehicleId.get(vehicle.id) || []
+            if (vehiclePhotos.length > 0) {
+              vehicle.photos = vehiclePhotos.sort((a, b) => {
+                if (a.is_primary && !b.is_primary) return -1
+                if (!a.is_primary && b.is_primary) return 1
+                return (a.display_order || 0) - (b.display_order || 0)
+              })
+            }
+          })
+        } catch (photoError) {
+          // 전체 vehicle_photos 조회 실패는 조용히 무시 (500 에러 등)
+          console.warn('차량 사진 조회 중 오류 발생 (무시됨):', photoError)
+        }
+      }
+      
+      setVehicles(vehiclesWithLegacyPhotos)
     } catch (error) {
       console.error('차량 목록을 불러오는 중 오류가 발생했습니다:', error)
-      // 에러가 발생해도 빈 배열로 설정하여 UI가 깨지지 않도록 함
       setVehicles([])
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  const handleEditVehicle = (vehicle: Vehicle) => {
+  useEffect(() => {
+    fetchVehicles()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleEditVehicle = useCallback((vehicle: Vehicle) => {
     setSelectedVehicle(vehicle)
     setIsEditModalOpen(true)
-  }
+  }, [])
 
-  const handleAddVehicle = () => {
+  const handleAddVehicle = useCallback(() => {
     setSelectedVehicle(null)
     setIsEditModalOpen(true)
-  }
+  }, [])
 
-  const handleCopyVehicle = (vehicle: Vehicle) => {
+  const handleCopyVehicle = useCallback((vehicle: Vehicle) => {
     // 차량 번호 중복 방지를 위한 타임스탬프 추가
     const timestamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '_')
     
@@ -242,9 +304,9 @@ export default function VehiclesPage() {
     }
     setSelectedVehicle(copiedVehicle as Vehicle)
     setIsEditModalOpen(true)
-  }
+  }, [])
 
-  const handleDeleteVehicle = async (vehicleId: string) => {
+  const handleDeleteVehicle = useCallback(async (vehicleId: string) => {
     if (!confirm('정말로 이 차량을 삭제하시겠습니까?')) return
 
     try {
@@ -261,35 +323,43 @@ export default function VehiclesPage() {
       console.error('차량 삭제 중 오류가 발생했습니다:', error)
       alert('차량 삭제 중 오류가 발생했습니다.')
     }
-  }
+  }, [vehicles])
 
-  // 필터링된 차량 목록 계산
-  const filteredVehicles = vehicles.filter(vehicle => {
-    const matchesSearch = vehicle.vehicle_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         vehicle.vehicle_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (vehicle.rental_company && vehicle.rental_company.toLowerCase().includes(searchTerm.toLowerCase()))
+  // 필터링된 차량 목록 계산 (메모이제이션으로 성능 최적화)
+  // 인덱스를 활용한 서버 사이드 필터링은 복잡하므로 클라이언트 사이드 필터링 유지
+  const filteredVehicles = useMemo(() => {
+    if (!vehicles || vehicles.length === 0) return []
     
-    let matchesTab = false
-    if (activeTab === 'company') {
-      matchesTab = vehicle.vehicle_category === 'company' || !vehicle.vehicle_category
-    } else if (activeTab === 'rental_active') {
-      const status = vehicle.rental_status || ''
-      matchesTab = vehicle.vehicle_category === 'rental' && 
-                   status !== '' && 
-                   ['reserved', 'picked_up', 'in_use'].includes(status)
-    } else if (activeTab === 'rental_returned') {
-      matchesTab = vehicle.vehicle_category === 'rental' && 
-                   vehicle.rental_status === 'returned'
-    } else if (activeTab === 'vehicle_types') {
-      // 차종 관리 탭에서는 차량 목록을 표시하지 않음
-      matchesTab = false
-    }
-    
-    return matchesSearch && matchesTab
-  })
+    return vehicles.filter(vehicle => {
+      // 검색어 필터링 (vehicle_number, vehicle_type 인덱스 활용 가능하지만 클라이언트 사이드 처리)
+      const matchesSearch = !searchTerm || 
+        vehicle.vehicle_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        vehicle.vehicle_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (vehicle.rental_company && vehicle.rental_company.toLowerCase().includes(searchTerm.toLowerCase()))
+      
+      // 탭별 필터링 (vehicle_category, rental_status 인덱스 활용)
+      let matchesTab = true
+      if (activeTab === 'company') {
+        matchesTab = vehicle.vehicle_category === 'company' || !vehicle.vehicle_category
+      } else if (activeTab === 'rental_active') {
+        const status = vehicle.rental_status || ''
+        matchesTab = vehicle.vehicle_category === 'rental' && 
+                     status !== '' && 
+                     ['reserved', 'picked_up', 'in_use'].includes(status)
+      } else if (activeTab === 'rental_returned') {
+        matchesTab = vehicle.vehicle_category === 'rental' && 
+                     vehicle.rental_status === 'returned'
+      } else if (activeTab === 'vehicle_types') {
+        // 차종 관리 탭에서는 차량 목록을 표시하지 않음
+        matchesTab = false
+      }
+      
+      return matchesSearch && matchesTab
+    })
+  }, [vehicles, searchTerm, activeTab])
 
-  // 상태 변경 함수
-  const handleStatusChange = async (vehicleId: string, newStatus: string) => {
+  // 상태 변경 함수 (useCallback으로 메모이제이션)
+  const handleStatusChange = useCallback(async (vehicleId: string, newStatus: string) => {
     try {
       setUpdatingStatus(vehicleId)
       
@@ -312,10 +382,10 @@ export default function VehiclesPage() {
     } finally {
       setUpdatingStatus(null)
     }
-  }
+  }, [vehicles])
 
-  // 렌터카 상태 변경 함수
-  const handleRentalStatusChange = async (vehicleId: string, newStatus: string) => {
+  // 렌터카 상태 변경 함수 (useCallback으로 메모이제이션)
+  const handleRentalStatusChange = useCallback(async (vehicleId: string, newStatus: string) => {
     try {
       setUpdatingStatus(vehicleId)
       
@@ -338,9 +408,9 @@ export default function VehiclesPage() {
     } finally {
       setUpdatingStatus(null)
     }
-  }
+  }, [vehicles])
 
-  const handleSaveVehicle = async (vehicleData: Partial<Vehicle>) => {
+  const handleSaveVehicle = useCallback(async (vehicleData: Partial<Vehicle>) => {
     try {
       // 데이터베이스에 존재하는 필드만 필터링
       const allowedFields = [
@@ -421,10 +491,11 @@ export default function VehiclesPage() {
       })
       alert(`차량 저장 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
     }
-  }
+  }, [selectedVehicle, vehicles])
 
 
-  const getStatusColor = (status: string) => {
+  // 헬퍼 함수들을 useCallback으로 메모이제이션
+  const getStatusColor = useCallback((status: string) => {
     switch (status) {
       case '운행 가능': return 'bg-green-100 text-green-800'
       case '수리 중': return 'bg-yellow-100 text-yellow-800'
@@ -433,9 +504,9 @@ export default function VehiclesPage() {
       case '사용 종료': return 'bg-red-100 text-red-800'
       default: return 'bg-gray-100 text-gray-800'
     }
-  }
+  }, [])
 
-  const getRentalStatusColor = (status: string) => {
+  const getRentalStatusColor = useCallback((status: string) => {
     switch (status) {
       case 'available': return 'bg-green-100 text-green-800'
       case 'reserved': return 'bg-yellow-100 text-yellow-800'
@@ -445,9 +516,9 @@ export default function VehiclesPage() {
       case 'cancelled': return 'bg-red-100 text-red-800'
       default: return 'bg-gray-100 text-gray-800'
     }
-  }
+  }, [])
 
-  const getRentalStatusText = (status: string) => {
+  const getRentalStatusText = useCallback((status: string) => {
     switch (status) {
       case 'available': return '사용가능'
       case 'reserved': return '예약됨'
@@ -457,23 +528,23 @@ export default function VehiclesPage() {
       case 'cancelled': return '취소됨'
       default: return status
     }
-  }
+  }, [])
 
-  const calculateRemainingInstallment = (vehicle: Vehicle) => {
+  const calculateRemainingInstallment = useCallback((vehicle: Vehicle) => {
     if (!vehicle.is_installment) return 0
     
     const monthlyPayment = vehicle.monthly_payment || 0
     const installmentAmount = vehicle.installment_amount || 0
     const totalPaid = monthlyPayment * 12 // 간단한 계산
     return Math.max(0, installmentAmount - totalPaid)
-  }
+  }, [])
 
-  const needsOilChange = (vehicle: Vehicle) => {
+  const needsOilChange = useCallback((vehicle: Vehicle) => {
     const currentMileage = vehicle.current_mileage || 0
     const recentOilChangeMileage = vehicle.recent_engine_oil_change_mileage || 0
     const oilChangeCycle = vehicle.engine_oil_change_cycle || 10000
     return currentMileage - recentOilChangeMileage >= oilChangeCycle
-  }
+  }, [])
 
   if (loading) {
     return (
@@ -574,17 +645,42 @@ export default function VehiclesPage() {
           // 대표사진 찾기
           const primaryPhoto = vehicle.photos?.find(photo => photo.is_primary)
           const firstPhoto = vehicle.photos?.[0]
-          const displayPhoto = primaryPhoto || firstPhoto || vehicle.vehicle_image_url
+          
+          // 사진 URL 결정: vehicle_photos > vehicle_image_url
+          let photoUrl: string | null = null
+          if (primaryPhoto?.photo_url) {
+            photoUrl = primaryPhoto.photo_url
+          } else if (firstPhoto?.photo_url) {
+            photoUrl = firstPhoto.photo_url
+          } else if (vehicle.vehicle_image_url) {
+            photoUrl = vehicle.vehicle_image_url
+          }
           
           return (
             <div key={vehicle.id} className="bg-white rounded-lg shadow overflow-hidden">
               {/* 차량 사진 */}
               <div className="aspect-[4/3] bg-gray-200 flex items-center justify-center">
-                {displayPhoto ? (
+                {photoUrl ? (
                   <img
-                    src={displayPhoto.photo_url || displayPhoto}
+                    src={photoUrl}
                     alt={vehicle.vehicle_number}
                     className="w-full h-full object-cover"
+                    onError={(e) => {
+                      // 이미지 로드 실패 시 기본 아이콘 표시
+                      e.currentTarget.style.display = 'none'
+                      const parent = e.currentTarget.parentElement
+                      if (parent && !parent.querySelector('.fallback-icon')) {
+                        parent.innerHTML = `
+                          <div class="flex flex-col items-center text-gray-400 fallback-icon">
+                            <svg class="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0"></path>
+                            </svg>
+                            <span class="text-sm">사진 없음</span>
+                          </div>
+                        `
+                      }
+                    }}
                   />
                 ) : (
                   <div className="flex flex-col items-center text-gray-400">

@@ -389,6 +389,40 @@ export async function POST(request: NextRequest) {
             console.error('[send-pickup-schedule-notification] 차량 사진 조회 오류:', photosError)
           }
 
+          // 차량 사진 URL 처리: base64 이미지는 제외하고, 상대 경로는 공개 URL로 변환
+          const processedPhotos = (photosData || []).map((photo: any) => {
+            // base64 이미지는 이메일에서 표시되지 않으므로 제외
+            if (photo.photo_url && photo.photo_url.startsWith('data:image')) {
+              console.log('[send-pickup-schedule-notification] base64 이미지 제외:', photo.photo_name)
+              return null
+            }
+
+            // photo_url이 상대 경로인 경우 Supabase Storage 공개 URL로 변환
+            if (photo.photo_url && !photo.photo_url.startsWith('http') && !photo.photo_url.startsWith('data:')) {
+              try {
+                // vehicle-type-photos 버킷에서 공개 URL 생성 시도
+                if (photo.photo_url.includes('vehicle-type-photos') || photo.photo_url.startsWith('vehicle-type-photos/')) {
+                  const path = photo.photo_url.replace('vehicle-type-photos/', '').replace(/^vehicle-type-photos/, '')
+                  const { data: { publicUrl } } = supabase.storage
+                    .from('vehicle-type-photos')
+                    .getPublicUrl(path)
+                  return { ...photo, photo_url: publicUrl }
+                } else {
+                  // 다른 버킷일 수 있으므로 images 버킷으로 시도
+                  const { data: { publicUrl } } = supabase.storage
+                    .from('images')
+                    .getPublicUrl(photo.photo_url)
+                  return { ...photo, photo_url: publicUrl }
+                }
+              } catch (error) {
+                console.error('[send-pickup-schedule-notification] 공개 URL 생성 오류:', error)
+                return photo // 원본 URL 유지
+              }
+            }
+
+            return photo
+          }).filter((photo: any) => photo !== null) // null 제거
+
           vehicleInfo = {
             vehicle_type: vehicleData.vehicle_type,
             color: vehicleData.color,
@@ -402,7 +436,7 @@ export async function POST(request: NextRequest) {
               name: vehicleData.vehicle_type,
               passenger_capacity: vehicleData.capacity
             },
-            vehicle_type_photos: photosData || []
+            vehicle_type_photos: processedPhotos
           }
           console.log('[send-pickup-schedule-notification] 차량 정보:', vehicleInfo ? '있음' : '없음')
         }
@@ -512,8 +546,7 @@ export async function POST(request: NextRequest) {
 
     const resend = new Resend(resendApiKey)
     // RESEND_FROM_EMAIL이 설정되어 있으면 사용, 없으면 기본값 사용
-    // updates.kovegas.com 도메인이 Verified 상태이므로 개발/운영 모두에서 사용 가능
-    const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'info@maniatour.com'
     
     console.log('[send-pickup-schedule-notification] 발신자 이메일:', {
       fromEmail,
@@ -537,6 +570,9 @@ export async function POST(request: NextRequest) {
         to: customer.email,
         subject: emailContent.subject,
         html: emailContent.html,
+        // 읽음 추적 활성화
+        open_tracking: true,
+        click_tracking: true,
       })
 
       if (emailError) {
@@ -613,7 +649,8 @@ export async function POST(request: NextRequest) {
             subject: emailContent.subject,
             status: 'sent',
             sent_at: new Date().toISOString(),
-            sent_by: sentBy || null
+            sent_by: sentBy || null,
+            resend_email_id: emailResult?.id || null
           } as never)
           .catch(() => {
             // email_logs 테이블이 없으면 무시

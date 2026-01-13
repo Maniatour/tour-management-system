@@ -246,7 +246,7 @@ export async function POST(request: NextRequest) {
     }
 
     const resend = new Resend(resendApiKey)
-    const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev' // 기본값 (Resend 기본 도메인)
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'info@maniatour.com'
 
     try {
       const { data: emailResult, error: emailError } = await resend.emails.send({
@@ -254,6 +254,9 @@ export async function POST(request: NextRequest) {
         to: email,
         subject: emailContent.subject,
         html: emailContent.html,
+        // 읽음 추적 활성화
+        open_tracking: true,
+        click_tracking: true,
       })
 
       if (emailError) {
@@ -304,7 +307,8 @@ export async function POST(request: NextRequest) {
             subject: emailContent.subject,
             status: 'sent',
             sent_at: new Date().toISOString(),
-            sent_by: sentBy || null
+            sent_by: sentBy || null,
+            resend_email_id: emailResult?.id || null
           } as never)
 
         if (logError) {

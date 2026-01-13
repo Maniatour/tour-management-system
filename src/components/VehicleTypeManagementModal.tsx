@@ -72,21 +72,36 @@ export default function VehicleTypeManagementModal({
   const [vehicleTypePhotos, setVehicleTypePhotos] = useState<VehicleTypePhoto[]>([])
   const [primaryPhotoId, setPrimaryPhotoId] = useState<string | null>(null)
 
-  // 차종 목록 가져오기
-  const fetchVehicleTypes = async () => {
+  // 차종 목록 가져오기 (최적화: 배치 조회)
+  const fetchVehicleTypes = React.useCallback(async () => {
     try {
       setLoading(true)
       
-      // 먼저 vehicle_types만 가져오기
+      // 1. 먼저 vehicle_types만 빠르게 가져오기 (인덱스 활용)
+      // display_order 인덱스를 활용하여 빠른 정렬
       const { data: typesData, error: typesError } = await supabase
         .from('vehicle_types')
-        .select('*')
+        .select(`
+          id,
+          name,
+          brand,
+          model,
+          passenger_capacity,
+          vehicle_category,
+          description,
+          is_active,
+          display_order,
+          created_at,
+          updated_at
+        `)
+        // display_order 인덱스 활용
         .order('display_order', { ascending: true })
         .order('created_at', { ascending: true })
 
       if (typesError) {
         console.error('차종 목록 조회 오류:', typesError)
-        throw typesError
+        setVehicleTypes([])
+        return
       }
 
       if (!typesData || typesData.length === 0) {
@@ -94,55 +109,107 @@ export default function VehicleTypeManagementModal({
         return
       }
 
-      // 각 차종의 사진을 별도로 가져오기
-      const typesWithPhotos = await Promise.all(
-        typesData.map(async (vehicleType) => {
-          let photos: any[] = []
+      // 2. 모든 차종의 사진을 배치로 한 번에 조회 (최적화)
+      const typeIds = typesData.map(t => t.id)
+      let photosByTypeId = new Map<string, any[]>()
+      
+      try {
+        // 배치 크기 제한: 한 번에 너무 많은 ID를 조회하면 URL이 너무 길어져 500 에러 발생
+        // Supabase PostgREST 제한을 고려하여 배치 크기를 20개로 제한 (더 안전)
+        const BATCH_SIZE = 20
+        
+        // 배치로 나눠서 조회
+        for (let i = 0; i < typeIds.length; i += BATCH_SIZE) {
+          const batchIds = typeIds.slice(i, i + BATCH_SIZE)
           
-          // vehicle_type_photos 조회는 현재 500 에러가 발생하여 임시로 비활성화
-          // 데이터베이스 문제 해결 후 아래 코드를 활성화할 수 있음
-          /*
           try {
-            const { data: typePhotos, error: photosError } = await supabase
+            // vehicle_type_id 인덱스를 활용하여 빠른 조회
+            const { data: batchPhotos, error: photosError } = await supabase
               .from('vehicle_type_photos')
-              .select('*')
-              .eq('vehicle_type_id', vehicleType.id)
+              .select(`
+                id,
+                vehicle_type_id,
+                photo_url,
+                photo_name,
+                description,
+                is_primary,
+                display_order,
+                created_at,
+                updated_at
+              `)
+              .in('vehicle_type_id', batchIds)
+              // 주의: order by는 URL을 더 길게 만들어 500 에러를 유발할 수 있으므로 제거
+              // 클라이언트 사이드에서 정렬 처리
+              .limit(1000)
 
-            if (!photosError && typePhotos && typePhotos.length > 0) {
-              photos = typePhotos.sort((a, b) => {
-                if (a.is_primary && !b.is_primary) return -1
-                if (!a.is_primary && b.is_primary) return 1
-                return (a.display_order || 0) - (b.display_order || 0)
-              })
+            if (!photosError && batchPhotos && batchPhotos.length > 0) {
+              // vehicle_type_id별로 그룹화 및 정렬 (클라이언트 사이드)
+              batchPhotos
+                .sort((a, b) => {
+                  // 먼저 vehicle_type_id로 정렬
+                  if (a.vehicle_type_id !== b.vehicle_type_id) {
+                    return a.vehicle_type_id.localeCompare(b.vehicle_type_id)
+                  }
+                  // 같은 vehicle_type_id 내에서 is_primary 우선, 그 다음 display_order
+                  if (a.is_primary && !b.is_primary) return -1
+                  if (!a.is_primary && b.is_primary) return 1
+                  return (a.display_order || 0) - (b.display_order || 0)
+                })
+                .forEach(photo => {
+                  if (!photosByTypeId.has(photo.vehicle_type_id)) {
+                    photosByTypeId.set(photo.vehicle_type_id, [])
+                  }
+                  photosByTypeId.get(photo.vehicle_type_id)!.push(photo)
+                })
             }
-          } catch (photoError) {
-            // 에러는 조용히 무시
+          } catch (batchError) {
+            // 개별 배치 실패는 조용히 무시하고 다음 배치 계속 진행
+            console.warn(`차종 사진 배치 조회 실패 (${i}-${i + BATCH_SIZE}):`, batchError)
           }
-          */
+        }
 
-          return {
-            ...vehicleType,
-            photos: photos || []
-          }
+        if (!photosError && allTypePhotos && allTypePhotos.length > 0) {
+          // vehicle_type_id별로 그룹화
+          allTypePhotos.forEach(photo => {
+            if (!photosByTypeId.has(photo.vehicle_type_id)) {
+              photosByTypeId.set(photo.vehicle_type_id, [])
+            }
+            photosByTypeId.get(photo.vehicle_type_id)!.push(photo)
+          })
+        }
+      } catch (photoError) {
+        // vehicle_type_photos 조회 실패는 조용히 무시 (500 에러 등)
+      }
+
+      // 3. 각 차종에 사진 할당
+      const typesWithPhotos = typesData.map(vehicleType => {
+        const photos = photosByTypeId.get(vehicleType.id) || []
+        const sortedPhotos = photos.sort((a, b) => {
+          if (a.is_primary && !b.is_primary) return -1
+          if (!a.is_primary && b.is_primary) return 1
+          return (a.display_order || 0) - (b.display_order || 0)
         })
-      )
+
+        return {
+          ...vehicleType,
+          photos: sortedPhotos
+        }
+      })
 
       setVehicleTypes(typesWithPhotos)
     } catch (error) {
       console.error('차종 목록 조회 오류:', error)
-      alert('차종 목록을 불러오는데 실패했습니다.')
-      // 에러가 발생해도 빈 배열로 설정하여 UI가 깨지지 않도록 함
       setVehicleTypes([])
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     if (isOpen) {
       fetchVehicleTypes()
     }
-  }, [isOpen])
+  }, [isOpen, fetchVehicleTypes])
 
   // 폼 초기화
   const resetForm = () => {

@@ -560,38 +560,64 @@ export default function PickupScheduleEmailPreviewModal({
                     </button>
                     
                     {/* 개별 발송 버튼 */}
-                    <div className="px-4 pb-4">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleSendIndividual(reservation.id)
-                        }}
-                        disabled={isSending || isSent}
-                        className={`w-full px-3 py-2 text-xs rounded transition-all flex items-center justify-center gap-2 ${
-                          isSent
-                            ? 'bg-green-100 text-green-700 cursor-not-allowed'
-                            : isSending
-                            ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                            : 'bg-blue-600 text-white hover:bg-blue-700'
-                        }`}
-                      >
-                        {isSending ? (
-                          <>
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                            <span>발송 중...</span>
-                          </>
-                        ) : isSent ? (
-                          <>
+                    <div className="px-4 pb-4 space-y-2">
+                      {isSent ? (
+                        <>
+                          <div className="w-full px-3 py-2 text-xs rounded bg-green-100 text-green-700 flex items-center justify-center gap-2">
                             <Mail className="w-3 h-3" />
                             <span>발송 완료</span>
-                          </>
-                        ) : (
-                          <>
-                            <Mail className="w-3 h-3" />
-                            <span>개별 발송</span>
-                          </>
-                        )}
-                      </button>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleSendIndividual(reservation.id)
+                            }}
+                            disabled={isSending}
+                            className={`w-full px-3 py-2 text-xs rounded transition-all flex items-center justify-center gap-2 ${
+                              isSending
+                                ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                                : 'bg-orange-600 text-white hover:bg-orange-700'
+                            }`}
+                          >
+                            {isSending ? (
+                              <>
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                <span>재전송 중...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Mail className="w-3 h-3" />
+                                <span>재전송</span>
+                              </>
+                            )}
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleSendIndividual(reservation.id)
+                          }}
+                          disabled={isSending}
+                          className={`w-full px-3 py-2 text-xs rounded transition-all flex items-center justify-center gap-2 ${
+                            isSending
+                              ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                              : 'bg-blue-600 text-white hover:bg-blue-700'
+                          }`}
+                        >
+                          {isSending ? (
+                            <>
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              <span>발송 중...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Mail className="w-3 h-3" />
+                              <span>개별 발송</span>
+                            </>
+                          )}
+                        </button>
+                      )}
                     </div>
                   </div>
                 )

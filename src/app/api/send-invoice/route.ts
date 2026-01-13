@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     const resend = new Resend(resendApiKey)
-    const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'info@maniatour.com'
 
     // 이메일 발송
     const { data: emailResult, error: emailError } = await resend.emails.send({

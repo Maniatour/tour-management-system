@@ -109,14 +109,63 @@ export async function saveReservation(data: ReservationData, reservationId?: str
     }
 
     // 3. 새로운 초이스 선택 저장
+    // 불러오는 로직과 동일하게 product_choices에서 매칭하여 최신 ID 사용
     if (data.selectedChoices.length > 0) {
-      const choicesToInsert = data.selectedChoices.map(choice => ({
-        reservation_id: reservationResult.id,
-        choice_id: choice.choice_id,
-        option_id: choice.option_id,
-        quantity: choice.quantity,
-        total_price: choice.total_price
-      }));
+      // product_choices와 choice_options를 조회하여 최신 ID 매칭
+      const { data: productChoicesData, error: productChoicesError } = await supabase
+        .from('product_choices')
+        .select(`
+          id,
+          options:choice_options (
+            id,
+            option_key
+          )
+        `)
+        .eq('product_id', reservationResult.product_id);
+
+      if (productChoicesError) {
+        console.error('상품 초이스 조회 오류:', productChoicesError);
+      }
+
+      const choicesToInsert = data.selectedChoices.map(choice => {
+        // 불러오는 로직과 동일하게 매칭
+        let finalChoiceId = choice.choice_id;
+        let finalOptionId = choice.option_id;
+
+        // productChoices에서 매칭 시도 (불러오는 로직과 동일)
+        if (productChoicesData && productChoicesData.length > 0) {
+          // 1차: option_id로 직접 매칭 시도
+          for (const pc of productChoicesData) {
+            const matchedOption = pc.options?.find((opt: any) => opt.id === choice.option_id);
+            if (matchedOption) {
+              finalChoiceId = pc.id;
+              finalOptionId = matchedOption.id;
+              break;
+            }
+          }
+
+          // 2차: choice_id로 매칭 시도 (fallback)
+          if (finalOptionId === choice.option_id) {
+            const matchedChoice = productChoicesData.find((pc: any) => pc.id === choice.choice_id);
+            if (matchedChoice) {
+              finalChoiceId = matchedChoice.id;
+              // choice_id가 매칭되면 option_id도 해당 choice의 option 중에서 찾기
+              const matchedOption = matchedChoice.options?.find((opt: any) => opt.id === choice.option_id);
+              if (matchedOption) {
+                finalOptionId = matchedOption.id;
+              }
+            }
+          }
+        }
+
+        return {
+          reservation_id: reservationResult.id,
+          choice_id: finalChoiceId,
+          option_id: finalOptionId,
+          quantity: choice.quantity,
+          total_price: choice.total_price
+        };
+      });
 
       const { error: choicesError } = await supabase
         .from('reservation_choices')
