@@ -62,14 +62,14 @@ export default function SimpleChoiceSelector({
 
   // initialSelections prop이 변경될 때 selections 상태 업데이트
   // 이 변경은 props에서 온 것이므로 onSelectionChange를 호출하지 않음 (무한 루프 방지)
-  // 매우 보수적으로 처리: 현재 selections가 비어있을 때만 업데이트
+  // 편집 모드에서 초이스가 로드될 때 제대로 반영되도록 개선
   useEffect(() => {
     // initialSelections가 실제로 변경되었는지 확인 (참조 비교가 아닌 내용 비교)
-    const prevIds = prevInitialSelectionsRef.current.map(s => `${s.choice_id}:${s.option_id}`).sort().join(',');
-    const newIds = initialSelections.map(s => `${s.choice_id}:${s.option_id}`).sort().join(',');
+    const prevIds = prevInitialSelectionsRef.current.map(s => `${s.choice_id}:${s.option_id}:${s.quantity}`).sort().join(',');
+    const newIds = initialSelections.map(s => `${s.choice_id}:${s.option_id}:${s.quantity}`).sort().join(',');
     
     // 현재 selections와 비교
-    const currentIds = selections.map(s => `${s.choice_id}:${s.option_id}`).sort().join(',');
+    const currentIds = selections.map(s => `${s.choice_id}:${s.option_id}:${s.quantity}`).sort().join(',');
     
     console.log('SimpleChoiceSelector: initialSelections 체크', {
       prevLength: prevInitialSelectionsRef.current.length,
@@ -81,9 +81,9 @@ export default function SimpleChoiceSelector({
       isDifferent: prevIds !== newIds,
       isUserAction: isUserActionRef.current,
       timeSinceLastUserAction: Date.now() - lastUserActionTimeRef.current,
-      prev: prevInitialSelectionsRef.current.map(s => ({ choice_id: s.choice_id, option_id: s.option_id })),
-      new: initialSelections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id })),
-      current: selections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id }))
+      prev: prevInitialSelectionsRef.current.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, quantity: s.quantity })),
+      new: initialSelections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, quantity: s.quantity })),
+      current: selections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, quantity: s.quantity }))
     });
     
     // 이전 값과 새로운 값이 다르면 업데이트 고려
@@ -104,33 +104,45 @@ export default function SimpleChoiceSelector({
         return;
       }
       
-      // 현재 selections가 비어있고 initialSelections에 데이터가 있을 때만 업데이트
-      // 이것이 가장 보수적인 접근: 사용자가 선택한 것이 있으면 절대 덮어쓰지 않음
-      if (currentIds === '' && newIds !== '') {
-        console.log('SimpleChoiceSelector: initialSelections 변경됨, 상태 업데이트 (현재 selections가 비어있고 새로운 데이터가 있음)', { 
-          prev: prevInitialSelectionsRef.current.map(s => ({ choice_id: s.choice_id, option_id: s.option_id })), 
-          new: initialSelections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id })),
+      // 편집 모드에서 초이스가 로드될 때 제대로 반영되도록 개선
+      // 조건 1: 현재 selections가 비어있고 initialSelections에 데이터가 있는 경우
+      // 조건 2: initialSelections가 이전 값과 다르고, 현재 selections가 이전 initialSelections와 같은 경우 (초기 로드 후 업데이트)
+      const shouldUpdate = 
+        (currentIds === '' && newIds !== '') || // 빈 상태에서 데이터가 로드되는 경우
+        (newIds !== '' && currentIds === prevIds); // 초이스가 로드된 후 업데이트되는 경우
+      
+      if (shouldUpdate) {
+        console.log('SimpleChoiceSelector: initialSelections 변경됨, 상태 업데이트', { 
+          prev: prevInitialSelectionsRef.current.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, quantity: s.quantity })), 
+          new: initialSelections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, quantity: s.quantity })),
           prevIds,
           newIds,
-          currentIds
+          currentIds,
+          reason: currentIds === '' ? '빈 상태에서 데이터 로드' : '초이스 업데이트'
         });
         
         // 새로운 값으로 업데이트
-        const newSelections = [...initialSelections]; // 복사본으로 설정
+        const newSelections = initialSelections.map(s => ({
+          ...s,
+          option_key: s.option_key || '',
+          option_name_ko: s.option_name_ko || ''
+        }));
         setSelections(newSelections);
         prevInitialSelectionsRef.current = [...initialSelections]; // 복사본 저장
-        prevSelectionsRef.current = [...initialSelections]; // 복사본 저장
+        prevSelectionsRef.current = [...newSelections]; // 복사본 저장
         
         console.log('SimpleChoiceSelector: selections 상태 업데이트 완료 (props에서)', {
-          updatedSelections: newSelections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id })),
+          updatedSelections: newSelections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, quantity: s.quantity })),
           selectionsCount: newSelections.length
         });
       } else {
-        console.log('SimpleChoiceSelector: initialSelections 변경되었지만 현재 selections가 비어있지 않아서 덮어쓰지 않음 (사용자 선택 보호)', {
+        console.log('SimpleChoiceSelector: initialSelections 변경되었지만 업데이트하지 않음', {
           currentIds,
           newIds,
+          prevIds,
           currentSelections: selections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id })),
-          newInitialSelections: initialSelections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id }))
+          newInitialSelections: initialSelections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id })),
+          reason: '사용자 선택 보호 또는 변경 없음'
         });
         // prevInitialSelectionsRef만 업데이트 (selections는 절대 변경하지 않음)
         prevInitialSelectionsRef.current = [...initialSelections];

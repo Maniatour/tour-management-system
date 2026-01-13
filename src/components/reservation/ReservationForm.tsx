@@ -631,6 +631,8 @@ export default function ReservationForm({
                       selectedChoices.push({
                         choice_id: choice.choice_id,
                         option_id: choice.option_id,
+                        option_key: choice.option?.option_key || choice.option_key || '',
+                        option_name_ko: choice.option?.name_ko || choice.option?.option_name_ko || choice.option_name_ko || '',
                         quantity: choice.quantity || 1,
                         total_price: choice.total_price || 0
                       })
@@ -684,6 +686,8 @@ export default function ReservationForm({
                         selectedChoices.push({
                           choice_id: choice.id,
                           option_id: selectedOption.id,
+                          option_key: selectedOption.option_key || selectedOption.key || '',
+                          option_name_ko: selectedOption.name_ko || selectedOption.option_name_ko || selectedOption.name || '',
                           quantity: 1,
                           total_price: selectedOption.adult_price || 0
                         })
@@ -948,6 +952,8 @@ export default function ReservationForm({
                       fallbackChoicesData.push({
                         choice_id: matchingChoice.id,
                         option_id: matchingOption.id,
+                        option_key: matchingOption.option_key || '',
+                        option_name_ko: matchingOption.option_name_ko || '',
                         quantity: selectedOption.quantity || 1,
                         total_price: selectedOption.total_price || (matchingOption.adult_price || 0)
                       })
@@ -981,7 +987,10 @@ export default function ReservationForm({
             option_id: fc.option_id,
             quantity: fc.quantity,
             total_price: fc.total_price,
-            choice_options: null // fallback 데이터는 choice_options가 없음
+            choice_options: {
+              option_key: fc.option_key || '',
+              option_name_ko: fc.option_name_ko || ''
+            } // fallback 데이터의 option_key와 option_name_ko 포함
           }))
       
       if (choicesToProcess && choicesToProcess.length > 0) {
@@ -1017,13 +1026,17 @@ export default function ReservationForm({
           }
 
           // 최종적으로 매칭된 값 사용 (없으면 reservation_choices의 값 사용)
-          // 저장할 때와 동일한 구조로 생성 (choice_id, option_id, quantity, total_price만 포함)
+          // SimpleChoiceSelector에서 필요한 필드 포함 (choice_id, option_id, option_key, option_name_ko, quantity, total_price)
           const finalChoiceId = matchedChoice?.id || rc.choice_options?.product_choices?.id || rc.choice_id
           const finalOptionId = matchedOption?.id || rc.option_id
+          const finalOptionKey = matchedOption?.option_key || rc.choice_options?.option_key || ''
+          const finalOptionNameKo = matchedOption?.option_name_ko || rc.choice_options?.option_name_ko || ''
 
           selectedChoices.push({
             choice_id: finalChoiceId,
             option_id: finalOptionId,
+            option_key: finalOptionKey,
+            option_name_ko: finalOptionNameKo,
             quantity: rc.quantity || 1,
             total_price: rc.total_price || 0
           })
@@ -2754,8 +2767,7 @@ export default function ReservationForm({
             choice_id: choice.choice_id,
             option_id: choice.option_id,
             quantity: choice.quantity,
-            total_price: choice.total_price,
-            timestamp: new Date().toISOString()
+            total_price: choice.total_price
           })
         })
       } else if (formData.selectedChoices && typeof formData.selectedChoices === 'object') {
@@ -2767,8 +2779,7 @@ export default function ReservationForm({
               choice_id: choiceId,
               option_id: choice.selected,
               quantity: 1,
-              total_price: 0, // 기존 시스템에서는 가격이 별도로 계산됨
-              timestamp: choice.timestamp || new Date().toISOString()
+              total_price: 0 // 기존 시스템에서는 가격이 별도로 계산됨
             })
           }
         })

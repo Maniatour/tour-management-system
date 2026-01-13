@@ -1758,7 +1758,8 @@ export default function TourDetailPage() {
                 status: reservationData.status,
                 selected_options: reservationData.selectedOptions,
                 selected_option_prices: reservationData.selectedOptionPrices,
-                is_private_tour: reservationData.isPrivateTour || false
+                is_private_tour: reservationData.isPrivateTour || false,
+                choices: reservationData.choices
               }
 
               const { error } = await supabase
@@ -1770,6 +1771,37 @@ export default function TourDetailPage() {
                 console.error('Error updating reservation:', error)
                 alert('예약 수정 중 오류가 발생했습니다: ' + error.message)
                 return
+              }
+
+              // 새로운 초이스 시스템: reservation_choices 테이블에 저장
+              if (reservationData.choices && reservationData.choices.required && Array.isArray(reservationData.choices.required)) {
+                // 기존 reservation_choices 삭제
+                await supabase
+                  .from('reservation_choices')
+                  .delete()
+                  .eq('reservation_id', editingReservation.id)
+
+                // 새로운 초이스 데이터 저장
+                const choicesToInsert = reservationData.choices.required.map((choice: any) => ({
+                  reservation_id: editingReservation.id,
+                  choice_id: choice.choice_id,
+                  option_id: choice.option_id,
+                  quantity: choice.quantity,
+                  total_price: choice.total_price
+                }))
+
+                if (choicesToInsert.length > 0) {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const { error: choicesError } = await (supabase as any)
+                    .from('reservation_choices')
+                    .insert(choicesToInsert)
+
+                  if (choicesError) {
+                    console.error('초이스 저장 오류:', choicesError)
+                    alert('초이스 저장 중 오류가 발생했습니다: ' + choicesError.message)
+                    return
+                  }
+                }
               }
 
               // 예약 목록 새로고침

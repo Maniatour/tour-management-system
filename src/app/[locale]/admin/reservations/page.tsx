@@ -1119,7 +1119,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         status: reservation.status,
         selected_options: reservation.selectedOptions,
         selected_option_prices: reservation.selectedOptionPrices,
-        is_private_tour: reservation.isPrivateTour || false
+        is_private_tour: reservation.isPrivateTour || false,
+        choices: reservation.choices
       }
 
       const { data: newReservation, error } = await supabase
@@ -1231,6 +1232,40 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         }
       }
 
+      // 새로운 초이스 시스템: reservation_choices 테이블에 저장
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const reservationId = (newReservation as any)?.id
+      if (reservationId && reservation.choices && reservation.choices.required && Array.isArray(reservation.choices.required)) {
+        try {
+          // 새로운 초이스 데이터 저장
+          const choicesToInsert = reservation.choices.required.map((choice: any) => ({
+            reservation_id: reservationId,
+            choice_id: choice.choice_id,
+            option_id: choice.option_id,
+            quantity: choice.quantity,
+            total_price: choice.total_price
+          }))
+
+          if (choicesToInsert.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { error: choicesError } = await (supabase as any)
+              .from('reservation_choices')
+              .insert(choicesToInsert)
+
+            if (choicesError) {
+              console.error('초이스 저장 오류:', choicesError)
+              // 초이스 저장 실패해도 예약은 성공으로 처리 (경고만 표시)
+              console.warn('초이스 저장 중 오류가 발생했습니다: ' + choicesError.message)
+            } else {
+              console.log('초이스 저장 성공:', choicesToInsert.length, '개')
+            }
+          }
+        } catch (choicesError) {
+          console.error('초이스 저장 중 예외:', choicesError)
+          // 초이스 저장 실패해도 예약은 성공으로 처리
+        }
+      }
+
       // selected_options는 reservations 테이블의 selected_options 컬럼에 저장됨
       // 별도의 reservation_options 테이블 저장은 현재 비활성화
 
@@ -1271,7 +1306,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           status: reservation.status,
           selected_options: reservation.selectedOptions,
           selected_option_prices: reservation.selectedOptionPrices,
-          is_private_tour: reservation.isPrivateTour || false
+          is_private_tour: reservation.isPrivateTour || false,
+          choices: reservation.choices
         }
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1290,6 +1326,43 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           })
           alert(t('messages.reservationUpdateError') + error.message)
           return
+        }
+
+        // 새로운 초이스 시스템: reservation_choices 테이블에 저장
+        if (reservation.choices && reservation.choices.required && Array.isArray(reservation.choices.required)) {
+          try {
+            // 기존 reservation_choices 삭제
+            await supabase
+              .from('reservation_choices')
+              .delete()
+              .eq('reservation_id', editingReservation.id)
+
+            // 새로운 초이스 데이터 저장
+            const choicesToInsert = reservation.choices.required.map((choice: any) => ({
+              reservation_id: editingReservation.id,
+              choice_id: choice.choice_id,
+              option_id: choice.option_id,
+              quantity: choice.quantity,
+              total_price: choice.total_price
+            }))
+
+            if (choicesToInsert.length > 0) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const { error: choicesError } = await (supabase as any)
+                .from('reservation_choices')
+                .insert(choicesToInsert)
+
+              if (choicesError) {
+                console.error('초이스 저장 오류:', choicesError)
+                alert('초이스 저장 중 오류가 발생했습니다: ' + choicesError.message)
+                return
+              }
+            }
+          } catch (choicesError) {
+            console.error('초이스 저장 중 예외:', choicesError)
+            alert('초이스 저장 중 오류가 발생했습니다.')
+            return
+          }
         }
 
         // reservation_customers 테이블에 거주 상태별 인원 수 저장
