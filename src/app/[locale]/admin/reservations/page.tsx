@@ -1233,8 +1233,6 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       }
 
       // 새로운 초이스 시스템: reservation_choices 테이블에 저장
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const reservationId = (newReservation as any)?.id
       if (reservationId && reservation.choices && reservation.choices.required && Array.isArray(reservation.choices.required)) {
         try {
           // 새로운 초이스 데이터 저장
