@@ -761,6 +761,15 @@ export function generatePickupScheduleEmailContent(
     weekday: 'long'
   })
 
+  // 전화번호를 tel: 링크로 변환하는 헬퍼 함수
+  const formatPhoneLink = (phone: string) => {
+    if (!phone) return phone
+    // 전화번호에서 숫자만 추출
+    const phoneNumber = phone.replace(/\D/g, '')
+    if (!phoneNumber) return phone
+    return `tel:${phoneNumber}`
+  }
+
   // 픽업 시간 포맷팅 (HH:MM -> HH:MM AM/PM)
   const formatTime = (time: string) => {
     if (!time) return time
@@ -979,7 +988,8 @@ export function generatePickupScheduleEmailContent(
                 </div>
                 ${tourDetails.tour_guide.phone ? `
                 <div style="margin-bottom: 5px;">
-                  <strong>${isEnglish ? 'Phone:' : '전화번호:'}</strong> ${tourDetails.tour_guide.phone}
+                  <strong>${isEnglish ? 'Phone:' : '전화번호:'}</strong> 
+                  <a href="${formatPhoneLink(tourDetails.tour_guide.phone)}" style="color: #2563eb; text-decoration: none; font-weight: 600;">${tourDetails.tour_guide.phone}</a>
                 </div>
                 ` : ''}
                 ${tourDetails.tour_guide.languages ? `
@@ -1007,7 +1017,8 @@ export function generatePickupScheduleEmailContent(
                 </div>
                 ${tourDetails.assistant.phone ? `
                 <div style="margin-bottom: 5px;">
-                  <strong>${isEnglish ? 'Phone:' : '전화번호:'}</strong> ${tourDetails.assistant.phone}
+                  <strong>${isEnglish ? 'Phone:' : '전화번호:'}</strong> 
+                  <a href="${formatPhoneLink(tourDetails.assistant.phone)}" style="color: #2563eb; text-decoration: none; font-weight: 600;">${tourDetails.assistant.phone}</a>
                 </div>
                 ` : ''}
               </div>

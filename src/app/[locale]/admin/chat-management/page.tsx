@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { MessageCircle, Calendar, Search, RefreshCw, Languages, ChevronDown, Cast } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -8,7 +8,7 @@ import { translateText, detectLanguage, SupportedLanguage, SUPPORTED_LANGUAGES }
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { useFloatingChat } from '@/contexts/FloatingChatContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { formatTimeWithAMPM } from '@/lib/utils'
+import { PickupSchedule } from '@/components/tour/PickupSchedule'
 
 interface ChatRoom {
   id: string
@@ -67,6 +67,7 @@ interface TourInfo {
   assistant_id?: string
   tour_car_id?: string
   tour_status?: string
+  total_people?: number
   product?: {
     name_ko?: string
     name_en?: string
@@ -90,11 +91,13 @@ interface TourInfo {
     total_people: number
     pickup_hotel?: string
     pickup_time?: string
+    pickup_notification_sent?: boolean
     pickup_hotel_info?: {
       hotel: string
       pick_up_location: string
     }
     customer?: {
+      id?: string
       name: string
       email: string
       phone?: string
@@ -122,9 +125,11 @@ export default function ChatManagementPage() {
   const [tourInfo, setTourInfo] = useState<TourInfo | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [activeTab, setActiveTab] = useState<'past' | 'upcoming'>('upcoming')
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['pickup-schedule']))
+  const [pickupHotels, setPickupHotels] = useState<Array<{ id: string; hotel: string; pick_up_location?: string; google_maps_link?: string }>>([])
 
   // 최적화된 채팅방 데이터 로딩
-  const { data: chatRoomsData, loading, refetch: refetchChatRooms } = useOptimizedData({
+  const { data: chatRoomsData, loading, refetch: refetchChatRooms, invalidateCache } = useOptimizedData({
     fetchFn: async () => {
       // 먼저 기본 채팅방 정보만 가져오기
       const { data: chatRoomsData, error: chatRoomsError } = await supabase
@@ -139,11 +144,20 @@ export default function ChatManagementPage() {
         return []
       }
 
-      // 각 채팅방에 대해 투어 정보를 별도로 가져오기
-      const roomsWithTour = await Promise.all(
-        chatRoomsData.map(async (room: ChatRoom) => {
+      // 모든 투어 ID 수집
+      const tourIds = (chatRoomsData as ChatRoom[]).map(room => room.tour_id).filter(Boolean) as string[]
+      
+      // 단일 쿼리로 모든 투어 정보 가져오기 (배치 처리)
+      const tourMap = new Map<string, any>()
+      const productIds = new Set<string>()
+      
+      if (tourIds.length > 0) {
+        const TOUR_BATCH_SIZE = 50
+        for (let i = 0; i < tourIds.length; i += TOUR_BATCH_SIZE) {
+          const batchIds = tourIds.slice(i, i + TOUR_BATCH_SIZE)
+          
           try {
-            const { data: tourData, error: tourError } = await supabase
+            const { data: toursData, error: toursError } = await supabase
               .from('tours')
               .select(`
                 id,
@@ -153,91 +167,311 @@ export default function ChatManagementPage() {
                 assistant_id,
                 tour_car_id,
                 tour_status,
+                reservation_ids,
                 product:products(
                   name_ko,
                   name_en,
                   description
                 )
               `)
-              .eq('id', room.tour_id)
-              .single()
+              .in('id', batchIds)
 
-            if (tourError) {
-              console.warn(`Error fetching tour for room ${room.id}:`, tourError)
-              return {
-                ...room,
-                tour: {
-                  id: room.tour_id,
-                  status: null,
-                  reservations: []
-                },
-                unread_count: 0
-              }
+            if (toursError) {
+              console.warn(`Error fetching tours (batch ${Math.floor(i / TOUR_BATCH_SIZE) + 1}):`, toursError)
+              continue
             }
 
-            // 예약 정보 가져오기
+            if (toursData) {
+              toursData.forEach((tour: any) => {
+                tourMap.set(tour.id, tour)
+                if (tour.product_id) {
+                  productIds.add(tour.product_id)
+                }
+              })
+            }
+          } catch (error) {
+            console.warn(`Error processing tours batch ${Math.floor(i / TOUR_BATCH_SIZE) + 1}:`, error)
+            continue
+          }
+        }
+      }
+
+      // 모든 투어의 reservation_ids 수집
+      const allReservationIds = new Set<string>()
+      tourMap.forEach((tour: any) => {
+        if (tour.reservation_ids) {
+          // reservation_ids가 배열인지 문자열인지 확인
+          const ids = Array.isArray(tour.reservation_ids) 
+            ? tour.reservation_ids 
+            : String(tour.reservation_ids).split(',').map((id: string) => id.trim()).filter((id: string) => id)
+          ids.forEach((id: string) => allReservationIds.add(id))
+        }
+      })
+
+      // 예약 정보 배치로 가져오기 (reservation_ids 사용)
+      const reservationsMap = new Map<string, any>()
+      const reservationIdsArray = Array.from(allReservationIds)
+      
+      if (reservationIdsArray.length > 0) {
+        const RESERVATION_BATCH_SIZE = 50
+        for (let i = 0; i < reservationIdsArray.length; i += RESERVATION_BATCH_SIZE) {
+          const batchIds = reservationIdsArray.slice(i, i + RESERVATION_BATCH_SIZE)
+          
+          try {
             const { data: reservationsData, error: reservationsError } = await supabase
               .from('reservations')
-              .select('id, adults, child, infant')
-              .eq('tour_id', (tourData as { id: string }).id)
+              .select(`
+                id,
+                tour_id,
+                adults,
+                child,
+                infant,
+                total_people,
+                pickup_hotel,
+                pickup_time,
+                status,
+                customer_id
+              `)
+              .in('id', batchIds)
+              .neq('status', 'cancelled') // 취소된 예약 제외
 
             if (reservationsError) {
-              console.warn(`Error fetching reservations for tour ${(tourData as { id: string }).id}:`, reservationsError)
+              console.warn(`Error fetching reservations (batch ${Math.floor(i / RESERVATION_BATCH_SIZE) + 1}):`, reservationsError)
+              continue
             }
 
-            return {
-              ...room,
-              tour: {
-                ...(tourData as Record<string, unknown>),
-                status: (tourData as { tour_status: string }).tour_status,
-                reservations: reservationsData || []
-              },
-              unread_count: 0
+            if (reservationsData) {
+              reservationsData.forEach((reservation: any) => {
+                reservationsMap.set(reservation.id, reservation)
+              })
             }
           } catch (error) {
-            console.warn(`Error processing room ${room.id}:`, error)
-            return {
-              ...room,
-              tour: {
-                id: room.tour_id,
-                status: null,
-                reservations: []
-              },
-              unread_count: 0
-            }
+            console.warn(`Error processing reservations batch ${Math.floor(i / RESERVATION_BATCH_SIZE) + 1}:`, error)
+            continue
           }
-        })
-      )
+        }
+      }
 
-      // 이제 읽지 않은 메시지 수 계산
-      const roomsWithUnreadCount = await Promise.all(
-        roomsWithTour.map(async (room) => {
+      // 픽업 호텔 정보 가져오기
+      const pickupHotelIds = new Set<string>()
+      reservationsMap.forEach((reservation: any) => {
+        if (reservation.pickup_hotel) {
+          pickupHotelIds.add(reservation.pickup_hotel)
+        }
+      })
+
+      const pickupHotelsMap = new Map<string, any>()
+      if (pickupHotelIds.size > 0) {
+        const hotelIdsArray = Array.from(pickupHotelIds)
+        const HOTEL_BATCH_SIZE = 50
+        
+        for (let i = 0; i < hotelIdsArray.length; i += HOTEL_BATCH_SIZE) {
+          const batchIds = hotelIdsArray.slice(i, i + HOTEL_BATCH_SIZE)
+          
           try {
-            const { count } = await supabase
-              .from('chat_messages')
-              .select('*', { count: 'exact', head: true })
-              .eq('room_id', room.id)
-              .eq('sender_type', 'customer')
-              .eq('is_read', false)
-            
-            return {
-              ...room,
-              unread_count: count || 0
+            const { data: hotelsData, error: hotelsError } = await supabase
+              .from('pickup_hotels')
+              .select('id, hotel, pick_up_location, address, link')
+              .in('id', batchIds)
+
+            if (hotelsError) {
+              console.warn(`Error fetching pickup hotels (batch ${Math.floor(i / HOTEL_BATCH_SIZE) + 1}):`, hotelsError)
+              continue
+            }
+
+            if (hotelsData) {
+              hotelsData.forEach((hotel: any) => {
+                pickupHotelsMap.set(hotel.id, hotel)
+              })
             }
           } catch (error) {
-            console.error(`Error counting unread messages for room ${room.id}:`, error)
-            return {
-              ...room,
-              unread_count: 0
-            }
+            console.warn(`Error processing hotels batch ${Math.floor(i / HOTEL_BATCH_SIZE) + 1}:`, error)
+            continue
           }
-        })
-      )
+        }
+      }
+
+      // 고객 정보 가져오기
+      const customerIds = new Set<string>()
+      reservationsMap.forEach((reservation: any) => {
+        if (reservation.customer_id) {
+          customerIds.add(reservation.customer_id)
+        }
+      })
+
+      const customersMap = new Map<string, any>()
+      if (customerIds.size > 0) {
+        const customerIdsArray = Array.from(customerIds)
+        const CUSTOMER_BATCH_SIZE = 50
+        
+        for (let i = 0; i < customerIdsArray.length; i += CUSTOMER_BATCH_SIZE) {
+          const batchIds = customerIdsArray.slice(i, i + CUSTOMER_BATCH_SIZE)
+          
+          try {
+            const { data: customersData, error: customersError } = await supabase
+              .from('customers')
+              .select('id, name, email, phone')
+              .in('id', batchIds)
+
+            if (customersError) {
+              console.warn(`Error fetching customers (batch ${Math.floor(i / CUSTOMER_BATCH_SIZE) + 1}):`, customersError)
+              continue
+            }
+
+            if (customersData) {
+              customersData.forEach((customer: any) => {
+                customersMap.set(customer.id, customer)
+              })
+            }
+          } catch (error) {
+            console.warn(`Error processing customers batch ${Math.floor(i / CUSTOMER_BATCH_SIZE) + 1}:`, error)
+            continue
+          }
+        }
+      }
+
+      // 채팅방에 투어 정보 매핑 (투어 상세 페이지와 동일한 방식)
+      const roomsWithTour = chatRoomsData.map((room: ChatRoom) => {
+        const tourData = tourMap.get(room.tour_id)
+
+        if (!tourData) {
+          return {
+            ...room,
+            tour: {
+              id: room.tour_id,
+              status: null,
+              reservations: []
+            },
+            unread_count: 0
+          }
+        }
+
+        // 투어의 reservation_ids를 사용하여 배정된 예약만 가져오기 (투어 상세 페이지와 동일한 방식)
+        const assignedReservationIds = tourData.reservation_ids || []
+        const tourReservationIds = Array.isArray(assignedReservationIds)
+          ? assignedReservationIds.map((id: any) => String(id).trim()).filter((id: string) => id)
+          : String(assignedReservationIds).split(',').map((id: string) => id.trim()).filter((id: string) => id)
+
+        // 배정된 예약 정보 가져오기 (호텔 정보 포함)
+        const reservations = tourReservationIds
+          .map((reservationId: string) => {
+            const reservation = reservationsMap.get(reservationId)
+            if (!reservation) return null
+
+            const hotel = reservation.pickup_hotel ? pickupHotelsMap.get(reservation.pickup_hotel) : null
+            const customer = reservation.customer_id ? customersMap.get(reservation.customer_id) : null
+
+            // 인원 계산 (투어 상세 페이지와 동일한 방식)
+            const totalPeople = reservation.total_people 
+              ? Number(reservation.total_people)
+              : ((Number(reservation.adults) || 0) + (Number(reservation.child) || 0) + (Number(reservation.infant) || 0))
+
+            return {
+              id: reservation.id,
+              adults: Number(reservation.adults) || 0,
+              child: Number(reservation.child) || 0,
+              infant: Number(reservation.infant) || 0,
+              total_people: totalPeople,
+              status: reservation.status,
+              pickup_hotel: reservation.pickup_hotel,
+              pickup_time: reservation.pickup_time,
+              pickup_hotel_info: hotel ? {
+                hotel: hotel.hotel,
+                pick_up_location: hotel.pick_up_location,
+                address: hotel.address,
+                link: hotel.link
+              } : undefined,
+              customer: customer ? {
+                name: customer.name,
+                email: customer.email,
+                phone: customer.phone
+              } : undefined
+            }
+          })
+          .filter((r: any) => r !== null)
+
+        // 총 인원 계산 (배정된 예약의 total_people 합계)
+        const totalPeople = reservations.reduce((sum: number, r: any) => sum + (r.total_people || 0), 0)
+
+        return {
+          ...room,
+          tour: {
+            ...(tourData as Record<string, unknown>),
+            status: (tourData as { tour_status: string }).tour_status,
+            reservations: reservations,
+            total_people: totalPeople // 총 인원 추가
+          },
+          unread_count: 0
+        }
+      })
+
+      // 이제 읽지 않은 메시지 수 계산 - 배치 처리로 최적화
+      const roomIds = roomsWithTour.map(room => room.id)
+      
+      // 채팅방이 없으면 빈 배열 반환
+      if (roomIds.length === 0) {
+        return roomsWithTour.map(room => ({
+          ...room,
+          unread_count: 0
+        }))
+      }
+      
+      // URL 길이 제한을 피하기 위해 배치로 나누어 조회
+      const BATCH_SIZE = 50 // 한 번에 50개씩 처리
+      const unreadCountMap = new Map<string, number>()
+      
+      // 배치로 나눠서 조회
+      for (let i = 0; i < roomIds.length; i += BATCH_SIZE) {
+        const batchIds = roomIds.slice(i, i + BATCH_SIZE)
+        
+        try {
+          const { data: unreadMessages, error: unreadError } = await supabase
+            .from('chat_messages')
+            .select('room_id')
+            .in('room_id', batchIds)
+            .eq('sender_type', 'customer')
+            .eq('is_read', false)
+          
+          // 에러 처리
+          if (unreadError) {
+            // 에러 객체가 비어있지 않은 경우에만 로깅
+            if (unreadError.message || unreadError.code || unreadError.details || unreadError.hint) {
+              console.error(`Error fetching unread messages (batch ${Math.floor(i / BATCH_SIZE) + 1}):`, {
+                message: unreadError.message,
+                code: unreadError.code,
+                details: unreadError.details,
+                hint: unreadError.hint,
+                batchSize: batchIds.length
+              })
+            }
+            // 에러가 발생해도 다음 배치는 계속 처리
+            continue
+          }
+          
+          // 채팅방별로 안읽은 메시지 수 계산
+          if (unreadMessages && Array.isArray(unreadMessages)) {
+            unreadMessages.forEach((msg: { room_id: string }) => {
+              const currentCount = unreadCountMap.get(msg.room_id) || 0
+              unreadCountMap.set(msg.room_id, currentCount + 1)
+            })
+          }
+        } catch (error) {
+          console.error(`Error processing batch ${Math.floor(i / BATCH_SIZE) + 1}:`, error)
+          // 에러가 발생해도 다음 배치는 계속 처리
+          continue
+        }
+      }
+      
+      // 각 채팅방에 안읽은 메시지 수 추가
+      const roomsWithUnreadCount = roomsWithTour.map(room => ({
+        ...room,
+        unread_count: unreadCountMap.get(room.id) || 0
+      }))
 
       return roomsWithUnreadCount
     },
     cacheKey: 'chat-rooms',
-    cacheTime: 1 * 60 * 1000 // 1분 캐시 (채팅은 자주 변경되므로 짧은 캐시)
+    cacheTime: 30 * 1000 // 30초 캐시 (투어 정보가 자주 변경되므로 짧은 캐시)
   })
   
   // 번역 관련 상태
@@ -269,6 +503,41 @@ export default function ChatManagementPage() {
       window.history.scrollRestoration = 'manual'
     }
   }, [])
+
+  // 페이지 포커스 시 및 주기적으로 투어 정보 새로고침 (백그라운드에서 조용히)
+  useEffect(() => {
+    let isRefreshing = false
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !isRefreshing) {
+        // 페이지가 다시 보일 때만 새로고침
+        isRefreshing = true
+        invalidateCache()
+        refetchChatRooms().finally(() => {
+          isRefreshing = false
+        })
+      }
+    }
+
+    // 60초마다 자동 새로고침 (투어 정보 최신화) - 간격을 늘려서 로딩 화면이 자주 나타나지 않도록
+    const intervalId = setInterval(() => {
+      if (!isRefreshing && !loading) {
+        isRefreshing = true
+        invalidateCache()
+        refetchChatRooms().finally(() => {
+          isRefreshing = false
+        })
+      }
+    }, 60 * 1000) // 30초에서 60초로 변경
+
+    // 페이지 포커스 시 새로고침
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [refetchChatRooms, invalidateCache, loading])
 
   // 번역 관련 함수들
   const needsTranslation = useCallback((message: ChatMessage) => {
@@ -494,14 +763,24 @@ export default function ChatManagementPage() {
         }
       }
 
-      // 3단계: 예약 정보 가져오기 (tour_id로 직접 조회)
-      const { data: reservationsData, error: reservationsError } = await supabase
-        .from('reservations')
-        .select('*')
-        .eq('tour_id', tourId)
+      // 3단계: 예약 정보 가져오기 (reservation_ids 사용 - 투어 상세 페이지와 동일)
+      const assignedReservationIds = (tourData as { reservation_ids?: string[] | string }).reservation_ids || []
+      const reservationIdsArray = Array.isArray(assignedReservationIds)
+        ? assignedReservationIds.map((id: any) => String(id).trim()).filter((id: string) => id)
+        : String(assignedReservationIds).split(',').map((id: string) => id.trim()).filter((id: string) => id)
 
-      if (reservationsError) {
-        console.warn('Error fetching reservations:', reservationsError)
+      let reservationsData: any[] = []
+      if (reservationIdsArray.length > 0) {
+        const { data: assignedReservations, error: reservationsError } = await supabase
+          .from('reservations')
+          .select('*, pickup_notification_sent')
+          .in('id', reservationIdsArray)
+
+        if (reservationsError) {
+          console.warn('Error fetching assigned reservations:', reservationsError)
+        } else {
+          reservationsData = assignedReservations || []
+        }
       }
 
       // 4단계: 고객 정보 가져오기 (예약이 있는 경우에만)
@@ -535,8 +814,8 @@ export default function ChatManagementPage() {
         }
       }
 
-      // 5.5단계: 픽업 호텔 정보 가져오기
-      let pickupHotelsData: Array<{ id: string; hotel: string; pick_up_location: string }> = []
+      // 5.5단계: 픽업 호텔 정보 가져오기 (PickupSchedule 컴포넌트용)
+      let pickupHotelsData: Array<{ id: string; hotel: string; pick_up_location?: string; google_maps_link?: string }> = []
       if (reservationsData && reservationsData.length > 0) {
         const pickupHotelIds = reservationsData
           .map((r: Record<string, unknown>) => r.pickup_hotel as string)
@@ -546,12 +825,13 @@ export default function ChatManagementPage() {
         if (pickupHotelIds.length > 0) {
           const { data: pickupHotels, error: pickupHotelsError } = await supabase
             .from('pickup_hotels')
-            .select('*')
+            .select('id, hotel, pick_up_location, google_maps_link')
             .in('id', pickupHotelIds)
             .eq('is_active', true)
 
           if (!pickupHotelsError) {
             pickupHotelsData = pickupHotels || []
+            setPickupHotels(pickupHotelsData)
           }
         }
       }
@@ -565,15 +845,17 @@ export default function ChatManagementPage() {
           adults: (reservation.adults as number) || 0,
           child: (reservation.child as number) || 0,
           infant: (reservation.infant as number) || 0,
-          total_people: ((reservation.adults as number) || 0) + ((reservation.child as number) || 0) + ((reservation.infant as number) || 0),
+          total_people: (reservation.total_people as number) || ((reservation.adults as number) || 0) + ((reservation.child as number) || 0) + ((reservation.infant as number) || 0),
           status: (reservation.status as string) || 'pending',
           pickup_hotel: reservation.pickup_hotel as string,
           pickup_time: reservation.pickup_time as string,
+          pickup_notification_sent: reservation.pickup_notification_sent as boolean || false,
           pickup_hotel_info: pickupHotel ? {
             hotel: pickupHotel.hotel,
             pick_up_location: pickupHotel.pick_up_location
           } : undefined,
           customer: customer ? {
+            id: customer.id,
             name: customer.name,
             email: customer.email,
             phone: customer.phone
@@ -598,9 +880,8 @@ export default function ChatManagementPage() {
         vehicle: vehicleData ? {
           id: (vehicleData as Record<string, unknown>).id as string,
           vehicle_number: (vehicleData as Record<string, unknown>).vehicle_number as string,
-          vehicle_category: (vehicleData as Record<string, unknown>).vehicle_category as string,
-          driver_name: undefined, // tours 테이블에 car_driver_name 컬럼이 없음
-          driver_phone: undefined // vehicles 테이블에 driver_phone 컬럼이 없음
+          vehicle_category: (vehicleData as Record<string, unknown>).vehicle_category as string
+          // driver_name과 driver_phone은 optional이므로 생략 가능
         } : undefined,
         reservations: combinedReservations
       } as TourInfo
@@ -845,9 +1126,6 @@ export default function ChatManagementPage() {
     }
   }
 
-  const getTotalParticipants = (reservations: Array<{ adults: number; child: number; infant: number }> = []) => {
-    return reservations.reduce((total, res) => total + res.adults + res.child + res.infant, 0)
-  }
 
   if (loading) {
     return (
@@ -997,9 +1275,13 @@ export default function ChatManagementPage() {
                       <span className="truncate">
                         {(room.tour as Record<string, unknown>)?.tour_date ? formatTourDate(String((room.tour as Record<string, unknown>).tour_date)) : '날짜미정'}
                       </span>
-                      {(room.tour as Record<string, unknown>)?.reservations && Array.isArray((room.tour as Record<string, unknown>).reservations) && ((room.tour as Record<string, unknown>).reservations as unknown[]).length > 0 ? (
+                      {(room.tour as Record<string, unknown>)?.total_people ? (
                         <span className="ml-2 text-gray-400">
-                          {getTotalParticipants(((room.tour as Record<string, unknown>).reservations) as Array<{ adults: number; child: number; infant: number }>)}명
+                          {(room.tour as Record<string, unknown>).total_people as number}명
+                        </span>
+                      ) : (room.tour as Record<string, unknown>)?.reservations && Array.isArray((room.tour as Record<string, unknown>).reservations) && ((room.tour as Record<string, unknown>).reservations as unknown[]).length > 0 ? (
+                        <span className="ml-2 text-gray-400">
+                          {((room.tour as Record<string, unknown>).reservations as Array<{ total_people?: number }>).reduce((sum, r) => sum + (r.total_people || 0), 0)}명
                         </span>
                       ) : null}
                     </div>
@@ -1279,7 +1561,7 @@ export default function ChatManagementPage() {
                 <div className="flex justify-between">
                   <span className="text-gray-600">인원</span>
                   <span className="text-gray-900">
-                    {tourInfo.reservations?.reduce((sum, r) => sum + r.adults + r.child + r.infant, 0) || 0}명
+                    {tourInfo.total_people || tourInfo.reservations?.reduce((sum, r) => sum + (r.total_people || 0), 0) || 0}명
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -1289,73 +1571,52 @@ export default function ChatManagementPage() {
               </div>
             </div>
 
-            {/* 픽업스케줄 */}
-            <div className="bg-blue-50 rounded-lg p-3">
-              <h4 className="text-sm font-medium text-gray-900 mb-2">픽업스케줄</h4>
-              <div className="space-y-1 text-xs">
-                {(() => {
-                  // 픽업 시간과 호텔의 유니크한 조합을 찾기
-                  const pickupSchedules = new Map()
-                  tourInfo.reservations?.forEach(reservation => {
-                    if (reservation.pickup_time && reservation.pickup_hotel_info) {
-                      const key = `${reservation.pickup_time}-${reservation.pickup_hotel}`
-                      if (!pickupSchedules.has(key)) {
-                        pickupSchedules.set(key, {
-                          time: reservation.pickup_time,
-                          hotel: reservation.pickup_hotel_info.hotel,
-                          location: reservation.pickup_hotel_info.pick_up_location
-                        })
-                      }
+            {/* 픽업스케줄 - 투어 상세 페이지 컴포넌트 사용 */}
+            <div className="bg-white rounded-lg shadow-sm border">
+              <PickupSchedule
+                assignedReservations={tourInfo.reservations?.map((res: any) => ({
+                  id: res.id,
+                  customer_id: res.customer?.id || null,
+                  pickup_hotel: res.pickup_hotel || null,
+                  pickup_time: res.pickup_time || null,
+                  adults: res.adults || 0,
+                  children: res.child || 0,
+                  infants: res.infant || 0,
+                  tour_date: tourInfo.tour_date || null,
+                  pickup_notification_sent: res.pickup_notification_sent || false
+                })) || []}
+                pickupHotels={pickupHotels}
+                expandedSections={expandedSections}
+                connectionStatus={{ reservations: true }}
+                onToggleSection={(sectionId: string) => {
+                  setExpandedSections(prev => {
+                    const newSet = new Set(prev)
+                    if (newSet.has(sectionId)) {
+                      newSet.delete(sectionId)
+                    } else {
+                      newSet.add(sectionId)
                     }
+                    return newSet
                   })
-                  
-                  const schedules = Array.from(pickupSchedules.values())
-                    .sort((a, b) => {
-                      // 시간을 비교하여 정렬 (HH:MM 형식)
-                      const timeA = a.time || '00:00'
-                      const timeB = b.time || '00:00'
-                      return timeA.localeCompare(timeB)
-                    })
-                  
-                  if (schedules.length === 0) {
-                    return <div className="text-gray-500 text-center py-2">픽업 정보 없음</div>
-                  }
-                  
-                  return schedules.map((schedule, scheduleIndex) => (
-                    <div key={scheduleIndex} className="border-b border-blue-200 pb-2 last:border-b-0">
-                      {/* 첫 번째 줄: 시간 | 호텔 */}
-                      <div className="flex items-center mb-1">
-                        <div className="text-gray-900 font-medium text-sm mr-2">
-                          {(() => {
-                            const pickupTime = schedule.time ? schedule.time.split(':').slice(0, 2).join(':') : '미정'
-                            if (pickupTime === '미정') return pickupTime
-                            
-                            const timeHour = parseInt(pickupTime.split(':')[0])
-                            
-                            // 오후 9시(21:00) 이후면 날짜를 하루 빼기
-                            let displayDate = tourInfo.tour_date || ''
-                            if (timeHour >= 21 && tourInfo.tour_date) {
-                              const date = new Date(tourInfo.tour_date)
-                              date.setDate(date.getDate() - 1)
-                              displayDate = date.toISOString().split('T')[0]
-                            }
-                            
-                            return `${formatTimeWithAMPM(pickupTime)} ${displayDate}`
-                          })()}
-                        </div>
-                        <div className="text-gray-400">|</div>
-                        <div className="text-gray-900 font-medium text-sm ml-2">
-                          {schedule.hotel}
-                        </div>
-                      </div>
-                      {/* 두 번째 줄: 픽업장소 */}
-                      <div className="text-gray-500 text-xs">
-                        {schedule.location}
-                      </div>
-                    </div>
-                  ))
-                })()}
-              </div>
+                }}
+                onAutoGenerate={() => {
+                  router.push(`/ko/admin/tours/${tourInfo.id}#pickup-schedule`)
+                }}
+                onPreviewEmail={() => {
+                  router.push(`/ko/admin/tours/${tourInfo.id}#pickup-schedule`)
+                }}
+                getPickupHotelNameOnly={(hotelId: string) => {
+                  const hotel = pickupHotels.find(h => h.id === hotelId)
+                  return hotel?.hotel || '호텔 정보 없음'
+                }}
+                getCustomerName={(customerId: string) => {
+                  const reservation = tourInfo.reservations?.find((r: any) => r.customer?.id === customerId)
+                  return reservation?.customer?.name || '고객 정보 없음'
+                }}
+                openGoogleMaps={(link: string) => {
+                  window.open(link, '_blank')
+                }}
+              />
             </div>
 
             {/* 배정 (예약 데이터) */}
@@ -1421,7 +1682,7 @@ export default function ChatManagementPage() {
                 <div className="flex justify-between">
                   <span className="text-gray-600">총 인원</span>
                   <span className="text-gray-900 font-medium">
-                    {tourInfo.reservations?.reduce((sum, r) => sum + r.adults + r.child + r.infant, 0) || 0}명
+                    {tourInfo.total_people || tourInfo.reservations?.reduce((sum, r) => sum + (r.total_people || 0), 0) || 0}명
                   </span>
                 </div>
               </div>
