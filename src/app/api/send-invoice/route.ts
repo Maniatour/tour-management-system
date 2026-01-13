@@ -30,10 +30,13 @@ export async function POST(request: NextRequest) {
 
     const resend = new Resend(resendApiKey)
     const fromEmail = process.env.RESEND_FROM_EMAIL || 'info@maniatour.com'
+    // Reply-To 설정: 회신은 info@maniatour.com으로 받기
+    const replyTo = process.env.RESEND_REPLY_TO || 'info@maniatour.com'
 
     // 이메일 발송
     const { data: emailResult, error: emailError } = await resend.emails.send({
       from: fromEmail,
+      reply_to: replyTo,
       to: to,
       subject: subject,
       html: html,

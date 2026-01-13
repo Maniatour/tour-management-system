@@ -547,15 +547,19 @@ export async function POST(request: NextRequest) {
     const resend = new Resend(resendApiKey)
     // RESEND_FROM_EMAIL이 설정되어 있으면 사용, 없으면 기본값 사용
     const fromEmail = process.env.RESEND_FROM_EMAIL || 'info@maniatour.com'
+    // Reply-To 설정: 회신은 info@maniatour.com으로 받기
+    const replyTo = process.env.RESEND_REPLY_TO || 'info@maniatour.com'
     
     console.log('[send-pickup-schedule-notification] 발신자 이메일:', {
       fromEmail,
+      replyTo,
       isDevelopment,
       hasConfiguredEmail: !!process.env.RESEND_FROM_EMAIL
     })
     
     console.log('[send-pickup-schedule-notification] 이메일 발송 준비:', {
       fromEmail,
+      replyTo,
       to: customer.email,
       hasApiKey: !!resendApiKey,
       apiKeyLength: resendApiKey?.length || 0,
@@ -567,6 +571,7 @@ export async function POST(request: NextRequest) {
       console.log('[send-pickup-schedule-notification] Resend API 호출 시작...')
       const { data: emailResult, error: emailError } = await resend.emails.send({
         from: fromEmail,
+        reply_to: replyTo,
         to: customer.email,
         subject: emailContent.subject,
         html: emailContent.html,
