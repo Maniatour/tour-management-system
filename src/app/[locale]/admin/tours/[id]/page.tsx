@@ -988,6 +988,10 @@ export default function TourDetailPage() {
         return
       }
 
+      // 현재 사용자 이메일 가져오기 (발송 내역 기록용)
+      const { data: { user } } = await supabase.auth.getUser()
+      const sentBy = user?.email || null
+
       // 각 예약에 대해 알림 발송
       let successCount = 0
       let failCount = 0
@@ -1003,7 +1007,7 @@ export default function TourDetailPage() {
             continue
           }
 
-          await fetch('/api/send-pickup-schedule-notification', {
+          const response = await fetch('/api/send-pickup-schedule-notification', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -1015,11 +1019,18 @@ export default function TourDetailPage() {
                 : reservation.pickup_time 
                   ? `${reservation.pickup_time}:00`
                   : '',
-              tourDate: tourDate
+              tourDate: tourDate,
+              sentBy: sentBy
             })
           })
-          
-          successCount++
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}))
+            console.error(`예약 ${reservation.id} 알림 발송 실패:`, errorData)
+            failCount++
+          } else {
+            successCount++
+          }
         } catch (error) {
           console.error(`예약 ${reservation.id} 알림 발송 오류:`, error)
           failCount++
