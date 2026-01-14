@@ -1915,6 +1915,7 @@ export default function TourDetailPage() {
             tour_date: res.tour_date || tourData.tour?.tour_date
           }))}
           tourDate={tourData.tour.tour_date}
+          tourId={tourData.tour.id}
           onSend={handleBatchSendPickupScheduleNotifications}
         />
       )}

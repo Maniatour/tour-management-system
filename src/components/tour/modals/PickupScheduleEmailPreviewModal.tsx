@@ -14,6 +14,7 @@ interface PickupScheduleEmailPreviewModalProps {
     tour_date?: string | null
   }>
   tourDate: string
+  tourId?: string | null
   onSend?: () => Promise<void>
 }
 
@@ -22,6 +23,7 @@ export default function PickupScheduleEmailPreviewModal({
   onClose,
   reservations,
   tourDate,
+  tourId,
   onSend
 }: PickupScheduleEmailPreviewModalProps) {
   const [selectedReservationId, setSelectedReservationId] = useState<string | null>(null)
@@ -287,7 +289,8 @@ export default function PickupScheduleEmailPreviewModal({
           pickupTime: selectedReservation.pickup_time.includes(':') 
             ? selectedReservation.pickup_time 
             : `${selectedReservation.pickup_time}:00`,
-          tourDate: selectedReservation.tour_date || tourDate
+          tourDate: selectedReservation.tour_date || tourDate,
+          tourId: tourId || undefined
         })
       })
 
