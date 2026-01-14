@@ -403,7 +403,9 @@ export default function VehicleTypeManagementModal({
         }
       }
 
-      alert(editingType ? '차종이 수정되었습니다.' : '차종이 추가되었습니다.')
+      if (!editingType) {
+        alert('차종이 추가되었습니다.')
+      }
       closeEditModal()
       fetchVehicleTypes()
     } catch (error) {

@@ -139,7 +139,6 @@ export default function VehicleTypesPage() {
         setVehicleTypes(prev => 
           prev.map(type => type.id === editingType.id ? { ...type, ...formData } : type)
         )
-        alert('차종이 성공적으로 수정되었습니다.')
       } else {
         // 추가
         const { data, error } = await supabase
