@@ -136,10 +136,10 @@ export default function PricingSection({
   const [showHelp, setShowHelp] = useState(false)
   const [reservationExpensesTotal, setReservationExpensesTotal] = useState(0)
   const [loadingExpenses, setLoadingExpenses] = useState(false)
+  // 입금 내역 계산 결과 저장
+  const [calculatedBalanceReceivedTotal, setCalculatedBalanceReceivedTotal] = useState(0)
   // 카드 수수료 수동 입력 여부 추적
   const isCardFeeManuallyEdited = useRef(false)
-  // 채널 수수료 기본가격 입력 중 포맷팅 방지
-  const [commissionBasePriceInput, setCommissionBasePriceInput] = useState<string | null>(null)
 
   // 예약 지출 총합 조회 함수
   const fetchReservationExpenses = useCallback(async () => {
@@ -215,14 +215,122 @@ export default function PricingSection({
     reservationOptionsTotalPrice
   ])
 
-  // 잔액 자동 계산 (고객 총 결제금액 - 고객 실제 지불액)
+  // 입금 내역 조회 및 자동 계산
+  const fetchPaymentRecords = useCallback(async () => {
+    if (!reservationId) {
+      console.log('PricingSection: reservationId가 없어서 입금 내역 조회를 건너뜁니다.')
+      return
+    }
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        console.warn('PricingSection: 세션이 없어서 입금 내역 조회를 건너뜁니다.')
+        return
+      }
+
+      const response = await fetch(`/api/payment-records?reservation_id=${reservationId}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+
+      if (!response.ok) {
+        console.warn('PricingSection: 입금 내역 조회 실패')
+        return
+      }
+
+      const data = await response.json()
+      const paymentRecords = data.paymentRecords || []
+
+      // payment_status에 따라 보증금과 잔금 분리
+      let depositTotal = 0 // 보증금 총합
+      let balanceReceivedTotal = 0 // 잔금 수령 총합
+
+      paymentRecords.forEach((record: { payment_status: string; amount: number }) => {
+        const status = (record.payment_status || '').toLowerCase()
+        const amount = Number(record.amount) || 0
+
+        // 보증금 관련 상태
+        if (
+          status.includes('partner received') ||
+          status.includes('deposit received') ||
+          status.includes("customer's cc charged") ||
+          status.includes('deposit requested')
+        ) {
+          depositTotal += amount
+        }
+        // 잔금 관련 상태
+        else if (
+          status.includes('balance received') ||
+          status.includes('balance requested')
+        ) {
+          balanceReceivedTotal += amount
+        }
+        // 환불 관련은 제외 (음수 처리하지 않음)
+      })
+
+      console.log('PricingSection: 입금 내역 계산 결과', {
+        depositTotal,
+        balanceReceivedTotal,
+        paymentRecords: paymentRecords.map((r: { payment_status: string; amount: number }) => ({
+          status: r.payment_status,
+          amount: r.amount
+        }))
+      })
+
+      // 계산 결과를 state에 저장
+      setCalculatedBalanceReceivedTotal(balanceReceivedTotal)
+
+      // depositAmount와 balanceReceivedTotal을 기반으로 잔액 계산
+      const totalCustomerPayment = calculateTotalCustomerPayment()
+      const totalPaid = depositTotal + balanceReceivedTotal
+      const remainingBalance = Math.max(0, totalCustomerPayment - totalPaid)
+
+      // 입금 내역이 있으면 항상 자동으로 업데이트 (입금 내역이 실제 데이터이므로 우선)
+      setFormData((prev: typeof formData) => {
+        return {
+          ...prev,
+          // 입금 내역이 있으면 자동으로 업데이트
+          depositAmount: depositTotal,
+          // 잔금 수령이 있으면 남은 잔액 계산, 없으면 전체 잔액 계산
+          onSiteBalanceAmount: remainingBalance,
+          balanceAmount: remainingBalance
+        }
+      })
+    } catch (error) {
+      console.error('PricingSection: 입금 내역 조회 중 오류', error)
+    }
+  }, [reservationId, calculateTotalCustomerPayment, setFormData])
+
+  // 입금 내역 조회 (reservationId가 변경될 때)
+  useEffect(() => {
+    if (reservationId) {
+      fetchPaymentRecords()
+    }
+  }, [reservationId, fetchPaymentRecords])
+
+  // 입금 내역 업데이트 감지 (expenseUpdateTrigger와 동일한 방식)
+  useEffect(() => {
+    if (expenseUpdateTrigger && expenseUpdateTrigger > 0) {
+      const timer = setTimeout(() => {
+        fetchPaymentRecords()
+      }, 1000)
+      
+      return () => clearTimeout(timer)
+    }
+    return undefined
+  }, [expenseUpdateTrigger, fetchPaymentRecords])
+
+  // 잔액 자동 계산 (고객 총 결제금액 - 보증금 - 잔금 수령)
   // depositAmount나 고객 총 결제금액이 변경될 때 잔액을 자동으로 업데이트
   useEffect(() => {
     const totalCustomerPayment = calculateTotalCustomerPayment()
-    const calculatedBalance = Math.max(0, totalCustomerPayment - formData.depositAmount)
+    const totalPaid = formData.depositAmount + calculatedBalanceReceivedTotal
+    const calculatedBalance = Math.max(0, totalCustomerPayment - totalPaid)
     
     // 잔액이 설정되지 않았거나 0일 때 기본값으로 설정
-    // 기본값 = 고객 총 결제 금액 - 고객 실제 지불액 (보증금)
+    // 기본값 = 고객 총 결제 금액 - 보증금 - 잔금 수령
     if (formData.onSiteBalanceAmount === undefined || formData.onSiteBalanceAmount === null || formData.onSiteBalanceAmount === 0) {
       setFormData((prev: typeof formData) => ({ 
         ...prev, 
@@ -230,7 +338,7 @@ export default function PricingSection({
         balanceAmount: calculatedBalance
       }))
     }
-  }, [calculateTotalCustomerPayment, formData.depositAmount, formData.onSiteBalanceAmount, setFormData])
+  }, [calculateTotalCustomerPayment, formData.depositAmount, calculatedBalanceReceivedTotal, formData.onSiteBalanceAmount, setFormData])
 
   // 선택된 채널 정보 가져오기
   const selectedChannel = channels?.find(ch => ch.id === formData.channelId)
@@ -1464,7 +1572,8 @@ export default function PricingSection({
                     onChange={(e) => {
                       const newDepositAmount = Number(e.target.value) || 0
                       const totalCustomerPayment = calculateTotalCustomerPayment()
-                      const calculatedBalance = Math.max(0, totalCustomerPayment - newDepositAmount)
+                      const totalPaid = newDepositAmount + calculatedBalanceReceivedTotal
+                      const calculatedBalance = Math.max(0, totalCustomerPayment - totalPaid)
                       setFormData({ 
                         ...formData, 
                         depositAmount: newDepositAmount,
@@ -1480,6 +1589,16 @@ export default function PricingSection({
                 </div>
               </div>
               
+              {/* 잔금 수령 */}
+              {calculatedBalanceReceivedTotal > 0 && (
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm text-gray-700">{isKorean ? '잔금 수령' : 'Balance Received'}</span>
+                  <span className="text-sm font-medium text-green-600">
+                    ${calculatedBalanceReceivedTotal.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              
               {/* 잔액 (투어 당일 지불) */}
               <div className="flex justify-between items-center mb-2">
                 <span className="text-sm text-gray-700">{isKorean ? '잔액 (투어 당일 지불)' : 'Remaining Balance (On-site)'}</span>
@@ -1488,9 +1607,10 @@ export default function PricingSection({
                   <input
                     type="number"
                     value={(() => {
-                      // 기본값 = 고객 총 결제 금액 - 고객 실제 지불액 (보증금)
+                      // 고객 총 결제 금액 - 보증금 - 잔금 수령
                       const totalCustomerPayment = calculateTotalCustomerPayment()
-                      const defaultBalance = Math.max(0, totalCustomerPayment - formData.depositAmount)
+                      const totalPaid = formData.depositAmount + calculatedBalanceReceivedTotal
+                      const defaultBalance = Math.max(0, totalCustomerPayment - totalPaid)
                       return formData.onSiteBalanceAmount !== undefined && formData.onSiteBalanceAmount !== null 
                         ? formData.onSiteBalanceAmount 
                         : defaultBalance
@@ -1512,7 +1632,7 @@ export default function PricingSection({
               <div className="flex justify-between items-center mb-2">
                 <span className="text-sm font-semibold text-gray-900">{isKorean ? '총 결제 예정 금액' : 'Total Payment Due'}</span>
                 <span className="text-sm font-bold text-blue-600">
-                  ${((formData.depositAmount || 0) + (formData.onSiteBalanceAmount || 0)).toFixed(2)}
+                  ${((formData.depositAmount || 0) + (calculatedBalanceReceivedTotal || 0) + (formData.onSiteBalanceAmount || 0)).toFixed(2)}
                 </span>
               </div>
             </div>

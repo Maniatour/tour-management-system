@@ -27,8 +27,10 @@ export class PaymentMethodsSyncService {
       errors.push('Method는 필수입니다.')
     }
 
+    // User 필드는 필수이지만, 빈 값이어도 경고만 (다중 사용자 파싱에서 처리)
     if (!data.User || data.User.toString().trim() === '') {
-      errors.push('User는 필수입니다.')
+      // User가 없으면 경고만 (필수는 아니지만 권장)
+      console.warn(`ID ${data.ID}: User 필드가 비어있습니다.`)
     }
 
     // 한도 검증
@@ -59,47 +61,99 @@ export class PaymentMethodsSyncService {
     }))
   }
 
+  // User 필드에서 여러 사용자 파싱 (쉼표, 세미콜론, 줄바꿈 등으로 구분)
+  private parseUsers(userString: string): string[] {
+    if (!userString || userString.trim() === '') {
+      return []
+    }
+    
+    // 여러 구분자 지원: 쉼표, 세미콜론, 줄바꿈, 파이프
+    const separators = [',', ';', '\n', '|', '\r\n']
+    let users = [userString]
+    
+    for (const separator of separators) {
+      const newUsers: string[] = []
+      for (const user of users) {
+        newUsers.push(...user.split(separator))
+      }
+      users = newUsers
+    }
+    
+    // 공백 제거 및 빈 값 필터링
+    return users
+      .map(u => u.trim())
+      .filter(u => u.length > 0)
+  }
+
   private async insertPaymentMethod(data: PaymentMethodData): Promise<void> {
     try {
-      // 기존 데이터 확인
-      const { data: existing } = await supabase
-        .from('payment_methods')
-        .select('id')
-        .eq('id', data.ID)
-        .single()
-
-      if (existing) {
-        console.log(`결제 방법 ID ${data.ID}는 이미 존재합니다. 업데이트를 건너뜁니다.`)
+      // User 필드에서 여러 사용자 파싱
+      const users = this.parseUsers(data.User)
+      
+      if (users.length === 0) {
+        console.log(`결제 방법 ID ${data.ID}: 사용자가 없어 건너뜁니다.`)
         return
       }
 
-      // 새 데이터 삽입
-      const insertData = {
-        id: data.ID,
-        method: data.Method,
-        method_type: this.detectMethodType(data.Method),
-        user_email: data.User,
-        limit_amount: data.Limit,
-        status: (data.Status || 'active').toLowerCase(),
-        // 카드 정보 자동 감지
-        card_number_last4: this.extractCardLast4(data.Method),
-        card_type: this.detectCardType(data.Method),
-        // 기본값 설정
-        current_month_usage: 0,
-        current_day_usage: 0,
-        assigned_date: new Date().toISOString().split('T')[0]
+      // 각 사용자마다 별도 레코드 생성
+      const methodSlug = data.Method.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9-]/g, '').toUpperCase()
+      const baseId = data.ID.trim()
+      
+      for (let i = 0; i < users.length; i++) {
+        const userEmail = users[i]
+        const emailPrefix = userEmail.split('@')[0]
+        
+        // ID 생성: 기존 ID가 있으면 사용자별 접미사 추가, 없으면 자동 생성
+        let recordId: string
+        if (users.length === 1) {
+          // 사용자가 하나면 기존 ID 그대로 사용
+          recordId = baseId
+        } else {
+          // 여러 사용자면 ID에 사용자별 접미사 추가
+          recordId = `${baseId}-${emailPrefix}`
+        }
+        
+        // 기존 데이터 확인 (같은 ID와 사용자 조합이 이미 있는지)
+        const { data: existing } = await supabase
+          .from('payment_methods')
+          .select('id')
+          .eq('id', recordId)
+          .single()
+
+        if (existing) {
+          console.log(`결제 방법 ID ${recordId}는 이미 존재합니다. 건너뜁니다.`)
+          continue
+        }
+
+        // 새 데이터 삽입
+        const insertData = {
+          id: recordId,
+          method: data.Method,
+          method_type: this.detectMethodType(data.Method),
+          user_email: userEmail,
+          limit_amount: data.Limit,
+          status: (data.Status || 'active').toLowerCase(),
+          // 카드 정보 자동 감지
+          card_number_last4: this.extractCardLast4(data.Method),
+          card_type: this.detectCardType(data.Method),
+          // 기본값 설정
+          current_month_usage: 0,
+          current_day_usage: 0,
+          assigned_date: new Date().toISOString().split('T')[0]
+        }
+
+        const { error } = await supabase
+          .from('payment_methods')
+          .insert(insertData)
+
+        if (error) {
+          console.error(`결제 방법 삽입 오류 (ID: ${recordId}, User: ${userEmail}):`, error)
+          // 개별 레코드 오류는 로그만 남기고 계속 진행
+          continue
+        }
+
+        console.log(`결제 방법 삽입 성공: ${recordId} (User: ${userEmail})`)
       }
-
-      const { error } = await supabase
-        .from('payment_methods')
-        .insert(insertData)
-
-      if (error) {
-        console.error(`결제 방법 삽입 오류 (ID: ${data.ID}):`, error)
-        throw error
-      }
-
-      console.log(`결제 방법 삽입 성공: ${data.ID}`)
     } catch (error) {
       console.error(`결제 방법 삽입 실패 (ID: ${data.ID}):`, error)
       throw error

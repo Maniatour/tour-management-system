@@ -41,18 +41,27 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
   const [saving, setSaving] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<string | null>(null)
   const [error, setError] = useState('')
-  const [paymentMethodOptions, setPaymentMethodOptions] = useState<Array<{id: string, method: string, method_type: string}>>([])
+  const [paymentMethodOptions, setPaymentMethodOptions] = useState<Array<{id: string, method: string, method_type: string, user_email: string | null}>>([])
   const [loadingOptions, setLoadingOptions] = useState(true)
   const [validationError, setValidationError] = useState('')
 
   // 결제 방법 옵션 로드 및 수정 모드일 때 기존 데이터 로드
   useEffect(() => {
+    let isMounted = true
+    let hasLoaded = false
+    
     const loadPaymentMethodOptions = async () => {
+      if (hasLoaded) return
+      hasLoaded = true
+      
       try {
         const { data: { session } } = await supabase.auth.getSession()
         const userEmail = session?.user?.email
         
         const options = await paymentMethodIntegration.getPaymentMethodOptions(userEmail || undefined)
+        
+        if (!isMounted) return
+        
         setPaymentMethodOptions(options)
         
         // 수정 모드일 때 기존 데이터 로드
@@ -75,13 +84,23 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
             }
           }
           
-          setFormData({
-            payment_status: editingRecord.payment_status,
-            amount: editingRecord.amount.toString(),
-            payment_method: editingRecord.payment_method,
-            payment_method_id: paymentMethodId,
-            note: editingRecord.note || '',
-            amount_krw: editingRecord.amount_krw?.toString() || ''
+          if (!isMounted) return
+          
+          setFormData(prev => {
+            // 이미 같은 데이터가 설정되어 있으면 업데이트하지 않음
+            if (prev.payment_method_id === paymentMethodId && 
+                prev.amount === editingRecord.amount.toString()) {
+              return prev
+            }
+            
+            return {
+              payment_status: editingRecord.payment_status,
+              amount: editingRecord.amount.toString(),
+              payment_method: editingRecord.payment_method,
+              payment_method_id: paymentMethodId,
+              note: editingRecord.note || '',
+              amount_krw: editingRecord.amount_krw?.toString() || ''
+            }
           })
           
           if (editingRecord.image_file_url) {
@@ -91,26 +110,31 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
       } catch (error) {
         console.error('결제 방법 옵션 로드 오류:', error)
       } finally {
-        setLoadingOptions(false)
+        if (isMounted) {
+          setLoadingOptions(false)
+        }
       }
     }
 
     loadPaymentMethodOptions()
-  }, [editingRecord])
-
-  // 결제 방법 변경 시 검증
-  useEffect(() => {
-    if (formData.payment_method_id && formData.amount) {
-      validatePaymentMethod()
+    
+    return () => {
+      isMounted = false
+      hasLoaded = false
     }
-  }, [formData.payment_method_id, formData.amount])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingRecord?.id, editingRecord?.payment_method]) // id와 payment_method만 의존성으로 사용
 
-  const validatePaymentMethod = async () => {
+  // 결제 방법 검증 함수
+  const validatePaymentMethod = async (methodId: string, amount: string) => {
     try {
-      const amount = parseFloat(formData.amount)
-      if (isNaN(amount) || amount <= 0) return
+      const amountNum = parseFloat(amount)
+      if (isNaN(amountNum) || amountNum <= 0) {
+        setValidationError('')
+        return
+      }
 
-      const validation = await paymentMethodIntegration.validatePaymentMethod(formData.payment_method_id, amount)
+      const validation = await paymentMethodIntegration.validatePaymentMethod(methodId, amountNum)
       
       if (!validation.isValid) {
         setValidationError(validation.reason || '결제 방법 검증에 실패했습니다.')
@@ -119,8 +143,19 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
       }
     } catch (error) {
       console.error('결제 방법 검증 오류:', error)
+      setValidationError('')
     }
   }
+
+  // 결제 방법 변경 시 검증
+  useEffect(() => {
+    if (formData.payment_method_id && formData.amount) {
+      validatePaymentMethod(formData.payment_method_id, formData.amount)
+    } else {
+      setValidationError('')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.payment_method_id, formData.amount])
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]

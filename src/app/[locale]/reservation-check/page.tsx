@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Calendar, Users, MapPin, Clock, CreditCard, CheckCircle, AlertCircle, Search, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -63,6 +63,33 @@ export default function ReservationCheckPage() {
   const [reservation, setReservation] = useState<Reservation | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [paymentMethodMap, setPaymentMethodMap] = useState<Record<string, string>>({})
+
+  // 결제 방법 정보 로드
+  useEffect(() => {
+    const loadPaymentMethods = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('payment_methods')
+          .select('id, method')
+        
+        if (error) throw error
+        
+        const methodMap: Record<string, string> = {}
+        data?.forEach(pm => {
+          // ID로 조회 시 방법명(method)만 반환
+          methodMap[pm.id] = pm.method
+          // 방법명으로도 매핑 (payment_records에 방법명이 직접 저장된 경우 대비)
+          methodMap[pm.method] = pm.method
+        })
+        setPaymentMethodMap(methodMap)
+      } catch (error) {
+        console.error('결제 방법 정보 로드 오류:', error)
+      }
+    }
+    
+    loadPaymentMethods()
+  }, [])
 
   const handleSearch = async () => {
     if (!reservationId || !customerEmail) {
@@ -361,9 +388,18 @@ export default function ReservationCheckPage() {
                           <CreditCard className="h-5 w-5 text-gray-500 mr-3" />
                           <div>
                             <span className="font-medium text-gray-900">
-                              {payment.payment_method === 'card' ? '신용카드' : 
-                               payment.payment_method === 'bank_transfer' ? '은행 이체' :
-                               payment.payment_method === 'cash' ? '현금' : payment.payment_method}
+                              {(() => {
+                                const method = payment.payment_method
+                                // payment_methods 테이블에서 조회한 방법명이 있으면 사용
+                                if (paymentMethodMap[method]) {
+                                  return paymentMethodMap[method]
+                                }
+                                // 기본 매핑
+                                if (method === 'card') return '신용카드'
+                                if (method === 'bank_transfer') return '은행 이체'
+                                if (method === 'cash') return '현금'
+                                return method
+                              })()}
                             </span>
                             <p className="text-sm text-gray-600">
                               {new Date(payment.submit_on).toLocaleDateString('ko-KR')}

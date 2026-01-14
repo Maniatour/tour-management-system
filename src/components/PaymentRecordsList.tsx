@@ -40,6 +40,29 @@ export default function PaymentRecordsList({ reservationId, customerName }: Paym
   const [showForm, setShowForm] = useState(false)
   const [editingRecord, setEditingRecord] = useState<PaymentRecord | null>(null)
   const [error, setError] = useState('')
+  const [paymentMethodMap, setPaymentMethodMap] = useState<Record<string, string>>({})
+
+  // 결제 방법 정보 로드
+  const loadPaymentMethods = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('payment_methods')
+        .select('id, method')
+      
+      if (error) throw error
+      
+      const methodMap: Record<string, string> = {}
+      data?.forEach(pm => {
+        // ID로 조회 시 방법명(method)만 반환
+        methodMap[pm.id] = pm.method
+        // 방법명으로도 매핑 (payment_records에 방법명이 직접 저장된 경우 대비)
+        methodMap[pm.method] = pm.method
+      })
+      setPaymentMethodMap(methodMap)
+    } catch (error) {
+      console.error('결제 방법 정보 로드 오류:', error)
+    }
+  }
 
   const fetchPaymentRecords = async () => {
     try {
@@ -69,6 +92,7 @@ export default function PaymentRecordsList({ reservationId, customerName }: Paym
   }
 
   useEffect(() => {
+    loadPaymentMethods()
     fetchPaymentRecords()
   }, [reservationId])
 
@@ -199,6 +223,12 @@ export default function PaymentRecordsList({ reservationId, customerName }: Paym
   }
 
   const getPaymentMethodText = (method: string) => {
+    // payment_methods 테이블에서 조회한 방법명이 있으면 사용
+    if (paymentMethodMap[method]) {
+      return paymentMethodMap[method]
+    }
+    
+    // 기본 결제 방법 매핑
     const methods: Record<string, string> = {
       bank_transfer: '은행 이체',
       cash: '현금',
@@ -206,6 +236,8 @@ export default function PaymentRecordsList({ reservationId, customerName }: Paym
       paypal: 'PayPal',
       other: '기타'
     }
+    
+    // 매핑에 없으면 원본 값 반환 (이미 방법명이거나 ID일 수 있음)
     return methods[method] || method
   }
 

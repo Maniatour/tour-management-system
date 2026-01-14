@@ -5,16 +5,24 @@ import webpush from 'web-push'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
-// VAPID 키 설정 (환경 변수에서 가져오기)
-const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!
-const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY!
-const vapidEmail = process.env.VAPID_EMAIL || 'mailto:your-email@example.com'
+// VAPID 키 설정 함수 (필요할 때만 호출)
+function setupVapidDetails() {
+  const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+  const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY
+  const vapidEmail = process.env.VAPID_EMAIL || 'mailto:your-email@example.com'
 
-// web-push 설정
-webpush.setVapidDetails(vapidEmail, vapidPublicKey, vapidPrivateKey)
+  if (!vapidPublicKey || !vapidPrivateKey) {
+    throw new Error('VAPID keys are not configured. Please set NEXT_PUBLIC_VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY environment variables.')
+  }
+
+  webpush.setVapidDetails(vapidEmail, vapidPublicKey, vapidPrivateKey)
+}
 
 export async function POST(request: NextRequest) {
   try {
+    // VAPID 설정 (요청 시점에 설정)
+    setupVapidDetails()
+
     const { roomId, message, senderName } = await request.json()
 
     if (!roomId || !message) {

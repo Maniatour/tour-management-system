@@ -9,39 +9,41 @@ export class PaymentMethodIntegration {
       if (!paymentMethodString) return null
 
       // 먼저 정확한 매치를 찾기
-      const { data: exactMatch } = await supabase
+      const { data: exactMatch, error: exactError } = await supabase
         .from('payment_methods')
         .select('id')
         .eq('method', paymentMethodString)
         .eq('status', 'active')
-        .single()
+        .maybeSingle()
 
-      if (exactMatch) {
+      if (!exactError && exactMatch) {
         return exactMatch.id
       }
 
       // 부분 매치 찾기 (카드 번호 등)
-      const { data: partialMatch } = await supabase
+      const { data: partialMatch, error: partialError } = await supabase
         .from('payment_methods')
         .select('id')
         .ilike('method', `%${paymentMethodString}%`)
         .eq('status', 'active')
-        .single()
+        .limit(1)
+        .maybeSingle()
 
-      if (partialMatch) {
+      if (!partialError && partialMatch) {
         return partialMatch.id
       }
 
       // 사용자별 매치 찾기
       if (userEmail) {
-        const { data: userMatch } = await supabase
+        const { data: userMatch, error: userError } = await supabase
           .from('payment_methods')
           .select('id')
           .eq('user_email', userEmail)
           .eq('status', 'active')
-          .single()
+          .limit(1)
+          .maybeSingle()
 
-        if (userMatch) {
+        if (!userError && userMatch) {
           return userMatch.id
         }
       }
@@ -58,11 +60,16 @@ export class PaymentMethodIntegration {
     try {
       if (!paymentMethodId) return null
 
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('payment_methods')
         .select('method')
         .eq('id', paymentMethodId)
-        .single()
+        .maybeSingle()
+
+      if (error) {
+        console.error('결제 방법 문자열 해결 오류:', error)
+        return null
+      }
 
       return data?.method || null
     } catch (error) {
@@ -88,16 +95,22 @@ export class PaymentMethodIntegration {
   }
 
   // 결제 방법 옵션 목록 가져오기 (드롭다운용)
-  async getPaymentMethodOptions(userEmail?: string): Promise<Array<{id: string, method: string, method_type: string}>> {
+  // userEmail이 제공되면 해당 직원의 결제 방법만, 없으면 모든 활성 결제 방법 반환
+  // 고객 결제 내역에서는 userEmail 없이 호출하여 모든 결제 방법(직원용 + 고객용) 표시
+  async getPaymentMethodOptions(userEmail?: string, includeCustomerMethods: boolean = true): Promise<Array<{id: string, method: string, method_type: string, user_email: string | null}>> {
     try {
       let query = supabase
         .from('payment_methods')
-        .select('id, method, method_type')
+        .select('id, method, method_type, user_email')
         .eq('status', 'active')
         .order('method')
 
       if (userEmail) {
+        // 특정 직원의 결제 방법만 조회
         query = query.eq('user_email', userEmail)
+      } else if (includeCustomerMethods) {
+        // userEmail이 없으면 모든 활성 결제 방법 조회 (직원용 + 고객용)
+        // user_email이 null인 것(고객용)과 모든 직원용 모두 포함
       }
 
       const { data, error } = await query
@@ -121,7 +134,7 @@ export class PaymentMethodIntegration {
         .from('payment_methods')
         .select('limit_amount, monthly_limit, daily_limit, current_month_usage, current_day_usage, status')
         .eq('id', paymentMethodId)
-        .single()
+        .maybeSingle()
 
       if (error || !data) {
         return { isValid: false, reason: '결제 방법을 찾을 수 없습니다.' }
@@ -179,7 +192,7 @@ export class PaymentMethodIntegration {
         .from('payment_methods')
         .select('limit_amount, monthly_limit, daily_limit, current_month_usage, current_day_usage')
         .eq('id', paymentMethodId)
-        .single()
+        .maybeSingle()
 
       if (error || !data) return null
 
@@ -225,7 +238,8 @@ export class PaymentMethodIntegration {
             .from('payment_methods')
             .select('id')
             .eq('method', method)
-            .single()
+            .limit(1)
+            .maybeSingle()
 
           if (existing) continue
 

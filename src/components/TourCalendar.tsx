@@ -41,14 +41,15 @@ interface TourCalendarProps {
   tours: ExtendedTour[]
   onTourClick: (tour: ExtendedTour) => void
   allReservations?: Database['public']['Tables']['reservations']['Row'][]
+  reservationPricingMap?: Map<string, Database['public']['Tables']['reservation_pricing']['Row']>
   offSchedules?: OffSchedule[]
   onOffScheduleChange?: () => void
   onTourStatusUpdate?: (tourId: string, newStatus: string) => Promise<void>
-  userRole?: string
-  userPosition?: string | null
+  userRole?: string | undefined
+  userPosition?: string | null | undefined
 }
 
-const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReservations = [], offSchedules = [], onOffScheduleChange, onTourStatusUpdate, userRole, userPosition }: TourCalendarProps) {
+const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReservations = [], reservationPricingMap = new Map(), offSchedules = [], onOffScheduleChange, onTourStatusUpdate, userRole, userPosition }: TourCalendarProps) {
   const { user, simulatedUser, isSimulating } = useAuth()
   const t = useTranslations('tours.calendar')
   const locale = useLocale()
@@ -507,6 +508,29 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
     return total
   }, [allReservations, normalizeReservationIds])
 
+  // 투어별 밸런스 확인: reservation_ids에 있는 예약들의 balance_amount 확인
+  const hasBalance = useCallback((tour: ExtendedTour) => {
+    const ids = normalizeReservationIds(tour.reservation_ids as unknown)
+    if (ids.length === 0) return false
+    
+    // 중복 제거
+    const uniqueIds = [...new Set(ids)]
+    
+    for (const id of uniqueIds) {
+      const pricing = reservationPricingMap.get(id)
+      if (pricing) {
+        const balanceAmount = typeof pricing.balance_amount === 'string'
+          ? parseFloat(pricing.balance_amount) || 0
+          : (pricing.balance_amount || 0)
+        if (balanceAmount > 0) {
+          return true
+        }
+      }
+    }
+    
+    return false
+  }, [reservationPricingMap, normalizeReservationIds])
+
   // 같은 상품/날짜의 전체 인원 계산 (Recruiting/Confirmed만)
   const getTotalPeopleSameProductDateFiltered = useCallback((tour: ExtendedTour) => {
     const key = `${(tour.product_id ? String(tour.product_id) : '').trim()}__${(tour.tour_date ? String(tour.tour_date) : '').trim()}`
@@ -752,6 +776,9 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                     )
                   })()
                   
+                  // 밸런스 확인
+                  const tourHasBalance = hasBalance(tour)
+                  
                   // 고유한 key 생성: tour.id + tourIndex + date 정보를 조합
                   const uniqueKey = `${tour.id}-${tourIndex}-${date.getTime()}`
                   
@@ -771,12 +798,18 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                         isPrivateTour ? 'ring-2 ring-purple-400 ring-opacity-100' : ''
                       } ${
                         hasUnsentPickupNotification ? 'ring-2 ring-red-500 ring-opacity-100' : ''
+                      } ${
+                        tourHasBalance ? 'ring-2 ring-yellow-400 ring-opacity-100' : ''
                       }`}
-                      title={hasUnsentPickupNotification ? '픽업 안내 미발송 예약이 있습니다' : ''}
+                      title={
+                        (hasUnsentPickupNotification ? '픽업 안내 미발송 예약이 있습니다. ' : '') +
+                        (tourHasBalance ? '밸런스가 남아 있는 투어입니다.' : '')
+                      }
                     >
                       <div className="whitespace-normal break-words leading-tight sm:whitespace-nowrap sm:truncate">
                         <span className={`font-medium ${isPrivateTour ? 'text-purple-100' : ''}`}>
                           {hasUnsentPickupNotification && <span className="inline-block mr-0.5" title="픽업 안내 미발송">📧</span>}
+                          {tourHasBalance && <span className="inline-block mr-0.5" title="밸런스 남음">💲</span>}
                           {tourStatusIcon && <span className="inline-block mr-0.5">{tourStatusIcon}</span>}
                           {assignmentIcon && <span className="inline-block mr-0.5">{assignmentIcon}</span>}
                           {isPrivateTour ? '🔒 ' : ''}{getTourDisplayName(tour)}
@@ -784,7 +817,6 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                         <span className="mx-0.5 sm:mx-1">
                           {(() => {
                             // tour 객체에 assigned_adults, assigned_children, assigned_infants가 있으면 사용
-                            const adults = tour.assigned_adults ?? 0
                             const children = tour.assigned_children ?? 0
                             const infants = tour.assigned_infants ?? 0
                             const total = tour.assigned_people ?? assignedPeople

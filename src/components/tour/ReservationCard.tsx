@@ -98,6 +98,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   const [showSimplePickupModal, setShowSimplePickupModal] = useState(false)
   const [channelInfo, setChannelInfo] = useState<{ name: string; favicon?: string; has_not_included_price?: boolean; commission_base_price_only?: boolean } | null>(null)
   const [customerData, setCustomerData] = useState<{ id: string; resident_status: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null } | null>(null)
+  const [paymentMethodMap, setPaymentMethodMap] = useState<Record<string, string>>({})
   const [residentStatusDropdownOpen, setResidentStatusDropdownOpen] = useState<string | null>(null)
   const [showResidentStatusModal, setShowResidentStatusModal] = useState(false)
   const [residentStatusCounts, setResidentStatusCounts] = useState({
@@ -317,6 +318,28 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       console.error('예약 가격 정보 조회 오류:', error)
     }
   }, [isStaff, reservation.id])
+
+  // 결제 방법 정보 로드
+  const loadPaymentMethods = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('payment_methods')
+        .select('id, method')
+      
+      if (error) throw error
+      
+      const methodMap: Record<string, string> = {}
+      data?.forEach(pm => {
+        // ID로 조회 시 방법명(method)만 반환
+        methodMap[pm.id] = pm.method
+        // 방법명으로도 매핑 (payment_records에 방법명이 직접 저장된 경우 대비)
+        methodMap[pm.method] = pm.method
+      })
+      setPaymentMethodMap(methodMap)
+    } catch (error) {
+      console.error('결제 방법 정보 로드 오류:', error)
+    }
+  }, [])
 
   // 입금 내역 가져오기
   const fetchPaymentRecords = useCallback(async () => {
@@ -575,6 +598,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
 
   // 컴포넌트 마운트 시 가격 정보, 입금 내역, 채널 정보, 고객 정보 가져오기
   useEffect(() => {
+    // 결제 방법 정보 로드
+    loadPaymentMethods()
+    
     // 동시 요청을 방지하기 위해 예약 ID를 기반으로 일관된 지연 시간 설정
     // 예약 ID의 마지막 문자를 숫자로 변환하여 0-1000ms 사이의 지연 시간 생성
     const reservationIdHash = reservation.id.charCodeAt(reservation.id.length - 1) % 1000
@@ -591,7 +617,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }, delay)
 
     return () => clearTimeout(timeoutId)
-  }, [isStaff, reservation.id, reservation.customer_id, fetchReservationPricing, fetchChannelInfo, fetchCustomerData])
+  }, [isStaff, reservation.id, reservation.customer_id, loadPaymentMethods, fetchReservationPricing, fetchChannelInfo, fetchCustomerData])
 
   // 입금 내역 표시 토글
   const togglePaymentRecords = () => {
@@ -913,6 +939,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   }
 
   const getPaymentMethodText = (method: string) => {
+    // payment_methods 테이블에서 조회한 방법명이 있으면 사용
+    if (paymentMethodMap[method]) {
+      return paymentMethodMap[method]
+    }
+    
+    // 기본 결제 방법 매핑
     switch (method?.toLowerCase()) {
       case 'bank_transfer':
         return '계좌이체'

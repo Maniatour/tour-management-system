@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Plus, Search, Calendar, Grid, CalendarDays, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
 import { useTranslations, useLocale } from 'next-intl'
 import { useRouter } from 'next/navigation'
@@ -72,6 +72,7 @@ export default function AdminTours() {
   const [, setProducts] = useState<Product[]>([])
   const [tours, setTours] = useState<ExtendedTour[]>([])
   const [allReservations, setAllReservations] = useState<Database['public']['Tables']['reservations']['Row'][]>([])
+  const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, Database['public']['Tables']['reservation_pricing']['Row']>>(new Map())
   const [viewMode, setViewMode] = useState<'list' | 'calendar' | 'schedule'>('calendar')
   const [statusOptions, setStatusOptions] = useState<string[]>([])
   const [gridMonth, setGridMonth] = useState<Date>(new Date())
@@ -303,6 +304,23 @@ export default function AdminTours() {
 
       // 5. allReservations 상태 설정
       setAllReservations(reservationsData || [])
+
+      // 5-1. reservation_pricing 데이터 가져오기 (밸런스 확인용)
+      const reservationIds = (reservationsData || []).map(r => r.id).filter(Boolean)
+      const pricingMap = new Map<string, Database['public']['Tables']['reservation_pricing']['Row']>()
+      if (reservationIds.length > 0) {
+        const { data: pricingData } = await supabase
+          .from('reservation_pricing')
+          .select('*')
+          .in('reservation_id', reservationIds)
+        
+        if (pricingData) {
+          pricingData.forEach((pricing: Database['public']['Tables']['reservation_pricing']['Row']) => {
+            pricingMap.set(pricing.reservation_id, pricing)
+          })
+        }
+      }
+      setReservationPricingMap(pricingMap)
 
       // 6. 사전 계산 맵 구성 (성능 최적화)
       const reservationIdToPeople = new Map<string, number>()
@@ -804,9 +822,10 @@ export default function AdminTours() {
             tours={filteredTours} 
             onTourClick={handleTourClick} 
             allReservations={allReservations}
+            reservationPricingMap={reservationPricingMap}
             onTourStatusUpdate={handleTourStatusUpdate}
-            userRole={userRole || undefined}
-            userPosition={userPosition}
+            userRole={userRole ? String(userRole) : undefined}
+            userPosition={userPosition || undefined}
           />
         </div>
       )}

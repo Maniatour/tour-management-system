@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 
 // 입금 내역 업데이트
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> | { id: string } }
+) {
   try {
-    const { id } = params
+    const resolvedParams = await Promise.resolve(params)
+    const { id } = resolvedParams
     const body = await request.json()
     const { 
       payment_status, 
@@ -30,7 +34,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     }
 
     // 업데이트할 데이터 준비
-    const updateData: any = {}
+    const updateData: any = {
+      updated_at: new Date().toISOString()
+    }
     if (payment_status !== undefined) updateData.payment_status = payment_status
     if (amount !== undefined) updateData.amount = parseFloat(amount)
     if (payment_method !== undefined) updateData.payment_method = payment_method
@@ -61,11 +67,15 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           )
         )
       `)
-      .single()
+      .maybeSingle()
 
     if (error) {
       console.error('입금 내역 업데이트 오류:', error)
       return NextResponse.json({ error: '입금 내역을 업데이트할 수 없습니다' }, { status: 500 })
+    }
+
+    if (!updatedPaymentRecord) {
+      return NextResponse.json({ error: '입금 내역을 찾을 수 없습니다' }, { status: 404 })
     }
 
     return NextResponse.json({ paymentRecord: updatedPaymentRecord })
@@ -76,9 +86,13 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 // 입금 내역 삭제
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> | { id: string } }
+) {
   try {
-    const { id } = params
+    const resolvedParams = await Promise.resolve(params)
+    const { id } = resolvedParams
 
     // Authorization 헤더에서 토큰 확인
     const authHeader = request.headers.get('authorization')

@@ -123,6 +123,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // display_name 자동 생성 (ID가 PAYM으로 시작하는 경우만 ID 포함)
+    const displayName = id && id.startsWith('PAYM') 
+      ? `${id} - ${method}`
+      : method
+
     const { data, error } = await supabase
       .from('payment_methods')
       .insert({
@@ -139,10 +144,11 @@ export async function POST(request: NextRequest) {
         monthly_limit: monthly_limit ? parseFloat(monthly_limit) : null,
         daily_limit: daily_limit ? parseFloat(daily_limit) : null,
         notes: notes || null,
-        created_by: created_by || null
+        created_by: created_by || null,
+        display_name: displayName
       })
       .select()
-      .single()
+      .maybeSingle()
 
     if (error) {
       console.error('Error creating payment method:', error)
@@ -153,6 +159,13 @@ export async function POST(request: NextRequest) {
           error: error.message,
           details: error
         },
+        { status: 500 }
+      )
+    }
+
+    if (!data) {
+      return NextResponse.json(
+        { success: false, message: 'Failed to create payment method - no data returned' },
         { status: 500 }
       )
     }
@@ -212,18 +225,43 @@ export async function PUT(request: NextRequest) {
       )
     }
 
+    // method나 id가 변경되면 display_name 자동 업데이트
+    if (updateData.method !== undefined || updateData.id !== undefined) {
+      // 기존 데이터 조회
+      const { data: existingData } = await supabase
+        .from('payment_methods')
+        .select('id, method')
+        .eq('id', id)
+        .single()
+      
+      const finalId = updateData.id || existingData?.id || id
+      const finalMethod = updateData.method || existingData?.method || ''
+      
+      // display_name 자동 생성
+      updateData.display_name = finalId && finalId.startsWith('PAYM')
+        ? `${finalId} - ${finalMethod}`
+        : finalMethod
+    }
+
     const { data, error } = await supabase
       .from('payment_methods')
       .update(updateData)
       .eq('id', id)
       .select()
-      .single()
+      .maybeSingle()
 
     if (error) {
       console.error('Error updating payment method:', error)
       return NextResponse.json(
         { success: false, message: 'Failed to update payment method' },
         { status: 500 }
+      )
+    }
+
+    if (!data) {
+      return NextResponse.json(
+        { success: false, message: 'Payment method not found' },
+        { status: 404 }
       )
     }
 
