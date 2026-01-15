@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Check, X, Users, Clock, Building, DollarSign, Wallet, Home, Plane, PlaneTakeoff, HelpCircle, CheckCircle2, AlertCircle, XCircle, Circle } from 'lucide-react'
+import { Check, X, Users, Clock, Building, DollarSign, Wallet, Home, Plane, PlaneTakeoff, HelpCircle, CheckCircle2, AlertCircle, XCircle, Circle, MessageSquare } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { SimplePickupEditModal } from './modals/SimplePickupEditModal'
+import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 
 interface Reservation {
   id: string
@@ -96,6 +97,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   const [loadingPayments, setLoadingPayments] = useState(false)
   const [reservationPricing, setReservationPricing] = useState<ReservationPricing | null>(null)
   const [showSimplePickupModal, setShowSimplePickupModal] = useState(false)
+  const [showReviewModal, setShowReviewModal] = useState(false)
   const [channelInfo, setChannelInfo] = useState<{ name: string; favicon?: string; has_not_included_price?: boolean; commission_base_price_only?: boolean } | null>(null)
   const [customerData, setCustomerData] = useState<{ id: string; resident_status: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null } | null>(null)
   const [paymentMethodMap, setPaymentMethodMap] = useState<Record<string, string>>({})
@@ -1519,6 +1521,20 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               </button>
             )}
 
+            {/* 후기 관리 버튼 */}
+            {isStaff && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowReviewModal(true)
+                }}
+                className="p-1 text-purple-600 hover:bg-purple-50 rounded"
+                title="후기 관리"
+              >
+                <MessageSquare size={14} />
+              </button>
+            )}
+
             {/* 액션 버튼들 */}
             {showActions && isStaff && (
               <>
@@ -1828,9 +1844,50 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                  </button>
                </div>
              </div>
-           </div>
-         </div>
-       )}
-     </div>
-   )
- }
+          </div>
+        </div>
+      )}
+
+      {/* 후기 관리 모달 */}
+      {showReviewModal && (
+        <ReviewManagementModal
+          reservationId={reservation.id}
+          isOpen={showReviewModal}
+          onClose={() => setShowReviewModal(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// 후기 관리 모달 컴포넌트
+function ReviewManagementModal({
+  reservationId,
+  isOpen,
+  onClose
+}: {
+  reservationId: string
+  isOpen: boolean
+  onClose: () => void
+}) {
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
+          <h2 className="text-xl font-semibold text-gray-900">후기 관리</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6">
+          <ReviewManagementSection reservationId={reservationId} />
+        </div>
+      </div>
+    </div>
+  )
+}

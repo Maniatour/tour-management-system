@@ -18,6 +18,7 @@ import TourConnectionSection from '@/components/reservation/TourConnectionSectio
 import PaymentRecordsList from '@/components/PaymentRecordsList'
 import ReservationExpenseManager from '@/components/ReservationExpenseManager'
 import ReservationOptionsSection from '@/components/reservation/ReservationOptionsSection'
+import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import { getOptionalOptionsForProduct } from '@/utils/reservationUtils'
 import type { 
@@ -3207,6 +3208,13 @@ export default function ReservationForm({
                       // 투어 생성 후 필요한 새로고침 로직
                     }}
                   />
+                </div>
+              )}
+
+              {/* 후기 관리 섹션 - 연결된 투어 아래에 배치 */}
+              {layout === 'page' && reservation && (
+                <div className="mt-4">
+                  <ReviewManagementSection reservationId={reservation.id} />
                 </div>
               )}
             </div>

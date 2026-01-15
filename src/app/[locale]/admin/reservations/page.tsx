@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, DollarSign, Eye, X, GripVertical, Clock, Mail, ChevronDown, Edit } from 'lucide-react'
+import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, DollarSign, Eye, X, GripVertical, Clock, Mail, ChevronDown, Edit, MessageSquare } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
@@ -20,6 +20,7 @@ import PickupTimeModal from '@/components/tour/modals/PickupTimeModal'
 import PickupHotelModal from '@/components/tour/modals/PickupHotelModal'
 import EmailPreviewModal from '@/components/reservation/EmailPreviewModal'
 import EmailLogsModal from '@/components/reservation/EmailLogsModal'
+import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 import { useAuth } from '@/contexts/AuthContext'
 import { 
   getPickupHotelDisplay, 
@@ -251,6 +252,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const [showPricingModal, setShowPricingModal] = useState(false)
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
+  const [selectedReservationForReview, setSelectedReservationForReview] = useState<Reservation | null>(null)
+  const [showReviewModal, setShowReviewModal] = useState(false)
 
   // 페이지네이션 상태
   const [currentPage, setCurrentPage] = useState(1)
@@ -2995,6 +2998,20 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       <span>고객 보기</span>
                     </button>
 
+                    {/* 후기 관리 버튼 */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedReservationForReview(reservation);
+                        setShowReviewModal(true);
+                      }}
+                      className="px-2 py-1 text-xs bg-pink-50 text-pink-600 rounded-md hover:bg-pink-100 transition-colors flex items-center space-x-1 border border-pink-200"
+                      title="후기 관리"
+                    >
+                      <MessageSquare className="w-3 h-3" />
+                      <span>후기</span>
+                    </button>
+
                     {/* 이메일 발송 드롭다운 */}
                     <div className="relative">
                       <button
@@ -3543,6 +3560,20 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                       <span>고객 보기</span>
                     </button>
 
+                    {/* 후기 관리 버튼 */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedReservationForReview(reservation);
+                        setShowReviewModal(true);
+                      }}
+                      className="px-2 py-1 text-xs bg-pink-50 text-pink-600 rounded-md hover:bg-pink-100 transition-colors flex items-center space-x-1 border border-pink-200"
+                      title="후기 관리"
+                    >
+                      <MessageSquare className="w-3 h-3" />
+                      <span>후기</span>
+                    </button>
+
                     {/* 이메일 발송 드롭다운 */}
                     <div className="relative">
                       <button
@@ -3927,6 +3958,29 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           </ResizableModal>
         )
       })()}
+
+      {/* 후기 관리 모달 */}
+      {showReviewModal && selectedReservationForReview && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
+              <h2 className="text-xl font-semibold text-gray-900">후기 관리</h2>
+              <button
+                onClick={() => {
+                  setShowReviewModal(false)
+                  setSelectedReservationForReview(null)
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              <ReviewManagementSection reservationId={selectedReservationForReview.id} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
