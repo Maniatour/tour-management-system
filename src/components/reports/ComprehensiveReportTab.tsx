@@ -64,8 +64,8 @@ export default function ComprehensiveReportTab({
       // 예약 통계
       const filteredReservations = reservations.filter(r => {
         const date = new Date(r.addedTime)
-        const start = new Date(dateRange.start)
-        const end = new Date(dateRange.end)
+        const start = new Date(dateRange.start + 'T00:00:00')
+        const end = new Date(dateRange.end + 'T23:59:59.999')
         return date >= start && date <= end
       })
 
@@ -352,7 +352,7 @@ export default function ComprehensiveReportTab({
       const { data: allCashPayments } = await supabase
         .from('payment_records')
         .select('amount')
-        .eq('payment_method', 'PAYM032')
+        .in('payment_method', ['PAYM032', 'PAYM001'])
         .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
         .gte('submit_on', baseDate + 'T00:00:00')
 
@@ -375,7 +375,7 @@ export default function ComprehensiveReportTab({
       const { data: periodCashPayments } = await supabase
         .from('payment_records')
         .select('amount')
-        .eq('payment_method', 'PAYM032')
+        .in('payment_method', ['PAYM032', 'PAYM001'])
         .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
         .gte('submit_on', startISO)
         .lte('submit_on', endISO)

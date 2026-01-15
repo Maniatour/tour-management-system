@@ -24,6 +24,34 @@ export default function ReservationReportTab({
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
+  const displayedSettlements = useMemo(() => {
+    if (!stats?.settlements) return []
+    return stats.settlements.slice(0, 50)
+  }, [stats])
+
+  const displayedTotals = useMemo(() => {
+    return displayedSettlements.reduce(
+      (acc: { revenue: number; expenses: number; netProfit: number }, cur: any) => ({
+        revenue: acc.revenue + (cur?.revenue || 0),
+        expenses: acc.expenses + (cur?.expenses || 0),
+        netProfit: acc.netProfit + (cur?.netProfit || 0)
+      }),
+      { revenue: 0, expenses: 0, netProfit: 0 }
+    )
+  }, [displayedSettlements])
+
+  const overallTotals = useMemo(() => {
+    if (!stats?.settlements) return { revenue: 0, expenses: 0, netProfit: 0 }
+    return stats.settlements.reduce(
+      (acc: { revenue: number; expenses: number; netProfit: number }, cur: any) => ({
+        revenue: acc.revenue + (cur?.revenue || 0),
+        expenses: acc.expenses + (cur?.expenses || 0),
+        netProfit: acc.netProfit + (cur?.netProfit || 0)
+      }),
+      { revenue: 0, expenses: 0, netProfit: 0 }
+    )
+  }, [stats])
+
   useEffect(() => {
     loadReservationStats()
   }, [dateRange, period, reservations])
@@ -33,8 +61,9 @@ export default function ReservationReportTab({
     try {
       const filteredReservations = reservations.filter(r => {
         const date = new Date(r.addedTime)
-        const start = new Date(dateRange.start)
-        const end = new Date(dateRange.end)
+        // dateRange는 'YYYY-MM-DD' 이므로 로컬 하루 범위로 비교
+        const start = new Date(dateRange.start + 'T00:00:00')
+        const end = new Date(dateRange.end + 'T23:59:59.999')
         return date >= start && date <= end
       })
 
@@ -95,6 +124,7 @@ export default function ReservationReportTab({
 
           return {
             reservationId: r.id,
+            status: r.status || 'Unknown',
             customerName: customers.find(c => c.id === r.customerId)?.name || 'Unknown',
             productName: products.find(p => p.id === r.productId)?.name || 'Unknown',
             channelName: channels.find(c => c.id === r.channelId)?.name || 'Unknown',
@@ -247,6 +277,7 @@ export default function ReservationReportTab({
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">고객</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">상품</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">채널</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">상태</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">인원</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">수익</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">지출</th>
@@ -254,11 +285,12 @@ export default function ReservationReportTab({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {stats.settlements.slice(0, 50).map((item: any, idx: number) => (
+              {displayedSettlements.map((item: any, idx: number) => (
                 <tr key={idx}>
                   <td className="px-4 py-3 text-sm">{item.customerName}</td>
                   <td className="px-4 py-3 text-sm">{item.productName}</td>
                   <td className="px-4 py-3 text-sm">{item.channelName}</td>
+                  <td className="px-4 py-3 text-sm">{item.status}</td>
                   <td className="px-4 py-3 text-sm">{item.totalPeople}</td>
                   <td className="px-4 py-3 text-sm">${item.revenue.toLocaleString()}</td>
                   <td className="px-4 py-3 text-sm text-red-600">${item.expenses.toLocaleString()}</td>
@@ -266,6 +298,36 @@ export default function ReservationReportTab({
                 </tr>
               ))}
             </tbody>
+            <tfoot className="bg-gray-50 border-t border-gray-200">
+              <tr className="font-semibold">
+                <td className="px-4 py-3 text-sm text-gray-700" colSpan={5}>
+                  소계 (표시된 {displayedSettlements.length}건)
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-900">
+                  ${displayedTotals.revenue.toLocaleString()}
+                </td>
+                <td className="px-4 py-3 text-sm text-red-700">
+                  ${displayedTotals.expenses.toLocaleString()}
+                </td>
+                <td className="px-4 py-3 text-sm text-green-700">
+                  ${displayedTotals.netProfit.toLocaleString()}
+                </td>
+              </tr>
+              <tr className="font-bold">
+                <td className="px-4 py-3 text-sm text-gray-900" colSpan={5}>
+                  총합 (전체 {stats.settlements.length}건)
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-900">
+                  ${overallTotals.revenue.toLocaleString()}
+                </td>
+                <td className="px-4 py-3 text-sm text-red-700">
+                  ${overallTotals.expenses.toLocaleString()}
+                </td>
+                <td className="px-4 py-3 text-sm text-green-700">
+                  ${overallTotals.netProfit.toLocaleString()}
+                </td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>

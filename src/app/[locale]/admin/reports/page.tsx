@@ -81,33 +81,45 @@ export default function AdminReports({ }: AdminReportsProps) {
   const dateRange = useMemo(() => {
     const today = new Date()
     let startDate: Date
-    let endDate = new Date(today)
-    endDate.setHours(23, 59, 59, 999)
+    let endDate: Date
+
+    const formatLocalDate = (d: Date) => {
+      const yyyy = d.getFullYear()
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      return `${yyyy}-${mm}-${dd}`
+    }
 
     switch (reportPeriod) {
       case 'daily':
         startDate = new Date(today)
         startDate.setHours(0, 0, 0, 0)
+        // 일별 리포트는 하루만: start = end
+        endDate = new Date(startDate)
         break
       case 'weekly':
         startDate = new Date(today)
         const dayOfWeek = startDate.getDay()
         startDate.setDate(today.getDate() - dayOfWeek)
         startDate.setHours(0, 0, 0, 0)
+        endDate = new Date(today)
         break
       case 'monthly':
         startDate = new Date(today.getFullYear(), today.getMonth(), 1)
         startDate.setHours(0, 0, 0, 0)
+        endDate = new Date(today)
         break
       case 'yearly':
         startDate = new Date(today.getFullYear(), 0, 1)
         startDate.setHours(0, 0, 0, 0)
+        endDate = new Date(today)
         break
     }
 
     return {
-      start: startDate.toISOString().split('T')[0],
-      end: endDate.toISOString().split('T')[0]
+      // toISOString()은 UTC로 변환되어 날짜가 하루 밀릴 수 있으므로 로컬 기준 문자열 사용
+      start: formatLocalDate(startDate),
+      end: formatLocalDate(endDate)
     }
   }, [reportPeriod])
 

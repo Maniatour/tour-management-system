@@ -20,6 +20,15 @@ export default function SettlementReportTab({ dateRange, period }: SettlementRep
   const loadSettlementStats = async () => {
     setLoading(true)
     try {
+      const toNumber = (v: unknown) => {
+        if (typeof v === 'number') return v
+        if (typeof v === 'string') {
+          const n = parseFloat(v)
+          return Number.isFinite(n) ? n : 0
+        }
+        return 0
+      }
+
       // 날짜 범위를 ISO 형식으로 변환 (시간 포함)
       const startDate = new Date(dateRange.start + 'T00:00:00')
       const endDate = new Date(dateRange.end + 'T23:59:59.999')
@@ -41,7 +50,7 @@ export default function SettlementReportTab({ dateRange, period }: SettlementRep
           .select('total_price')
           .in('reservation_id', reservationIds)
         
-        reservationRevenue = pricing?.reduce((sum, p) => sum + (p.total_price || 0), 0) || 0
+        reservationRevenue = pricing?.reduce((sum, p) => sum + toNumber((p as any).total_price), 0) || 0
       }
 
       // 예약 지출
@@ -52,7 +61,7 @@ export default function SettlementReportTab({ dateRange, period }: SettlementRep
           .select('amount')
           .in('reservation_id', reservationIds)
         
-        reservationExpenses = expenses?.reduce((sum, e) => sum + (e.amount || 0), 0) || 0
+        reservationExpenses = expenses?.reduce((sum, e) => sum + toNumber((e as any).amount), 0) || 0
       }
 
       // 투어 수익
@@ -77,7 +86,7 @@ export default function SettlementReportTab({ dateRange, period }: SettlementRep
               .in('reservation_id', tour.reservation_ids)
             
             if (pricing) {
-              tourRevenue += pricing.reduce((sum, p) => sum + (p.total_price || 0), 0)
+              tourRevenue += pricing.reduce((sum, p) => sum + toNumber((p as any).total_price), 0)
             }
           }
         }
@@ -89,7 +98,7 @@ export default function SettlementReportTab({ dateRange, period }: SettlementRep
           .in('tour_id', tourIds)
         
         if (expenses) {
-          tourExpenses = expenses.reduce((sum, e) => sum + (e.amount || 0), 0)
+          tourExpenses = expenses.reduce((sum, e) => sum + toNumber((e as any).amount), 0)
         }
       }
 
@@ -97,20 +106,20 @@ export default function SettlementReportTab({ dateRange, period }: SettlementRep
       const { data: companyExpenses } = await supabase
         .from('company_expenses')
         .select('amount')
-        .gte('created_at', startISO)
-        .lte('created_at', endISO)
+        .gte('submit_on', startISO)
+        .lte('submit_on', endISO)
 
-      const totalCompanyExpenses = companyExpenses?.reduce((sum, e) => sum + (e.amount || 0), 0) || 0
+      const totalCompanyExpenses = companyExpenses?.reduce((sum, e) => sum + toNumber((e as any).amount), 0) || 0
 
       // 입금
       const { data: deposits } = await supabase
         .from('payment_records')
         .select('amount')
-        .gte('submit_on', dateRange.start)
-        .lte('submit_on', dateRange.end)
+        .gte('submit_on', startISO)
+        .lte('submit_on', endISO)
         .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
 
-      const totalDeposits = deposits?.reduce((sum, d) => sum + (d.amount || 0), 0) || 0
+      const totalDeposits = deposits?.reduce((sum, d) => sum + toNumber((d as any).amount), 0) || 0
 
       // 총계
       const totalRevenue = reservationRevenue + tourRevenue

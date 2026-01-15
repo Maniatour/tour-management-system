@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Calendar, DollarSign, TrendingUp, Car } from 'lucide-react'
+import { Calendar, DollarSign, TrendingUp, Users } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface TourReportTabProps {
@@ -22,7 +22,7 @@ export default function TourReportTab({ dateRange, period }: TourReportTabProps)
     try {
       const { data: tours } = await supabase
         .from('tours')
-        .select('id, tour_date, reservation_ids, vehicle_type, guide_fee, assistant_fee')
+        .select('id, tour_date, tour_status, reservation_ids, product_id, tour_guide_id, assistant_id, guide_fee, assistant_fee')
         .gte('tour_date', dateRange.start)
         .lte('tour_date', dateRange.end)
 
@@ -31,59 +31,115 @@ export default function TourReportTab({ dateRange, period }: TourReportTabProps)
         return
       }
 
-      const tourStats = await Promise.all(
-        tours.map(async (tour) => {
-          // 예약 가격 합산
-          let revenue = 0
-          if (tour.reservation_ids && Array.isArray(tour.reservation_ids)) {
-            const { data: pricing } = await supabase
-              .from('reservation_pricing')
-              .select('total_price')
-              .in('reservation_id', tour.reservation_ids)
-            
-            if (pricing) {
-              revenue = pricing.reduce((sum, p) => sum + (p.total_price || 0), 0)
-            }
-          }
+      const tourIds = tours.map(t => t.id)
+      const productIds = [...new Set(tours.map(t => t.product_id).filter(Boolean))] as string[]
+      const guideEmails = [...new Set(tours.map(t => t.tour_guide_id).filter(Boolean))] as string[]
+      const assistantEmails = [...new Set(tours.map(t => t.assistant_id).filter(Boolean))] as string[]
+      const teamEmails = [...new Set([...guideEmails, ...assistantEmails])]
 
-          // 투어 지출 합산
-          const { data: expenses } = await supabase
-            .from('tour_expenses')
-            .select('amount')
-            .eq('tour_id', tour.id)
+      const allReservationIds = [
+        ...new Set(
+          tours
+            .flatMap(t => (Array.isArray(t.reservation_ids) ? t.reservation_ids : []))
+            .filter(Boolean)
+        )
+      ] as string[]
 
-          const { data: ticketBookings } = await supabase
-            .from('ticket_bookings')
-            .select('expense')
-            .eq('tour_id', tour.id)
-            .eq('status', 'confirmed')
+      const [
+        { data: products },
+        { data: team },
+        { data: reservations },
+        { data: pricing },
+        { data: tourExpensesRows },
+        { data: ticketBookingsRows },
+        { data: hotelBookingsRows }
+      ] = await Promise.all([
+        productIds.length > 0
+          ? supabase.from('products').select('id, name, name_en').in('id', productIds)
+          : Promise.resolve({ data: [] as any[] } as any),
+        teamEmails.length > 0
+          ? supabase.from('team').select('email, name_ko, name_en').in('email', teamEmails)
+          : Promise.resolve({ data: [] as any[] } as any),
+        allReservationIds.length > 0
+          ? supabase.from('reservations').select('id, total_people').in('id', allReservationIds)
+          : Promise.resolve({ data: [] as any[] } as any),
+        allReservationIds.length > 0
+          ? supabase.from('reservation_pricing').select('reservation_id, total_price').in('reservation_id', allReservationIds)
+          : Promise.resolve({ data: [] as any[] } as any),
+        tourIds.length > 0
+          ? supabase.from('tour_expenses').select('tour_id, amount').in('tour_id', tourIds)
+          : Promise.resolve({ data: [] as any[] } as any),
+        tourIds.length > 0
+          ? supabase.from('ticket_bookings').select('tour_id, expense').in('tour_id', tourIds).in('status', ['confirmed', 'paid'])
+          : Promise.resolve({ data: [] as any[] } as any),
+        tourIds.length > 0
+          ? supabase.from('tour_hotel_bookings').select('tour_id, total_price').in('tour_id', tourIds).in('status', ['confirmed', 'paid'])
+          : Promise.resolve({ data: [] as any[] } as any)
+      ])
 
-          const { data: hotelBookings } = await supabase
-            .from('tour_hotel_bookings')
-            .select('total_price')
-            .eq('tour_id', tour.id)
-            .eq('status', 'confirmed')
+      const productNameMap = new Map<string, string>()
+      ;(products || []).forEach((p: any) => {
+        productNameMap.set(p.id, p.name || p.name_en || p.id)
+      })
 
-          const tourExpenses = expenses?.reduce((sum, e) => sum + (e.amount || 0), 0) || 0
-          const ticketCosts = ticketBookings?.reduce((sum, b) => sum + (b.expense || 0), 0) || 0
-          const hotelCosts = hotelBookings?.reduce((sum, b) => sum + (b.total_price || 0), 0) || 0
-          const fees = (tour.guide_fee || 0) + (tour.assistant_fee || 0)
-          
-          const totalExpenses = tourExpenses + ticketCosts + hotelCosts + fees
-          const netProfit = revenue - totalExpenses
+      const teamNameMap = new Map<string, string>()
+      ;(team || []).forEach((m: any) => {
+        teamNameMap.set(m.email, m.name_ko || m.name_en || m.email)
+      })
 
-          return {
-            tourId: tour.id,
-            tourDate: tour.tour_date,
-            vehicleType: tour.vehicle_type || 'Unknown',
-            revenue,
-            expenses: totalExpenses,
-            netProfit,
-            guideFee: tour.guide_fee || 0,
-            assistantFee: tour.assistant_fee || 0
-          }
-        })
-      )
+      const peopleMap = new Map<string, number>()
+      ;(reservations || []).forEach((r: any) => {
+        peopleMap.set(r.id, r.total_people || 0)
+      })
+
+      const pricingMap = new Map<string, number>()
+      ;(pricing || []).forEach((p: any) => {
+        pricingMap.set(p.reservation_id, p.total_price || 0)
+      })
+
+      const tourExpensesMap = new Map<string, number>()
+      ;(tourExpensesRows || []).forEach((e: any) => {
+        tourExpensesMap.set(e.tour_id, (tourExpensesMap.get(e.tour_id) || 0) + (e.amount || 0))
+      })
+
+      const ticketCostsMap = new Map<string, number>()
+      ;(ticketBookingsRows || []).forEach((b: any) => {
+        ticketCostsMap.set(b.tour_id, (ticketCostsMap.get(b.tour_id) || 0) + (b.expense || 0))
+      })
+
+      const hotelCostsMap = new Map<string, number>()
+      ;(hotelBookingsRows || []).forEach((b: any) => {
+        hotelCostsMap.set(b.tour_id, (hotelCostsMap.get(b.tour_id) || 0) + (b.total_price || 0))
+      })
+
+      const tourStats = tours.map((tour: any) => {
+        const reservationIds = Array.isArray(tour.reservation_ids) ? tour.reservation_ids : []
+
+        const revenue = reservationIds.reduce((sum: number, rid: string) => sum + (pricingMap.get(rid) || 0), 0)
+        const totalPeople = reservationIds.reduce((sum: number, rid: string) => sum + (peopleMap.get(rid) || 0), 0)
+
+        const fees = (tour.guide_fee || 0) + (tour.assistant_fee || 0)
+        const totalExpenses =
+          (tourExpensesMap.get(tour.id) || 0) +
+          (ticketCostsMap.get(tour.id) || 0) +
+          (hotelCostsMap.get(tour.id) || 0) +
+          fees
+
+        const netProfit = revenue - totalExpenses
+
+        return {
+          tourId: tour.id,
+          tourDate: tour.tour_date,
+          tourStatus: tour.tour_status || 'Unknown',
+          productName: tour.product_id ? (productNameMap.get(tour.product_id) || 'Unknown') : 'Unknown',
+          guideName: tour.tour_guide_id ? (teamNameMap.get(tour.tour_guide_id) || tour.tour_guide_id) : '미지정',
+          assistantName: tour.assistant_id ? (teamNameMap.get(tour.assistant_id) || tour.assistant_id) : '미지정',
+          totalPeople,
+          revenue,
+          expenses: totalExpenses,
+          netProfit
+        }
+      })
 
       const totalRevenue = tourStats.reduce((sum, t) => sum + t.revenue, 0)
       const totalExpenses = tourStats.reduce((sum, t) => sum + t.expenses, 0)
@@ -148,7 +204,7 @@ export default function TourReportTab({ dateRange, period }: TourReportTabProps)
         </div>
         <div className="bg-purple-50 p-6 rounded-lg">
           <div className="flex items-center space-x-3">
-            <Car className="h-8 w-8 text-purple-600" />
+            <Users className="h-8 w-8 text-purple-600" />
             <div>
               <p className="text-sm text-gray-600">순이익</p>
               <p className="text-2xl font-bold text-gray-900">${stats.netProfit.toLocaleString()}</p>
@@ -165,7 +221,11 @@ export default function TourReportTab({ dateRange, period }: TourReportTabProps)
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">투어 날짜</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">차량 유형</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">상태</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">상품</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">가이드</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">어시스턴트</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">총 인원</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">수익</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">지출</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">순이익</th>
@@ -174,8 +234,12 @@ export default function TourReportTab({ dateRange, period }: TourReportTabProps)
             <tbody className="divide-y divide-gray-200">
               {stats.tours.map((tour: any, idx: number) => (
                 <tr key={idx}>
-                  <td className="px-4 py-3 text-sm">{new Date(tour.tourDate).toLocaleDateString('ko-KR')}</td>
-                  <td className="px-4 py-3 text-sm">{tour.vehicleType}</td>
+                  <td className="px-4 py-3 text-sm">{tour.tourDate}</td>
+                  <td className="px-4 py-3 text-sm">{tour.tourStatus}</td>
+                  <td className="px-4 py-3 text-sm">{tour.productName}</td>
+                  <td className="px-4 py-3 text-sm">{tour.guideName}</td>
+                  <td className="px-4 py-3 text-sm">{tour.assistantName}</td>
+                  <td className="px-4 py-3 text-sm font-medium">{(tour.totalPeople || 0).toLocaleString()}명</td>
                   <td className="px-4 py-3 text-sm font-medium text-green-600">${tour.revenue.toLocaleString()}</td>
                   <td className="px-4 py-3 text-sm text-red-600">${tour.expenses.toLocaleString()}</td>
                   <td className="px-4 py-3 text-sm font-medium text-blue-600">${tour.netProfit.toLocaleString()}</td>

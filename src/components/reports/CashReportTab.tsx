@@ -9,6 +9,18 @@ interface CashReportTabProps {
   period: 'daily' | 'weekly' | 'monthly' | 'yearly'
 }
 
+type CashDetailRow = {
+  source: 'cash_transactions' | 'payment_records'
+  occurred_at: string
+  transaction_type: 'deposit' | 'withdrawal'
+  amount: number
+  category: string
+  description: string
+  payment_status?: string | null
+  reservation_id?: string | null
+  payment_method?: string | null
+}
+
 export default function CashReportTab({ dateRange, period }: CashReportTabProps) {
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -20,6 +32,15 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
   const loadCashStats = async () => {
     setLoading(true)
     try {
+      const toNumber = (v: unknown) => {
+        if (typeof v === 'number') return v
+        if (typeof v === 'string') {
+          const n = parseFloat(v)
+          return Number.isFinite(n) ? n : 0
+        }
+        return 0
+      }
+
       // 기준일: 2026년 1월 1일
       const baseDate = '2026-01-01'
       
@@ -52,11 +73,11 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         console.error('전체 현금 거래 조회 오류:', allError)
       }
 
-      // payment_records에서 현금 입금 조회 (PAYM032)
+      // payment_records에서 현금 입금 조회 (PAYM032 + PAYM001)
       const { data: cashPayments, error: paymentsError } = await supabase
         .from('payment_records')
-        .select('amount, submit_on, payment_status')
-        .eq('payment_method', 'PAYM032')
+        .select('id, amount, submit_on, payment_status, reservation_id, payment_method, note')
+        .in('payment_method', ['PAYM032', 'PAYM001'])
         .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
         .gte('submit_on', startISO)
         .lte('submit_on', endISO)
@@ -68,15 +89,15 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
       // 기간 내 통계 계산
       const periodDeposits = (periodTransactions || [])
         .filter(t => t.transaction_type === 'deposit')
-        .reduce((sum, t) => sum + (t.amount || 0), 0)
+        .reduce((sum, t) => sum + toNumber((t as any).amount), 0)
 
       const periodWithdrawals = (periodTransactions || [])
         .filter(t => t.transaction_type === 'withdrawal')
-        .reduce((sum, t) => sum + (t.amount || 0), 0)
+        .reduce((sum, t) => sum + toNumber((t as any).amount), 0)
 
       // payment_records에서의 현금 입금도 포함
       const cashPaymentsTotal = (cashPayments || [])
-        .reduce((sum, p) => sum + (p.amount || 0), 0)
+        .reduce((sum, p) => sum + toNumber((p as any).amount), 0)
 
       const totalDeposits = periodDeposits + cashPaymentsTotal
       const netCashFlow = totalDeposits - periodWithdrawals
@@ -84,9 +105,9 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
       // 2026년 1월 1일부터의 총 잔액 계산
       const totalBalance = (allTransactions || []).reduce((balance, t) => {
         if (t.transaction_type === 'deposit') {
-          return balance + (t.amount || 0)
+          return balance + toNumber((t as any).amount)
         } else {
-          return balance - (t.amount || 0)
+          return balance - toNumber((t as any).amount)
         }
       }, 0)
 
@@ -94,12 +115,12 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
       const { data: allCashPayments } = await supabase
         .from('payment_records')
         .select('amount')
-        .eq('payment_method', 'PAYM032')
+        .in('payment_method', ['PAYM032', 'PAYM001'])
         .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
         .gte('submit_on', baseDate + 'T00:00:00')
 
       const allCashPaymentsTotal = (allCashPayments || [])
-        .reduce((sum, p) => sum + (p.amount || 0), 0)
+        .reduce((sum, p) => sum + toNumber((p as any).amount), 0)
 
       const finalBalance = totalBalance + allCashPaymentsTotal
 
@@ -112,9 +133,9 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         }
         const cat = categoryMap.get(category)!
         if (t.transaction_type === 'deposit') {
-          cat.deposits += t.amount || 0
+          cat.deposits += toNumber((t as any).amount)
         } else {
-          cat.withdrawals += t.amount || 0
+          cat.withdrawals += toNumber((t as any).amount)
         }
       })
 
@@ -141,11 +162,36 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         }
         const trend = trendMap.get(periodKey)!
         if (t.transaction_type === 'deposit') {
-          trend.deposits += t.amount || 0
+          trend.deposits += toNumber((t as any).amount)
         } else {
-          trend.withdrawals += t.amount || 0
+          trend.withdrawals += toNumber((t as any).amount)
         }
       })
+
+      const details: CashDetailRow[] = [
+        ...(periodTransactions || []).map((t: any) => ({
+          source: 'cash_transactions' as const,
+          occurred_at: t.transaction_date,
+          transaction_type: t.transaction_type,
+          amount: toNumber(t.amount),
+          category: t.category || '기타',
+          description: t.description || '',
+          payment_status: null,
+          reservation_id: null,
+          payment_method: null
+        })),
+        ...(cashPayments || []).map((p: any) => ({
+          source: 'payment_records' as const,
+          occurred_at: p.submit_on,
+          transaction_type: 'deposit' as const,
+          amount: toNumber(p.amount),
+          category: '예약 현금 입금',
+          description: p.note || '',
+          payment_status: p.payment_status || null,
+          reservation_id: p.reservation_id || null,
+          payment_method: p.payment_method || null
+        }))
+      ].sort((a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at)))
 
       setStats({
         period: {
@@ -173,6 +219,8 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
             net: data.deposits - data.withdrawals
           }))
           .sort((a, b) => a.period.localeCompare(b.period))
+        ,
+        details
       })
     } catch (error) {
       console.error('현금 통계 로드 오류:', error)
@@ -344,6 +392,70 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           </div>
         </div>
       )}
+
+      {/* 상세 거래 내역 */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">상세 거래 내역</h3>
+        <p className="text-sm text-gray-500 mb-4">
+          선택한 기간 내 현금 거래(`cash_transactions`)와 현금 입금(`payment_records`: PAYM032/PAYM001)을 함께 표시합니다.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">일시</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">구분</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">금액</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">카테고리</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">설명/메모</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">출처</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">상태</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">예약</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {(stats.details || []).length === 0 ? (
+                <tr>
+                  <td className="px-4 py-6 text-sm text-gray-500" colSpan={8}>
+                    해당 기간에 거래 내역이 없습니다.
+                  </td>
+                </tr>
+              ) : (
+                (stats.details as CashDetailRow[]).map((row, idx) => (
+                  <tr key={idx}>
+                    <td className="px-4 py-3 text-sm">
+                      {row.occurred_at ? new Date(row.occurred_at).toLocaleString() : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      <span
+                        className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                          row.transaction_type === 'deposit'
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-red-100 text-red-800'
+                        }`}
+                      >
+                        {row.transaction_type === 'deposit' ? '입금' : '출금'}
+                      </span>
+                    </td>
+                    <td
+                      className={`px-4 py-3 text-sm font-medium ${
+                        row.transaction_type === 'deposit' ? 'text-green-600' : 'text-red-600'
+                      }`}
+                    >
+                      ${Number(row.amount || 0).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-3 text-sm">{row.category || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700">{row.description || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{row.source}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{row.payment_status || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{row.reservation_id || '-'}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }

@@ -20,11 +20,15 @@ export default function DepositReportTab({ dateRange, period }: DepositReportTab
   const loadDepositStats = async () => {
     setLoading(true)
     try {
+      // submit_on은 TIMESTAMP이므로 ISO 범위로 조회 (일별도 하루 전체 포함)
+      const startISO = new Date(dateRange.start + 'T00:00:00').toISOString()
+      const endISO = new Date(dateRange.end + 'T23:59:59.999').toISOString()
+
       const { data: deposits } = await supabase
         .from('payment_records')
         .select('id, amount, payment_method, payment_status, submit_on, reservation_id')
-        .gte('submit_on', dateRange.start)
-        .lte('submit_on', dateRange.end)
+        .gte('submit_on', startISO)
+        .lte('submit_on', endISO)
         .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
 
       if (!deposits) {
@@ -43,7 +47,8 @@ export default function DepositReportTab({ dateRange, period }: DepositReportTab
       const methodNameMap = new Map<string, string>()
       if (paymentMethods) {
         paymentMethods.forEach(pm => {
-          methodNameMap.set(pm.id, pm.display_name || pm.method || pm.id)
+          // 입금 통계에서는 ID(PAYMxxx) 없이 방법명만 표시
+          methodNameMap.set(pm.id, pm.method || pm.display_name || pm.id)
         })
       }
 
