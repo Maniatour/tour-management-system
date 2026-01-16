@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 
 interface DepositReportTabProps {
   dateRange: { start: string; end: string }
-  period: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  period: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'yesterday' | 'lastWeek' | 'lastMonth' | 'lastYear'
 }
 
 export default function DepositReportTab({ dateRange, period }: DepositReportTabProps) {
@@ -20,9 +20,25 @@ export default function DepositReportTab({ dateRange, period }: DepositReportTab
   const loadDepositStats = async () => {
     setLoading(true)
     try {
+      // 날짜 유효성 검사
+      if (!dateRange.start || !dateRange.end) {
+        setLoading(false)
+        return
+      }
+
+      const startDate = new Date(dateRange.start + 'T00:00:00')
+      const endDate = new Date(dateRange.end + 'T23:59:59.999')
+
+      // 날짜 유효성 검사
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        console.error('유효하지 않은 날짜 범위:', dateRange)
+        setLoading(false)
+        return
+      }
+
       // submit_on은 TIMESTAMP이므로 ISO 범위로 조회 (일별도 하루 전체 포함)
-      const startISO = new Date(dateRange.start + 'T00:00:00').toISOString()
-      const endISO = new Date(dateRange.end + 'T23:59:59.999').toISOString()
+      const startISO = startDate.toISOString()
+      const endISO = endDate.toISOString()
 
       const { data: deposits } = await supabase
         .from('payment_records')

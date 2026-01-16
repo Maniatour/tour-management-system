@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 
 interface SettlementReportTabProps {
   dateRange: { start: string; end: string }
-  period: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  period: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'yesterday' | 'lastWeek' | 'lastMonth' | 'lastYear'
 }
 
 export default function SettlementReportTab({ dateRange, period }: SettlementReportTabProps) {
@@ -29,97 +29,91 @@ export default function SettlementReportTab({ dateRange, period }: SettlementRep
         return 0
       }
 
+      // 날짜 유효성 검사
+      if (!dateRange.start || !dateRange.end) {
+        setLoading(false)
+        return
+      }
+
       // 날짜 범위를 ISO 형식으로 변환 (시간 포함)
       const startDate = new Date(dateRange.start + 'T00:00:00')
       const endDate = new Date(dateRange.end + 'T23:59:59.999')
+
+      // 날짜 유효성 검사
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        console.error('유효하지 않은 날짜 범위:', dateRange)
+        setLoading(false)
+        return
+      }
+
       const startISO = startDate.toISOString()
       const endISO = endDate.toISOString()
 
-      // 예약 수익
-      const { data: reservations } = await supabase
-        .from('reservations')
-        .select('id, created_at')
-        .gte('created_at', startISO)
-        .lte('created_at', endISO)
-
-      const reservationIds = reservations?.map(r => r.id) || []
-      let reservationRevenue = 0
-      if (reservationIds.length > 0) {
-        const { data: pricing } = await supabase
-          .from('reservation_pricing')
-          .select('total_price')
-          .in('reservation_id', reservationIds)
-        
-        reservationRevenue = pricing?.reduce((sum, p) => sum + toNumber((p as any).total_price), 0) || 0
-      }
-
-      // 예약 지출
-      let reservationExpenses = 0
-      if (reservationIds.length > 0) {
-        const { data: expenses } = await supabase
-          .from('reservation_expenses')
+      // 1단계: 기본 데이터 병렬 조회
+      const [reservationsResult, toursResult, companyExpensesResult, depositsResult] = await Promise.all([
+        supabase
+          .from('reservations')
+          .select('id, created_at')
+          .gte('created_at', startISO)
+          .lte('created_at', endISO),
+        supabase
+          .from('tours')
+          .select('id, reservation_ids')
+          .gte('tour_date', dateRange.start)
+          .lte('tour_date', dateRange.end),
+        supabase
+          .from('company_expenses')
           .select('amount')
-          .in('reservation_id', reservationIds)
-        
-        reservationExpenses = expenses?.reduce((sum, e) => sum + toNumber((e as any).amount), 0) || 0
-      }
-
-      // 투어 수익
-      const { data: tours } = await supabase
-        .from('tours')
-        .select('id, reservation_ids')
-        .gte('tour_date', dateRange.start)
-        .lte('tour_date', dateRange.end)
-
-      let tourRevenue = 0
-      let tourExpenses = 0
-
-      if (tours && tours.length > 0) {
-        const tourIds = tours.map(t => t.id)
-        
-        // 투어별 예약 가격 합산
-        for (const tour of tours) {
-          if (tour.reservation_ids && Array.isArray(tour.reservation_ids)) {
-            const { data: pricing } = await supabase
-              .from('reservation_pricing')
-              .select('total_price')
-              .in('reservation_id', tour.reservation_ids)
-            
-            if (pricing) {
-              tourRevenue += pricing.reduce((sum, p) => sum + toNumber((p as any).total_price), 0)
-            }
-          }
-        }
-
-        // 투어 지출
-        const { data: expenses } = await supabase
-          .from('tour_expenses')
+          .gte('submit_on', startISO)
+          .lte('submit_on', endISO),
+        supabase
+          .from('payment_records')
           .select('amount')
-          .in('tour_id', tourIds)
-        
-        if (expenses) {
-          tourExpenses = expenses.reduce((sum, e) => sum + toNumber((e as any).amount), 0)
-        }
-      }
+          .gte('submit_on', startISO)
+          .lte('submit_on', endISO)
+          .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
+      ])
 
-      // 회사 지출
-      const { data: companyExpenses } = await supabase
-        .from('company_expenses')
-        .select('amount')
-        .gte('submit_on', startISO)
-        .lte('submit_on', endISO)
+      const reservations = reservationsResult.data || []
+      const tours = toursResult.data || []
+      const companyExpenses = companyExpensesResult.data || []
+      const deposits = depositsResult.data || []
 
-      const totalCompanyExpenses = companyExpenses?.reduce((sum, e) => sum + toNumber((e as any).amount), 0) || 0
+      const reservationIds = reservations.map(r => r.id)
+      const tourIds = tours.map(t => t.id)
+      const allTourReservationIds = [...new Set(
+        tours
+          .flatMap(t => (Array.isArray(t.reservation_ids) ? t.reservation_ids : []))
+          .filter(Boolean)
+      )]
 
-      // 입금
-      const { data: deposits } = await supabase
-        .from('payment_records')
-        .select('amount')
-        .gte('submit_on', startISO)
-        .lte('submit_on', endISO)
-        .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
+      // 2단계: 관련 데이터 병렬 조회
+      const [reservationPricingResult, reservationExpensesResult, tourPricingResult, tourExpensesResult] = await Promise.all([
+        reservationIds.length > 0
+          ? supabase.from('reservation_pricing').select('total_price').in('reservation_id', reservationIds)
+          : Promise.resolve({ data: [] }),
+        reservationIds.length > 0
+          ? supabase.from('reservation_expenses').select('amount').in('reservation_id', reservationIds)
+          : Promise.resolve({ data: [] }),
+        allTourReservationIds.length > 0
+          ? supabase.from('reservation_pricing').select('total_price').in('reservation_id', allTourReservationIds)
+          : Promise.resolve({ data: [] }),
+        tourIds.length > 0
+          ? supabase.from('tour_expenses').select('amount').in('tour_id', tourIds)
+          : Promise.resolve({ data: [] })
+      ])
 
-      const totalDeposits = deposits?.reduce((sum, d) => sum + toNumber((d as any).amount), 0) || 0
+      const reservationRevenue = (reservationPricingResult.data || [])
+        .reduce((sum, p) => sum + toNumber((p as any).total_price), 0)
+      const reservationExpenses = (reservationExpensesResult.data || [])
+        .reduce((sum, e) => sum + toNumber((e as any).amount), 0)
+      const tourRevenue = (tourPricingResult.data || [])
+        .reduce((sum, p) => sum + toNumber((p as any).total_price), 0)
+      const tourExpenses = (tourExpensesResult.data || [])
+        .reduce((sum, e) => sum + toNumber((e as any).amount), 0)
+
+      const totalCompanyExpenses = companyExpenses.reduce((sum, e) => sum + toNumber((e as any).amount), 0)
+      const totalDeposits = deposits.reduce((sum, d) => sum + toNumber((d as any).amount), 0)
 
       // 총계
       const totalRevenue = reservationRevenue + tourRevenue

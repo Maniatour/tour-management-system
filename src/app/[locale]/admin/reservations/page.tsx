@@ -1273,6 +1273,92 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       // 가격 정보는 현재 reservations 테이블의 selected_option_prices 컬럼에 저장됨
       // 별도의 reservation_pricing 테이블 저장은 현재 비활성화
 
+      // reservation_pricing 자동 생성
+      if (reservationId && (reservation as any).pricingInfo) {
+        try {
+          const pricingInfo = (reservation as any).pricingInfo
+          const pricingId = crypto.randomUUID()
+          
+          const pricingData = {
+            id: pricingId,
+            reservation_id: reservationId,
+            adult_product_price: pricingInfo.adultProductPrice || 0,
+            child_product_price: pricingInfo.childProductPrice || 0,
+            infant_product_price: pricingInfo.infantProductPrice || 0,
+            product_price_total: pricingInfo.productPriceTotal || 0,
+            required_options: pricingInfo.requiredOptions || {},
+            required_option_total: pricingInfo.requiredOptionTotal || 0,
+            choices: pricingInfo.choices || {},
+            choices_total: pricingInfo.choicesTotal || 0,
+            subtotal: pricingInfo.subtotal || 0,
+            coupon_code: pricingInfo.couponCode || null,
+            coupon_discount: pricingInfo.couponDiscount || 0,
+            additional_discount: pricingInfo.additionalDiscount || 0,
+            additional_cost: pricingInfo.additionalCost || 0,
+            card_fee: pricingInfo.cardFee || 0,
+            tax: pricingInfo.tax || 0,
+            prepayment_cost: pricingInfo.prepaymentCost || 0,
+            prepayment_tip: pricingInfo.prepaymentTip || 0,
+            selected_options: pricingInfo.selectedOptionalOptions || {},
+            option_total: pricingInfo.optionTotal || 0,
+            total_price: pricingInfo.totalPrice || 0,
+            deposit_amount: pricingInfo.depositAmount || 0,
+            balance_amount: pricingInfo.balanceAmount || 0,
+            private_tour_additional_cost: pricingInfo.privateTourAdditionalCost || 0,
+            commission_percent: pricingInfo.commission_percent || 0,
+            commission_amount: 0
+          }
+
+          const { error: pricingError } = await supabase
+            .from('reservation_pricing')
+            .insert(pricingData as any)
+
+          if (pricingError) {
+            console.error('reservation_pricing 생성 오류:', pricingError)
+          } else {
+            console.log('reservation_pricing 생성 성공')
+          }
+        } catch (pricingError) {
+          console.error('reservation_pricing 생성 중 예외:', pricingError)
+        }
+      }
+
+      // payment_records 자동 생성 (할인 후 상품가격으로 Partner Received)
+      if (reservationId && (reservation as any).pricingInfo) {
+        try {
+          const pricingInfo = (reservation as any).pricingInfo
+          // 할인 후 상품가 계산
+          const discountedPrice = (pricingInfo.productPriceTotal || 0) - (pricingInfo.couponDiscount || 0) - (pricingInfo.additionalDiscount || 0)
+          
+          if (discountedPrice > 0) {
+            const { data: { session } } = await supabase.auth.getSession()
+            if (session?.access_token) {
+              const response = await fetch('/api/payment-records', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify({
+                  reservation_id: reservationId,
+                  payment_status: 'Partner Received',
+                  amount: discountedPrice,
+                  payment_method: 'PAYM033'
+                })
+              })
+
+              if (!response.ok) {
+                const errorData = await response.json()
+                console.error('payment_records 생성 오류:', errorData.error)
+              } else {
+                console.log('payment_records 생성 성공')
+              }
+            }
+          }
+        } catch (paymentError) {
+          console.error('payment_records 생성 중 예외:', paymentError)
+        }
+      }
 
       // 성공 시 예약 목록 새로고침
       await refreshReservations()

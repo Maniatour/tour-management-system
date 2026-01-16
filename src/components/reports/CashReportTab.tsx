@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 
 interface CashReportTabProps {
   dateRange: { start: string; end: string }
-  period: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  period: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'yesterday' | 'lastWeek' | 'lastMonth' | 'lastYear'
 }
 
 type CashDetailRow = {
@@ -44,47 +44,71 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
       // 기준일: 2026년 1월 1일
       const baseDate = '2026-01-01'
       
+      // 날짜 유효성 검사
+      if (!dateRange.start || !dateRange.end) {
+        setLoading(false)
+        return
+      }
+
       // 날짜 범위를 ISO 형식으로 변환
       const startDate = new Date(dateRange.start + 'T00:00:00')
       const endDate = new Date(dateRange.end + 'T23:59:59.999')
+
+      // 날짜 유효성 검사
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        console.error('유효하지 않은 날짜 범위:', dateRange)
+        setLoading(false)
+        return
+      }
+
       const startISO = startDate.toISOString()
       const endISO = endDate.toISOString()
 
-      // 기간 내 현금 거래 조회
-      const { data: periodTransactions, error: periodError } = await supabase
-        .from('cash_transactions')
-        .select('transaction_type, amount, transaction_date, category, description')
-        .gte('transaction_date', startISO)
-        .lte('transaction_date', endISO)
-        .order('transaction_date', { ascending: false })
+      // 모든 쿼리를 병렬로 실행
+      const [
+        periodTransactionsResult,
+        allTransactionsResult,
+        cashPaymentsResult,
+        allCashPaymentsResult
+      ] = await Promise.all([
+        // 기간 내 현금 거래 조회
+        supabase
+          .from('cash_transactions')
+          .select('transaction_type, amount, transaction_date, category, description')
+          .gte('transaction_date', startISO)
+          .lte('transaction_date', endISO)
+          .order('transaction_date', { ascending: false }),
+        // 2026년 1월 1일부터의 모든 거래 조회 (잔액 계산용)
+        supabase
+          .from('cash_transactions')
+          .select('transaction_type, amount, transaction_date')
+          .gte('transaction_date', baseDate + 'T00:00:00')
+          .order('transaction_date', { ascending: true }),
+        // payment_records에서 현금 입금 조회 (PAYM032 + PAYM001)
+        supabase
+          .from('payment_records')
+          .select('id, amount, submit_on, payment_status, reservation_id, payment_method, note')
+          .in('payment_method', ['PAYM032', 'PAYM001'])
+          .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
+          .gte('submit_on', startISO)
+          .lte('submit_on', endISO),
+        // 2026년 1월 1일부터의 현금 입금 (잔액 계산용)
+        supabase
+          .from('payment_records')
+          .select('amount')
+          .in('payment_method', ['PAYM032', 'PAYM001'])
+          .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
+          .gte('submit_on', baseDate + 'T00:00:00')
+      ])
 
-      if (periodError) {
-        console.error('기간 내 현금 거래 조회 오류:', periodError)
-      }
+      const periodTransactions = periodTransactionsResult.data
+      const allTransactions = allTransactionsResult.data
+      const cashPayments = cashPaymentsResult.data
+      const allCashPayments = allCashPaymentsResult.data
 
-      // 2026년 1월 1일부터의 모든 거래 조회 (잔액 계산용)
-      const { data: allTransactions, error: allError } = await supabase
-        .from('cash_transactions')
-        .select('transaction_type, amount, transaction_date')
-        .gte('transaction_date', baseDate + 'T00:00:00')
-        .order('transaction_date', { ascending: true })
-
-      if (allError) {
-        console.error('전체 현금 거래 조회 오류:', allError)
-      }
-
-      // payment_records에서 현금 입금 조회 (PAYM032 + PAYM001)
-      const { data: cashPayments, error: paymentsError } = await supabase
-        .from('payment_records')
-        .select('id, amount, submit_on, payment_status, reservation_id, payment_method, note')
-        .in('payment_method', ['PAYM032', 'PAYM001'])
-        .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
-        .gte('submit_on', startISO)
-        .lte('submit_on', endISO)
-
-      if (paymentsError) {
-        console.error('현금 입금 조회 오류:', paymentsError)
-      }
+      if (periodTransactionsResult.error) console.error('기간 내 현금 거래 조회 오류:', periodTransactionsResult.error)
+      if (allTransactionsResult.error) console.error('전체 현금 거래 조회 오류:', allTransactionsResult.error)
+      if (cashPaymentsResult.error) console.error('현금 입금 조회 오류:', cashPaymentsResult.error)
 
       // 기간 내 통계 계산
       const periodDeposits = (periodTransactions || [])
@@ -111,14 +135,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         }
       }, 0)
 
-      // payment_records에서 2026년 1월 1일부터의 현금 입금도 포함
-      const { data: allCashPayments } = await supabase
-        .from('payment_records')
-        .select('amount')
-        .in('payment_method', ['PAYM032', 'PAYM001'])
-        .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
-        .gte('submit_on', baseDate + 'T00:00:00')
-
+      // payment_records에서 2026년 1월 1일부터의 현금 입금도 포함 (이미 병렬 쿼리로 조회됨)
       const allCashPaymentsTotal = (allCashPayments || [])
         .reduce((sum, p) => sum + toNumber((p as any).amount), 0)
 

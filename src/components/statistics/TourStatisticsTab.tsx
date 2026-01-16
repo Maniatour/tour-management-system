@@ -179,14 +179,14 @@ async function getTourFinancialStats(tourId: string) {
         }
       }
       
-      const [{ data: pricingData, error: pricingError }, { data: paymentsData, error: paymentsError }, { data: expensesData, error: expensesError }] = await Promise.all([
+      // 배치 크기 제한: URL 길이 제한을 피하기 위해 작은 배치로 나눠서 조회
+      const BATCH_SIZE = 20
+      
+      // reservation_pricing과 reservation_expenses는 한 번에 조회
+      const [{ data: pricingData, error: pricingError }, { data: expensesData, error: expensesError }] = await Promise.all([
         supabase
           .from('reservation_pricing')
           .select('reservation_id, total_price, product_price_total, option_total, choices_total, coupon_discount, additional_discount, additional_cost, card_fee, prepayment_tip, commission_amount, commission_percent')
-          .in('reservation_id', reservationIds),
-        supabase
-          .from('payment_records')
-          .select('reservation_id, amount, payment_status')
           .in('reservation_id', reservationIds),
         supabase
           .from('reservation_expenses')
@@ -199,11 +199,6 @@ async function getTourFinancialStats(tourId: string) {
       } else {
         reservationPricing = pricingData || []
       }
-      if (paymentsError) {
-        console.error('실입금 정보 조회 오류:', paymentsError)
-      } else {
-        paymentRecords = paymentsData || []
-      }
       if (expensesError) {
         console.error('예약 지출 정보 조회 오류:', expensesError)
       } else {
@@ -215,6 +210,27 @@ async function getTourFinancialStats(tourId: string) {
           reservationExpenses[expense.reservation_id] += expense.amount || 0
         })
       }
+
+      // payment_records는 배치로 나눠서 조회 (URL 길이 제한 방지)
+      const allPaymentRecords: Array<{ reservation_id: string; amount: number; payment_status?: string | null }> = []
+      for (let i = 0; i < reservationIds.length; i += BATCH_SIZE) {
+        const batchIds = reservationIds.slice(i, i + BATCH_SIZE)
+        try {
+          const { data: batchPayments, error: batchPaymentsError } = await supabase
+            .from('payment_records')
+            .select('reservation_id, amount, payment_status')
+            .in('reservation_id', batchIds)
+          
+          if (batchPaymentsError) {
+            console.error(`실입금 정보 조회 오류 (배치 ${Math.floor(i / BATCH_SIZE) + 1}):`, batchPaymentsError)
+          } else if (batchPayments) {
+            allPaymentRecords.push(...batchPayments)
+          }
+        } catch (error) {
+          console.error(`실입금 정보 조회 예외 (배치 ${Math.floor(i / BATCH_SIZE) + 1}):`, error)
+        }
+      }
+      paymentRecords = allPaymentRecords
     }
 
     console.log('예약 가격 정보:', reservationPricing)
@@ -604,30 +620,25 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
         const reservationIds = reservations.map(r => r.id).filter(Boolean)
         
         if (reservationIds.length > 0) {
+          // 배치 크기 제한: URL 길이 제한을 피하기 위해 작은 배치로 나눠서 조회
+          const BATCH_SIZE = 20
+          
+          // reservation_pricing과 reservation_expenses는 한 번에 조회
           const queries = [
             supabase
               .from('reservation_pricing')
               .select('reservation_id, total_price, additional_cost')
               .in('reservation_id', reservationIds),
             supabase
-              .from('payment_records')
-              .select('id, reservation_id, amount, payment_status, submit_on, payment_method')
-              .in('reservation_id', reservationIds)
-          ]
-          
-          // reservation_expenses 조회 추가 (에러 처리 포함)
-          queries.push(
-            supabase
               .from('reservation_expenses')
               .select('reservation_id, amount, paid_for')
               .in('reservation_id', reservationIds)
-          )
+          ]
           
           const results = await Promise.all(queries)
-          const [pricingResult, paymentsResult, expensesResult] = results
+          const [pricingResult, expensesResult] = results
 
           reservationPricing = pricingResult.data || []
-          paymentRecords = paymentsResult.data || []
           
           // reservation_expenses 조회 에러 처리
           if (expensesResult.error) {
@@ -636,6 +647,27 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
           } else {
             reservationExpenses = expensesResult.data || []
           }
+
+          // payment_records는 배치로 나눠서 조회 (URL 길이 제한 방지)
+          const allPaymentRecords: any[] = []
+          for (let i = 0; i < reservationIds.length; i += BATCH_SIZE) {
+            const batchIds = reservationIds.slice(i, i + BATCH_SIZE)
+            try {
+              const { data: batchPayments, error: batchPaymentsError } = await supabase
+                .from('payment_records')
+                .select('id, reservation_id, amount, payment_status, submit_on, payment_method')
+                .in('reservation_id', batchIds)
+              
+              if (batchPaymentsError) {
+                console.error(`실입금 정보 조회 오류 (배치 ${Math.floor(i / BATCH_SIZE) + 1}):`, batchPaymentsError)
+              } else if (batchPayments) {
+                allPaymentRecords.push(...batchPayments)
+              }
+            } catch (error) {
+              console.error(`실입금 정보 조회 예외 (배치 ${Math.floor(i / BATCH_SIZE) + 1}):`, error)
+            }
+          }
+          paymentRecords = allPaymentRecords
         }
       }
 
@@ -682,130 +714,92 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
   // 투어 통계 데이터 계산 (TourExpenseManager 로직 재사용)
   useEffect(() => {
     const calculateTourStatistics = async () => {
-      if (!reservations.length) {
-        setTourStatisticsData({
-          totalTours: 0,
-          totalRevenue: 0,
-          totalExpenses: 0,
-          netProfit: 0,
-          averageProfitPerTour: 0,
-          totalAdditionalCostRounded: 0,
-          tourStats: [],
-          expenseBreakdown: [],
-          vehicleStats: []
-        })
-        return
-      }
-
       setIsCalculating(true)
 
       try {
-        // 날짜 필터링된 예약들
-        const filteredReservations = reservations.filter(reservation => {
-          const reservationDate = new Date(reservation.tourDate)
-          const startDate = new Date(dateRange.start)
-          const endDate = new Date(dateRange.end)
-          return reservationDate >= startDate && reservationDate <= endDate
-        })
+        // tours 테이블에서 직접 투어 조회 (날짜 범위 필터링)
+        const { data: toursData, error: toursError } = await supabase
+          .from('tours')
+          .select('id, tour_date, tour_status, reservation_ids, product_id')
+          .gte('tour_date', dateRange.start)
+          .lte('tour_date', dateRange.end)
 
-        // 투어별 그룹화 (tourId 기준)
-        const tourGroups = filteredReservations.reduce((groups, reservation) => {
-          // 실제 투어 ID가 있으면 사용, 없으면 날짜+상품ID로 생성
-          const tourId = reservation.tourId || `${reservation.tourDate}-${reservation.productId}`
-          
-          if (!groups[tourId]) {
-            groups[tourId] = {
-              tourId,
-              tourDate: reservation.tourDate,
-              productId: reservation.productId,
-              reservations: [],
-              totalPeople: 0,
-              hasValidTourId: !!reservation.tourId // 실제 투어 ID가 있는지 표시
-            }
-          }
-          
-          groups[tourId].reservations.push(reservation)
-          groups[tourId].totalPeople += reservation.totalPeople
-          
-          return groups
-        }, {} as Record<string, any>)
+        if (toursError) {
+          console.error('투어 조회 오류:', toursError)
+          setTourStatisticsData({
+            totalTours: 0,
+            totalRevenue: 0,
+            totalExpenses: 0,
+            netProfit: 0,
+            averageProfitPerTour: 0,
+            totalAdditionalCostRounded: 0,
+            tourStats: [],
+            expenseBreakdown: [],
+            vehicleStats: []
+          })
+          return
+        }
 
-        console.log('투어 그룹:', tourGroups)
+        if (!toursData || toursData.length === 0) {
+          setTourStatisticsData({
+            totalTours: 0,
+            totalRevenue: 0,
+            totalExpenses: 0,
+            netProfit: 0,
+            averageProfitPerTour: 0,
+            totalAdditionalCostRounded: 0,
+            tourStats: [],
+            expenseBreakdown: [],
+            vehicleStats: []
+          })
+          return
+        }
 
-        // 투어 상태 확인 및 필터링 (한 번에 모든 투어 상태 조회)
-        const validTourIds = []
-        const tourIdsToCheck = Object.keys(tourGroups).filter(tourId => tourGroups[tourId].hasValidTourId)
+        // 통계 포함 상태: Recruiting, Confirmed, Completed
+        const validTours = toursData.filter(tour => 
+          tour.tour_status === 'Recruiting' || tour.tour_status === 'Confirmed' || tour.tour_status === 'Completed'
+        )
+
+        console.log('유효한 투어:', validTours.length, '개')
+
+        // 상품 정보 조회 (products가 없을 경우를 대비해 직접 조회)
+        const productIds = [...new Set(validTours.map(t => t.product_id).filter(Boolean))] as string[]
+        let productMap = new Map<string, string>()
         
-        if (tourIdsToCheck.length > 0) {
-          try {
-            const { data: toursData, error: toursError } = await supabase
-              .from('tours')
-              .select('id, tour_status')
-              .in('id', tourIdsToCheck)
-
-            if (toursError) {
-              console.error('투어 상태 조회 오류:', toursError)
-            } else {
-              console.log('투어 상태 데이터:', toursData)
-              
-              // 통계 포함 상태: Recruiting, Confirmed, Completed
-              const validTours = toursData?.filter(tour => 
-                tour.tour_status === 'Recruiting' || tour.tour_status === 'Confirmed' || tour.tour_status === 'Completed'
-              ) || []
-              
-              validTourIds.push(...validTours.map(tour => tour.id))
-              
-              console.log('유효한 투어 상태:', validTours.map(tour => ({ id: tour.id, status: tour.tour_status })))
+        if (products && Array.isArray(products) && products.length > 0) {
+          products.forEach((p: any) => {
+            productMap.set(p.id, p.name_ko || p.name_en || p.name || 'Unknown')
+          })
+        }
+        
+        // products에 없는 상품이 있으면 직접 조회
+        if (productIds.length > 0) {
+          const missingProductIds = productIds.filter(id => !productMap.has(id))
+          if (missingProductIds.length > 0) {
+            const { data: missingProducts } = await supabase
+              .from('products')
+              .select('id, name_ko, name_en, name')
+              .in('id', missingProductIds)
+            
+            if (missingProducts) {
+              missingProducts.forEach((p: any) => {
+                productMap.set(p.id, p.name_ko || p.name_en || p.name || 'Unknown')
+              })
             }
-          } catch (error) {
-            console.error('투어 상태 조회 중 예외 발생:', error)
           }
         }
 
-        console.log('유효한 투어 ID 목록:', validTourIds)
-
-        // 유효한 투어만 필터링
-        const filteredTourGroups = Object.fromEntries(
-          Object.entries(tourGroups).filter(([tourId]) => validTourIds.includes(tourId))
-        )
-
-        console.log('필터링된 투어 그룹:', filteredTourGroups)
-
         // 각 투어별로 TourExpenseManager와 동일한 정산 통계 계산
-        const tourStatsPromises = Object.values(filteredTourGroups).map(async (tour: any) => {
-          console.log('투어 그룹 처리 중:', tour)
-          
-          // 투어 ID가 유효한지 확인
-          if (!tour.hasValidTourId || !tour.tourId || tour.tourId.startsWith('undefined')) {
-            console.log('유효하지 않은 투어 ID 또는 실제 투어가 없음:', tour.tourId)
-            return {
-              tourId: tour.tourId,
-              tourDate: tour.tourDate,
-              productName: products.find(p => p.id === tour.productId)?.name_ko || 'Unknown',
-              totalPeople: tour.totalPeople,
-              revenue: 0,
-              expenses: 0,
-              netProfit: 0,
-              additionalCostRounded: 0,
-              vehicleType: tour.totalPeople > 10 ? '대형버스' : '소형버스',
-              gasCost: 0,
-              ticketBookingsCost: 0,
-              hotelBookingsCost: 0,
-              guideFee: 0,
-              assistantFee: 0,
-              hasValidTourId: false
-            }
-          }
-
-          console.log('투어 ID로 정산 통계 조회 시작:', tour.tourId)
-          const financialStats = await getTourFinancialStats(tour.tourId)
+        const tourStatsPromises = validTours.map(async (tour: any) => {
+          console.log('투어 ID로 정산 통계 조회 시작:', tour.id)
+          const financialStats = await getTourFinancialStats(tour.id)
           
           return {
-            tourId: tour.tourId,
-            tourDate: tour.tourDate,
-            productName: products.find(p => p.id === tour.productId)?.name_ko || 'Unknown',
-            totalPeople: financialStats.totalPeople,
-            revenue: financialStats.totalOperatingProfit, // Operating Profit 사용
+            tourId: tour.id,
+            tourDate: tour.tour_date,
+            productName: productMap.get(tour.product_id) || 'Unknown',
+            totalPeople: financialStats.totalPeople, // reservation_ids의 예약들의 total_people 합산
+            revenue: financialStats.totalOperatingProfit, // reservation_ids의 예약들의 수익 합산
             expenses: financialStats.totalExpensesWithFeesAndBookings,
             netProfit: financialStats.profit,
             additionalCostRounded: financialStats.totalAdditionalCostRounded,
@@ -815,7 +809,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
             hotelBookingsCost: financialStats.totalHotelCosts,
             guideFee: financialStats.totalFees,
             assistantFee: 0, // 별도로 계산됨
-            hasValidTourId: tour.hasValidTourId
+            hasValidTourId: true
           }
         })
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 // 새로운 간결한 타입 정의
 interface ChoiceOption {
@@ -326,6 +326,41 @@ export default function SimpleChoiceSelector({
     validateSelections();
   }, [validateSelections]);
 
+  // 인원 수가 변경될 때 단일 선택 초이스의 total_price 업데이트
+  useEffect(() => {
+    const updatedSelections = selections.map(selection => {
+      const choice = choices.find(c => c.id === selection.choice_id);
+      if (!choice) return selection;
+      
+      const isResidentStatusChoice = choice.choice_group_ko?.includes('거주자') || 
+                                     choice.choice_group_ko?.includes('거주') ||
+                                     choice.choice_group?.toLowerCase().includes('resident') ||
+                                     choice.choice_group?.toLowerCase().includes('거주');
+      
+      // 단일 선택 초이스이고 선택된 경우에만 total_price 업데이트
+      if (choice.choice_type === 'single' && !isResidentStatusChoice && selection.quantity > 0) {
+        const option = choice.options?.find(o => o.id === selection.option_id);
+        if (option) {
+          const newTotalPrice = (adults * option.adult_price) + 
+                               (children * option.child_price) + 
+                               (infants * option.infant_price);
+          return { ...selection, total_price: newTotalPrice };
+        }
+      }
+      return selection;
+    });
+    
+    // total_price가 변경된 경우에만 onSelectionChange 호출
+    const hasChanges = updatedSelections.some((updated, index) => 
+      updated.total_price !== selections[index]?.total_price
+    );
+    
+    if (hasChanges) {
+      onSelectionChange(updatedSelections);
+      setSelections(updatedSelections);
+    }
+  }, [adults, children, infants, choices, selections, onSelectionChange]);
+
   return (
     <div className="space-y-3">
       {choices.map(choice => {
@@ -358,7 +393,17 @@ export default function SimpleChoiceSelector({
                   s.choice_id === choice.id && s.option_id === option.id
                 );
                 const currentQuantity = currentSelection?.quantity || 0;
-                const totalPrice = calculatePrice(option, currentQuantity, adults, children, infants, isResidentStatusChoice);
+                // 단일 선택 초이스의 경우: 선택 여부와 관계없이 인원 수에 따른 총액 계산
+                let totalPrice = 0;
+                if (choice.choice_type === 'single' && !isResidentStatusChoice) {
+                  // 단일 선택 초이스: 성인, 아동, 유아 가격에 각각의 인원 수를 곱해서 총액 계산
+                  totalPrice = (adults * option.adult_price) + 
+                              (children * option.child_price) + 
+                              (infants * option.infant_price);
+                } else {
+                  // multiple/quantity 타입 또는 거주자 구분 초이스: 기존 로직 사용
+                  totalPrice = calculatePrice(option, currentQuantity, adults, children, infants, isResidentStatusChoice);
+                }
                 
                 // 디버깅: 첫 번째 옵션만 로그 출력
                 if (option === (choice.options || []).filter(o => o.is_active).sort((a, b) => a.sort_order - b.sort_order)[0]) {
@@ -404,13 +449,24 @@ export default function SimpleChoiceSelector({
                           );
                         } else {
                           // 선택
+                          // 단일 선택 초이스가 아닌 경우에만 calculatePrice 사용
+                          let selectionTotalPrice = 0;
+                          if (choice.choice_type === 'single' && !isResidentStatusChoice) {
+                            // 단일 선택 초이스: 인원 수에 따른 총액 계산
+                            selectionTotalPrice = (adults * option.adult_price) + 
+                                                  (children * option.child_price) + 
+                                                  (infants * option.infant_price);
+                          } else {
+                            // multiple/quantity 타입 또는 거주자 구분 초이스: 기존 로직 사용
+                            selectionTotalPrice = calculatePrice(option, 1, adults, children, infants, isResidentStatusChoice);
+                          }
                           handleSelectionChange(
                             choice.id,
                             option.id,
                             option.option_key,
                             option.option_name_ko,
                             1,
-                            calculatePrice(option, 1, adults, children, infants, isResidentStatusChoice)
+                            selectionTotalPrice
                           );
                         }
                       } else {
@@ -428,13 +484,17 @@ export default function SimpleChoiceSelector({
                             );
                           });
                           // 현재 옵션 선택
+                          // 단일 선택 초이스의 경우: 인원 수에 따른 총액 계산
+                          const singleChoiceTotalPrice = (adults * option.adult_price) + 
+                                                         (children * option.child_price) + 
+                                                         (infants * option.infant_price);
                           handleSelectionChange(
                             choice.id,
                             option.id,
                             option.option_key,
                             option.option_name_ko,
                             1,
-                            calculatePrice(option, 1, adults, children, infants, isResidentStatusChoice)
+                            singleChoiceTotalPrice
                           );
                         } else {
                           // 이미 선택된 경우 해제

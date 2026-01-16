@@ -1,8 +1,11 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
-import { X, Mail, Eye, Loader2, Users, Clock, Building, Copy, Check } from 'lucide-react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { X, Mail, Eye, Loader2, Users, Clock, Building, Copy, Check, Image as ImageIcon, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import html2canvas from 'html2canvas'
+import jsPDF from 'jspdf'
+import html2pdf from 'html2pdf.js'
 
 interface PickupScheduleEmailPreviewModalProps {
   isOpen: boolean
@@ -41,6 +44,8 @@ export default function PickupScheduleEmailPreviewModal({
   const [sendingReservationId, setSendingReservationId] = useState<string | null>(null)
   const [sentReservations, setSentReservations] = useState<Set<string>>(new Set())
   const [copied, setCopied] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const emailPreviewRef = useRef<HTMLDivElement>(null)
   const [reservationDetails, setReservationDetails] = useState<Record<string, {
     customerName: string
     adults: number | null
@@ -341,6 +346,173 @@ export default function PickupScheduleEmailPreviewModal({
     }
   }
 
+  // HTML을 텍스트로 변환하는 함수 (블록 요소에 줄바꿈 마커 삽입)
+  const htmlToText = (html: string): string => {
+    // 줄바꿈 마커
+    const NL = '{{NL}}'
+    const NL2 = '{{NL2}}'
+    
+    // HTML 문자열에서 직접 줄바꿈 마커 삽입
+    let processed = html
+    
+    // 블록 요소 앞뒤에 줄바꿈 마커 삽입
+    const blockTags = ['div', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'tr', 'td', 'th', 'section', 'article', 'header', 'footer']
+    for (const tag of blockTags) {
+      // 닫는 태그 뒤에 줄바꿈
+      processed = processed.replace(new RegExp(`</${tag}>`, 'gi'), `</${tag}>${NL}`)
+    }
+    
+    // <br> 태그를 줄바꿈으로
+    processed = processed.replace(/<br\s*\/?>/gi, NL)
+    
+    // 섹션 구분용 클래스 앞에 이중 줄바꿈 추가
+    processed = processed.replace(/class="info-box/gi, `${NL2}class="info-box`)
+    processed = processed.replace(/class="highlight/gi, `${NL2}class="highlight`)
+    
+    // DOM 파싱
+    const tempDiv = document.createElement('div')
+    tempDiv.innerHTML = processed
+    
+    // 스타일과 스크립트 태그 제거
+    const scripts = tempDiv.querySelectorAll('script, style')
+    scripts.forEach(el => el.remove())
+    
+    // 링크를 "텍스트 (URL)" 형태로 변환 (중복 URL 제거)
+    const seenUrls = new Set<string>()
+    const allLinks = tempDiv.querySelectorAll('a')
+    allLinks.forEach(link => {
+      const linkText = link.textContent?.trim() || ''
+      const linkUrl = link.getAttribute('href') || ''
+      
+      if (linkUrl && !seenUrls.has(linkUrl)) {
+        seenUrls.add(linkUrl)
+        const replacement = linkText ? `${linkText} (${linkUrl})` : linkUrl
+        const textNode = document.createTextNode(replacement)
+        link.parentNode?.replaceChild(textNode, link)
+      } else if (linkText) {
+        const textNode = document.createTextNode(linkText)
+        link.parentNode?.replaceChild(textNode, link)
+      } else {
+        link.remove()
+      }
+    })
+    
+    // 이미지 URL 수집 (중복 제거, base64 제외)
+    const imageUrls: string[] = []
+    const seenImageUrls = new Set<string>()
+    const images = tempDiv.querySelectorAll('img')
+    images.forEach(img => {
+      const src = img.getAttribute('src') || ''
+      if (src && !src.startsWith('data:image') && !seenImageUrls.has(src)) {
+        seenImageUrls.add(src)
+        imageUrls.push(src)
+      }
+      img.remove()
+    })
+    
+    // 텍스트 추출
+    let text = tempDiv.textContent || ''
+    
+    // 마커를 실제 줄바꿈으로 변환
+    text = text.replace(/\{\{NL2\}\}/g, '\n\n')
+    text = text.replace(/\{\{NL\}\}/g, '\n')
+    
+    // 이미지 URL 섹션 추가
+    if (imageUrls.length > 0) {
+      if (text.includes('픽업 장소 이미지')) {
+        text = text.replace(/(픽업 장소 이미지[^\n]*\n[^\n]*)/, '$1\n\n' + imageUrls.join('\n'))
+      } else {
+        text += '\n\n📷 이미지:\n' + imageUrls.join('\n')
+      }
+    }
+    
+    // 먼저 분리된 아이콘과 제목을 합치기 (아이콘 제거하고 제목만 유지)
+    text = text.replace(/🚌\s*\n*\s*(모든 픽업 스케줄)/g, '$1')
+    text = text.replace(/📸\s*\n*\s*(픽업 장소 이미지)/g, '$1')
+    text = text.replace(/👥\s*\n*\s*(투어 상세 정보)/g, '$1')
+    text = text.replace(/⚠️\s*\n*\s*(중요)/g, '$1')
+    text = text.replace(/💬\s*\n*\s*(투어 채팅방)/g, '$1')
+    
+    // 섹션 구분자
+    const sectionMarker = '■■■■■'
+    
+    // 섹션 제목 매핑 (원본 -> 표시용)
+    const sectionTitleMap: { [key: string]: string } = {
+      '📸 픽업 장소 이미지': '픽업 장소 이미지',
+      '🖼️ 픽업 장소 이미지': '픽업 장소 이미지',
+      '픽업 장소 이미지:': '픽업 장소 이미지',
+      '픽업 장소 이미지': '픽업 장소 이미지',
+      '🚌 모든 픽업 스케줄': '모든 픽업 스케줄',
+      '📋 모든 픽업 스케줄': '모든 픽업 스케줄',
+      '모든 픽업 스케줄': '모든 픽업 스케줄',
+      'All Pickup Schedule': 'All Pickup Schedule',
+      '👥 투어 상세 정보': '투어 상세 정보',
+      '📋 투어 상세 정보': '투어 상세 정보',
+      '투어 상세 정보': '투어 상세 정보',
+      'Tour Details': 'Tour Details',
+      '⚠️ 중요:': '중요 안내',
+      '⚠️ 중요': '중요 안내',
+      '중요:': '중요 안내',
+      '💬 투어 채팅방': '투어 채팅방',
+      '투어 채팅방': '투어 채팅방'
+    }
+    
+    for (const [original, display] of Object.entries(sectionTitleMap)) {
+      if (text.includes(original)) {
+        const formattedTitle = `${sectionMarker} ${display} ${sectionMarker}`
+        text = text.split(original).join('\n\n' + formattedTitle + '\n')
+      }
+    }
+    
+    // 각 픽업 시간 앞에 빈 줄 + 시계 이모지 추가 (시간 패턴)
+    // 11:20 PM, 11:25 AM 등의 패턴
+    text = text.replace(/(\d{1,2}:\d{2}\s*(?:AM|PM))/gi, '\n\n🕐 $1')
+    
+    // 정리
+    text = text.replace(/[ \t]+/g, ' ') // 여러 공백을 하나로
+    text = text.replace(/\n{4,}/g, '\n\n') // 4개 이상 줄바꿈을 2개로
+    text = text.replace(/\n{3,}/g, '\n\n') // 3개 이상 줄바꿈을 2개로
+    text = text.replace(/^\s+$/gm, '') // 빈 줄의 공백 제거
+    text = text.trim()
+    
+    return text
+  }
+
+  // 텍스트 버전 복사
+  const handleCopyText = async () => {
+    if (!emailContent) return
+
+    try {
+      let textContent = htmlToText(emailContent.html)
+      // Windows 줄바꿈으로 변환 (일부 앱에서 더 잘 인식)
+      textContent = textContent.replace(/\n/g, '\r\n')
+      
+      await navigator.clipboard.writeText(textContent)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (error) {
+      console.error('텍스트 복사 실패:', error)
+      // 폴백: 텍스트 영역 사용
+      const textArea = document.createElement('textarea')
+      let textContent = htmlToText(emailContent.html)
+      textContent = textContent.replace(/\n/g, '\r\n')
+      textArea.value = textContent
+      textArea.style.position = 'fixed'
+      textArea.style.opacity = '0'
+      document.body.appendChild(textArea)
+      textArea.select()
+      try {
+        document.execCommand('copy')
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      } catch (err) {
+        console.error('복사 실패:', err)
+        alert('텍스트 복사에 실패했습니다.')
+      }
+      document.body.removeChild(textArea)
+    }
+  }
+
   const handleCopyEmail = async () => {
     if (!emailContent) return
 
@@ -386,6 +558,175 @@ export default function PickupScheduleEmailPreviewModal({
         }
         document.body.removeChild(textArea)
       }
+    }
+  }
+
+  // 이미지 압축 함수 (1MB 미만으로)
+  const compressImage = async (dataUrl: string, maxSizeMB: number = 1): Promise<string> => {
+    const maxSizeBytes = maxSizeMB * 1024 * 1024
+    let quality = 0.9
+
+    // PNG를 JPEG로 변환하여 압축
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          resolve(dataUrl)
+          return
+        }
+
+        // 이미지 크기 조정 (너무 크면 줄임)
+        let width = img.width
+        let height = img.height
+        const maxDimension = 2000 // 최대 크기 제한
+
+        if (width > maxDimension || height > maxDimension) {
+          const ratio = Math.min(maxDimension / width, maxDimension / height)
+          width = width * ratio
+          height = height * ratio
+        }
+
+        canvas.width = width
+        canvas.height = height
+        ctx.drawImage(img, 0, 0, width, height)
+
+        // JPEG로 변환하며 품질 조정
+        const tryCompress = (q: number) => {
+          const jpegDataUrl = canvas.toDataURL('image/jpeg', q)
+          const sizeInBytes = (jpegDataUrl.length * 3) / 4 // base64 크기 추정
+          
+          if (sizeInBytes <= maxSizeBytes || q <= 0.1) {
+            resolve(jpegDataUrl)
+          } else {
+            // 품질을 낮춰서 재시도
+            setTimeout(() => tryCompress(q - 0.1), 0)
+          }
+        }
+
+        tryCompress(quality)
+      }
+      img.onerror = () => resolve(dataUrl)
+      img.src = dataUrl
+    })
+  }
+
+  // 이미지로 다운로드
+  const handleDownloadImage = async () => {
+    if (!emailPreviewRef.current || !emailContent) return
+
+    setDownloading(true)
+    try {
+      const canvas = await html2canvas(emailPreviewRef.current, {
+        backgroundColor: '#ffffff',
+        scale: 1.5, // scale을 낮춰서 용량 감소
+        logging: false,
+        useCORS: true,
+        allowTaint: false
+      })
+
+      let dataUrl = canvas.toDataURL('image/png')
+      
+      // 이미지 압축
+      dataUrl = await compressImage(dataUrl, 1)
+      
+      const link = document.createElement('a')
+      const customerName = emailContent.customer?.name || 'customer'
+      const fileName = `픽업_스케줄_${customerName}_${new Date().toISOString().split('T')[0]}.jpg`
+      link.download = fileName
+      link.href = dataUrl
+      link.click()
+    } catch (error) {
+      console.error('이미지 다운로드 오류:', error)
+      alert('이미지 다운로드에 실패했습니다.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  // PDF로 다운로드
+  const handleDownloadPDF = async () => {
+    if (!emailPreviewRef.current || !emailContent) return
+
+    setDownloading(true)
+    try {
+      const customerName = emailContent.customer?.name || 'customer'
+      const fileName = `픽업_스케줄_${customerName}_${new Date().toISOString().split('T')[0]}.pdf`
+
+      // html2pdf.js 옵션 설정 (링크 클릭 가능)
+      const opt = {
+        margin: 10,
+        filename: fileName,
+        image: { type: 'jpeg' as const, quality: 0.95 },
+        html2canvas: { 
+          scale: 2, 
+          useCORS: true,
+          logging: false,
+          allowTaint: false,
+          letterRendering: true
+        },
+        jsPDF: { 
+          unit: 'mm' as const, 
+          format: 'a4' as const, 
+          orientation: 'portrait' as const,
+          compress: true
+        },
+        pagebreak: { mode: 'avoid-all' as const }
+      }
+
+      // html2pdf로 PDF 생성 (링크 유지됨)
+      await html2pdf().set(opt).from(emailPreviewRef.current).save()
+      
+    } catch (error) {
+      console.error('PDF 다운로드 오류:', error)
+      // 폴백: 기존 방식으로 시도
+      try {
+        const canvas = await html2canvas(emailPreviewRef.current, {
+          backgroundColor: '#ffffff',
+          scale: 2,
+          logging: false,
+          useCORS: true,
+          allowTaint: false
+        })
+
+        let imgData = canvas.toDataURL('image/png')
+        imgData = await compressImage(imgData, 0.9)
+
+        const pdf = new jsPDF({
+          orientation: 'portrait',
+          unit: 'mm',
+          format: 'a4',
+          compress: true
+        })
+
+        const pdfWidth = pdf.internal.pageSize.getWidth()
+        const pdfHeight = pdf.internal.pageSize.getHeight()
+
+        const img = new Image()
+        await new Promise((resolve) => {
+          img.onload = resolve
+          img.onerror = resolve
+          img.src = imgData
+        })
+
+        const imgWidth = img.width || canvas.width
+        const imgHeight = img.height || canvas.height
+        const ratio = Math.min(pdfWidth / (imgWidth * 0.264583), pdfHeight / (imgHeight * 0.264583))
+        const imgX = (pdfWidth - imgWidth * 0.264583 * ratio) / 2
+        const imgY = 10
+
+        pdf.addImage(imgData, 'JPEG', imgX, imgY, imgWidth * 0.264583 * ratio, imgHeight * 0.264583 * ratio, undefined, 'FAST')
+
+        const customerName = emailContent.customer?.name || 'customer'
+        const fileName = `픽업_스케줄_${customerName}_${new Date().toISOString().split('T')[0]}.pdf`
+        pdf.save(fileName)
+      } catch (fallbackError) {
+        console.error('PDF 폴백 다운로드 오류:', fallbackError)
+        alert('PDF 다운로드에 실패했습니다.')
+      }
+    } finally {
+      setDownloading(false)
     }
   }
 
@@ -669,34 +1010,88 @@ export default function PickupScheduleEmailPreviewModal({
                         <Mail className="w-4 h-4" />
                         <span>이메일 미리보기</span>
                       </div>
-                      <button
-                        onClick={handleCopyEmail}
-                        className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                        title="이메일 내용 복사"
-                      >
-                        {copied ? (
-                          <>
-                            <Check className="w-4 h-4" />
-                            <span>복사됨</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-4 h-4" />
-                            <span>복사</span>
-                          </>
-                        )}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {/* 텍스트 복사 버튼 */}
+                        <button
+                          onClick={handleCopyText}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                          title="텍스트 버전 복사 (카카오톡/왓츠앱용)"
+                          disabled={downloading}
+                        >
+                          {copied ? (
+                            <>
+                              <Check className="w-4 h-4" />
+                              <span>복사됨</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-4 h-4" />
+                              <span>텍스트 복사</span>
+                            </>
+                          )}
+                        </button>
+                        {/* 이미지 다운로드 버튼 */}
+                        <button
+                          onClick={handleDownloadImage}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors disabled:opacity-50"
+                          title="이미지로 다운로드"
+                          disabled={downloading}
+                        >
+                          {downloading ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <span>다운로드 중...</span>
+                            </>
+                          ) : (
+                            <>
+                              <ImageIcon className="w-4 h-4" />
+                              <span>이미지</span>
+                            </>
+                          )}
+                        </button>
+                        {/* PDF 다운로드 버튼 */}
+                        <button
+                          onClick={handleDownloadPDF}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors disabled:opacity-50"
+                          title="PDF로 다운로드"
+                          disabled={downloading}
+                        >
+                          {downloading ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <span>다운로드 중...</span>
+                            </>
+                          ) : (
+                            <>
+                              <FileText className="w-4 h-4" />
+                              <span>PDF</span>
+                            </>
+                          )}
+                        </button>
+                        {/* HTML 복사 버튼 */}
+                        <button
+                          onClick={handleCopyEmail}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                          title="HTML 복사 (이메일용)"
+                          disabled={downloading}
+                        >
+                          <Copy className="w-4 h-4" />
+                          <span>HTML 복사</span>
+                        </button>
+                      </div>
                     </div>
-                    <div className="text-xs text-gray-500 bg-yellow-50 border border-yellow-200 rounded p-2">
-                      💡 <strong>Gmail 사용 안내:</strong> 복사 후 Gmail 작성 화면에서 "..." 메뉴 → "HTML 편집"을 선택한 후 붙여넣으세요.
+                    <div className="text-xs text-gray-500 bg-yellow-50 border border-yellow-200 rounded p-2 mb-2">
+                      💡 <strong>사용 안내:</strong> 텍스트 복사는 카카오톡/왓츠앱용, 이미지/PDF는 파일로 공유용입니다.
                     </div>
                   </div>
                   <div 
+                    ref={emailPreviewRef}
                     className="p-4"
                     dangerouslySetInnerHTML={{ __html: emailContent.html }}
                     style={{ 
                       maxWidth: '600px',
-                      margin: '0 auto'
+                      margin: '0 auto',
+                      backgroundColor: '#ffffff'
                     }}
                   />
                 </div>

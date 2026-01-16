@@ -119,12 +119,29 @@ async function getCachedWeatherData(locationName: string, date: string) {
 // Fallback: Get sunrise/sunset data from API (only if cache miss)
 async function getSunriseSunsetDataFromAPI(lat: number, lng: number, date: string) {
   try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10초 타임아웃
+    
     const response = await fetch(
-      `https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lng}&date=${date}&formatted=0`
+      `https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lng}&date=${date}&formatted=0`,
+      {
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/json',
+        }
+      }
     )
+    
+    clearTimeout(timeoutId)
+    
+    if (!response.ok) {
+      console.warn(`Sunrise/sunset API responded with status ${response.status}`)
+      return null
+    }
+    
     const data = await response.json()
     
-    if (data.status === 'OK') {
+    if (data.status === 'OK' && data.results) {
       const sunriseUTC = data.results.sunrise.split('T')[1].split('+')[0]
       const sunsetUTC = data.results.sunset.split('T')[1].split('+')[0]
       
@@ -134,8 +151,15 @@ async function getSunriseSunsetDataFromAPI(lat: number, lng: number, date: strin
       }
     }
     return null
-  } catch (error) {
-    console.error('Error fetching sunrise/sunset data from API:', error)
+  } catch (error: any) {
+    // 네트워크 오류는 조용히 처리 (fallback 사용)
+    if (error.name === 'AbortError') {
+      console.warn('Sunrise/sunset API request timed out')
+    } else if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+      console.warn('Sunrise/sunset API request failed (network error)')
+    } else {
+      console.error('Error fetching sunrise/sunset data from API:', error)
+    }
     return null
   }
 }
@@ -149,11 +173,28 @@ async function getWeatherDataFromAPI(lat: number, lng: number) {
   }
 
   try {
-    const response = await fetch(
-      `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lng}&appid=${apiKey}&units=metric`
-    )
-    const data = await response.json()
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 15000) // 15초 타임아웃
     
+    const response = await fetch(
+      `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lng}&appid=${apiKey}&units=metric`,
+      {
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/json',
+        }
+      }
+    )
+    
+    clearTimeout(timeoutId)
+    
+    if (!response.ok) {
+      console.warn(`OpenWeatherMap API responded with status ${response.status}`)
+      return null
+    }
+    
+    const data = await response.json()
+
     if (data.cod === '200') {
       // Get today's forecast data
       const today = new Date().toISOString().split('T')[0]
@@ -183,8 +224,15 @@ async function getWeatherDataFromAPI(lat: number, lng: number) {
       }
     }
     return null
-  } catch (error) {
-    console.error('Error fetching weather data from API:', error)
+  } catch (error: any) {
+    // 네트워크 오류는 조용히 처리 (fallback 사용)
+    if (error.name === 'AbortError') {
+      console.warn('Weather API request timed out')
+    } else if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+      console.warn('Weather API request failed (network error)')
+    } else {
+      console.error('Error fetching weather data from API:', error)
+    }
     return null
   }
 }
@@ -273,9 +321,26 @@ export async function get7DayWeatherForecast(locationName: string): Promise<Loca
   }
 
   try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 15000) // 15초 타임아웃
+    
     const response = await fetch(
-      `https://api.openweathermap.org/data/2.5/forecast?lat=${location.lat}&lon=${location.lng}&appid=${apiKey}&units=metric`
+      `https://api.openweathermap.org/data/2.5/forecast?lat=${location.lat}&lon=${location.lng}&appid=${apiKey}&units=metric`,
+      {
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/json',
+        }
+      }
     )
+    
+    clearTimeout(timeoutId)
+    
+    if (!response.ok) {
+      console.warn(`OpenWeatherMap API responded with status ${response.status}`)
+      return []
+    }
+    
     const data = await response.json()
     
     if (data.cod === '200') {
@@ -338,8 +403,15 @@ export async function get7DayWeatherForecast(locationName: string): Promise<Loca
     }
     
     return []
-  } catch (error) {
-    console.error('Error fetching 7-day weather forecast:', error)
+  } catch (error: any) {
+    // 네트워크 오류는 조용히 처리 (빈 배열 반환)
+    if (error.name === 'AbortError') {
+      console.warn('7-day weather forecast API request timed out')
+    } else if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+      console.warn('7-day weather forecast API request failed (network error)')
+    } else {
+      console.error('Error fetching 7-day weather forecast:', error)
+    }
     return []
   }
 }

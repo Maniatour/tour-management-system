@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Upload, RefreshCw, FileSpreadsheet, CheckCircle, XCircle, Clock, Settings, ArrowRight, ExternalLink, Database, X, Zap } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { RefreshCw, FileSpreadsheet, CheckCircle, XCircle, Clock, Settings, ArrowRight, ExternalLink, Database, X, Zap } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import PerformanceMonitor from '@/components/data-sync/PerformanceMonitor'
 import WeatherDataCollector from '@/components/WeatherDataCollector'
@@ -64,6 +64,8 @@ export default function DataSyncPage() {
   const [tableColumns, setTableColumns] = useState<ColumnInfo[]>([])
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({})
   // const [mappingSuggestions] = useState<{ [key: string]: ColumnMapping }>({})
+  // 각 행의 추천 드롭다운이 열려있는지 추적
+  const [openRecommendationIndex, setOpenRecommendationIndex] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null)
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
@@ -1582,7 +1584,7 @@ export default function DataSyncPage() {
                       <div className="text-blue-800">처리된 예약</div>
                     </div>
                     <div className="bg-green-50 p-2 rounded text-center">
-                      <div className="font-bold text-green-600">{migrationResult.details.totalCreated || migrationResult.details.totalUpdated || 0}</div>
+                      <div className="font-bold text-green-600">{(migrationResult.details as any).totalCreated || migrationResult.details.totalUpdated || 0}</div>
                       <div className="text-green-800">생성된 초이스</div>
                     </div>
                     <div className="bg-gray-50 p-2 rounded text-center">
@@ -1594,11 +1596,11 @@ export default function DataSyncPage() {
                       <div className="text-red-800">오류</div>
                     </div>
                   </div>
-                  {migrationResult.details.errorMessages && migrationResult.details.errorMessages.length > 0 && (
+                  {(migrationResult.details as any).errorMessages && (migrationResult.details as any).errorMessages.length > 0 && (
                     <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded text-xs">
                       <div className="font-medium text-red-800 mb-1">오류 상세 (최대 10개):</div>
                       <ul className="text-red-700 space-y-0.5">
-                        {migrationResult.details.errorMessages.map((msg: string, idx: number) => (
+                        {(migrationResult.details as any).errorMessages.map((msg: string, idx: number) => (
                           <li key={idx}>• {msg}</li>
                         ))}
                       </ul>
@@ -2063,6 +2065,23 @@ export default function DataSyncPage() {
                                   }
                                   
                                   setColumnMapping(newMapping)
+                                  // 매핑이 변경되면 추천 드롭다운 닫기
+                                  setOpenRecommendationIndex(null)
+                                }}
+                                onFocus={() => {
+                                  // select가 포커스될 때 추천 드롭다운 열기
+                                  const currentValue = Object.entries(columnMapping).find(([, dbCol]) => dbCol === dbColumn.name)?.[0] || ''
+                                  const suggestions = getAutoCompleteSuggestions(dbColumn.name, sheetInfo.find(s => s.name === selectedSheet)?.columns || [])
+                                  if (suggestions.length > 0 && !currentValue) {
+                                    setOpenRecommendationIndex(index)
+                                  }
+                                }}
+                                onBlur={(e) => {
+                                  // blur 이벤트가 추천 드롭다운 클릭으로 인한 것이 아닌 경우에만 닫기
+                                  const relatedTarget = e.relatedTarget as HTMLElement
+                                  if (!relatedTarget || !relatedTarget.closest('.recommendation-dropdown')) {
+                                    setOpenRecommendationIndex(null)
+                                  }
                                 }}
                                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                               >
@@ -2074,14 +2093,21 @@ export default function DataSyncPage() {
                                 ))}
                               </select>
                               
-                              {/* 자동 완성 제안 */}
+                              {/* 자동 완성 제안 - 클릭했을 때만 표시 */}
                               {(() => {
                                 const suggestions = getAutoCompleteSuggestions(dbColumn.name, sheetInfo.find(s => s.name === selectedSheet)?.columns || [])
                                 const currentValue = Object.entries(columnMapping).find(([, dbCol]) => dbCol === dbColumn.name)?.[0] || ''
                                 const hasSuggestion = suggestions.length > 0 && !currentValue
+                                const isOpen = openRecommendationIndex === index
                                 
-                                return hasSuggestion && (
-                                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg z-10">
+                                return hasSuggestion && isOpen && (
+                                  <div 
+                                    className="recommendation-dropdown absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg z-10"
+                                    onMouseDown={(e) => {
+                                      // 마우스 다운 이벤트로 blur 방지
+                                      e.preventDefault()
+                                    }}
+                                  >
                                     <div className="p-2 text-xs text-gray-500 border-b">
                                       추천: {suggestions.slice(0, 3).join(', ')}
                                     </div>
@@ -2101,6 +2127,7 @@ export default function DataSyncPage() {
                                           // 새로운 매핑 추가
                                           newMapping[suggestion] = dbColumn.name
                                           setColumnMapping(newMapping)
+                                          setOpenRecommendationIndex(null)
                                         }}
                                         className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center"
                                       >

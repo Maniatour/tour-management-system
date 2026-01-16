@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 
 interface ExpenseReportTabProps {
   dateRange: { start: string; end: string }
-  period: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  period: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'yesterday' | 'lastWeek' | 'lastMonth' | 'lastYear'
 }
 
 export default function ExpenseReportTab({ dateRange, period }: ExpenseReportTabProps) {
@@ -20,69 +20,74 @@ export default function ExpenseReportTab({ dateRange, period }: ExpenseReportTab
   const loadExpenseStats = async () => {
     setLoading(true)
     try {
+      // 날짜 유효성 검사
+      if (!dateRange.start || !dateRange.end) {
+        setLoading(false)
+        return
+      }
+
       // 날짜 범위를 ISO 형식으로 변환 (시간 포함, 로컬 시간대 유지)
       const startDate = new Date(dateRange.start + 'T00:00:00')
       const endDate = new Date(dateRange.end + 'T23:59:59.999')
+
+      // 날짜 유효성 검사
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        console.error('유효하지 않은 날짜 범위:', dateRange)
+        setLoading(false)
+        return
+      }
 
       // ISO 형식으로 변환 (타임존 정보 포함)
       const startISO = startDate.toISOString()
       const endISO = endDate.toISOString()
 
-      // 투어 지출 - submit_on 기준으로 필터링
-      const { data: tourExpenses, error: tourError } = await supabase
-        .from('tour_expenses')
-        .select('amount, paid_for, payment_method')
-        .gte('submit_on', startISO)
-        .lte('submit_on', endISO)
+      // 모든 지출 관련 쿼리를 병렬로 실행
+      const [
+        tourExpensesResult,
+        reservationExpensesResult,
+        companyExpensesResult,
+        ticketBookingsResult,
+        toursResult
+      ] = await Promise.all([
+        supabase
+          .from('tour_expenses')
+          .select('amount, paid_for, payment_method')
+          .gte('submit_on', startISO)
+          .lte('submit_on', endISO),
+        supabase
+          .from('reservation_expenses')
+          .select('amount, paid_for, payment_method')
+          .gte('submit_on', startISO)
+          .lte('submit_on', endISO),
+        supabase
+          .from('company_expenses')
+          .select('amount, category, payment_method')
+          .gte('submit_on', startISO)
+          .lte('submit_on', endISO),
+        supabase
+          .from('ticket_bookings')
+          .select('expense, category, payment_method, tour_id')
+          .gte('submit_on', startISO)
+          .lte('submit_on', endISO)
+          .in('status', ['confirmed', 'paid']),
+        supabase
+          .from('tours')
+          .select('guide_fee, assistant_fee')
+          .gte('tour_date', dateRange.start)
+          .lte('tour_date', dateRange.end)
+      ])
 
-      if (tourError) {
-        console.error('투어 지출 조회 오류:', tourError)
-      }
+      const tourExpenses = tourExpensesResult.data
+      const reservationExpenses = reservationExpensesResult.data
+      const companyExpenses = companyExpensesResult.data
+      const ticketBookings = ticketBookingsResult.data
+      const tours = toursResult.data
 
-      // 예약 지출 - submit_on 기준
-      const { data: reservationExpenses, error: reservationError } = await supabase
-        .from('reservation_expenses')
-        .select('amount, paid_for, payment_method')
-        .gte('submit_on', startISO)
-        .lte('submit_on', endISO)
-
-      if (reservationError) {
-        console.error('예약 지출 조회 오류:', reservationError)
-      }
-
-      // 회사 지출 - submit_on 기준
-      const { data: companyExpenses, error: companyError } = await supabase
-        .from('company_expenses')
-        .select('amount, category, payment_method')
-        .gte('submit_on', startISO)
-        .lte('submit_on', endISO)
-
-      if (companyError) {
-        console.error('회사 지출 조회 오류:', companyError)
-      }
-
-      // ticket_bookings - submit_on 기준으로 필터링
-      const { data: ticketBookings, error: ticketError } = await supabase
-        .from('ticket_bookings')
-        .select('expense, category, payment_method, tour_id')
-        .gte('submit_on', startISO)
-        .lte('submit_on', endISO)
-        .in('status', ['confirmed', 'paid'])
-
-      if (ticketError) {
-        console.error('입장권 부킹 조회 오류:', ticketError)
-      }
-
-      // tours 테이블의 guide_fee, assistant_fee - tour_date 기준 (DATE 타입이므로 'YYYY-MM-DD' 형식 사용)
-      const { data: tours, error: toursError } = await supabase
-        .from('tours')
-        .select('guide_fee, assistant_fee')
-        .gte('tour_date', dateRange.start)
-        .lte('tour_date', dateRange.end)
-
-      if (toursError) {
-        console.error('투어 조회 오류:', toursError)
-      }
+      if (tourExpensesResult.error) console.error('투어 지출 조회 오류:', tourExpensesResult.error)
+      if (reservationExpensesResult.error) console.error('예약 지출 조회 오류:', reservationExpensesResult.error)
+      if (companyExpensesResult.error) console.error('회사 지출 조회 오류:', companyExpensesResult.error)
+      if (ticketBookingsResult.error) console.error('입장권 부킹 조회 오류:', ticketBookingsResult.error)
+      if (toursResult.error) console.error('투어 조회 오류:', toursResult.error)
 
       const allExpenses = [
         ...(tourExpenses || []).map(e => ({ 

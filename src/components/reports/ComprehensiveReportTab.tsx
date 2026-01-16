@@ -1,12 +1,14 @@
 'use client'
 
 import React, { useState, useMemo, useEffect } from 'react'
-import { BarChart3, TrendingUp, DollarSign, Users, Package, Receipt, CreditCard, Calendar, Wallet } from 'lucide-react'
+import { BarChart3, TrendingUp, DollarSign, Users, Package, Receipt, CreditCard, Calendar, Wallet, Settings } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import CategoryManagerModal from '@/components/expenses/CategoryManagerModal'
+import ExpenseDetailModal from '@/components/expenses/ExpenseDetailModal'
 
 interface ComprehensiveReportTabProps {
   dateRange: { start: string; end: string }
-  period: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  period: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'yesterday' | 'lastWeek' | 'lastMonth' | 'lastYear'
   reservations: any[]
   products: any[]
   channels: any[]
@@ -53,14 +55,35 @@ export default function ComprehensiveReportTab({
 }: ComprehensiveReportTabProps) {
   const [stats, setStats] = useState<ComprehensiveStats | null>(null)
   const [loading, setLoading] = useState(true)
+  
+  // 모달 상태
+  const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [isExpenseDetailOpen, setIsExpenseDetailOpen] = useState(false)
 
   useEffect(() => {
     loadComprehensiveStats()
   }, [dateRange, period])
 
+  const handleCategoryClick = (category: string) => {
+    setSelectedCategory(category)
+    setIsExpenseDetailOpen(true)
+  }
+
+  const handleExpenseUpdate = () => {
+    // 지출 데이터가 업데이트되면 통계 다시 로드
+    loadComprehensiveStats()
+  }
+
   const loadComprehensiveStats = async () => {
     setLoading(true)
     try {
+      // 날짜 유효성 검사
+      if (!dateRange.start || !dateRange.end) {
+        setLoading(false)
+        return
+      }
+
       // 예약 통계
       const filteredReservations = reservations.filter(r => {
         const date = new Date(r.addedTime)
@@ -126,7 +149,7 @@ export default function ComprehensiveReportTab({
         ...data
       }))
 
-      // 투어 통계
+      // 투어 통계 - 최적화: 모든 예약 ID를 한 번에 수집하여 단일 쿼리로 처리
       const { data: tours } = await supabase
         .from('tours')
         .select('id, reservation_ids')
@@ -139,21 +162,26 @@ export default function ComprehensiveReportTab({
       if (tours && tours.length > 0) {
         const tourIds = tours.map(t => t.id)
         
-        // 투어별 예약 가격 합산
-        for (const tour of tours) {
-          if (tour.reservation_ids && Array.isArray(tour.reservation_ids)) {
-            const { data: pricing } = await supabase
-              .from('reservation_pricing')
-              .select('total_price')
-              .in('reservation_id', tour.reservation_ids)
-            
-            if (pricing) {
-              tourRevenue += pricing.reduce((sum, p) => sum + (p.total_price || 0), 0)
-            }
+        // 모든 투어의 예약 ID를 한 번에 수집
+        const allTourReservationIds = [...new Set(
+          tours
+            .flatMap(t => (Array.isArray(t.reservation_ids) ? t.reservation_ids : []))
+            .filter(Boolean)
+        )]
+        
+        // 단일 쿼리로 모든 예약 가격 조회
+        if (allTourReservationIds.length > 0) {
+          const { data: allPricing } = await supabase
+            .from('reservation_pricing')
+            .select('total_price')
+            .in('reservation_id', allTourReservationIds)
+          
+          if (allPricing) {
+            tourRevenue = allPricing.reduce((sum, p) => sum + (p.total_price || 0), 0)
           }
         }
 
-        // 투어 지출 합산
+        // 투어 지출 합산 (이미 단일 쿼리)
         const { data: expenses } = await supabase
           .from('tour_expenses')
           .select('amount')
@@ -175,64 +203,68 @@ export default function ComprehensiveReportTab({
       const startDate = new Date(dateRange.start + 'T00:00:00')
       const endDate = new Date(dateRange.end + 'T23:59:59.999')
 
+      // 날짜 유효성 검사
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        console.error('유효하지 않은 날짜 범위:', dateRange)
+        setLoading(false)
+        return
+      }
+
       const startISO = startDate.toISOString()
       const endISO = endDate.toISOString()
 
-      // 지출 통계 - tour_expenses는 submit_on 기준으로 필터링
-      const { data: allExpenses, error: tourExpensesError } = await supabase
-        .from('tour_expenses')
-        .select('amount, paid_for')
-        .gte('submit_on', startISO)
-        .lte('submit_on', endISO)
+      // 모든 지출 관련 쿼리를 병렬로 실행
+      const [
+        tourExpensesResult,
+        reservationExpensesResult,
+        companyExpensesResult,
+        ticketBookingsResult,
+        toursForFeesResult
+      ] = await Promise.all([
+        // 지출 통계 - tour_expenses는 submit_on 기준으로 필터링
+        supabase
+          .from('tour_expenses')
+          .select('amount, paid_for')
+          .gte('submit_on', startISO)
+          .lte('submit_on', endISO),
+        // reservation_expenses는 submit_on 기준
+        supabase
+          .from('reservation_expenses')
+          .select('amount, paid_for')
+          .gte('submit_on', startISO)
+          .lte('submit_on', endISO),
+        // company_expenses는 submit_on 기준
+        supabase
+          .from('company_expenses')
+          .select('amount, category')
+          .gte('submit_on', startISO)
+          .lte('submit_on', endISO),
+        // ticket_bookings - submit_on 기준
+        supabase
+          .from('ticket_bookings')
+          .select('expense, category')
+          .gte('submit_on', startISO)
+          .lte('submit_on', endISO)
+          .in('status', ['confirmed', 'paid']),
+        // tours 테이블의 guide_fee, assistant_fee
+        supabase
+          .from('tours')
+          .select('guide_fee, assistant_fee')
+          .gte('tour_date', dateRange.start)
+          .lte('tour_date', dateRange.end)
+      ])
 
-      if (tourExpensesError) {
-        console.error('투어 지출 조회 오류:', tourExpensesError)
-      }
+      const allExpenses = tourExpensesResult.data
+      const reservationExpenses = reservationExpensesResult.data
+      const companyExpenses = companyExpensesResult.data
+      const ticketBookings = ticketBookingsResult.data
+      const toursForFees = toursForFeesResult.data
 
-      // reservation_expenses는 submit_on 기준
-      const { data: reservationExpenses, error: reservationError } = await supabase
-        .from('reservation_expenses')
-        .select('amount, paid_for')
-        .gte('submit_on', startISO)
-        .lte('submit_on', endISO)
-
-      if (reservationError) {
-        console.error('예약 지출 조회 오류:', reservationError)
-      }
-
-      // company_expenses는 submit_on 기준
-      const { data: companyExpenses, error: companyError } = await supabase
-        .from('company_expenses')
-        .select('amount, category')
-        .gte('submit_on', startISO)
-        .lte('submit_on', endISO)
-
-      if (companyError) {
-        console.error('회사 지출 조회 오류:', companyError)
-      }
-
-      // ticket_bookings - submit_on 기준
-      const { data: ticketBookings, error: ticketError } = await supabase
-        .from('ticket_bookings')
-        .select('expense, category')
-        .gte('submit_on', startISO)
-        .lte('submit_on', endISO)
-        .in('status', ['confirmed', 'paid'])
-
-      if (ticketError) {
-        console.error('입장권 부킹 조회 오류:', ticketError)
-      }
-
-      // tours 테이블의 guide_fee, assistant_fee (tour_date는 DATE 타입이므로 'YYYY-MM-DD' 형식 사용)
-      const { data: toursForFees, error: toursFeesError } = await supabase
-        .from('tours')
-        .select('guide_fee, assistant_fee')
-        .gte('tour_date', dateRange.start)
-        .lte('tour_date', dateRange.end)
-
-      if (toursFeesError) {
-        console.error('투어 수수료 조회 오류:', toursFeesError)
-      }
+      if (tourExpensesResult.error) console.error('투어 지출 조회 오류:', tourExpensesResult.error)
+      if (reservationExpensesResult.error) console.error('예약 지출 조회 오류:', reservationExpensesResult.error)
+      if (companyExpensesResult.error) console.error('회사 지출 조회 오류:', companyExpensesResult.error)
+      if (ticketBookingsResult.error) console.error('입장권 부킹 조회 오류:', ticketBookingsResult.error)
+      if (toursForFeesResult.error) console.error('투어 수수료 조회 오류:', toursForFeesResult.error)
 
       const expenseMap = new Map<string, number>()
       
@@ -342,19 +374,44 @@ export default function ComprehensiveReportTab({
         profitMargin
       }
 
-      // 현금 통계 (2026년 1월 1일부터)
+      // 현금 통계 (2026년 1월 1일부터) - 병렬 처리
       const baseDate = '2026-01-01'
-      const { data: allCashTransactions } = await supabase
-        .from('cash_transactions')
-        .select('transaction_type, amount')
-        .gte('transaction_date', baseDate + 'T00:00:00')
+      const [
+        allCashTransactionsResult,
+        allCashPaymentsResult,
+        periodCashTransactionsResult,
+        periodCashPaymentsResult
+      ] = await Promise.all([
+        supabase
+          .from('cash_transactions')
+          .select('transaction_type, amount')
+          .gte('transaction_date', baseDate + 'T00:00:00'),
+        supabase
+          .from('payment_records')
+          .select('amount')
+          .in('payment_method', ['PAYM032', 'PAYM001'])
+          .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
+          .gte('submit_on', baseDate + 'T00:00:00'),
+        // 기간 내 현금 거래
+        supabase
+          .from('cash_transactions')
+          .select('transaction_type, amount')
+          .gte('transaction_date', startISO)
+          .lte('transaction_date', endISO),
+        // 기간 내 payment_records에서 현금 입금 조회
+        supabase
+          .from('payment_records')
+          .select('amount')
+          .in('payment_method', ['PAYM032', 'PAYM001'])
+          .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
+          .gte('submit_on', startISO)
+          .lte('submit_on', endISO)
+      ])
 
-      const { data: allCashPayments } = await supabase
-        .from('payment_records')
-        .select('amount')
-        .in('payment_method', ['PAYM032', 'PAYM001'])
-        .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
-        .gte('submit_on', baseDate + 'T00:00:00')
+      const allCashTransactions = allCashTransactionsResult.data
+      const allCashPayments = allCashPaymentsResult.data
+      const periodCashTransactions = periodCashTransactionsResult.data
+      const periodCashPayments = periodCashPaymentsResult.data
 
       const cashBalance = (allCashTransactions || []).reduce((balance, t) => {
         if (t.transaction_type === 'deposit') {
@@ -363,22 +420,6 @@ export default function ComprehensiveReportTab({
           return balance - (t.amount || 0)
         }
       }, 0) + (allCashPayments || []).reduce((sum, p) => sum + (p.amount || 0), 0)
-
-      // 기간 내 현금 거래
-      const { data: periodCashTransactions } = await supabase
-        .from('cash_transactions')
-        .select('transaction_type, amount')
-        .gte('transaction_date', startISO)
-        .lte('transaction_date', endISO)
-
-      // 기간 내 payment_records에서 현금 입금 조회
-      const { data: periodCashPayments } = await supabase
-        .from('payment_records')
-        .select('amount')
-        .in('payment_method', ['PAYM032', 'PAYM001'])
-        .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
-        .gte('submit_on', startISO)
-        .lte('submit_on', endISO)
 
       const periodCashDeposits = (periodCashTransactions || [])
         .filter(t => t.transaction_type === 'deposit')
@@ -541,10 +582,19 @@ export default function ComprehensiveReportTab({
 
         {/* 지출 통계 */}
         <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-            <TrendingUp size={20} />
-            <span>지출 통계</span>
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
+              <TrendingUp size={20} />
+              <span>지출 통계</span>
+            </h3>
+            <button
+              onClick={() => setIsCategoryManagerOpen(true)}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700"
+            >
+              <Settings size={14} />
+              카테고리 매니저
+            </button>
+          </div>
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <span className="text-gray-600">총 지출</span>
@@ -580,13 +630,17 @@ export default function ComprehensiveReportTab({
               </div>
             </div>
             <div className="mt-4 pt-4 border-t border-gray-200">
-              <p className="text-sm font-medium text-gray-700 mb-2">카테고리별</p>
+              <p className="text-sm font-medium text-gray-700 mb-2">카테고리별 (클릭하여 상세 보기)</p>
               <div className="space-y-2">
                 {stats.expenses.byCategory.map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-center text-sm">
-                    <span className="text-gray-600">{item.category}</span>
-                    <span>${item.amount.toLocaleString()}</span>
-                  </div>
+                  <button
+                    key={idx}
+                    onClick={() => handleCategoryClick(item.category)}
+                    className="w-full flex justify-between items-center text-sm p-2 rounded hover:bg-gray-100 transition-colors text-left"
+                  >
+                    <span className="text-gray-600 hover:text-blue-600">{item.category}</span>
+                    <span className="font-medium">${item.amount.toLocaleString()}</span>
+                  </button>
                 ))}
               </div>
             </div>
@@ -653,6 +707,26 @@ export default function ComprehensiveReportTab({
           </div>
         )}
       </div>
+
+      {/* 모달들 */}
+      <CategoryManagerModal
+        isOpen={isCategoryManagerOpen}
+        onClose={() => setIsCategoryManagerOpen(false)}
+        onSave={handleExpenseUpdate}
+      />
+
+      {selectedCategory && (
+        <ExpenseDetailModal
+          isOpen={isExpenseDetailOpen}
+          onClose={() => {
+            setIsExpenseDetailOpen(false)
+            setSelectedCategory(null)
+          }}
+          category={selectedCategory}
+          dateRange={dateRange}
+          onUpdate={handleExpenseUpdate}
+        />
+      )}
     </div>
   )
 }

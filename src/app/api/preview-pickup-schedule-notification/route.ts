@@ -445,6 +445,37 @@ export async function POST(request: NextRequest) {
             console.error('[preview-pickup-schedule-notification] 차량 사진 조회 오류:', photosError)
           }
 
+          // URL 단순화 함수: 불필요한 쿼리 파라미터 제거
+          const simplifyUrl = (url: string): string => {
+            if (!url) return url
+            try {
+              const urlObj = new URL(url)
+              // 쿼리 파라미터 제거
+              urlObj.search = ''
+              // 해시 제거
+              urlObj.hash = ''
+              return urlObj.toString()
+            } catch {
+              // URL 파싱 실패 시 원본 반환
+              return url
+            }
+          }
+
+          // 차량 사진 URL 단순화 및 base64 이미지 제외
+          const processedPhotos = (photosData || [])
+            .filter((photo: any) => {
+              // base64 이미지는 제외
+              if (photo.photo_url && photo.photo_url.startsWith('data:image')) {
+                console.log('[preview-pickup-schedule-notification] base64 이미지 제외:', photo.photo_name)
+                return false
+              }
+              return true
+            })
+            .map((photo: any) => ({
+              ...photo,
+              photo_url: photo.photo_url ? simplifyUrl(photo.photo_url) : photo.photo_url
+            }))
+
           vehicleInfo = {
             vehicle_type: vehicleData.vehicle_type,
             color: vehicleData.color,
@@ -458,7 +489,7 @@ export async function POST(request: NextRequest) {
               name: vehicleData.vehicle_type,
               passenger_capacity: vehicleData.capacity
             },
-            vehicle_type_photos: photosData || []
+            vehicle_type_photos: processedPhotos
           }
           console.log('[preview-pickup-schedule-notification] 차량 정보:', vehicleInfo ? '있음' : '없음')
         }

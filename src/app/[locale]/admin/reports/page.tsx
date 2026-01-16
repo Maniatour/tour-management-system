@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react'
-import { Calendar, BarChart3, TrendingUp, Users, Package, Receipt, DollarSign, CreditCard, FileText, Mail, Download, Clock } from 'lucide-react'
+import { Calendar, BarChart3, TrendingUp, Users, Package, Receipt, DollarSign, CreditCard, FileText, Mail, Download, Clock, Search } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useReservationData } from '@/hooks/useReservationData'
 import { useAuth } from '@/contexts/AuthContext'
@@ -19,7 +19,7 @@ interface AdminReportsProps {
   params: Promise<{ locale: string }>
 }
 
-type ReportPeriod = 'daily' | 'weekly' | 'monthly' | 'yearly'
+type ReportPeriod = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'yesterday' | 'lastWeek' | 'lastMonth' | 'lastYear'
 type ReportTab = 'comprehensive' | 'reservations' | 'tours' | 'expenses' | 'deposits' | 'settlement' | 'cash'
 
 export default function AdminReports({ }: AdminReportsProps) {
@@ -27,6 +27,17 @@ export default function AdminReports({ }: AdminReportsProps) {
   const { authUser } = useAuth()
   const [isSuper, setIsSuper] = useState(false)
   const [isCheckingPermission, setIsCheckingPermission] = useState(true)
+  
+  // 커스텀 날짜 범위
+  const formatTodayDate = () => {
+    const today = new Date()
+    const yyyy = today.getFullYear()
+    const mm = String(today.getMonth() + 1).padStart(2, '0')
+    const dd = String(today.getDate()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd}`
+  }
+  const [customStartDate, setCustomStartDate] = useState(formatTodayDate())
+  const [customEndDate, setCustomEndDate] = useState(formatTodayDate())
   
   // 권한 체크
   useEffect(() => {
@@ -77,25 +88,35 @@ export default function AdminReports({ }: AdminReportsProps) {
   const [activeTab, setActiveTab] = useState<ReportTab>('comprehensive')
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>('daily')
   
-  // 날짜 범위 계산
-  const dateRange = useMemo(() => {
+  // 적용된 커스텀 날짜 (검색 버튼 클릭 시에만 업데이트)
+  const [appliedCustomStartDate, setAppliedCustomStartDate] = useState(formatTodayDate())
+  const [appliedCustomEndDate, setAppliedCustomEndDate] = useState(formatTodayDate())
+
+  // 날짜 범위 계산 헬퍼
+  const formatLocalDate = (d: Date) => {
+    const yyyy = d.getFullYear()
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd}`
+  }
+
+  const calculateDateRange = useCallback((period: ReportPeriod, customStart: string, customEnd: string) => {
     const today = new Date()
     let startDate: Date
     let endDate: Date
 
-    const formatLocalDate = (d: Date) => {
-      const yyyy = d.getFullYear()
-      const mm = String(d.getMonth() + 1).padStart(2, '0')
-      const dd = String(d.getDate()).padStart(2, '0')
-      return `${yyyy}-${mm}-${dd}`
-    }
-
-    switch (reportPeriod) {
+    switch (period) {
       case 'daily':
         startDate = new Date(today)
         startDate.setHours(0, 0, 0, 0)
-        // 일별 리포트는 하루만: start = end
         endDate = new Date(startDate)
+        break
+      case 'yesterday':
+        startDate = new Date(today)
+        startDate.setDate(today.getDate() - 1)
+        startDate.setHours(0, 0, 0, 0)
+        endDate = new Date(startDate)
+        endDate.setHours(23, 59, 59, 999)
         break
       case 'weekly':
         startDate = new Date(today)
@@ -104,24 +125,70 @@ export default function AdminReports({ }: AdminReportsProps) {
         startDate.setHours(0, 0, 0, 0)
         endDate = new Date(today)
         break
+      case 'lastWeek':
+        startDate = new Date(today)
+        const lastWeekDayOfWeek = startDate.getDay()
+        // 지난주 월요일
+        startDate.setDate(today.getDate() - lastWeekDayOfWeek - 7)
+        startDate.setHours(0, 0, 0, 0)
+        // 지난주 일요일
+        endDate = new Date(startDate)
+        endDate.setDate(startDate.getDate() + 6)
+        endDate.setHours(23, 59, 59, 999)
+        break
       case 'monthly':
         startDate = new Date(today.getFullYear(), today.getMonth(), 1)
         startDate.setHours(0, 0, 0, 0)
         endDate = new Date(today)
+        break
+      case 'lastMonth':
+        startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+        startDate.setHours(0, 0, 0, 0)
+        // 지난달 마지막 날
+        endDate = new Date(today.getFullYear(), today.getMonth(), 0)
+        endDate.setHours(23, 59, 59, 999)
         break
       case 'yearly':
         startDate = new Date(today.getFullYear(), 0, 1)
         startDate.setHours(0, 0, 0, 0)
         endDate = new Date(today)
         break
+      case 'lastYear':
+        startDate = new Date(today.getFullYear() - 1, 0, 1)
+        startDate.setHours(0, 0, 0, 0)
+        endDate = new Date(today.getFullYear() - 1, 11, 31)
+        endDate.setHours(23, 59, 59, 999)
+        break
+      case 'custom':
+        return {
+          start: customStart,
+          end: customEnd
+        }
     }
 
     return {
-      // toISOString()은 UTC로 변환되어 날짜가 하루 밀릴 수 있으므로 로컬 기준 문자열 사용
       start: formatLocalDate(startDate),
       end: formatLocalDate(endDate)
     }
-  }, [reportPeriod])
+  }, [])
+  
+  // 실제 검색에 사용되는 날짜 범위 (커스텀 모드는 적용된 날짜 사용)
+  const dateRange = useMemo(() => {
+    return calculateDateRange(reportPeriod, appliedCustomStartDate, appliedCustomEndDate)
+  }, [reportPeriod, appliedCustomStartDate, appliedCustomEndDate, calculateDateRange])
+
+  // 기간 선택 변경 핸들러
+  const handlePeriodChange = (period: ReportPeriod) => {
+    setReportPeriod(period)
+    // 커스텀이 아닌 경우 즉시 검색 (dateRange가 자동 업데이트됨)
+    // 커스텀인 경우 검색 버튼을 눌러야 검색됨
+  }
+
+  // 커스텀 검색 버튼 핸들러
+  const handleCustomSearch = () => {
+    setAppliedCustomStartDate(customStartDate)
+    setAppliedCustomEndDate(customEndDate)
+  }
 
   // 리포트 생성 및 이메일 전송
   const [isGeneratingReport, setIsGeneratingReport] = useState(false)
@@ -199,8 +266,13 @@ export default function AdminReports({ }: AdminReportsProps) {
           <h1 className="text-3xl font-bold text-gray-900">종합 통계 리포트</h1>
           <p className="text-sm text-gray-600 mt-1">
             {reportPeriod === 'daily' ? '일별' : 
+             reportPeriod === 'yesterday' ? '어제' :
              reportPeriod === 'weekly' ? '주별' : 
-             reportPeriod === 'monthly' ? '월별' : '연간'} 리포트
+             reportPeriod === 'lastWeek' ? '지난주' :
+             reportPeriod === 'monthly' ? '월별' : 
+             reportPeriod === 'lastMonth' ? '지난달' :
+             reportPeriod === 'yearly' ? '연간' : 
+             reportPeriod === 'lastYear' ? '작년' : '기간 선택'} 리포트
             ({dateRange.start} ~ {dateRange.end})
           </p>
         </div>
@@ -241,13 +313,13 @@ export default function AdminReports({ }: AdminReportsProps) {
 
       {/* 리포트 기간 선택 */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-        <div className="flex items-center space-x-4">
+        <div className="flex flex-wrap items-center gap-4">
           <label className="text-sm font-medium text-gray-700">리포트 기간:</label>
-          <div className="flex space-x-2">
-            {(['daily', 'weekly', 'monthly', 'yearly'] as ReportPeriod[]).map((period) => (
+          <div className="flex flex-wrap gap-2">
+            {(['daily', 'weekly', 'monthly', 'yearly', 'custom'] as ReportPeriod[]).map((period) => (
               <button
                 key={period}
-                onClick={() => setReportPeriod(period)}
+                onClick={() => handlePeriodChange(period)}
                 className={`px-4 py-2 text-sm rounded-md transition-colors ${
                   reportPeriod === period
                     ? 'bg-blue-500 text-white'
@@ -256,10 +328,63 @@ export default function AdminReports({ }: AdminReportsProps) {
               >
                 {period === 'daily' ? '일별' : 
                  period === 'weekly' ? '주별' : 
-                 period === 'monthly' ? '월별' : '연간'}
+                 period === 'monthly' ? '월별' : 
+                 period === 'yearly' ? '연간' : '기간 선택'}
               </button>
             ))}
           </div>
+          <div className="flex flex-wrap gap-2 ml-2 border-l pl-4">
+            {(['yesterday', 'lastWeek', 'lastMonth', 'lastYear'] as ReportPeriod[]).map((period) => (
+              <button
+                key={period}
+                onClick={() => handlePeriodChange(period)}
+                className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                  reportPeriod === period
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200'
+                }`}
+              >
+                {period === 'yesterday' ? '어제' : 
+                 period === 'lastWeek' ? '지난주' : 
+                 period === 'lastMonth' ? '지난달' : 
+                 period === 'lastYear' ? '작년' : period}
+              </button>
+            ))}
+          </div>
+          
+          {/* 커스텀 날짜 선택 */}
+          {reportPeriod === 'custom' && (
+            <div className="flex items-center gap-2 ml-4">
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-600">시작일:</label>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  max={customEndDate}
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <span className="text-gray-400">~</span>
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-600">종료일:</label>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  min={customStartDate}
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <button
+                onClick={handleCustomSearch}
+                className="ml-2 px-4 py-2 bg-blue-500 text-white text-sm rounded-md hover:bg-blue-600 transition-colors flex items-center gap-2"
+              >
+                <Search size={16} />
+                <span>검색</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

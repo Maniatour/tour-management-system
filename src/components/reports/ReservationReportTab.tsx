@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 
 interface ReservationReportTabProps {
   dateRange: { start: string; end: string }
-  period: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  period: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'yesterday' | 'lastWeek' | 'lastMonth' | 'lastYear'
   reservations: any[]
   products: any[]
   channels: any[]
@@ -59,6 +59,12 @@ export default function ReservationReportTab({
   const loadReservationStats = async () => {
     setLoading(true)
     try {
+      // 날짜 유효성 검사
+      if (!dateRange.start || !dateRange.end) {
+        setLoading(false)
+        return
+      }
+
       const filteredReservations = reservations.filter(r => {
         const date = new Date(r.addedTime)
         // dateRange는 'YYYY-MM-DD' 이므로 로컬 하루 범위로 비교
@@ -108,33 +114,46 @@ export default function ReservationReportTab({
         stats.revenue += pricing?.total_price || 0
       })
 
-      // 예약별 정산 (수익 - 지출)
-      const reservationSettlements = await Promise.all(
-        filteredReservations.map(async (r) => {
-          const pricing = reservationPricing.find(p => p.reservation_id === r.id)
-          const revenue = pricing?.total_price || 0
+      // 예약별 정산 (수익 - 지출) - 최적화: 단일 쿼리로 모든 지출 조회
+      let allExpenses: { reservation_id: string; amount: number }[] = []
+      if (reservationIds.length > 0) {
+        const { data: expensesData } = await supabase
+          .from('reservation_expenses')
+          .select('reservation_id, amount')
+          .in('reservation_id', reservationIds)
+        allExpenses = expensesData || []
+      }
 
-          const { data: expenses } = await supabase
-            .from('reservation_expenses')
-            .select('amount')
-            .eq('reservation_id', r.id)
+      // 예약별 지출 합계를 Map으로 미리 계산
+      const expensesByReservation = new Map<string, number>()
+      allExpenses.forEach(e => {
+        const current = expensesByReservation.get(e.reservation_id) || 0
+        expensesByReservation.set(e.reservation_id, current + (e.amount || 0))
+      })
 
-          const totalExpenses = expenses?.reduce((sum, e) => sum + (e.amount || 0), 0) || 0
-          const netProfit = revenue - totalExpenses
+      // 채널/상품/고객 조회를 Map으로 최적화
+      const channelNameMap = new Map(channels.map(c => [c.id, c.name]))
+      const productNameMap = new Map(products.map(p => [p.id, p.name]))
+      const customerNameMap = new Map(customers.map(c => [c.id, c.name]))
+      const pricingMap = new Map(reservationPricing.map(p => [p.reservation_id, p.total_price || 0]))
 
-          return {
-            reservationId: r.id,
-            status: r.status || 'Unknown',
-            customerName: customers.find(c => c.id === r.customerId)?.name || 'Unknown',
-            productName: products.find(p => p.id === r.productId)?.name || 'Unknown',
-            channelName: channels.find(c => c.id === r.channelId)?.name || 'Unknown',
-            totalPeople: r.totalPeople || 0,
-            revenue,
-            expenses: totalExpenses,
-            netProfit
-          }
-        })
-      )
+      const reservationSettlements = filteredReservations.map(r => {
+        const revenue = pricingMap.get(r.id) || 0
+        const totalExpenses = expensesByReservation.get(r.id) || 0
+        const netProfit = revenue - totalExpenses
+
+        return {
+          reservationId: r.id,
+          status: r.status || 'Unknown',
+          customerName: customerNameMap.get(r.customerId) || 'Unknown',
+          productName: productNameMap.get(r.productId) || 'Unknown',
+          channelName: channelNameMap.get(r.channelId) || 'Unknown',
+          totalPeople: r.totalPeople || 0,
+          revenue,
+          expenses: totalExpenses,
+          netProfit
+        }
+      })
 
       setStats({
         total: filteredReservations.length,

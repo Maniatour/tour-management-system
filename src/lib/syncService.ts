@@ -38,7 +38,10 @@ const TOUR_COLUMN_MAPPING = {
   '개인투어': 'is_private_tour',
   '상품명한글': 'name_ko',
   '상품명영어': 'name_en',
-  '배정현황': 'assignment_status'
+  '배정현황': 'assignment_status',
+  '예약ID들': 'reservation_ids',
+  'Reservation IDs': 'reservation_ids',
+  'reservation_ids': 'reservation_ids'
 }
 
 // 예약 데이터 변환
@@ -138,6 +141,32 @@ const transformTourData = (sheetData: any[]) => {
     }
     // tour_date는 그대로 저장 (변환하지 않음)
 
+    // reservation_ids 처리: 구글 시트에 값이 있으면 배열로 변환, 없으면 빈 배열로 설정
+    if (transformed.reservation_ids !== undefined) {
+      if (transformed.reservation_ids === '' || transformed.reservation_ids === null) {
+        transformed.reservation_ids = []
+      } else if (typeof transformed.reservation_ids === 'string') {
+        // 문자열을 배열로 변환 (쉼표로 구분된 값 또는 JSON 배열)
+        const trimmed = transformed.reservation_ids.trim()
+        if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+          try {
+            transformed.reservation_ids = JSON.parse(trimmed)
+          } catch {
+            transformed.reservation_ids = []
+          }
+        } else if (trimmed.includes(',')) {
+          transformed.reservation_ids = trimmed.split(',').map((id: string) => id.trim()).filter((id: string) => id.length > 0)
+        } else {
+          transformed.reservation_ids = trimmed.length > 0 ? [trimmed] : []
+        }
+      } else if (!Array.isArray(transformed.reservation_ids)) {
+        transformed.reservation_ids = []
+      }
+    } else {
+      // 구글 시트에 reservation_ids 컬럼이 없으면 빈 배열로 설정
+      transformed.reservation_ids = []
+    }
+
     // 기본값 설정
     transformed.tour_status = transformed.tour_status || 'Recruiting'
     transformed.assignment_status = transformed.assignment_status || 'pending'
@@ -161,7 +190,7 @@ const processCustomer = async (customerData: any) => {
       .single()
 
     if (existingCustomer) {
-      return existingCustomer.id
+      return (existingCustomer as { id: string }).id
     }
 
     // 새 고객 생성
@@ -173,7 +202,7 @@ const processCustomer = async (customerData: any) => {
         phone: customerData.customer_phone || null,
         language: 'ko',
         created_at: new Date().toISOString()
-      })
+      } as any)
       .select('id')
       .single()
 
@@ -182,7 +211,7 @@ const processCustomer = async (customerData: any) => {
       return null
     }
 
-    return newCustomer.id
+    return (newCustomer as { id: string })?.id || null
   } catch (error) {
     console.error('Error processing customer:', error)
     return null
@@ -240,12 +269,13 @@ export const syncReservations = async (spreadsheetId: string, sheetName: string)
 
         if (existingReservation) {
           // 업데이트
-          const { error: updateError } = await supabase
-            .from('reservations')
-            .update({
-              ...row,
-              updated_at: new Date().toISOString()
-            })
+          const updatePayload: any = {
+            ...row,
+            updated_at: new Date().toISOString()
+          }
+          const { error: updateError } = await (supabase
+            .from('reservations') as any)
+            .update(updatePayload)
             .eq('id', row.id)
 
           if (updateError) {
@@ -280,7 +310,7 @@ export const syncReservations = async (spreadsheetId: string, sheetName: string)
               option_value: choice,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
-            })
+            } as any)
 
           if (optionError) {
             console.error('Option insert error:', optionError)
@@ -350,13 +380,16 @@ export const syncTours = async (spreadsheetId: string, sheetName: string) => {
           .single()
 
         if (existingTour) {
-          // 업데이트
-          const { error: updateError } = await supabase
-            .from('tours')
-            .update({
-              ...row,
-              updated_at: new Date().toISOString()
-            })
+          // 업데이트 - reservation_ids는 구글 시트 값으로 무조건 덮어쓰기
+          const updateData: any = {
+            ...row,
+            // reservation_ids는 구글 시트에 값이 있으면 그 값으로, 없으면 빈 배열로 설정
+            reservation_ids: row.reservation_ids !== undefined ? row.reservation_ids : [],
+            updated_at: new Date().toISOString()
+          }
+          const { error: updateError } = await (supabase
+            .from('tours') as any)
+            .update(updateData)
             .eq('id', row.id)
 
           if (updateError) {
@@ -367,10 +400,14 @@ export const syncTours = async (spreadsheetId: string, sheetName: string) => {
             results.updated++
           }
         } else {
-          // 삽입
+          // 삽입 - reservation_ids는 구글 시트 값으로 설정 (없으면 빈 배열)
+          const insertData = {
+            ...row,
+            reservation_ids: row.reservation_ids !== undefined ? row.reservation_ids : []
+          }
           const { error: insertError } = await supabase
             .from('tours')
-            .insert(row)
+            .insert(insertData)
 
           if (insertError) {
             console.error('Tour insert error:', insertError)
@@ -419,7 +456,7 @@ export const runIncrementalSync = async (spreadsheetId: string, reservationsShee
       .limit(1)
       .single()
     
-    const lastSyncTime = lastSync?.last_sync_time || new Date('1900-01-01').toISOString()
+    const lastSyncTime = (lastSync as { last_sync_time?: string } | null)?.last_sync_time || new Date('1900-01-01').toISOString()
     console.log('Last sync time:', lastSyncTime)
     
     // 증분 동기화 실행 (현재는 전체 동기화와 동일하지만 향후 개선 가능)
@@ -440,7 +477,7 @@ export const runIncrementalSync = async (spreadsheetId: string, reservationsShee
         success: reservationResult.success && tourResult.success,
         error_message: reservationResult.success && tourResult.success ? null : 'Sync completed with errors',
         created_at: new Date().toISOString()
-      })
+      } as any)
     
     return {
       success: reservationResult.success && tourResult.success,
@@ -483,7 +520,7 @@ export const runFullSync = async (spreadsheetId: string, reservationsSheet: stri
         success: reservationResult.success && tourResult.success,
         error_message: reservationResult.success && tourResult.success ? null : 'Sync completed with errors',
         created_at: new Date().toISOString()
-      })
+      } as any)
     
     return {
       success: reservationResult.success && tourResult.success,

@@ -7,7 +7,8 @@ import ReservationExpenseManager from '@/components/ReservationExpenseManager'
 import CompanyExpenseManager from '@/components/CompanyExpenseManager'
 import AllTourExpensesManager from '@/components/AllTourExpensesManager'
 import CashManagement from '@/components/CashManagement'
-import { Receipt, Calendar, Building2, MapPin, Wallet } from 'lucide-react'
+import CategoryManagerModal from '@/components/expenses/CategoryManagerModal'
+import { Receipt, Calendar, Building2, MapPin, Wallet, Settings } from 'lucide-react'
 
 type ExpenseTab = 'reservation' | 'company' | 'tour' | 'cash'
 
@@ -17,6 +18,7 @@ export default function ExpensesManagementPage() {
   const searchParams = useSearchParams()
   const tabFromUrl = searchParams.get('tab') as ExpenseTab | null
   const [activeTab, setActiveTab] = useState<ExpenseTab>(tabFromUrl || 'tour')
+  const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
   
   // URL 쿼리 파라미터와 동기화
   useEffect(() => {
@@ -64,9 +66,18 @@ export default function ExpensesManagementPage() {
     <div className="container mx-auto px-2 py-6 max-w-full">
       {/* 헤더 */}
       <div className="mb-6">
-        <div className="flex items-center gap-3 mb-2">
-          <Receipt className="w-8 h-8 text-blue-600" />
-          <h1 className="text-3xl font-bold text-gray-900">지출 관리</h1>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 mb-2">
+            <Receipt className="w-8 h-8 text-blue-600" />
+            <h1 className="text-3xl font-bold text-gray-900">지출 관리</h1>
+          </div>
+          <button
+            onClick={() => setIsCategoryManagerOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 text-sm"
+          >
+            <Settings size={18} />
+            카테고리 매니저
+          </button>
         </div>
         <p className="text-gray-600">예약, 회사, 투어 지출을 통합 관리합니다.</p>
       </div>
@@ -151,6 +162,12 @@ export default function ExpensesManagementPage() {
           </div>
         )}
       </div>
+
+      {/* 카테고리 매니저 모달 */}
+      <CategoryManagerModal
+        isOpen={isCategoryManagerOpen}
+        onClose={() => setIsCategoryManagerOpen(false)}
+      />
     </div>
   )
 }

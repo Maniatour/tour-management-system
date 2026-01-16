@@ -20,12 +20,7 @@ import {
   BookOpen,
   Receipt,
   X,
-  Home,
-  Plane,
-  PlaneTakeoff,
-  HelpCircle,
   Upload,
-  Image as ImageIcon,
   XCircle
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -318,6 +313,12 @@ export default function AdminCustomers() {
     setShowInvoiceModal(true)
   }
 
+  // 인보이스 목록 보기 함수
+  const handleViewInvoices = (customer: Customer) => {
+    setSelectedCustomerForInvoiceList(customer)
+    setShowInvoiceListModal(true)
+  }
+
 
   // 폼 닫기 함수
   const closeForm = () => {
@@ -435,7 +436,7 @@ export default function AdminCustomers() {
 
       const { error } = await supabase
         .from('reservations')
-        .insert([dbReservationData])
+        .insert([dbReservationData] as any)
         .select('*')
 
       if (error) {
@@ -529,7 +530,7 @@ export default function AdminCustomers() {
   const handleUpdateResidentStatus = async (customerId: string, newStatus: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null) => {
     // "비거주자 (패스 보유)" 선택 시 모달 열기
     if (newStatus === 'non_resident_with_pass') {
-      const customer = customers.find(c => c.id === customerId)
+      const customer = (customers || []).find(c => c.id === customerId)
       if (customer) {
         setSelectedCustomerForPassUpload(customer)
         setShowPassUploadModal(true)
@@ -540,10 +541,11 @@ export default function AdminCustomers() {
 
     // 다른 상태는 바로 업데이트
     try {
-      const { error } = await supabase
-        .from('customers')
+      const query = (supabase
+        .from('customers') as any)
         .update({ resident_status: newStatus })
         .eq('id', customerId)
+      const { error } = await query
 
       if (error) {
         console.error('Error updating resident status:', error)
@@ -565,14 +567,15 @@ export default function AdminCustomers() {
     if (!selectedCustomerForPassUpload) return
 
     try {
-      const { error } = await supabase
-        .from('customers')
+      const query = (supabase
+        .from('customers') as any)
         .update({ 
           resident_status: 'non_resident_with_pass',
           pass_photo_url: passPhotoUrl,
           id_photo_url: idPhotoUrl
         })
         .eq('id', selectedCustomerForPassUpload.id)
+      const { error } = await query
 
       if (error) {
         console.error('Error updating customer with pass photos:', error)
@@ -1486,9 +1489,12 @@ export default function AdminCustomers() {
             booking_count: c.booking_count,
             channel_id: c.channel_id,
             status: c.status,
+            resident_status: c.resident_status,
+            pass_photo_url: c.pass_photo_url,
+            id_photo_url: c.id_photo_url,
             created_at: c.created_at,
             updated_at: c.updated_at
-          }))}
+          })) as ReservationCustomer[]}
           products={products || []}
           channels={channels || []}
           productOptions={productOptions || []}
@@ -1508,14 +1514,14 @@ export default function AdminCustomers() {
             phone: selectedCustomerForInvoice.phone,
             channel_id: selectedCustomerForInvoice.channel_id
           }}
-          products={(products || []).map(p => ({
+          products={((products || []) as any[]).map((p: any) => ({
             id: p.id,
-            name_ko: p.name_ko,
-            name_en: p.name_en,
-            base_price: (p as any).base_price || null,
-            adult_base_price: (p as any).adult_base_price || null,
-            child_base_price: (p as any).child_base_price || null,
-            infant_base_price: (p as any).infant_base_price || null
+            name_ko: p.name_ko || null,
+            name_en: p.name_en || null,
+            base_price: p.base_price || null,
+            adult_base_price: p.adult_base_price || null,
+            child_base_price: p.child_base_price || null,
+            infant_base_price: p.infant_base_price || null
           }))}
           onClose={() => {
             setShowInvoiceModal(false)
@@ -2527,13 +2533,15 @@ function CustomerForm({
 }
 
 // 고객 상세 정보 모달
-function CustomerDetailModal({ 
-  customer, 
-  onClose 
-}: { 
+function CustomerDetailModal({
+  customer,
+  onClose
+}: {
   customer: Customer
   onClose: () => void
 }) {
+  const t = useTranslations('customers')
+  
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -2714,52 +2722,11 @@ function ReservationModal({
     end_date?: string | null
   }>
 }) {
-  // 고객 정보를 미리 채운 예약 데이터 생성
-  const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD 형식
-  const preFilledReservation: Partial<Reservation> = {
-    customerId: customer.id,
-    channelId: customer.channel_id || '',
-    addedBy: customer.name,
-    tourDate: today, // 오늘 날짜를 기본값으로 설정
-    tourTime: '09:00', // 기본 투어 시간
-    adults: 1, // 기본 성인 수
-    child: 0,
-    infant: 0,
-    totalPeople: 1,
-    status: 'pending' as const,
-    // 상품 선택을 위한 안내 메시지
-    productId: '', // 상품을 선택해야 가격 정보가 로드됩니다
-    // 가격 관련 초기값들
-    adultProductPrice: 0,
-    childProductPrice: 0,
-    infantProductPrice: 0,
-    productPriceTotal: 0,
-    requiredOptions: {},
-    requiredOptionTotal: 0,
-    subtotal: 0,
-    couponCode: '',
-    couponDiscount: 0,
-    additionalDiscount: 0,
-    additionalCost: 0,
-    cardFee: 0,
-    tax: 0,
-    prepaymentCost: 0,
-    prepaymentTip: 0,
-    selectedOptionalOptions: {},
-    optionTotal: 0,
-    totalPrice: 0,
-    depositAmount: 0,
-    balanceAmount: 0,
-    isPrivateTour: false,
-    privateTourAdditionalCost: 0,
-    commission_percent: 0,
-    onlinePaymentAmount: 0,
-    onSiteBalanceAmount: 0
-  }
-
+  // 새 예약 추가 모달이므로 reservation은 null로 전달
+  // 고객 정보는 ReservationFormWithInitialCustomer 컴포넌트를 사용하여 전달
   return (
-    <ReservationForm
-      reservation={preFilledReservation as Reservation | null}
+    <ReservationFormWithInitialCustomer
+      customer={customer}
       customers={customers}
       products={products}
       channels={channels}
@@ -2772,6 +2739,67 @@ function ReservationModal({
       onRefreshCustomers={async () => {}}
       onDelete={onDelete}
       layout="modal"
+    />
+  )
+}
+
+// 고객 정보를 미리 채운 새 예약 추가를 위한 컴포넌트
+function ReservationFormWithInitialCustomer({
+  customer,
+  customers,
+  products,
+  channels,
+  productOptions,
+  options,
+  pickupHotels,
+  coupons,
+  onSubmit,
+  onCancel,
+  onRefreshCustomers,
+  onDelete,
+  layout
+}: {
+  customer: Customer
+  customers: ReservationCustomer[]
+  products: Product[]
+  channels: Channel[]
+  productOptions: ProductOption[]
+  options: Option[]
+  pickupHotels: PickupHotel[]
+  coupons: Array<{
+    id: string
+    coupon_code: string
+    discount_type: 'percentage' | 'fixed'
+    percentage_value?: number | null
+    fixed_value?: number | null
+    status?: string | null
+    channel_id?: string | null
+    product_id?: string | null
+    start_date?: string | null
+    end_date?: string | null
+  }>
+  onSubmit: (reservationData: Omit<Reservation, 'id'>) => void
+  onCancel: () => void
+  onRefreshCustomers: () => Promise<void>
+  onDelete: (reservationId: string) => void
+  layout?: 'modal' | 'page'
+}) {
+  return (
+    <ReservationForm
+      reservation={null}
+      customers={customers}
+      products={products}
+      channels={channels}
+      productOptions={productOptions}
+      options={options}
+      pickupHotels={pickupHotels}
+      coupons={coupons}
+      onSubmit={onSubmit}
+      onCancel={onCancel}
+      onRefreshCustomers={onRefreshCustomers}
+      onDelete={onDelete}
+      layout={layout || 'modal'}
+      initialCustomerId={customer.id}
     />
   )
 }

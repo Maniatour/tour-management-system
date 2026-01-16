@@ -340,7 +340,7 @@ export const flexibleSync = async (
   sheetName: string, 
   targetTable: string, 
   columnMapping: { [key: string]: string }, 
-  enableIncrementalSync: boolean = true,
+  _enableIncrementalSync: boolean = true,
   onProgress?: (event: {
     type: 'start' | 'progress' | 'complete' | 'info' | 'warn' | 'error'
     message?: string
@@ -457,6 +457,32 @@ export const flexibleSync = async (
         }
 
         const converted = convertDataTypes(transformed, targetTable)
+        
+        // tours 테이블 동기화 시 reservation_ids 명시적 처리
+        // 구글 시트에 reservation_ids 컬럼이 있으면 그 값으로, 없으면 빈 배열로 설정
+        if (targetTable === 'tours') {
+          if (converted.reservation_ids === undefined || converted.reservation_ids === null) {
+            converted.reservation_ids = []
+          } else if (typeof converted.reservation_ids === 'string') {
+            // 문자열을 배열로 변환 (쉼표로 구분된 값 또는 JSON 배열)
+            const trimmed = converted.reservation_ids.trim()
+            if (trimmed === '') {
+              converted.reservation_ids = []
+            } else if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+              try {
+                converted.reservation_ids = JSON.parse(trimmed)
+              } catch {
+                converted.reservation_ids = []
+              }
+            } else if (trimmed.includes(',')) {
+              converted.reservation_ids = trimmed.split(',').map((id: string) => id.trim()).filter((id: string) => id.length > 0)
+            } else {
+              converted.reservation_ids = [trimmed]
+            }
+          } else if (!Array.isArray(converted.reservation_ids)) {
+            converted.reservation_ids = []
+          }
+        }
         
         // 첫 번째 행에 대한 디버그 로그
         if (index === 0) {
@@ -722,6 +748,13 @@ export const flexibleSync = async (
           const row = { ...sanitized }
           if (tableColumns && tableColumns.has('updated_at')) {
             row.updated_at = nowIso
+          }
+          // tours 테이블 동기화 시 reservation_ids 명시적 처리
+          // 구글 시트에 값이 있으면 그 값으로, 없으면 빈 배열로 설정
+          if (targetTable === 'tours') {
+            row.reservation_ids = row.reservation_ids !== undefined && row.reservation_ids !== null 
+              ? row.reservation_ids 
+              : []
           }
           return row
         })
@@ -1135,7 +1168,7 @@ export const getTableColumnMapping = (_tableName: string) => {
 }
 
 // 시트의 컬럼과 테이블 컬럼 매핑 제안 (동적 생성)
-export const suggestColumnMapping = (sheetColumns: string[], tableName: string, dbColumns: Record<string, unknown>[] = []) => {
+export const suggestColumnMapping = (sheetColumns: string[], _tableName: string, dbColumns: Record<string, unknown>[] = []) => {
   const suggested: { [key: string]: string } = {}
   
   // 데이터베이스 컬럼명을 기반으로 매핑 제안 생성

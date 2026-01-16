@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 
 interface TourReportTabProps {
   dateRange: { start: string; end: string }
-  period: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  period: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'yesterday' | 'lastWeek' | 'lastMonth' | 'lastYear'
 }
 
 export default function TourReportTab({ dateRange, period }: TourReportTabProps) {
@@ -20,6 +20,12 @@ export default function TourReportTab({ dateRange, period }: TourReportTabProps)
   const loadTourStats = async () => {
     setLoading(true)
     try {
+      // 날짜 유효성 검사
+      if (!dateRange.start || !dateRange.end) {
+        setLoading(false)
+        return
+      }
+
       const { data: tours } = await supabase
         .from('tours')
         .select('id, tour_date, tour_status, reservation_ids, product_id, tour_guide_id, assistant_id, guide_fee, assistant_fee')

@@ -387,6 +387,22 @@ export async function POST(request: NextRequest) {
             console.error('[send-pickup-schedule-notification] 차량 사진 조회 오류:', photosError)
           }
 
+          // URL 단순화 함수: 불필요한 쿼리 파라미터 제거
+          const simplifyUrl = (url: string): string => {
+            if (!url) return url
+            try {
+              const urlObj = new URL(url)
+              // 쿼리 파라미터 제거
+              urlObj.search = ''
+              // 해시 제거
+              urlObj.hash = ''
+              return urlObj.toString()
+            } catch {
+              // URL 파싱 실패 시 원본 반환
+              return url
+            }
+          }
+
           // 차량 사진 URL 처리: base64 이미지는 제외하고, 상대 경로는 공개 URL로 변환
           const processedPhotos = (photosData || []).map((photo: any) => {
             // base64 이미지는 이메일에서 표시되지 않으므로 제외
@@ -404,18 +420,23 @@ export async function POST(request: NextRequest) {
                   const { data: { publicUrl } } = supabase.storage
                     .from('vehicle-type-photos')
                     .getPublicUrl(path)
-                  return { ...photo, photo_url: publicUrl }
+                  return { ...photo, photo_url: simplifyUrl(publicUrl) }
                 } else {
                   // 다른 버킷일 수 있으므로 images 버킷으로 시도
                   const { data: { publicUrl } } = supabase.storage
                     .from('images')
                     .getPublicUrl(photo.photo_url)
-                  return { ...photo, photo_url: publicUrl }
+                  return { ...photo, photo_url: simplifyUrl(publicUrl) }
                 }
               } catch (error) {
                 console.error('[send-pickup-schedule-notification] 공개 URL 생성 오류:', error)
                 return photo // 원본 URL 유지
               }
+            }
+
+            // 이미 HTTP URL인 경우에도 단순화
+            if (photo.photo_url && photo.photo_url.startsWith('http')) {
+              return { ...photo, photo_url: simplifyUrl(photo.photo_url) }
             }
 
             return photo
@@ -805,7 +826,34 @@ export function generatePickupScheduleEmailContent(
     return `${timeFormatted} ${dateFormatted}`
   }
 
-  const formattedPickupTime = formatTime(pickupTime)
+  // 픽업 시간과 날짜 포맷팅 (오후 9시~자정 사이는 하루 마이너스, 요일 포함)
+  const formatPickupTimeWithFullDate = (time: string, baseDate: string) => {
+    if (!time) return formatTime(time)
+    
+    const [hours, minutes] = time.split(':')
+    const hour = parseInt(hours, 10)
+    const period = hour >= 12 ? 'PM' : 'AM'
+    const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour
+    const timeFormatted = `${displayHour}:${minutes || '00'} ${period}`
+    
+    // 오후 9시(21:00)~자정(23:59) 사이는 하루를 마이너스
+    let displayDate = parseTourDate(baseDate)
+    if (hour >= 21 && hour <= 23) {
+      displayDate = new Date(displayDate)
+      displayDate.setDate(displayDate.getDate() - 1)
+    }
+    
+    const dateFormatted = displayDate.toLocaleDateString(isEnglish ? 'en-US' : 'ko-KR', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      weekday: 'long'
+    })
+    
+    return `${timeFormatted} (${dateFormatted})`
+  }
+
+  const formattedPickupTime = formatPickupTimeWithFullDate(pickupTime, tourDate)
 
   const subject = isEnglish
     ? `Pickup Schedule Confirmed - ${productName} on ${formattedTourDate}`
@@ -816,8 +864,9 @@ export function generatePickupScheduleEmailContent(
     <html>
     <head>
       <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
         .container { max-width: 600px; margin: 0 auto; padding: 20px; }
         .header { background: #2563eb; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
         .content { background: #f9fafb; padding: 20px; border: 1px solid #e5e7eb; }
@@ -829,10 +878,9 @@ export function generatePickupScheduleEmailContent(
         .highlight { background: #fef3c7; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #f59e0b; }
         .button { display: inline-block; padding: 12px 24px; background: #2563eb; color: white; text-decoration: none; border-radius: 6px; margin-top: 15px; }
         .media-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 15px 0; }
-        .media-item { width: 100%; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: transform 0.2s, box-shadow 0.2s; }
-        .media-item:hover { transform: scale(1.02); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
+        .media-item { width: 100%; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .media-item a { display: block; text-decoration: none; }
-        .media-item img { width: 100%; height: auto; display: block; }
+        .media-item img { max-width: 250px; max-height: 250px; width: auto; height: auto; object-fit: cover; display: block; }
         .pickup-location-box { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 15px 0; border-radius: 4px; }
       </style>
     </head>
@@ -903,10 +951,10 @@ export function generatePickupScheduleEmailContent(
               <p style="font-size: 12px; color: #6b7280; margin-top: 5px;">${isEnglish ? '(Click on images to view in full size)' : '(이미지를 클릭하면 크게 볼 수 있습니다)'}</p>
             </div>
             <div class="media-gallery">
-              ${pickupHotel.media.map((mediaUrl: string) => `
+              ${pickupHotel.media.slice(0, 4).map((mediaUrl: string) => `
                 <div class="media-item">
                   <a href="${mediaUrl}" target="_blank" style="display: block; cursor: pointer;">
-                    <img src="${mediaUrl}" alt="${isEnglish ? 'Pickup location' : '픽업 장소'}" style="max-width: 100%; height: auto; transition: transform 0.2s;" />
+                    <img src="${mediaUrl}" alt="${isEnglish ? 'Pickup location' : '픽업 장소'}" width="250" height="250" style="max-width: 250px; max-height: 250px; width: auto; height: auto; object-fit: cover; transition: transform 0.2s;" loading="lazy" />
                   </a>
                 </div>
               `).join('')}
@@ -1068,10 +1116,13 @@ export function generatePickupScheduleEmailContent(
                     ${isEnglish ? '(Click on images to view in full size)' : '(이미지를 클릭하면 크게 볼 수 있습니다)'}
                   </p>
                   <div class="media-gallery" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 15px 0; align-items: start;">
-                    ${tourDetails.vehicle.vehicle_type_photos.map((photo: any) => `
+                    ${tourDetails.vehicle.vehicle_type_photos
+                      .filter((photo: any) => photo.photo_url && !photo.photo_url.startsWith('data:image'))
+                      .slice(0, 4)
+                      .map((photo: any) => `
                       <div class="media-item" style="width: 100%; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: transform 0.2s, box-shadow 0.2s; display: flex; flex-direction: column;">
                         <a href="${photo.photo_url}" target="_blank" style="display: block; text-decoration: none; cursor: pointer; flex: 1; display: flex; align-items: center; justify-content: center;">
-                          <img src="${photo.photo_url}" alt="${photo.photo_name || (isEnglish ? 'Vehicle photo' : '차량 사진')}" style="width: 100%; height: auto; max-width: 100%; display: block; transition: transform 0.2s; object-fit: contain;" />
+                          <img src="${photo.photo_url}" alt="${photo.photo_name || (isEnglish ? 'Vehicle photo' : '차량 사진')}" width="250" height="250" style="max-width: 250px; max-height: 250px; width: auto; height: auto; display: block; transition: transform 0.2s; object-fit: cover;" loading="lazy" />
                         </a>
                       </div>
                     `).join('')}

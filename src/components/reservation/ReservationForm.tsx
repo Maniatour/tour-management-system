@@ -59,6 +59,7 @@ interface ReservationFormProps {
   onDelete: (id: string) => void
   layout?: 'modal' | 'page'
   onViewCustomer?: () => void
+  initialCustomerId?: string
 }
 
 type RezLike = Partial<Reservation> & {
@@ -94,7 +95,8 @@ export default function ReservationForm({
   onRefreshCustomers, 
   onDelete,
   layout = 'modal',
-  onViewCustomer
+  onViewCustomer,
+  initialCustomerId
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
@@ -221,9 +223,9 @@ export default function ReservationForm({
     // 초이스별 불포함 금액 총합
     choiceNotIncludedTotal?: number
   }>({
-    customerId: reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id || '',
+    customerId: reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id || initialCustomerId || '',
     customerSearch: (() => {
-      const customerId = reservation?.customerId || (reservation as any)?.customer_id
+      const customerId = reservation?.customerId || (reservation as any)?.customer_id || initialCustomerId
       if (customerId && customers.length > 0) {
         const customer = customers.find(c => c.id === customerId)
         return customer?.name || ''
@@ -237,7 +239,7 @@ export default function ReservationForm({
     showCustomerDropdown: false,
     // 고객 정보 초기값
     customerName: (() => {
-      const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id
+      const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id || initialCustomerId
       if (customerId && customers.length > 0) {
         const customer = customers.find(c => c.id === customerId)
         return customer?.name || ''
@@ -245,7 +247,7 @@ export default function ReservationForm({
       return ''
     })(),
     customerPhone: (() => {
-      const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id
+      const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id || initialCustomerId
       if (customerId && customers.length > 0) {
         const customer = customers.find(c => c.id === customerId)
         return customer?.phone || ''
@@ -253,7 +255,7 @@ export default function ReservationForm({
       return ''
     })(),
     customerEmail: (() => {
-      const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id
+      const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id || initialCustomerId
       if (customerId && customers.length > 0) {
         const customer = customers.find(c => c.id === customerId)
         return customer?.email || ''
@@ -474,6 +476,30 @@ export default function ReservationForm({
     getCurrentUser()
   }, [reservation])
 
+  // initialCustomerId가 있고 reservation이 null일 때 고객 정보를 초기값으로 설정
+  useEffect(() => {
+    if (!reservation && initialCustomerId && customers.length > 0) {
+      const customer = customers.find(c => c.id === initialCustomerId)
+      if (customer) {
+        const customerData = customer as any // eslint-disable-line @typescript-eslint/no-explicit-any
+        setFormData((prev: typeof formData) => ({
+          ...prev,
+          customerId: customer.id,
+          customerSearch: customer.name,
+          customerName: customer.name,
+          customerPhone: customer.phone || '',
+          customerEmail: customer.email || '',
+          customerAddress: (customerData.address as string | undefined) || '',
+          customerLanguage: customer.language || 'KR',
+          customerEmergencyContact: (customerData.emergency_contact as string | undefined) || '',
+          customerSpecialRequests: (customerData.special_requests as string | undefined) || '',
+          channelId: (customerData.channel_id as string | undefined) || prev.channelId || '',
+          addedBy: customer.name
+        }))
+      }
+    }
+  }, [initialCustomerId, reservation, customers])
+
   // reservation_id로 reservations 테이블에서 직접 데이터 가져오기
   useEffect(() => {
     const fetchReservationData = async () => {
@@ -632,11 +658,11 @@ export default function ReservationForm({
                       selectedChoices.push({
                         choice_id: choice.choice_id,
                         option_id: choice.option_id,
-                        option_key: choice.option?.option_key || choice.option_key || '',
-                        option_name_ko: choice.option?.name_ko || choice.option?.option_name_ko || choice.option_name_ko || '',
                         quantity: choice.quantity || 1,
-                        total_price: choice.total_price || 0
-                      })
+                        total_price: choice.total_price || 0,
+                        ...(choice.option?.option_key || choice.option_key ? { option_key: choice.option?.option_key || choice.option_key } : {}),
+                        ...(choice.option?.name_ko || choice.option?.option_name_ko || choice.option_name_ko ? { option_name_ko: choice.option?.name_ko || choice.option?.option_name_ko || choice.option_name_ko } : {})
+                      } as any)
                       
                       // 가격 정보는 나중에 productChoices에서 가져올 수 있음
                       if (choice.option && choice.option.adult_price !== undefined) {
@@ -687,11 +713,11 @@ export default function ReservationForm({
                         selectedChoices.push({
                           choice_id: choice.id,
                           option_id: selectedOption.id,
-                          option_key: selectedOption.option_key || selectedOption.key || '',
-                          option_name_ko: selectedOption.name_ko || selectedOption.option_name_ko || selectedOption.name || '',
                           quantity: 1,
-                          total_price: selectedOption.adult_price || 0
-                        })
+                          total_price: selectedOption.adult_price || 0,
+                          ...(selectedOption.option_key || selectedOption.key ? { option_key: selectedOption.option_key || selectedOption.key } : {}),
+                          ...(selectedOption.name_ko || selectedOption.option_name_ko || selectedOption.name ? { option_name_ko: selectedOption.name_ko || selectedOption.option_name_ko || selectedOption.name } : {})
+                        } as any)
                         
                         choicesData[selectedOption.id] = {
                           adult_price: selectedOption.adult_price || 0,
@@ -864,7 +890,7 @@ export default function ReservationForm({
       
       // productId가 없고 reservation_choices에서 product_id를 가져올 수 있으면 사용
       if (!actualProductId && reservationChoicesData && reservationChoicesData.length > 0) {
-        const firstChoice = reservationChoicesData[0]
+        const firstChoice = reservationChoicesData[0] as any
         if (firstChoice.choice_options?.product_choices?.product_id) {
           actualProductId = firstChoice.choice_options.product_choices.product_id
           console.log('ReservationForm: reservation_choices에서 product_id 발견:', actualProductId)
@@ -1036,11 +1062,11 @@ export default function ReservationForm({
           selectedChoices.push({
             choice_id: finalChoiceId,
             option_id: finalOptionId,
-            option_key: finalOptionKey,
-            option_name_ko: finalOptionNameKo,
             quantity: rc.quantity || 1,
-            total_price: rc.total_price || 0
-          })
+            total_price: rc.total_price || 0,
+            ...(finalOptionKey ? { option_key: finalOptionKey } : {}),
+            ...(finalOptionNameKo ? { option_name_ko: finalOptionNameKo } : {})
+          } as any)
 
           // 가격 정보 저장
           const priceOption = matchedOption || rc.choice_options
@@ -1272,7 +1298,8 @@ export default function ReservationForm({
     }
   }, [])
 
-  // 기존 choices 데이터 처리 함수
+  // 기존 choices 데이터 처리 함수 (현재 사용되지 않음 - 향후 사용을 위해 주석 처리)
+  /*
   const _processExistingChoicesData = useCallback((choicesData: any) => {
     console.log('ReservationForm: 기존 choices 데이터 처리 시작:', choicesData)
     
@@ -1376,6 +1403,7 @@ export default function ReservationForm({
       }))
     }
   }, [])
+  */
 
   // 예약 데이터에서 choices 선택 복원 (편집 모드에서만)
   useEffect(() => {
@@ -3116,20 +3144,6 @@ export default function ReservationForm({
                   expenseUpdateTrigger={expenseUpdateTrigger}
                   channels={channels}
                 />
-                {reservation && (
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setShowPricingModal(true)}
-                      className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                      </svg>
-                      <span>reservation_pricing 수정</span>
-                    </button>
-                  </div>
-                )}
               </div>
 
               {/* 입금 내역, 지출 내역과 예약 옵션을 3열 그리드로 배치 - 예약이 있을 때만 표시 */}
