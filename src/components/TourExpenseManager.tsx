@@ -137,7 +137,7 @@ export default function TourExpenseManager({
     custom_paid_for: ''
   })
 
-  // 예약 데이터 로드
+  // 예약 데이터 로드 - reservationIds가 있으면 해당 예약들만, 없으면 빈 배열
   const loadReservations = useCallback(async () => {
     try {
       console.log('🔍 Loading reservations for tourId:', tourId, 'reservationIds:', reservationIds)
@@ -145,7 +145,7 @@ export default function TourExpenseManager({
       let reservationsData: any[] = []
       
       if (reservationIds && reservationIds.length > 0) {
-        // reservationIds가 있으면 해당 예약들만 가져오기
+        // reservationIds가 있으면 해당 예약들만 가져오기 (배정된 예약만)
         console.log('📋 Loading assigned reservations:', reservationIds)
         const { data, error } = await supabase
           .from('reservations')
@@ -160,20 +160,9 @@ export default function TourExpenseManager({
         reservationsData = data || []
         console.log('✅ Assigned reservations data:', reservationsData)
       } else {
-        // reservationIds가 없으면 tour_id로 필터링 (기존 방식)
-        console.log('📋 Loading reservations by tour_id:', tourId)
-        const { data, error } = await supabase
-          .from('reservations')
-          .select('id, customer_id, adults, child, infant')
-          .eq('tour_id', tourId)
-
-        if (error) {
-          console.error('❌ Reservations by tour_id error:', error)
-          throw error
-        }
-        
-        reservationsData = data || []
-        console.log('✅ Reservations by tour_id data:', reservationsData)
+        // reservationIds가 없으면 빈 배열 (배정된 예약이 없음)
+        console.log('📋 No reservationIds provided, loading empty array')
+        reservationsData = []
       }
       
       if (!reservationsData || reservationsData.length === 0) {
@@ -1460,36 +1449,42 @@ export default function TourExpenseManager({
           {expandedSections.additionalCosts && (
             <div className="border-t p-4 bg-gray-50">
               <div className="mb-2 text-xs text-gray-500">
-                📋 표시된 예약: {reservations.filter(r => reservationIds?.includes(r.id)).length}팀 (배정된 예약만)
+                📋 표시된 예약: {reservationIds && reservationIds.length > 0 
+                  ? reservations.filter(r => reservationIds.includes(r.id)).length 
+                  : 0}팀 (배정된 예약만)
               </div>
               <div className="space-y-2">
-                {reservations
-                  .filter(reservation => reservationIds?.includes(reservation.id))
-                  .map((reservation) => {
-                    const pricing = reservationPricing.find(p => p.reservation_id === reservation.id)
-                    const totalPeople = reservation.adults + reservation.children + reservation.infants
-                    const additionalCost = pricing?.additional_cost || 0
-                    // $100 단위로 내림
-                    const roundedAdditionalCost = Math.floor(additionalCost / 100) * 100
-                    console.log('💰 Additional Cost display:', {
-                      reservationId: reservation.id,
-                      customerName: reservation.customer_name,
-                      totalPeople,
-                      additionalCost,
-                      roundedAdditionalCost
-                    })
-                    return (
-                      <div key={reservation.id} className="flex items-center justify-between text-sm">
-                        <div className="flex items-center space-x-2">
-                          <span className="font-medium">{reservation.customer_name}</span>
-                          <span className="text-gray-500">({totalPeople}명)</span>
+                {reservationIds && reservationIds.length > 0 ? (
+                  reservations
+                    .filter(reservation => reservationIds.includes(reservation.id))
+                    .map((reservation) => {
+                      const pricing = reservationPricing.find(p => p.reservation_id === reservation.id)
+                      const totalPeople = reservation.adults + reservation.children + reservation.infants
+                      const additionalCost = pricing?.additional_cost || 0
+                      // $100 단위로 내림
+                      const roundedAdditionalCost = Math.floor(additionalCost / 100) * 100
+                      console.log('💰 Additional Cost display:', {
+                        reservationId: reservation.id,
+                        customerName: reservation.customer_name,
+                        totalPeople,
+                        additionalCost,
+                        roundedAdditionalCost
+                      })
+                      return (
+                        <div key={reservation.id} className="flex items-center justify-between text-sm">
+                          <div className="flex items-center space-x-2">
+                            <span className="font-medium">{reservation.customer_name}</span>
+                            <span className="text-gray-500">({totalPeople}명)</span>
+                          </div>
+                          <span className="font-medium text-purple-600">
+                            {formatCurrency(roundedAdditionalCost)}
+                          </span>
                         </div>
-                        <span className="font-medium text-purple-600">
-                          {formatCurrency(roundedAdditionalCost)}
-                        </span>
-                      </div>
-                    )
-                  })}
+                      )
+                    })
+                ) : (
+                  <div className="text-sm text-gray-500">배정된 예약이 없습니다.</div>
+                )}
               </div>
             </div>
           )}

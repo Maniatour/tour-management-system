@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, Save, Copy, Download, Upload, FileText, Info, Share2, ChevronDown, ChevronUp } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
@@ -469,7 +469,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         .eq('product_id', productId)
       
       const existingChoicesMap = new Map(
-        (existingChoices || []).map(ec => [ec.choice_group, ec.id])
+        ((existingChoices || []) as Array<{ id: string; choice_group: string }>).map(ec => [ec.choice_group, ec.id])
       )
 
       // 새로운 choices 저장 (processedChoices 사용)
@@ -508,7 +508,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
               min_selections: choice.min_selections,
               max_selections: choice.max_selections,
               sort_order: choice.sort_order !== undefined ? choice.sort_order : index
-            })
+            } as never)
             .eq('id', updateId)
             .select() as { data: ProductChoiceData[] | null, error: SupabaseError | null }
 
@@ -538,7 +538,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                 min_selections: choice.min_selections,
                 max_selections: choice.max_selections,
                 sort_order: choice.sort_order !== undefined ? choice.sort_order : index
-              })
+              } as never)
               .select()
               .single() as { data: ProductChoiceData, error: SupabaseError | null }
 
@@ -561,7 +561,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
               min_selections: choice.min_selections,
               max_selections: choice.max_selections,
               sort_order: choice.sort_order !== undefined ? choice.sort_order : index
-            })
+            } as never)
             .select()
             .single() as { data: ProductChoiceData, error: SupabaseError | null }
 
@@ -592,7 +592,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
 
           const { error: optionsError } = await supabase
             .from('choice_options')
-            .insert(optionsToInsert)
+            .insert(optionsToInsert as never)
 
           if (optionsError) throw optionsError
         }
@@ -600,7 +600,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
 
       // 삭제된 choices 제거 (더 이상 존재하지 않는 choice_group)
       const currentChoiceGroups = processedChoices.map(c => c.choice_group.trim())
-      const choicesToDelete = (existingChoices || []).filter(
+      const choicesToDelete = ((existingChoices || []) as Array<{ id: string; choice_group: string }>).filter(
         ec => !currentChoiceGroups.includes(ec.choice_group)
       )
       
@@ -893,7 +893,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
 
       if (error) throw error
 
-        const copiedChoices: ProductChoice[] = (data || []).map((choice: ProductChoiceData) => ({
+        const copiedChoices: ProductChoice[] = (data || []).map((choice: ProductChoiceData, index: number) => ({
           id: `temp_${Date.now()}_${Math.random()}`,
           choice_group: choice.choice_group,
           choice_group_ko: choice.choice_group_ko,
@@ -904,7 +904,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           is_required: choice.is_required,
           min_selections: choice.min_selections,
           max_selections: choice.max_selections,
-            sort_order: choice.sort_order || index,
+          sort_order: choice.sort_order || index,
           options: (choice.options || []).map((option: ChoiceOptionData) => ({
           id: `temp_option_${Date.now()}_${Math.random()}`,
           option_key: option.option_key,
@@ -938,7 +938,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   const exportChoices = useCallback(() => {
     const exportData = {
       product_id: productId,
-      choices: productChoices.map(choice => ({
+      choices: productChoices.map((choice, index) => ({
         choice_group: choice.choice_group,
         choice_group_ko: choice.choice_group_ko,
         choice_group_en: choice.choice_group_en,
@@ -948,7 +948,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         is_required: choice.is_required,
         min_selections: choice.min_selections,
         max_selections: choice.max_selections,
-            sort_order: choice.sort_order || index,
+        sort_order: choice.sort_order || index,
         options: choice.options.map(option => ({
           option_key: option.option_key,
           option_name: option.option_name,
@@ -1039,8 +1039,8 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
     }
 
     try {
-      // 상품 정보 가져오기
-      const { data: product, error: productError } = await supabase
+      // 상품 정보 가져오기 (템플릿 그룹명 생성에 사용)
+      const { error: productError } = await supabase
         .from('products')
         .select('name, name_ko')
         .eq('id', productId)
@@ -1108,6 +1108,17 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
         }
 
         // 각 옵션을 템플릿으로 변환
+        // 이미지 URL 유효성 검사 함수
+        const isValidUrl = (url: string | null | undefined): string | null => {
+          if (!url || url.trim() === '') return null
+          try {
+            new URL(url)
+            return url.trim()
+          } catch {
+            return null
+          }
+        }
+
         for (const option of choice.options || []) {
           const newTemplate = {
             id: crypto.randomUUID(),
@@ -1116,7 +1127,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
             description: option.description || null,
             description_ko: option.description_ko || null,
             description_en: null,
-            category: null,
+            category: 'choice_template', // NOT NULL 필드이므로 기본값 설정
             adult_price: option.adult_price || 0,
             child_price: option.child_price || 0,
             infant_price: option.infant_price || 0,
@@ -1131,17 +1142,20 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
             template_group_ko: templateGroupKo,
             is_required: choice.is_required,
             sort_order: option.sort_order || 0,
-            image_url: option.image_url || null,
+            image_url: isValidUrl(option.image_url),
             image_alt: option.image_alt || null,
-            thumbnail_url: option.thumbnail_url || null
+            thumbnail_url: isValidUrl(option.thumbnail_url)
           }
 
           const { error } = await supabase
             .from('options')
-            .insert([newTemplate])
+            .insert([newTemplate] as never)
 
           if (error) {
             console.error('Error exporting template:', error)
+            setSaveMessage(`템플릿 내보내기 중 오류가 발생했습니다: ${error.message}`)
+            setShowExportTemplateModal(false)
+            return
           } else {
             exportedCount++
           }
@@ -1181,8 +1195,8 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
               const [groupIndex, optionIndex] = uploadKey.split('-').map(Number)
               e.preventDefault()
               const file = item.getAsFile()
-              if (file) {
-                await handleImageUpload(file, groupIndex, optionIndex)
+              if (file && productChoices[groupIndex]?.options[optionIndex]?.id) {
+                await handleImageUpload(file, groupIndex, productChoices[groupIndex].options[optionIndex].id)
               }
             }
           }
@@ -1476,7 +1490,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
 
                 {/* 세로형 카드뷰 그리드 레이아웃 */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                 {[...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((option, optionIndex) => {
+                 {[...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((option) => {
                    const sortedOptions = [...choice.options].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
                    const actualIndex = sortedOptions.findIndex(opt => opt.id === option.id)
                    const isFirst = actualIndex === 0
@@ -2048,7 +2062,7 @@ function TemplateModal({ onSelectTemplate, onClose }: TemplateModalProps) {
         .from('options')
         .select('template_group, template_group_ko')
         .eq('is_choice_template', true) // 초이스 관리 탭의 아이템만 사용
-        .not('template_group', 'is', null) as { data: DatabaseOptions[] | null, error: SupabaseError | null }) // template_group이 있는 것만
+        .not('template_group', 'is', null) as unknown as { data: DatabaseOptions[] | null, error: SupabaseError | null }) // template_group이 있는 것만
 
       if (error) {
         console.error('Error loading template groups:', error)

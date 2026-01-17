@@ -350,19 +350,25 @@ async function getTourFinancialStats(tourId: string) {
     const tour = tourRow
     console.log('투어 수수료:', { guide_fee: tour?.guide_fee, assistant_fee: tour?.assistant_fee })
 
-    // 총 Operating Profit 계산 (각 예약의 Operating Profit 합산)
-    const totalOperatingProfit = reservationPricing.reduce((sum, pricing) => {
+    // reservation_ids에 있는 예약만 필터링 (추가 확인)
+    const reservationIdsArray = tourRow?.reservation_ids && Array.isArray(tourRow.reservation_ids) ? tourRow.reservation_ids : []
+    const filteredReservationPricing = reservationIdsArray.length > 0
+      ? reservationPricing.filter(p => reservationIdsArray.includes(p.reservation_id))
+      : reservationPricing
+
+    // 총 Operating Profit 계산 (각 예약의 Operating Profit 합산) - reservation_ids에 있는 예약만
+    const totalOperatingProfit = filteredReservationPricing.reduce((sum, pricing) => {
       return sum + calculateOperatingProfit(pricing, pricing.reservation_id)
     }, 0)
     
-    // 추가비용 계산 ($100 단위로 내림한 후 합산)
-    const totalAdditionalCostRounded = reservationPricing.reduce((sum, pricing) => {
+    // 추가비용 계산 ($100 단위로 내림한 후 합산) - reservation_ids에 있는 예약만
+    const totalAdditionalCostRounded = filteredReservationPricing.reduce((sum, pricing) => {
       const additionalCost = pricing.additional_cost || 0
       const rounded = Math.floor(additionalCost / 100) * 100
       return sum + rounded
     }, 0)
     
-    const totalPayments = reservationPricing?.reduce((sum, pricing) => sum + (pricing.total_price || 0), 0) || 0
+    const totalPayments = filteredReservationPricing?.reduce((sum, pricing) => sum + (pricing.total_price || 0), 0) || 0
     const totalExpenses = expenses?.reduce((sum, expense) => sum + (expense.amount || 0), 0) || 0
     const totalFees = (tour?.guide_fee || 0) + (tour?.assistant_fee || 0)
     const totalTicketCosts = ticketBookings?.reduce((sum, booking) => sum + (booking.expense || 0), 0) || 0

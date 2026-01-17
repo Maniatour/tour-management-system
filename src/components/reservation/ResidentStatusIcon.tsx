@@ -20,20 +20,21 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
 }) => {
   const t = useTranslations('common')
   const locale = useLocale()
-  const [residentStatus, setResidentStatus] = useState<'us_resident' | 'non_resident' | 'non_resident_with_pass' | null>(null)
+  const [residentStatus, setResidentStatus] = useState<'us_resident' | 'non_resident' | 'non_resident_with_pass' | 'non_resident_under_16' | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [residentStatusCounts, setResidentStatusCounts] = useState({
     usResident: 0,
     nonResident: 0,
+    nonResidentUnder16: 0,
     nonResidentWithPass: 0,
     passCoveredCount: 0
   })
 
   // 패스 장수에 따라 실제 커버되는 인원 수 계산 (패스 1장 = 4인)
   // 실제 예약 인원을 초과할 수 없음
-  const calculateActualPassCovered = (passCount: number, usResident: number, nonResident: number) => {
+  const calculateActualPassCovered = (passCount: number, usResident: number, nonResident: number, nonResidentUnder16: number) => {
     const maxCoverable = passCount * 4 // 패스로 최대 커버 가능한 인원 수
-    const remainingPeople = totalPeople - usResident - nonResident // 패스로 커버해야 할 인원 수
+    const remainingPeople = totalPeople - usResident - nonResident - nonResidentUnder16 // 패스로 커버해야 할 인원 수
     return Math.min(maxCoverable, remainingPeople) // 둘 중 작은 값
   }
 
@@ -52,12 +53,12 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
           statusCounts[status] = (statusCounts[status] || 0) + 1
         })
         
-        let mostCommonStatus: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null = null
+        let mostCommonStatus: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | 'non_resident_under_16' | null = null
         let maxCount = 0
         Object.entries(statusCounts).forEach(([status, count]) => {
           if (count > maxCount && status !== 'unknown') {
             maxCount = count
-            mostCommonStatus = status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
+            mostCommonStatus = status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | 'non_resident_under_16' | null
           }
         })
         
@@ -79,6 +80,7 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
       if (!error && reservationCustomers && reservationCustomers.length > 0) {
         let usResidentCount = 0
         let nonResidentCount = 0
+        let nonResidentUnder16Count = 0
         let nonResidentWithPassCount = 0
         let totalPassCoveredCount = 0
         
@@ -87,6 +89,8 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
             usResidentCount++
           } else if (rc.resident_status === 'non_resident') {
             nonResidentCount++
+          } else if (rc.resident_status === 'non_resident_under_16') {
+            nonResidentUnder16Count++
           } else if (rc.resident_status === 'non_resident_with_pass') {
             nonResidentWithPassCount++ // 패스 장수
             // 각 패스는 4인을 커버하므로 합산
@@ -99,6 +103,7 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
         setResidentStatusCounts({
           usResident: usResidentCount,
           nonResident: nonResidentCount,
+          nonResidentUnder16: nonResidentUnder16Count,
           nonResidentWithPass: nonResidentWithPassCount, // 패스 장수
           passCoveredCount: totalPassCoveredCount // 패스로 커버되는 총 인원 수
         })
@@ -106,6 +111,7 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
         setResidentStatusCounts({
           usResident: 0,
           nonResident: 0,
+          nonResidentUnder16: 0,
           nonResidentWithPass: 0,
           passCoveredCount: 0
         })
@@ -126,11 +132,12 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
       const actualPassCovered = calculateActualPassCovered(
         passCount, 
         residentStatusCounts.usResident, 
-        residentStatusCounts.nonResident
+        residentStatusCounts.nonResident,
+        residentStatusCounts.nonResidentUnder16
       )
 
       // 총 인원 수 확인
-      const statusTotal = residentStatusCounts.usResident + residentStatusCounts.nonResident + actualPassCovered
+      const statusTotal = residentStatusCounts.usResident + residentStatusCounts.nonResident + residentStatusCounts.nonResidentUnder16 + actualPassCovered
       
       if (statusTotal !== totalPeople) {
         const message = locale === 'ko'
@@ -167,6 +174,17 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
           reservation_id: reservationId,
           customer_id: customerId,
           resident_status: 'non_resident',
+          pass_covered_count: 0,
+          order_index: orderIndex++
+        })
+      }
+
+      // 비 거주자 (16세 이하)
+      for (let i = 0; i < residentStatusCounts.nonResidentUnder16; i++) {
+        reservationCustomers.push({
+          reservation_id: reservationId,
+          customer_id: customerId,
+          resident_status: 'non_resident_under_16',
           pass_covered_count: 0,
           order_index: orderIndex++
         })
@@ -220,6 +238,8 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
       return <Plane className="h-4 w-4 text-blue-600 cursor-pointer hover:scale-110 transition-transform" />
     } else if (residentStatus === 'non_resident_with_pass') {
       return <PlaneTakeoff className="h-4 w-4 text-purple-600 cursor-pointer hover:scale-110 transition-transform" />
+    } else if (residentStatus === 'non_resident_under_16') {
+      return <Plane className="h-4 w-4 text-orange-600 cursor-pointer hover:scale-110 transition-transform" />
     } else {
       return <HelpCircle className="h-4 w-4 text-gray-400 cursor-pointer hover:scale-110 transition-transform" />
     }
@@ -316,7 +336,8 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
                     const actualPassCovered = calculateActualPassCovered(
                       residentStatusCounts.nonResidentWithPass,
                       residentStatusCounts.usResident,
-                      newCount
+                      newCount,
+                      residentStatusCounts.nonResidentUnder16
                     )
                     setResidentStatusCounts(prev => ({ 
                       ...prev, 
@@ -326,6 +347,36 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
                   }}
                   min="0"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* 비 거주자 (16세 이하) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <span className="inline-flex items-center">
+                    <span className="w-3 h-3 rounded-full bg-orange-600 mr-2"></span>
+                    {locale === 'ko' ? '비 거주자 (16세 이하)' : 'Non-Resident (Under 16)'}
+                  </span>
+                </label>
+                <input
+                  type="number"
+                  value={residentStatusCounts.nonResidentUnder16}
+                  onChange={(e) => {
+                    const newCount = Number(e.target.value) || 0
+                    const actualPassCovered = calculateActualPassCovered(
+                      residentStatusCounts.nonResidentWithPass,
+                      residentStatusCounts.usResident,
+                      residentStatusCounts.nonResident,
+                      newCount
+                    )
+                    setResidentStatusCounts(prev => ({ 
+                      ...prev, 
+                      nonResidentUnder16: newCount,
+                      passCoveredCount: actualPassCovered
+                    }))
+                  }}
+                  min="0"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 />
               </div>
 
@@ -359,8 +410,8 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   {locale === 'ko' 
-                    ? `패스 ${residentStatusCounts.nonResidentWithPass}장 = ${calculateActualPassCovered(residentStatusCounts.nonResidentWithPass, residentStatusCounts.usResident, residentStatusCounts.nonResident)}인 커버 (최대 ${residentStatusCounts.nonResidentWithPass * 4}인 가능)`
-                    : `${residentStatusCounts.nonResidentWithPass} passes = covers ${calculateActualPassCovered(residentStatusCounts.nonResidentWithPass, residentStatusCounts.usResident, residentStatusCounts.nonResident)} people (max ${residentStatusCounts.nonResidentWithPass * 4} possible)`}
+                    ? `패스 ${residentStatusCounts.nonResidentWithPass}장 = ${calculateActualPassCovered(residentStatusCounts.nonResidentWithPass, residentStatusCounts.usResident, residentStatusCounts.nonResident, residentStatusCounts.nonResidentUnder16)}인 커버 (최대 ${residentStatusCounts.nonResidentWithPass * 4}인 가능)`
+                    : `${residentStatusCounts.nonResidentWithPass} passes = covers ${calculateActualPassCovered(residentStatusCounts.nonResidentWithPass, residentStatusCounts.usResident, residentStatusCounts.nonResident, residentStatusCounts.nonResidentUnder16)} people (max ${residentStatusCounts.nonResidentWithPass * 4} possible)`}
                 </p>
               </div>
 
@@ -385,14 +436,14 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
               {/* 합계 확인 */}
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                 <div className="text-sm text-gray-700">
-                  {t('residentStatusTotal')}: {residentStatusCounts.usResident + residentStatusCounts.nonResident + residentStatusCounts.passCoveredCount}{locale === 'ko' ? '명' : ` ${t('people')}`}
+                  {t('residentStatusTotal')}: {residentStatusCounts.usResident + residentStatusCounts.nonResident + residentStatusCounts.nonResidentUnder16 + residentStatusCounts.passCoveredCount}{locale === 'ko' ? '명' : ` ${t('people')}`}
                 </div>
                 <div className="text-xs text-gray-600 mt-1">
                   {locale === 'ko' 
-                    ? `(미국 거주자: ${residentStatusCounts.usResident}명, 비거주자: ${residentStatusCounts.nonResident}명, 패스 커버: ${residentStatusCounts.passCoveredCount}명)`
-                    : `(US Resident: ${residentStatusCounts.usResident}, Non-Resident: ${residentStatusCounts.nonResident}, Pass Covered: ${residentStatusCounts.passCoveredCount})`}
+                    ? `(미국 거주자: ${residentStatusCounts.usResident}명, 비거주자: ${residentStatusCounts.nonResident}명, 비 거주자 16세 이하: ${residentStatusCounts.nonResidentUnder16}명, 패스 커버: ${residentStatusCounts.passCoveredCount}명)`
+                    : `(US Resident: ${residentStatusCounts.usResident}, Non-Resident: ${residentStatusCounts.nonResident}, Non-Resident Under 16: ${residentStatusCounts.nonResidentUnder16}, Pass Covered: ${residentStatusCounts.passCoveredCount})`}
                 </div>
-                {(residentStatusCounts.usResident + residentStatusCounts.nonResident + residentStatusCounts.passCoveredCount) !== totalPeople && (
+                {(residentStatusCounts.usResident + residentStatusCounts.nonResident + residentStatusCounts.nonResidentUnder16 + residentStatusCounts.passCoveredCount) !== totalPeople && (
                   <div className="text-xs text-orange-600 mt-1">
                     ⚠️ {t('peopleCountMismatch')}
                   </div>

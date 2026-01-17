@@ -106,18 +106,19 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   const [residentStatusCounts, setResidentStatusCounts] = useState({
     usResident: 0,
     nonResident: 0,
+    nonResidentUnder16: 0,
     nonResidentWithPass: 0,
     passCoveredCount: 0
   })
 
   // 패스 장수에 따라 실제 커버되는 인원 수 계산 (패스 1장 = 4인)
   // 실제 예약 인원을 초과할 수 없음
-  const calculateActualPassCovered = (passCount: number, usResident: number, nonResident: number) => {
+  const calculateActualPassCovered = (passCount: number, usResident: number, nonResident: number, nonResidentUnder16: number) => {
     const totalPeople = (reservation.adults || 0) + 
       ((reservation.children || (reservation as any).child || 0) as number) + 
       ((reservation.infants || (reservation as any).infant || 0) as number)
     const maxCoverable = passCount * 4 // 패스로 최대 커버 가능한 인원 수
-    const remainingPeople = totalPeople - usResident - nonResident // 패스로 커버해야 할 인원 수
+    const remainingPeople = totalPeople - usResident - nonResident - nonResidentUnder16 // 패스로 커버해야 할 인원 수
     return Math.min(maxCoverable, remainingPeople) // 둘 중 작은 값
   }
   
@@ -155,6 +156,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       // 상태별 개수 계산 및 인원 수 저장
       let usResidentCount = 0
       let nonResidentCount = 0
+      let nonResidentUnder16Count = 0
       let nonResidentWithPassCount = 0
       let passCoveredCount = 0
       
@@ -169,6 +171,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             usResidentCount++
           } else if (status === 'non_resident') {
             nonResidentCount++
+          } else if (status === 'non_resident_under_16') {
+            nonResidentUnder16Count++
           } else if (status === 'non_resident_with_pass') {
             nonResidentWithPassCount++
             // 패스 커버 수는 첫 번째 레코드에서만 가져오기
@@ -182,28 +186,29 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         setResidentStatusCounts({
           usResident: usResidentCount,
           nonResident: nonResidentCount,
+          nonResidentUnder16: nonResidentUnder16Count,
           nonResidentWithPass: nonResidentWithPassCount,
           passCoveredCount: passCoveredCount
         })
         
         // 가장 많은 상태 찾기
-        let mostCommonStatus: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null = null
+        let mostCommonStatus: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | 'non_resident_under_16' | null = null
         let maxCount = 0
         Object.entries(statusCounts).forEach(([status, count]) => {
           if (count > maxCount && status !== 'unknown') {
             maxCount = count
-            mostCommonStatus = status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
+            mostCommonStatus = status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | 'non_resident_under_16' | null
           }
         })
         
         // 가장 많은 상태가 없으면 첫 번째 상태 사용
         if (!mostCommonStatus && reservationCustomers[0]) {
-          mostCommonStatus = reservationCustomers[0].resident_status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
+          mostCommonStatus = reservationCustomers[0].resident_status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | 'non_resident_under_16' | null
         }
         
         setCustomerData({
           id: reservation.id, // reservation_id를 id로 사용
-          resident_status: mostCommonStatus
+          resident_status: mostCommonStatus as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | 'non_resident_under_16' | null
         })
       } else {
         // reservation_customers에 데이터가 없으면 customers 테이블에서 가져오기 (fallback)
@@ -388,6 +393,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       if (!error && reservationCustomers && reservationCustomers.length > 0) {
         let usResidentCount = 0
         let nonResidentCount = 0
+        let nonResidentUnder16Count = 0
         let nonResidentWithPassCount = 0
         let passCoveredCount = 0
         
@@ -396,6 +402,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             usResidentCount++
           } else if (rc.resident_status === 'non_resident') {
             nonResidentCount++
+          } else if (rc.resident_status === 'non_resident_under_16') {
+            nonResidentUnder16Count++
           } else if (rc.resident_status === 'non_resident_with_pass') {
             nonResidentWithPassCount++
             // 각 패스는 4인을 커버하므로 합산
@@ -408,6 +416,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         setResidentStatusCounts({
           usResident: usResidentCount,
           nonResident: nonResidentCount,
+          nonResidentUnder16: nonResidentUnder16Count,
           nonResidentWithPass: nonResidentWithPassCount,
           passCoveredCount: passCoveredCount
         })
@@ -416,6 +425,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         setResidentStatusCounts({
           usResident: 0,
           nonResident: 0,
+          nonResidentUnder16: 0,
           nonResidentWithPass: 0,
           passCoveredCount: 0
         })
@@ -440,11 +450,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       const actualPassCovered = calculateActualPassCovered(
         passCount,
         residentStatusCounts.usResident,
-        residentStatusCounts.nonResident
+        residentStatusCounts.nonResident,
+        residentStatusCounts.nonResidentUnder16
       )
       
       // 총 인원 수 확인
-      const statusTotal = residentStatusCounts.usResident + residentStatusCounts.nonResident + actualPassCovered
+      const statusTotal = residentStatusCounts.usResident + residentStatusCounts.nonResident + residentStatusCounts.nonResidentUnder16 + actualPassCovered
       
       if (statusTotal !== totalPeople) {
         alert(`총 인원(${totalPeople}명)과 거주 상태별 합계(${statusTotal}명)가 일치하지 않습니다.`)
@@ -478,6 +489,17 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           reservation_id: reservation.id,
           customer_id: reservation.customer_id,
           resident_status: 'non_resident',
+          pass_covered_count: 0,
+          order_index: orderIndex++
+        })
+      }
+
+      // 비 거주자 (16세 이하)
+      for (let i = 0; i < residentStatusCounts.nonResidentUnder16; i++) {
+        reservationCustomers.push({
+          reservation_id: reservation.id,
+          customer_id: reservation.customer_id,
+          resident_status: 'non_resident_under_16',
           pass_covered_count: 0,
           order_index: orderIndex++
         })
@@ -1719,7 +1741,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                     const actualPassCovered = calculateActualPassCovered(
                       residentStatusCounts.nonResidentWithPass,
                       newCount,
-                      residentStatusCounts.nonResident
+                      residentStatusCounts.nonResident,
+                      residentStatusCounts.nonResidentUnder16
                     )
                     setResidentStatusCounts(prev => ({ 
                       ...prev, 
@@ -1748,7 +1771,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                     const actualPassCovered = calculateActualPassCovered(
                       residentStatusCounts.nonResidentWithPass,
                       residentStatusCounts.usResident,
-                      newCount
+                      newCount,
+                      residentStatusCounts.nonResidentUnder16
                     )
                     setResidentStatusCounts(prev => ({ 
                       ...prev, 
@@ -1758,6 +1782,36 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                   }}
                    min="0"
                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                 />
+               </div>
+
+               {/* 비 거주자 (16세 이하) */}
+               <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                   <span className="inline-flex items-center">
+                     <span className="w-3 h-3 rounded-full bg-orange-600 mr-2"></span>
+                     비 거주자 (16세 이하)
+                   </span>
+                 </label>
+                 <input
+                   type="number"
+                   value={residentStatusCounts.nonResidentUnder16}
+                   onChange={(e) => {
+                     const newCount = Number(e.target.value) || 0
+                     const actualPassCovered = calculateActualPassCovered(
+                       residentStatusCounts.nonResidentWithPass,
+                       residentStatusCounts.usResident,
+                       residentStatusCounts.nonResident,
+                       newCount
+                     )
+                     setResidentStatusCounts(prev => ({ 
+                       ...prev, 
+                       nonResidentUnder16: newCount,
+                       passCoveredCount: actualPassCovered
+                     }))
+                   }}
+                   min="0"
+                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                  />
                </div>
 
@@ -1790,7 +1844,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                    placeholder="실제 보유한 패스 장수 입력"
                  />
                  <p className="text-xs text-gray-500 mt-1">
-                   패스 {residentStatusCounts.nonResidentWithPass}장 = {calculateActualPassCovered(residentStatusCounts.nonResidentWithPass, residentStatusCounts.usResident, residentStatusCounts.nonResident)}인 커버 (최대 {residentStatusCounts.nonResidentWithPass * 4}인 가능)
+                   패스 {residentStatusCounts.nonResidentWithPass}장 = {calculateActualPassCovered(residentStatusCounts.nonResidentWithPass, residentStatusCounts.usResident, residentStatusCounts.nonResident, residentStatusCounts.nonResidentUnder16)}인 커버 (최대 {residentStatusCounts.nonResidentWithPass * 4}인 가능)
                  </p>
                </div>
 
@@ -1813,12 +1867,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                {/* 합계 확인 */}
                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                  <div className="text-sm text-gray-700">
-                   거주 상태별 합계: {residentStatusCounts.usResident + residentStatusCounts.nonResident + residentStatusCounts.passCoveredCount}명
+                   거주 상태별 합계: {residentStatusCounts.usResident + residentStatusCounts.nonResident + residentStatusCounts.nonResidentUnder16 + residentStatusCounts.passCoveredCount}명
                  </div>
                  <div className="text-xs text-gray-600 mt-1">
-                   (미국 거주자: {residentStatusCounts.usResident}명, 비거주자: {residentStatusCounts.nonResident}명, 패스 커버: {residentStatusCounts.passCoveredCount}명)
+                   (미국 거주자: {residentStatusCounts.usResident}명, 비거주자: {residentStatusCounts.nonResident}명, 비 거주자 16세 이하: {residentStatusCounts.nonResidentUnder16}명, 패스 커버: {residentStatusCounts.passCoveredCount}명)
                  </div>
-                 {(residentStatusCounts.usResident + residentStatusCounts.nonResident + residentStatusCounts.passCoveredCount) !== 
+                 {(residentStatusCounts.usResident + residentStatusCounts.nonResident + residentStatusCounts.nonResidentUnder16 + residentStatusCounts.passCoveredCount) !== 
                   ((reservation.adults || 0) + 
                     ((reservation.children || (reservation as any).child || 0) as number) + 
                     ((reservation.infants || (reservation as any).infant || 0) as number)) && (

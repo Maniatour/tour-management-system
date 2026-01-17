@@ -143,6 +143,7 @@ export default function ReservationForm({
     usResidentCount?: number
     nonResidentCount?: number
     nonResidentWithPassCount?: number
+    nonResidentUnder16Count?: number // 비 거주자 (16세 이하)
     passCoveredCount?: number // 패스로 커버되는 인원 수
     channelId: string
     selectedChannelType: 'ota' | 'self' | 'partner'
@@ -340,6 +341,7 @@ export default function ReservationForm({
     usResidentCount: 0,
     nonResidentCount: 0,
     nonResidentWithPassCount: 0,
+    nonResidentUnder16Count: 0,
     passCoveredCount: 0,
     channelId: reservation?.channelId || rez.channel_id || '',
     selectedChannelType: reservation?.channelId ? 
@@ -560,6 +562,7 @@ export default function ReservationForm({
           // reservation_customers 테이블에서 거주 상태별 인원 수 가져오기
           let usResidentCount = 0
           let nonResidentCount = 0
+          let nonResidentUnder16Count = 0
           let nonResidentWithPassCount = 0
           let passCoveredCount = 0
           
@@ -575,6 +578,8 @@ export default function ReservationForm({
                   usResidentCount++
                 } else if (rc.resident_status === 'non_resident') {
                   nonResidentCount++
+                } else if (rc.resident_status === 'non_resident_under_16') {
+                  nonResidentUnder16Count++
                 } else if (rc.resident_status === 'non_resident_with_pass') {
                   nonResidentWithPassCount++
                   // 각 패스는 4인을 커버하므로 합산
@@ -617,6 +622,7 @@ export default function ReservationForm({
                 usResidentCount,
                 nonResidentCount,
                 nonResidentWithPassCount,
+                nonResidentUnder16Count,
                 passCoveredCount
               }))
               
@@ -2639,7 +2645,8 @@ export default function ReservationForm({
     // 거주 상태별 인원 수가 설정되어 있으면 "미국 거주자 구분" 관련 초이스 검증 건너뛰기
     const hasResidentStatusData = (formData.usResidentCount || 0) > 0 || 
                                    (formData.nonResidentCount || 0) > 0 || 
-                                   (formData.nonResidentWithPassCount || 0) > 0
+                                   (formData.nonResidentWithPassCount || 0) > 0 ||
+                                   (formData.nonResidentUnder16Count || 0) > 0
     
     // selectedChoices가 배열인지 확인하고, 배열이 아니면 빈 배열로 처리
     const selectedChoicesArray = Array.isArray(formData.selectedChoices) 

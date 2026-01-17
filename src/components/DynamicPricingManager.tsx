@@ -217,6 +217,62 @@ export default function DynamicPricingManager({
     choices_pricing: {}
   });
 
+  // Variant 관리 상태
+  const [selectedVariant, setSelectedVariant] = useState<string>('default');
+  const [productVariants, setProductVariants] = useState<Array<{
+    variant_key: string;
+    variant_name_ko?: string | null;
+    variant_name_en?: string | null;
+  }>>([]);
+
+  // Variant 목록 불러오기
+  useEffect(() => {
+    const loadProductVariants = async () => {
+      if (!productId || !selectedChannel) {
+        setProductVariants([]);
+        setSelectedVariant('default');
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('channel_products')
+          .select('variant_key, variant_name_ko, variant_name_en')
+          .eq('product_id', productId)
+          .eq('channel_id', selectedChannel)
+          .eq('is_active', true)
+          .order('variant_key');
+
+        if (error) {
+          console.error('Variant 목록 로드 실패:', error);
+          setProductVariants([]);
+          return;
+        }
+
+        const variants = (data || []).map(item => ({
+          variant_key: item.variant_key || 'default',
+          variant_name_ko: item.variant_name_ko,
+          variant_name_en: item.variant_name_en
+        }));
+
+        setProductVariants(variants.length > 0 ? variants : [{ variant_key: 'default' }]);
+        
+        // 기본 variant가 없으면 'default'로 설정
+        if (variants.length > 0 && !variants.find(v => v.variant_key === 'default')) {
+          setSelectedVariant(variants[0].variant_key);
+        } else {
+          setSelectedVariant('default');
+        }
+      } catch (error) {
+        console.error('Variant 목록 로드 중 오류:', error);
+        setProductVariants([{ variant_key: 'default' }]);
+        setSelectedVariant('default');
+      }
+    };
+
+    loadProductVariants();
+  }, [productId, selectedChannel]);
+
   // 상품 기본 가격 불러오기
   useEffect(() => {
     const loadProductBasePrice = async () => {
@@ -1009,6 +1065,7 @@ export default function DynamicPricingManager({
             product_id: productId,
             channel_id: channelId,
             date: dateString,
+            variant_key: selectedVariant, // variant_key 추가
             // 판매 상태만 설정, 가격 정보는 전달하지 않음 (기존 값 유지)
             is_sale_available: status === 'sale',
             // choices_pricing이 있으면 포함
@@ -1357,6 +1414,7 @@ export default function DynamicPricingManager({
           product_id: productId,
           channel_id: channelId,
           date,
+          variant_key: selectedVariant, // variant_key 추가
           adult_price: productBasePrice.adult + priceAdjustmentAdult,
           child_price: productBasePrice.child + priceAdjustmentChild,
           infant_price: productBasePrice.infant + priceAdjustmentInfant,
@@ -1588,6 +1646,11 @@ export default function DynamicPricingManager({
     
     setSelectedDates([rule.date]);
     handleChannelSelect(rule.channel_id);
+    
+    // variant_key가 있으면 선택
+    if (rule.variant_key) {
+      setSelectedVariant(rule.variant_key);
+    }
     
     // 캘린더 뷰로 전환하여 편집 가능하도록 함
     setViewMode('calendar');
@@ -1883,6 +1946,31 @@ export default function DynamicPricingManager({
             onSelectAllChannelsInType={handleSelectAllChannelsInType}
             onChannelEdit={handleChannelEdit}
           />
+          
+          {/* Variant 선택 */}
+          {selectedChannel && productVariants.length > 0 && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Variant 선택
+              </label>
+              <select
+                value={selectedVariant}
+                onChange={(e) => setSelectedVariant(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              >
+                {productVariants.map((variant) => (
+                  <option key={variant.variant_key} value={variant.variant_key}>
+                    {variant.variant_name_ko || variant.variant_name_en || variant.variant_key}
+                  </option>
+                ))}
+              </select>
+              {productVariants.find(v => v.variant_key === selectedVariant)?.variant_name_ko && (
+                <p className="mt-1 text-xs text-gray-500">
+                  {productVariants.find(v => v.variant_key === selectedVariant)?.variant_name_ko}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* 2열: 캘린더 (10/12 ÷ 3 = 3.33/12 → 3/12) */}

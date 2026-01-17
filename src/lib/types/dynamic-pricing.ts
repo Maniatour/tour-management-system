@@ -129,6 +129,7 @@ export interface SimplePricingRuleDto {
   not_included_price?: number;
   markup_percent?: number;
   price_type?: 'dynamic' | 'base'; // 동적 가격 또는 기본 가격
+  variant_key?: string; // Variant 식별자 (기본값: 'default')
   price_adjustment_adult?: number; // 채널별 증차감 금액 (성인)
   price_adjustment_child?: number; // 채널별 증차감 금액 (아동)
   price_adjustment_infant?: number; // 채널별 증차감 금액 (유아)
@@ -160,6 +161,7 @@ export interface SimplePricingRule {
   not_included_price?: number;
   markup_percent?: number;
   price_type?: 'dynamic' | 'base'; // 동적 가격 또는 기본 가격
+  variant_key?: string; // Variant 식별자 (기본값: 'default')
   options_pricing?: Record<string, {
     adult_price: number;
     child_price: number;

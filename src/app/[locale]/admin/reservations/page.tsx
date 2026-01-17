@@ -1182,6 +1182,18 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             })
           }
 
+          // 비 거주자 (16세 이하)
+          const nonResidentUnder16Count = (reservation as any).nonResidentUnder16Count || 0
+          for (let i = 0; i < nonResidentUnder16Count; i++) {
+            reservationCustomers.push({
+              reservation_id: reservationId,
+              customer_id: reservation.customerId,
+              resident_status: 'non_resident_under_16',
+              pass_covered_count: 0,
+              order_index: orderIndex++
+            })
+          }
+
           // 비거주자 (패스 보유) - 패스 장수는 nonResidentWithPassCount와 같음
           const nonResidentWithPassCount = (reservation as any).nonResidentWithPassCount || 0
           
@@ -1483,6 +1495,18 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               reservation_id: editingReservation.id,
               customer_id: reservation.customerId,
               resident_status: 'non_resident',
+              pass_covered_count: 0,
+              order_index: orderIndex++
+            })
+          }
+
+          // 비 거주자 (16세 이하)
+          const nonResidentUnder16Count = (reservation as any).nonResidentUnder16Count || 0
+          for (let i = 0; i < nonResidentUnder16Count; i++) {
+            reservationCustomers.push({
+              reservation_id: editingReservation.id,
+              customer_id: reservation.customerId,
+              resident_status: 'non_resident_under_16',
               pass_covered_count: 0,
               order_index: orderIndex++
             })

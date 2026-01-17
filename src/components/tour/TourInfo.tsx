@@ -64,6 +64,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   const [residentStatusSummary, setResidentStatusSummary] = useState({
     usResident: 0,
     nonResident: 0,
+    nonResidentUnder16: 0,
     nonResidentWithPass: 0,
     passCoveredCount: 0
   })
@@ -91,6 +92,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
         if (!error && reservationCustomers) {
           let usResidentCount = 0
           let nonResidentCount = 0
+          let nonResidentUnder16Count = 0
           let nonResidentWithPassCount = 0
           let passCoveredCount = 0
           
@@ -99,6 +101,8 @@ export const TourInfo: React.FC<TourInfoProps> = ({
               usResidentCount++
             } else if (rc.resident_status === 'non_resident') {
               nonResidentCount++
+            } else if (rc.resident_status === 'non_resident_under_16') {
+              nonResidentUnder16Count++
             } else if (rc.resident_status === 'non_resident_with_pass') {
               nonResidentWithPassCount++
               if (rc.pass_covered_count) {
@@ -110,6 +114,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
           setResidentStatusSummary({
             usResident: usResidentCount,
             nonResident: nonResidentCount,
+            nonResidentUnder16: nonResidentUnder16Count,
             nonResidentWithPass: nonResidentWithPassCount,
             passCoveredCount: passCoveredCount
           })

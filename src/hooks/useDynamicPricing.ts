@@ -32,6 +32,9 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
         query = query.like('channel_id', 'B%');
       }
 
+      // variant_key는 필터링하지 않음 (모든 variant 표시)
+      // 필요시 variant_key로 필터링하려면 파라미터 추가 필요
+
       const { data, error } = await query.order('date', { ascending: true });
 
       if (error) {
@@ -196,7 +199,10 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
       // price_type 기본값 설정 (없으면 'dynamic')
       const priceType = ruleData.price_type || 'dynamic';
       
-      // 먼저 기존 레코드가 있는지 확인 (choices_pricing 포함, price_type 포함)
+      // variant_key 기본값 설정
+      const variantKey = ruleData.variant_key || 'default';
+      
+      // 먼저 기존 레코드가 있는지 확인 (choices_pricing 포함, price_type, variant_key 포함)
       const { data: existingData, error: selectError } = await supabase
         .from('dynamic_pricing')
         .select('id, choices_pricing')
@@ -204,6 +210,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
         .eq('channel_id', ruleData.channel_id)
         .eq('date', ruleData.date)
         .eq('price_type', priceType)
+        .eq('variant_key', variantKey)
         .maybeSingle();
 
       let result;
@@ -231,6 +238,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
           channel_id: ruleData.channel_id,
           date: ruleData.date,
           price_type: ruleData.price_type !== undefined ? ruleData.price_type : priceType, // ruleData의 price_type 우선 사용
+          variant_key: ruleData.variant_key !== undefined ? ruleData.variant_key : variantKey, // variant_key 포함
           
           // 전달된 필드만 업데이트, 전달되지 않은 필드는 기존 값 유지
           adult_price: ruleData.adult_price !== undefined ? ruleData.adult_price : fullExistingData.adult_price,
@@ -278,6 +286,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
           channel_id: ruleData.channel_id,
           date: ruleData.date,
           price_type: priceType,
+          variant_key: variantKey,
           adult_price: ruleData.adult_price !== undefined ? ruleData.adult_price : 0,
           child_price: ruleData.child_price !== undefined ? ruleData.child_price : 0,
           infant_price: ruleData.infant_price !== undefined ? ruleData.infant_price : 0,
@@ -457,11 +466,13 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
               if (error) throw error;
             } else {
               // 삽입 (필수 필드가 없으면 기본값 설정)
+              const variantKey = ruleData.variant_key || 'default';
               const insertData: SimplePricingRuleDto = {
                 product_id: ruleData.product_id,
                 channel_id: ruleData.channel_id,
                 date: ruleData.date,
                 price_type: ruleData.price_type || 'dynamic', // price_type 필드 추가
+                variant_key: variantKey, // variant_key 추가
                 adult_price: ruleData.adult_price !== undefined ? ruleData.adult_price : 0,
                 child_price: ruleData.child_price !== undefined ? ruleData.child_price : 0,
                 infant_price: ruleData.infant_price !== undefined ? ruleData.infant_price : 0,

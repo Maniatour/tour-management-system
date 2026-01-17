@@ -79,7 +79,15 @@ export default function AdminChannels() {
   const [loadingProducts, setLoadingProducts] = useState(true)
 
   // 채널별 상품 연결 정보 (channel_products 테이블에서 가져옴)
-  const [channelProducts, setChannelProducts] = useState<Array<{ id: string; channelId: string; productId: string; is_active: boolean }>>([])
+  const [channelProducts, setChannelProducts] = useState<Array<{ 
+    id: string; 
+    channelId: string; 
+    productId: string; 
+    is_active: boolean;
+    variant_key?: string;
+    variant_name_ko?: string;
+    variant_name_en?: string;
+  }>>([])
 
   const [searchTerm, setSearchTerm] = useState('')
   const [activeTab, setActiveTab] = useState<string>('all')
@@ -187,7 +195,7 @@ export default function AdminChannels() {
     try {
       const { data, error } = await supabase
         .from('channel_products')
-        .select('id, channel_id, product_id, is_active')
+        .select('id, channel_id, product_id, is_active, variant_key, variant_name_ko, variant_name_en')
         .eq('is_active', true)
 
       if (error) {
@@ -200,7 +208,10 @@ export default function AdminChannels() {
         id: item.id,
         channelId: item.channel_id,
         productId: item.product_id,
-        is_active: item.is_active
+        is_active: item.is_active,
+        variant_key: item.variant_key || 'default',
+        variant_name_ko: item.variant_name_ko,
+        variant_name_en: item.variant_name_en
       })))
     } catch (error) {
       console.error('Error fetching channel products:', error)
@@ -1217,6 +1228,10 @@ export default function AdminChannels() {
           products={products}
           channelProducts={channelProducts}
           loading={loadingProducts}
+          onVariantChange={async () => {
+            // Variant 변경 시 channelProducts 데이터 새로고침
+            await fetchChannelProducts()
+          }}
           onSave={async (selectedProductIds) => {
             if (!selectedChannelForProducts) return
 
@@ -1294,20 +1309,139 @@ export default function AdminChannels() {
   )
 }
 
+interface ProductVariant {
+  id?: string
+  variant_key: string
+  variant_name_ko?: string | null
+  variant_name_en?: string | null
+  variant_description_ko?: string | null
+  variant_description_en?: string | null
+}
+
 interface ChannelProductSelectionFormProps {
   channel: Channel | null
   products: Product[]
-  channelProducts: Array<{ id: string; channelId: string; productId: string; is_active: boolean }>
+  channelProducts: Array<{ 
+    id: string; 
+    channelId: string; 
+    productId: string; 
+    is_active: boolean;
+    variant_key?: string;
+    variant_name_ko?: string;
+    variant_name_en?: string;
+  }>
   loading?: boolean
   onSave: (selectedProductIds: string[]) => void
   onCancel: () => void
+  onVariantChange?: () => void // Variant 변경 시 부모 컴포넌트에 알림
 }
 
-function ChannelProductSelectionForm({ channel, products, channelProducts, loading = false, onSave, onCancel }: ChannelProductSelectionFormProps) {
+// Variant 편집 폼 컴포넌트
+interface VariantEditFormProps {
+  variant: ProductVariant
+  onSave: (variant: ProductVariant) => void
+  onCancel: () => void
+}
+
+function VariantEditForm({ variant, onSave, onCancel }: VariantEditFormProps) {
+  const [formData, setFormData] = useState<ProductVariant>(variant)
+  
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    onSave(formData)
+  }
+  
+  return (
+    <form onSubmit={handleSubmit} className="space-y-2">
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">
+          Variant Key
+        </label>
+        <input
+          type="text"
+          value={formData.variant_key}
+          onChange={(e) => setFormData({ ...formData, variant_key: e.target.value })}
+          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+          disabled={variant.variant_key === 'default'}
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">
+          이름 (한국어)
+        </label>
+        <input
+          type="text"
+          value={formData.variant_name_ko || ''}
+          onChange={(e) => setFormData({ ...formData, variant_name_ko: e.target.value })}
+          placeholder="예: 모든 금액 포함"
+          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">
+          이름 (영어)
+        </label>
+        <input
+          type="text"
+          value={formData.variant_name_en || ''}
+          onChange={(e) => setFormData({ ...formData, variant_name_en: e.target.value })}
+          placeholder="예: All Inclusive"
+          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">
+          설명 (한국어)
+        </label>
+        <textarea
+          value={formData.variant_description_ko || ''}
+          onChange={(e) => setFormData({ ...formData, variant_description_ko: e.target.value })}
+          placeholder="Variant 설명을 입력하세요"
+          rows={2}
+          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">
+          설명 (영어)
+        </label>
+        <textarea
+          value={formData.variant_description_en || ''}
+          onChange={(e) => setFormData({ ...formData, variant_description_en: e.target.value })}
+          placeholder="Enter variant description"
+          rows={2}
+          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+        />
+      </div>
+      <div className="flex space-x-2 pt-2">
+        <button
+          type="submit"
+          className="flex-1 bg-blue-600 text-white px-3 py-1 text-sm rounded hover:bg-blue-700"
+        >
+          저장
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex-1 bg-gray-300 text-gray-700 px-3 py-1 text-sm rounded hover:bg-gray-400"
+        >
+          취소
+        </button>
+      </div>
+    </form>
+  )
+}
+
+function ChannelProductSelectionForm({ channel, products, channelProducts, loading = false, onSave, onCancel, onVariantChange }: ChannelProductSelectionFormProps) {
   const [selectedProducts, setSelectedProducts] = useState<string[]>([])
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [expandedSubCategories, setExpandedSubCategories] = useState<Set<string>>(new Set())
   const [searchTerm, setSearchTerm] = useState<string>('')
+  
+  // Variant 관리 상태
+  const [productVariants, setProductVariants] = useState<Record<string, ProductVariant[]>>({})
+  const [editingVariant, setEditingVariant] = useState<{ productId: string; variant?: ProductVariant } | null>(null)
+  const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set())
 
   // 현재 채널에 연결된 상품들 초기화
   React.useEffect(() => {
@@ -1316,8 +1450,185 @@ function ChannelProductSelectionForm({ channel, products, channelProducts, loadi
         .filter(cp => cp.channelId === channel.id && cp.is_active)
         .map(cp => cp.productId)
       setSelectedProducts(connectedProducts)
+      
+      // Variant 데이터 로드
+      const variantsByProduct: Record<string, ProductVariant[]> = {}
+      channelProducts
+        .filter(cp => cp.channelId === channel.id && cp.is_active)
+        .forEach(cp => {
+          if (!variantsByProduct[cp.productId]) {
+            variantsByProduct[cp.productId] = []
+          }
+          variantsByProduct[cp.productId].push({
+            id: cp.id,
+            variant_key: cp.variant_key || 'default',
+            variant_name_ko: cp.variant_name_ko ?? null,
+            variant_name_en: cp.variant_name_en ?? null
+          })
+        })
+      setProductVariants(variantsByProduct)
     }
   }, [channel, channelProducts])
+  
+  // Variant 추가
+  const handleAddVariant = async (productId: string) => {
+    if (!channel) {
+      alert('채널 정보가 없습니다.')
+      return
+    }
+    
+    // 상품이 선택되지 않았다면 자동으로 선택
+    if (!selectedProducts.includes(productId)) {
+      setSelectedProducts(prev => [...prev, productId])
+    }
+    
+    // 상품을 확장하여 variant 목록 표시
+    setExpandedProducts(prev => new Set([...prev, productId]))
+    
+    const newVariantKey = `variant_${Date.now()}`
+    
+    try {
+      console.log('Adding variant:', { channel_id: channel.id, product_id: productId, variant_key: newVariantKey })
+      
+      const { data, error } = await supabase
+        .from('channel_products')
+        .insert({
+          channel_id: channel.id,
+          product_id: productId,
+          variant_key: newVariantKey,
+          is_active: true
+        } as any)
+        .select()
+        .single()
+      
+      if (error) {
+        console.error('Supabase error:', error)
+        throw error
+      }
+      
+      if (!data) {
+        throw new Error('데이터가 반환되지 않았습니다.')
+      }
+      
+      console.log('Variant added successfully:', data)
+      
+      const savedVariant: ProductVariant = { 
+        variant_key: newVariantKey,
+        id: data.id,
+        variant_name_ko: null,
+        variant_name_en: null,
+        variant_description_ko: null,
+        variant_description_en: null
+      }
+      
+      // 상태 업데이트
+      setProductVariants(prev => {
+        const currentVariants = prev[productId] || []
+        const updated = {
+          ...prev,
+          [productId]: [...currentVariants, savedVariant]
+        }
+        console.log('Updated productVariants:', updated)
+        return updated
+      })
+      
+      // 편집 모드로 전환
+      setEditingVariant({ productId, variant: savedVariant })
+      
+      console.log('Variant 추가 완료:', savedVariant)
+      
+    } catch (error: any) {
+      console.error('Error adding variant:', error)
+      const errorMessage = error?.message || '알 수 없는 오류가 발생했습니다.'
+      alert(`Variant 추가 중 오류가 발생했습니다: ${errorMessage}`)
+    }
+  }
+  
+  // Variant 삭제
+  const handleDeleteVariant = async (productId: string, variantId: string, variantKey: string) => {
+    if (!channel) return
+    if (variantKey === 'default') {
+      alert('기본 variant는 삭제할 수 없습니다.')
+      return
+    }
+    
+    if (!confirm('이 variant를 삭제하시겠습니까?')) return
+    
+    try {
+      const { error } = await supabase
+        .from('channel_products')
+        .delete()
+        .eq('id', variantId)
+      
+      if (error) throw error
+      
+      setProductVariants(prev => ({
+        ...prev,
+        [productId]: (prev[productId] || []).filter(v => v.id !== variantId)
+      }))
+      
+      // 부모 컴포넌트에 알림 (데이터 새로고침)
+      if (onVariantChange) {
+        onVariantChange()
+      }
+    } catch (error) {
+      console.error('Error deleting variant:', error)
+      alert('Variant 삭제 중 오류가 발생했습니다.')
+    }
+  }
+  
+  // Variant 저장
+  const handleSaveVariant = async (productId: string, variant: ProductVariant) => {
+    if (!channel || !variant.id) return
+    
+    try {
+      const { error } = await supabase
+        .from('channel_products')
+        .update({
+          variant_key: variant.variant_key,
+          variant_name_ko: variant.variant_name_ko ?? null,
+          variant_name_en: variant.variant_name_en ?? null,
+          variant_description_ko: variant.variant_description_ko ?? null,
+          variant_description_en: variant.variant_description_en ?? null
+        } as any)
+        .eq('id', variant.id)
+      
+      if (error) throw error
+      
+      setProductVariants(prev => ({
+        ...prev,
+        [productId]: (prev[productId] || []).map(v => 
+          v.id === variant.id ? variant : v
+        )
+      }))
+      
+      setEditingVariant(null)
+    } catch (error) {
+      console.error('Error saving variant:', error)
+      alert('Variant 저장 중 오류가 발생했습니다.')
+    }
+  }
+  
+  // 상품 확장/축소 토글
+  const toggleProduct = (productId: string) => {
+    setExpandedProducts(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(productId)) {
+        newSet.delete(productId)
+      } else {
+        newSet.add(productId)
+      }
+      return newSet
+    })
+  }
+  
+  const toggleProductSelection = (productId: string) => {
+    setSelectedProducts(prev => 
+      prev.includes(productId) 
+        ? prev.filter(id => id !== productId)
+        : [...prev, productId]
+    )
+  }
 
   // 카테고리 접기/펼치기 토글
   const toggleCategory = (category: string) => {
@@ -1348,14 +1659,6 @@ function ChannelProductSelectionForm({ channel, products, channelProducts, loadi
 
   const handleSave = () => {
     onSave(selectedProducts)
-  }
-
-  const toggleProduct = (productId: string) => {
-    setSelectedProducts(prev => 
-      prev.includes(productId) 
-        ? prev.filter(id => id !== productId)
-        : [...prev, productId]
-    )
   }
 
   // 검색어로 필터링된 상품 목록
@@ -1528,22 +1831,129 @@ function ChannelProductSelectionForm({ channel, products, channelProducts, loadi
                             {/* 상품 목록 */}
                             {isSubCategoryExpanded && (
                               <div className="p-3 space-y-2">
-                                {products.map(product => (
-                                  <label
-                                    key={product.id}
-                                    className="flex items-center space-x-3 p-2 border rounded-lg hover:bg-gray-50 cursor-pointer"
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedProducts.includes(product.id)}
-                                      onChange={() => toggleProduct(product.id)}
-                                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                                    />
-                                    <div className="flex-1 font-medium text-gray-900">
-                                      {product.name}
+                                {products.map(product => {
+                                  const isProductExpanded = expandedProducts.has(product.id)
+                                  const variants = productVariants[product.id] || []
+                                  const isSelected = selectedProducts.includes(product.id)
+                                  
+                                  return (
+                                    <div key={product.id} className="border rounded-lg overflow-hidden">
+                                      {/* 상품 헤더 */}
+                                      <div className="flex items-center space-x-3 p-2 hover:bg-gray-50">
+                                        <input
+                                          type="checkbox"
+                                          checked={isSelected}
+                                          onChange={() => toggleProductSelection(product.id)}
+                                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                        />
+                                        <div 
+                                          className="flex-1 font-medium text-gray-900 cursor-pointer"
+                                          onClick={() => {
+                                            // 상품이 선택되지 않았다면 자동 선택
+                                            if (!isSelected) {
+                                              toggleProductSelection(product.id)
+                                            }
+                                            toggleProduct(product.id)
+                                          }}
+                                        >
+                                          {product.name}
+                                        </div>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            // 상품이 선택되지 않았다면 자동 선택
+                                            if (!isSelected) {
+                                              toggleProductSelection(product.id)
+                                            }
+                                            toggleProduct(product.id)
+                                          }}
+                                          className="p-1 hover:bg-gray-200 rounded"
+                                          title="Variant 목록 보기/숨기기"
+                                        >
+                                          {isProductExpanded ? (
+                                            <ChevronDown className="h-4 w-4 text-gray-600" />
+                                          ) : (
+                                            <ChevronRight className="h-4 w-4 text-gray-600" />
+                                          )}
+                                        </button>
+                                        <button
+                                          onClick={async (e) => {
+                                            e.stopPropagation()
+                                            // 상품이 선택되지 않았다면 자동 선택
+                                            if (!isSelected) {
+                                              toggleProductSelection(product.id)
+                                            }
+                                            // 상품이 확장되지 않았다면 자동 확장
+                                            if (!isProductExpanded) {
+                                              setExpandedProducts(prev => new Set([...prev, product.id]))
+                                            }
+                                            await handleAddVariant(product.id)
+                                          }}
+                                          className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                          title="Variant 추가"
+                                        >
+                                          <Plus className="h-4 w-4" />
+                                        </button>
+                                      </div>
+                                      
+                                      {/* Variant 목록 */}
+                                      {isProductExpanded && (
+                                        <div className="p-3 bg-gray-50 space-y-2">
+                                          {variants.length === 0 ? (
+                                            <div className="text-sm text-gray-500 text-center py-2">
+                                              Variant가 없습니다. + 버튼을 클릭하여 추가하세요.
+                                            </div>
+                                          ) : (
+                                            variants.map((variant, idx) => {
+                                              const isEditing = editingVariant?.productId === product.id && editingVariant?.variant?.id === variant.id
+                                              
+                                              return (
+                                                <div key={variant.id || idx} className="bg-white border rounded p-2">
+                                                  {isEditing ? (
+                                                    <VariantEditForm
+                                                      variant={variant}
+                                                      onSave={(updatedVariant: ProductVariant) => handleSaveVariant(product.id, updatedVariant)}
+                                                      onCancel={() => setEditingVariant(null)}
+                                                    />
+                                                  ) : (
+                                                    <div className="flex items-center justify-between">
+                                                      <div className="flex-1">
+                                                        <div className="font-medium text-sm">
+                                                          {variant.variant_name_ko || variant.variant_name_en || variant.variant_key}
+                                                        </div>
+                                                        <div className="text-xs text-gray-500">
+                                                          Key: {variant.variant_key}
+                                                        </div>
+                                                      </div>
+                                                      <div className="flex space-x-1">
+                                                        <button
+                                                          onClick={() => setEditingVariant({ productId: product.id, variant })}
+                                                          className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                                          title="편집"
+                                                        >
+                                                          <Edit className="h-3 w-3" />
+                                                        </button>
+                                                        {variant.variant_key !== 'default' && (
+                                                          <button
+                                                            onClick={() => handleDeleteVariant(product.id, variant.id!, variant.variant_key)}
+                                                            className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                                            title="삭제"
+                                                          >
+                                                            <Trash2 className="h-3 w-3" />
+                                                          </button>
+                                                        )}
+                                                      </div>
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              )
+                                            })
+                                          )}
+                                        </div>
+                                      )}
                                     </div>
-                                  </label>
-                                ))}
+                                  )
+                                })}
                               </div>
                             )}
                           </div>

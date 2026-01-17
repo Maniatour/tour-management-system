@@ -715,6 +715,28 @@ export default function DataSyncPage() {
         },
       })
 
+      if (!response.ok) {
+        // HTTP 에러 상태 코드인 경우
+        const errorText = await response.text()
+        let errorMessage = `서버 오류 (${response.status}): ${response.statusText}`
+        
+        try {
+          const errorJson = JSON.parse(errorText)
+          errorMessage = errorJson.message || errorMessage
+        } catch {
+          // JSON 파싱 실패 시 텍스트 그대로 사용
+          if (errorText) {
+            errorMessage = errorText
+          }
+        }
+        
+        setCleanupResult({
+          success: false,
+          message: errorMessage
+        })
+        return
+      }
+
       const result = await response.json()
       setCleanupResult(result)
       
@@ -730,9 +752,10 @@ export default function DataSyncPage() {
       }
       
       console.error('Error during cleanup:', error)
+      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류'
       setCleanupResult({
         success: false,
-        message: '예약 데이터 정리 중 오류가 발생했습니다.'
+        message: `예약 데이터 정리 중 오류가 발생했습니다: ${errorMessage}`
       })
     } finally {
       setCleanupLoading(false)

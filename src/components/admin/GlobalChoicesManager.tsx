@@ -103,6 +103,17 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
 
   const handleAddTemplate = async (template: Omit<ChoiceTemplate, 'id' | 'created_at'>) => {
     try {
+      // 이미지 URL 유효성 검사 및 정리
+      const isValidUrl = (url: string | null | undefined): string | null => {
+        if (!url || url.trim() === '') return null
+        try {
+          new URL(url)
+          return url.trim()
+        } catch {
+          return null
+        }
+      }
+
       const newTemplate = {
         id: crypto.randomUUID(),
         name: template.name,
@@ -125,10 +136,10 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
         template_group_ko: template.template_group_ko,
         is_required: template.is_required,
         sort_order: template.sort_order,
-        image_url: template.image_url,
-        image_alt: template.image_alt,
-        thumbnail_url: template.thumbnail_url,
-        image_order: template.image_order
+        image_url: isValidUrl(template.image_url),
+        image_alt: template.image_alt || null,
+        thumbnail_url: isValidUrl(template.thumbnail_url),
+        image_order: template.image_order || null
       }
 
       const { data, error } = await supabase
@@ -585,6 +596,17 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
         }
 
         // 각 옵션을 템플릿으로 변환
+        // 이미지 URL 유효성 검사 함수
+        const isValidUrl = (url: string | null | undefined): string | null => {
+          if (!url || url.trim() === '') return null
+          try {
+            new URL(url)
+            return url.trim()
+          } catch {
+            return null
+          }
+        }
+
         for (const option of choice.options || []) {
           const newTemplate = {
             id: crypto.randomUUID(),
@@ -593,7 +615,7 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
             description: option.description || null,
             description_ko: option.description_ko || null,
             description_en: null,
-            category: null,
+            category: 'choice_template', // NOT NULL 필드이므로 기본값 설정
             adult_price: option.adult_price || 0,
             child_price: option.child_price || 0,
             infant_price: option.infant_price || 0,
@@ -607,7 +629,10 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
             template_group: templateGroup,
             template_group_ko: templateGroupKo,
             is_required: choice.is_required,
-            sort_order: option.sort_order || 0
+            sort_order: option.sort_order || 0,
+            image_url: isValidUrl(option.image_url),
+            image_alt: option.image_alt || null,
+            thumbnail_url: isValidUrl(option.thumbnail_url)
           }
 
           const { error } = await supabase
@@ -616,6 +641,8 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
 
           if (error) {
             console.error('Error importing template:', error)
+            alert(`템플릿 가져오기 중 오류가 발생했습니다: ${error.message}`)
+            return
           }
         }
       }
