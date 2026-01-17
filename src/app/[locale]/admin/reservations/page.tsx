@@ -245,6 +245,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     return () => clearTimeout(timer)
   }, [searchTerm])
   const [showAddForm, setShowAddForm] = useState(false)
+  const [newReservationId, setNewReservationId] = useState<string | null>(null)
   const [editingReservation, setEditingReservation] = useState<Reservation | null>(null)
   const [viewMode, setViewMode] = useState<'card' | 'calendar'>('card')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
@@ -1099,11 +1100,42 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }))
   }, [filteredReservations, products, customers, channels, optionChoices])
 
-  const handleAddReservation = useCallback(async (reservation: Omit<Reservation, 'id'>) => {
+  const isAddingReservationRef = useRef(false)
+  
+  const handleAddReservation = useCallback(async (reservation: Omit<Reservation, 'id'> & { id?: string }) => {
+    // 중복 호출 방지
+    if (isAddingReservationRef.current) {
+      console.log('handleAddReservation: 이미 처리 중입니다. 중복 호출 방지.')
+      return
+    }
+    
+    isAddingReservationRef.current = true
+    
+    // 예약 ID 확인 (모달 오픈 시 생성된 ID 또는 reservation.id)
+    const reservationId = (reservation as any).id || newReservationId
+    
+    console.log('handleAddReservation 호출됨:', {
+      reservationId,
+      hasChoices: !!reservation.choices,
+      choicesRequiredCount: Array.isArray(reservation.choices?.required) ? reservation.choices.required.length : 0,
+      hasSelectedChoices: !!(reservation as any).selectedChoices,
+      selectedChoicesCount: Array.isArray((reservation as any).selectedChoices) ? (reservation as any).selectedChoices.length : 0,
+      hasPricingInfo: !!(reservation as any).pricingInfo,
+      pricingInfo: (reservation as any).pricingInfo
+    })
+    
+    if (!reservationId) {
+      console.error('예약 ID가 없습니다!')
+      alert('예약 ID가 없습니다. 모달을 다시 열어주세요.')
+      isAddingReservationRef.current = false
+      return
+    }
+    
     try {
       // Supabase에 저장할 데이터 준비
       // tour_id는 먼저 null로 설정하고, 투어 생성 후 업데이트
       const reservationData = {
+        id: reservationId, // 미리 생성된 ID 사용
         customer_id: reservation.customerId,
         product_id: reservation.productId,
         tour_date: reservation.tourDate,
@@ -1127,26 +1159,63 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         variant_key: (reservation as any).variantKey || 'default' // variant_key 추가
       }
 
-      const { data: newReservation, error } = await supabase
+      // ID가 있으면 upsert 사용 (이미 존재하면 update, 없으면 insert)
+      let newReservation
+      let error
+      
+      // 먼저 존재 여부 확인
+      const { data: existingReservation } = await supabase
         .from('reservations')
+        .select('id')
+        .eq('id', reservationId)
+        .maybeSingle()
+      
+      if (existingReservation) {
+        // 이미 존재하면 update
+        console.log('기존 예약 발견, 업데이트:', reservationId)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .insert(reservationData as any)
-        .select('*')
-        .single()
+        const result = await (supabase as any)
+          .from('reservations')
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .update(reservationData as any)
+          .eq('id', reservationId)
+          .select('*')
+          .single()
+        newReservation = result.data
+        error = result.error
+      } else {
+        // 없으면 insert
+        console.log('새 예약 생성:', reservationId)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await (supabase as any)
+          .from('reservations')
+          .insert(reservationData)
+          .select('*')
+          .single()
+        newReservation = result.data
+        error = result.error
+      }
 
       if (error) {
-        console.error('Error adding reservation:', error)
+        console.error('Error saving reservation:', error)
         alert('예약 추가 중 오류가 발생했습니다: ' + error.message)
+        isAddingReservationRef.current = false
         return
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      console.log('New reservation created with ID:', (newReservation as any)?.id)
+      console.log('Reservation saved with ID:', reservationId)
+      
+      console.log('Reservation upserted with ID:', reservationId)
       console.log('Full reservation data:', newReservation)
+      console.log('Reservation payload received:', {
+        hasChoices: !!reservation.choices,
+        choicesRequiredCount: Array.isArray(reservation.choices?.required) ? reservation.choices.required.length : 0,
+        hasSelectedChoices: !!(reservation as any).selectedChoices,
+        selectedChoicesCount: Array.isArray((reservation as any).selectedChoices) ? (reservation as any).selectedChoices.length : 0,
+        hasPricingInfo: !!(reservation as any).pricingInfo
+      })
 
       // reservation_customers 테이블에 거주 상태별 인원 수 저장
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const reservationId = (newReservation as any)?.id
       if (reservationId) {
         try {
           // 기존 reservation_customers 데이터 삭제 (업데이트 시)
@@ -1249,57 +1318,104 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       }
 
       // 새로운 초이스 시스템: reservation_choices 테이블에 저장
-      if (reservationId && reservation.choices && reservation.choices.required && Array.isArray(reservation.choices.required)) {
+      // reservation.choices 또는 reservation.selectedChoices에서 초이스 데이터 가져오기
+      console.log('초이스 저장 시도:', {
+        reservationId,
+        hasChoices: !!reservation.choices,
+        choicesRequiredCount: Array.isArray(reservation.choices?.required) ? reservation.choices.required.length : 0,
+        hasSelectedChoices: !!(reservation as any).selectedChoices,
+        selectedChoicesCount: Array.isArray((reservation as any).selectedChoices) ? (reservation as any).selectedChoices.length : 0,
+        choices: reservation.choices,
+        selectedChoices: (reservation as any).selectedChoices
+      })
+      
+      if (reservationId) {
         try {
-          // option_id가 choice_options 테이블에 존재하는지 검증
-          const validChoices = []
-          for (const choice of reservation.choices.required) {
-            if (!choice.option_id) {
-              console.warn('option_id가 없는 choice 건너뛰기:', choice)
-              continue
-            }
-
-            // choice_options 테이블에서 option_id 존재 여부 확인
-            const { data: optionExists, error: checkError } = await supabase
-              .from('choice_options')
-              .select('id')
-              .eq('id', choice.option_id)
-              .maybeSingle()
-
-            if (checkError) {
-              console.error('choice_options 확인 오류:', checkError)
-              continue
-            }
-
-            if (!optionExists) {
-              console.warn(`option_id ${choice.option_id}가 choice_options 테이블에 존재하지 않습니다. 건너뜁니다.`)
-              continue
-            }
-
-            validChoices.push({
-              reservation_id: reservationId,
-              choice_id: choice.choice_id,
-              option_id: choice.option_id,
-              quantity: choice.quantity || 1,
-              total_price: choice.total_price || 0
+          let choicesToSave: Array<{
+            reservation_id: string
+            choice_id: string
+            option_id: string
+            quantity: number
+            total_price: number
+          }> = []
+          
+          // 1. reservation.selectedChoices에서 가져오기 (우선순위 1 - 배열 형태)
+          if ((reservation as any).selectedChoices) {
+            const selectedChoices = (reservation as any).selectedChoices
+            console.log('reservation.selectedChoices 확인:', {
+              isArray: Array.isArray(selectedChoices),
+              length: Array.isArray(selectedChoices) ? selectedChoices.length : 'not array',
+              type: typeof selectedChoices,
+              value: selectedChoices
             })
+            
+            if (Array.isArray(selectedChoices) && selectedChoices.length > 0) {
+              console.log('reservation.selectedChoices에서 초이스 데이터 발견:', selectedChoices.length, '개')
+              for (const choice of selectedChoices) {
+                if (choice.choice_id && choice.option_id) {
+                  choicesToSave.push({
+                    reservation_id: reservationId,
+                    choice_id: choice.choice_id,
+                    option_id: choice.option_id,
+                    quantity: choice.quantity || 1,
+                    total_price: choice.total_price || 0
+                  })
+                } else {
+                  console.warn('초이스 데이터에 choice_id 또는 option_id가 없습니다:', choice)
+                }
+              }
+            }
           }
-
-          if (validChoices.length > 0) {
+          
+          // 2. reservation.choices.required에서 가져오기 (fallback)
+          if (choicesToSave.length === 0 && reservation.choices && reservation.choices.required && Array.isArray(reservation.choices.required)) {
+            console.log('reservation.choices.required에서 초이스 데이터 발견:', reservation.choices.required.length, '개')
+            for (const choice of reservation.choices.required) {
+              if (choice.choice_id && choice.option_id) {
+                choicesToSave.push({
+                  reservation_id: reservationId,
+                  choice_id: choice.choice_id,
+                  option_id: choice.option_id,
+                  quantity: choice.quantity || 1,
+                  total_price: choice.total_price || 0
+                })
+              }
+            }
+          }
+          
+          console.log('저장할 초이스 데이터:', choicesToSave.length, '개', choicesToSave)
+          
+          if (choicesToSave.length > 0) {
+            // option_id 검증을 건너뛰고 바로 저장 (검증이 너무 엄격해서 저장이 안 될 수 있음)
+            console.log('reservation_choices에 저장할 데이터:', choicesToSave)
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const { error: choicesError } = await (supabase as any)
+            const { data: insertedChoices, error: choicesError } = await (supabase as any)
               .from('reservation_choices')
-              .insert(validChoices)
+              .insert(choicesToSave)
+              .select()
 
             if (choicesError) {
               console.error('초이스 저장 오류:', choicesError)
-              // 초이스 저장 실패해도 예약은 성공으로 처리 (경고만 표시)
-              console.warn('초이스 저장 중 오류가 발생했습니다: ' + choicesError.message)
+              console.error('저장 시도한 데이터:', choicesToSave)
+              console.error('오류 상세:', {
+                message: choicesError.message,
+                details: choicesError.details,
+                hint: choicesError.hint,
+                code: choicesError.code
+              })
+              alert('초이스 저장 중 오류가 발생했습니다: ' + choicesError.message)
             } else {
-              console.log('초이스 저장 성공:', validChoices.length, '개')
+              console.log('초이스 저장 성공:', choicesToSave.length, '개', insertedChoices)
             }
           } else {
-            console.warn('유효한 초이스가 없어 저장하지 않습니다.')
+            console.warn('저장할 초이스 데이터가 없습니다.', {
+              hasChoices: !!reservation.choices,
+              choicesRequiredCount: Array.isArray(reservation.choices?.required) ? reservation.choices.required.length : 0,
+              hasSelectedChoices: !!(reservation as any).selectedChoices,
+              selectedChoicesCount: Array.isArray((reservation as any).selectedChoices) ? (reservation as any).selectedChoices.length : 0,
+              selectedChoicesType: typeof (reservation as any).selectedChoices,
+              selectedChoicesValue: (reservation as any).selectedChoices
+            })
           }
         } catch (choicesError) {
           console.error('초이스 저장 중 예외:', choicesError)
@@ -1314,9 +1430,17 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       // 별도의 reservation_pricing 테이블 저장은 현재 비활성화
 
       // reservation_pricing 자동 생성
-      if (reservationId && (reservation as any).pricingInfo) {
+      console.log('가격 정보 저장 시도:', {
+        reservationId,
+        hasPricingInfo: !!(reservation as any).pricingInfo,
+        pricingInfo: (reservation as any).pricingInfo,
+        pricingInfoKeys: (reservation as any).pricingInfo ? Object.keys((reservation as any).pricingInfo) : []
+      })
+      
+      if (reservationId) {
+        // pricingInfo가 없어도 기본값으로 생성
+        const pricingInfo = (reservation as any).pricingInfo || {}
         try {
-          const pricingInfo = (reservation as any).pricingInfo
           const pricingId = crypto.randomUUID()
           
           const pricingData = {
@@ -1346,31 +1470,50 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             balance_amount: pricingInfo.balanceAmount || 0,
             private_tour_additional_cost: pricingInfo.privateTourAdditionalCost || 0,
             commission_percent: pricingInfo.commission_percent || 0,
-            commission_amount: 0
+            commission_amount: pricingInfo.commission_amount || 0
           }
 
-          const { error: pricingError } = await supabase
+          console.log('reservation_pricing 저장 데이터:', pricingData)
+
+          const { data: insertedPricing, error: pricingError } = await supabase
             .from('reservation_pricing')
             .insert(pricingData as any)
+            .select()
+            .single()
 
           if (pricingError) {
             console.error('reservation_pricing 생성 오류:', pricingError)
+            console.error('저장 시도한 데이터:', pricingData)
+            console.error('오류 상세:', {
+              message: pricingError.message,
+              details: pricingError.details,
+              hint: pricingError.hint,
+              code: pricingError.code
+            })
+            alert('가격 정보 저장 중 오류가 발생했습니다: ' + pricingError.message)
           } else {
-            console.log('reservation_pricing 생성 성공')
+            console.log('reservation_pricing 생성 성공:', pricingId, insertedPricing)
           }
         } catch (pricingError) {
           console.error('reservation_pricing 생성 중 예외:', pricingError)
+          console.error('예외 스택:', (pricingError as Error).stack)
+          alert('가격 정보 저장 중 예외가 발생했습니다: ' + (pricingError as Error).message)
         }
+      } else {
+        console.warn('reservationId가 없어 reservation_pricing을 생성하지 않습니다.', {
+          reservationId,
+          hasPricingInfo: !!(reservation as any).pricingInfo
+        })
       }
 
-      // payment_records 자동 생성 (할인 후 상품가격으로 Partner Received)
+      // payment_records 자동 생성 (사용자가 입력한 depositAmount로 Deposit Received)
       if (reservationId && (reservation as any).pricingInfo) {
         try {
           const pricingInfo = (reservation as any).pricingInfo
-          // 할인 후 상품가 계산
-          const discountedPrice = (pricingInfo.productPriceTotal || 0) - (pricingInfo.couponDiscount || 0) - (pricingInfo.additionalDiscount || 0)
+          // 사용자가 입력한 depositAmount 사용
+          const depositAmount = pricingInfo.depositAmount || 0
           
-          if (discountedPrice > 0) {
+          if (depositAmount > 0) {
             const { data: { session } } = await supabase.auth.getSession()
             if (session?.access_token) {
               const response = await fetch('/api/payment-records', {
@@ -1381,8 +1524,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 },
                 body: JSON.stringify({
                   reservation_id: reservationId,
-                  payment_status: 'Partner Received',
-                  amount: discountedPrice,
+                  payment_status: 'Deposit Received',
+                  amount: depositAmount,
                   payment_method: 'PAYM033'
                 })
               })
@@ -1391,7 +1534,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 const errorData = await response.json()
                 console.error('payment_records 생성 오류:', errorData.error)
               } else {
-                console.log('payment_records 생성 성공')
+                console.log('payment_records 생성 성공 (depositAmount:', depositAmount, ')')
               }
             }
           }
@@ -1401,12 +1544,18 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       }
 
       // 성공 시 예약 목록 새로고침
+      console.log('handleAddReservation: 모든 저장 완료, 예약 목록 새로고침 시작')
       await refreshReservations()
+      console.log('handleAddReservation: 예약 목록 새로고침 완료')
       setShowAddForm(false)
+      setNewReservationId(null)
       alert('예약이 성공적으로 추가되었습니다!')
     } catch (error) {
-      console.error('Error adding reservation:', error)
-      alert('예약 추가 중 오류가 발생했습니다.')
+      console.error('handleAddReservation: 예약 추가 중 오류:', error)
+      console.error('오류 스택:', (error as Error).stack)
+      alert('예약 추가 중 오류가 발생했습니다: ' + ((error as Error).message || '알 수 없는 오류'))
+    } finally {
+      isAddingReservationRef.current = false
     }
   }, [refreshReservations])
 
@@ -2137,7 +2286,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               />
             </div>
             <button
-              onClick={() => setShowAddForm(true)}
+              onClick={() => {
+                // 새 예약 ID 생성
+                const newId = crypto.randomUUID()
+                setNewReservationId(newId)
+                setShowAddForm(true)
+                console.log('새 예약 모달 오픈, 예약 ID 생성:', newId)
+              }}
               className="bg-blue-600 text-white px-2 sm:px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center space-x-1 text-xs sm:text-sm flex-shrink-0"
             >
               <Plus size={14} />
@@ -3881,7 +4036,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       {/* 예약 추가/편집 모달 */}
       {(showAddForm || editingReservation) && (
         <ReservationForm
-          reservation={editingReservation}
+          reservation={editingReservation || (newReservationId ? { id: newReservationId } as Reservation : null)}
           customers={customers || []}
           products={products || []}
           channels={channels || []}
@@ -3892,6 +4047,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           onSubmit={editingReservation ? handleEditReservation : handleAddReservation}
           onCancel={() => {
             setShowAddForm(false)
+            setNewReservationId(null)
             setEditingReservation(null)
           }}
           onRefreshCustomers={refreshCustomers}

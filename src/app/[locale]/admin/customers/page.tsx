@@ -285,6 +285,7 @@ export default function AdminCustomers() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [showReservationForm, setShowReservationForm] = useState(false)
   const [selectedCustomerForReservation, setSelectedCustomerForReservation] = useState<Customer | null>(null)
+  const [newReservationId, setNewReservationId] = useState<string | null>(null)
   const [showInvoiceModal, setShowInvoiceModal] = useState(false)
   const [selectedCustomerForInvoice, setSelectedCustomerForInvoice] = useState<Customer | null>(null)
   const [showInvoiceListModal, setShowInvoiceListModal] = useState(false)
@@ -303,8 +304,12 @@ export default function AdminCustomers() {
 
   // 예약 추가 함수
   const handleAddReservation = (customer: Customer) => {
+    // 새 예약 ID 생성
+    const newId = crypto.randomUUID()
+    setNewReservationId(newId)
     setSelectedCustomerForReservation(customer)
     setShowReservationForm(true)
+    console.log('고객 관리: 새 예약 모달 오픈, 예약 ID 생성:', newId)
   }
 
   // 인보이스 생성 함수
@@ -408,11 +413,33 @@ export default function AdminCustomers() {
     }
   }, [])
 
-  // 예약 저장 함수
-  const handleSaveReservation = useCallback(async (reservationData: Omit<Reservation, 'id'>) => {
+  // 예약 저장 함수 (예약 관리 페이지와 동일한 로직)
+  const handleSaveReservation = useCallback(async (reservationData: Omit<Reservation, 'id'> & { id?: string }) => {
+    // 예약 ID 확인 (모달 오픈 시 생성된 ID 또는 reservationData.id)
+    const reservationId = (reservationData as any).id || newReservationId
+    
+    console.log('고객 관리: handleSaveReservation 호출됨:', {
+      reservationId,
+      reservationDataId: (reservationData as any).id,
+      newReservationId,
+      hasChoices: !!reservationData.choices,
+      choicesRequiredCount: Array.isArray(reservationData.choices?.required) ? reservationData.choices.required.length : 0,
+      hasSelectedChoices: !!(reservationData as any).selectedChoices,
+      selectedChoicesCount: Array.isArray((reservationData as any).selectedChoices) ? (reservationData as any).selectedChoices.length : 0,
+      hasPricingInfo: !!(reservationData as any).pricingInfo,
+      pricingInfo: (reservationData as any).pricingInfo
+    })
+    
+    if (!reservationId) {
+      console.error('예약 ID가 없습니다!')
+      alert('예약 ID가 없습니다. 모달을 다시 열어주세요.')
+      return
+    }
+    
     try {
       // camelCase를 snake_case로 변환
       const dbReservationData = {
+        id: reservationId, // 미리 생성된 ID 사용
         customer_id: reservationData.customerId,
         product_id: reservationData.productId,
         tour_date: reservationData.tourDate,
@@ -431,13 +458,43 @@ export default function AdminCustomers() {
         status: reservationData.status,
         selected_options: reservationData.selectedOptions,
         selected_option_prices: reservationData.selectedOptionPrices,
-        is_private_tour: reservationData.isPrivateTour || false
+        is_private_tour: reservationData.isPrivateTour || false,
+        choices: reservationData.choices,
+        variant_key: (reservationData as any).variantKey || 'default'
       }
 
-      const { error } = await supabase
+      // ID가 있으면 upsert 사용 (이미 존재하면 update, 없으면 insert)
+      let error
+      
+      // 먼저 존재 여부 확인
+      const { data: existingReservation } = await supabase
         .from('reservations')
-        .insert([dbReservationData] as any)
-        .select('*')
+        .select('id')
+        .eq('id', reservationId)
+        .maybeSingle()
+      
+      if (existingReservation) {
+        // 이미 존재하면 update
+        console.log('고객 관리: 기존 예약 발견, 업데이트:', reservationId)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await (supabase as any)
+          .from('reservations')
+          .update(dbReservationData)
+          .eq('id', reservationId)
+          .select('*')
+          .single()
+        error = result.error
+      } else {
+        // 없으면 insert
+        console.log('고객 관리: 새 예약 생성:', reservationId)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await (supabase as any)
+          .from('reservations')
+          .insert(dbReservationData)
+          .select('*')
+          .single()
+        error = result.error
+      }
 
       if (error) {
         console.error('Error saving reservation:', error)
@@ -445,16 +502,269 @@ export default function AdminCustomers() {
         return
       }
 
+      console.log('고객 관리: Reservation saved with ID:', reservationId)
+
+      // reservation_customers 테이블에 거주 상태별 인원 수 저장
+      if (reservationId) {
+        try {
+          // 기존 reservation_customers 데이터 삭제 (업데이트 시)
+          await supabase
+            .from('reservation_customers')
+            .delete()
+            .eq('reservation_id', reservationId)
+
+          // 상태별 인원 수에 따라 reservation_customers 레코드 생성
+          const reservationCustomers: any[] = []
+          let orderIndex = 0
+
+          // 미국 거주자
+          const usResidentCount = (reservationData as any).usResidentCount || 0
+          for (let i = 0; i < usResidentCount; i++) {
+            reservationCustomers.push({
+              reservation_id: reservationId,
+              customer_id: reservationData.customerId,
+              resident_status: 'us_resident',
+              pass_covered_count: 0,
+              order_index: orderIndex++
+            })
+          }
+
+          // 비거주자
+          const nonResidentCount = (reservationData as any).nonResidentCount || 0
+          for (let i = 0; i < nonResidentCount; i++) {
+            reservationCustomers.push({
+              reservation_id: reservationId,
+              customer_id: reservationData.customerId,
+              resident_status: 'non_resident',
+              pass_covered_count: 0,
+              order_index: orderIndex++
+            })
+          }
+
+          // 비 거주자 (16세 이하)
+          const nonResidentUnder16Count = (reservationData as any).nonResidentUnder16Count || 0
+          for (let i = 0; i < nonResidentUnder16Count; i++) {
+            reservationCustomers.push({
+              reservation_id: reservationId,
+              customer_id: reservationData.customerId,
+              resident_status: 'non_resident_under_16',
+              pass_covered_count: 0,
+              order_index: orderIndex++
+            })
+          }
+
+          // 비거주자 (패스 보유)
+          const nonResidentWithPassCount = (reservationData as any).nonResidentWithPassCount || 0
+          for (let i = 0; i < nonResidentWithPassCount; i++) {
+            reservationCustomers.push({
+              reservation_id: reservationId,
+              customer_id: reservationData.customerId,
+              resident_status: 'non_resident_with_pass',
+              pass_covered_count: 4,
+              order_index: orderIndex++
+            })
+          }
+
+          // reservation_customers 데이터 삽입
+          if (reservationCustomers.length > 0) {
+            const { error: rcError } = await supabase
+              .from('reservation_customers')
+              .insert(reservationCustomers as any)
+
+            if (rcError) {
+              console.error('Error saving reservation_customers:', rcError)
+            } else {
+              console.log('Reservation customers saved successfully')
+            }
+          }
+        } catch (rcError) {
+          console.error('Error saving reservation_customers:', rcError)
+        }
+      }
+
+      // reservation_choices 테이블에 저장
+      console.log('고객 관리: 초이스 저장 시도:', {
+        reservationId,
+        hasChoices: !!reservationData.choices,
+        choicesRequiredCount: Array.isArray(reservationData.choices?.required) ? reservationData.choices.required.length : 0,
+        hasSelectedChoices: !!(reservationData as any).selectedChoices,
+        selectedChoicesCount: Array.isArray((reservationData as any).selectedChoices) ? (reservationData as any).selectedChoices.length : 0
+      })
+      
+      if (reservationId) {
+        try {
+          let choicesToSave: Array<{
+            reservation_id: string
+            choice_id: string
+            option_id: string
+            quantity: number
+            total_price: number
+          }> = []
+          
+          // 1. reservation.selectedChoices에서 가져오기 (우선순위 1 - 배열 형태)
+          if ((reservationData as any).selectedChoices) {
+            const selectedChoices = (reservationData as any).selectedChoices
+            if (Array.isArray(selectedChoices) && selectedChoices.length > 0) {
+              console.log('고객 관리: reservation.selectedChoices에서 초이스 데이터 발견:', selectedChoices.length, '개')
+              for (const choice of selectedChoices) {
+                if (choice.choice_id && choice.option_id) {
+                  choicesToSave.push({
+                    reservation_id: reservationId,
+                    choice_id: choice.choice_id,
+                    option_id: choice.option_id,
+                    quantity: choice.quantity || 1,
+                    total_price: choice.total_price || 0
+                  })
+                }
+              }
+            }
+          }
+          
+          // 2. reservation.choices.required에서 가져오기 (fallback)
+          if (choicesToSave.length === 0 && reservationData.choices && reservationData.choices.required && Array.isArray(reservationData.choices.required)) {
+            console.log('고객 관리: reservation.choices.required에서 초이스 데이터 발견:', reservationData.choices.required.length, '개')
+            for (const choice of reservationData.choices.required) {
+              if (choice.choice_id && choice.option_id) {
+                choicesToSave.push({
+                  reservation_id: reservationId,
+                  choice_id: choice.choice_id,
+                  option_id: choice.option_id,
+                  quantity: choice.quantity || 1,
+                  total_price: choice.total_price || 0
+                })
+              }
+            }
+          }
+          
+          console.log('고객 관리: 저장할 초이스 데이터:', choicesToSave.length, '개', choicesToSave)
+          
+          if (choicesToSave.length > 0) {
+            const { data: insertedChoices, error: choicesError } = await supabase
+              .from('reservation_choices')
+              .insert(choicesToSave as any)
+              .select()
+
+            if (choicesError) {
+              console.error('고객 관리: 초이스 저장 오류:', choicesError)
+              alert('초이스 저장 중 오류가 발생했습니다: ' + choicesError.message)
+            } else {
+              console.log('고객 관리: 초이스 저장 성공:', choicesToSave.length, '개', insertedChoices)
+            }
+          }
+        } catch (choicesError) {
+          console.error('고객 관리: 초이스 저장 중 예외:', choicesError)
+        }
+      }
+
+      // reservation_pricing 테이블에 저장
+      console.log('고객 관리: 가격 정보 저장 시도:', {
+        reservationId,
+        hasPricingInfo: !!(reservationData as any).pricingInfo,
+        pricingInfo: (reservationData as any).pricingInfo
+      })
+      
+      if (reservationId) {
+        const pricingInfo = (reservationData as any).pricingInfo || {}
+        try {
+          const pricingId = crypto.randomUUID()
+          
+          const pricingData = {
+            id: pricingId,
+            reservation_id: reservationId,
+            adult_product_price: pricingInfo.adultProductPrice || 0,
+            child_product_price: pricingInfo.childProductPrice || 0,
+            infant_product_price: pricingInfo.infantProductPrice || 0,
+            product_price_total: pricingInfo.productPriceTotal || 0,
+            required_options: pricingInfo.requiredOptions || {},
+            required_option_total: pricingInfo.requiredOptionTotal || 0,
+            choices: pricingInfo.choices || {},
+            choices_total: pricingInfo.choicesTotal || 0,
+            subtotal: pricingInfo.subtotal || 0,
+            coupon_code: pricingInfo.couponCode || null,
+            coupon_discount: pricingInfo.couponDiscount || 0,
+            additional_discount: pricingInfo.additionalDiscount || 0,
+            additional_cost: pricingInfo.additionalCost || 0,
+            card_fee: pricingInfo.cardFee || 0,
+            tax: pricingInfo.tax || 0,
+            prepayment_cost: pricingInfo.prepaymentCost || 0,
+            prepayment_tip: pricingInfo.prepaymentTip || 0,
+            selected_options: pricingInfo.selectedOptionalOptions || {},
+            option_total: pricingInfo.optionTotal || 0,
+            total_price: pricingInfo.totalPrice || 0,
+            deposit_amount: pricingInfo.depositAmount || 0,
+            balance_amount: pricingInfo.balanceAmount || 0,
+            private_tour_additional_cost: pricingInfo.privateTourAdditionalCost || 0,
+            commission_percent: pricingInfo.commission_percent || 0,
+            commission_amount: pricingInfo.commission_amount || 0
+          }
+
+          console.log('고객 관리: reservation_pricing 저장 데이터:', pricingData)
+
+          const { data: insertedPricing, error: pricingError } = await supabase
+            .from('reservation_pricing')
+            .insert(pricingData as any)
+            .select()
+            .single()
+
+          if (pricingError) {
+            console.error('고객 관리: reservation_pricing 생성 오류:', pricingError)
+            alert('가격 정보 저장 중 오류가 발생했습니다: ' + pricingError.message)
+          } else {
+            console.log('고객 관리: reservation_pricing 생성 성공:', pricingId, insertedPricing)
+          }
+        } catch (pricingError) {
+          console.error('고객 관리: reservation_pricing 생성 중 예외:', pricingError)
+          alert('가격 정보 저장 중 예외가 발생했습니다: ' + (pricingError as Error).message)
+        }
+      }
+
+      // payment_records 자동 생성
+      if (reservationId && (reservationData as any).pricingInfo) {
+        try {
+          const pricingInfo = (reservationData as any).pricingInfo
+          const depositAmount = pricingInfo.depositAmount || 0
+          
+          if (depositAmount > 0) {
+            const { data: { session } } = await supabase.auth.getSession()
+            if (session?.access_token) {
+              const response = await fetch('/api/payment-records', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify({
+                  reservation_id: reservationId,
+                  payment_status: 'Deposit Received',
+                  amount: depositAmount,
+                  payment_method: 'PAYM033'
+                })
+              })
+
+              if (!response.ok) {
+                const errorData = await response.json()
+                console.error('payment_records 생성 오류:', errorData.error)
+              } else {
+                console.log('payment_records 생성 성공 (depositAmount:', depositAmount, ')')
+              }
+            }
+          }
+        } catch (paymentError) {
+          console.error('payment_records 생성 중 예외:', paymentError)
+        }
+      }
+
       // 성공 시 예약 정보 새로고침
       await fetchReservationInfo()
       setShowReservationForm(false)
       setSelectedCustomerForReservation(null)
+      setNewReservationId(null)
       alert(t('messages.reservationAdded'))
     } catch (error) {
       console.error('Error saving reservation:', error)
       alert(t('messages.errorSavingReservation'))
     }
-  }, [fetchReservationInfo, t])
+  }, [fetchReservationInfo, t, newReservationId])
 
   // 예약 삭제 함수
   const handleDeleteReservation = useCallback(async (reservationId: string) => {
@@ -1471,9 +1781,11 @@ export default function AdminCustomers() {
       {showReservationForm && selectedCustomerForReservation && (
         <ReservationModal
           customer={selectedCustomerForReservation}
+          newReservationId={newReservationId}
           onClose={() => {
             setShowReservationForm(false)
             setSelectedCustomerForReservation(null)
+            setNewReservationId(null)
           }}
           onSave={handleSaveReservation}
           onDelete={handleDeleteReservation}
@@ -2688,6 +3000,7 @@ function CustomerDetailModal({
 // 예약 추가 모달
 function ReservationModal({ 
   customer, 
+  newReservationId,
   onClose, 
   onSave,
   onDelete,
@@ -2700,6 +3013,7 @@ function ReservationModal({
   coupons
 }: { 
   customer: Customer
+  newReservationId?: string | null
   onClose: () => void
   onSave: (reservationData: Omit<Reservation, 'id'>) => void
   onDelete: (reservationId: string) => void
@@ -2722,7 +3036,7 @@ function ReservationModal({
     end_date?: string | null
   }>
 }) {
-  // 새 예약 추가 모달이므로 reservation은 null로 전달
+  // 새 예약 추가 모달이므로 reservation은 null 또는 { id: newReservationId }로 전달
   // 고객 정보는 ReservationFormWithInitialCustomer 컴포넌트를 사용하여 전달
   return (
     <ReservationFormWithInitialCustomer
@@ -2739,6 +3053,7 @@ function ReservationModal({
       onRefreshCustomers={async () => {}}
       onDelete={onDelete}
       layout="modal"
+      newReservationId={newReservationId ?? null}
     />
   )
 }
@@ -2757,7 +3072,8 @@ function ReservationFormWithInitialCustomer({
   onCancel,
   onRefreshCustomers,
   onDelete,
-  layout
+  layout,
+  newReservationId
 }: {
   customer: Customer
   customers: ReservationCustomer[]
@@ -2783,10 +3099,12 @@ function ReservationFormWithInitialCustomer({
   onRefreshCustomers: () => Promise<void>
   onDelete: (reservationId: string) => void
   layout?: 'modal' | 'page'
+  newReservationId?: string | null
 }) {
+  const reservationId = newReservationId ?? null
   return (
     <ReservationForm
-      reservation={null}
+      reservation={reservationId ? { id: reservationId } as Reservation : null}
       customers={customers}
       products={products}
       channels={channels}

@@ -59,6 +59,8 @@ export default function SimpleChoiceSelector({
   const [errors, setErrors] = useState<string[]>([]);
   const prevInitialSelectionsRef = useRef<SelectedChoice[]>(initialSelections);
   const prevSelectionsRef = useRef<SelectedChoice[]>(initialSelections);
+  // 수동으로 가격을 수정한 초이스를 추적 (choice_id:option_id 형식)
+  const [manuallyEditedPrices, setManuallyEditedPrices] = useState<Set<string>>(new Set());
 
   // initialSelections prop이 변경될 때 selections 상태 업데이트
   // 이 변경은 props에서 온 것이므로 onSelectionChange를 호출하지 않음 (무한 루프 방지)
@@ -152,8 +154,9 @@ export default function SimpleChoiceSelector({
   
   // selections 상태 변경 추적 및 부모 컴포넌트에 알림
   useEffect(() => {
-    const prevIds = prevSelectionsRef.current.map(s => `${s.choice_id}:${s.option_id}:${s.quantity}`).sort().join(',');
-    const currentIds = selections.map(s => `${s.choice_id}:${s.option_id}:${s.quantity}`).sort().join(',');
+    // total_price도 포함하여 변경 감지 (가격 수정도 감지하기 위해)
+    const prevIds = prevSelectionsRef.current.map(s => `${s.choice_id}:${s.option_id}:${s.quantity}:${s.total_price}`).sort().join(',');
+    const currentIds = selections.map(s => `${s.choice_id}:${s.option_id}:${s.quantity}:${s.total_price}`).sort().join(',');
     
     console.log('SimpleChoiceSelector: selections 상태 변경됨', {
       selections,
@@ -163,13 +166,13 @@ export default function SimpleChoiceSelector({
       isUserAction: isUserActionRef.current
     });
     
-    // 이전 값과 다르면 변경 감지
+    // 이전 값과 다르면 변경 감지 (total_price 포함)
     if (prevIds !== currentIds) {
       // 사용자 액션이면 onSelectionChange 호출
       if (isUserActionRef.current) {
         console.log('SimpleChoiceSelector: 사용자 액션으로 인한 변경, onSelectionChange 호출', {
           selectionsCount: selections.length,
-          selections: selections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id }))
+          selections: selections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, total_price: s.total_price }))
         });
         onSelectionChange(selections);
         // prevSelectionsRef 업데이트
@@ -327,6 +330,7 @@ export default function SimpleChoiceSelector({
   }, [validateSelections]);
 
   // 인원 수가 변경될 때 단일 선택 초이스의 total_price 업데이트
+  // 단, 수동으로 수정한 가격은 자동 계산에서 제외
   useEffect(() => {
     const updatedSelections = selections.map(selection => {
       const choice = choices.find(c => c.id === selection.choice_id);
@@ -337,8 +341,13 @@ export default function SimpleChoiceSelector({
                                      choice.choice_group?.toLowerCase().includes('resident') ||
                                      choice.choice_group?.toLowerCase().includes('거주');
       
+      // 수동으로 수정한 가격인지 확인
+      const priceKey = `${selection.choice_id}:${selection.option_id}`;
+      const isManuallyEdited = manuallyEditedPrices.has(priceKey);
+      
       // 단일 선택 초이스이고 선택된 경우에만 total_price 업데이트
-      if (choice.choice_type === 'single' && !isResidentStatusChoice && selection.quantity > 0) {
+      // 단, 수동으로 수정한 경우는 자동 계산하지 않음
+      if (choice.choice_type === 'single' && !isResidentStatusChoice && selection.quantity > 0 && !isManuallyEdited) {
         const option = choice.options?.find(o => o.id === selection.option_id);
         if (option) {
           const newTotalPrice = (adults * option.adult_price) + 
@@ -359,7 +368,7 @@ export default function SimpleChoiceSelector({
       onSelectionChange(updatedSelections);
       setSelections(updatedSelections);
     }
-  }, [adults, children, infants, choices, selections, onSelectionChange]);
+  }, [adults, children, infants, choices, selections, onSelectionChange, manuallyEditedPrices]);
 
   return (
     <div className="space-y-3">
@@ -438,7 +447,13 @@ export default function SimpleChoiceSelector({
                       if (isResidentStatusChoice || choice.choice_type !== 'single') {
                         // multiple/quantity 타입: 현재 옵션 토글
                         if (currentQuantity > 0) {
-                          // 선택 해제
+                          // 선택 해제 - 수동 수정 플래그도 제거
+                          const priceKey = `${choice.id}:${option.id}`;
+                          setManuallyEditedPrices(prev => {
+                            const newSet = new Set(prev);
+                            newSet.delete(priceKey);
+                            return newSet;
+                          });
                           handleSelectionChange(
                             choice.id,
                             option.id,
@@ -497,7 +512,13 @@ export default function SimpleChoiceSelector({
                             singleChoiceTotalPrice
                           );
                         } else {
-                          // 이미 선택된 경우 해제
+                          // 이미 선택된 경우 해제 - 수동 수정 플래그도 제거
+                          const priceKey = `${choice.id}:${option.id}`;
+                          setManuallyEditedPrices(prev => {
+                            const newSet = new Set(prev);
+                            newSet.delete(priceKey);
+                            return newSet;
+                          });
                           handleSelectionChange(
                             choice.id,
                             option.id,
@@ -535,7 +556,14 @@ export default function SimpleChoiceSelector({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
+                                const priceKey = `${choice.id}:${option.id}`;
                                 if (currentQuantity > 1) {
+                                  // 수량 조절 시 수동 수정 플래그 제거 (자동 계산 재시작)
+                                  setManuallyEditedPrices(prev => {
+                                    const newSet = new Set(prev);
+                                    newSet.delete(priceKey);
+                                    return newSet;
+                                  });
                                   handleSelectionChange(
                                     choice.id,
                                     option.id,
@@ -546,6 +574,11 @@ export default function SimpleChoiceSelector({
                                   );
                                 } else {
                                   // 수량이 1이면 선택 해제
+                                  setManuallyEditedPrices(prev => {
+                                    const newSet = new Set(prev);
+                                    newSet.delete(priceKey);
+                                    return newSet;
+                                  });
                                   handleSelectionChange(
                                     choice.id,
                                     option.id,
@@ -567,6 +600,13 @@ export default function SimpleChoiceSelector({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
+                                // 수량 조절 시 수동 수정 플래그 제거 (자동 계산 재시작)
+                                const priceKey = `${choice.id}:${option.id}`;
+                                setManuallyEditedPrices(prev => {
+                                  const newSet = new Set(prev);
+                                  newSet.delete(priceKey);
+                                  return newSet;
+                                });
                                 handleSelectionChange(
                                   choice.id,
                                   option.id,
@@ -620,10 +660,47 @@ export default function SimpleChoiceSelector({
                             </div>
                           )}
                         </div>
-                        {/* 총액 - 오른쪽 끝 */}
-                        <div className="text-sm font-medium text-gray-900">
-                          ${totalPrice.toLocaleString()}
-                        </div>
+                        {/* 총액 - 오른쪽 끝 (수정 가능) */}
+                        {currentQuantity > 0 ? (
+                          <div className="flex items-center space-x-1">
+                            <span className="text-xs text-gray-500">총액:</span>
+                            <div className="relative">
+                              <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                              <input
+                                type="number"
+                                value={currentSelection?.total_price !== undefined ? currentSelection.total_price : totalPrice}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  const inputValue = e.target.value;
+                                  // 빈 문자열이면 0으로 처리, 그 외에는 숫자로 변환
+                                  const newTotalPrice = inputValue === '' ? 0 : Number(inputValue);
+                                  // NaN 체크
+                                  if (isNaN(newTotalPrice)) return;
+                                  // 수동으로 가격을 수정했음을 표시
+                                  const priceKey = `${choice.id}:${option.id}`;
+                                  setManuallyEditedPrices(prev => new Set(prev).add(priceKey));
+                                  handleSelectionChange(
+                                    choice.id,
+                                    option.id,
+                                    option.option_key,
+                                    option.option_name_ko,
+                                    currentQuantity,
+                                    newTotalPrice
+                                  );
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                onFocus={(e) => e.stopPropagation()}
+                                className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right focus:ring-1 focus:ring-blue-500"
+                                step="0.01"
+                                min="0"
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-sm font-medium text-gray-500">
+                            ${totalPrice.toLocaleString()}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

@@ -109,6 +109,7 @@ export default function ReservationForm({
   const [, setProductAccordionExpanded] = useState(layout === 'modal')
   const [reservationOptionsTotalPrice, setReservationOptionsTotalPrice] = useState(0)
   const [expenseUpdateTrigger, setExpenseUpdateTrigger] = useState(0)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   
   const [formData, setFormData] = useState<{
     customerId: string
@@ -523,6 +524,19 @@ export default function ReservationForm({
         return
       }
       
+      // 새 예약 모드 확인: reservation에 id만 있고 다른 필드가 없으면 새 예약
+      const reservationKeys = Object.keys(reservation)
+      const isNewReservation = reservationKeys.length === 1 && reservationKeys[0] === 'id'
+      
+      if (isNewReservation) {
+        console.log('ReservationForm: 새 예약 모드 감지, 데이터베이스 조회 건너뜀:', {
+          reservationId: reservation.id,
+          reservationKeys
+        })
+        loadedReservationDataRef.current = reservation.id
+        return
+      }
+      
       loadedReservationDataRef.current = reservation.id
 
       console.log('ReservationForm: reservation_id로 데이터 조회 시작:', {
@@ -548,6 +562,11 @@ export default function ReservationForm({
           .single()
 
         if (reservationError) {
+          // PGRST116은 "no rows returned" 오류 - 새 예약 모드일 수 있음
+          if (reservationError.code === 'PGRST116') {
+            console.log('ReservationForm: 예약 데이터가 없음 (새 예약 모드일 수 있음):', reservation.id)
+            return
+          }
           console.error('ReservationForm: 예약 데이터 조회 오류:', reservationError)
           console.log('예약 오류 상세:', {
             message: reservationError.message,
@@ -2801,34 +2820,50 @@ export default function ReservationForm({
         required: []
       }
       
+      console.log('ReservationForm: 초이스 데이터 준비 시작', {
+        selectedChoicesType: Array.isArray(formData.selectedChoices) ? 'array' : typeof formData.selectedChoices,
+        selectedChoicesCount: Array.isArray(formData.selectedChoices) ? formData.selectedChoices.length : 'not array',
+        selectedChoices: formData.selectedChoices
+      })
+      
       // 새로운 초이스 시스템에서 선택된 초이스 처리
-      if (Array.isArray(formData.selectedChoices)) {
+      if (Array.isArray(formData.selectedChoices) && formData.selectedChoices.length > 0) {
         formData.selectedChoices.forEach(choice => {
-          choicesData.required.push({
-            choice_id: choice.choice_id,
-            option_id: choice.option_id,
-            quantity: choice.quantity,
-            total_price: choice.total_price
-          })
+          if (choice.choice_id && choice.option_id) {
+            choicesData.required.push({
+              choice_id: choice.choice_id,
+              option_id: choice.option_id,
+              quantity: choice.quantity || 1,
+              total_price: choice.total_price || 0
+            })
+          }
         })
       } else if (formData.selectedChoices && typeof formData.selectedChoices === 'object') {
         // 기존 객체 형태의 selectedChoices 처리
         Object.entries(formData.selectedChoices).forEach(([choiceId, choiceData]) => {
           if (choiceData && typeof choiceData === 'object' && 'selected' in choiceData) {
             const choice = choiceData as { selected: string; timestamp?: string }
-            choicesData.required.push({
-              choice_id: choiceId,
-              option_id: choice.selected,
-              quantity: 1,
-              total_price: 0 // 기존 시스템에서는 가격이 별도로 계산됨
-            })
+            if (choice.selected) {
+              choicesData.required.push({
+                choice_id: choiceId,
+                option_id: choice.selected,
+                quantity: 1,
+                total_price: 0 // 기존 시스템에서는 가격이 별도로 계산됨
+              })
+            }
           }
         })
       }
       
+      console.log('ReservationForm: 초이스 데이터 준비 완료', {
+        choicesRequiredCount: choicesData.required.length,
+        choicesData: choicesData
+      })
+      
       // 예약 정보와 가격 정보를 함께 제출 (customerId 업데이트)
-      onSubmit({
+      const reservationPayload = {
         ...formData,
+        id: reservation?.id, // 예약 ID 포함 (새 예약 모드에서 미리 생성된 ID)
         customerId: finalCustomerId || formData.customerId,
         totalPeople,
         choices: choicesData,
@@ -2861,14 +2896,36 @@ export default function ReservationForm({
           balanceAmount: formData.balanceAmount,
           isPrivateTour: formData.isPrivateTour,
           privateTourAdditionalCost: formData.privateTourAdditionalCost,
-          commission_percent: formData.commission_percent
+          commission_percent: formData.commission_percent,
+          commission_amount: formData.commission_amount || 0
         }
+      }
+      
+      console.log('ReservationForm: 예약 정보와 가격 정보 제출', {
+        reservationId: reservationPayload.id,
+        hasChoices: !!reservationPayload.choices,
+        choicesRequiredCount: reservationPayload.choices?.required?.length || 0,
+        hasSelectedChoices: !!reservationPayload.selectedChoices,
+        selectedChoicesCount: Array.isArray(reservationPayload.selectedChoices) ? reservationPayload.selectedChoices.length : 0,
+        hasPricingInfo: !!reservationPayload.pricingInfo,
+        pricingInfo: reservationPayload.pricingInfo,
+        onSubmitType: typeof onSubmit,
+        onSubmitExists: !!onSubmit
       })
       
-      console.log('예약 정보와 가격 정보가 제출되었습니다.')
+      try {
+        console.log('ReservationForm: onSubmit 호출 시작')
+        await onSubmit(reservationPayload)
+        console.log('ReservationForm: onSubmit 호출 완료')
+      } catch (onSubmitError) {
+        console.error('ReservationForm: onSubmit 호출 중 오류:', onSubmitError)
+        throw onSubmitError
+      }
     } catch (error) {
       console.error('예약 저장 중 오류:', error)
       alert('예약 저장 중 오류가 발생했습니다.')
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -3251,9 +3308,10 @@ export default function ReservationForm({
           <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3 pt-4">
             <button
               type="submit"
-              className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 text-sm sm:text-base"
+              disabled={isSubmitting}
+              className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
             >
-              {reservation ? tCommon('edit') : tCommon('add')}
+              {isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('edit') : tCommon('add'))}
             </button>
             <button
               type="button"

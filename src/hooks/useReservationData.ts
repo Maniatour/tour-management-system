@@ -98,7 +98,11 @@ export function useReservationData() {
         return []
       }
 
-      console.log('Fetched channels with favicon_url and pricing_type:', data?.map(ch => ({ name: ch.name, favicon_url: ch.favicon_url, pricing_type: (ch as any).pricing_type })))
+      console.log('Fetched channels with commission info:', data?.map(ch => ({ 
+        name: ch.name, 
+        commission_percent: (ch as any).commission_percent,
+        commission: (ch as any).commission
+      })))
       return data || []
     },
     cacheKey: 'reservation-channels',
