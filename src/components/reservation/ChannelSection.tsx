@@ -100,7 +100,7 @@ export default function ChannelSection({
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
-        <label className="block text-base font-semibold text-gray-900">{t('form.channel')}</label>
+        <label className="block text-sm font-medium text-gray-900">{t('form.channel')}</label>
         <button
           type="button"
           onClick={handleToggle}
@@ -114,13 +114,83 @@ export default function ChannelSection({
         </button>
       </div>
       
+      {/* 선택된 채널 정보 표시 - 검색창 위에 배치 */}
+      {formData.channelId && (
+        <div className="mb-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-blue-600 font-medium">선택된 채널:</span>
+              {(() => {
+                const selectedChannel = channels.find(c => c.id === formData.channelId)
+                return selectedChannel ? (
+                  <div className="flex items-center space-x-2">
+                    {(selectedChannel as any).favicon_url ? (
+                      <img 
+                        src={(selectedChannel as any).favicon_url} 
+                        alt={`${selectedChannel.name} favicon`} 
+                        className="h-4 w-4 rounded flex-shrink-0"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement
+                          target.style.display = 'none'
+                          const parent = target.parentElement
+                          if (parent) {
+                            const fallback = document.createElement('div')
+                            fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0'
+                            fallback.innerHTML = '🌐'
+                            parent.appendChild(fallback)
+                          }
+                        }}
+                      />
+                    ) : (
+                      <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0">
+                        🌐
+                      </div>
+                    )}
+                    <span className="text-sm text-blue-900 font-medium">{selectedChannel.name}</span>
+                  </div>
+                ) : null
+              })()}
+            </div>
+            <button
+              type="button"
+              onClick={() => setFormData((prev: any) => ({ ...prev, channelId: '' }))} // eslint-disable-line @typescript-eslint/no-explicit-any
+              className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 hover:bg-blue-100 rounded"
+            >
+              해제
+            </button>
+          </div>
+          {/* Variant 선택 (상품이 선택된 경우에만 표시) - 선택된 채널 박스 안에 통합 */}
+          {formData.productId && productVariants.length > 0 && (
+            <div className="pt-2 border-t border-blue-200">
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Variant
+              </label>
+              <select
+                value={formData.variantKey || 'default'}
+                onChange={(e) => setFormData((prev: any) => ({
+                  ...prev,
+                  variantKey: e.target.value
+                }))}
+                className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              >
+                {productVariants.map((variant: { variant_key: string; variant_name_ko?: string | null; variant_name_en?: string | null }) => (
+                  <option key={variant.variant_key} value={variant.variant_key}>
+                    {variant.variant_name_ko || variant.variant_name_en || variant.variant_key}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      )}
+      
       {/* 채널명 검색 - 아코디언이 펼쳐졌을 때만 표시 */}
       {isExpanded && (
         <div className="mb-3">
           <input
             type="text"
             placeholder="채널명 검색..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
             onChange={(e) => setFormData((prev: any) => ({ ...prev, channelSearch: e.target.value }))} // eslint-disable-line @typescript-eslint/no-explicit-any
           />
         </div>
@@ -196,73 +266,6 @@ export default function ChannelSection({
               </div>
             ))}
         </div>
-        </div>
-      )}
-      
-      {/* 선택된 채널 정보 표시 */}
-      {formData.channelId && (
-        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <h4 className="text-sm font-semibold text-blue-800 mb-2">선택된 채널</h4>
-          {(() => {
-            const selectedChannel = channels.find(c => c.id === formData.channelId)
-            return selectedChannel ? (
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  {(selectedChannel as any).favicon_url ? (
-                    <img 
-                      src={(selectedChannel as any).favicon_url} 
-                      alt={`${selectedChannel.name} favicon`} 
-                      className="h-4 w-4 rounded flex-shrink-0"
-                      onError={(e) => {
-                        // 파비콘 로드 실패 시 기본 아이콘으로 대체
-                        const target = e.target as HTMLImageElement
-                        target.style.display = 'none'
-                        const parent = target.parentElement
-                        if (parent) {
-                          const fallback = document.createElement('div')
-                          fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0'
-                          fallback.innerHTML = '🌐'
-                          parent.appendChild(fallback)
-                        }
-                      }}
-                    />
-                  ) : (
-                    <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0">
-                      🌐
-                    </div>
-                  )}
-                  <div className="font-medium text-gray-900">{selectedChannel.name}</div>
-                </div>
-                <div className="text-sm text-gray-600">
-                  {selectedChannel.type === 'self' ? '자체채널' : 
-                   selectedChannel.type === 'ota' ? 'OTA' : '제휴사'}
-                </div>
-                
-                {/* Variant 선택 (상품이 선택된 경우에만 표시) */}
-                {formData.productId && productVariants.length > 0 && (
-                  <div className="mt-3">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Variant
-                    </label>
-                    <select
-                      value={formData.variantKey || 'default'}
-                      onChange={(e) => setFormData((prev: any) => ({
-                        ...prev,
-                        variantKey: e.target.value
-                      }))}
-                      className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      {productVariants.map((variant: { variant_key: string; variant_name_ko?: string | null; variant_name_en?: string | null }) => (
-                        <option key={variant.variant_key} value={variant.variant_key}>
-                          {variant.variant_name_ko || variant.variant_name_en || variant.variant_key}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-            ) : null
-          })()}
         </div>
       )}
     </div>

@@ -35,23 +35,23 @@ export default function TourInfoSection({
       {/* 두 번째 행: 투어 날짜, 투어 시간 */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.tourDate')}</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">{t('form.tourDate')}</label>
           <input
             type="date"
             value={formData.tourDate}
             onChange={(e) => setFormData((prev: any) => ({ ...prev, tourDate: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
             required
           />
         </div>
              
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.tourTime')}</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">{t('form.tourTime')}</label>
           <input
             type="time"
             value={formData.tourTime}
             onChange={(e) => setFormData((prev: any) => ({ ...prev, tourTime: sanitizeTimeInput(e.target.value) }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
           />
         </div>
       </div>
@@ -69,7 +69,7 @@ export default function TourInfoSection({
               }}
               onFocus={() => setFormData((prev: any) => ({ ...prev, showPickupHotelDropdown: true }))}
               placeholder="픽업 호텔을 검색하세요"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
             />
             
             {/* 드롭다운 화살표 */}
@@ -122,12 +122,12 @@ export default function TourInfoSection({
         </div>
              
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.pickUpTime')}</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">{t('form.pickUpTime')}</label>
           <input
             type="time"
             value={formData.pickUpTime}
             onChange={(e) => setFormData((prev: any) => ({ ...prev, pickUpTime: sanitizeTimeInput(e.target.value) }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
           />
         </div>
       </div>

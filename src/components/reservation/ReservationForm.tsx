@@ -2987,21 +2987,21 @@ export default function ReservationForm({
         : "bg-white rounded-lg p-2 sm:p-4 w-full"}
       >
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-2 space-y-3 sm:space-y-0">
-          <h2 className="text-lg sm:text-xl font-bold">
+          <h2 className="text-sm sm:text-base font-semibold">
             {reservation ? t('form.editTitle') : t('form.title')}
             {reservation && (
-              <span className="ml-2 text-sm font-normal text-gray-500">
+              <span className="ml-2 text-xs font-normal text-gray-500">
                 (ID: {reservation.id})
               </span>
             )}
           </h2>
           <div className="w-full sm:w-auto flex items-end space-x-2">
             <div className="flex-1 sm:flex-none">
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.status')}</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">{t('form.status')}</label>
               <select
                 value={formData.status}
                 onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as 'pending' | 'confirmed' | 'completed' | 'cancelled' }))}
-                className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full sm:w-auto px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
               >
                 <option value="pending">{t('status.pending')}</option>
                 <option value="confirmed">{t('status.confirmed')}</option>
@@ -3023,7 +3023,7 @@ export default function ReservationForm({
             <button
               type="button"
               onClick={() => window.history.back()}
-              className="px-3 py-2 rounded bg-gray-100 hover:bg-gray-200 text-sm"
+              className="px-2 py-1.5 rounded bg-gray-100 hover:bg-gray-200 text-xs"
             >
               목록으로
             </button>
@@ -3037,7 +3037,7 @@ export default function ReservationForm({
             {/* 1열: 고객 정보 수정 - 모바일에서는 전체 너비 */}
             <div className="col-span-1 lg:col-span-1 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 lg:h-[940px]">
               <div>
-                <h3 className="text-base font-semibold text-gray-900 mb-3">고객 정보</h3>
+                <h3 className="text-sm font-medium text-gray-900 mb-2">고객 정보</h3>
                 {/* 고객 검색 */}
                 <CustomerSection
                   formData={formData}
@@ -3076,22 +3076,22 @@ export default function ReservationForm({
                   <div className="mt-4 space-y-3 pt-4 border-t border-gray-200">
                     <div className="grid grid-cols-1 gap-3">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">전화번호</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">전화번호</label>
                         <input
                           type="tel"
                           value={formData.customerPhone}
                           onChange={(e) => setFormData(prev => ({ ...prev, customerPhone: e.target.value }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
                         />
                       </div>
                       
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">이메일</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">이메일</label>
                         <input
                           type="email"
                           value={formData.customerEmail}
                           onChange={(e) => setFormData(prev => ({ ...prev, customerEmail: e.target.value }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
                         />
                       </div>
                       
@@ -3100,7 +3100,7 @@ export default function ReservationForm({
                         <select
                           value={formData.customerLanguage}
                           onChange={(e) => setFormData(prev => ({ ...prev, customerLanguage: e.target.value }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
                         >
                           <option value="KR">🇰🇷 한국어</option>
                           <option value="EN">🇺🇸 English</option>
@@ -3121,7 +3121,7 @@ export default function ReservationForm({
                           type="tel"
                           value={formData.customerEmergencyContact}
                           onChange={(e) => setFormData(prev => ({ ...prev, customerEmergencyContact: e.target.value }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
                         />
                       </div>
                       
@@ -3131,7 +3131,7 @@ export default function ReservationForm({
                           type="text"
                           value={formData.customerAddress}
                           onChange={(e) => setFormData(prev => ({ ...prev, customerAddress: e.target.value }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
                         />
                       </div>
                       
@@ -3141,7 +3141,7 @@ export default function ReservationForm({
                           value={formData.customerSpecialRequests}
                           onChange={(e) => setFormData(prev => ({ ...prev, customerSpecialRequests: e.target.value }))}
                           rows={3}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
                         />
                       </div>
                       
@@ -3178,7 +3178,7 @@ export default function ReservationForm({
             {/* 2열: 예약 정보 (투어 정보, 참가자, 가격) - 모바일에서는 전체 너비 */}
             <div className="col-span-1 lg:col-span-2 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 lg:h-[940px]">
               <div>
-                <h3 className="text-base font-semibold text-gray-900 mb-3">예약 정보</h3>
+                <h3 className="text-sm font-medium text-gray-900 mb-2">예약 정보</h3>
               </div>
               <TourInfoSection
                 formData={formData}
@@ -3316,7 +3316,7 @@ export default function ReservationForm({
             <button
               type="button"
               onClick={onCancel}
-              className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 text-sm sm:text-base"
+              className="flex-1 bg-gray-300 text-gray-700 py-1.5 px-3 rounded-lg hover:bg-gray-400 text-xs sm:text-sm"
             >
               {tCommon('cancel')}
             </button>
@@ -3329,7 +3329,7 @@ export default function ReservationForm({
                     onCancel();
                   }
                 }}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                className="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-xs"
               >
                 <Trash2 size={16} className="inline mr-2" />
                 {tCommon('delete')}

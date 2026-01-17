@@ -1112,7 +1112,7 @@ export default function PricingSection({
         {/* 첫 번째 줄: 가격 정보 제목, 가격 타입, 저장/초기화 버튼 */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div className="flex items-center space-x-3">
-            <h3 className="text-base font-semibold text-gray-900">가격 정보</h3>
+            <h3 className="text-sm font-medium text-gray-900">가격 정보</h3>
             {/* 가격 타입 표시 (채널 정보에 따라 자동 결정) */}
             <div className="flex items-center space-x-2">
               <label className="text-xs text-gray-600">가격 타입:</label>

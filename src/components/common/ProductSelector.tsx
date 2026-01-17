@@ -35,6 +35,7 @@ export interface ProductSelectorProps {
   onProductSelect: (product: Product | null) => void;
   onChoiceSelect?: (choice: Choice | null) => void;
   showChoices?: boolean;
+  showSelectedProduct?: boolean; // 선택된 상품 박스 표시 여부
   className?: string;
   disabled?: boolean;
   locale?: 'ko' | 'en';
@@ -46,6 +47,7 @@ export default function ProductSelector({
   onProductSelect,
   onChoiceSelect,
   showChoices = false,
+  showSelectedProduct = true, // 기본값은 true (기존 동작 유지)
   className = "",
   disabled = false,
   locale = 'ko'
@@ -496,7 +498,7 @@ export default function ProductSelector({
             placeholder="상품명, 카테고리, 초성으로 검색..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs placeholder:text-xs"
             disabled={disabled}
           />
         </div>
@@ -584,7 +586,7 @@ export default function ProductSelector({
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
-                          <div className="text-sm font-medium text-gray-900">
+                          <div className="text-xs font-medium text-gray-900">
                             {getProductName(product)}
                           </div>
                         </div>
@@ -610,7 +612,7 @@ export default function ProductSelector({
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
-                          <div className="text-sm font-medium text-gray-900">
+                          <div className="text-xs font-medium text-gray-900">
                             {getProductName(product)}
                           </div>
                         </div>
@@ -636,7 +638,7 @@ export default function ProductSelector({
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
-                          <div className="text-sm font-medium text-gray-900">
+                          <div className="text-xs font-medium text-gray-900">
                             {getProductName(product)}
                           </div>
                         </div>
@@ -654,7 +656,7 @@ export default function ProductSelector({
       </div>
 
       {/* 선택된 상품 정보 - 컴팩트 */}
-      {selectedProduct && (
+      {selectedProduct && showSelectedProduct && (
         <div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">

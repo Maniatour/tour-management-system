@@ -382,7 +382,7 @@ export default function SimpleChoiceSelector({
         return (
         <div key={choice.id} className="border border-gray-200 rounded-lg p-3">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-md font-medium text-gray-900">
+            <h3 className="text-xs font-medium text-gray-900">
               {choice.choice_group_ko}
               {choice.is_required && <span className="text-red-500 ml-1">*</span>}
             </h3>
@@ -535,7 +535,7 @@ export default function SimpleChoiceSelector({
                       {/* 상단: 옵션명과 수량 조절 */}
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center space-x-2">
-                          <h4 className="font-medium text-gray-900 text-sm">
+                          <h4 className="font-medium text-gray-900 text-xs">
                             {option.option_name_ko}
                           </h4>
                           {option.is_default && (

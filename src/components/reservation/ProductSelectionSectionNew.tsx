@@ -333,7 +333,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
-        <h3 className="text-base font-semibold text-gray-900">
+        <h3 className="text-sm font-medium text-gray-900">
           {t('form.productSelection')}
         </h3>
         <button
@@ -349,8 +349,8 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
         </button>
       </div>
       
-      {/* 선택된 상품 정보 표시 (어코디언이 접혀있을 때도 표시) */}
-      {formData.productId && !isExpanded && (
+      {/* 선택된 상품 정보 표시 - 검색창 위에 배치 */}
+      {formData.productId && (
         <div className="mb-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -391,6 +391,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
             selectedProductId={formData.productId}
             onProductSelect={handleProductSelect}
             showChoices={false}
+            showSelectedProduct={false}
             className="mb-4"
           />
         </div>
@@ -399,7 +400,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
       {/* 새로운 간결한 초이스 선택기 */}
       {formData.productId && (
         <div className="mt-4">
-          <h4 className="text-md font-semibold text-gray-900 mb-3">초이스 선택</h4>
+          <h4 className="text-xs font-medium text-gray-900 mb-2">초이스 선택</h4>
           {isLoadingChoices ? (
             <div className="text-center py-8 text-gray-500">
               <p className="text-sm">초이스 데이터를 불러오는 중...</p>
@@ -421,7 +422,7 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
                 initialSelections={formData.selectedChoices || []}
               />
               <div className="mt-4 text-right">
-                <span className="text-lg font-semibold text-gray-900">
+                <span className="text-sm font-medium text-gray-900">
                   초이스 총액: ${formData.choicesTotal.toLocaleString()}
                 </span>
               </div>

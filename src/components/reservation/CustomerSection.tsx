@@ -37,7 +37,7 @@ export default function CustomerSection({
     <div className="space-y-4">
       <div>
         <div className="flex items-center justify-between mb-1">
-          <label className="block text-sm font-medium text-gray-700">{t('form.customer')}</label>
+          <label className="block text-xs font-medium text-gray-700">{t('form.customer')}</label>
           {formData.customerId && !formData.showCustomerDropdown && (
             <span className="text-xs text-gray-600">
               선택된 고객: {customers.find(c => c.id === formData.customerId)?.name || '알 수 없음'}
@@ -115,12 +115,12 @@ export default function CustomerSection({
       </div>
        
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.channelRN')}</label>
+        <label className="block text-xs font-medium text-gray-700 mb-1">{t('form.channelRN')}</label>
         <input
           type="text"
           value={formData.channelRN}
           onChange={(e) => setFormData({ ...formData, channelRN: e.target.value })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
           placeholder={t('form.channelRNPlaceholder')}
         />
       </div>
