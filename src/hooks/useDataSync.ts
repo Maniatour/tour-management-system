@@ -447,6 +447,9 @@ export function useDataSync() {
       setLoading(false)
     }
   }
+
+  // 유연한 동기화 함수
+  const handleFlexibleSync = async () => {
     const supabase = createClientSupabase()
     const { data: { session } } = await supabase.auth.getSession()
     const accessToken = session?.access_token

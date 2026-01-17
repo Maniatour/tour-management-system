@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
 
 interface Channel {
   id: string
@@ -14,6 +15,8 @@ interface ChannelSectionProps {
     selectedChannelType: 'ota' | 'self' | 'partner'
     channelSearch: string
     channelId: string
+    variantKey?: string
+    productId?: string
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setFormData: (data: any) => void
@@ -32,6 +35,59 @@ export default function ChannelSection({
   onAccordionToggle
 }: ChannelSectionProps) {
   const [isExpanded, setIsExpanded] = useState(layout === 'modal')
+  const [productVariants, setProductVariants] = useState<Array<{
+    variant_key: string;
+    variant_name_ko?: string | null;
+    variant_name_en?: string | null;
+  }>>([])
+  
+  // 채널과 상품이 선택되었을 때 variant 목록 로드
+  useEffect(() => {
+    const loadVariants = async () => {
+      if (!formData.channelId || !formData.productId) {
+        setProductVariants([])
+        return
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('channel_products')
+          .select('variant_key, variant_name_ko, variant_name_en')
+          .eq('product_id', formData.productId)
+          .eq('channel_id', formData.channelId)
+          .eq('is_active', true)
+          .order('variant_key')
+
+        if (error) {
+          console.error('Variant 로드 실패:', error)
+          setProductVariants([{ variant_key: 'default' }])
+          return
+        }
+
+        const variants = (data || []).map((item: any) => ({
+          variant_key: item.variant_key || 'default',
+          variant_name_ko: item.variant_name_ko,
+          variant_name_en: item.variant_name_en
+        }))
+
+        setProductVariants(variants.length > 0 ? variants : [{ variant_key: 'default' }])
+        
+        // 기본 variant 선택 (아직 선택되지 않은 경우)
+        if (!formData.variantKey && variants.length > 0) {
+          const defaultVariant = variants.find(v => v.variant_key === 'default') || variants[0]
+          setFormData((prev: any) => ({
+            ...prev,
+            variantKey: defaultVariant.variant_key
+          }))
+        }
+      } catch (error) {
+        console.error('Variant 목록 로드 중 오류:', error)
+        setProductVariants([{ variant_key: 'default' }])
+      }
+    }
+
+    loadVariants()
+  }, [formData.channelId, formData.productId, formData.variantKey, setFormData])
   
   const handleToggle = () => {
     const newExpanded = !isExpanded
@@ -112,9 +168,9 @@ export default function ChannelSection({
                 }`}
               >
                 <div className="flex items-center space-x-2">
-                  {(channel as { favicon_url?: string }).favicon_url ? (
+                  {((channel as any).favicon_url) ? (
                     <img 
-                      src={(channel as { favicon_url: string }).favicon_url} 
+                      src={(channel as any).favicon_url} 
                       alt={`${channel.name} favicon`} 
                       className="h-4 w-4 rounded flex-shrink-0"
                       onError={(e) => {
@@ -181,6 +237,29 @@ export default function ChannelSection({
                   {selectedChannel.type === 'self' ? '자체채널' : 
                    selectedChannel.type === 'ota' ? 'OTA' : '제휴사'}
                 </div>
+                
+                {/* Variant 선택 (상품이 선택된 경우에만 표시) */}
+                {formData.productId && productVariants.length > 0 && (
+                  <div className="mt-3">
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Variant
+                    </label>
+                    <select
+                      value={formData.variantKey || 'default'}
+                      onChange={(e) => setFormData((prev: any) => ({
+                        ...prev,
+                        variantKey: e.target.value
+                      }))}
+                      className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      {productVariants.map((variant: { variant_key: string; variant_name_ko?: string | null; variant_name_en?: string | null }) => (
+                        <option key={variant.variant_key} value={variant.variant_key}>
+                          {variant.variant_name_ko || variant.variant_name_en || variant.variant_key}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             ) : null
           })()}

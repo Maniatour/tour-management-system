@@ -135,6 +135,14 @@ export default function ProductDetailsTab({
   const [loadingChannelData, setLoadingChannelData] = useState(false)
   const [copyFromChannel, setCopyFromChannel] = useState<string | null>(null)
   const [channelPricingStats, setChannelPricingStats] = useState<Record<string, Record<string, number>>>({})
+  
+  // Variant 관리 상태 (채널별 variant 선택)
+  const [channelVariants, setChannelVariants] = useState<Record<string, string>>({}) // channelId -> variant_key
+  const [productVariantsByChannel, setProductVariantsByChannel] = useState<Record<string, Array<{
+    variant_key: string;
+    variant_name_ko?: string | null;
+    variant_name_en?: string | null;
+  }>>>({}) // channelId -> variants[]
 
   const supabase = createClientSupabase()
   const { user, loading: authLoading } = useAuth()
@@ -384,15 +392,20 @@ export default function ProductDetailsTab({
 
       // 조회할 channel_id 목록 생성
       const channelIdsToQuery: string[] = []
+      const variantKeysByChannel: Record<string, string> = {} // channelId -> variant_key
       
       // self 채널이 선택된 경우 'SELF_GROUP' 추가
       if (selfChannels.length > 0) {
         channelIdsToQuery.push('SELF_GROUP')
+        // self 채널의 variant는 첫 번째 선택된 self 채널의 variant 사용
+        const firstSelfChannelId = selfChannels[0].id
+        variantKeysByChannel['SELF_GROUP'] = channelVariants[firstSelfChannelId] || 'default'
       }
       
       // OTA 채널들의 개별 ID 추가
       otaChannels.forEach(channel => {
         channelIdsToQuery.push(channel.id)
+        variantKeysByChannel[channel.id] = channelVariants[channel.id] || 'default'
       })
 
       if (channelIdsToQuery.length === 0) {
@@ -400,35 +413,53 @@ export default function ProductDetailsTab({
         return
       }
 
-      const { data, error } = await supabase
-        .from('product_details_multilingual')
-        .select('*')
-        .eq('product_id', productId)
-        .in('channel_id', channelIdsToQuery) as {
-          data: Array<{
-            channel_id: string | null
-            language_code: string | null
-            slogan1: string | null
-            slogan2: string | null
-            slogan3: string | null
-            description: string | null
-            included: string | null
-            not_included: string | null
-            pickup_drop_info: string | null
-            luggage_info: string | null
-            tour_operation_info: string | null
-            preparation_info: string | null
-            small_group_info: string | null
-            notice_info: string | null
-            private_tour_info: string | null
-            cancellation_policy: string | null
-            chat_announcement: string | null
-            tags: string[] | null
-          }> | null
-          error: unknown
+      // 각 채널별로 variant_key를 포함하여 조회
+      // 여러 채널이 선택된 경우 각각 조회해야 함
+      let allData: any[] = []
+      
+      for (const channelId of channelIdsToQuery) {
+        const variantKey = variantKeysByChannel[channelId] || 'default'
+        const { data: channelData, error: channelError } = await supabase
+          .from('product_details_multilingual')
+          .select('*')
+          .eq('product_id', productId)
+          .eq('channel_id', channelId)
+          .eq('variant_key', variantKey) as {
+            data: Array<{
+              channel_id: string | null
+              language_code: string | null
+              variant_key?: string | null
+              slogan1: string | null
+              slogan2: string | null
+              slogan3: string | null
+              description: string | null
+              included: string | null
+              not_included: string | null
+              pickup_drop_info: string | null
+              luggage_info: string | null
+              tour_operation_info: string | null
+              preparation_info: string | null
+              small_group_info: string | null
+              notice_info: string | null
+              private_tour_info: string | null
+              cancellation_policy: string | null
+              chat_announcement: string | null
+              tags: string[] | null
+            }> | null
+            error: unknown
+          }
+        
+        if (channelError) {
+          console.error(`채널 ${channelId} 데이터 로드 오류:`, channelError)
+          continue
         }
+        
+        if (channelData) {
+          allData = [...allData, ...channelData]
+        }
+      }
 
-      if (error) throw error
+      const data = allData.length > 0 ? allData : null
 
       console.log('선택된 채널 데이터 로드됨:', data)
 
@@ -536,12 +567,81 @@ export default function ProductDetailsTab({
     }
   }, [selectedChannels, productId, supabase, setFormData, channels])
 
+  // 채널별 variant 목록 로드
+  useEffect(() => {
+    const loadChannelVariants = async () => {
+      const selectedChannelIds = Object.keys(selectedChannels).filter(id => selectedChannels[id])
+      if (selectedChannelIds.length === 0) {
+        setProductVariantsByChannel({})
+        return
+      }
+
+      const variantsByChannel: Record<string, Array<{
+        variant_key: string;
+        variant_name_ko?: string | null;
+        variant_name_en?: string | null;
+      }>> = {}
+
+      try {
+        for (const channelId of selectedChannelIds) {
+          const { data, error } = await supabase
+            .from('channel_products')
+            .select('variant_key, variant_name_ko, variant_name_en')
+            .eq('product_id', productId)
+            .eq('channel_id', channelId)
+            .eq('is_active', true)
+            .order('variant_key')
+
+          if (error) {
+            console.error(`채널 ${channelId} variant 로드 실패:`, error)
+            continue
+          }
+
+          const variants = (data || []).map((item: any) => ({
+            variant_key: item.variant_key || 'default',
+            variant_name_ko: item.variant_name_ko,
+            variant_name_en: item.variant_name_en
+          }))
+
+          variantsByChannel[channelId] = variants.length > 0 ? variants : [{ variant_key: 'default' }]
+          
+          // 기본 variant 선택 (아직 선택되지 않은 경우)
+          if (!channelVariants[channelId]) {
+            setChannelVariants(prev => ({
+              ...prev,
+              [channelId]: variants.length > 0 && variants.find(v => v.variant_key === 'default')
+                ? 'default'
+                : variants.length > 0
+                ? variants[0].variant_key
+                : 'default'
+            }))
+          }
+        }
+
+        setProductVariantsByChannel(variantsByChannel)
+      } catch (error) {
+        console.error('Variant 목록 로드 중 오류:', error)
+      }
+    }
+
+    loadChannelVariants()
+  }, [selectedChannels, productId, supabase, channelVariants])
+
   // 채널 선택 토글
   const toggleChannelSelection = (channelId: string) => {
     setSelectedChannels(prev => ({
       ...prev,
       [channelId]: !prev[channelId]
     }))
+    
+    // 채널 선택 해제 시 variant도 제거
+    if (selectedChannels[channelId]) {
+      setChannelVariants(prev => {
+        const newVariants = { ...prev }
+        delete newVariants[channelId]
+        return newVariants
+      })
+    }
   }
 
   // 그룹 전체 선택/해제
@@ -576,11 +676,20 @@ export default function ProductDetailsTab({
       // fromChannelId가 'SELF_GROUP'인 경우 실제 channel_id로 변환
       const actualFromChannelId = fromChannelId === 'SELF_GROUP' ? 'SELF_GROUP' : fromChannelId
       
+      // 복사 소스의 variant_key 가져오기
+      const sourceVariantKey = actualFromChannelId === 'SELF_GROUP'
+        ? (channelVariants[Object.keys(selectedChannels).find(id => {
+            const ch = channels.find(c => c.id === id)
+            return ch?.type === 'self' || ch?.type === 'SELF'
+          }) || ''] || 'default')
+        : (channelVariants[actualFromChannelId] || 'default')
+      
       const { data: sourceData, error: fetchError } = await supabase
         .from('product_details_multilingual')
         .select('*')
         .eq('product_id', productId)
         .eq('channel_id', actualFromChannelId)
+        .eq('variant_key', sourceVariantKey)
 
       if (fetchError) throw fetchError
 
@@ -613,8 +722,14 @@ export default function ProductDetailsTab({
         })
 
         const copyPromises = channelGroupsToSave.map(async (group) => {
+          // 복사 대상의 variant_key 가져오기
+          const targetVariantKey = group.channelIds.length === 1
+            ? (channelVariants[group.channelIds[0]] || 'default')
+            : 'default'
+          
           for (const sourceItem of sourceData as Array<{
             language_code: string
+            variant_key?: string | null
             slogan1: string | null
             slogan2: string | null
             slogan3: string | null
@@ -636,6 +751,7 @@ export default function ProductDetailsTab({
               product_id: productId,
               channel_id: group.channelId, // self 채널은 'SELF_GROUP', OTA는 개별 channel_id
               language_code: sourceItem.language_code,
+              variant_key: targetVariantKey, // variant_key 추가
               slogan1: sourceItem.slogan1,
               slogan2: sourceItem.slogan2,
               slogan3: sourceItem.slogan3,
@@ -661,6 +777,7 @@ export default function ProductDetailsTab({
               .eq('product_id', productId)
               .eq('channel_id', group.channelId)
               .eq('language_code', sourceItem.language_code)
+              .eq('variant_key', targetVariantKey)
               .maybeSingle()
 
             if (selectError && selectError.code !== 'PGRST116') {
@@ -790,10 +907,16 @@ export default function ProductDetailsTab({
           return value
         }
         
+        // 선택된 variant 가져오기 (각 채널별로)
+        const groupVariantKey = group.channelIds.length === 1 
+          ? (channelVariants[group.channelIds[0]] || 'default')
+          : 'default' // 여러 채널이면 default 사용
+        
         const detailsData = {
           product_id: productId,
           channel_id: group.channelId, // self 채널은 'SELF_GROUP', OTA는 개별 channel_id
           language_code: currentLang,
+          variant_key: groupVariantKey, // variant_key 추가
           slogan1: toNullIfEmpty(currentDetails.slogan1),
           slogan2: toNullIfEmpty(currentDetails.slogan2),
           slogan3: toNullIfEmpty(currentDetails.slogan3),
@@ -836,13 +959,19 @@ export default function ProductDetailsTab({
           allFields: detailsData
         })
 
-        // 기존 데이터 확인 (product_id, channel_id, language_code 조합으로)
+        // 선택된 variant 가져오기 (각 채널별로)
+        const variantKey = group.channelIds.length === 1 
+          ? (channelVariants[group.channelIds[0]] || 'default')
+          : 'default' // 여러 채널이면 default 사용
+        
+        // 기존 데이터 확인 (product_id, channel_id, language_code, variant_key 조합으로)
         const { data: existingData, error: selectError } = await supabase
           .from('product_details_multilingual')
           .select('id')
           .eq('product_id', productId)
           .eq('channel_id', group.channelId)
           .eq('language_code', currentLang)
+          .eq('variant_key', groupVariantKey)
           .maybeSingle()
 
         if (selectError && selectError.code !== 'PGRST116') {
@@ -873,6 +1002,7 @@ export default function ProductDetailsTab({
               .eq('product_id', productId)
               .eq('channel_id', group.channelId)
               .eq('language_code', currentLang)
+              .eq('variant_key', groupVariantKey)
               .maybeSingle() as { data: { private_tour_info: string | null; chat_announcement: string | null } | null; error: unknown }
             
             if (!verifyError && savedData) {
@@ -902,6 +1032,7 @@ export default function ProductDetailsTab({
                 .eq('product_id', productId)
                 .eq('language_code', currentLang)
                 .eq('channel_id', group.channelId)
+                .eq('variant_key', groupVariantKey)
                 .maybeSingle()
 
               if (findError && findError.code !== 'PGRST116') {
@@ -1725,6 +1856,7 @@ export default function ProductDetailsTab({
         .eq('product_id', productId)
         .eq('language_code', currentLang)
         .is('channel_id', null) // channel_id가 NULL인 경우만 조회
+        .eq('variant_key', 'default') // variant_key가 'default'인 경우만 조회
         .maybeSingle() as { data: { id: string } | null, error: unknown }
 
       if (selectDetailsError) {
@@ -1749,6 +1881,7 @@ export default function ProductDetailsTab({
         product_id: productId,
         channel_id: null, // 채널 선택 없이 저장할 때는 NULL로 설정
         language_code: currentLang,
+        variant_key: 'default', // 채널 선택 없이 저장할 때는 default variant 사용
         slogan1: toNullIfEmpty(currentDetails.slogan1),
         slogan2: toNullIfEmpty(currentDetails.slogan2),
         slogan3: toNullIfEmpty(currentDetails.slogan3),
@@ -1792,6 +1925,7 @@ export default function ProductDetailsTab({
           .eq('product_id', productId)
           .eq('language_code', currentLang)
           .is('channel_id', null) // channel_id가 NULL인 경우만 업데이트
+          .eq('variant_key', 'default') // variant_key가 'default'인 경우만 업데이트
 
         if (detailsError) {
           console.error('product_details 업데이트 오류:', detailsError)
@@ -1806,6 +1940,7 @@ export default function ProductDetailsTab({
           .eq('product_id', productId)
           .eq('language_code', currentLang)
           .is('channel_id', null)
+          .eq('variant_key', 'default')
           .maybeSingle() as { data: { private_tour_info: string | null; chat_announcement: string | null } | null; error: unknown }
         
         if (!verifyError && savedData) {
@@ -1836,6 +1971,7 @@ export default function ProductDetailsTab({
           .eq('product_id', productId)
           .eq('language_code', currentLang)
           .is('channel_id', null)
+          .eq('variant_key', 'default')
           .maybeSingle() as { data: { private_tour_info: string | null; chat_announcement: string | null } | null; error: unknown }
         
         if (!verifyError && savedData) {
@@ -2194,18 +2330,22 @@ export default function ProductDetailsTab({
                             });
                           }
 
+                          const isSelected = selectedChannels[channel.id] || false
+                          const variants = productVariantsByChannel[channel.id] || []
+                          const selectedVariant = channelVariants[channel.id] || 'default'
+                          
                           return (
-                            <label
-                              key={channel.id}
-                              className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={selectedChannels[channel.id] || false}
-                                onChange={() => toggleChannelSelection(channel.id)}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                              />
-                              <div className="flex flex-col flex-1">
+                            <div key={channel.id} className="space-y-1">
+                              <label
+                                className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleChannelSelection(channel.id)}
+                                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                />
+                                <div className="flex flex-col flex-1">
                                 <span className="text-sm text-gray-700">{channel.name}</span>
                                 {statsText && (
                                   <span className="text-xs text-gray-500 mt-0.5">{statsText}</span>
@@ -2215,6 +2355,34 @@ export default function ProductDetailsTab({
                                 <span className="text-xs text-blue-600">(그룹)</span>
                               )}
                             </label>
+                            
+                            {/* Variant 선택 (채널이 선택되었을 때만 표시) */}
+                            {isSelected && variants.length > 0 && (
+                              <div className="ml-6 mb-2">
+                                <label className="block text-xs font-medium text-gray-700 mb-1">
+                                  Variant
+                                </label>
+                                <select
+                                  value={selectedVariant}
+                                  onChange={(e) => {
+                                    setChannelVariants(prev => ({
+                                      ...prev,
+                                      [channel.id]: e.target.value
+                                    }))
+                                    // Variant 변경 시 해당 variant의 데이터 로드
+                                    loadSelectedChannelData()
+                                  }}
+                                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                  {variants.map((variant) => (
+                                    <option key={variant.variant_key} value={variant.variant_key}>
+                                      {variant.variant_name_ko || variant.variant_name_en || variant.variant_key}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+                          </div>
                           );
                         })}
                       </div>

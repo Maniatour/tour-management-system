@@ -17,7 +17,7 @@ interface TranslationCheckerProps {
   locale: string
 }
 
-export default function TranslationChecker({ locale }: TranslationChecker deputis) {
+export default function TranslationChecker({ locale }: TranslationCheckerProps) {
   const [isChecking, setIsChecking] = useState(false)
   const [results, setResults] = useState<TranslationCheckResult[]>([])
   const [summary, setSummary] = useState({ total: 0, unused: 0, missing: 0 })
@@ -175,7 +175,7 @@ export default function TranslationChecker({ locale }: TranslationChecker deputi
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">네임스페이스</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">키</th>
-                  <th className="px-6 pyquiries text-left text-xs font-medium text-gray-500 uppercase">DB</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">DB</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">JSON</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">사용 위치</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">상태</th>

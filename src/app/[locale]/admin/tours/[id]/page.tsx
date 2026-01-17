@@ -1792,26 +1792,55 @@ export default function TourDetailPage() {
                   .delete()
                   .eq('reservation_id', editingReservation.id)
 
-                // 새로운 초이스 데이터 저장
-                const choicesToInsert = reservationData.choices.required.map((choice: any) => ({
-                  reservation_id: editingReservation.id,
-                  choice_id: choice.choice_id,
-                  option_id: choice.option_id,
-                  quantity: choice.quantity,
-                  total_price: choice.total_price
-                }))
+                // option_id가 choice_options 테이블에 존재하는지 검증
+                const validChoices = []
+                for (const choice of reservationData.choices.required) {
+                  if (!choice.option_id) {
+                    console.warn('option_id가 없는 choice 건너뛰기:', choice)
+                    continue
+                  }
 
-                if (choicesToInsert.length > 0) {
+                  // choice_options 테이블에서 option_id 존재 여부 확인
+                  const { data: optionExists, error: checkError } = await supabase
+                    .from('choice_options')
+                    .select('id')
+                    .eq('id', choice.option_id)
+                    .maybeSingle()
+
+                  if (checkError) {
+                    console.error('choice_options 확인 오류:', checkError)
+                    continue
+                  }
+
+                  if (!optionExists) {
+                    console.warn(`option_id ${choice.option_id}가 choice_options 테이블에 존재하지 않습니다. 건너뜁니다.`)
+                    continue
+                  }
+
+                  validChoices.push({
+                    reservation_id: editingReservation.id,
+                    choice_id: choice.choice_id,
+                    option_id: choice.option_id,
+                    quantity: choice.quantity || 1,
+                    total_price: choice.total_price || 0
+                  })
+                }
+
+                if (validChoices.length > 0) {
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   const { error: choicesError } = await (supabase as any)
                     .from('reservation_choices')
-                    .insert(choicesToInsert)
+                    .insert(validChoices)
 
                   if (choicesError) {
                     console.error('초이스 저장 오류:', choicesError)
                     alert('초이스 저장 중 오류가 발생했습니다: ' + choicesError.message)
                     return
+                  } else {
+                    console.log('초이스 저장 성공:', validChoices.length, '개')
                   }
+                } else {
+                  console.warn('유효한 초이스가 없어 저장하지 않습니다.')
                 }
               }
 

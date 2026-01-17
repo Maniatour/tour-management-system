@@ -148,6 +148,7 @@ export default function ReservationForm({
     channelId: string
     selectedChannelType: 'ota' | 'self' | 'partner'
     channelSearch: string
+    variantKey?: string
     channelRN: string
     addedBy: string
     addedTime: string
@@ -347,6 +348,7 @@ export default function ReservationForm({
     selectedChannelType: reservation?.channelId ? 
       (channels.find(c => c.id === reservation?.channelId)?.type || 'self') : (rez.channel_id ? (channels.find(c => c.id === rez.channel_id)?.type || 'self') : 'self'),
     channelSearch: '',
+    variantKey: (reservation as any)?.variant_key || (rez as any)?.variant_key || 'default',
     channelRN: reservation?.channelRN || rez.channel_rn || '',
     addedBy: reservation?.addedBy || rez.added_by || '',
     addedTime: reservation?.addedTime || rez.created_at || new Date().toISOString().slice(0, 16).replace('T', ' '),
@@ -1932,12 +1934,15 @@ export default function ReservationForm({
         // Dynamic Price 타입: dynamic_pricing 테이블에서 조회
         console.log('Dynamic pricing 조회 시작:', { productId, tourDate, channelId })
         
+        const variantKey = formData.variantKey || 'default'
+        
         const { data: pricingData, error } = await (supabase as any)
           .from('dynamic_pricing')
           .select('adult_price, child_price, infant_price, commission_percent, options_pricing, not_included_price, choices_pricing')
           .eq('product_id', productId)
           .eq('date', tourDate)
           .eq('channel_id', channelId)
+          .eq('variant_key', variantKey)
           .limit(1)
 
         if (error) {
