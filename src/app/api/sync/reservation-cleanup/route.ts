@@ -1,16 +1,22 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 export async function POST() {
   try {
     // 환경 변수에서 Supabase 설정 가져오기
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    // 이 엔드포인트는 데이터 정리/수정 작업이므로 Service Role Key가 필수입니다.
+    // (Anon key로는 RLS 때문에 product_choices/choice_options를 제대로 읽거나 쓰지 못해 400이 발생할 수 있음)
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     
     if (!supabaseUrl || !supabaseServiceKey) {
       console.error('Supabase environment variables not configured')
       return NextResponse.json(
-        { success: false, message: 'Supabase configuration missing' },
+        {
+          success: false,
+          message:
+            'Supabase configuration missing. Please set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.',
+        },
         { status: 500 }
       )
     }
@@ -134,265 +140,11 @@ export async function POST() {
       console.log('Updated MDGC1D_X to MDGC1D')
     }
 
-    // 4. 기존 product_choices에 맞게 예약 데이터 업데이트
-    
-    // 기존 product_choices 조회 (삭제하지 않음)
-    const { data: existingChoices, error: fetchChoicesError } = await supabase
-      .from('product_choices')
-      .select(`
-        id,
-        product_id,
-        choice_group,
-        choice_group_ko,
-        options:choice_options (
-          id,
-          option_key,
-          option_name,
-          option_name_ko
-        )
-      `)
-      .in('product_id', ['MDGCSUNRISE', 'MDGC1D'])
+    // 4. product_id만 변경 (reservation_choices는 이미 마이그레이션으로 입력되어 있으므로 그대로 유지)
+    // 선택사항 마이그레이션으로 초이스가 reservation_choices에 이미 입력되어 있으므로
+    // product_id만 변경하면 됨
 
-    if (fetchChoicesError) {
-      console.error('Error fetching existing product_choices:', fetchChoicesError)
-      return NextResponse.json(
-        { success: false, message: `Error fetching product choices: ${fetchChoicesError.message}` },
-        { status: 500 }
-      )
-    }
-
-    if (!existingChoices || existingChoices.length === 0) {
-      console.warn('No existing product_choices found for MDGCSUNRISE and MDGC1D')
-      return NextResponse.json(
-        { success: false, message: 'No existing product choices found. Please create product choices first.' },
-        { status: 400 }
-      )
-    }
-
-    console.log('Found existing product_choices:', existingChoices)
-
-    // 각 상품별로 choice와 option 매핑 생성
-    const mdgcSunriseChoice = existingChoices.find((pc: any) => pc.product_id === 'MDGCSUNRISE')
-    const mdgc1DChoice = existingChoices.find((pc: any) => pc.product_id === 'MDGC1D')
-
-    if (!mdgcSunriseChoice || !mdgc1DChoice) {
-      console.error('Missing product_choices for MDGCSUNRISE or MDGC1D')
-      return NextResponse.json(
-        { success: false, message: 'Missing product choices for MDGCSUNRISE or MDGC1D' },
-        { status: 400 }
-      )
-    }
-
-    // option_key로 option_id 찾기
-    const mdgcSunriseOptions = (mdgcSunriseChoice as any).options || []
-    const mdgc1DOptions = (mdgc1DChoice as any).options || []
-
-    const lowerAntelopeOptionId = mdgcSunriseOptions.find((opt: any) => opt.option_key === 'lower_antelope')?.id
-    const antelopeXOptionId = mdgcSunriseOptions.find((opt: any) => opt.option_key === 'antelope_x')?.id
-    const lowerAntelopeOptionId1D = mdgc1DOptions.find((opt: any) => opt.option_key === 'lower_antelope')?.id
-    const antelopeXOptionId1D = mdgc1DOptions.find((opt: any) => opt.option_key === 'antelope_x')?.id
-
-    if (!lowerAntelopeOptionId || !antelopeXOptionId || !lowerAntelopeOptionId1D || !antelopeXOptionId1D) {
-      console.error('Missing required choice options. Found options:', {
-        mdgcSunrise: mdgcSunriseOptions.map((opt: any) => opt.option_key),
-        mdgc1D: mdgc1DOptions.map((opt: any) => opt.option_key)
-      })
-      return NextResponse.json(
-        { success: false, message: 'Missing required choice options (lower_antelope or antelope_x)' },
-        { status: 400 }
-      )
-    }
-
-    console.log('Using existing product_choices:', {
-      mdgcSunriseChoiceId: mdgcSunriseChoice.id,
-      mdgc1DChoiceId: mdgc1DChoice.id,
-      lowerAntelopeOptionId,
-      antelopeXOptionId,
-      lowerAntelopeOptionId1D,
-      antelopeXOptionId1D
-    })
-
-    // 기존 reservation_choices 데이터 삭제
-    const { error: deleteReservationChoicesError } = await supabase
-      .from('reservation_choices')
-      .delete()
-      .in('reservation_id', [...mdgcSunriseXIds, ...mdgc1DXIds])
-
-    if (deleteReservationChoicesError) {
-      console.error('Error deleting existing reservation_choices:', deleteReservationChoicesError)
-    }
-
-    // MDGCSUNRISE_X였던 레코드들을 Antelope X Canyon으로 설정
-    if (mdgcSunriseXIds.length > 0 && antelopeXOptionId) {
-      const antelopeXReservationChoices = mdgcSunriseXIds.map(reservationId => ({
-        reservation_id: reservationId,
-        choice_id: mdgcSunriseChoice.id,
-        option_id: antelopeXOptionId,
-        quantity: 1,
-        total_price: 0
-      }))
-
-      const { error: insertReservationChoicesError } = await supabase
-        .from('reservation_choices')
-        .insert(antelopeXReservationChoices)
-
-      if (insertReservationChoicesError) {
-        console.error('Error inserting reservation_choices for MDGCSUNRISE_X:', insertReservationChoicesError)
-      } else {
-        console.log(`Created ${mdgcSunriseXIds.length} reservation_choices for MDGCSUNRISE_X → Antelope X Canyon`)
-      }
-    }
-
-    // MDGC1D_X였던 레코드들을 Antelope X Canyon으로 설정
-    if (mdgc1DXIds.length > 0 && antelopeXOptionId1D) {
-      const antelopeXReservationChoices1D = mdgc1DXIds.map(reservationId => ({
-        reservation_id: reservationId,
-        choice_id: mdgc1DChoice.id,
-        option_id: antelopeXOptionId1D,
-        quantity: 1,
-        total_price: 0
-      }))
-
-      const { error: insertReservationChoicesError1D } = await supabase
-        .from('reservation_choices')
-        .insert(antelopeXReservationChoices1D)
-
-      if (insertReservationChoicesError1D) {
-        console.error('Error inserting reservation_choices for MDGC1D_X:', insertReservationChoicesError1D)
-      } else {
-        console.log(`Created ${mdgc1DXIds.length} reservation_choices for MDGC1D_X → Antelope X Canyon`)
-      }
-    }
-
-    // 기존 MDGCSUNRISE 레코드들 (reservation_choices가 없는 경우)을 Lower Antelope Canyon으로 설정 (페이지네이션으로 전체 데이터 처리)
-    if (lowerAntelopeOptionId) {
-      let mdgcSunriseFrom = 0
-      const mdgcSunrisePageSize = 1000
-      let hasMoreMdgcSunrise = true
-      let totalProcessedMdgcSunrise = 0
-      
-      while (hasMoreMdgcSunrise) {
-        const { data: mdgcSunriseReservations, error: mdgcSunriseError } = await supabase
-          .from('reservations')
-          .select('id')
-          .eq('product_id', 'MDGCSUNRISE')
-          .range(mdgcSunriseFrom, mdgcSunriseFrom + mdgcSunrisePageSize - 1)
-
-        if (mdgcSunriseError) {
-          console.error('Error fetching MDGCSUNRISE records:', mdgcSunriseError)
-          break
-        }
-
-        if (mdgcSunriseReservations && mdgcSunriseReservations.length > 0) {
-          // 현재 배치의 reservation_choices 확인
-          const reservationIds = mdgcSunriseReservations.map(r => r.id)
-          const { data: existingReservationChoices } = await supabase
-            .from('reservation_choices')
-            .select('reservation_id')
-            .in('reservation_id', reservationIds)
-
-          const reservationsWithoutChoices = mdgcSunriseReservations.filter(r => 
-            !existingReservationChoices?.some(rc => rc.reservation_id === r.id)
-          )
-
-          if (reservationsWithoutChoices.length > 0) {
-            const lowerAntelopeReservationChoices = reservationsWithoutChoices.map(reservation => ({
-              reservation_id: reservation.id,
-              choice_id: mdgcSunriseChoice.id,
-              option_id: lowerAntelopeOptionId,
-              quantity: 1,
-              total_price: 0
-            }))
-
-            const { error: insertLowerAntelopeError } = await supabase
-              .from('reservation_choices')
-              .insert(lowerAntelopeReservationChoices)
-
-            if (insertLowerAntelopeError) {
-              console.error('Error inserting reservation_choices for MDGCSUNRISE:', insertLowerAntelopeError)
-            } else {
-              console.log(`Created ${reservationsWithoutChoices.length} reservation_choices for MDGCSUNRISE → Lower Antelope Canyon (batch starting at ${mdgcSunriseFrom})`)
-              totalProcessedMdgcSunrise += reservationsWithoutChoices.length
-            }
-          }
-
-          mdgcSunriseFrom += mdgcSunrisePageSize
-          hasMoreMdgcSunrise = mdgcSunriseReservations.length >= mdgcSunrisePageSize
-        } else {
-          hasMoreMdgcSunrise = false
-        }
-      }
-      
-      if (totalProcessedMdgcSunrise > 0) {
-        console.log(`Total: Created ${totalProcessedMdgcSunrise} reservation_choices for MDGCSUNRISE → Lower Antelope Canyon`)
-      }
-    }
-
-    // 기존 MDGC1D 레코드들 (reservation_choices가 없는 경우)을 Lower Antelope Canyon으로 설정 (페이지네이션으로 전체 데이터 처리)
-    if (lowerAntelopeOptionId1D) {
-      let mdgc1DFrom = 0
-      const mdgc1DPageSize = 1000
-      let hasMoreMdgc1D = true
-      let totalProcessedMdgc1D = 0
-      
-      while (hasMoreMdgc1D) {
-        const { data: mdgc1DReservations, error: mdgc1DError } = await supabase
-          .from('reservations')
-          .select('id')
-          .eq('product_id', 'MDGC1D')
-          .range(mdgc1DFrom, mdgc1DFrom + mdgc1DPageSize - 1)
-
-        if (mdgc1DError) {
-          console.error('Error fetching MDGC1D records:', mdgc1DError)
-          break
-        }
-
-        if (mdgc1DReservations && mdgc1DReservations.length > 0) {
-          // 현재 배치의 reservation_choices 확인
-          const reservationIds = mdgc1DReservations.map(r => r.id)
-          const { data: existingReservationChoices1D } = await supabase
-            .from('reservation_choices')
-            .select('reservation_id')
-            .in('reservation_id', reservationIds)
-
-          const reservationsWithoutChoices1D = mdgc1DReservations.filter(r => 
-            !existingReservationChoices1D?.some(rc => rc.reservation_id === r.id)
-          )
-
-          if (reservationsWithoutChoices1D.length > 0) {
-            const lowerAntelopeReservationChoices1D = reservationsWithoutChoices1D.map(reservation => ({
-              reservation_id: reservation.id,
-              choice_id: mdgc1DChoice.id,
-              option_id: lowerAntelopeOptionId1D,
-              quantity: 1,
-              total_price: 0
-            }))
-
-            const { error: insertLowerAntelopeError1D } = await supabase
-              .from('reservation_choices')
-              .insert(lowerAntelopeReservationChoices1D)
-
-            if (insertLowerAntelopeError1D) {
-              console.error('Error inserting reservation_choices for MDGC1D:', insertLowerAntelopeError1D)
-            } else {
-              console.log(`Created ${reservationsWithoutChoices1D.length} reservation_choices for MDGC1D → Lower Antelope Canyon (batch starting at ${mdgc1DFrom})`)
-              totalProcessedMdgc1D += reservationsWithoutChoices1D.length
-            }
-          }
-
-          mdgc1DFrom += mdgc1DPageSize
-          hasMoreMdgc1D = mdgc1DReservations.length >= mdgc1DPageSize
-        } else {
-          hasMoreMdgc1D = false
-        }
-      }
-      
-      if (totalProcessedMdgc1D > 0) {
-        console.log(`Total: Created ${totalProcessedMdgc1D} reservation_choices for MDGC1D → Lower Antelope Canyon`)
-      }
-    }
-
-    // 5. 최종 결과 확인 (새로운 초이스 시스템 기준) - 페이지네이션으로 전체 데이터 처리
+    // 5. 최종 결과 확인 - 페이지네이션으로 전체 데이터 처리
 
     // 최종 예약 데이터 전체 조회 (페이지네이션)
     const allFinalReservations: Array<{ id: string; product_id: string }> = []
@@ -481,7 +233,7 @@ export async function POST() {
 
     const result = {
       success: true,
-      message: 'Reservation data cleanup completed successfully with new choices system',
+      message: '예약 데이터 정리 완료: product_id만 변경되었습니다. reservation_choices는 기존 데이터를 그대로 사용합니다.',
       details: {
         totalProcessed: allFinalReservations.length,
         productIds: [...new Set(allFinalReservations.map(r => r.product_id))],
@@ -489,8 +241,7 @@ export async function POST() {
         mdgcSunriseXUpdated: mdgcSunriseXIds.length,
         mdgc1DXUpdated: mdgc1DXIds.length,
         lowerAntelopeCount,
-        antelopeXCount,
-        productChoicesUsed: existingChoices?.length || 0
+        antelopeXCount
       }
     }
 

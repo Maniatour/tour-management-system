@@ -34,7 +34,7 @@ import {
 import { ResidentStatusIcon } from '@/components/reservation/ResidentStatusIcon'
 import type { 
   Customer, 
-  Reservation 
+  Reservation
 } from '@/types/reservation'
 
 interface AdminReservationsProps {
@@ -245,6 +245,21 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     return () => clearTimeout(timer)
   }, [searchTerm])
   const [showAddForm, setShowAddForm] = useState(false)
+  
+  // URL 파라미터 add=true일 때 모달 자동 열기
+  useEffect(() => {
+    const addParam = searchParams.get('add')
+    if (addParam === 'true' && !showAddForm) {
+      const newId = crypto.randomUUID()
+      setNewReservationId(newId)
+      setShowAddForm(true)
+      // URL에서 add 파라미터 제거 (뒤로가기 시 모달이 다시 열리지 않도록)
+      const newSearchParams = new URLSearchParams(searchParams.toString())
+      newSearchParams.delete('add')
+      const newUrl = `${window.location.pathname}${newSearchParams.toString() ? '?' + newSearchParams.toString() : ''}`
+      window.history.replaceState({}, '', newUrl)
+    }
+  }, [searchParams, showAddForm])
   const [newReservationId, setNewReservationId] = useState<string | null>(null)
   const [editingReservation, setEditingReservation] = useState<Reservation | null>(null)
   const [viewMode, setViewMode] = useState<'card' | 'calendar'>('card')
@@ -1450,6 +1465,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             child_product_price: pricingInfo.childProductPrice || 0,
             infant_product_price: pricingInfo.infantProductPrice || 0,
             product_price_total: pricingInfo.productPriceTotal || 0,
+            not_included_price: pricingInfo.not_included_price || 0,
             required_options: pricingInfo.requiredOptions || {},
             required_option_total: pricingInfo.requiredOptionTotal || 0,
             choices: pricingInfo.choices || {},
@@ -1748,30 +1764,32 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         // 가격 정보가 있으면 업데이트 또는 삽입
         if (reservation.pricingInfo) {
           try {
+            const pricingInfo = reservation.pricingInfo as any
             const pricingData = {
               reservation_id: editingReservation.id,
-              adult_product_price: reservation.pricingInfo.adultProductPrice,
-              child_product_price: reservation.pricingInfo.childProductPrice,
-              infant_product_price: reservation.pricingInfo.infantProductPrice,
-              product_price_total: reservation.pricingInfo.productPriceTotal,
-              required_options: reservation.pricingInfo.requiredOptions,
-              required_option_total: reservation.pricingInfo.requiredOptionTotal,
-              subtotal: reservation.pricingInfo.subtotal,
-              coupon_code: reservation.pricingInfo.couponCode,
-              coupon_discount: reservation.pricingInfo.couponDiscount,
-              additional_discount: reservation.pricingInfo.additionalDiscount,
-              additional_cost: reservation.pricingInfo.additionalCost,
-              card_fee: reservation.pricingInfo.cardFee,
-              tax: reservation.pricingInfo.tax,
-              prepayment_cost: reservation.pricingInfo.prepaymentCost,
-              prepayment_tip: reservation.pricingInfo.prepaymentTip,
-              selected_options: reservation.pricingInfo.selectedOptionalOptions,
-              option_total: reservation.pricingInfo.optionTotal,
-              total_price: reservation.pricingInfo.totalPrice,
-              deposit_amount: reservation.pricingInfo.depositAmount,
-              balance_amount: reservation.pricingInfo.balanceAmount,
-            private_tour_additional_cost: reservation.pricingInfo.privateTourAdditionalCost,
-            commission_percent: reservation.pricingInfo.commission_percent || 0
+              adult_product_price: pricingInfo.adultProductPrice,
+              child_product_price: pricingInfo.childProductPrice,
+              infant_product_price: pricingInfo.infantProductPrice,
+              product_price_total: pricingInfo.productPriceTotal,
+              not_included_price: pricingInfo.not_included_price || 0,
+              required_options: pricingInfo.requiredOptions,
+              required_option_total: pricingInfo.requiredOptionTotal,
+              subtotal: pricingInfo.subtotal,
+              coupon_code: pricingInfo.couponCode,
+              coupon_discount: pricingInfo.couponDiscount,
+              additional_discount: pricingInfo.additionalDiscount,
+              additional_cost: pricingInfo.additionalCost,
+              card_fee: pricingInfo.cardFee,
+              tax: pricingInfo.tax,
+              prepayment_cost: pricingInfo.prepaymentCost,
+              prepayment_tip: pricingInfo.prepaymentTip,
+              selected_options: pricingInfo.selectedOptionalOptions,
+              option_total: pricingInfo.optionTotal,
+              total_price: pricingInfo.totalPrice,
+              deposit_amount: pricingInfo.depositAmount,
+              balance_amount: pricingInfo.balanceAmount,
+            private_tour_additional_cost: pricingInfo.privateTourAdditionalCost,
+            commission_percent: pricingInfo.commission_percent || 0
             }
 
             // upsert를 사용하여 기존 레코드가 있으면 업데이트, 없으면 삽입

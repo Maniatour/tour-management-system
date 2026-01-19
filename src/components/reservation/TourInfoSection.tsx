@@ -30,6 +30,13 @@ export default function TourInfoSection({
   sanitizeTimeInput,
   t
 }: TourInfoSectionProps) {
+  // 오늘 날짜부터 3년 후까지의 날짜 범위 계산
+  const today = new Date()
+  const todayString = today.toISOString().split('T')[0] // YYYY-MM-DD 형식
+  const threeYearsLater = new Date(today)
+  threeYearsLater.setFullYear(today.getFullYear() + 3)
+  const maxDateString = threeYearsLater.toISOString().split('T')[0] // YYYY-MM-DD 형식
+
   return (
     <>
       {/* 두 번째 행: 투어 날짜, 투어 시간 */}
@@ -40,6 +47,8 @@ export default function TourInfoSection({
             type="date"
             value={formData.tourDate}
             onChange={(e) => setFormData((prev: any) => ({ ...prev, tourDate: e.target.value }))}
+            min={todayString}
+            max={maxDateString}
             className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
             required
           />

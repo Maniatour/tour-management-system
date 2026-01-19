@@ -1514,7 +1514,7 @@ function TeamMemberForm({
             {[
               { type: 'contract', label: '계약서', accept: '.pdf,.doc,.docx' },
               { type: 'id_copy', label: '신분증 사본', accept: '.pdf,.jpg,.jpeg,.png' },
-              { type: 'bank_info', label: '은행 계좌 정보', accept: '.pdf,.jpg,.jpeg,.png' },
+              { type: 'bank_info', label: 'W9', accept: '.pdf,.jpg,.jpeg,.png' },
               { type: 'other', label: '기타 문서', accept: '.pdf,.doc,.docx,.jpg,.jpeg,.png' }
             ].map(({ type, label, accept }) => (
               <div key={type} className="mb-4">
@@ -1658,7 +1658,7 @@ function TeamMemberDocuments({
   const documentTypeLabels: {[key: string]: string} = {
     contract: '계약서',
     id_copy: '신분증 사본',
-    bank_info: '은행 계좌 정보',
+    bank_info: 'W9',
     other: '기타 문서'
   }
 

@@ -29,6 +29,7 @@ export interface PricingInfo {
   childProductPrice: number
   infantProductPrice: number
   productPriceTotal: number
+  not_included_price?: number
   requiredOptions: { [key: string]: unknown }
   requiredOptionTotal: number
   choices: { [key: string]: unknown }

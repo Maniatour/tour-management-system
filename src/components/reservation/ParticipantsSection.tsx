@@ -96,7 +96,7 @@ export default function ParticipantsSection({
           </div>
           <div>
             <label className="block text-xs text-gray-600 mb-1">총 인원</label>
-            <div className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700">
+            <div className="px-2 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-700">
               <span className="font-medium">{formData.totalPeople}</span>명
             </div>
           </div>
@@ -108,7 +108,7 @@ export default function ParticipantsSection({
         <label className="block text-xs font-medium text-gray-700 mb-2">
           거주 상태별 인원 수
         </label>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-xs text-gray-600 mb-1">
               <span className="inline-flex items-center">
@@ -134,7 +134,7 @@ export default function ParticipantsSection({
                 }))
               }}
               min="0"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-xs"
             />
           </div>
           <div>
@@ -190,14 +190,17 @@ export default function ParticipantsSection({
                 }))
               }}
               min="0"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-xs"
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-600 mb-1">
+            <label 
+              className="block text-xs text-gray-600 mb-1 cursor-help"
+              title={`패스 ${formData.nonResidentWithPassCount || 0}장 = ${calculateActualPassCovered(formData.nonResidentWithPassCount || 0, formData.usResidentCount || 0, formData.nonResidentCount || 0, formData.nonResidentUnder16Count || 0)}인 커버 (최대 ${(formData.nonResidentWithPassCount || 0) * 4}인 가능)`}
+            >
               <span className="inline-flex items-center">
                 <span className="w-3 h-3 rounded-full bg-purple-600 mr-1"></span>
-                비거주자 (패스 보유) (패스 장수)
+                비거주자 (패스 보유)
               </span>
             </label>
             <input
@@ -218,26 +221,10 @@ export default function ParticipantsSection({
                 }))
               }}
               min="0"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-xs"
               placeholder="실제 보유한 패스 장수 입력"
             />
-            <p className="text-xs text-gray-500 mt-1">
-              패스 {formData.nonResidentWithPassCount || 0}장 = {calculateActualPassCovered(formData.nonResidentWithPassCount || 0, formData.usResidentCount || 0, formData.nonResidentCount || 0, formData.nonResidentUnder16Count || 0)}인 커버 (최대 {(formData.nonResidentWithPassCount || 0) * 4}인 가능)
-            </p>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">
-              패스로 커버되는 인원 수 (자동 계산)
-            </label>
-            <input
-              type="number"
-              value={formData.passCoveredCount || 0}
-              readOnly
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-700 cursor-not-allowed"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              패스 1장당 4인 커버 (실제 예약 인원과 패스 최대 커버 인원 중 작은 값)
-            </p>
+            <p className="text-xs text-gray-500 mt-1">(패스 장수)</p>
           </div>
         </div>
         <div className="mt-2 text-xs text-gray-500">

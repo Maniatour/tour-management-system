@@ -624,8 +624,8 @@ export default function SimpleChoiceSelector({
                         )}
                       </div>
                       
-                      {/* 하단: 가격 정보와 총액을 한 줄에 */}
-                      <div className="flex items-center justify-between text-xs text-gray-600">
+                      {/* 하단: 가격 정보 */}
+                      <div className="text-xs text-gray-600 mb-2">
                         <div className="flex items-center space-x-2">
                           <span>성인: ${option.adult_price.toLocaleString()}</span>
                           <span>아동: ${option.child_price.toLocaleString()}</span>
@@ -660,48 +660,48 @@ export default function SimpleChoiceSelector({
                             </div>
                           )}
                         </div>
-                        {/* 총액 - 오른쪽 끝 (수정 가능) */}
-                        {currentQuantity > 0 ? (
-                          <div className="flex items-center space-x-1">
-                            <span className="text-xs text-gray-500">총액:</span>
-                            <div className="relative">
-                              <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                              <input
-                                type="number"
-                                value={currentSelection?.total_price !== undefined ? currentSelection.total_price : totalPrice}
-                                onChange={(e) => {
-                                  e.stopPropagation();
-                                  const inputValue = e.target.value;
-                                  // 빈 문자열이면 0으로 처리, 그 외에는 숫자로 변환
-                                  const newTotalPrice = inputValue === '' ? 0 : Number(inputValue);
-                                  // NaN 체크
-                                  if (isNaN(newTotalPrice)) return;
-                                  // 수동으로 가격을 수정했음을 표시
-                                  const priceKey = `${choice.id}:${option.id}`;
-                                  setManuallyEditedPrices(prev => new Set(prev).add(priceKey));
-                                  handleSelectionChange(
-                                    choice.id,
-                                    option.id,
-                                    option.option_key,
-                                    option.option_name_ko,
-                                    currentQuantity,
-                                    newTotalPrice
-                                  );
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                                onFocus={(e) => e.stopPropagation()}
-                                className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right focus:ring-1 focus:ring-blue-500"
-                                step="0.01"
-                                min="0"
-                              />
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="text-sm font-medium text-gray-500">
-                            ${totalPrice.toLocaleString()}
-                          </div>
-                        )}
                       </div>
+                      {/* 총액 - 별도 줄 (수정 가능) */}
+                      {currentQuantity > 0 ? (
+                        <div className="flex items-center space-x-1">
+                          <span className="text-xs text-gray-500">총액:</span>
+                          <div className="relative">
+                            <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                            <input
+                              type="number"
+                              value={currentSelection?.total_price !== undefined ? currentSelection.total_price : totalPrice}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                const inputValue = e.target.value;
+                                // 빈 문자열이면 0으로 처리, 그 외에는 숫자로 변환
+                                const newTotalPrice = inputValue === '' ? 0 : Number(inputValue);
+                                // NaN 체크
+                                if (isNaN(newTotalPrice)) return;
+                                // 수동으로 가격을 수정했음을 표시
+                                const priceKey = `${choice.id}:${option.id}`;
+                                setManuallyEditedPrices(prev => new Set(prev).add(priceKey));
+                                handleSelectionChange(
+                                  choice.id,
+                                  option.id,
+                                  option.option_key,
+                                  option.option_name_ko,
+                                  currentQuantity,
+                                  newTotalPrice
+                                );
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              onFocus={(e) => e.stopPropagation()}
+                              className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right focus:ring-1 focus:ring-blue-500"
+                              step="0.01"
+                              min="0"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-sm font-medium text-gray-500">
+                          ${totalPrice.toLocaleString()}
+                        </div>
+                      )}
                     </div>
                   </div>
                 );

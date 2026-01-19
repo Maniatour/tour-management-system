@@ -32,7 +32,8 @@ import {
   UserCheck,
   CreditCard,
   Wrench,
-  Tag
+  Tag,
+  Plus
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -566,6 +567,16 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                 >
                   {t('chatManagement')}
                 </Link>
+                {/* 새 예약 추가 버튼 (모든 admin 페이지에서 표시) */}
+                <button
+                  onClick={() => {
+                    router.push(`/${locale}/admin/reservations?add=true`)
+                  }}
+                  className="px-3 py-1.5 text-sm border rounded-md text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer relative z-10 flex items-center space-x-1"
+                >
+                  <Plus size={14} />
+                  <span>새 예약 추가</span>
+                </button>
               </div>
               
             </div>

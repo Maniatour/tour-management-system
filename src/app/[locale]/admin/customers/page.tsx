@@ -675,6 +675,7 @@ export default function AdminCustomers() {
             child_product_price: pricingInfo.childProductPrice || 0,
             infant_product_price: pricingInfo.infantProductPrice || 0,
             product_price_total: pricingInfo.productPriceTotal || 0,
+            not_included_price: pricingInfo.not_included_price || 0,
             required_options: pricingInfo.requiredOptions || {},
             required_option_total: pricingInfo.requiredOptionTotal || 0,
             choices: pricingInfo.choices || {},

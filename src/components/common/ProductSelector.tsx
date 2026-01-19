@@ -528,19 +528,19 @@ export default function ProductSelector({
         ) : (
           <div className="flex flex-col h-full">
               {/* 카테고리 탭 헤더 - 고정 */}
-              <div className="flex border-b border-gray-200 bg-gray-50 flex-shrink-0">
+              <div className="flex border-b border-gray-200 bg-gray-50 flex-shrink-0 gap-0">
                 {allCategories.map(category => (
                   <button
                     key={category}
                     onClick={(e) => toggleCategory(category, e)}
-                    className={`px-3 py-2 text-xs font-medium border-b-2 transition-colors ${
+                    className={`px-2 py-1.5 text-xs font-medium border-b-2 transition-colors ${
                       selectedCategory === category
                         ? 'border-blue-500 text-blue-600 bg-white'
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                     }`}
                   >
                     {category}
-                    <span className="ml-2 text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded-full">
+                    <span className="ml-1 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">
                       {productsByCategory[category]?.length || 0}
                     </span>
                   </button>
@@ -549,19 +549,19 @@ export default function ProductSelector({
 
               {/* 서브카테고리 탭 헤더 - 고정 */}
               {selectedCategory && selectedCategorySubCategories.length > 0 && (
-                <div className="flex border-b border-gray-200 bg-gray-100 flex-shrink-0">
+                <div className="flex border-b border-gray-200 bg-gray-100 flex-shrink-0 gap-0">
                   {selectedCategorySubCategories.map(subCategory => (
                     <button
                       key={subCategory}
                       onClick={(e) => toggleSubCategory(subCategory, e)}
-                      className={`px-2 py-1.5 text-xs font-medium border-b-2 transition-colors ${
+                      className={`px-1.5 py-1 text-xs font-medium border-b-2 transition-colors ${
                         selectedSubCategory === subCategory
                           ? 'border-green-500 text-green-600 bg-white'
                           : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                       }`}
                     >
                       {subCategory}
-                      <span className="ml-1 text-xs bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded-full">
+                      <span className="ml-1 text-xs bg-gray-200 text-gray-600 px-1 py-0.5 rounded-full">
                         {productsBySubCategory[subCategory]?.length || 0}
                       </span>
                     </button>

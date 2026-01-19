@@ -2315,7 +2315,9 @@ export default function ReservationForm({
       if (selectedCoupon) {
         console.log('자동 선택된 쿠폰:', selectedCoupon)
         
-        const subtotal = calculateProductPriceTotal() + calculateRequiredOptionTotal()
+        // 불포함 가격 계산 (쿠폰 할인 계산에서 제외)
+        const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+        const subtotal = calculateProductPriceTotal() + calculateRequiredOptionTotal() - notIncludedPrice
         const couponDiscount = calculateCouponDiscount(selectedCoupon, subtotal)
         
         setFormData(prev => ({
@@ -2332,7 +2334,7 @@ export default function ReservationForm({
         couponDiscount: 0
       }))
     }
-  }, [formData.productId, formData.tourDate, formData.channelId, coupons, formData.adults, formData.child, formData.infant])
+  }, [formData.productId, formData.tourDate, formData.channelId, coupons, formData.adults, formData.child, formData.infant, formData.not_included_price, calculateProductPriceTotal, calculateRequiredOptionTotal, calculateCouponDiscount, setFormData])
 
   // 상품이 변경될 때 choice 데이터 로드 (편집 모드에서는 기존 데이터 보존)
   useEffect(() => {
@@ -2604,6 +2606,7 @@ export default function ReservationForm({
         child_product_price: formData.childProductPrice,
         infant_product_price: formData.infantProductPrice,
         product_price_total: formData.productPriceTotal,
+        not_included_price: formData.not_included_price || 0,
         required_options: formData.requiredOptions,
         required_option_total: formData.requiredOptionTotal,
         choices: formData.choices,
@@ -2625,7 +2628,7 @@ export default function ReservationForm({
         private_tour_additional_cost: formData.privateTourAdditionalCost,
         commission_percent: formData.commission_percent,
         commission_amount: formData.commission_amount || 0
-      } as Database['public']['Tables']['reservation_pricing']['Insert'] & { commission_amount?: number }
+      } as Database['public']['Tables']['reservation_pricing']['Insert'] & { commission_amount?: number; not_included_price?: number }
 
       let error: unknown
       if (checkError && checkError.code !== 'PGRST116') { // PGRST116은 "no rows returned" 오류
@@ -2874,6 +2877,7 @@ export default function ReservationForm({
           childProductPrice: formData.childProductPrice,
           infantProductPrice: formData.infantProductPrice,
           productPriceTotal: formData.productPriceTotal,
+          not_included_price: formData.not_included_price || 0,
           requiredOptions: formData.requiredOptions,
           requiredOptionTotal: formData.requiredOptionTotal,
           choices: choicesData,

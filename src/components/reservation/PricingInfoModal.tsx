@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { X, DollarSign, Users, Calendar, MapPin, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Reservation } from '@/types/reservation'
@@ -34,6 +34,11 @@ interface PricingData {
   balance_amount: number
   is_private_tour: boolean
   private_tour_additional_cost: number
+  choices?: Record<string, unknown>
+  choices_total?: number
+  not_included_price?: number
+  commission_amount?: number
+  commission_percent?: number
 }
 
 interface Coupon {
@@ -165,7 +170,12 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
           deposit_amount: pricingInfo?.depositAmount || 0,
           balance_amount: pricingInfo?.balanceAmount || reservation.balanceAmount || totalPrice,
           is_private_tour: reservation.isPrivateTour || false,
-          private_tour_additional_cost: pricingInfo?.privateTourAdditionalCost || 0
+          private_tour_additional_cost: pricingInfo?.privateTourAdditionalCost || 0,
+          choices: pricingInfo?.choices || {},
+          choices_total: pricingInfo?.choicesTotal || 0,
+          not_included_price: pricingInfo?.not_included_price || 0,
+          commission_amount: 0,
+          commission_percent: pricingInfo?.commission_percent || 0
         }
         setPricingData(defaultData)
         setEditData(defaultData)
@@ -177,8 +187,17 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
         data.coupon_discount = -data.coupon_discount
       }
       
-      setPricingData(data)
-      setEditData(data)
+      // choices_total과 not_included_price가 없으면 0으로 설정
+      const pricingDataWithDefaults: PricingData = {
+        ...data,
+        choices_total: data.choices_total ?? 0,
+        not_included_price: data.not_included_price ?? 0,
+        commission_amount: data.commission_amount ?? 0,
+        commission_percent: data.commission_percent ?? 0
+      }
+      
+      setPricingData(pricingDataWithDefaults)
+      setEditData(pricingDataWithDefaults)
     } catch (err) {
       console.error('가격 정보 로드 오류:', err)
       setError('가격 정보를 불러오는 중 오류가 발생했습니다.')
@@ -238,19 +257,19 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
   const handleInputChange = (field: keyof PricingData, value: number) => {
     if (!editData) return
     
-    const updatedData = { ...editData, [field]: value }
+    // 기존 데이터를 완전히 보존하면서 필드만 업데이트
+    const updatedData: PricingData = { 
+      ...editData, 
+      [field]: value
+    }
     
-    // 자동 계산 로직
+    // 자동 계산 로직 (total_price 재계산만 수행, 다른 필드는 보존)
     if (field === 'adult_product_price' || field === 'child_product_price' || field === 'infant_product_price') {
       // 상품 가격 합계 계산
       const productTotal = (updatedData.adult_product_price || 0) + 
                           (updatedData.child_product_price || 0) + 
                           (updatedData.infant_product_price || 0)
       updatedData.product_price_total = productTotal
-    }
-    
-    if (field === 'required_option_total' || field === 'option_total') {
-      // 옵션 가격은 이미 개별적으로 관리됨
     }
     
     // 소계 계산 (상품 가격 + 옵션 가격)
@@ -277,16 +296,18 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     const totalPrice = Math.max(0, subtotal - totalDiscount + totalAdditional)
     updatedData.total_price = totalPrice
     
-    // 디버깅: additional_cost 변경 시 로그 출력
-    if (field === 'additional_cost') {
-      console.log('추가비용 변경:', {
+    // 디버깅: 필드 변경 시 로그 출력
+    if (field === 'additional_cost' || field === 'additional_discount' || field === 'card_fee' || field === 'tax' || field === 'prepayment_cost') {
+      console.log(`${field} 변경:`, {
         field,
         value,
-        additionalCost,
-        totalAdditional,
-        subtotal,
-        totalDiscount,
-        totalPrice
+        updatedData: {
+          additional_cost: updatedData.additional_cost,
+          additional_discount: updatedData.additional_discount,
+          card_fee: updatedData.card_fee,
+          tax: updatedData.tax,
+          prepayment_cost: updatedData.prepayment_cost
+        }
       })
     }
     
@@ -752,6 +773,229 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                     })()}
                   </span>
                 </div>
+              </div>
+
+              {/* 4️⃣ 최종 매출 & 운영 이익 */}
+              <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-200 rounded-lg p-4">
+                <div className="flex items-center mb-3">
+                  <span className="text-lg mr-2">4️⃣</span>
+                  <h3 className="text-lg font-bold text-gray-900">최종 매출 & 운영 이익</h3>
+                  <span className="ml-2 text-xs text-gray-500">(Company View)</span>
+                </div>
+                
+                {(() => {
+                  // 값들을 메모이제이션하여 안정적으로 유지
+                  if (!editData || !reservation) return null
+                  
+                  const productSubtotal = (editData.product_price_total || 0) - Math.abs(editData.coupon_discount || 0)
+                  const choicesTotal = editData.choices_total ?? 0
+                  const commissionAmount = editData.commission_amount ?? 0
+                  const channelSettlementAmount = Math.max(0, productSubtotal - choicesTotal - commissionAmount)
+                  
+                  const notIncludedPrice = editData.not_included_price ?? 0
+                  const totalPeople = (reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)
+                  const notIncludedTotal = notIncludedPrice * totalPeople
+                  
+                  const additionalDiscount = editData.additional_discount ?? 0
+                  const additionalCost = editData.additional_cost ?? 0
+                  const cardFee = editData.card_fee ?? 0
+                  const tax = editData.tax ?? 0
+                  const prepaymentCost = editData.prepayment_cost ?? 0
+                  
+                  return (
+                    <div className="space-y-2 text-sm">
+                      {/* 채널 정산 금액 */}
+                      {channelSettlementAmount > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-gray-700">채널 정산 금액</span>
+                          <span className="text-sm font-medium text-gray-900">
+                            ${channelSettlementAmount.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {/* 초이스 총액 */}
+                      {choicesTotal > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-gray-700">+ 초이스 총액</span>
+                          <span className="text-sm font-medium text-gray-900">
+                            +${choicesTotal.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {/* 불포함 가격 */}
+                      {notIncludedTotal > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-gray-700">+ 불포함 가격</span>
+                          <span className="text-sm font-medium text-gray-900">
+                            +${notIncludedTotal.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                  
+                      {/* 추가할인 (음수) */}
+                      {additionalDiscount > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-gray-700">- 추가할인</span>
+                          <span className="text-sm font-medium text-red-600">
+                            -${additionalDiscount.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {/* 추가비용 */}
+                      {additionalCost > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-gray-700">+ 추가비용</span>
+                          <span className="text-sm font-medium text-gray-900">
+                            +${additionalCost.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {/* 결제 수수료 */}
+                      {cardFee > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-gray-700">+ 결제 수수료</span>
+                          <span className="text-sm font-medium text-gray-900">
+                            +${cardFee.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {/* 세금 */}
+                      {tax > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-gray-700">+ 세금</span>
+                          <span className="text-sm font-medium text-gray-900">
+                            +${tax.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {/* 선결제 지출 */}
+                      {prepaymentCost > 0 && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-gray-700">+ 선결제 지출</span>
+                          <span className="text-sm font-medium text-gray-900">
+                            +${prepaymentCost.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                  
+                      <div className="border-t border-gray-300 my-2"></div>
+                      
+                      {/* 총 매출 */}
+                      <div className="flex justify-between items-center">
+                        <span className="text-base font-bold text-green-800">총 매출</span>
+                        <span className="text-lg font-bold text-green-600">
+                          ${(() => {
+                            // 총 매출 계산: 표시된 각 항목의 합계
+                            // 채널 정산 금액 + 초이스 총액 + 불포함 가격 - 추가할인 + 추가비용 + 결제 수수료 + 세금 + 선결제 지출
+                            let totalRevenue = 0
+                            
+                            // 채널 정산 금액이 0보다 크면 추가
+                            if (channelSettlementAmount > 0) {
+                              totalRevenue += channelSettlementAmount
+                            }
+                            
+                            // 초이스 총액이 0보다 크면 추가
+                            if (choicesTotal > 0) {
+                              totalRevenue += choicesTotal
+                            }
+                            
+                            // 불포함 가격이 0보다 크면 추가
+                            if (notIncludedTotal > 0) {
+                              totalRevenue += notIncludedTotal
+                            }
+                            
+                            // 추가할인이 0보다 크면 차감
+                            if (additionalDiscount > 0) {
+                              totalRevenue -= additionalDiscount
+                            }
+                            
+                            // 추가비용이 0보다 크면 추가
+                            if (additionalCost > 0) {
+                              totalRevenue += additionalCost
+                            }
+                            
+                            // 결제 수수료가 0보다 크면 추가
+                            if (cardFee > 0) {
+                              totalRevenue += cardFee
+                            }
+                            
+                            // 세금이 0보다 크면 추가
+                            if (tax > 0) {
+                              totalRevenue += tax
+                            }
+                            
+                            // 선결제 지출이 0보다 크면 추가
+                            if (prepaymentCost > 0) {
+                              totalRevenue += prepaymentCost
+                            }
+                            
+                            return totalRevenue.toFixed(2)
+                          })()}
+                        </span>
+                      </div>
+                  
+                      {/* 선결제 팁 (수익 아님) */}
+                      {editData.prepayment_tip && editData.prepayment_tip > 0 && (
+                        <>
+                          <p className="text-xs text-red-600 mb-1">❗ 팁은 수익 아님 → 반드시 분리</p>
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-600">- 선결제 팁</span>
+                            <span className="text-xs text-gray-700">-${editData.prepayment_tip.toFixed(2)}</span>
+                          </div>
+                        </>
+                      )}
+                      
+                      <div className="border-t border-gray-300 my-2"></div>
+                      
+                      {/* 운영 이익 */}
+                      <div className="flex justify-between items-center">
+                        <span className="text-base font-bold text-purple-800">운영 이익</span>
+                        <span className="text-lg font-bold text-purple-600">
+                          ${(() => {
+                            // 총 매출 계산 (위에서 계산한 값들 사용)
+                            let totalRevenue = 0
+                            
+                            if (channelSettlementAmount > 0) {
+                              totalRevenue += channelSettlementAmount
+                            }
+                            if (choicesTotal > 0) {
+                              totalRevenue += choicesTotal
+                            }
+                            if (notIncludedTotal > 0) {
+                              totalRevenue += notIncludedTotal
+                            }
+                            if (additionalDiscount > 0) {
+                              totalRevenue -= additionalDiscount
+                            }
+                            if (additionalCost > 0) {
+                              totalRevenue += additionalCost
+                            }
+                            if (cardFee > 0) {
+                              totalRevenue += cardFee
+                            }
+                            if (tax > 0) {
+                              totalRevenue += tax
+                            }
+                            if (prepaymentCost > 0) {
+                              totalRevenue += prepaymentCost
+                            }
+                            
+                            // 운영 이익 = 총 매출 - 선결제 팁
+                            const operatingProfit = totalRevenue - (editData.prepayment_tip || 0)
+                            
+                            return operatingProfit.toFixed(2)
+                          })()}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
 
               {/* 최종 가격 */}
