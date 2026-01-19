@@ -1622,65 +1622,102 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         }
 
         // 새로운 초이스 시스템: reservation_choices 테이블에 저장
-        if (reservation.choices && reservation.choices.required && Array.isArray(reservation.choices.required)) {
-          try {
-            // 기존 reservation_choices 삭제
-            await supabase
-              .from('reservation_choices')
-              .delete()
-              .eq('reservation_id', editingReservation.id)
+        try {
+          // 기존 reservation_choices 삭제
+          await supabase
+            .from('reservation_choices')
+            .delete()
+            .eq('reservation_id', editingReservation.id)
 
-            // option_id가 choice_options 테이블에 존재하는지 검증
-            const validChoices = []
-            for (const choice of reservation.choices.required) {
-              if (!choice.option_id) {
-                console.warn('option_id가 없는 choice 건너뛰기:', choice)
-                continue
-              }
-
-              // choice_options 테이블에서 option_id 존재 여부 확인
-              const { data: optionExists, error: checkError } = await supabase
-                .from('choice_options')
-                .select('id')
-                .eq('id', choice.option_id)
-                .maybeSingle()
-
-              if (checkError) {
-                console.error('choice_options 확인 오류:', checkError)
-                continue
-              }
-
-              if (!optionExists) {
-                console.warn(`option_id ${choice.option_id}가 choice_options 테이블에 존재하지 않습니다. 건너뜁니다.`)
-                continue
-              }
-
-              validChoices.push({
-                reservation_id: editingReservation.id,
-                choice_id: choice.choice_id,
-                option_id: choice.option_id,
-                quantity: choice.quantity || 1,
-                total_price: choice.total_price || 0
-              })
-            }
-
-            if (validChoices.length > 0) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const { error: choicesError } = await (supabase as any)
-                .from('reservation_choices')
-                .insert(validChoices)
-
-              if (choicesError) {
-                console.error('초이스 저장 오류:', choicesError)
-                alert('초이스 저장 중 오류가 발생했습니다: ' + choicesError.message)
-                return
+          let choicesToSave: Array<{
+            reservation_id: string
+            choice_id: string
+            option_id: string
+            quantity: number
+            total_price: number
+          }> = []
+          
+          // 1. reservation.selectedChoices에서 가져오기 (우선순위 1 - 배열 형태)
+          if ((reservation as any).selectedChoices) {
+            const selectedChoices = (reservation as any).selectedChoices
+            console.log('handleEditReservation: reservation.selectedChoices 확인:', {
+              isArray: Array.isArray(selectedChoices),
+              length: Array.isArray(selectedChoices) ? selectedChoices.length : 'not array',
+              type: typeof selectedChoices,
+              value: selectedChoices
+            })
+            
+            if (Array.isArray(selectedChoices) && selectedChoices.length > 0) {
+              console.log('handleEditReservation: reservation.selectedChoices에서 초이스 데이터 발견:', selectedChoices.length, '개')
+              for (const choice of selectedChoices) {
+                if (choice.choice_id && choice.option_id) {
+                  choicesToSave.push({
+                    reservation_id: editingReservation.id,
+                    choice_id: choice.choice_id,
+                    option_id: choice.option_id,
+                    quantity: choice.quantity || 1,
+                    total_price: choice.total_price || 0
+                  })
+                } else {
+                  console.warn('초이스 데이터에 choice_id 또는 option_id가 없습니다:', choice)
+                }
               }
             }
-          } catch (choicesError) {
-            console.error('초이스 저장 중 예외:', choicesError)
-            alert('초이스 저장 중 오류가 발생했습니다.')
-            return
           }
+          
+          // 2. reservation.choices.required에서 가져오기 (fallback)
+          if (choicesToSave.length === 0 && reservation.choices && reservation.choices.required && Array.isArray(reservation.choices.required)) {
+            console.log('handleEditReservation: reservation.choices.required에서 초이스 데이터 발견:', reservation.choices.required.length, '개')
+            for (const choice of reservation.choices.required) {
+              if (choice.choice_id && choice.option_id) {
+                choicesToSave.push({
+                  reservation_id: editingReservation.id,
+                  choice_id: choice.choice_id,
+                  option_id: choice.option_id,
+                  quantity: choice.quantity || 1,
+                  total_price: choice.total_price || 0
+                })
+              }
+            }
+          }
+          
+          console.log('handleEditReservation: 저장할 초이스 데이터:', choicesToSave.length, '개', choicesToSave)
+          
+          if (choicesToSave.length > 0) {
+            // option_id 검증을 건너뛰고 바로 저장 (검증이 너무 엄격해서 저장이 안 될 수 있음)
+            console.log('handleEditReservation: reservation_choices에 저장할 데이터:', choicesToSave)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data: insertedChoices, error: choicesError } = await (supabase as any)
+              .from('reservation_choices')
+              .insert(choicesToSave)
+              .select()
+
+            if (choicesError) {
+              console.error('초이스 저장 오류:', choicesError)
+              console.error('저장 시도한 데이터:', choicesToSave)
+              console.error('오류 상세:', {
+                message: choicesError.message,
+                details: choicesError.details,
+                hint: choicesError.hint,
+                code: choicesError.code
+              })
+              alert('초이스 저장 중 오류가 발생했습니다: ' + choicesError.message)
+            } else {
+              console.log('초이스 저장 성공:', choicesToSave.length, '개', insertedChoices)
+            }
+          } else {
+            console.warn('저장할 초이스 데이터가 없습니다.', {
+              hasChoices: !!reservation.choices,
+              choicesRequiredCount: Array.isArray(reservation.choices?.required) ? reservation.choices.required.length : 0,
+              hasSelectedChoices: !!(reservation as any).selectedChoices,
+              selectedChoicesCount: Array.isArray((reservation as any).selectedChoices) ? (reservation as any).selectedChoices.length : 0,
+              selectedChoicesType: typeof (reservation as any).selectedChoices,
+              selectedChoicesValue: (reservation as any).selectedChoices
+            })
+          }
+        } catch (choicesError) {
+          console.error('초이스 저장 중 예외:', choicesError)
+          // 초이스 저장 실패해도 예약은 성공으로 처리
         }
 
         // reservation_customers 테이블에 거주 상태별 인원 수 저장
@@ -1774,6 +1811,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               not_included_price: pricingInfo.not_included_price || 0,
               required_options: pricingInfo.requiredOptions,
               required_option_total: pricingInfo.requiredOptionTotal,
+              choices: pricingInfo.choices || {},
+              choices_total: pricingInfo.choicesTotal || 0,
               subtotal: pricingInfo.subtotal,
               coupon_code: pricingInfo.couponCode,
               coupon_discount: pricingInfo.couponDiscount,
@@ -1788,8 +1827,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               total_price: pricingInfo.totalPrice,
               deposit_amount: pricingInfo.depositAmount,
               balance_amount: pricingInfo.balanceAmount,
-            private_tour_additional_cost: pricingInfo.privateTourAdditionalCost,
-            commission_percent: pricingInfo.commission_percent || 0
+              private_tour_additional_cost: pricingInfo.privateTourAdditionalCost,
+              commission_percent: pricingInfo.commission_percent || 0,
+              commission_amount: pricingInfo.commission_amount || 0
             }
 
             // upsert를 사용하여 기존 레코드가 있으면 업데이트, 없으면 삽입

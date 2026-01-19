@@ -64,6 +64,10 @@ interface ProductSelectionSectionProps {
     productChoices: ProductChoice[]
     selectedChoices: ReservationChoice[]
     choicesTotal: number
+    // 인원 수 필드
+    adults?: number
+    child?: number
+    infant?: number
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setFormData: (data: any) => void
@@ -415,9 +419,9 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
               })}
               <SimpleChoiceSelector
                 choices={formData.productChoices}
-                adults={0}
-                children={0}
-                infants={0}
+                adults={formData.adults || 0}
+                children={formData.child || 0}
+                infants={formData.infant || 0}
                 onSelectionChange={handleSelectionChange}
                 initialSelections={formData.selectedChoices || []}
               />
