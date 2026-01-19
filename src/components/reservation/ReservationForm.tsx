@@ -1086,11 +1086,23 @@ export default function ReservationForm({
           const finalOptionKey = matchedOption?.option_key || rc.choice_options?.option_key || ''
           const finalOptionNameKo = matchedOption?.option_name_ko || rc.choice_options?.option_name_ko || ''
 
+          const totalPrice = rc.total_price !== undefined && rc.total_price !== null 
+            ? Number(rc.total_price) 
+            : 0
+          console.log('ReservationForm: 초이스 로드 - total_price 확인:', {
+            choice_id: finalChoiceId,
+            option_id: finalOptionId,
+            option_name_ko: finalOptionNameKo,
+            quantity: rc.quantity || 1,
+            total_price: totalPrice,
+            original_total_price: rc.total_price,
+            type: typeof rc.total_price
+          })
           selectedChoices.push({
             choice_id: finalChoiceId,
             option_id: finalOptionId,
             quantity: rc.quantity || 1,
-            total_price: rc.total_price || 0,
+            total_price: totalPrice,
             ...(finalOptionKey ? { option_key: finalOptionKey } : {}),
             ...(finalOptionNameKo ? { option_name_ko: finalOptionNameKo } : {})
           } as any)
@@ -1714,7 +1726,7 @@ export default function ReservationForm({
       if (reservationId) {
         const { data: existingPricing, error: existingError } = await (supabase as any)
           .from('reservation_pricing')
-          .select('id, adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, commission_percent, commission_amount')
+          .select('id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, commission_percent, commission_amount, choices, choices_total')
           .eq('reservation_id', reservationId)
           .maybeSingle()
 
@@ -1764,6 +1776,7 @@ export default function ReservationForm({
               adultProductPrice: adultPrice,
               childProductPrice: childPrice,
               infantProductPrice: infantPrice,
+              not_included_price: Number(existingPricing.not_included_price) || 0,
               requiredOptions: existingPricing.required_options || {},
               couponCode: existingPricing.coupon_code || '',
               couponDiscount: Number(existingPricing.coupon_discount) || 0,
@@ -1794,7 +1807,9 @@ export default function ReservationForm({
               commission_base_price: (existingPricing as any).commission_base_price !== undefined && (existingPricing as any).commission_base_price !== null
                 ? Number((existingPricing as any).commission_base_price) 
                 : 0,
-              onSiteBalanceAmount: onSiteBalanceAmount
+              onSiteBalanceAmount: onSiteBalanceAmount,
+              choices: existingPricing.choices || {},
+              choicesTotal: Number(existingPricing.choices_total) || 0
             }
             
             // 가격 계산 수행 (단일 가격 모드 적용 후 재계산)

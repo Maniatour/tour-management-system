@@ -124,18 +124,62 @@ export default function SimpleChoiceSelector({
         });
         
         // 새로운 값으로 업데이트
-        const newSelections = initialSelections.map(s => ({
-          ...s,
-          option_key: s.option_key || '',
-          option_name_ko: s.option_name_ko || ''
-        }));
+        const newSelections = initialSelections.map(s => {
+          const choice = choices.find(c => c.id === s.choice_id);
+          const option = choice?.options?.find(o => o.id === s.option_id);
+          
+          // 저장된 total_price와 자동 계산된 가격을 비교하여 수동 수정 여부 판단
+          if (choice && option && s.total_price !== undefined && s.total_price !== null) {
+            const isResidentStatusChoice = choice.choice_group_ko?.includes('거주자') || 
+                                           choice.choice_group_ko?.includes('거주') ||
+                                           choice.choice_group?.toLowerCase().includes('resident') ||
+                                           choice.choice_group?.toLowerCase().includes('거주');
+            
+            let calculatedPrice = 0;
+            if (choice.choice_type === 'single' && !isResidentStatusChoice) {
+              // 단일 선택 초이스: 인원 수에 따른 총액 계산
+              calculatedPrice = (adults * option.adult_price) + 
+                               (children * option.child_price) + 
+                               (infants * option.infant_price);
+            } else if (isResidentStatusChoice) {
+              // 거주자 구분 초이스: 수량에 따라 가격 계산
+              calculatedPrice = option.adult_price * (s.quantity || 1);
+            } else {
+              // multiple/quantity 타입: 수량과 인원 수에 따른 가격 계산
+              const pricePerPerson = (adults * option.adult_price) + 
+                                    (children * option.child_price) + 
+                                    (infants * option.infant_price);
+              calculatedPrice = pricePerPerson * (s.quantity || 1);
+            }
+            
+            // 저장된 가격과 자동 계산된 가격이 다르면 수동 수정으로 간주
+            const priceKey = `${s.choice_id}:${s.option_id}`;
+            if (Math.abs(s.total_price - calculatedPrice) > 0.01) {
+              console.log('SimpleChoiceSelector: 수동 수정된 가격 감지', {
+                choice_id: s.choice_id,
+                option_id: s.option_id,
+                saved_price: s.total_price,
+                calculated_price: calculatedPrice,
+                difference: Math.abs(s.total_price - calculatedPrice)
+              });
+              setManuallyEditedPrices(prev => new Set(prev).add(priceKey));
+            }
+          }
+          
+          return {
+            ...s,
+            option_key: s.option_key || '',
+            option_name_ko: s.option_name_ko || ''
+          };
+        });
         setSelections(newSelections);
         prevInitialSelectionsRef.current = [...initialSelections]; // 복사본 저장
         prevSelectionsRef.current = [...newSelections]; // 복사본 저장
         
         console.log('SimpleChoiceSelector: selections 상태 업데이트 완료 (props에서)', {
-          updatedSelections: newSelections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, quantity: s.quantity })),
-          selectionsCount: newSelections.length
+          updatedSelections: newSelections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, quantity: s.quantity, total_price: s.total_price })),
+          selectionsCount: newSelections.length,
+          manuallyEditedCount: Array.from(manuallyEditedPrices).length
         });
       } else {
         console.log('SimpleChoiceSelector: initialSelections 변경되었지만 업데이트하지 않음', {
@@ -150,7 +194,7 @@ export default function SimpleChoiceSelector({
         prevInitialSelectionsRef.current = [...initialSelections];
       }
     }
-  }, [initialSelections, selections]);
+  }, [initialSelections, selections, choices, adults, children, infants]);
   
   // selections 상태 변경 추적 및 부모 컴포넌트에 알림
   useEffect(() => {

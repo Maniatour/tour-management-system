@@ -439,10 +439,9 @@ export default function PricingSection({
     }
     
     if (formData.productPriceTotal > 0) {
-      // 불포함 가격 계산
-      const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
-      // 할인 후 상품가에서 불포함 가격 제외
-      const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount - notIncludedPrice
+      // 할인 후 상품가 계산 (불포함 가격 제외하지 않음)
+      // 할인 후 상품가 = 상품 가격 총합 - 쿠폰 할인 - 추가 할인
+      const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
       if (discountedPrice > 0) {
         // depositAmount가 0이거나, 현재 값이 이전 할인 후 상품가와 다를 때 업데이트
         // (사용자가 수동으로 변경한 경우를 방지하기 위해 현재 값이 할인 후 상품가와 비슷하면 업데이트)
@@ -451,7 +450,7 @@ export default function PricingSection({
         
         // depositAmount가 0이거나, 현재 값이 할인 후 상품가와 차이가 0.01 이상이면 업데이트
         if (currentDeposit === 0 || priceDifference > 0.01) {
-          // 잔액도 함께 계산하여 업데이트 (불포함 가격을 기본값으로)
+          // 잔액도 함께 계산하여 업데이트
           const totalCustomerPayment = calculateTotalCustomerPayment()
           const totalPaid = discountedPrice + calculatedBalanceReceivedTotal
           const calculatedBalance = Math.max(0, totalCustomerPayment - totalPaid)
@@ -459,8 +458,8 @@ export default function PricingSection({
           setFormData((prev: typeof formData) => ({
             ...prev,
             depositAmount: discountedPrice,
-            onSiteBalanceAmount: notIncludedPrice > 0 ? notIncludedPrice : calculatedBalance,
-            balanceAmount: notIncludedPrice > 0 ? notIncludedPrice : calculatedBalance
+            onSiteBalanceAmount: calculatedBalance,
+            balanceAmount: calculatedBalance
           }))
         }
       }
@@ -1847,15 +1846,13 @@ export default function PricingSection({
               
               <div className="border-t border-gray-200 my-2"></div>
               
-              {/* 할인 후 상품가 (불포함 가격 제외) */}
+              {/* 할인 후 상품가 */}
               <div className="flex justify-between items-center mb-2">
                 <span className="text-sm text-gray-700">{isKorean ? '할인 후 상품가' : 'Discounted Product Price'}</span>
                 <span className="text-sm font-medium text-gray-900">
                   ${(() => {
-                    // 불포함 가격 계산
-                    const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
-                    // 할인 후 상품가에서 불포함 가격 제외
-                    const discountedPrice = formData.productPriceTotal - formData.couponDiscount - notIncludedPrice
+                    // 할인 후 상품가 = 상품 가격 총합 - 쿠폰 할인 - 추가 할인
+                    const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
                     return discountedPrice.toFixed(2)
                   })()}
                 </span>
@@ -1866,14 +1863,6 @@ export default function PricingSection({
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-xs text-gray-600">{isKorean ? '+ 옵션 추가' : '+ Options'}</span>
                   <span className="text-xs text-gray-700">+${reservationOptionsTotalPrice.toFixed(2)}</span>
-                </div>
-              )}
-              
-              {/* 추가 비용(비거주자 등) */}
-              {(formData.additionalCost - formData.additionalDiscount) > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs text-gray-600">{isKorean ? '+ 추가 비용(비거주자 등)' : '+ Additional Costs'}</span>
-                  <span className="text-xs text-gray-700">+${(formData.additionalCost - formData.additionalDiscount).toFixed(2)}</span>
                 </div>
               )}
               
@@ -1897,12 +1886,20 @@ export default function PricingSection({
                   </div>
                 ) : null
               })()}
-
-              {/* 결제 수수료 */}
-              {formData.cardFee > 0 && (
+              
+              {/* 추가 할인 */}
+              {(formData.additionalDiscount || 0) > 0 && (
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs text-gray-600">{isKorean ? '+ 결제 수수료' : '+ Payment Processing Fee'}</span>
-                  <span className="text-xs text-gray-700">+${formData.cardFee.toFixed(2)}</span>
+                  <span className="text-xs text-gray-600">{isKorean ? '- 추가 할인' : '- Additional Discount'}</span>
+                  <span className="text-xs text-red-600">-${(formData.additionalDiscount || 0).toFixed(2)}</span>
+                </div>
+              )}
+              
+              {/* 추가 비용 */}
+              {(formData.additionalCost || 0) > 0 && (
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs text-gray-600">{isKorean ? '+ 추가 비용' : '+ Additional Cost'}</span>
+                  <span className="text-xs text-gray-700">+${(formData.additionalCost || 0).toFixed(2)}</span>
                 </div>
               )}
               
@@ -1911,6 +1908,14 @@ export default function PricingSection({
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-xs text-gray-600">{isKorean ? '+ 세금' : '+ Tax'}</span>
                   <span className="text-xs text-gray-700">+${(formData.tax || 0).toFixed(2)}</span>
+                </div>
+              )}
+              
+              {/* 카드 수수료 */}
+              {(formData.cardFee || 0) > 0 && (
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs text-gray-600">{isKorean ? '+ 카드 수수료' : '+ Card Fee'}</span>
+                  <span className="text-xs text-gray-700">+${(formData.cardFee || 0).toFixed(2)}</span>
                 </div>
               )}
               
@@ -1923,10 +1928,10 @@ export default function PricingSection({
               )}
               
               {/* 선결제 팁 */}
-              {formData.prepaymentTip > 0 && (
+              {(formData.prepaymentTip || 0) > 0 && (
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-xs text-gray-600">{isKorean ? '+ 선결제 팁' : '+ Prepaid Tips'}</span>
-                  <span className="text-xs text-gray-700">+${formData.prepaymentTip.toFixed(2)}</span>
+                  <span className="text-xs text-gray-700">+${(formData.prepaymentTip || 0).toFixed(2)}</span>
                 </div>
               )}
               
@@ -1937,16 +1942,47 @@ export default function PricingSection({
                 <span className="text-base font-bold text-blue-800">{isKorean ? '고객 총 결제 금액' : 'Total Customer Payment'}</span>
                 <span className="text-base font-bold text-blue-600">
                   ${(() => {
-                    // 상품 합계
-                    const productSubtotal = (
-                      (formData.productPriceTotal - formData.couponDiscount) +
-                      reservationOptionsTotalPrice +
-                      (formData.additionalCost - formData.additionalDiscount)
-                    )
+                    // 할인 후 상품가 = 상품 가격 총합 - 쿠폰 할인 - 추가 할인
+                    const discountedProductPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
+                    
+                    // 옵션 추가
+                    const optionsTotal = reservationOptionsTotalPrice || 0
+                    
                     // 초이스 총액
                     const choicesTotal = formData.choiceTotal || formData.choicesTotal || 0
-                    // 고객 총 결제 금액 = 상품 합계 + 초이스 총액 + 세금 + 선결제 지출
-                    return (productSubtotal + choicesTotal + (formData.tax || 0) + (formData.prepaymentCost || 0)).toFixed(2)
+                    
+                    // 불포함 가격
+                    const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+                    const notIncludedTotal = notIncludedPrice
+                    
+                    // 추가 비용
+                    const additionalCost = formData.additionalCost || 0
+                    
+                    // 세금
+                    const tax = formData.tax || 0
+                    
+                    // 카드 수수료
+                    const cardFee = formData.cardFee || 0
+                    
+                    // 선결제 지출
+                    const prepaymentCost = formData.prepaymentCost || 0
+                    
+                    // 선결제 팁
+                    const prepaymentTip = formData.prepaymentTip || 0
+                    
+                    // 고객 총 결제 금액 = 할인 후 상품가 + 옵션 + 초이스 총액 + 불포함 가격 + 추가 비용 + 세금 + 카드 수수료 + 선결제 지출 + 선결제 팁
+                    const totalCustomerPayment = 
+                      discountedProductPrice +
+                      optionsTotal +
+                      choicesTotal +
+                      notIncludedTotal +
+                      additionalCost +
+                      tax +
+                      cardFee +
+                      prepaymentCost +
+                      prepaymentTip
+                    
+                    return totalCustomerPayment.toFixed(2)
                   })()}
                 </span>
               </div>
@@ -2632,22 +2668,22 @@ export default function PricingSection({
                 </div>
               )}
               
-              {/* 결제 수수료 */}
-              {(formData.cardFee || 0) > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700">+ {isKorean ? '결제 수수료' : 'Card Fee'}</span>
-                  <span className="text-sm font-medium text-gray-900">
-                    +${(formData.cardFee || 0).toFixed(2)}
-                  </span>
-                </div>
-              )}
-              
               {/* 세금 */}
               {(formData.tax || 0) > 0 && (
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm font-medium text-gray-700">+ {isKorean ? '세금' : 'Tax'}</span>
                   <span className="text-sm font-medium text-gray-900">
                     +${(formData.tax || 0).toFixed(2)}
+                  </span>
+                </div>
+              )}
+              
+              {/* 결제 수수료 */}
+              {(formData.cardFee || 0) > 0 && (
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-gray-700">+ {isKorean ? '결제 수수료' : 'Card Fee'}</span>
+                  <span className="text-sm font-medium text-gray-900">
+                    +${(formData.cardFee || 0).toFixed(2)}
                   </span>
                 </div>
               )}
@@ -2774,7 +2810,7 @@ export default function PricingSection({
                       ? choiceNotIncludedTotal 
                       : (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
                     
-                    // 총 매출 = 채널 정산금액 + 초이스 총액 + 불포함 가격 - 추가할인 + 추가비용 + 결제 수수료 + 세금 + 선결제 지출 + 추가 결제금 - 환불금
+                    // 총 매출 = 채널 정산금액 + 초이스 총액 + 불포함 가격 - 추가할인 + 추가비용 + 세금 + 결제 수수료 + 선결제 지출 + 추가 결제금 - 환불금
                     let totalRevenue = channelSettlementAmount
                     
                     // 초이스 총액
@@ -2798,14 +2834,14 @@ export default function PricingSection({
                       totalRevenue += formData.additionalCost
                     }
                     
-                    // 결제 수수료
-                    if ((formData.cardFee || 0) > 0) {
-                      totalRevenue += formData.cardFee
-                    }
-                    
                     // 세금
                     if ((formData.tax || 0) > 0) {
                       totalRevenue += formData.tax
+                    }
+                    
+                    // 결제 수수료
+                    if ((formData.cardFee || 0) > 0) {
+                      totalRevenue += formData.cardFee
                     }
                     
                     // 선결제 지출
@@ -2879,7 +2915,7 @@ export default function PricingSection({
                       ? choiceNotIncludedTotal 
                       : (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
                     
-                    // 총 매출 = 채널 정산금액 + 초이스 총액 + 불포함 가격 - 추가할인 + 추가비용 + 결제 수수료 + 세금 + 선결제 지출 + 추가 결제금 - 환불금
+                    // 총 매출 = 채널 정산금액 + 초이스 총액 + 불포함 가격 - 추가할인 + 추가비용 + 세금 + 결제 수수료 + 선결제 지출 + 추가 결제금 - 환불금
                     let totalRevenue = channelSettlementAmount
                     
                     // 초이스 총액
@@ -2903,14 +2939,14 @@ export default function PricingSection({
                       totalRevenue += formData.additionalCost
                     }
                     
-                    // 결제 수수료
-                    if ((formData.cardFee || 0) > 0) {
-                      totalRevenue += formData.cardFee
-                    }
-                    
                     // 세금
                     if ((formData.tax || 0) > 0) {
                       totalRevenue += formData.tax
+                    }
+                    
+                    // 결제 수수료
+                    if ((formData.cardFee || 0) > 0) {
+                      totalRevenue += formData.cardFee
                     }
                     
                     // 선결제 지출

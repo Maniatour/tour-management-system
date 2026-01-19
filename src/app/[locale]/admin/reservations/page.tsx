@@ -1651,12 +1651,23 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               console.log('handleEditReservation: reservation.selectedChoices에서 초이스 데이터 발견:', selectedChoices.length, '개')
               for (const choice of selectedChoices) {
                 if (choice.choice_id && choice.option_id) {
+                  const totalPrice = choice.total_price !== undefined && choice.total_price !== null 
+                    ? Number(choice.total_price) 
+                    : 0
+                  console.log('handleEditReservation: 초이스 저장 데이터:', {
+                    choice_id: choice.choice_id,
+                    option_id: choice.option_id,
+                    quantity: choice.quantity || 1,
+                    total_price: totalPrice,
+                    original_total_price: choice.total_price,
+                    type: typeof choice.total_price
+                  })
                   choicesToSave.push({
                     reservation_id: editingReservation.id,
                     choice_id: choice.choice_id,
                     option_id: choice.option_id,
                     quantity: choice.quantity || 1,
-                    total_price: choice.total_price || 0
+                    total_price: totalPrice
                   })
                 } else {
                   console.warn('초이스 데이터에 choice_id 또는 option_id가 없습니다:', choice)
