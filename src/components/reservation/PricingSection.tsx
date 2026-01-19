@@ -92,6 +92,11 @@ interface PricingSectionProps {
     commission_rate?: number
     [key: string]: unknown
   }>
+  products?: Array<{
+    id: string
+    sub_category?: string | null
+    [key: string]: unknown
+  }>
   reservationId?: string
   expenseUpdateTrigger?: number
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -129,13 +134,16 @@ export default function PricingSection({
   isExistingPricingLoaded,
   reservationId,
   expenseUpdateTrigger,
-  channels = []
+  channels = [],
+  products = []
 }: PricingSectionProps) {
   const locale = useLocale()
   const isKorean = locale === 'ko'
   const [showHelp, setShowHelp] = useState(false)
   const [reservationExpensesTotal, setReservationExpensesTotal] = useState(0)
   const [loadingExpenses, setLoadingExpenses] = useState(false)
+  const [tourExpensesTotal, setTourExpensesTotal] = useState(0)
+  const [loadingTourExpenses, setLoadingTourExpenses] = useState(false)
   // 입금 내역 계산 결과 저장
   const [calculatedBalanceReceivedTotal, setCalculatedBalanceReceivedTotal] = useState(0)
   // 환불 금액 저장
@@ -190,10 +198,238 @@ export default function PricingSection({
     }
   }, [reservationId])
 
+  // 투어 지출 총합 조회 함수 (Mania Tour 또는 Mania Service인 경우)
+  const fetchTourExpenses = useCallback(async () => {
+    if (!reservationId || !formData.productId || !formData.tourDate) {
+      setTourExpensesTotal(0)
+      return
+    }
+
+    // 상품의 sub_category 확인
+    const product = products.find(p => p.id === formData.productId)
+    const subCategory = product?.sub_category || ''
+    const isManiaTour = subCategory === 'Mania Tour' || subCategory === 'Mania Service'
+    
+    if (!isManiaTour) {
+      setTourExpensesTotal(0)
+      return
+    }
+
+    console.log('PricingSection: 투어 지출 조회 시작', { reservationId, productId: formData.productId, tourDate: formData.tourDate })
+    setLoadingTourExpenses(true)
+    try {
+      // 1. 먼저 reservations 테이블에서 tour_id 확인
+      const { data: reservationData, error: reservationError } = await supabase
+        .from('reservations')
+        .select('tour_id')
+        .eq('id', reservationId)
+        .maybeSingle()
+
+      if (reservationError && (reservationError.message || reservationError.code)) {
+        console.error('예약 조회 오류:', reservationError)
+        setTourExpensesTotal(0)
+        setLoadingTourExpenses(false)
+        return
+      }
+
+      let tourData: any = null
+
+      // 2. tour_id가 있으면 해당 투어 사용
+      if (reservationData?.tour_id) {
+        const { data: tourById, error: tourByIdError } = await supabase
+          .from('tours')
+          .select('id, reservation_ids, product_id, tour_date, guide_fee, assistant_fee')
+          .eq('id', reservationData.tour_id)
+          .maybeSingle()
+
+        if (tourByIdError && (tourByIdError.message || tourByIdError.code)) {
+          console.error('tour_id로 투어 조회 오류:', tourByIdError)
+        } else if (tourById) {
+          tourData = tourById
+          console.log('PricingSection: reservations.tour_id로 투어 찾음:', tourData.id)
+        }
+      }
+
+      // 3. tour_id가 없거나 찾지 못한 경우, tours 테이블의 reservation_ids 배열에서 찾기
+      if (!tourData) {
+        console.log('PricingSection: tour_id가 없어서 reservation_ids에서 투어 찾기 시도')
+        
+        // 같은 product_id와 tour_date의 모든 투어를 가져온 후 필터링
+        const { data: allTours, error: toursError } = await (supabase as any)
+          .from('tours')
+          .select('id, reservation_ids, product_id, tour_date, guide_fee, assistant_fee')
+          .eq('product_id', formData.productId)
+          .eq('tour_date', formData.tourDate)
+
+        // 오류가 있고 실제 오류인 경우에만 처리 (빈 객체나 null이 아닌 경우)
+        if (toursError && (toursError.message || toursError.code || Object.keys(toursError).length > 0)) {
+          console.error('투어 조회 오류:', toursError)
+          setTourExpensesTotal(0)
+          setLoadingTourExpenses(false)
+          return
+        }
+
+        if (!allTours || allTours.length === 0) {
+          console.log('해당 날짜의 투어가 없습니다. (정상적인 경우일 수 있음)')
+          setTourExpensesTotal(0)
+          setLoadingTourExpenses(false)
+          return
+        }
+
+        // reservation_ids 배열에 현재 예약 ID가 포함된 투어 찾기
+        const toursList = (allTours || []) as any[]
+        for (const tour of toursList) {
+          const reservationIds = tour.reservation_ids
+          if (reservationIds) {
+            // 배열인 경우
+            if (Array.isArray(reservationIds)) {
+              const ids = reservationIds.map(id => String(id).trim())
+              if (ids.includes(String(reservationId).trim())) {
+                tourData = tour
+                console.log('PricingSection: reservation_ids 배열에서 투어 찾음:', tourData.id)
+                break
+              }
+            }
+            // 문자열인 경우 (쉼표로 구분)
+            else if (typeof reservationIds === 'string') {
+              const ids = reservationIds.split(',').map(id => id.trim()).filter(id => id)
+              if (ids.includes(String(reservationId).trim())) {
+                tourData = tour
+                console.log('PricingSection: reservation_ids 문자열에서 투어 찾음:', tourData.id)
+                break
+              }
+            }
+          }
+        }
+      }
+
+      if (!tourData) {
+        console.log('해당 예약이 포함된 투어를 찾을 수 없습니다.')
+        setTourExpensesTotal(0)
+        setLoadingTourExpenses(false)
+        return
+      }
+
+      // 2. 투어 지출 총합 조회 (모든 지출 소스 포함)
+      const tourId = (tourData as any).id
+      
+      // 2-1. 투어 영수증들 (tour_expenses)
+      const { data: expensesData, error: expensesError } = await supabase
+        .from('tour_expenses')
+        .select('amount, status')
+        .eq('tour_id', tourId)
+        .not('status', 'eq', 'rejected')
+
+      if (expensesError && (expensesError.message || expensesError.code || Object.keys(expensesError).length > 0)) {
+        console.error('투어 지출 조회 오류:', expensesError)
+        setTourExpensesTotal(0)
+        setLoadingTourExpenses(false)
+        return
+      }
+
+      // 2-2. 입장권 부킹 비용 (ticket_bookings)
+      const { data: ticketBookingsData, error: ticketBookingsError } = await supabase
+        .from('ticket_bookings')
+        .select('expense, status')
+        .eq('tour_id', tourId)
+        .in('status', ['confirmed', 'paid'])
+
+      // 실제 오류인 경우에만 로그 출력 (빈 객체는 완전히 무시)
+      // Supabase는 데이터가 없을 때 빈 객체를 반환할 수 있으므로, message나 code가 있는 경우에만 오류로 처리
+      if (ticketBookingsError && (ticketBookingsError.message || ticketBookingsError.code)) {
+        console.error('입장권 부킹 조회 오류:', ticketBookingsError)
+        // 오류가 있어도 계속 진행
+      }
+      // 빈 객체 {}는 무시 (로그 출력 안 함)
+
+      // 2-3. 호텔 부킹 비용 (tour_hotel_bookings)
+      const { data: hotelBookingsData, error: hotelBookingsError } = await supabase
+        .from('tour_hotel_bookings')
+        .select('total_price, status')
+        .eq('tour_id', tourId)
+        .in('status', ['confirmed', 'paid'])
+
+      // 실제 오류인 경우에만 로그 출력 (빈 객체는 완전히 무시)
+      // Supabase는 데이터가 없을 때 빈 객체를 반환할 수 있으므로, message나 code가 있는 경우에만 오류로 처리
+      if (hotelBookingsError && (hotelBookingsError.message || hotelBookingsError.code)) {
+        console.error('호텔 부킹 조회 오류:', hotelBookingsError)
+        // 오류가 있어도 계속 진행
+      }
+      // 빈 객체 {}는 무시 (로그 출력 안 함)
+
+      // 3. 투어 총 지출 계산 (모든 소스 합산)
+      const tourExpenses = (expensesData || []).reduce((sum: number, expense: any) => sum + (expense?.amount || 0), 0)
+      const ticketBookingsCosts = (ticketBookingsData || []).reduce((sum: number, booking: any) => sum + (booking?.expense || 0), 0)
+      const hotelBookingsCosts = (hotelBookingsData || []).reduce((sum: number, booking: any) => {
+        // total_price만 사용 (total_cost 컬럼은 존재하지 않음)
+        return sum + (booking?.total_price || 0)
+      }, 0)
+      
+      // 2-4. 가이드비 및 드라이버 비 (tourData에서 가져온 값 사용)
+      const guideFee = (tourData as any).guide_fee || 0
+      const assistantFee = (tourData as any).assistant_fee || 0
+      
+      const totalTourExpenses = tourExpenses + ticketBookingsCosts + hotelBookingsCosts + guideFee + assistantFee
+
+      console.log('PricingSection: 투어 지출 상세', {
+        tourExpenses,
+        ticketBookingsCosts,
+        hotelBookingsCosts,
+        guideFee,
+        assistantFee,
+        totalTourExpenses
+      })
+
+      // 4. 투어의 총 인원수 계산 (reservation_ids의 예약들의 total_people 합산)
+      let totalTourPeople = 0
+      const reservationIds = (tourData as any).reservation_ids
+      if (reservationIds && Array.isArray(reservationIds) && reservationIds.length > 0) {
+        const { data: reservationsData, error: reservationsError } = await supabase
+          .from('reservations')
+          .select('total_people')
+          .in('id', reservationIds)
+
+        if (reservationsError && (reservationsError.message || reservationsError.code || Object.keys(reservationsError).length > 0)) {
+          console.error('예약 인원수 조회 오류:', reservationsError)
+          // 오류가 있어도 계속 진행 (인원수는 0으로 처리)
+        } else if (reservationsData) {
+          totalTourPeople = (reservationsData || []).reduce((sum: number, r: any) => sum + (r?.total_people || 0), 0)
+        }
+      }
+
+      // 5. 해당 예약건의 인원수
+      const reservationPeople = formData.adults + formData.child + formData.infant
+
+      // 6. 투어 지출 총합 = (투어 총 지출 / 투어 총 인원수) * 해당 예약건의 인원수
+      const tourExpensesForReservation = totalTourPeople > 0 
+        ? (totalTourExpenses / totalTourPeople) * reservationPeople
+        : 0
+
+      console.log('PricingSection: 투어 지출 계산 결과', {
+        totalTourExpenses,
+        totalTourPeople,
+        reservationPeople,
+        tourExpensesForReservation
+      })
+
+      setTourExpensesTotal(tourExpensesForReservation)
+    } catch (error) {
+      console.error('투어 지출 조회 중 예외 발생:', error)
+      setTourExpensesTotal(0)
+    } finally {
+      setLoadingTourExpenses(false)
+    }
+  }, [reservationId, formData.productId, formData.tourDate, formData.adults, formData.child, formData.infant, products])
+
   // 예약 지출 총합 조회
   useEffect(() => {
     fetchReservationExpenses()
   }, [reservationId, fetchReservationExpenses])
+
+  // 투어 지출 총합 조회 (Mania Tour 또는 Mania Service인 경우)
+  useEffect(() => {
+    fetchTourExpenses()
+  }, [reservationId, formData.productId, formData.tourDate, formData.adults, formData.child, formData.infant, fetchTourExpenses])
 
   // 예약 지출 업데이트 감지
   useEffect(() => {
@@ -786,11 +1022,11 @@ export default function PricingSection({
     }
   }
 
-  // 수익 계산 (Net 가격 - 예약 지출 총합)
+  // 수익 계산 (Net 가격 - 예약 지출 총합 - 투어 지출 총합)
   const calculateProfit = useCallback(() => {
     const netPrice = calculateNetPrice()
-    return netPrice - reservationExpensesTotal
-  }, [calculateNetPrice, reservationExpensesTotal])
+    return netPrice - reservationExpensesTotal - tourExpensesTotal
+  }, [calculateNetPrice, reservationExpensesTotal, tourExpensesTotal])
 
   // 커미션 기본값 설정 및 자동 업데이트 (할인 후 상품가 우선, 없으면 OTA 판매가, 없으면 소계)
   const otaSalePrice = formData.onlinePaymentAmount ?? 0
@@ -2698,50 +2934,6 @@ export default function PricingSection({
                 </div>
               )}
               
-              {/* 추가 결제금 */}
-              {(() => {
-                // 채널 정산금액 계산 (Returned 반영)
-                const channelSettlementAmount = isOTAChannel 
-                  ? (() => {
-                      const adjustedPaymentAmount = Math.max(0, (formData.onlinePaymentAmount || 0) - returnedAmount)
-                      return adjustedPaymentAmount - formData.commission_amount
-                    })()
-                  : (() => {
-                      // 자체 채널: 채널 결제 금액(onlinePaymentAmount 또는 상품 합계 - 초이스 총액) - 카드수수료
-                      const productSubtotal = (
-                        (formData.productPriceTotal - formData.couponDiscount) +
-                        reservationOptionsTotalPrice +
-                        (formData.additionalCost - formData.additionalDiscount) +
-                        formData.tax +
-                        formData.cardFee +
-                        formData.prepaymentTip -
-                        (formData.onSiteBalanceAmount || 0)
-                      )
-                      const choicesTotal = formData.choiceTotal || formData.choicesTotal || 0
-                      const defaultChannelPaymentAmount = productSubtotal - choicesTotal
-                      const channelPaymentAmount = formData.onlinePaymentAmount || (defaultChannelPaymentAmount > 0 ? defaultChannelPaymentAmount : 0)
-                      // Returned 차감
-                      const adjustedPaymentAmount = Math.max(0, channelPaymentAmount - returnedAmount)
-                      return adjustedPaymentAmount - formData.commission_amount
-                    })()
-                
-                // 고객 총 결제 금액
-                const totalCustomerPayment = calculateTotalCustomerPayment()
-                
-                // 추가 결제금 = 고객 총 결제 금액 - 채널 수수료$ - 채널 정산 금액 - 잔액
-                // (잔액은 이미 별도로 표시되므로 중복 방지)
-                const additionalPayment = totalCustomerPayment - formData.commission_amount - channelSettlementAmount - (formData.onSiteBalanceAmount || 0)
-                
-                return additionalPayment > 0 ? (
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium text-gray-700">+ {isKorean ? '추가 결제금' : 'Additional Payment'}</span>
-                    <span className="text-sm font-medium text-gray-900">
-                      +${additionalPayment.toFixed(2)}
-                    </span>
-                  </div>
-                ) : null
-              })()}
-              
               {/* 환불금 */}
               {(() => {
                 const hasRefund = refundedAmount > 0 || returnedAmount > 0
@@ -2798,19 +2990,12 @@ export default function PricingSection({
                           return adjustedPaymentAmount - formData.commission_amount
                         })()
                     
-                    // 고객 총 결제 금액
-                    const totalCustomerPayment = calculateTotalCustomerPayment()
-                    
-                    // 추가 결제금 = 고객 총 결제 금액 - 채널 수수료$ - 채널 정산 금액 - 잔액
-                    // (잔액은 이미 별도로 표시되므로 중복 방지)
-                    const additionalPayment = totalCustomerPayment - formData.commission_amount - channelSettlementAmount - (formData.onSiteBalanceAmount || 0)
-                    
                     // 불포함 가격 계산
                     const notIncludedTotal = choiceNotIncludedTotal > 0 
                       ? choiceNotIncludedTotal 
                       : (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
                     
-                    // 총 매출 = 채널 정산금액 + 초이스 총액 + 불포함 가격 - 추가할인 + 추가비용 + 세금 + 결제 수수료 + 선결제 지출 + 추가 결제금 - 환불금
+                    // 총 매출 = 채널 정산금액 + 초이스 총액 + 불포함 가격 - 추가할인 + 추가비용 + 세금 + 결제 수수료 + 선결제 지출 - 환불금
                     let totalRevenue = channelSettlementAmount
                     
                     // 초이스 총액
@@ -2847,11 +3032,6 @@ export default function PricingSection({
                     // 선결제 지출
                     if ((formData.prepaymentCost || 0) > 0) {
                       totalRevenue += formData.prepaymentCost
-                    }
-                    
-                    // 추가 결제금
-                    if (additionalPayment > 0) {
-                      totalRevenue += additionalPayment
                     }
                     
                     // 환불금 차감
@@ -2903,19 +3083,12 @@ export default function PricingSection({
                           return adjustedPaymentAmount - formData.commission_amount
                         })()
                     
-                    // 고객 총 결제 금액
-                    const totalCustomerPayment = calculateTotalCustomerPayment()
-                    
-                    // 추가 결제금 = 고객 총 결제 금액 - 채널 수수료$ - 채널 정산 금액 - 잔액
-                    // (잔액은 이미 별도로 표시되므로 중복 방지)
-                    const additionalPayment = totalCustomerPayment - formData.commission_amount - channelSettlementAmount - (formData.onSiteBalanceAmount || 0)
-                    
                     // 불포함 가격 계산
                     const notIncludedTotal = choiceNotIncludedTotal > 0 
                       ? choiceNotIncludedTotal 
                       : (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
                     
-                    // 총 매출 = 채널 정산금액 + 초이스 총액 + 불포함 가격 - 추가할인 + 추가비용 + 세금 + 결제 수수료 + 선결제 지출 + 추가 결제금 - 환불금
+                    // 총 매출 = 채널 정산금액 + 초이스 총액 + 불포함 가격 - 추가할인 + 추가비용 + 세금 + 결제 수수료 + 선결제 지출 - 환불금
                     let totalRevenue = channelSettlementAmount
                     
                     // 초이스 총액
@@ -2952,11 +3125,6 @@ export default function PricingSection({
                     // 선결제 지출
                     if ((formData.prepaymentCost || 0) > 0) {
                       totalRevenue += formData.prepaymentCost
-                    }
-                    
-                    // 추가 결제금
-                    if (additionalPayment > 0) {
-                      totalRevenue += additionalPayment
                     }
                     
                     // 환불금 차감
@@ -3000,53 +3168,82 @@ export default function PricingSection({
               </div>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Net 가격 */}
-              <div className="bg-white p-4 rounded-lg border border-blue-200 shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex items-center space-x-2 mb-2">
-                  <DollarSign className="h-4 w-4 text-blue-500" />
-                  <div className="text-sm font-medium text-gray-700">Net 가격</div>
-                </div>
-                <div className="text-xl font-bold text-blue-600 mb-1">
-                  ${calculateNetPrice().toFixed(2)}
-                </div>
-                <div className="text-xs text-gray-500">
-                  커미션 차감 후 수령액
-                </div>
-              </div>
+            {(() => {
+              // Mania Tour 또는 Mania Service인지 확인
+              const product = products.find(p => p.id === formData.productId)
+              const subCategory = product?.sub_category || ''
+              const isManiaTour = subCategory === 'Mania Tour' || subCategory === 'Mania Service'
+              
+              return (
+                <div className={`grid grid-cols-1 gap-4 ${isManiaTour ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
+                  {/* Net 가격 */}
+                  <div className="bg-white p-4 rounded-lg border border-blue-200 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <DollarSign className="h-4 w-4 text-blue-500" />
+                      <div className="text-sm font-medium text-gray-700">Net 가격</div>
+                    </div>
+                    <div className="text-xl font-bold text-blue-600 mb-1">
+                      ${calculateNetPrice().toFixed(2)}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      커미션 차감 후 수령액
+                    </div>
+                  </div>
 
-              {/* 예약 지출 총합 */}
-              <div className="bg-white p-4 rounded-lg border border-red-200 shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex items-center space-x-2 mb-2">
-                  <AlertCircle className="h-4 w-4 text-red-500" />
-                  <div className="text-sm font-medium text-gray-700">예약 지출 총합</div>
-                </div>
-                <div className="text-xl font-bold text-red-600 mb-1">
-                  ${reservationExpensesTotal.toFixed(2)}
-                </div>
-                <div className="text-xs text-gray-500">
-                  승인/대기/기타 지출 (거부 제외)
-                </div>
-              </div>
+                  {/* 예약 지출 총합 */}
+                  <div className="bg-white p-4 rounded-lg border border-red-200 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <AlertCircle className="h-4 w-4 text-red-500" />
+                      <div className="text-sm font-medium text-gray-700">예약 지출 총합</div>
+                    </div>
+                    <div className="text-xl font-bold text-red-600 mb-1">
+                      ${reservationExpensesTotal.toFixed(2)}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      승인/대기/기타 지출 (거부 제외)
+                    </div>
+                  </div>
 
-              {/* 수익 */}
-              <div className="bg-white p-4 rounded-lg border border-green-200 shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex items-center space-x-2 mb-2">
-                  {calculateProfit() >= 0 ? (
-                    <TrendingUp className="h-4 w-4 text-green-500" />
-                  ) : (
-                    <TrendingDown className="h-4 w-4 text-red-500" />
+                  {/* 투어 지출 총합 (Mania Tour 또는 Mania Service인 경우만) */}
+                  {isManiaTour && (
+                    <div className="bg-white p-4 rounded-lg border border-orange-200 shadow-sm hover:shadow-md transition-shadow">
+                      <div className="flex items-center space-x-2 mb-2">
+                        {loadingTourExpenses ? (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-500"></div>
+                        ) : (
+                          <AlertCircle className="h-4 w-4 text-orange-500" />
+                        )}
+                        <div className="text-sm font-medium text-gray-700">투어 지출 총합</div>
+                      </div>
+                      <div className="text-xl font-bold text-orange-600 mb-1">
+                        ${tourExpensesTotal.toFixed(2)}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        투어 총 지출 ÷ 투어 인원수 × 예약 인원수
+                      </div>
+                    </div>
                   )}
-                  <div className="text-sm font-medium text-gray-700">수익</div>
+
+                  {/* 수익 */}
+                  <div className="bg-white p-4 rounded-lg border border-green-200 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center space-x-2 mb-2">
+                      {calculateProfit() >= 0 ? (
+                        <TrendingUp className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <TrendingDown className="h-4 w-4 text-red-500" />
+                      )}
+                      <div className="text-sm font-medium text-gray-700">수익</div>
+                    </div>
+                    <div className={`text-xl font-bold mb-1 ${calculateProfit() >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      ${calculateProfit().toFixed(2)}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Net 가격 - 지출 총합{isManiaTour ? ' - 투어 지출' : ''}
+                    </div>
+                  </div>
                 </div>
-                <div className={`text-xl font-bold mb-1 ${calculateProfit() >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  ${calculateProfit().toFixed(2)}
-                </div>
-                <div className="text-xs text-gray-500">
-                  Net 가격 - 지출 총합
-                </div>
-              </div>
-            </div>
+              )
+            })()}
 
             {/* 수익률 표시 */}
             <div className="mt-4 pt-4 border-t border-blue-200">

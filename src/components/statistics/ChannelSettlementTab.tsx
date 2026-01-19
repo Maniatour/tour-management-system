@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
-import { DollarSign, Users, Calendar, Search, ChevronDown, ChevronRight } from 'lucide-react'
+import { DollarSign, Users, Calendar, Search, ChevronDown, ChevronRight, X, Filter } from 'lucide-react'
 import { useReservationData } from '@/hooks/useReservationData'
 import { getChannelName, getProductName, getCustomerName, getStatusColor } from '@/utils/reservationUtils'
 import { supabase } from '@/lib/supabase'
@@ -86,6 +86,8 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
   const [tourSortOrder, setTourSortOrder] = useState<'asc' | 'desc'>('asc')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [expandedChannels, setExpandedChannels] = useState<Set<string>>(new Set())
+  const [selectedChannelIdForFilter, setSelectedChannelIdForFilter] = useState<string>('')
+  const [isChannelModalOpen, setIsChannelModalOpen] = useState(false)
 
   // 채널 그룹화
   const channelGroups = useMemo((): ChannelGroup[] => {
@@ -152,9 +154,12 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
     })
   }
 
-  // 예약 내역 필터링 (등록일 기준, 상태 필터, 검색 필터) - 채널 필터는 아코디언에서 처리
+  // 예약 내역 필터링 (등록일 기준, 상태 필터, 검색 필터, 채널 필터)
   const filteredReservations = useMemo(() => {
     return reservations.filter(reservation => {
+      // 채널 필터 (선택된 경우에만)
+      if (selectedChannelIdForFilter && reservation.channelId !== selectedChannelIdForFilter) return false
+      
       // 상태 필터 (선택된 경우에만)
       if (selectedStatuses.length > 0 && !selectedStatuses.includes(reservation.status)) return false
       
@@ -193,7 +198,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
 
       return true
     })
-  }, [reservations, selectedStatuses, dateRange, searchQuery, customers, products])
+  }, [reservations, selectedStatuses, dateRange, searchQuery, customers, products, selectedChannelIdForFilter])
 
   // 채널별로 예약 필터링하는 헬퍼 함수
   const getReservationsByChannel = useCallback((channelId: string) => {
@@ -216,16 +221,10 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
       setPricesLoading(true)
       try {
         const reservationIds = filteredReservations.map(r => r.id)
-        
-        const { data: pricingData, error } = await supabase
-          .from('reservation_pricing')
-          .select('reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount')
-          .in('reservation_id', reservationIds)
-
-        if (error) {
-          console.error('예약 가격 조회 오류:', error)
+        if (reservationIds.length === 0) {
           setReservationPrices({})
           setReservationPricingData({})
+          setPricesLoading(false)
           return
         }
 
@@ -243,23 +242,39 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
           depositAmount: number
           balanceAmount: number
         }> = {}
-        
-        pricingData?.forEach(p => {
-          pricesMap[p.reservation_id] = p.total_price || 0
-          pricingDataMap[p.reservation_id] = {
-            adultPrice: p.adult_product_price || 0,
-            productPriceTotal: p.product_price_total || 0,
-            optionTotal: p.option_total || 0,
-            subtotal: p.subtotal || 0,
-            commissionAmount: p.commission_amount || 0,
-            couponDiscount: p.coupon_discount || 0,
-            additionalDiscount: p.additional_discount || 0,
-            additionalCost: p.additional_cost || 0,
-            tax: p.tax || 0,
-            depositAmount: p.deposit_amount || 0,
-            balanceAmount: p.balance_amount || 0
+
+        // URL 길이 제한을 피하기 위해 청크 단위로 나눠서 요청 (한 번에 최대 100개씩)
+        const chunkSize = 100
+        for (let i = 0; i < reservationIds.length; i += chunkSize) {
+          const chunk = reservationIds.slice(i, i + chunkSize)
+          
+          const { data: pricingData, error } = await supabase
+            .from('reservation_pricing')
+            .select('reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount')
+            .in('reservation_id', chunk)
+
+          if (error) {
+            console.error('예약 가격 조회 오류 (청크):', error, { chunkSize: chunk.length, chunkIndex: i / chunkSize })
+            continue // 다음 청크 계속 처리
           }
-        })
+
+          pricingData?.forEach((p: any) => {
+            pricesMap[p.reservation_id] = p.total_price || 0
+            pricingDataMap[p.reservation_id] = {
+              adultPrice: p.adult_product_price || 0,
+              productPriceTotal: p.product_price_total || 0,
+              optionTotal: p.option_total || 0,
+              subtotal: p.subtotal || 0,
+              commissionAmount: p.commission_amount || 0,
+              couponDiscount: p.coupon_discount || 0,
+              additionalDiscount: p.additional_discount || 0,
+              additionalCost: p.additional_cost || 0,
+              tax: p.tax || 0,
+              depositAmount: p.deposit_amount || 0,
+              balanceAmount: p.balance_amount || 0
+            }
+          })
+        }
 
         setReservationPrices(pricesMap)
         setReservationPricingData(pricingDataMap)
@@ -386,11 +401,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
 
         // 예약 가격 정보 가져오기
         const reservationIds = tourDateFilteredReservations.map(r => r.id)
-        const { data: pricingData } = await supabase
-          .from('reservation_pricing')
-          .select('reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount')
-          .in('reservation_id', reservationIds)
-
+        
         const pricesMap: Record<string, number> = {}
         const pricingDataMap: Record<string, {
           adultPrice: number
@@ -405,23 +416,41 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
           depositAmount: number
           balanceAmount: number
         }> = {}
-        
-        pricingData?.forEach(p => {
-          pricesMap[p.reservation_id] = p.total_price || 0
-          pricingDataMap[p.reservation_id] = {
-            adultPrice: p.adult_product_price || 0,
-            productPriceTotal: p.product_price_total || 0,
-            optionTotal: p.option_total || 0,
-            subtotal: p.subtotal || 0,
-            commissionAmount: p.commission_amount || 0,
-            couponDiscount: p.coupon_discount || 0,
-            additionalDiscount: p.additional_discount || 0,
-            additionalCost: p.additional_cost || 0,
-            tax: p.tax || 0,
-            depositAmount: p.deposit_amount || 0,
-            balanceAmount: p.balance_amount || 0
+
+        // URL 길이 제한을 피하기 위해 청크 단위로 나눠서 요청 (한 번에 최대 100개씩)
+        if (reservationIds.length > 0) {
+          const chunkSize = 100
+          for (let i = 0; i < reservationIds.length; i += chunkSize) {
+            const chunk = reservationIds.slice(i, i + chunkSize)
+            
+            const { data: pricingData, error } = await supabase
+              .from('reservation_pricing')
+              .select('reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount')
+              .in('reservation_id', chunk)
+
+            if (error) {
+              console.error('예약 가격 조회 오류 (청크):', error, { chunkSize: chunk.length, chunkIndex: i / chunkSize })
+              continue // 다음 청크 계속 처리
+            }
+            
+            pricingData?.forEach((p: any) => {
+              pricesMap[p.reservation_id] = p.total_price || 0
+              pricingDataMap[p.reservation_id] = {
+                adultPrice: p.adult_product_price || 0,
+                productPriceTotal: p.product_price_total || 0,
+                optionTotal: p.option_total || 0,
+                subtotal: p.subtotal || 0,
+                commissionAmount: p.commission_amount || 0,
+                couponDiscount: p.coupon_discount || 0,
+                additionalDiscount: p.additional_discount || 0,
+                additionalCost: p.additional_cost || 0,
+                tax: p.tax || 0,
+                depositAmount: p.deposit_amount || 0,
+                balanceAmount: p.balance_amount || 0
+              }
+            })
           }
-        })
+        }
 
         // 예약 아이템으로 변환
         const tourReservationItems: ReservationItem[] = tourDateFilteredReservations.map(reservation => {
@@ -511,6 +540,12 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
     }
   }, [reservationItems, sortedTourItems])
 
+  // 선택된 채널명 가져오기 (early return 이전에 위치해야 함)
+  const selectedChannelName = useMemo(() => {
+    if (!selectedChannelIdForFilter) return '전체 채널'
+    return getChannelName(selectedChannelIdForFilter, channels || []) || '알 수 없는 채널'
+  }, [selectedChannelIdForFilter, channels])
+
   if (reservationsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -521,6 +556,33 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
 
   return (
     <div className="space-y-4 overflow-x-hidden max-w-full">
+      {/* 채널 선택 버튼 */}
+      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Filter className="h-5 w-5 text-gray-500" />
+            <span className="text-sm font-medium text-gray-700">채널 필터:</span>
+            <button
+              onClick={() => setIsChannelModalOpen(true)}
+              className="px-4 py-2 bg-blue-50 hover:bg-blue-100 border border-blue-300 rounded-lg text-sm font-medium text-blue-700 transition-colors flex items-center gap-2"
+            >
+              {selectedChannelName}
+              <ChevronDown className="h-4 w-4" />
+            </button>
+            {selectedChannelIdForFilter && (
+              <button
+                onClick={() => setSelectedChannelIdForFilter('')}
+                className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+                title="필터 제거"
+              >
+                <X className="h-3 w-3" />
+                초기화
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* 요약 카드 */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
@@ -720,7 +782,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">고객명</th>
                                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">채널RN</th>
                                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">채널</th>
-                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">상품명</th>
+                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" style={{ width: '150px', minWidth: '150px', maxWidth: '150px' }}>상품명</th>
                                  <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-16">인원</th>
                                  <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">성인 가격</th>
                                  <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">상품가격 합계</th>
@@ -773,7 +835,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 truncate max-w-[120px]">
                                          {item.channelName}
                                        </td>
-                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 truncate w-32">
+                                       <td className="px-2 py-2 text-xs text-gray-600 truncate" style={{ width: '150px', minWidth: '150px', maxWidth: '150px' }} title={item.productName}>
                                          {item.productName}
                                        </td>
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 text-center w-16">
@@ -813,7 +875,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                              </tbody>
                              <tfoot className="bg-gray-50">
                                <tr>
-                                 <td colSpan={7} className="px-2 py-2 text-xs font-medium text-gray-900">
+                                 <td colSpan={6} className="px-2 py-2 text-xs font-medium text-gray-900">
                                    합계
                                  </td>
                                  <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-center w-16">
@@ -993,7 +1055,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">등록일</th>
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">고객명</th>
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">채널RN</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">상품명</th>
+                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" style={{ width: '150px', minWidth: '150px', maxWidth: '150px' }}>상품명</th>
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-16">인원</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">성인 가격</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">상품가격 합계</th>
@@ -1043,7 +1105,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 w-24 truncate">
                           {item.channelRN || '-'}
                         </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 truncate w-32">
+                                              <td className="px-2 py-2 text-xs text-gray-600 truncate" style={{ width: '150px', minWidth: '150px', maxWidth: '150px' }} title={item.productName}>
                                                 {item.productName}
                                               </td>
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 text-center w-16">
@@ -1083,7 +1145,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                 </tbody>
                 <tfoot className="bg-gray-50">
                   <tr>
-                                        <td colSpan={6} className="px-2 py-2 text-xs font-medium text-gray-900">
+                                        <td colSpan={5} className="px-2 py-2 text-xs font-medium text-gray-900">
                       합계
                     </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-center w-16">
@@ -1218,7 +1280,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">고객명</th>
                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">채널RN</th>
                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">채널</th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">상품명</th>
+                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" style={{ width: '150px', minWidth: '150px', maxWidth: '150px' }}>상품명</th>
                                 <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-16">인원</th>
                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">성인 가격</th>
                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">상품가격 합계</th>
@@ -1450,7 +1512,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">투어 날짜</th>
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">고객명</th>
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-24">채널RN</th>
-                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-32">상품명</th>
+                                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" style={{ width: '150px', minWidth: '150px', maxWidth: '150px' }}>상품명</th>
                                         <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase w-16">인원</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">성인 가격</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">상품가격 합계</th>
@@ -1500,7 +1562,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 w-24 truncate">
                             {item.channelRN || '-'}
                           </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 truncate w-32">
+                                              <td className="px-2 py-2 text-xs text-gray-600 truncate" style={{ width: '150px', minWidth: '150px', maxWidth: '150px' }} title={item.productName}>
                                                 {item.productName}
                                               </td>
                                        <td className="px-2 py-2 whitespace-nowrap text-xs text-gray-600 text-center w-16">
@@ -1597,6 +1659,88 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
           </div>
         )}
       </div>
+
+      {/* 채널 선택 모달 */}
+      {isChannelModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setIsChannelModalOpen(false)}>
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">채널 선택</h3>
+              <button
+                onClick={() => setIsChannelModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto max-h-[calc(80vh-120px)]">
+              <div className="space-y-4">
+                {/* 전체 채널 옵션 */}
+                <button
+                  onClick={() => {
+                    setSelectedChannelIdForFilter('')
+                    setIsChannelModalOpen(false)
+                  }}
+                  className={`w-full text-left px-4 py-3 rounded-lg border-2 transition-colors ${
+                    !selectedChannelIdForFilter
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="font-medium">전체 채널</div>
+                  <div className="text-sm text-gray-500 mt-1">모든 채널 표시</div>
+                </button>
+
+                {/* 채널 그룹별 표시 */}
+                {channelGroups.map((group) => (
+                  <div key={group.type} className="space-y-2">
+                    <div className="text-sm font-semibold text-gray-700 px-2">
+                      {group.label}
+                    </div>
+                    <div className="space-y-2">
+                      {group.channels.map((channel) => (
+                        <button
+                          key={channel.id}
+                          onClick={() => {
+                            setSelectedChannelIdForFilter(channel.id)
+                            setIsChannelModalOpen(false)
+                          }}
+                          className={`w-full text-left px-4 py-3 rounded-lg border-2 transition-colors ${
+                            selectedChannelIdForFilter === channel.id
+                              ? 'border-blue-500 bg-blue-50 text-blue-700'
+                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="font-medium">{channel.name}</div>
+                          {channel.type && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              {channel.type}
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                {channelGroups.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    채널 데이터가 없습니다.
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-200">
+              <button
+                onClick={() => setIsChannelModalOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

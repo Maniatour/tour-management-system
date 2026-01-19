@@ -1119,7 +1119,7 @@ export default function TourDetailPage() {
       id: reservation.id,
       customerId: reservation.customer_id || '',
       productId: reservation.product_id || '',
-      tourDate: reservation.tour_date || '',
+      tourDate: reservation.tour_date || tourData.tour?.tour_date || '',
       tourTime: reservation.tour_time || '',
       eventNote: reservation.event_note || '',
       pickUpHotel: reservation.pickup_hotel || '',

@@ -708,7 +708,7 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">예약 날짜</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">상품명</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase" style={{ width: '150px', minWidth: '150px', maxWidth: '150px' }}>상품명</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">서브카테고리</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">고객명</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">채널</th>
@@ -727,13 +727,13 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {formatDate(reservation.reservationDate)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-6 py-4 text-sm text-gray-900 truncate" style={{ width: '150px', minWidth: '150px', maxWidth: '150px' }} title={reservation.productName}>
                       <Link 
                         href={`/ko/admin/reservations/${reservation.reservationId}`}
-                        className="flex items-center space-x-1 text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                        className="flex items-center space-x-1 text-blue-600 hover:text-blue-800 hover:underline transition-colors truncate"
                       >
-                        <span>{reservation.productName}</span>
-                        <ExternalLink size={14} />
+                        <span className="truncate">{reservation.productName}</span>
+                        <ExternalLink size={14} className="flex-shrink-0" />
                       </Link>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

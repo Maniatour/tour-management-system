@@ -3231,6 +3231,7 @@ export default function ReservationForm({
                   {...(reservation?.id ? { reservationId: reservation.id } : {})}
                   expenseUpdateTrigger={expenseUpdateTrigger}
                   channels={channels}
+                  products={products}
                 />
               </div>
 
