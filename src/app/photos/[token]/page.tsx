@@ -257,6 +257,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
               product_id,
               tour_date,
               tour_status,
+              photos_extended_access,
               products(
                 id,
                 name,
@@ -473,6 +474,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
                 product_id,
                 tour_date,
                 tour_status,
+                photos_extended_access,
                 products(
                   id,
                   name,
@@ -508,6 +510,14 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
           const today = new Date()
           const daysDiff = Math.floor((today.getTime() - tourDate.getTime()) / (1000 * 60 * 60 * 24))
           
+          // 디버깅 로그
+          console.log('[PhotoDownloadPage] Access check:', {
+            tourDate: tourInfoData.tour_date,
+            daysDiff,
+            photos_extended_access: tourInfoData.photos_extended_access,
+            willBlock: daysDiff > 7 && !tourInfoData.photos_extended_access
+          })
+          
           // 7일이 지났고, photos_extended_access가 false이거나 null인 경우에만 접속 제한
           if (daysDiff > 7 && !tourInfoData.photos_extended_access) {
             setError(language === 'ko' 
@@ -517,6 +527,8 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
             return
           }
         }
+      } else {
+        console.warn('[PhotoDownloadPage] tourInfoData is null, cannot check access restrictions')
       }
       setTourId(tourIdToUse)
     } catch (error) {
