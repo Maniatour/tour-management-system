@@ -42,6 +42,7 @@ interface TourInfo {
   product_id: string
   tour_date: string
   tour_status: string
+  photos_extended_access?: boolean | null
   products?: Product | null
 }
 
@@ -207,6 +208,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
             product_id,
             tour_date,
             tour_status,
+            photos_extended_access,
             products(
               id,
               name,
@@ -400,6 +402,7 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
               product_id,
               tour_date,
               tour_status,
+              photos_extended_access,
               products(
                 id,
                 name,
@@ -499,12 +502,14 @@ export default function PhotoDownloadPage({ params }: { params: Promise<{ token:
         setTourInfo(tourInfoData)
         
         // 투어 날짜로부터 7일 후 접속 제한 체크
+        // photos_extended_access가 true이면 제한 우회
         if (tourInfoData.tour_date) {
           const tourDate = new Date(tourInfoData.tour_date)
           const today = new Date()
           const daysDiff = Math.floor((today.getTime() - tourDate.getTime()) / (1000 * 60 * 60 * 24))
           
-          if (daysDiff > 7) {
+          // 7일이 지났고, photos_extended_access가 false이거나 null인 경우에만 접속 제한
+          if (daysDiff > 7 && !tourInfoData.photos_extended_access) {
             setError(language === 'ko' 
               ? '투어 날짜로부터 7일이 지나 이 페이지에 접속할 수 없습니다.' 
               : 'This page is no longer accessible 7 days after the tour date.')
