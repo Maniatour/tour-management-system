@@ -1,9 +1,12 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { X, Calculator, Clock, DollarSign, Calendar, User, Printer } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
+import html2pdf from 'html2pdf.js'
+import html2canvas from 'html2canvas'
+import jsPDF from 'jspdf'
 
 interface BiweeklyCalculatorModalProps {
   isOpen: boolean
@@ -35,6 +38,7 @@ interface TourFee {
   guide_fee: number
   driver_fee: number
   prepaid_tips: number
+  personal_car: number
   total_fee: number
 }
 
@@ -47,11 +51,23 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   const [attendancePay, setAttendancePay] = useState<number>(0)
   const [tourPay, setTourPay] = useState<number>(0)
   const [tipPay, setTipPay] = useState<number>(0)
+  const [personalCarPay, setPersonalCarPay] = useState<number>(0)
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<string>('')
   const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string}>>([])
   const [tourFees, setTourFees] = useState<TourFee[]>([])
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
+  const [paymentData, setPaymentData] = useState<{
+    paid_to: string
+    paid_for: string
+    description: string
+    amount: number
+    payment_method: string
+    photo_url: string
+  } | null>(null)
+  const printContentRef = useRef<HTMLDivElement>(null)
 
   // 현재 날짜 기준으로 기본값 설정
   const getDefaultDates = () => {
@@ -161,8 +177,8 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   }
 
   // 총 급여 계산 함수
-  const calculateTotalPay = (attendanceSalary: number, tourSalary: number, tipSalary: number) => {
-    return attendanceSalary + tourSalary + tipSalary
+  const calculateTotalPay = (attendanceSalary: number, tourSalary: number, tipSalary: number, personalCarSalary: number) => {
+    return attendanceSalary + tourSalary + tipSalary + personalCarSalary
   }
 
   // 출퇴근 기록 조회
@@ -423,6 +439,22 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
             console.error('Prepaid tips 계산 오류:', err)
           }
           
+          // Personal Car 금액 계산 (paid_for가 "Rent (Personal Vehicle)"인 tour_expenses 합산)
+          let personalCarAmount = 0
+          try {
+            const { data: expensesData, error: expensesError } = await supabase
+              .from('tour_expenses')
+              .select('amount')
+              .eq('tour_id', tour.id)
+              .eq('paid_for', 'Rent (Personal Vehicle)')
+
+            if (!expensesError && expensesData) {
+              personalCarAmount = expensesData.reduce((sum, expense) => sum + (expense.amount || 0), 0)
+            }
+          } catch (err) {
+            console.error('Personal Car 금액 계산 오류:', err)
+          }
+          
           return {
             id: tour.id,
             tour_id: tour.id,
@@ -434,16 +466,32 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
             guide_fee: tour.guide_fee || 0,
             driver_fee: tour.assistant_fee || 0,
             prepaid_tips: prepaidTips,
-            total_fee: (isGuide ? (tour.guide_fee || 0) : (tour.assistant_fee || 0)) + prepaidTips
+            personal_car: personalCarAmount,
+            total_fee: (isGuide ? (tour.guide_fee || 0) : (tour.assistant_fee || 0)) + prepaidTips + personalCarAmount
           }
         })
       )
 
       setTourFees(fees)
       
-      // 투어 급여 계산
-      const tourSalary = fees.reduce((sum, tour) => sum + tour.total_fee, 0)
+      // 투어 급여 계산 (personal_car, prepaid_tips 제외, guide_fee/driver_fee만 포함)
+      const tourSalary = fees.reduce((sum, tour) => {
+        const isGuide = tour.tour_guide_id === selectedEmployee
+        const isAssistant = tour.assistant_id === selectedEmployee
+        let fee = 0
+        if (isGuide) {
+          fee = tour.guide_fee
+        } else if (isAssistant) {
+          fee = tour.driver_fee
+        }
+        return sum + fee
+      }, 0)
       setTourPay(tourSalary)
+      
+      // Personal Car 소계 계산
+      const personalCarTotal = fees.reduce((sum, tour) => sum + (tour.personal_car || 0), 0)
+      setPersonalCarPay(personalCarTotal)
+      
       // 총 급여는 별도 useEffect에서 계산
     } catch (error) {
       console.error('투어 fee 조회 오류:', error)
@@ -458,11 +506,11 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     }
   }, [selectedEmployee, startDate, endDate])
 
-  // attendancePay, tourPay, tipPay가 변경될 때마다 총 급여 계산
+  // attendancePay, tourPay, tipPay, personalCarPay가 변경될 때마다 총 급여 계산
   useEffect(() => {
-    const total = calculateTotalPay(attendancePay, tourPay, tipPay)
+    const total = calculateTotalPay(attendancePay, tourPay, tipPay, personalCarPay)
     setTotalPay(total)
-  }, [attendancePay, tourPay, tipPay])
+  }, [attendancePay, tourPay, tipPay, personalCarPay])
 
   // 날짜나 직원이 변경될 때 투어 fee 조회
   useEffect(() => {
@@ -665,7 +713,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   }
 
   // 투어 필드 업데이트 핸들러
-  const handleTourFieldUpdate = async (tourId: string, field: 'team_type' | 'guide_fee' | 'driver_fee' | 'prepaid_tips', value: string | number) => {
+  const handleTourFieldUpdate = async (tourId: string, field: 'team_type' | 'guide_fee' | 'driver_fee' | 'prepaid_tips' | 'personal_car', value: string | number) => {
     try {
       // 로컬 state 먼저 업데이트
       setTourFees(prevFees => {
@@ -676,25 +724,35 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               updated.team_type = value as string
             } else if (field === 'guide_fee') {
               updated.guide_fee = value as number
-              // 선택된 직원이 가이드인 경우 total_fee도 업데이트 (prepaid_tips 포함)
+              // 선택된 직원이 가이드인 경우 total_fee도 업데이트 (prepaid_tips, personal_car 포함)
               if (tour.tour_guide_id === selectedEmployee) {
-                updated.total_fee = value as number + (updated.prepaid_tips || 0)
+                updated.total_fee = value as number + (updated.prepaid_tips || 0) + (updated.personal_car || 0)
               }
             } else if (field === 'driver_fee') {
               updated.driver_fee = value as number
-              // 선택된 직원이 어시스턴트인 경우 total_fee도 업데이트 (prepaid_tips 포함)
+              // 선택된 직원이 어시스턴트인 경우 total_fee도 업데이트 (prepaid_tips, personal_car 포함)
               if (tour.assistant_id === selectedEmployee) {
-                updated.total_fee = value as number + (updated.prepaid_tips || 0)
+                updated.total_fee = value as number + (updated.prepaid_tips || 0) + (updated.personal_car || 0)
               }
             } else if (field === 'prepaid_tips') {
               updated.prepaid_tips = value as number
-              // prepaid_tips 업데이트 시 total_fee도 재계산
+              // prepaid_tips 업데이트 시 total_fee도 재계산 (personal_car 포함)
               const isGuide = tour.tour_guide_id === selectedEmployee
               const isAssistant = tour.assistant_id === selectedEmployee
               if (isGuide) {
-                updated.total_fee = (updated.guide_fee || 0) + value as number
+                updated.total_fee = (updated.guide_fee || 0) + value as number + (updated.personal_car || 0)
               } else if (isAssistant) {
-                updated.total_fee = (updated.driver_fee || 0) + value as number
+                updated.total_fee = (updated.driver_fee || 0) + value as number + (updated.personal_car || 0)
+              }
+            } else if (field === 'personal_car') {
+              updated.personal_car = value as number
+              // personal_car 업데이트 시 total_fee도 재계산
+              const isGuide = tour.tour_guide_id === selectedEmployee
+              const isAssistant = tour.assistant_id === selectedEmployee
+              if (isGuide) {
+                updated.total_fee = (updated.guide_fee || 0) + (updated.prepaid_tips || 0) + value as number
+              } else if (isAssistant) {
+                updated.total_fee = (updated.driver_fee || 0) + (updated.prepaid_tips || 0) + value as number
               }
             }
             return updated
@@ -702,9 +760,23 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
           return tour
         })
         
-        // 투어 급여 재계산
-        const tourSalary = updatedFees.reduce((sum, tour) => sum + tour.total_fee, 0)
+        // 투어 급여 재계산 (guide_fee/driver_fee만 포함, prepaid_tips, personal_car 제외)
+        const tourSalary = updatedFees.reduce((sum, tour) => {
+          const isGuide = tour.tour_guide_id === selectedEmployee
+          const isAssistant = tour.assistant_id === selectedEmployee
+          let fee = 0
+          if (isGuide) {
+            fee = tour.guide_fee
+          } else if (isAssistant) {
+            fee = tour.driver_fee
+          }
+          return sum + fee
+        }, 0)
         setTourPay(tourSalary)
+        
+        // Personal Car 소계 재계산
+        const personalCarTotal = updatedFees.reduce((sum, tour) => sum + (tour.personal_car || 0), 0)
+        setPersonalCarPay(personalCarTotal)
         
         return updatedFees
       })
@@ -822,6 +894,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     setAttendancePay(0)
     setTourPay(0)
     setTipPay(0)
+    setPersonalCarPay(0)
     setAttendanceRecords([])
     setSelectedEmployee('')
     setTourFees([])
@@ -834,6 +907,15 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     const printWindow = window.open('', '_blank', 'width=800,height=600')
     
     if (printWindow) {
+      // 직원 포지션 확인
+      const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
+      const position = selectedMember?.position?.toLowerCase() || ''
+      const isGuideOrDriver = position === '가이드' || 
+                              position === 'guide' || 
+                              position === 'tour guide' ||
+                              position === '드라이버' || 
+                              position === 'driver'
+      
       // 프린트용 HTML 생성
       const printContent = `
         <!DOCTYPE html>
@@ -964,10 +1046,12 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                 <span class="info-label">기간:</span>
                 <span class="info-value">${startDate} ~ ${endDate}</span>
               </div>
+              ${!isGuideOrDriver ? `
               <div class="info-row">
                 <span class="info-label">시급:</span>
                 <span class="info-value">$${hourlyRate || '0'}</span>
               </div>
+              ` : ''}
             </div>
             
             <div class="right-section">
@@ -982,12 +1066,16 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   <span>$${formatCurrency(attendancePay)}</span>
                 </div>
                 <div class="calculation-item">
-                  <span>투어 Fee 소계:</span>
+                  <span>가이드 Fee 소계:</span>
                   <span>$${formatCurrency(tourPay)}</span>
                 </div>
                 <div class="calculation-item">
                   <span>Tips 쉐어 소계:</span>
                   <span>$${formatCurrency(tipPay)}</span>
+                </div>
+                <div class="calculation-item">
+                  <span>Personal Car 소계:</span>
+                  <span>$${formatCurrency(personalCarPay)}</span>
                 </div>
                 <div class="calculation-item total">
                   <span>총 급여:</span>
@@ -1039,23 +1127,33 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   <th>투어명</th>
                   <th>팀 타입</th>
                   <th>가이드 Fee</th>
-                  <th>드라이버 Fee</th>
                   <th>Prepaid Tips</th>
+                  <th>Personal Car</th>
                   <th>총 Fee</th>
                 </tr>
               </thead>
               <tbody>
-                ${tourFees.map(tour => `
+                ${tourFees.map(tour => {
+                  const isGuide = tour.tour_guide_id === selectedEmployee
+                  const isAssistant = tour.assistant_id === selectedEmployee
+                  let guideFeeDisplay = 0
+                  if (isGuide) {
+                    guideFeeDisplay = tour.guide_fee
+                  } else if (isAssistant) {
+                    guideFeeDisplay = tour.driver_fee
+                  }
+                  return `
                   <tr>
                     <td>${formatDate(tour.date)}</td>
                     <td>${tour.tour_name}</td>
                     <td>${tour.team_type}</td>
-                    <td>$${formatCurrency(tour.guide_fee)}</td>
-                    <td>$${formatCurrency(tour.driver_fee)}</td>
+                    <td>$${formatCurrency(guideFeeDisplay)}</td>
                     <td>$${formatCurrency(tour.prepaid_tips || 0)}</td>
+                    <td>$${formatCurrency(tour.personal_car || 0)}</td>
                     <td>$${formatCurrency(tour.total_fee)}</td>
                   </tr>
-                `).join('')}
+                `
+                }).join('')}
                 <tr style="font-weight: bold; background: #f3f4f6;">
                   <td colspan="6">총합</td>
                   <td>$${formatCurrency(tourFees.reduce((sum, tour) => sum + tour.total_fee, 0))}</td>
@@ -1154,12 +1252,545 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     })
   }
 
+  // 날짜를 MM/DD/YYYY 형식으로 변환 (라스베가스 시간 기준)
+  const formatDateForDescription = (dateString: string) => {
+    // YYYY-MM-DD 형식의 문자열을 라스베가스 시간으로 변환
+    const date = new Date(dateString + 'T00:00:00')
+    const lasVegasDate = new Date(date.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+    const month = String(lasVegasDate.getMonth() + 1).padStart(2, '0')
+    const day = String(lasVegasDate.getDate()).padStart(2, '0')
+    const year = lasVegasDate.getFullYear()
+    return `${month}/${day}/${year}`
+  }
+
+  // 현재 라스베가스 시간을 MM/DD/YYYY 형식으로 반환
+  const getLasVegasDateString = () => {
+    const now = new Date()
+    const lasVegasDate = new Date(now.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+    const month = String(lasVegasDate.getMonth() + 1).padStart(2, '0')
+    const day = String(lasVegasDate.getDate()).padStart(2, '0')
+    const year = lasVegasDate.getFullYear()
+    return `${month}/${day}/${year}`
+  }
+
+  // PDF 생성 및 업로드
+  const generateAndUploadPDF = async (): Promise<string | null> => {
+    if (!selectedEmployee || !startDate || !endDate) {
+      alert('직원과 날짜를 선택해주세요.')
+      return null
+    }
+
+    try {
+      setIsGeneratingPDF(true)
+
+      // 프린트용 HTML 생성 (handlePrint 함수의 내용 재사용)
+      const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
+      const employeeName = selectedMember?.name_ko || ''
+      const employeePosition = selectedMember?.position?.toLowerCase() || ''
+      const isGuideOrDriver = employeePosition === '가이드' || 
+                              employeePosition === 'guide' || 
+                              employeePosition === 'tour guide' ||
+                              employeePosition === '드라이버' || 
+                              employeePosition === 'driver'
+      
+      // Personal Car 소계 계산
+      const personalCarTotal = tourFees.reduce((sum, tour) => sum + (tour.personal_car || 0), 0)
+
+      const printContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>2주급 계산기</title>
+          <style>
+            * {
+              box-sizing: border-box;
+            }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              margin: 0;
+              padding: 20mm 15mm;
+              color: #333;
+              width: 100%;
+              max-width: 210mm;
+              margin: 0 auto;
+            }
+            .header {
+              text-align: center;
+              margin-bottom: 30px;
+              border-bottom: 2px solid #e5e7eb;
+              padding-bottom: 20px;
+            }
+            .header h1 {
+              font-size: 24px;
+              font-weight: bold;
+              margin: 0 0 10px 0;
+            }
+            .header p {
+              font-size: 14px;
+              color: #666;
+              margin: 0;
+            }
+            .content {
+              display: flex;
+              gap: 30px;
+              margin-bottom: 30px;
+            }
+            .left-section {
+              flex: 1;
+            }
+            .right-section {
+              flex: 1;
+            }
+            .section-title {
+              font-size: 18px;
+              font-weight: 600;
+              margin-bottom: 15px;
+              color: #374151;
+            }
+            .info-row {
+              display: flex;
+              margin-bottom: 10px;
+            }
+            .info-label {
+              font-weight: 500;
+              min-width: 120px;
+              color: #6b7280;
+            }
+            .info-value {
+              font-weight: 600;
+              color: #111827;
+            }
+            .calculation-box {
+              background: #f9fafb;
+              border: 1px solid #e5e7eb;
+              border-radius: 8px;
+              padding: 20px;
+              margin-bottom: 20px;
+            }
+            .calculation-item {
+              display: flex;
+              justify-content: space-between;
+              margin-bottom: 8px;
+              padding: 5px 0;
+            }
+            .calculation-item.total {
+              border-top: 1px solid #d1d5db;
+              padding-top: 10px;
+              margin-top: 10px;
+              font-weight: bold;
+              font-size: 16px;
+            }
+            .table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 15px;
+              table-layout: fixed;
+            }
+            .table th,
+            .table td {
+              border: 1px solid #d1d5db;
+              padding: 6px 8px;
+              text-align: left;
+              word-wrap: break-word;
+            }
+            .table th {
+              background: #f9fafb;
+              font-weight: 600;
+              font-size: 10px;
+            }
+            .table td {
+              font-size: 11px;
+            }
+            .table tbody tr:nth-child(even) {
+              background: #f9fafb;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>2주급 계산기</h1>
+            <p>${employeeName} | ${startDate} ~ ${endDate}</p>
+          </div>
+          
+          <div class="content">
+            <div class="left-section">
+              <div class="section-title">직원 정보</div>
+              <div class="info-row">
+                <span class="info-label">직원:</span>
+                <span class="info-value">${employeeName}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">기간:</span>
+                <span class="info-value">${startDate} ~ ${endDate}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">시급:</span>
+                <span class="info-value">$${hourlyRate || '0'}</span>
+              </div>
+            </div>
+            
+            <div class="right-section">
+              <div class="section-title">급여 계산</div>
+              <div class="calculation-box">
+                <div class="calculation-item">
+                  <span>총 근무시간:</span>
+                  <span>${formatWorkHours(totalHours)}</span>
+                </div>
+                <div class="calculation-item">
+                  <span>출퇴근 기록 소계:</span>
+                  <span>$${formatCurrency(attendancePay)}</span>
+                </div>
+                <div class="calculation-item">
+                  <span>가이드 Fee 소계:</span>
+                  <span>$${formatCurrency(tourPay)}</span>
+                </div>
+                <div class="calculation-item">
+                  <span>Tips 쉐어 소계:</span>
+                  <span>$${formatCurrency(tipPay)}</span>
+                </div>
+                <div class="calculation-item">
+                  <span>Personal Car 소계:</span>
+                  <span>$${formatCurrency(personalCarTotal)}</span>
+                </div>
+                <div class="calculation-item total">
+                  <span>총 급여:</span>
+                  <span>$${formatCurrency(totalPay)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          ${attendanceRecords.length > 0 ? `
+            <div class="section-title">출퇴근 기록 (${new Set(attendanceRecords.map(record => {
+              if (!record.check_in_time) return record.date
+              const utcDate = new Date(record.check_in_time)
+              const lasVegasTime = new Date(utcDate.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+              return lasVegasTime.toISOString().split('T')[0]
+            })).size}일, 총 ${attendanceRecords.length}회)</div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>출근 날짜</th>
+                  <th>출근 시간</th>
+                  <th>퇴근 시간</th>
+                  <th>근무시간</th>
+                  <th>식사시간 차감 후</th>
+                  <th>상태</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${attendanceRecords.map(record => `
+                  <tr>
+                    <td>${getDateFromCheckInTime(record.check_in_time)}</td>
+                    <td>${formatTime(record.check_in_time)}</td>
+                    <td>${formatTime(record.check_out_time)}</td>
+                    <td>${formatWorkHours(record.work_hours || 0)}</td>
+                    <td>${formatWorkHours(record.work_hours && record.work_hours > 8 ? record.work_hours - 0.5 : record.work_hours || 0)}</td>
+                    <td>${record.status || '-'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          ` : ''}
+          
+          ${tourFees.length > 0 ? `
+            <div class="section-title">투어 Fee</div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>투어 날짜</th>
+                  <th>투어명</th>
+                  <th>팀 타입</th>
+                  <th>가이드 Fee</th>
+                  <th>Prepaid Tips</th>
+                  <th>Personal Car</th>
+                  <th>총 Fee</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${tourFees.map(tour => {
+                  const isGuide = tour.tour_guide_id === selectedEmployee
+                  const isAssistant = tour.assistant_id === selectedEmployee
+                  let guideFeeDisplay = 0
+                  if (isGuide) {
+                    guideFeeDisplay = tour.guide_fee
+                  } else if (isAssistant) {
+                    guideFeeDisplay = tour.driver_fee
+                  }
+                  return `
+                  <tr>
+                    <td>${formatDate(tour.date)}</td>
+                    <td>${tour.tour_name}</td>
+                    <td>${tour.team_type}</td>
+                    <td>$${formatCurrency(guideFeeDisplay)}</td>
+                    <td>$${formatCurrency(tour.prepaid_tips || 0)}</td>
+                    <td>$${formatCurrency(tour.personal_car || 0)}</td>
+                    <td>$${formatCurrency(tour.total_fee)}</td>
+                  </tr>
+                `
+                }).join('')}
+                <tr style="font-weight: bold; background: #f3f4f6;">
+                  <td colspan="6">총합</td>
+                  <td>$${formatCurrency(tourFees.reduce((sum, tour) => sum + tour.total_fee, 0))}</td>
+                </tr>
+              </tbody>
+            </table>
+          ` : ''}
+        </body>
+        </html>
+      `
+
+      // 새 창을 열어서 HTML 렌더링 후 PDF 생성
+      const printWindow = window.open('', '_blank', 'width=800,height=600')
+      if (!printWindow) {
+        throw new Error('팝업이 차단되었습니다. 팝업 차단을 해제해주세요.')
+      }
+
+      printWindow.document.write(printContent)
+      printWindow.document.close()
+
+      // 콘텐츠가 완전히 로드될 때까지 대기
+      await new Promise<void>((resolve) => {
+        const checkReady = () => {
+          if (printWindow.document.readyState === 'complete') {
+            // 이미지와 스타일이 로드될 시간 확보
+            setTimeout(() => {
+              resolve()
+            }, 1000)
+          } else {
+            printWindow.addEventListener('load', () => {
+              setTimeout(() => {
+                resolve()
+              }, 1000)
+            })
+          }
+        }
+        checkReady()
+      })
+
+      // html2canvas로 캔버스 생성 (새 창의 body 사용)
+      const canvas = await html2canvas(printWindow.document.body, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        allowTaint: false,
+        backgroundColor: '#ffffff',
+        width: printWindow.document.documentElement.scrollWidth,
+        height: printWindow.document.documentElement.scrollHeight,
+        x: 0,
+        y: 0
+      })
+
+      // jsPDF로 PDF 생성
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      })
+
+      const imgWidth = 210 // A4 너비 (mm)
+      const pageHeight = 297 // A4 높이 (mm)
+      const imgHeight = (canvas.height * imgWidth) / canvas.width
+      let heightLeft = imgHeight
+      let position = 0
+
+      // 첫 페이지 추가
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, position, imgWidth, imgHeight)
+      heightLeft -= pageHeight
+
+      // 여러 페이지가 필요한 경우
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight
+        pdf.addPage()
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, position, imgWidth, imgHeight)
+        heightLeft -= pageHeight
+      }
+
+      // PDF를 Blob으로 변환
+      const pdfBlob = pdf.output('blob')
+      
+      // 창 닫기
+      printWindow.close()
+
+      // Supabase Storage에 업로드
+      const fileName = `payroll/${selectedEmployee}/${Date.now()}_payroll_${startDate}_${endDate}.pdf`
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('company-expense-files')
+        .upload(fileName, pdfBlob, {
+          contentType: 'application/pdf',
+          upsert: false
+        })
+
+      if (uploadError) {
+        console.error('PDF 업로드 오류:', uploadError)
+        throw uploadError
+      }
+
+      // 공개 URL 생성
+      const { data: urlData } = supabase.storage
+        .from('company-expense-files')
+        .getPublicUrl(fileName)
+
+      return urlData.publicUrl
+    } catch (error) {
+      console.error('PDF 생성 및 업로드 오류:', error)
+      alert('PDF 생성 중 오류가 발생했습니다.')
+      return null
+    } finally {
+      setIsGeneratingPDF(false)
+    }
+  }
+
+  // 기존 PDF 찾기
+  const findExistingPDF = async (): Promise<string | null> => {
+    if (!selectedEmployee || !startDate || !endDate) {
+      return null
+    }
+
+    try {
+      const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
+      const guideName = selectedMember?.name_ko || ''
+      
+      if (!guideName) {
+        return null
+      }
+
+      // 날짜 포맷팅 (라스베가스 시간 기준)
+      const startDateFormatted = formatDateForDescription(startDate)
+      const endDateFormatted = formatDateForDescription(endDate)
+      
+      // description 패턴: "MM/DD/YYYY ~ MM/DD/YYYY Paid on ..."
+      const descriptionPattern = `${startDateFormatted} ~ ${endDateFormatted}`
+      
+      // company_expenses 테이블에서 해당 기간의 기록 찾기
+      const { data: existingExpenses, error } = await supabase
+        .from('company_expenses')
+        .select('photo_url, description')
+        .eq('paid_to', guideName)
+        .eq('paid_for', 'Guide Fee')
+        .ilike('description', `%${descriptionPattern}%`)
+        .not('photo_url', 'is', null)
+        .order('submit_on', { ascending: false })
+        .limit(1)
+
+      if (error) {
+        console.error('기존 PDF 찾기 오류:', error)
+        return null
+      }
+
+      if (existingExpenses && existingExpenses.length > 0 && existingExpenses[0].photo_url) {
+        // PDF URL이 유효한지 확인
+        const photoUrl = existingExpenses[0].photo_url
+        if (photoUrl && photoUrl.trim() !== '') {
+          return photoUrl
+        }
+      }
+
+      return null
+    } catch (error) {
+      console.error('기존 PDF 찾기 오류:', error)
+      return null
+    }
+  }
+
+  // 지불 처리
+  const handlePayment = async () => {
+    if (!selectedEmployee || totalPay === 0) {
+      alert('지불할 금액이 없습니다.')
+      return
+    }
+
+    try {
+      // 먼저 기존 PDF가 있는지 확인
+      let pdfUrl = await findExistingPDF()
+      let isExistingPDF = false
+      
+      if (!pdfUrl) {
+        // 기존 PDF가 없으면 새로 생성
+        setIsGeneratingPDF(true)
+        pdfUrl = await generateAndUploadPDF()
+        if (!pdfUrl) {
+          return
+        }
+      } else {
+        // 기존 PDF가 있으면 사용
+        isExistingPDF = true
+        console.log('기존 PDF를 사용합니다:', pdfUrl)
+      }
+
+      // 가이드 이름 가져오기
+      const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
+      const guideName = selectedMember?.name_ko || ''
+
+      // 날짜 포맷팅 (라스베가스 시간 기준)
+      const startDateFormatted = formatDateForDescription(startDate)
+      const endDateFormatted = formatDateForDescription(endDate)
+      const paidOnDate = getLasVegasDateString()
+      const description = `${startDateFormatted} ~ ${endDateFormatted} Paid on ${paidOnDate}`
+
+      setPaymentData({
+        paid_to: guideName,
+        paid_for: 'Guide Fee',
+        description: description,
+        amount: totalPay,
+        payment_method: 'zelle',
+        photo_url: pdfUrl
+      })
+
+      // 기존 PDF 사용 시 알림
+      if (isExistingPDF) {
+        // 알림은 표시하지 않고 바로 모달 열기 (사용자가 확인할 수 있음)
+      }
+
+      // 회사 지출 추가 모달 열기
+      setShowPaymentModal(true)
+      
+    } catch (error) {
+      console.error('지불 처리 오류:', error)
+      alert('지불 처리 중 오류가 발생했습니다.')
+    }
+  }
+
+  // 회사 지출 저장
+  const handleSaveCompanyExpense = async () => {
+    if (!paymentData) return
+
+    try {
+      const { error } = await supabase
+        .from('company_expenses')
+        .insert({
+          paid_to: paymentData.paid_to,
+          paid_for: paymentData.paid_for,
+          description: paymentData.description,
+          amount: paymentData.amount,
+          payment_method: paymentData.payment_method,
+          photo_url: paymentData.photo_url,
+          submit_by: selectedEmployee,
+          category: 'payroll',
+          status: 'pending'
+        })
+
+      if (error) {
+        console.error('회사 지출 추가 오류:', error)
+        alert('회사 지출 추가 중 오류가 발생했습니다.')
+        return
+      }
+
+      alert('회사 지출이 성공적으로 추가되었습니다.')
+      setShowPaymentModal(false)
+      setPaymentData(null)
+    } catch (error) {
+      console.error('회사 지출 저장 오류:', error)
+      alert('회사 지출 저장 중 오류가 발생했습니다.')
+    }
+  }
+
   if (!isOpen) return null
 
   return (
     <>
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="bg-white rounded-lg shadow-xl max-w-7xl w-full mx-4 max-h-[90vh] overflow-y-auto">
         {/* 헤더 */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex items-center">
@@ -1291,7 +1922,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-medium text-gray-600">
                         <DollarSign className="w-3 h-3 inline mr-1" />
-                        투어 Fee 소계:
+                        가이드 Fee 소계:
                       </span>
                       <span className="text-sm font-bold text-purple-600">
                         ${formatCurrency(tourPay)}
@@ -1304,6 +1935,15 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                       </span>
                       <span className="text-sm font-bold text-pink-600">
                         ${formatCurrency(tipPay)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-gray-600">
+                        <DollarSign className="w-3 h-3 inline mr-1" />
+                        Personal Car 소계:
+                      </span>
+                      <span className="text-sm font-bold text-orange-600">
+                        ${formatCurrency(personalCarPay)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between border-t pt-1">
@@ -1359,19 +1999,19 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   <tbody className="bg-white divide-y divide-gray-200">
                     {attendanceRecords.map((record) => (
                       <tr key={record.id} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
                           {getDateFromCheckInTime(record.check_in_time)}
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
                           {formatTime(record.check_in_time)}
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
                           {formatTime(record.check_out_time)}
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
                           {record.work_hours ? formatWorkHours(record.work_hours) : '-'}
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
                           {record.work_hours ? formatWorkHours(record.work_hours > 8 ? record.work_hours - 0.5 : record.work_hours) : '-'}
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap">
@@ -1404,25 +2044,28 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                 <table className="min-w-full bg-white border border-gray-200 rounded-lg">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider align-middle">
                         투어 날짜
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider align-middle">
                         투어명
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider align-middle">
                         팀 타입
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider align-middle">
                         가이드 Fee
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider align-middle">
                         드라이버 Fee
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider align-middle">
                         Prepaid Tips
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider align-middle">
+                        Personal Car
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider align-middle">
                         총 Fee
                       </th>
                     </tr>
@@ -1430,18 +2073,18 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   <tbody className="bg-white divide-y divide-gray-200">
                     {tourFees.map((tour) => (
                       <tr key={tour.id} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 align-middle">
                           {formatDate(tour.date)}
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 align-middle">
                           <Link 
                             href={`/${locale}/admin/tours/${tour.tour_id}`}
-                            className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                            className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer text-xs"
                           >
                             {tour.tour_name}
                           </Link>
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 align-middle">
                           <select
                             value={tour.team_type || ''}
                             onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'team_type', e.target.value)}
@@ -1452,25 +2095,33 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                             <option value="guide+driver">guide+driver</option>
                           </select>
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 align-middle">
                           <input
                             type="number"
                             step="0.01"
                             value={tour.guide_fee || 0}
                             onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'guide_fee', parseFloat(e.target.value) || 0)}
-                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className={`w-full px-2 py-1 text-xs border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                              tour.tour_guide_id === selectedEmployee 
+                                ? 'border-blue-500 bg-blue-50' 
+                                : 'border-gray-300'
+                            }`}
                           />
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 align-middle">
                           <input
                             type="number"
                             step="0.01"
                             value={tour.driver_fee || 0}
                             onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'driver_fee', parseFloat(e.target.value) || 0)}
-                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className={`w-full px-2 py-1 text-xs border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                              tour.assistant_id === selectedEmployee 
+                                ? 'border-green-500 bg-green-50' 
+                                : 'border-gray-300'
+                            }`}
                           />
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 align-middle">
                           <input
                             type="number"
                             step="0.01"
@@ -1479,7 +2130,16 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                             className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           />
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-green-600">
+                        <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 align-middle">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={tour.personal_car || 0}
+                            onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'personal_car', parseFloat(e.target.value) || 0)}
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap text-xs font-medium text-green-600 align-middle">
                           ${formatCurrency(tour.total_fee)}
                         </td>
                       </tr>
@@ -1487,15 +2147,61 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   </tbody>
                   <tfoot className="bg-gray-50">
                     <tr>
-                      <td colSpan={6} className="px-3 py-2 text-right text-sm font-medium text-gray-900">
+                      <td colSpan={7} className="px-3 py-2 text-right text-xs font-medium text-gray-900 align-middle">
                         총합:
                       </td>
-                      <td className="px-3 py-2 text-sm font-bold text-green-600">
+                      <td className="px-3 py-2 text-xs font-bold text-green-600 align-middle">
                         ${formatCurrency(tourFees.reduce((sum, tour) => sum + tour.total_fee, 0))}
                       </td>
                     </tr>
                   </tfoot>
                 </table>
+              </div>
+              
+              {/* 소계 표시 */}
+              <div className="mt-4 bg-gray-50 rounded-lg p-4">
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center">
+                    <div className="text-xs font-medium text-gray-600 mb-1">가이드 Fee 소계</div>
+                    <div className="text-sm font-bold text-purple-600">
+                      ${formatCurrency(tourFees.reduce((sum, tour) => {
+                        const isGuide = tour.tour_guide_id === selectedEmployee
+                        const isAssistant = tour.assistant_id === selectedEmployee
+                        let fee = 0
+                        if (isGuide) {
+                          fee = tour.guide_fee
+                        } else if (isAssistant) {
+                          fee = tour.driver_fee
+                        }
+                        return sum + fee
+                      }, 0))}
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-xs font-medium text-gray-600 mb-1">Prepaid Tips 소계</div>
+                    <div className="text-sm font-bold text-pink-600">
+                      ${formatCurrency(tourFees.reduce((sum, tour) => sum + (tour.prepaid_tips || 0), 0))}
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-xs font-medium text-gray-600 mb-1">Personal Car 소계</div>
+                    <div className="text-sm font-bold text-orange-600">
+                      ${formatCurrency(tourFees.reduce((sum, tour) => sum + (tour.personal_car || 0), 0))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* 지불 버튼 */}
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={handlePayment}
+                  disabled={isGeneratingPDF || totalPay === 0}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 text-sm font-medium"
+                >
+                  <CreditCard className="w-4 h-4" />
+                  {isGeneratingPDF ? 'PDF 생성 중...' : '지불'}
+                </button>
               </div>
             </div>
           )}
@@ -1505,6 +2211,144 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
 
       </div>
     </div>
+
+    {/* 회사 지출 추가 모달 */}
+    {showPaymentModal && paymentData && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+        <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="flex items-center justify-between p-6 border-b border-gray-200">
+            <h2 className="text-xl font-bold text-gray-900">회사 지출 추가</h2>
+            <button
+              onClick={() => {
+                setShowPaymentModal(false)
+                setPaymentData(null)
+              }}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+
+          <div className="p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Paid To *
+                </label>
+                <input
+                  type="text"
+                  value={paymentData.paid_to}
+                  onChange={(e) => setPaymentData({ ...paymentData, paid_to: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Paid For *
+                </label>
+                <input
+                  type="text"
+                  value={paymentData.paid_for}
+                  onChange={(e) => setPaymentData({ ...paymentData, paid_for: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Description
+              </label>
+              <textarea
+                value={paymentData.description}
+                onChange={(e) => setPaymentData({ ...paymentData, description: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                rows={2}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Amount *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={paymentData.amount}
+                  onChange={(e) => setPaymentData({ ...paymentData, amount: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Payment Method *
+                </label>
+                <select
+                  value={paymentData.payment_method}
+                  onChange={(e) => setPaymentData({ ...paymentData, payment_method: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                >
+                  <option value="zelle">Zelle</option>
+                  <option value="cash">Cash</option>
+                  <option value="check">Check</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="venmo">Venmo</option>
+                  <option value="paypal">PayPal</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Photo URL (PDF)
+              </label>
+              <input
+                type="text"
+                value={paymentData.photo_url}
+                onChange={(e) => setPaymentData({ ...paymentData, photo_url: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                readOnly
+              />
+              {paymentData.photo_url && (
+                <a
+                  href={paymentData.photo_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 text-sm text-blue-600 hover:text-blue-800 underline"
+                >
+                  PDF 보기
+                </a>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t">
+              <button
+                onClick={() => {
+                  setShowPaymentModal(false)
+                  setPaymentData(null)
+                }}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleSaveCompanyExpense}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+              >
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
 
     </>
   )

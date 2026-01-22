@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { X, Send, DollarSign, Users, Package, Plus, Trash2, Calendar, Eye } from 'lucide-react'
+import { X, Send, DollarSign, Users, Package, Plus, Trash2, Calendar, Eye, FileText, Search, ChevronDown } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import ProductSelector, { Product as ProductSelectorProduct } from '@/components/common/ProductSelector'
@@ -48,6 +48,7 @@ interface InvoiceItem {
   participantType?: 'adult' | 'child' | 'infant' | 'none'
   choiceId?: string
   choiceOptionId?: string
+  selectedChoices?: Record<string, string> // choiceId -> optionId 매핑
   selectedOptions?: string[]
   itemType?: 'product' | 'option'
   optionId?: string
@@ -122,7 +123,20 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
     return `${year}-${month}-${day}`
   }
 
-  const [invoiceDate, setInvoiceDate] = useState(getLasVegasDate())
+  // Issue Date의 3일 뒤 날짜 계산
+  const getDueDateFromIssueDate = (issueDate: string) => {
+    if (!issueDate) return ''
+    const date = new Date(issueDate)
+    date.setDate(date.getDate() + 3)
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const initialIssueDate = getLasVegasDate()
+  const [invoiceDate, setInvoiceDate] = useState(initialIssueDate)
+  const [dueDate, setDueDate] = useState(getDueDateFromIssueDate(initialIssueDate))
   const [notes, setNotes] = useState('')
   const [savedInvoiceId, setSavedInvoiceId] = useState<string | null>(null)
   const [allProductOptions, setAllProductOptions] = useState<ProductOption[]>([])
@@ -140,6 +154,8 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
   const [showProductSelector, setShowProductSelector] = useState<string | null>(null)
   const [showPreview, setShowPreview] = useState(false)
   const [showAddMenu, setShowAddMenu] = useState<string | null>(null)
+  const [itemSearchQueries, setItemSearchQueries] = useState<Record<string, string>>({})
+  const [itemDropdownOpen, setItemDropdownOpen] = useState<Record<string, boolean>>({})
 
   // 실시간 환율 가져오기
   useEffect(() => {
@@ -230,7 +246,8 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         total: 0,
         editable: true,
         participantType: 'adult',
-        itemType: 'product'
+        itemType: 'product',
+        selectedChoices: {}
       }
       setInvoiceItems([initialItem])
     }
@@ -249,9 +266,32 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       if (error) throw error
 
       if (data) {
+        // 기존 choiceId/choiceOptionId를 selectedChoices로 변환
+        const items = (data.items || []).map((item: any) => {
+          // selectedChoices가 없고 기존 choiceId/choiceOptionId가 있으면 변환
+          if (!item.selectedChoices && item.choiceId && item.choiceOptionId) {
+            return {
+              ...item,
+              selectedChoices: {
+                [item.choiceId]: item.choiceOptionId
+              }
+            }
+          }
+          // selectedChoices가 없으면 빈 객체로 초기화
+          if (!item.selectedChoices) {
+            return {
+              ...item,
+              selectedChoices: {}
+            }
+          }
+          return item
+        })
+        
         setInvoiceNumber(data.invoice_number)
         setInvoiceDate(data.invoice_date)
-        setInvoiceItems(data.items || [])
+        // 저장된 due_date가 있으면 사용하고, 없으면 issue_date의 3일 뒤로 설정
+        setDueDate(data.due_date || getDueDateFromIssueDate(data.invoice_date))
+        setInvoiceItems(items)
         setSubtotal(parseFloat(data.subtotal) || 0)
         setTax(parseFloat(data.tax) || 0)
         setTotal(parseFloat(data.total) || 0)
@@ -266,8 +306,17 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         setNotes(data.notes || '')
         setSavedInvoiceId(data.id)
 
+        // 검색어 초기화
+        const searchQueries: Record<string, string> = {}
+        items.forEach((item: any) => {
+          if (item.productName) {
+            searchQueries[item.id] = item.productName
+          }
+        })
+        setItemSearchQueries(searchQueries)
+
         // 상품 초이스 로드
-        const productIds = [...new Set((data.items || []).filter((item: any) => item.productId).map((item: any) => item.productId))]
+        const productIds = [...new Set(items.filter((item: any) => item.productId).map((item: any) => item.productId))]
         for (const productId of productIds) {
           await loadProductChoices(productId)
         }
@@ -304,15 +353,18 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       if (!target.closest('.add-menu-container')) {
         setShowAddMenu(null)
       }
+      if (!target.closest('.item-combobox-container')) {
+        setItemDropdownOpen({})
+      }
     }
 
-    if (showAddMenu) {
+    if (showAddMenu || Object.keys(itemDropdownOpen).length > 0) {
       document.addEventListener('mousedown', handleClickOutside)
       return () => {
         document.removeEventListener('mousedown', handleClickOutside)
       }
     }
-  }, [showAddMenu])
+  }, [showAddMenu, itemDropdownOpen])
 
   // 상품 초이스 로드
   const loadProductChoices = async (productId: string) => {
@@ -547,15 +599,19 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       participantType: participantType as 'adult' | 'child' | 'infant' | 'none',
       choiceId: undefined,
       choiceOptionId: undefined,
+      selectedChoices: {},
       choiceInfo: undefined,
       selectedOptions: []
     })
 
+    // 검색어 업데이트
+    setItemSearchQueries(prev => ({ ...prev, [itemId]: productName }))
+    setItemDropdownOpen(prev => ({ ...prev, [itemId]: false }))
     setShowProductSelector(null)
   }
 
-  // 초이스 옵션 선택
-  const handleItemChoiceSelect = async (itemId: string, choiceId: string, optionId: string) => {
+  // 초이스 옵션 선택 (그룹별)
+  const handleItemChoiceSelect = async (itemId: string, choiceId: string, optionId: string | null) => {
     const item = invoiceItems.find(i => i.id === itemId)
     if (!item || !item.productId) return
 
@@ -564,7 +620,18 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
     const adults = participantType === 'adult' ? 1 : 0
     const children = participantType === 'child' ? 1 : 0
     const infants = participantType === 'infant' ? 1 : 0
-    const selectedChoices = [optionId]
+    
+    // 선택된 초이스 업데이트
+    const currentSelectedChoices = item.selectedChoices || {}
+    const updatedSelectedChoices = optionId 
+      ? { ...currentSelectedChoices, [choiceId]: optionId }
+      : (() => {
+          const { [choiceId]: removed, ...rest } = currentSelectedChoices
+          return rest
+        })()
+    
+    // 모든 선택된 초이스 옵션 ID 배열
+    const selectedChoiceOptionIds = Object.values(updatedSelectedChoices)
     const selectedOptions = item.selectedOptions || []
 
     let totalPrice = 0
@@ -593,226 +660,43 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
             basePrice = parseFloat(dynamicPricingData.infant_price || 0)
           }
 
-          // choices_pricing에서 해당 초이스 옵션의 가격 직접 조회
-          // 키 형식: {choice_id}+{option_key} (예: ec42a0fe-8747-4cfc-92b4-acaa51b75e5f+option_1)
-          if (dynamicPricingData.choices_pricing) {
-            const choicesPricing = typeof dynamicPricingData.choices_pricing === 'string'
-              ? JSON.parse(dynamicPricingData.choices_pricing)
-              : dynamicPricingData.choices_pricing
-
-            console.log('choices_pricing 데이터:', choicesPricing)
-            console.log('찾는 optionId:', optionId)
-            console.log('choices_pricing 키들:', Object.keys(choicesPricing || {}))
-
-            // 선택된 optionId에 해당하는 choice_id와 option_key 찾기
-            const choices = productChoicesMap[item.productId] || []
-            let choicePricing = null
-            let foundKey = null
-
-            // choices_pricing의 모든 키를 순회하면서 optionId와 매칭되는 키 찾기
-            const pricingKeys = Object.keys(choicesPricing || {})
+          // 모든 선택된 초이스의 가격을 계산하기 위해 calculateDynamicPrice 사용
+          try {
+            // 먼저 기본 가격만 계산 (초이스 없이)
+            const pricingWithoutChoice = await NewDynamicPricingService.calculateDynamicPrice(
+              item.productId,
+              channelId,
+              item.date,
+              adults,
+              children,
+              infants,
+              [], // 초이스 없이
+              []
+            )
             
-            // 먼저 현재 로드된 choices에서 optionId로 옵션 찾기
-            let targetOption = null
-            let targetChoice = null
+            // 모든 선택된 초이스 포함 가격 계산
+            const pricingWithChoice = await NewDynamicPricingService.calculateDynamicPrice(
+              item.productId,
+              channelId,
+              item.date,
+              adults,
+              children,
+              infants,
+              selectedChoiceOptionIds, // 모든 선택된 초이스 옵션 ID
+              []
+            )
             
-            for (const choice of choices) {
-              const option = optionId ? choice.options?.find((o: any) => o.id === optionId) : null
-              if (option) {
-                targetOption = option
-                targetChoice = choice
-                break
-              }
-            }
-
-            console.log('찾은 옵션:', targetOption, 'choice:', targetChoice)
-            console.log('choices_pricing 키들:', pricingKeys)
-            console.log('같은 상품의 모든 choice들:', choices.map(c => ({ id: c.id, name: c.name_ko || c.name, options: c.options?.map((o: any) => ({ id: o.id, option_key: o.option_key, name: o.name_ko || o.name })) })))
-
-            if (targetOption && targetChoice) {
-              // 방법 1: choice_id + option_key로 정확히 매칭 (가장 정확한 방법)
-              if (targetOption.option_key) {
-                const exactKey = `${targetChoice.id}+${targetOption.option_key}`
-                if (choicesPricing[exactKey]) {
-                  choicePricing = choicesPricing[exactKey]
-                  foundKey = exactKey
-                  console.log('정확한 매칭 (choice_id + option_key):', foundKey)
-                }
-              }
-
-              // 방법 2: choice_id로 시작하는 키들 중에서 option_key 매칭
-              if (!choicePricing && targetOption.option_key) {
-                const matchingKeys = pricingKeys.filter(key => key.startsWith(`${targetChoice.id}+`))
-                console.log('choice.id:', targetChoice.id, '일치하는 키들:', matchingKeys, '찾는 option_key:', targetOption.option_key)
-                
-                for (const key of matchingKeys) {
-                  const keyParts = key.split('+')
-                  if (keyParts.length === 2 && keyParts[1] === targetOption.option_key) {
-                    choicePricing = choicesPricing[key]
-                    foundKey = key
-                    console.log('choice_id + option_key로 찾음:', foundKey)
-                    break
-                  }
-                }
-              }
-
-              // 방법 3: 같은 상품의 모든 choice를 확인하여 option_key로 매칭
-              // choice_id가 변경되었을 수 있으므로, 같은 상품의 모든 choice를 확인
-              if (!choicePricing && targetOption.option_key) {
-                const allChoices = productChoicesMap[item.productId] || []
-                for (const choice of allChoices) {
-                  const matchingKeys = pricingKeys.filter(key => key.startsWith(`${choice.id}+`))
-                  if (matchingKeys.length > 0) {
-                    // 같은 choice의 옵션들 확인
-                    const sameChoiceOptions = choice.options || []
-                    const optionIndex = sameChoiceOptions.findIndex((o: any) => o.option_key === targetOption.option_key || o.id === optionId)
-                    
-                    if (optionIndex >= 0) {
-                      // option_1, option_2 형식의 키를 정렬하여 순서로 매칭
-                      const sortedKeys = matchingKeys.sort((a, b) => {
-                        const aNum = parseInt(a.split('+')[1]?.replace('option_', '') || '0')
-                        const bNum = parseInt(b.split('+')[1]?.replace('option_', '') || '0')
-                        return aNum - bNum
-                      })
-                      
-                      if (optionIndex < sortedKeys.length) {
-                        choicePricing = choicesPricing[sortedKeys[optionIndex]]
-                        foundKey = sortedKeys[optionIndex]
-                        console.log('다른 choice에서 옵션 순서로 매칭 성공:', foundKey, 'choice.id:', choice.id, 'optionIndex:', optionIndex, 'sortedKeys:', sortedKeys)
-                        break
-                      }
-                    }
-                  }
-                }
-              }
-
-              // 방법 4: option_key만으로 매칭 (choice_id가 변경되었을 수 있으므로)
-              // 하지만 같은 choice 내의 다른 옵션과 혼동될 수 있으므로 주의
-              if (!choicePricing && targetOption.option_key) {
-                // option_key로 직접 매칭 시도
-                for (const key of pricingKeys) {
-                  const keyParts = key.split('+')
-                  if (keyParts.length === 2 && keyParts[1] === targetOption.option_key) {
-                    choicePricing = choicesPricing[key]
-                    foundKey = key
-                    console.log('option_key만으로 찾음 (choice_id 무시):', foundKey)
-                    break
-                  }
-                }
-              }
-
-              // 방법 5: 같은 choice 내에서 옵션 순서로 매칭
-              // choices_pricing 키가 {choice_id}+option_1, {choice_id}+option_2 형식일 수 있음
-              if (!choicePricing) {
-                const sameChoiceOptions = targetChoice.options || []
-                const optionIndex = sameChoiceOptions.findIndex((o: any) => o.id === optionId)
-                
-                // choices_pricing에서 같은 choice_id로 시작하는 키들을 찾고, 순서로 매칭
-                const matchingKeys = pricingKeys.filter(key => key.startsWith(`${targetChoice.id}+`))
-                console.log('옵션 순서 매칭 시도 - optionIndex:', optionIndex, 'matchingKeys:', matchingKeys, 'sameChoiceOptions.length:', sameChoiceOptions.length)
-                
-                if (matchingKeys.length > 0 && optionIndex >= 0) {
-                  // option_1, option_2 형식의 키를 정렬하여 순서로 매칭
-                  const sortedKeys = matchingKeys.sort((a, b) => {
-                    const aNum = parseInt(a.split('+')[1]?.replace('option_', '') || '0')
-                    const bNum = parseInt(b.split('+')[1]?.replace('option_', '') || '0')
-                    return aNum - bNum
-                  })
-                  
-                  if (optionIndex < sortedKeys.length) {
-                    choicePricing = choicesPricing[sortedKeys[optionIndex]]
-                    foundKey = sortedKeys[optionIndex]
-                    console.log('옵션 순서로 매칭 성공:', foundKey, 'optionIndex:', optionIndex, 'sortedKeys:', sortedKeys)
-                  }
-                }
-              }
-
-              // 방법 6: 같은 choice에 옵션이 하나만 있고, choices_pricing에도 하나만 있으면 매칭
-              if (!choicePricing) {
-                const matchingKeys = pricingKeys.filter(key => key.startsWith(`${targetChoice.id}+`))
-                if (matchingKeys.length === 1 && targetChoice.options?.length === 1) {
-                  choicePricing = choicesPricing[matchingKeys[0]]
-                  foundKey = matchingKeys[0]
-                  console.log('단일 옵션 매칭으로 찾음:', foundKey)
-                }
-              }
-            }
-
-            console.log('찾은 choicePricing:', choicePricing, '키:', foundKey)
-
-            // choicePricing을 찾지 못했으면 calculateDynamicPrice 사용
-            if (!choicePricing) {
-              try {
-                console.log('calculateDynamicPrice로 초이스 가격 계산 시도')
-                // 먼저 기본 가격만 계산 (초이스 없이)
-                const pricingWithoutChoice = await NewDynamicPricingService.calculateDynamicPrice(
-                  item.productId,
-                  channelId,
-                  item.date,
-                  adults,
-                  children,
-                  infants,
-                  [], // 초이스 없이
-                  []
-                )
-                
-                // 초이스 포함 가격 계산
-                const pricingWithChoice = await NewDynamicPricingService.calculateDynamicPrice(
-                  item.productId,
-                  channelId,
-                  item.date,
-                  adults,
-                  children,
-                  infants,
-                  [optionId], // 선택된 초이스 옵션 ID
-                  []
-                )
-                
-                console.log('pricingWithoutChoice:', pricingWithoutChoice)
-                console.log('pricingWithChoice:', pricingWithChoice)
-                
-                // choicesPrice가 있으면 초이스 가격 사용
-                // choicesPrice는 참가자 수에 따라 계산된 총 가격이므로, 단일 참가자 기준으로 나누기
-                if (pricingWithChoice.choicesPrice > 0) {
-                  // 참가자 수에 따라 나누기
-                  const totalParticipants = adults + children + infants
-                  if (totalParticipants > 0) {
-                    choicePrice = pricingWithChoice.choicesPrice / totalParticipants
-                  } else {
-                    choicePrice = pricingWithChoice.choicesPrice
-                  }
-                  console.log('calculateDynamicPrice로 계산된 choicePrice:', choicePrice, 'choicesPrice:', pricingWithChoice.choicesPrice, 'totalParticipants:', totalParticipants)
-                } else {
-                  // choicesPrice가 0이면 totalPrice에서 basePrice를 빼서 초이스 가격 계산
-                  const diff = pricingWithChoice.totalPrice - pricingWithoutChoice.totalPrice
-                  if (diff > 0) {
-                    const totalParticipants = adults + children + infants
-                    if (totalParticipants > 0) {
-                      choicePrice = diff / totalParticipants
-                    } else {
-                      choicePrice = diff
-                    }
-                    console.log('totalPrice 차이로 계산된 choicePrice:', choicePrice, 'diff:', diff)
-                  }
-                }
-              } catch (error) {
-                console.error('calculateDynamicPrice 실패:', error)
-              }
+            // 초이스 가격 = (초이스 포함 가격 - 기본 가격) / 참가자 수
+            const totalParticipants = adults + children + infants
+            if (totalParticipants > 0) {
+              choicePrice = (pricingWithChoice.totalPrice - pricingWithoutChoice.totalPrice) / totalParticipants
             } else {
-              // adult, child, infant 필드 또는 adult_price, child_price, infant_price 필드 사용
-              if (participantType === 'adult') {
-                choicePrice = parseFloat(choicePricing.adult || choicePricing.adult_price || 0)
-              } else if (participantType === 'child') {
-                choicePrice = parseFloat(choicePricing.child || choicePricing.child_price || 0)
-              } else {
-                choicePrice = parseFloat(choicePricing.infant || choicePricing.infant_price || 0)
-              }
-              console.log('계산된 choicePrice:', choicePrice, 'participantType:', participantType, 'choicePricing:', choicePricing)
+              choicePrice = pricingWithChoice.totalPrice - pricingWithoutChoice.totalPrice
             }
-
-            if (!choicePricing && choicePrice === 0) {
-              console.warn('choicePricing을 찾을 수 없고 calculateDynamicPrice도 실패했습니다. optionId:', optionId, 'available keys:', Object.keys(choicesPricing || {}))
-            }
+            
+            console.log('초이스 가격 계산 - basePrice:', basePrice, 'choicePrice:', choicePrice, 'totalPrice:', basePrice + choicePrice)
+          } catch (error) {
+            console.error('calculateDynamicPrice 실패:', error)
           }
         } else {
           // dynamic_pricing이 없으면 calculateDynamicPrice 사용
@@ -823,7 +707,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
             adults,
             children,
             infants,
-            [],
+            selectedChoiceOptionIds,
             []
           )
           basePrice = pricing.basePrice
@@ -831,7 +715,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
 
         // 기본 가격 + 초이스 가격
         totalPrice = basePrice + choicePrice
-        console.log('최종 가격 계산 - basePrice:', basePrice, 'choicePrice:', choicePrice, 'totalPrice:', totalPrice)
+        console.log('최종 가격 계산 - basePrice:', basePrice, 'choicePrice:', choicePrice, 'totalPrice:', totalPrice, 'selectedChoices:', updatedSelectedChoices)
       } catch (error) {
         console.error('동적 가격 조회 실패:', error)
         // Fallback: 전체 가격 계산
@@ -843,7 +727,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
             adults,
             children,
             infants,
-            selectedChoices,
+            selectedChoiceOptionIds,
             selectedOptions
           )
           totalPrice = pricing.totalPrice
@@ -876,18 +760,27 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       }
     }
 
+    // 모든 선택된 초이스 정보 생성
     const choices = productChoicesMap[item.productId] || []
-    const choice = choices.find(c => c.id === choiceId)
-    const option = choice?.options.find(o => o.id === optionId)
-    const choiceName = locale === 'ko' ? (choice?.name_ko || choice?.name) : (choice?.name_en || choice?.name)
-    const optionName = locale === 'ko' ? (option?.name_ko || option?.name) : (option?.name_en || option?.name)
+    const choiceInfoParts: string[] = []
+    
+    for (const [cid, oid] of Object.entries(updatedSelectedChoices)) {
+      const choice = choices.find(c => c.id === cid)
+      const option = choice?.options.find(o => o.id === oid)
+      if (choice && option) {
+        const choiceName = locale === 'ko' ? (choice.name_ko || choice.name) : (choice.name_en || choice.name)
+        const optionName = locale === 'ko' ? (option.name_ko || option.name) : (option.name_en || option.name)
+        choiceInfoParts.push(`${choiceName}: ${optionName}`)
+      }
+    }
+    
+    const choiceInfo = choiceInfoParts.length > 0 ? choiceInfoParts.join(', ') : undefined
 
-    console.log('초이스 선택 완료 - optionId:', optionId, 'choicePrice:', choicePrice, 'totalPrice:', totalPrice, 'quantity:', item.quantity)
+    console.log('초이스 선택 완료 - selectedChoices:', updatedSelectedChoices, 'totalPrice:', totalPrice, 'quantity:', item.quantity)
 
     handleUpdateInvoiceItem(itemId, {
-      choiceId,
-      choiceOptionId: optionId,
-      choiceInfo: `${choiceName}: ${optionName}`,
+      selectedChoices: updatedSelectedChoices,
+      choiceInfo,
       unitPrice: totalPrice,
       total: totalPrice * item.quantity
     })
@@ -968,7 +861,8 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       total: 0,
       editable: true,
       participantType: 'adult',
-      itemType: 'product'
+      itemType: 'product',
+      selectedChoices: {}
     }
     setInvoiceItems(prev => [...prev, newItem])
   }
@@ -987,7 +881,8 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
       editable: true,
       participantType: productItem.participantType || 'adult',
       itemType: 'option',
-      optionId: undefined
+      optionId: undefined,
+      selectedChoices: {}
     }
     setInvoiceItems(prev => [...prev, newOptionItem])
   }
@@ -1012,6 +907,26 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
     setInvoiceItems(prev => [...prev, newOptionItem])
   }
 
+  // 텍스트 항목 추가
+  const handleAddTextItem = () => {
+    const lastItem = invoiceItems[invoiceItems.length - 1]
+    const newTextItem: InvoiceItem = {
+      id: `item-${Date.now()}`,
+      productId: '',
+      productName: '',
+      date: lastItem?.date || getLasVegasDate(),
+      description: '',
+      quantity: 1,
+      unitPrice: 0,
+      total: 0,
+      editable: true,
+      participantType: 'none',
+      itemType: 'product',
+      selectedChoices: {}
+    }
+    setInvoiceItems(prev => [...prev, newTextItem])
+  }
+
   // 항목 삭제
   const handleRemoveInvoiceItem = (itemId: string) => {
     setInvoiceItems(prev => prev.filter(i => i.id !== itemId))
@@ -1026,8 +941,14 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         <meta charset="UTF-8">
         <style>
           body { font-family: Arial, sans-serif; margin: 20px; }
-          .invoice-header { margin-bottom: 30px; }
-          .invoice-info { margin-bottom: 20px; }
+          .invoice-container { display: flex; justify-content: space-between; margin-bottom: 20px; }
+          .company-info { flex: 1; }
+          .company-info h2 { margin: 0 0 10px 0; font-size: 20px; font-weight: bold; }
+          .company-info p { margin: 4px 0; font-size: 12px; line-height: 1.4; }
+          .invoice-header { flex: 1; text-align: right; }
+          .invoice-info { margin-bottom: 0; }
+          .invoice-info p { margin: 6px 0; text-align: right; }
+          .invoice-title { text-align: center; font-size: 32px; font-weight: bold; margin: 20px 0; }
           table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
           th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
           th { background-color: #f5f5f5; font-weight: bold; }
@@ -1036,15 +957,26 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         </style>
       </head>
       <body>
-        <div class="invoice-header">
-          <h1>${locale === 'ko' ? '인보이스' : 'Invoice'}</h1>
-          <div class="invoice-info">
-            <p><strong>${locale === 'ko' ? '인보이스 번호' : 'Invoice Number'}:</strong> ${invoiceNumber}</p>
-            <p><strong>${locale === 'ko' ? '날짜' : 'Date'}:</strong> ${new Date(invoiceDate).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}</p>
-            <p><strong>${locale === 'ko' ? '고객' : 'Customer'}:</strong> ${customer.name}</p>
-            <p><strong>${locale === 'ko' ? '이메일' : 'Email'}:</strong> ${customer.email}</p>
+        <div class="invoice-container">
+          <div class="company-info">
+            <h2>LAS VEGAS MANIA TOUR</h2>
+            <p>3351 South Highland Drive</p>
+            <p>Las Vegas, Nevada 89109</p>
+            <p>United States</p>
+            <p>info@maniatour.com</p>
+            <p>+1 702-929-8025 / +1 702-444-5531</p>
+          </div>
+          <div class="invoice-header">
+            <div class="invoice-info">
+              <p><strong>${locale === 'ko' ? '인보이스 번호' : 'Invoice Number'}:</strong> ${invoiceNumber}</p>
+              <p><strong>${locale === 'ko' ? '작성일' : 'Issue Date'}:</strong> ${new Date(invoiceDate).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}</p>
+              ${dueDate ? `<p><strong>${locale === 'ko' ? '만기일' : 'Due Date'}:</strong> ${new Date(dueDate).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}</p>` : ''}
+              <p><strong>${locale === 'ko' ? '고객' : 'Customer'}:</strong> ${customer.name}</p>
+              <p><strong>${locale === 'ko' ? '이메일' : 'Email'}:</strong> ${customer.email}</p>
+            </div>
           </div>
         </div>
+        <h1 class="invoice-title">${locale === 'ko' ? '인보이스' : 'Invoice'}</h1>
         <table>
           <thead>
             <tr>
@@ -1069,29 +1001,34 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
               </tr>
             `).join('')}
             <tr class="total-row">
-              <td colspan="5" class="text-right">${locale === 'ko' ? '소계' : 'Subtotal'}:</td>
+              <td colspan="3"></td>
+              <td class="text-right">${locale === 'ko' ? '소계' : 'Subtotal'}:</td>
               <td class="text-right">${formatUSD(subtotal)}</td>
             </tr>
             ${applyTax && taxPercent > 0 ? `
             <tr>
-              <td colspan="5" class="text-right">${locale === 'ko' ? '세금' : 'Tax'} (${taxPercent}%):</td>
+              <td colspan="3"></td>
+              <td class="text-right">${locale === 'ko' ? '세금' : 'Tax'} (${taxPercent}%):</td>
               <td class="text-right">${formatUSD(tax)}</td>
             </tr>
             ` : ''}
             ${applyDiscount && (discountPercent > 0 || discountAmount > 0) ? `
             <tr>
-              <td colspan="5" class="text-right">${locale === 'ko' ? '할인' : 'Discount'}${discountPercent > 0 ? ` (${discountPercent}%)` : ''}${discountReason ? ` - ${discountReason}` : ''}:</td>
+              <td colspan="3"></td>
+              <td class="text-right">${locale === 'ko' ? '할인' : 'Discount'}${discountPercent > 0 ? ` (${discountPercent}%)` : ''}${discountReason ? ` - ${discountReason}` : ''}:</td>
               <td class="text-right" style="color: #dc2626;">-${formatUSD(discountAmount > 0 ? discountAmount : (subtotal + tax) * (discountPercent / 100))}</td>
             </tr>
             ` : ''}
             ${applyProcessingFee ? `
             <tr>
-              <td colspan="5" class="text-right">${locale === 'ko' ? '신용카드 처리 수수료 (5%)' : 'Credit Card Processing Fee (5%)'}:</td>
+              <td colspan="3"></td>
+              <td class="text-right">${locale === 'ko' ? '신용카드 처리 수수료 (5%)' : 'Credit Card Processing Fee (5%)'}:</td>
               <td class="text-right">${formatUSD((subtotal + tax - (applyDiscount ? (subtotal + tax) * (discountPercent / 100) : 0)) * 0.05)}</td>
             </tr>
             ` : ''}
             <tr class="total-row">
-              <td colspan="5" class="text-right">${locale === 'ko' ? '총액' : 'Total'}:</td>
+              <td colspan="3"></td>
+              <td class="text-right">${locale === 'ko' ? '총액' : 'Total'}:</td>
               <td class="text-right">${formatUSD(total)}</td>
             </tr>
           </tbody>
@@ -1214,6 +1151,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
           customer_id: customer.id,
           invoice_number: invoiceNumber,
           invoice_date: invoiceDate,
+          due_date: dueDate || null,
           items: invoiceItems,
           subtotal,
           tax,
@@ -1306,7 +1244,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
         {/* 본문 */}
         <div className="p-6">
           {/* 인보이스 정보 */}
-          <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="grid grid-cols-3 gap-4 mb-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {locale === 'ko' ? '인보이스 번호' : 'Invoice Number'}
@@ -1320,12 +1258,30 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                {locale === 'ko' ? '날짜' : 'Date'}
+                {locale === 'ko' ? '작성일' : 'Issue Date'}
               </label>
               <input
                 type="date"
                 value={invoiceDate}
-                onChange={(e) => setInvoiceDate(e.target.value)}
+                onChange={(e) => {
+                  const newIssueDate = e.target.value
+                  setInvoiceDate(newIssueDate)
+                  // Due Date가 비어있거나 Issue Date의 3일 뒤가 아닌 경우에만 자동 업데이트
+                  if (!dueDate || dueDate === getDueDateFromIssueDate(invoiceDate)) {
+                    setDueDate(getDueDateFromIssueDate(newIssueDate))
+                  }
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {locale === 'ko' ? '만기일' : 'Due Date'}
+              </label>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               />
             </div>
@@ -1399,6 +1355,16 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                                 >
                                   <Package size={14} className="text-purple-600" />
                                   <span>{locale === 'ko' ? '통합 옵션 추가' : 'Add Integrated Option'}</span>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    handleAddTextItem()
+                                    setShowAddMenu(null)
+                                  }}
+                                  className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors flex items-center space-x-2 border-t border-gray-100"
+                                >
+                                  <FileText size={14} className="text-blue-600" />
+                                  <span>{locale === 'ko' ? '텍스트 추가' : 'Add Text'}</span>
                                 </button>
                               </div>
                             )}
@@ -1512,43 +1478,143 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
                             </select>
                           ) : (
                             <>
-                              <button
-                                onClick={() => setShowProductSelector(item.id)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-left hover:bg-gray-50"
-                              >
-                                {item.productName || (locale === 'ko' ? '상품 선택' : 'Select Product')}
-                              </button>
+                              <div className="space-y-2">
+                                {/* Combobox 스타일 입력 */}
+                                <div className="relative item-combobox-container">
+                                  <div className="flex items-center border border-gray-300 rounded-lg">
+                                    <Search className="absolute left-2 h-4 w-4 text-gray-400" />
+                                    <input
+                                      type="text"
+                                      value={itemSearchQueries[item.id] !== undefined ? itemSearchQueries[item.id] : (item.productName || '')}
+                                      onChange={(e) => {
+                                        const query = e.target.value
+                                        setItemSearchQueries(prev => ({ ...prev, [item.id]: query }))
+                                        setItemDropdownOpen(prev => ({ ...prev, [item.id]: true }))
+                                        
+                                        // 텍스트 입력 시 즉시 업데이트
+                                        handleUpdateInvoiceItem(item.id, {
+                                          productName: query,
+                                          description: item.description || query,
+                                          productId: '', // 텍스트 입력 시 productId는 빈 문자열
+                                          choiceId: undefined,
+                                          choiceOptionId: undefined,
+                                          choiceInfo: undefined
+                                        })
+                                      }}
+                                      onFocus={() => {
+                                        setItemDropdownOpen(prev => ({ ...prev, [item.id]: true }))
+                                        // 포커스 시 검색어 초기화 (상품명으로)
+                                        if (itemSearchQueries[item.id] === undefined && item.productName) {
+                                          setItemSearchQueries(prev => ({ ...prev, [item.id]: item.productName }))
+                                        }
+                                      }}
+                                      placeholder={locale === 'ko' ? '입력, 선택 또는 검색' : 'Type, select or search for item'}
+                                      className="w-full pl-8 pr-8 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    <button
+                                      onClick={() => {
+                                        const isOpen = itemDropdownOpen[item.id]
+                                        setItemDropdownOpen(prev => ({ ...prev, [item.id]: !isOpen }))
+                                        if (!isOpen) {
+                                          setShowProductSelector(item.id)
+                                        }
+                                      }}
+                                      className="absolute right-2 p-1 hover:bg-gray-100 rounded"
+                                    >
+                                      <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${itemDropdownOpen[item.id] ? 'rotate-180' : ''}`} />
+                                    </button>
+                                  </div>
+                                  
+                                  {/* 드롭다운 목록 */}
+                                  {itemDropdownOpen[item.id] && (
+                                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                      <button
+                                        onClick={() => {
+                                          setShowProductSelector(item.id)
+                                          setItemDropdownOpen(prev => ({ ...prev, [item.id]: false }))
+                                        }}
+                                        className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 border-b border-gray-100"
+                                      >
+                                        {locale === 'ko' ? '상품 목록에서 선택' : 'Select from product list'}
+                                      </button>
+                                      {(() => {
+                                        const query = itemSearchQueries[item.id] || ''
+                                        const filteredProducts = products.filter(p => {
+                                          const nameKo = p.name_ko?.toLowerCase() || ''
+                                          const nameEn = p.name_en?.toLowerCase() || ''
+                                          const searchLower = query.toLowerCase()
+                                          return nameKo.includes(searchLower) || nameEn.includes(searchLower)
+                                        }).slice(0, 10)
+                                        
+                                        return filteredProducts.map(product => {
+                                          const productName = locale === 'ko' ? (product.name_ko || product.name_en) : (product.name_en || product.name_ko)
+                                          return (
+                                            <button
+                                              key={product.id}
+                                              onClick={() => {
+                                                handleItemProductSelect(item.id, product)
+                                                setItemSearchQueries(prev => ({ ...prev, [item.id]: productName || '' }))
+                                                setItemDropdownOpen(prev => ({ ...prev, [item.id]: false }))
+                                              }}
+                                              className="w-full px-3 py-2 text-left text-sm hover:bg-blue-50"
+                                            >
+                                              {productName}
+                                            </button>
+                                          )
+                                        })
+                                      })()}
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                {/* Description 필드 */}
+                                <textarea
+                                  value={item.description || ''}
+                                  onChange={(e) => handleUpdateInvoiceItem(item.id, {
+                                    description: e.target.value
+                                  })}
+                                  placeholder={locale === 'ko' ? '설명 작성' : 'Write a description'}
+                                  rows={2}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-y"
+                                />
+                              </div>
+                              {/* 초이스 그룹별 선택 */}
                               {item.productId && choices.length > 0 && (
-                                <select
-                                  value={item.choiceOptionId || ''}
-                                  onChange={(e) => {
-                                    if (e.target.value) {
-                                      const choice = choices.find(c => c.options.some(o => o.id === e.target.value))
-                                      if (choice) {
-                                        handleItemChoiceSelect(item.id, choice.id, e.target.value)
-                                      }
-                                    } else {
-                                      handleUpdateInvoiceItem(item.id, {
-                                        choiceId: undefined,
-                                        choiceOptionId: undefined,
-                                        choiceInfo: undefined,
-                                        unitPrice: item.unitPrice,
-                                        total: item.unitPrice * item.quantity
-                                      })
-                                    }
-                                  }}
-                                  className="w-full px-2 py-1 border border-gray-300 rounded text-xs mt-1"
-                                >
-                                  <option value="">{locale === 'ko' ? '초이스 선택 (선택사항)' : 'Select Choice (Optional)'}</option>
+                                <div className="space-y-2 mt-2">
                                   {choices.map(choice => {
                                     const options = choice.options?.filter(opt => opt.is_active) || []
-                                    return options.map(option => (
-                                      <option key={option.id} value={option.id}>
-                                        {locale === 'ko' ? (choice.name_ko || choice.name) : (choice.name_en || choice.name)}: {locale === 'ko' ? (option.name_ko || option.name) : (option.name_en || option.name)}
-                                      </option>
-                                    ))
+                                    if (options.length === 0) return null
+                                    
+                                    const choiceName = locale === 'ko' ? (choice.name_ko || choice.name) : (choice.name_en || choice.name)
+                                    const selectedOptionId = item.selectedChoices?.[choice.id] || ''
+                                    
+                                    return (
+                                      <div key={choice.id} className="space-y-1">
+                                        <label className="text-xs font-medium text-gray-700">
+                                          {choiceName}
+                                        </label>
+                                        <select
+                                          value={selectedOptionId}
+                                          onChange={(e) => {
+                                            const optionId = e.target.value || null
+                                            handleItemChoiceSelect(item.id, choice.id, optionId)
+                                          }}
+                                          className="w-full px-2 py-1 border border-gray-300 rounded text-xs"
+                                        >
+                                          <option value="">{locale === 'ko' ? '선택 안함' : 'None'}</option>
+                                          {options.map(option => {
+                                            const optionName = locale === 'ko' ? (option.name_ko || option.name) : (option.name_en || option.name)
+                                            return (
+                                              <option key={option.id} value={option.id}>
+                                                {optionName}
+                                              </option>
+                                            )
+                                          })}
+                                        </select>
+                                      </div>
+                                    )
                                   })}
-                                </select>
+                                </div>
                               )}
                               {item.choiceInfo && (
                                 <div className="text-xs text-blue-600 mt-1">

@@ -91,7 +91,25 @@ export async function POST() {
         break
       }
 
-      console.log(`Processing batch ${Math.floor(offset / pageSize) + 1}: ${reservations.length} reservations`)
+      // 배치로 이미 마이그레이션된 reservation_id 조회 (한 번에)
+      const reservationIds = reservations.map(r => r.id)
+      const { data: existingChoicesData } = await supabase
+        .from('reservation_choices')
+        .select('reservation_id')
+        .in('reservation_id', reservationIds)
+      
+      const migratedReservationIds = new Set(
+        existingChoicesData?.map(c => c.reservation_id) || []
+      )
+
+      // 배치로 모든 choices를 모아서 한 번에 insert
+      const allChoicesToInsert: Array<{
+        reservation_id: string
+        choice_id: string
+        option_id: string
+        quantity: number
+        total_price: number
+      }> = []
 
       // 각 예약의 selected_options를 reservation_choices로 변환
       for (const reservation of reservations) {
@@ -111,29 +129,14 @@ export async function POST() {
           continue
         }
 
-        // 이미 reservation_choices가 있는지 확인
-        const { data: existingChoices } = await supabase
-          .from('reservation_choices')
-          .select('id')
-          .eq('reservation_id', reservation.id)
-          .limit(1)
-
-        if (existingChoices && existingChoices.length > 0) {
-          // 이미 reservation_choices가 있으면 스킵
+        // 이미 reservation_choices가 있으면 스킵 (배치 조회 결과 사용)
+        if (migratedReservationIds.has(reservation.id)) {
           totalSkipped++
           continue
         }
 
         // selected_options를 reservation_choices로 변환
         // selected_options의 키는 option_key, 값은 option_id 배열
-        const choicesToInsert: Array<{
-          reservation_id: string
-          choice_id: string
-          option_id: string
-          quantity: number
-          total_price: number
-        }> = []
-
         for (const [optionKey, optionIds] of Object.entries(selectedOptions)) {
           if (!optionKey) continue
           
@@ -153,17 +156,15 @@ export async function POST() {
                   choiceId: choiceId,
                   optionId: firstOptionId
                 }
-                console.log(`Found choice_id via option_id fallback: option_key=${optionKey}, option_id=${firstOptionId}, choice_id=${choiceId} (reservation: ${reservation.id})`)
               }
             }
           }
           
           if (!choiceMapping) {
-            // option_key로 찾지 못하면 에러 로그
+            // option_key로 찾지 못하면 에러 로그 (최대 10개만)
             if (errorMessages.length < 10) {
               errorMessages.push(`No choice_id found for option_key: ${optionKey} (reservation: ${reservation.id})`)
             }
-            console.log(`Skipping option_key ${optionKey} - not found in choice_options (reservation: ${reservation.id})`)
             continue
           }
 
@@ -185,7 +186,6 @@ export async function POST() {
             if (optionKeyMapping) {
               finalChoiceId = optionKeyMapping.choiceId
               finalOptionId = optionKeyMapping.optionId
-              console.log(`Found via option_key: ${optionValue} -> choice_id: ${finalChoiceId}, option_id: ${finalOptionId} (reservation: ${reservation.id})`)
             } else {
               // 2차 시도: option_id로 조회
               let testOptionId = optionValue
@@ -193,21 +193,18 @@ export async function POST() {
               // 옵션 ID 마이그레이션 적용
               if (OPTION_ID_MIGRATION[testOptionId]) {
                 testOptionId = OPTION_ID_MIGRATION[testOptionId]
-                console.log(`Migrating option_id ${optionValue} to ${testOptionId} for reservation ${reservation.id}`)
               }
 
               const optionChoiceId = optionIdToChoiceMap.get(testOptionId)
               if (optionChoiceId) {
                 finalChoiceId = optionChoiceId
                 finalOptionId = testOptionId
-                console.log(`Found via option_id: ${optionValue} -> choice_id: ${finalChoiceId}, option_id: ${finalOptionId} (reservation: ${reservation.id})`)
               } else {
                 // 마이그레이션된 ID로도 찾지 못하면 원본 ID로 시도
                 const originalChoiceId = optionIdToChoiceMap.get(optionValue)
                 if (originalChoiceId) {
                   finalChoiceId = originalChoiceId
                   finalOptionId = optionValue
-                  console.log(`Found via original option_id: ${optionValue} -> choice_id: ${finalChoiceId}, option_id: ${finalOptionId} (reservation: ${reservation.id})`)
                 }
               }
             }
@@ -219,15 +216,12 @@ export async function POST() {
               
               // option_id는 값 그대로 사용 (나중에 수정될 수 있음)
               finalOptionId = optionValue
-              
-              console.log(`Using choice_id from option_key mapping: ${optionKey} -> choice_id: ${finalChoiceId}, option_id: ${finalOptionId} (reservation: ${reservation.id})`)
             }
 
             if (!finalChoiceId) {
               if (errorMessages.length < 10) {
                 errorMessages.push(`No choice_id found for option_key: ${optionKey}, option_value: ${optionValue} (reservation: ${reservation.id})`)
               }
-              console.log(`Skipping option_value ${optionValue} - no choice_id found (reservation: ${reservation.id})`)
               continue
             }
 
@@ -235,7 +229,7 @@ export async function POST() {
               finalOptionId = optionValue
             }
 
-            choicesToInsert.push({
+            allChoicesToInsert.push({
               reservation_id: reservation.id,
               choice_id: finalChoiceId,
               option_id: finalOptionId,
@@ -244,33 +238,38 @@ export async function POST() {
             })
           }
         }
+      }
 
-        if (choicesToInsert.length === 0) {
-          totalSkipped++
-          continue
-        }
+      // 배치로 한 번에 insert (빈 배열이 아닐 때만)
+      if (allChoicesToInsert.length > 0) {
+        // 큰 배치를 더 작은 청크로 나누어 insert (Supabase 제한 고려)
+        const insertChunkSize = 500
+        for (let i = 0; i < allChoicesToInsert.length; i += insertChunkSize) {
+          const chunk = allChoicesToInsert.slice(i, i + insertChunkSize)
+          const { error: insertError } = await supabase
+            .from('reservation_choices')
+            .insert(chunk)
 
-        // reservation_choices에 삽입
-        const { error: insertError } = await supabase
-          .from('reservation_choices')
-          .insert(choicesToInsert)
-
-        if (insertError) {
-          console.error(`Error inserting reservation_choices for ${reservation.id}:`, insertError)
-          totalErrors++
-          if (errorMessages.length < 10) {
-            errorMessages.push(`Insert error for ${reservation.id}: ${insertError.message}`)
+          if (insertError) {
+            console.error(`Error inserting reservation_choices batch:`, insertError)
+            totalErrors += chunk.length
+            if (errorMessages.length < 10) {
+              errorMessages.push(`Insert error: ${insertError.message}`)
+            }
+          } else {
+            totalCreated += chunk.length
           }
-        } else {
-          totalCreated += choicesToInsert.length
         }
+      } else {
+        // choicesToInsert가 비어있으면 모두 스킵된 것
+        totalSkipped += reservations.length
       }
 
       // 다음 페이지로
       offset += pageSize
       hasMore = reservations.length === pageSize
 
-      // 진행 상황 로그
+      // 진행 상황 로그 (배치마다만 출력)
       console.log(`Progress: ${totalProcessed} processed, ${totalCreated} created, ${totalSkipped} skipped, ${totalErrors} errors`)
     }
 

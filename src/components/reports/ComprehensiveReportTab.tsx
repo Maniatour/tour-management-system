@@ -345,11 +345,30 @@ export default function ComprehensiveReportTab({
         .lte('submit_on', dateRange.end)
         .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
 
+      // 결제 방법 정보 조회
+      const paymentMethodIds = [...new Set((deposits || []).map(d => d.payment_method).filter(Boolean))]
+      const { data: paymentMethods } = await supabase
+        .from('payment_methods')
+        .select('id, method, display_name')
+        .in('id', paymentMethodIds)
+
+      // 결제 방법 ID -> 방법명 매핑 생성 (method 컬럼 우선 사용)
+      const methodNameMap = new Map<string, string>()
+      if (paymentMethods) {
+        paymentMethods.forEach(pm => {
+          // payment_methods 테이블의 method 컬럼 값을 사용
+          const methodName = pm.method || pm.display_name || pm.id
+          methodNameMap.set(pm.id, methodName)
+        })
+      }
+
       const depositMap = new Map<string, number>()
       if (deposits) {
         deposits.forEach(d => {
-          const method = d.payment_method || 'Unknown'
-          depositMap.set(method, (depositMap.get(method) || 0) + (d.amount || 0))
+          const methodId = d.payment_method || 'Unknown'
+          // payment_methods 테이블에서 조회한 method 값을 사용
+          const methodName = methodNameMap.get(methodId) || methodId
+          depositMap.set(methodName, (depositMap.get(methodName) || 0) + (d.amount || 0))
         })
       }
 

@@ -2225,11 +2225,74 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   // 고객 추가 함수
   const handleAddCustomer = useCallback(async (customerData: Database['public']['Tables']['customers']['Insert']) => {
     try {
+      // 라스베가스 시간대의 오늘 날짜를 ISO 문자열로 생성
+      const getLasVegasToday = () => {
+        const now = new Date()
+        // 라스베가스 시간대의 현재 날짜를 가져옴
+        const lasVegasFormatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/Los_Angeles',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        })
+        
+        const parts = lasVegasFormatter.formatToParts(now)
+        const year = parseInt(parts.find(p => p.type === 'year')?.value || '0')
+        const month = parseInt(parts.find(p => p.type === 'month')?.value || '0')
+        const day = parseInt(parts.find(p => p.type === 'day')?.value || '0')
+        
+        // 라스베가스 시간대의 오늘 날짜 자정(00:00:00)을 UTC로 변환
+        // 라스베가스 시간대의 특정 날짜/시간에 대한 UTC 오프셋을 계산하기 위해
+        // 먼저 임시로 UTC로 해석된 Date 객체를 만들고, 그 시각을 라스베가스 시간대로 포맷팅하여 오프셋 계산
+        const tempUTC = new Date(Date.UTC(year, month - 1, day, 12, 0, 0)) // 정오를 사용하여 DST 문제 방지
+        
+        // 그 UTC 시간을 라스베가스 시간대로 변환하여 오프셋 계산
+        const lasVegasFormatter2 = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/Los_Angeles',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        })
+        
+        const lasVegasParts = lasVegasFormatter2.formatToParts(tempUTC)
+        const lvYear = parseInt(lasVegasParts.find(p => p.type === 'year')?.value || '0')
+        const lvMonth = parseInt(lasVegasParts.find(p => p.type === 'month')?.value || '0')
+        const lvDay = parseInt(lasVegasParts.find(p => p.type === 'day')?.value || '0')
+        const lvHour = parseInt(lasVegasParts.find(p => p.type === 'hour')?.value || '0')
+        const lvMinute = parseInt(lasVegasParts.find(p => p.type === 'minute')?.value || '0')
+        const lvSecond = parseInt(lasVegasParts.find(p => p.type === 'second')?.value || '0')
+        
+        // 라스베가스 시간대의 날짜/시간을 나타내는 Date 객체 생성 (로컬 시간대로 해석)
+        const lasVegasTime = new Date(lvYear, lvMonth - 1, lvDay, lvHour, lvMinute, lvSecond)
+        
+        // 오프셋 계산 (밀리초 단위)
+        // tempUTC는 UTC 시간이고, lasVegasTime은 그 UTC 시간을 라스베가스 시간대로 변환한 것
+        // 따라서 오프셋은 tempUTC - lasVegasTime (라스베가스가 UTC보다 느리므로)
+        const offsetMs = tempUTC.getTime() - lasVegasTime.getTime()
+        
+        // 라스베가스 시간대의 오늘 날짜 자정(00:00:00)을 UTC로 변환
+        // 라스베가스 시간대의 날짜/시간을 나타내는 Date 객체 생성
+        const lasVegasDateLocal = new Date(year, month - 1, day, 0, 0, 0)
+        const utcDate = new Date(lasVegasDateLocal.getTime() + offsetMs)
+        
+        return utcDate.toISOString()
+      }
+      
+      // created_at을 라스베가스 시간대의 오늘 날짜로 설정
+      const customerDataWithDate = {
+        ...customerData,
+        created_at: getLasVegasToday()
+      }
+      
       // Supabase에 저장
       const { data, error } = await supabase
         .from('customers')
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .insert(customerData as any)
+        .insert(customerDataWithDate as any)
         .select('*')
 
       if (error) {

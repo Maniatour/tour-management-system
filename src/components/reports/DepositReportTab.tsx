@@ -59,12 +59,14 @@ export default function DepositReportTab({ dateRange, period }: DepositReportTab
         .select('id, method, display_name')
         .in('id', paymentMethodIds)
 
-      // 결제 방법 ID -> 방법명 매핑 생성
+      // 결제 방법 ID -> 방법명 매핑 생성 (method 컬럼 우선 사용)
       const methodNameMap = new Map<string, string>()
       if (paymentMethods) {
         paymentMethods.forEach(pm => {
-          // 입금 통계에서는 ID(PAYMxxx) 없이 방법명만 표시
-          methodNameMap.set(pm.id, pm.method || pm.display_name || pm.id)
+          // payment_methods 테이블의 method 컬럼 값을 사용
+          // method가 없으면 display_name, 그것도 없으면 id 사용
+          const methodName = pm.method || pm.display_name || pm.id
+          methodNameMap.set(pm.id, methodName)
         })
       }
 
@@ -72,6 +74,8 @@ export default function DepositReportTab({ dateRange, period }: DepositReportTab
       const methodMap = new Map<string, number>()
       deposits.forEach(d => {
         const methodId = d.payment_method || 'Unknown'
+        // payment_methods 테이블에서 조회한 method 값을 사용
+        // 매핑이 없으면 (payment_methods에 해당 ID가 없으면) ID를 그대로 사용
         const methodName = methodNameMap.get(methodId) || methodId
         methodMap.set(methodName, (methodMap.get(methodName) || 0) + (d.amount || 0))
       })

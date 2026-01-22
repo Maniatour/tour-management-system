@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { 
   Search, 
   Edit, 
@@ -11,7 +11,8 @@ import {
   X,
   HelpCircle,
   BookOpen,
-  Plus
+  Plus,
+  Copy
 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
@@ -62,6 +63,7 @@ interface TourCourse {
   price_adult?: number
   price_child?: number
   price_infant?: number
+  price_type?: 'per_person' | 'per_vehicle' | 'none' | null
   is_active: boolean
   parent_id?: string
   children?: TourCourse[]
@@ -125,7 +127,8 @@ export default function TourCoursesPage() {
     data: tourCourses, 
     loading, 
     error, 
-    refetch: refetchCourses 
+    refetch: refetchCourses,
+    invalidateCache: invalidateCoursesCache
   } = useOptimizedData<TourCourse[]>({
     fetchFn: async () => {
       const { data, error } = await supabase
@@ -221,6 +224,22 @@ export default function TourCoursesPage() {
     setExpandedNodes(newExpanded)
   }
 
+  // 투어 코스 복사
+  const copyCourse = (course: TourCourse) => {
+    const copiedCourse: TourCourse = {
+      ...course,
+      id: '', // 새 코스는 빈 ID로 시작
+      name_ko: `${course.team_name_ko || course.name_ko} (복사본)`,
+      name_en: `${course.team_name_en || course.name_en} (Copy)`,
+      team_name_ko: `${course.team_name_ko || course.name_ko} (복사본)`,
+      team_name_en: `${course.team_name_en || course.name_en} (Copy)`,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+    setEditingCourse(copiedCourse)
+    setShowEditModal(true)
+  }
+
   // 투어 코스 삭제
   const deleteCourse = async (course: TourCourse) => {
     if (!confirm(`"${course.team_name_ko || course.name_ko}" 투어 코스를 삭제하시겠습니까?`)) return
@@ -233,6 +252,7 @@ export default function TourCoursesPage() {
 
       if (error) throw error
 
+      invalidateCoursesCache()
       refetchCourses()
       if (selectedCourse?.id === course.id) {
         setSelectedCourse(null)
@@ -296,6 +316,33 @@ export default function TourCoursesPage() {
 
   const hierarchicalCourses = buildHierarchy(filteredCourses)
 
+  // 카테고리별 색상 매핑 함수
+  const getCategoryBadgeColor = (category: string | undefined): string => {
+    if (!category) return 'bg-gray-100 text-gray-600'
+    
+    const categoryLower = category.toLowerCase()
+    
+    // 카테고리별 색상 매핑
+    if (categoryLower.includes('시티') || categoryLower.includes('city')) {
+      return 'bg-blue-100 text-blue-800'
+    } else if (categoryLower.includes('어드벤처') || categoryLower.includes('adventure') || categoryLower.includes('액티비티') || categoryLower.includes('activity')) {
+      return 'bg-orange-100 text-orange-800'
+    } else if (categoryLower.includes('포인트') || categoryLower.includes('point')) {
+      return 'bg-purple-100 text-purple-800'
+    } else if (categoryLower.includes('숙박') || categoryLower.includes('hotel') || categoryLower.includes('accommodation')) {
+      return 'bg-indigo-100 text-indigo-800'
+    } else if (categoryLower.includes('식당') || categoryLower.includes('restaurant') || categoryLower.includes('음식')) {
+      return 'bg-red-100 text-red-800'
+    } else if (categoryLower.includes('쇼핑') || categoryLower.includes('shopping')) {
+      return 'bg-pink-100 text-pink-800'
+    } else if (categoryLower.includes('휴게') || categoryLower.includes('rest')) {
+      return 'bg-yellow-100 text-yellow-800'
+    } else {
+      // 기본 색상 (카테고리가 매핑되지 않은 경우)
+      return 'bg-green-100 text-green-800'
+    }
+  }
+
   // 트리 아이템 렌더링 컴포넌트
   const TreeItem = ({ course, level = 0 }: { course: TourCourse, level?: number }) => {
     const hasChildren = course.children && course.children.length > 0
@@ -336,8 +383,31 @@ export default function TourCoursesPage() {
             
             <MapPin className="w-4 h-4 text-gray-400" />
             <div className="flex-1">
-              <div className="font-medium text-gray-900">
-                {course.team_name_ko || course.name_ko}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="font-medium text-gray-900">
+                  {course.team_name_ko || course.name_ko}
+                </div>
+                {/* 카테고리 뱃지 */}
+                {course.category && (
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getCategoryBadgeColor(course.category)}`}>
+                    {course.category}
+                  </span>
+                )}
+                {/* 가격 설정 방식 뱃지 */}
+                {course.price_type && course.price_type !== 'none' && (
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                    course.price_type === 'per_person' 
+                      ? 'bg-green-100 text-green-800' 
+                      : 'bg-purple-100 text-purple-800'
+                  }`}>
+                    {course.price_type === 'per_person' ? '인원별' : '차량별'}
+                  </span>
+                )}
+                {(!course.price_type || course.price_type === 'none') && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                    가격 없음
+                  </span>
+                )}
               </div>
               {course.team_name_en && course.team_name_en !== course.team_name_ko && (
                 <div className="text-sm text-gray-500">
@@ -362,6 +432,16 @@ export default function TourCoursesPage() {
               title="편집"
             >
               <Edit className="w-4 h-4" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                copyCourse(course)
+              }}
+              className="p-1 text-gray-400 hover:text-green-500 hover:bg-green-50 rounded"
+              title="복사"
+            >
+              <Copy className="w-4 h-4" />
             </button>
             <button
               onClick={(e) => {
@@ -698,6 +778,12 @@ export default function TourCoursesPage() {
                       편집
                     </button>
                     <button
+                      onClick={() => copyCourse(selectedCourse)}
+                      className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                    >
+                      복사
+                    </button>
+                    <button
                       onClick={() => deleteCourse(selectedCourse)}
                       className="flex-1 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
                     >
@@ -724,6 +810,7 @@ export default function TourCoursesPage() {
         onSave={(updatedCourse) => {
           console.log('투어 코스 저장:', updatedCourse)
           setShowEditModal(false)
+          invalidateCoursesCache()
           refetchCourses()
         }}
       />

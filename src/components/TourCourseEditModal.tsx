@@ -12,9 +12,11 @@ import {
   Upload,
   Image as ImageIcon,
   Trash2,
-  Star
+  Star,
+  Search
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import LocationPickerModal from './LocationPickerModal'
 
 interface TourCourse {
   id: string
@@ -40,9 +42,13 @@ interface TourCourse {
   duration_hours?: number | null
   distance?: number | null
   difficulty_level?: 'easy' | 'medium' | 'hard'
+  price_type?: 'per_person' | 'per_vehicle' | 'none' | null
   price_adult?: number | null
   price_child?: number | null
   price_infant?: number | null
+  price_minivan?: number | null
+  price_9seater?: number | null
+  price_13seater?: number | null
   is_active: boolean
   parent_id?: string | null
   children?: TourCourse[]
@@ -270,9 +276,13 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
     duration_hours: 60,
     distance: 0,
     difficulty_level: 'easy' as 'easy' | 'medium' | 'hard',
+    price_type: 'none' as 'per_person' | 'per_vehicle' | 'none',
     price_adult: 0,
     price_child: 0,
     price_infant: 0,
+    price_minivan: 0,
+    price_9seater: 0,
+    price_13seater: 0,
     is_active: true
   })
 
@@ -285,6 +295,8 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
   const [uploading, setUploading] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [showLocationPicker, setShowLocationPicker] = useState(false)
+  const [locationPickerType, setLocationPickerType] = useState<'start' | 'end' | 'single'>('single')
 
   // 투어 코스 데이터 로드
   useEffect(() => {
@@ -376,9 +388,13 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         duration_hours: course.duration_hours || 60,
         distance: course.distance || 0,
         difficulty_level: course.difficulty_level || 'easy',
+        price_type: course.price_type === null ? 'none' : (course.price_type || 'per_person'),
         price_adult: course.price_adult || 0,
         price_child: course.price_child || 0,
         price_infant: course.price_infant || 0,
+        price_minivan: course.price_minivan || 0,
+        price_9seater: course.price_9seater || 0,
+        price_13seater: course.price_13seater || 0,
         is_active: course.is_active
       })
     }
@@ -629,9 +645,13 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         duration_hours: formData.duration_hours,
         distance: formData.distance || null,
         difficulty_level: formData.difficulty_level,
-        price_adult: formData.price_adult || null,
-        price_child: formData.price_child || null,
-        price_infant: formData.price_infant || null,
+        price_type: formData.price_type === 'none' ? null : formData.price_type,
+        price_adult: formData.price_type === 'per_person' ? (formData.price_adult || null) : null,
+        price_child: formData.price_type === 'per_person' ? (formData.price_child || null) : null,
+        price_infant: formData.price_type === 'per_person' ? (formData.price_infant || null) : null,
+        price_minivan: formData.price_type === 'per_vehicle' ? (formData.price_minivan || null) : null,
+        price_9seater: formData.price_type === 'per_vehicle' ? (formData.price_9seater || null) : null,
+        price_13seater: formData.price_type === 'per_vehicle' ? (formData.price_13seater || null) : null,
         is_active: formData.is_active
       }
 
@@ -787,126 +807,136 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-900">이름 및 설명</h3>
             
-            {/* 팀원용 이름 */}
-            <div>
-              <h4 className="text-md font-medium text-gray-800 mb-3">팀원용 이름 *</h4>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    한국어 이름
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.team_name_ko}
-                    onChange={(e) => updateFormData({ team_name_ko: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="예: 그랜드캐년, 사우스림, 마더포인트"
-                  />
+            {/* 팀원용 박스 */}
+            <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+              <h4 className="text-md font-medium text-gray-800 mb-4">팀원용 *</h4>
+              
+              {/* 팀원용 이름 */}
+              <div className="mb-4">
+                <h5 className="text-sm font-medium text-gray-700 mb-2">이름</h5>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      한국어 이름
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.team_name_ko}
+                      onChange={(e) => updateFormData({ team_name_ko: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="예: 그랜드캐년, 사우스림, 마더포인트"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      영어 이름
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.team_name_en}
+                      onChange={(e) => updateFormData({ team_name_en: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="예: Grand Canyon, South Rim, Mather Point"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    영어 이름
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.team_name_en}
-                    onChange={(e) => updateFormData({ team_name_en: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="예: Grand Canyon, South Rim, Mather Point"
-                  />
+              </div>
+
+              {/* 팀원용 설명 */}
+              <div>
+                <h5 className="text-sm font-medium text-gray-700 mb-2">설명</h5>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      한국어 설명
+                    </label>
+                    <textarea
+                      value={formData.team_description_ko}
+                      onChange={(e) => updateFormData({ team_description_ko: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      rows={3}
+                      placeholder="팀원용 한국어 설명"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      영어 설명
+                    </label>
+                    <textarea
+                      value={formData.team_description_en}
+                      onChange={(e) => updateFormData({ team_description_en: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      rows={3}
+                      placeholder="팀원용 영어 설명"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* 고객용 이름 */}
-            <div>
-              <h4 className="text-md font-medium text-gray-800 mb-3">고객용 이름</h4>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    한국어 이름
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.customer_name_ko}
-                    onChange={(e) => updateFormData({ customer_name_ko: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="고객에게 표시될 한국어 이름"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    영어 이름
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.customer_name_en}
-                    onChange={(e) => updateFormData({ customer_name_en: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="고객에게 표시될 영어 이름"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* 팀원용 설명 */}
-            <div>
-              <h4 className="text-md font-medium text-gray-800 mb-3">팀원용 설명</h4>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    한국어 설명
-                  </label>
-                  <textarea
-                    value={formData.team_description_ko}
-                    onChange={(e) => updateFormData({ team_description_ko: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    rows={3}
-                    placeholder="팀원용 한국어 설명"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    영어 설명
-                  </label>
-                  <textarea
-                    value={formData.team_description_en}
-                    onChange={(e) => updateFormData({ team_description_en: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    rows={3}
-                    placeholder="팀원용 영어 설명"
-                  />
+            {/* 고객용 박스 */}
+            <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+              <h4 className="text-md font-medium text-gray-800 mb-4">고객용</h4>
+              
+              {/* 고객용 이름 */}
+              <div className="mb-4">
+                <h5 className="text-sm font-medium text-gray-700 mb-2">이름</h5>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      한국어 이름
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.customer_name_ko}
+                      onChange={(e) => updateFormData({ customer_name_ko: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="고객에게 표시될 한국어 이름"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      영어 이름
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.customer_name_en}
+                      onChange={(e) => updateFormData({ customer_name_en: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="고객에게 표시될 영어 이름"
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* 고객용 설명 */}
-            <div>
-              <h4 className="text-md font-medium text-gray-800 mb-3">고객용 설명</h4>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    한국어 설명
-                  </label>
-                  <textarea
-                    value={formData.customer_description_ko}
-                    onChange={(e) => updateFormData({ customer_description_ko: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    rows={3}
-                    placeholder="고객에게 표시될 한국어 설명"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    영어 설명
-                  </label>
-                  <textarea
-                    value={formData.customer_description_en}
-                    onChange={(e) => updateFormData({ customer_description_en: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    rows={3}
-                    placeholder="고객에게 표시될 영어 설명"
-                  />
+              {/* 고객용 설명 */}
+              <div>
+                <h5 className="text-sm font-medium text-gray-700 mb-2">설명</h5>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      한국어 설명
+                    </label>
+                    <textarea
+                      value={formData.customer_description_ko}
+                      onChange={(e) => updateFormData({ customer_description_ko: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      rows={3}
+                      placeholder="고객에게 표시될 한국어 설명"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      영어 설명
+                    </label>
+                    <textarea
+                      value={formData.customer_description_en}
+                      onChange={(e) => updateFormData({ customer_description_en: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      rows={3}
+                      placeholder="고객에게 표시될 영어 설명"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -930,195 +960,437 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-900">위치 및 상세 정보</h3>
             
+            {/* 카테고리 선택 (위치 좌표 위에 배치) */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                위치 정보
-              </label>
-              <input
-                type="text"
-                value={formData.location}
-                onChange={(e) => updateFormData({ location: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="예: 그랜드캐년 국립공원, 애리조나"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                포인트 이름
-              </label>
-              <input
-                type="text"
-                value={formData.point_name}
-                onChange={(e) => updateFormData({ point_name: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="예: 마더포인트, 야바파이 포인트"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  시작 위도
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={formData.start_latitude}
-                  onChange={(e) => updateFormData({ start_latitude: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="36.1069"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  시작 경도
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={formData.start_longitude}
-                  onChange={(e) => updateFormData({ start_longitude: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="-112.1129"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  종료 위도
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={formData.end_latitude}
-                  onChange={(e) => updateFormData({ end_latitude: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="36.1069"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  종료 경도
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={formData.end_longitude}
-                  onChange={(e) => updateFormData({ end_longitude: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="-112.1129"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  소요 시간 (분)
-                </label>
-                <input
-                  type="number"
-                  value={formData.duration_hours}
-                  onChange={(e) => updateFormData({ duration_hours: parseInt(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="60"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  거리 (km)
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={formData.distance}
-                  onChange={(e) => updateFormData({ distance: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="5.2"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                난이도
-              </label>
-              <select
-                value={formData.difficulty_level}
-                onChange={(e) => updateFormData({ difficulty_level: e.target.value as 'easy' | 'medium' | 'hard' })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="easy">쉬움</option>
-                <option value="medium">보통</option>
-                <option value="hard">어려움</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 카테고리
               </label>
-              <select
-                value={formData.category_id}
-                onChange={(e) => {
-                  const selectedCategory = categories.find(cat => cat.id === e.target.value)
-                  updateFormData({ 
-                    category_id: e.target.value,
-                    category: selectedCategory?.name_ko || ''
-                  })
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="">카테고리 선택</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name_ko}
-                  </option>
-                ))}
-              </select>
+              <div className="flex gap-2 overflow-x-auto pb-2">
+                {categories.map((category) => {
+                  const isSelected = formData.category_id === category.id
+                  // 카테고리 이름에서 "투어" 제거하여 텍스트 줄이기
+                  const shortName = category.name_ko
+                    .replace(' 투어', '')
+                    .replace('어드벤처 투어', '어드벤처')
+                    .replace('투어 포인트', '포인트')
+                  return (
+                    <button
+                      key={category.id}
+                      type="button"
+                      onClick={() => {
+                        updateFormData({ 
+                          category_id: category.id,
+                          category: category.name_ko || ''
+                        })
+                        // 카테고리 변경 시 종료 좌표를 시작 좌표로 동기화 (액티비티가 아닌 경우)
+                        if (category.name_ko !== '어드벤처 투어' && category.name_en !== 'Adventure Tour') {
+                          if (formData.start_latitude && formData.start_longitude) {
+                            updateFormData({
+                              end_latitude: formData.start_latitude,
+                              end_longitude: formData.start_longitude
+                            })
+                          }
+                        }
+                      }}
+                      className={`px-3 py-1.5 text-sm rounded-lg border-2 transition-colors whitespace-nowrap flex-shrink-0 ${
+                        isSelected
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+                      }`}
+                    >
+                      {shortName}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  성인 가격
+            {/* 카테고리가 액티비티(어드벤처 투어)인 경우만 시작점/종료점 분리 */}
+            {(() => {
+              const selectedCategory = categories.find(cat => cat.id === formData.category_id)
+              // 액티비티 카테고리 확인 (한글/영문 모두 체크)
+              const isActivity = selectedCategory?.name_ko?.toLowerCase().includes('액티비티') || 
+                                selectedCategory?.name_ko === '어드벤처 투어' || 
+                                selectedCategory?.name_en?.toLowerCase().includes('activity') ||
+                                selectedCategory?.name_en === 'Adventure Tour'
+              
+              if (isActivity) {
+                // 액티비티: 시작점과 종료점 분리
+                return (
+                  <>
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          시작 위치
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLocationPickerType('start')
+                            setShowLocationPicker(true)
+                          }}
+                          className="p-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center"
+                          title="지도에서 위치 선택"
+                        >
+                          <Search className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          step="any"
+                          value={formData.start_latitude}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            updateFormData({ 
+                              start_latitude: value,
+                              ...(value === '' && formData.start_longitude === '' ? { location: '' } : {})
+                            })
+                          }}
+                          className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="위도"
+                        />
+                        <input
+                          type="number"
+                          step="any"
+                          value={formData.start_longitude}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            updateFormData({ 
+                              start_longitude: value,
+                              ...(value === '' && formData.start_latitude === '' ? { location: '' } : {})
+                            })
+                          }}
+                          className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="경도"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          종료 위치
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLocationPickerType('end')
+                            setShowLocationPicker(true)
+                          }}
+                          className="p-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center"
+                          title="지도에서 위치 선택"
+                        >
+                          <Search className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          step="any"
+                          value={formData.end_latitude}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            updateFormData({ 
+                              end_latitude: value,
+                              ...(value === '' && formData.end_longitude === '' ? { location: '' } : {})
+                            })
+                          }}
+                          className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="위도"
+                        />
+                        <input
+                          type="number"
+                          step="any"
+                          value={formData.end_longitude}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            updateFormData({ 
+                              end_longitude: value,
+                              ...(value === '' && formData.end_latitude === '' ? { location: '' } : {})
+                            })
+                          }}
+                          className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="경도"
+                        />
+                      </div>
+                    </div>
+                  </>
+                )
+              } else {
+                // 일반 카테고리: 하나의 위치만 입력
+                return (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        위치 좌표
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLocationPickerType('single')
+                          setShowLocationPicker(true)
+                        }}
+                        className="p-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center"
+                        title="지도에서 위치 선택"
+                      >
+                        <Search className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        step="any"
+                        value={formData.start_latitude}
+                        onChange={(e) => {
+                          const lat = e.target.value
+                          const shouldClearLocation = lat === '' && formData.start_longitude === ''
+                          updateFormData({ 
+                            start_latitude: lat,
+                            end_latitude: lat, // 시작과 종료를 동일하게 설정
+                            ...(shouldClearLocation ? { location: '' } : {})
+                          })
+                        }}
+                        className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="위도"
+                      />
+                      <input
+                        type="number"
+                        step="any"
+                        value={formData.start_longitude}
+                        onChange={(e) => {
+                          const lng = e.target.value
+                          const shouldClearLocation = lng === '' && formData.start_latitude === ''
+                          updateFormData({ 
+                            start_longitude: lng,
+                            end_longitude: lng, // 시작과 종료를 동일하게 설정
+                            ...(shouldClearLocation ? { location: '' } : {})
+                          })
+                        }}
+                        className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="경도"
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      시작 위치와 종료 위치가 동일하게 설정됩니다
+                    </p>
+                  </div>
+                )
+              }
+            })()}
+
+            {/* 소요 시간 및 거리 (액티비티 카테고리일 때만 표시) */}
+            {(() => {
+              const selectedCategory = categories.find(cat => cat.id === formData.category_id)
+              const isActivity = selectedCategory?.name_ko?.toLowerCase().includes('액티비티') || 
+                                selectedCategory?.name_ko === '어드벤처 투어' || 
+                                selectedCategory?.name_en?.toLowerCase().includes('activity') ||
+                                selectedCategory?.name_en === 'Adventure Tour'
+              
+              if (isActivity) {
+                return (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        소요 시간 (분)
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.duration_hours}
+                        onChange={(e) => updateFormData({ duration_hours: parseInt(e.target.value) || 0 })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="60"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        거리 (mile)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={formData.distance}
+                        onChange={(e) => updateFormData({ distance: parseFloat(e.target.value) || 0 })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="5.2"
+                      />
+                    </div>
+                  </div>
+                )
+              }
+              return null
+            })()}
+
+            {/* 난이도 (액티비티 카테고리일 때만 표시) */}
+            {(() => {
+              const selectedCategory = categories.find(cat => cat.id === formData.category_id)
+              const isActivity = selectedCategory?.name_ko?.toLowerCase().includes('액티비티') || 
+                                selectedCategory?.name_ko === '어드벤처 투어' || 
+                                selectedCategory?.name_en?.toLowerCase().includes('activity') ||
+                                selectedCategory?.name_en === 'Adventure Tour'
+              
+              if (isActivity) {
+                return (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      난이도
+                    </label>
+                    <select
+                      value={formData.difficulty_level}
+                      onChange={(e) => updateFormData({ difficulty_level: e.target.value as 'easy' | 'medium' | 'hard' })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="easy">쉬움</option>
+                      <option value="medium">보통</option>
+                      <option value="hard">어려움</option>
+                    </select>
+                  </div>
+                )
+              }
+              return null
+            })()}
+
+            {/* 가격 설정 방식 선택 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                가격 설정 방식
+              </label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="price_type"
+                    value="none"
+                    checked={formData.price_type === 'none'}
+                    onChange={(e) => updateFormData({ price_type: e.target.value as 'per_person' | 'per_vehicle' | 'none' })}
+                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">가격 없음</span>
                 </label>
-                <input
-                  type="number"
-                  value={formData.price_adult}
-                  onChange={(e) => updateFormData({ price_adult: parseInt(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  어린이 가격
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="price_type"
+                    value="per_person"
+                    checked={formData.price_type === 'per_person'}
+                    onChange={(e) => updateFormData({ price_type: e.target.value as 'per_person' | 'per_vehicle' | 'none' })}
+                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">인원별</span>
                 </label>
-                <input
-                  type="number"
-                  value={formData.price_child}
-                  onChange={(e) => updateFormData({ price_child: parseInt(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  유아 가격
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="price_type"
+                    value="per_vehicle"
+                    checked={formData.price_type === 'per_vehicle'}
+                    onChange={(e) => updateFormData({ price_type: e.target.value as 'per_person' | 'per_vehicle' | 'none' })}
+                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">차량별</span>
                 </label>
-                <input
-                  type="number"
-                  value={formData.price_infant}
-                  onChange={(e) => updateFormData({ price_infant: parseInt(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="0"
-                />
               </div>
             </div>
+
+            {/* 인원별 가격 입력 */}
+            {formData.price_type === 'per_person' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  입장료 (인원별)
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      성인 가격
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.price_adult}
+                      onChange={(e) => updateFormData({ price_adult: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      어린이 가격
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.price_child}
+                      onChange={(e) => updateFormData({ price_child: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      유아 가격
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.price_infant}
+                      onChange={(e) => updateFormData({ price_infant: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 차량별 가격 입력 */}
+            {formData.price_type === 'per_vehicle' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  입장료 (차량별)
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      미니밴
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.price_minivan}
+                      onChange={(e) => updateFormData({ price_minivan: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      9인승
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.price_9seater}
+                      onChange={(e) => updateFormData({ price_9seater: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      13인승
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.price_13seater}
+                      onChange={(e) => updateFormData({ price_13seater: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="flex items-center">
               <input
@@ -1263,6 +1535,56 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
           </button>
         </div>
       </div>
+
+      {/* 위치 선택 모달 */}
+      {showLocationPicker && (() => {
+        let currentLat: number | undefined
+        let currentLng: number | undefined
+
+        if (locationPickerType === 'start') {
+          currentLat = formData.start_latitude ? parseFloat(formData.start_latitude) : undefined
+          currentLng = formData.start_longitude ? parseFloat(formData.start_longitude) : undefined
+        } else if (locationPickerType === 'end') {
+          currentLat = formData.end_latitude ? parseFloat(formData.end_latitude) : undefined
+          currentLng = formData.end_longitude ? parseFloat(formData.end_longitude) : undefined
+        } else {
+          currentLat = formData.start_latitude ? parseFloat(formData.start_latitude) : undefined
+          currentLng = formData.start_longitude ? parseFloat(formData.start_longitude) : undefined
+        }
+
+        return (
+          <LocationPickerModal
+            {...(currentLat !== undefined ? { currentLat } : {})}
+            {...(currentLng !== undefined ? { currentLng } : {})}
+            onLocationSelect={(lat, lng, address) => {
+              if (locationPickerType === 'start') {
+                updateFormData({
+                  start_latitude: lat.toString(),
+                  start_longitude: lng.toString()
+                })
+              } else if (locationPickerType === 'end') {
+                updateFormData({
+                  end_latitude: lat.toString(),
+                  end_longitude: lng.toString()
+                })
+              } else {
+                // single: 시작과 종료를 동일하게 설정
+                updateFormData({
+                  start_latitude: lat.toString(),
+                  start_longitude: lng.toString(),
+                  end_latitude: lat.toString(),
+                  end_longitude: lng.toString()
+                })
+              }
+              if (address && !formData.location) {
+                updateFormData({ location: address })
+              }
+              setShowLocationPicker(false)
+            }}
+            onClose={() => setShowLocationPicker(false)}
+          />
+        )
+      })()}
     </div>
   )
 }

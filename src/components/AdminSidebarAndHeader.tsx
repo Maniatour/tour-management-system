@@ -33,7 +33,8 @@ import {
   CreditCard,
   Wrench,
   Tag,
-  Plus
+  Plus,
+  TrendingUp
 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -440,6 +441,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     // removed from sidebar: 대시보드, 고객 관리, 예약 관리, 부킹 관리, 투어 관리, 채팅 관리
     { name: t('products'), href: `/${locale}/admin/products`, icon: BookOpen },
     { name: tAdmin('guideFeeManagement'), href: `/${locale}/admin/guide-costs`, icon: Calculator },
+    { name: '투어 비용 계산기', href: `/${locale}/admin/tour-cost-calculator`, icon: TrendingUp },
     { name: t('options'), href: `/${locale}/admin/options`, icon: Settings },
     { name: '태그 번역 관리', href: `/${locale}/admin/tag-translations`, icon: Tag },
     { name: t('channels'), href: `/${locale}/admin/channels`, icon: Settings },

@@ -2,7 +2,7 @@
 /* eslint-disable */
 
 import React, { useState, useCallback, useEffect, useRef } from 'react'
-import { Trash2, Eye } from 'lucide-react'
+import { Trash2, Eye, AlertTriangle, X, Mail, Phone } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { sanitizeTimeInput } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
@@ -110,6 +110,57 @@ export default function ReservationForm({
   const [reservationOptionsTotalPrice, setReservationOptionsTotalPrice] = useState(0)
   const [expenseUpdateTrigger, setExpenseUpdateTrigger] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  
+  // 중복 고객 확인 모달 상태
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false)
+  const [similarCustomers, setSimilarCustomers] = useState<Customer[]>([])
+  const [pendingCustomerData, setPendingCustomerData] = useState<any>(null)
+  const [pendingFormDataState, setPendingFormDataState] = useState<any>(null)
+  
+  // 비슷한 이름을 찾는 함수
+  const findSimilarCustomers = useCallback((name: string, email?: string, phone?: string): Customer[] => {
+    if (!name.trim()) return []
+    
+    const nameLower = name.toLowerCase().trim()
+    const similarCustomers: Customer[] = []
+    
+    for (const c of customers) {
+      const customerNameLower = c.name.toLowerCase().trim()
+      
+      // 정확히 일치하는 경우
+      if (customerNameLower === nameLower) {
+        similarCustomers.push(c)
+        continue
+      }
+      
+      // 이름이 포함되는 경우 (양방향)
+      if (customerNameLower.includes(nameLower) || nameLower.includes(customerNameLower)) {
+        // 이미 추가되지 않은 경우만 추가
+        if (!similarCustomers.find(sc => sc.id === c.id)) {
+          similarCustomers.push(c)
+        }
+        continue
+      }
+      
+      // 이메일이 일치하는 경우
+      if (email && c.email && c.email.toLowerCase() === email.toLowerCase()) {
+        if (!similarCustomers.find(sc => sc.id === c.id)) {
+          similarCustomers.push(c)
+        }
+        continue
+      }
+      
+      // 전화번호가 일치하는 경우
+      if (phone && c.phone && c.phone === phone) {
+        if (!similarCustomers.find(sc => sc.id === c.id)) {
+          similarCustomers.push(c)
+        }
+        continue
+      }
+    }
+    
+    return similarCustomers
+  }, [customers])
   
   const [formData, setFormData] = useState<{
     customerId: string
@@ -2763,6 +2814,32 @@ export default function ReservationForm({
           return
         }
         
+        // 비슷한 고객 체크
+        const similar = findSimilarCustomers(
+          formData.customerSearch.trim(),
+          formData.customerEmail || undefined,
+          formData.customerPhone || undefined
+        )
+        
+        if (similar.length > 0) {
+          // 비슷한 고객이 있으면 모달 표시
+          setSimilarCustomers(similar)
+          setPendingCustomerData({
+            name: formData.customerSearch.trim(),
+            phone: formData.customerPhone || null,
+            email: formData.customerEmail || null,
+            address: formData.customerAddress || null,
+            language: formData.customerLanguage || 'KR',
+            emergency_contact: formData.customerEmergencyContact || null,
+            special_requests: formData.customerSpecialRequests || null,
+            channel_id: formData.channelId || null,
+            status: formData.customerStatus || 'active'
+          })
+          setPendingFormDataState(formData)
+          setShowDuplicateModal(true)
+          return
+        }
+        
         // 랜덤 ID 생성
         const timestamp = Date.now().toString(36)
         const randomStr = Math.random().toString(36).substring(2, 8)
@@ -2951,10 +3028,73 @@ export default function ReservationForm({
   // 고객 추가 함수
   const handleAddCustomer = useCallback(async (customerData: Database['public']['Tables']['customers']['Insert']) => {
     try {
+      // 라스베가스 시간대의 오늘 날짜를 ISO 문자열로 생성
+      const getLasVegasToday = () => {
+        const now = new Date()
+        // 라스베가스 시간대의 현재 날짜를 가져옴
+        const lasVegasFormatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/Los_Angeles',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        })
+        
+        const parts = lasVegasFormatter.formatToParts(now)
+        const year = parseInt(parts.find(p => p.type === 'year')?.value || '0')
+        const month = parseInt(parts.find(p => p.type === 'month')?.value || '0')
+        const day = parseInt(parts.find(p => p.type === 'day')?.value || '0')
+        
+        // 라스베가스 시간대의 오늘 날짜 자정(00:00:00)을 UTC로 변환
+        // 라스베가스 시간대의 특정 날짜/시간에 대한 UTC 오프셋을 계산하기 위해
+        // 먼저 임시로 UTC로 해석된 Date 객체를 만들고, 그 시각을 라스베가스 시간대로 포맷팅하여 오프셋 계산
+        const tempUTC = new Date(Date.UTC(year, month - 1, day, 12, 0, 0)) // 정오를 사용하여 DST 문제 방지
+        
+        // 그 UTC 시간을 라스베가스 시간대로 변환하여 오프셋 계산
+        const lasVegasFormatter2 = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'America/Los_Angeles',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        })
+        
+        const lasVegasParts = lasVegasFormatter2.formatToParts(tempUTC)
+        const lvYear = parseInt(lasVegasParts.find(p => p.type === 'year')?.value || '0')
+        const lvMonth = parseInt(lasVegasParts.find(p => p.type === 'month')?.value || '0')
+        const lvDay = parseInt(lasVegasParts.find(p => p.type === 'day')?.value || '0')
+        const lvHour = parseInt(lasVegasParts.find(p => p.type === 'hour')?.value || '0')
+        const lvMinute = parseInt(lasVegasParts.find(p => p.type === 'minute')?.value || '0')
+        const lvSecond = parseInt(lasVegasParts.find(p => p.type === 'second')?.value || '0')
+        
+        // 라스베가스 시간대의 날짜/시간을 나타내는 Date 객체 생성 (로컬 시간대로 해석)
+        const lasVegasTime = new Date(lvYear, lvMonth - 1, lvDay, lvHour, lvMinute, lvSecond)
+        
+        // 오프셋 계산 (밀리초 단위)
+        // tempUTC는 UTC 시간이고, lasVegasTime은 그 UTC 시간을 라스베가스 시간대로 변환한 것
+        // 따라서 오프셋은 tempUTC - lasVegasTime (라스베가스가 UTC보다 느리므로)
+        const offsetMs = tempUTC.getTime() - lasVegasTime.getTime()
+        
+        // 라스베가스 시간대의 오늘 날짜 자정(00:00:00)을 UTC로 변환
+        // 라스베가스 시간대의 날짜/시간을 나타내는 Date 객체 생성
+        const lasVegasDateLocal = new Date(year, month - 1, day, 0, 0, 0)
+        const utcDate = new Date(lasVegasDateLocal.getTime() + offsetMs)
+        
+        return utcDate.toISOString()
+      }
+      
+      // created_at을 라스베가스 시간대의 오늘 날짜로 설정
+      const customerDataWithDate = {
+        ...customerData,
+        created_at: getLasVegasToday()
+      }
+      
       // Supabase에 저장
       const { data, error } = await (supabase as any)
         .from('customers')
-        .insert(customerData as Database['public']['Tables']['customers']['Insert'])
+        .insert(customerDataWithDate as Database['public']['Tables']['customers']['Insert'])
         .select('*')
 
       if (error) {
@@ -3376,6 +3516,167 @@ export default function ReservationForm({
           isOpen={showPricingModal}
           onClose={() => setShowPricingModal(false)}
         />
+      )}
+
+      {/* 중복 고객 확인 모달 */}
+      {showDuplicateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold flex items-center space-x-2">
+                <AlertTriangle className="h-6 w-6 text-amber-500" />
+                <span>비슷한 고객이 있습니다</span>
+              </h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDuplicateModal(false)
+                  setSimilarCustomers([])
+                  setPendingCustomerData(null)
+                  setPendingFormDataState(null)
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+              <p className="text-sm text-gray-700 mb-2">
+                <strong>입력한 정보:</strong>
+              </p>
+              <div className="text-sm space-y-1">
+                <div><strong>이름:</strong> {pendingCustomerData?.name}</div>
+                {pendingCustomerData?.email && <div><strong>이메일:</strong> {pendingCustomerData.email}</div>}
+                {pendingCustomerData?.phone && <div><strong>전화번호:</strong> {pendingCustomerData.phone}</div>}
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <p className="text-sm font-medium text-gray-700 mb-3">
+                비슷한 기존 고객 {similarCustomers.length}명을 찾았습니다. 기존 고객을 선택하시겠습니까, 아니면 새로 추가하시겠습니까?
+              </p>
+              
+              <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-200 rounded-lg p-2">
+                {similarCustomers.map((similarCustomer) => (
+                  <div
+                    key={similarCustomer.id}
+                    className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
+                    onClick={async () => {
+                      // 기존 고객 선택
+                      setFormData(prev => ({ ...prev, customerId: similarCustomer.id }))
+                      setShowNewCustomerForm(false)
+                      setShowDuplicateModal(false)
+                      setSimilarCustomers([])
+                      setPendingCustomerData(null)
+                      setPendingFormDataState(null)
+                      // 고객 목록 새로고침
+                      await onRefreshCustomers()
+                      // 폼 제출 계속 진행
+                      if (pendingFormDataState) {
+                        const form = document.querySelector('form') as HTMLFormElement
+                        if (form) {
+                          form.requestSubmit()
+                        }
+                      }
+                    }}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900 mb-1">
+                          {similarCustomer.name}
+                        </div>
+                        <div className="text-xs text-gray-400 font-mono mb-1">
+                          ID: {similarCustomer.id}
+                        </div>
+                        {similarCustomer.email && (
+                          <div className="text-sm text-gray-600 flex items-center space-x-1">
+                            <Mail className="h-3 w-3" />
+                            <span>{similarCustomer.email}</span>
+                          </div>
+                        )}
+                        {similarCustomer.phone && (
+                          <div className="text-sm text-gray-600 flex items-center space-x-1 mt-1">
+                            <Phone className="h-3 w-3" />
+                            <span>{similarCustomer.phone}</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="ml-4">
+                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                          선택
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-3 pt-4 border-t">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDuplicateModal(false)
+                  setSimilarCustomers([])
+                  setPendingCustomerData(null)
+                  setPendingFormDataState(null)
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  // 새로 추가하기
+                  if (pendingCustomerData) {
+                    // 랜덤 ID 생성
+                    const timestamp = Date.now().toString(36)
+                    const randomStr = Math.random().toString(36).substring(2, 8)
+                    const newCustomerId = `CUST_${timestamp}_${randomStr}`.toUpperCase()
+                    
+                    const customerData = {
+                      ...pendingCustomerData,
+                      id: newCustomerId
+                    }
+                    
+                    const { data: newCustomer, error: customerError } = await (supabase as any)
+                      .from('customers')
+                      .insert(customerData)
+                      .select('*')
+                      .single()
+                    
+                    if (customerError) {
+                      console.error('고객 정보 생성 오류:', customerError)
+                      alert('고객 정보 생성 중 오류가 발생했습니다: ' + customerError.message)
+                      return
+                    }
+                    
+                    setFormData(prev => ({ ...prev, customerId: newCustomer.id }))
+                    setShowNewCustomerForm(false)
+                    await onRefreshCustomers()
+                    
+                    // 폼 제출 계속 진행
+                    if (pendingFormDataState) {
+                      const form = document.querySelector('form') as HTMLFormElement
+                      if (form) {
+                        form.requestSubmit()
+                      }
+                    }
+                  }
+                  setShowDuplicateModal(false)
+                  setSimilarCustomers([])
+                  setPendingCustomerData(null)
+                  setPendingFormDataState(null)
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                새로 추가하기
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

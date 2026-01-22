@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { MapPin, Search, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -26,7 +26,19 @@ export default function LocationPickerModal({
   onClose,
   scheduleId
 }: LocationPickerModalProps) {
-  const [suggestions, setSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([])
+  interface Suggestion {
+    placeId: string
+    name: string
+    address: string
+    latitude: number | null
+    longitude: number | null
+    googleMapsUrl?: string
+    rating?: number | null
+    userRatingsTotal?: number | null
+    types?: string[]
+  }
+  
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [selectedLat, setSelectedLat] = useState(currentLat || 36.1699) // 라스베가스 위도
   const [selectedLng, setSelectedLng] = useState(currentLng || -115.1398) // 라스베가스 경도
@@ -34,12 +46,161 @@ export default function LocationPickerModal({
   const [searchQuery, setSearchQuery] = useState('')
   const [mapLoaded, setMapLoaded] = useState(false)
   const [map, setMap] = useState<google.maps.Map | null>(null)
-  const [marker, setMarker] = useState<google.maps.Marker | null>(null)
+  const [marker, setMarker] = useState<google.maps.Marker | google.maps.marker.AdvancedMarkerElement | null>(null)
   const [apiKeyError, setApiKeyError] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
 
   // 라스베가스 중심 좌표
   const LAS_VEGAS_CENTER = { lat: 36.1699, lng: -115.1398 }
+
+  // reverseGeocode 함수 선언 (initializeMap에서 사용)
+  const reverseGeocode = useCallback((lat: number, lng: number) => {
+    if (!window.google) return
+
+    const geocoder = new window.google.maps.Geocoder()
+    geocoder.geocode({ location: { lat, lng } }, (results: google.maps.GeocoderResult[], status: string) => {
+      if (status === 'OK' && results[0]) {
+        setAddress(results[0].formatted_address)
+      } else {
+        setAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`)
+      }
+    })
+  }, [])
+
+  // initializeMap 함수 선언 (useEffect에서 사용)
+  const initializeMap = useCallback(() => {
+    const mapElement = document.getElementById('map')
+    if (!mapElement || !window.google || !window.google.maps) return
+
+    // Google Maps API가 완전히 로드되었는지 확인
+    if (!window.google.maps.MapTypeId || !window.google.maps.MapTypeId.ROADMAP) {
+      console.warn('Google Maps API가 완전히 로드되지 않았습니다. 잠시 후 다시 시도합니다.')
+      setTimeout(initializeMap, 100)
+      return
+    }
+
+    // Map ID 설정
+    const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
+    console.log('LocationPickerModal Map ID:', mapId ? '설정됨' : '설정되지 않음', mapId)
+    
+    const mapOptions: google.maps.MapOptions = {
+      center: currentLat && currentLng ? { lat: currentLat, lng: currentLng } : LAS_VEGAS_CENTER,
+      zoom: 13,
+      mapTypeId: window.google.maps.MapTypeId.ROADMAP
+    }
+    
+    // Map ID가 있으면 Advanced Markers를 위한 맵 ID 설정
+    // mapId가 있을 때는 styles를 설정할 수 없음 (클라우드 콘솔에서 제어)
+    if (mapId) {
+      mapOptions.mapId = mapId
+      console.log('LocationPickerModal - Advanced Markers Map ID 설정:', mapId)
+    } else {
+      // mapId가 없을 때만 styles 설정 가능
+      mapOptions.styles = [
+        {
+          featureType: 'poi',
+          elementType: 'labels',
+          stylers: [{ visibility: 'off' }]
+        }
+      ]
+      console.warn('LocationPickerModal - Map ID 없음, 기본 마커 사용')
+    }
+
+    const newMap = new window.google.maps.Map(mapElement, mapOptions)
+
+    // Advanced Marker 또는 기본 Marker 생성
+    // AdvancedMarkerElement는 mapId가 필수이므로, mapId가 있을 때만 사용
+    let newMarker: google.maps.Marker | google.maps.marker.AdvancedMarkerElement
+    
+    // AdvancedMarkerElement 사용 가능 여부 및 mapId 확인
+    const hasAdvancedMarker = window.google?.maps?.marker?.AdvancedMarkerElement
+    const canUseAdvancedMarker = hasAdvancedMarker && mapId
+    
+    if (canUseAdvancedMarker) {
+      try {
+        // AdvancedMarkerElement 생성 (mapId 필수)
+        newMarker = new window.google.maps.marker.AdvancedMarkerElement({
+          position: currentLat && currentLng ? { lat: currentLat, lng: currentLng } : LAS_VEGAS_CENTER,
+          map: newMap,
+          draggable: true,
+          title: '선택된 위치'
+        })
+        console.log('✅ AdvancedMarkerElement 생성 성공 (Map ID:', mapId, ')')
+      } catch (error) {
+        // AdvancedMarkerElement 생성 실패 시 기본 Marker로 폴백
+        console.warn('⚠️ AdvancedMarkerElement 생성 실패, 기본 Marker 사용:', error)
+        newMarker = new window.google.maps.Marker({
+          position: currentLat && currentLng ? { lat: currentLat, lng: currentLng } : LAS_VEGAS_CENTER,
+          map: newMap,
+          draggable: true,
+          title: '선택된 위치'
+        })
+      }
+    } else {
+      // mapId가 없거나 AdvancedMarkerElement를 사용할 수 없는 경우
+      if (!mapId) {
+        console.warn('⚠️ Map ID가 설정되지 않아 기본 Marker 사용 (deprecated 경고 발생 가능)')
+      } else if (!hasAdvancedMarker) {
+        console.warn('⚠️ AdvancedMarkerElement를 사용할 수 없어 기본 Marker 사용')
+      }
+      newMarker = new window.google.maps.Marker({
+        position: currentLat && currentLng ? { lat: currentLat, lng: currentLng } : LAS_VEGAS_CENTER,
+        map: newMap,
+        draggable: true,
+        title: '선택된 위치'
+      })
+    }
+
+    // 지도 클릭 이벤트
+    newMap.addListener('click', (event: google.maps.MapMouseEvent) => {
+      const lat = event.latLng.lat()
+      const lng = event.latLng.lng()
+      if ('setPosition' in newMarker) {
+        newMarker.setPosition({ lat, lng })
+      } else if ('position' in newMarker) {
+        newMarker.position = { lat, lng }
+      }
+      setSelectedLat(lat)
+      setSelectedLng(lng)
+      reverseGeocode(lat, lng)
+    })
+
+    // 마커 드래그 이벤트
+    if ('addListener' in newMarker) {
+      // 기본 Marker의 경우
+      newMarker.addListener('dragend', () => {
+        const position = (newMarker as google.maps.Marker).getPosition()
+        if (position) {
+          const lat = position.lat()
+          const lng = position.lng()
+          setSelectedLat(lat)
+          setSelectedLng(lng)
+          reverseGeocode(lat, lng)
+        }
+      })
+    } else {
+      // AdvancedMarkerElement의 경우
+      newMarker.addEventListener('dragend', (event: any) => {
+        const position = (newMarker as google.maps.marker.AdvancedMarkerElement).position
+        if (position) {
+          const lat = typeof position.lat === 'function' ? position.lat() : position.lat
+          const lng = typeof position.lng === 'function' ? position.lng() : position.lng
+          setSelectedLat(lat)
+          setSelectedLng(lng)
+          reverseGeocode(lat, lng)
+        }
+      })
+    }
+
+    setMap(newMap)
+    setMarker(newMarker)
+    setMapLoaded(true)
+
+    // 초기 주소 설정
+    if (currentLat && currentLng) {
+      reverseGeocode(currentLat, currentLng)
+    }
+  }, [currentLat, currentLng, reverseGeocode])
 
   useEffect(() => {
     // Google Maps API 키 확인
@@ -55,22 +216,28 @@ export default function LocationPickerModal({
     
     if (!window.google && !existingScript) {
       const script = document.createElement('script')
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,marker&loading=async`
       script.async = true
       script.defer = true
       script.id = 'google-maps-script'
       
       // 스크립트 로드 완료 후 초기화
-      script.onload = () => {
+      script.onload = async () => {
         // Google Maps API가 완전히 로드될 때까지 대기
-        const checkGoogleMaps = () => {
+        const checkGoogleMaps = async () => {
           if (window.google && window.google.maps && window.google.maps.MapTypeId) {
+            // marker 라이브러리가 로드되었는지 확인
+            try {
+              await window.google.maps.importLibrary('marker')
+            } catch (error) {
+              console.warn('marker 라이브러리 로드 실패:', error)
+            }
             initializeMap()
           } else {
             setTimeout(checkGoogleMaps, 50)
           }
         }
-        checkGoogleMaps()
+        await checkGoogleMaps()
       }
       
       // 스크립트 로드 실패 처리
@@ -94,174 +261,181 @@ export default function LocationPickerModal({
       }
       checkGoogleMaps()
     }
-  }, [])
+  }, [initializeMap])
 
   // currentLat, currentLng가 변경될 때 지도와 마커 업데이트 (모달 열 때만)
   useEffect(() => {
     if (map && marker && currentLat && currentLng) {
       const newPosition = { lat: currentLat, lng: currentLng }
       map.setCenter(newPosition)
-      marker.setPosition(newPosition)
+      // Marker 타입에 따라 다른 메서드 사용
+      if ('setPosition' in marker) {
+        marker.setPosition(newPosition)
+      } else if ('position' in marker) {
+        marker.position = newPosition
+      }
       setSelectedLat(currentLat)
       setSelectedLng(currentLng)
       reverseGeocode(currentLat, currentLng)
     }
-  }, [map, marker, initializeMap])
+  }, [map, marker, currentLat, currentLng, reverseGeocode])
 
-  const initializeMap = () => {
-    const mapElement = document.getElementById('map')
-    if (!mapElement || !window.google || !window.google.maps) return
-
-    // Google Maps API가 완전히 로드되었는지 확인
-    if (!window.google.maps.MapTypeId || !window.google.maps.MapTypeId.ROADMAP) {
-      console.warn('Google Maps API가 완전히 로드되지 않았습니다. 잠시 후 다시 시도합니다.')
-      setTimeout(initializeMap, 100)
-      return
-    }
-
-    // Map ID 설정
-    const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID
-    console.log('LocationPickerModal Map ID:', mapId ? '설정됨' : '설정되지 않음', mapId)
-    
-    const mapOptions: google.maps.MapOptions = {
-      center: currentLat && currentLng ? { lat: currentLat, lng: currentLng } : LAS_VEGAS_CENTER,
-      zoom: 13,
-      mapTypeId: window.google.maps.MapTypeId.ROADMAP,
-      styles: [
-        {
-          featureType: 'poi',
-          elementType: 'labels',
-          stylers: [{ visibility: 'off' }]
-        }
-      ]
-    }
-    
-    // Map ID가 있으면 Advanced Markers를 위한 맵 ID 설정
-    if (mapId) {
-      mapOptions.mapId = mapId
-      console.log('LocationPickerModal - Advanced Markers Map ID 설정:', mapId)
-    } else {
-      console.warn('LocationPickerModal - Map ID 없음, 기본 마커 사용')
-    }
-
-    const newMap = new window.google.maps.Map(mapElement, mapOptions)
-
-    // Advanced Marker 또는 기본 Marker 생성
-    let newMarker: google.maps.Marker
-    if (window.google?.maps?.marker?.AdvancedMarkerElement && mapId) {
-      newMarker = new window.google.maps.marker.AdvancedMarkerElement({
-        position: currentLat && currentLng ? { lat: currentLat, lng: currentLng } : LAS_VEGAS_CENTER,
-        map: newMap,
-        draggable: true,
-        title: '선택된 위치'
-      })
-      console.log('LocationPickerModal - Advanced Marker 생성 성공')
-    } else {
-      newMarker = new window.google.maps.Marker({
-        position: currentLat && currentLng ? { lat: currentLat, lng: currentLng } : LAS_VEGAS_CENTER,
-        map: newMap,
-        draggable: true,
-        title: '선택된 위치'
-      })
-      console.log('LocationPickerModal - 기본 Marker 사용')
-    }
-
-    // 지도 클릭 이벤트
-    newMap.addListener('click', (event: google.maps.MapMouseEvent) => {
-      const lat = event.latLng.lat()
-      const lng = event.latLng.lng()
-      newMarker.setPosition({ lat, lng })
-      setSelectedLat(lat)
-      setSelectedLng(lng)
-      reverseGeocode(lat, lng)
-    })
-
-    // 마커 드래그 이벤트
-    newMarker.addListener('dragend', () => {
-      const position = newMarker.getPosition()
-      const lat = position.lat()
-      const lng = position.lng()
-      setSelectedLat(lat)
-      setSelectedLng(lng)
-      reverseGeocode(lat, lng)
-    })
-
-    setMap(newMap)
-    setMarker(newMarker)
-    setMapLoaded(true)
-
-    // 초기 주소 설정
-    if (currentLat && currentLng) {
-      reverseGeocode(currentLat, currentLng)
-    }
-  }
-
-  const reverseGeocode = (lat: number, lng: number) => {
-    if (!window.google) return
-
-    const geocoder = new window.google.maps.Geocoder()
-    geocoder.geocode({ location: { lat, lng } }, (results: google.maps.GeocoderResult[], status: string) => {
-      if (status === 'OK' && results[0]) {
-        setAddress(results[0].formatted_address)
-      } else {
-        setAddress(`${lat.toFixed(6)}, ${lng.toFixed(6)}`)
-      }
-    })
-  }
-
-  // 위치 검색 (LocationSearch와 같은 방식)
+  // 위치 검색 (최신 AutocompleteSuggestion 및 Place API만 사용)
   const searchPlaces = async (query: string) => {
-    if (!query.trim() || !mapLoaded) return
+    if (!query.trim() || !window.google || !window.google.maps) return
 
     setIsLoading(true)
     try {
-      const service = new window.google.maps.places.PlacesService(
-        document.createElement('div')
-      )
-
-      const request = {
-        query: query,
-        fields: ['place_id', 'name', 'formatted_address', 'geometry', 'url', 'types', 'rating', 'user_ratings_total'],
-        locationBias: { lat: 36.1699, lng: -115.1398, radius: 100000 }, // 라스베가스 중심 100km 반경
-        region: 'US' // 미국 지역 우선
+      // 최신 AutocompleteSuggestion API 사용
+      const { AutocompleteSuggestion, AutocompleteSessionToken } = await window.google.maps.importLibrary('places') as any
+      
+      if (!AutocompleteSuggestion) {
+        console.error('AutocompleteSuggestion API를 사용할 수 없습니다.')
+        setIsLoading(false)
+        return
       }
 
-      service.textSearch(request, (results: google.maps.places.PlaceResult[], status: google.maps.places.PlacesServiceStatus) => {
-        if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
-          // 결과를 평점과 리뷰 수로 정렬하여 더 관련성 높은 결과 우선 표시
-          const sortedResults = results
-            .filter(place => place.rating && place.user_ratings_total > 0) // 평점이 있는 장소만
-            .sort((a, b) => {
-              // 평점과 리뷰 수를 고려한 점수 계산
-              const scoreA = (a.rating * Math.log(a.user_ratings_total + 1))
-              const scoreB = (b.rating * Math.log(b.user_ratings_total + 1))
-              return scoreB - scoreA
-            })
-            .slice(0, 8) // 상위 8개 결과만 표시
-
-          const formattedResults = sortedResults.map((place) => ({
-            placeId: place.place_id,
-            name: place.name,
-            address: place.formatted_address,
-            latitude: place.geometry.location.lat(),
-            longitude: place.geometry.location.lng(),
-            googleMapsUrl: place.url || `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
-            rating: place.rating,
-            userRatingsTotal: place.user_ratings_total,
-            types: place.types
-          }))
-          
-          setSuggestions(formattedResults)
-          setShowSuggestions(true)
-        } else {
-          // Places API 실패 시 빈 결과 표시
-          setSuggestions([])
-          setShowSuggestions(false)
-        }
-        setIsLoading(false)
+      // 세션 토큰 생성
+      const sessionToken = new AutocompleteSessionToken()
+      
+      // 자동완성 제안 가져오기
+      const response = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
+        input: query,
+        includedRegionCodes: [], // 빈 배열로 전역 검색
+        sessionToken: sessionToken
       })
+
+      // 응답이 배열인지 객체인지 확인
+      let suggestionsArray: any[] = []
+      if (Array.isArray(response)) {
+        suggestionsArray = response
+      } else if (response && Array.isArray(response.suggestions)) {
+        suggestionsArray = response.suggestions
+      } else if (response && response.autocompleteSuggestions) {
+        suggestionsArray = response.autocompleteSuggestions
+      } else {
+        console.warn('예상치 못한 응답 형식:', response)
+        setSuggestions([])
+        setShowSuggestions(false)
+        setIsLoading(false)
+        return
+      }
+
+      if (!suggestionsArray || suggestionsArray.length === 0) {
+        setSuggestions([])
+        setShowSuggestions(false)
+        setIsLoading(false)
+        return
+      }
+
+      // Place API로 상세 정보 가져오기
+      const { Place } = await window.google.maps.importLibrary('places') as any
+      
+      const placeDetailsPromises = suggestionsArray.slice(0, 8).map(async (suggestion: any) => {
+        try {
+          // 다양한 응답 구조 지원: placePrediction 또는 직접 place 속성
+          let placeId: string | null = null
+          
+          if (suggestion.placePrediction?.place?.id) {
+            placeId = suggestion.placePrediction.place.id
+          } else if (suggestion.placePrediction?.placeId) {
+            placeId = suggestion.placePrediction.placeId
+          } else if (suggestion.place?.id) {
+            placeId = suggestion.place.id
+          } else if (suggestion.placeId) {
+            placeId = suggestion.placeId
+          } else if (typeof suggestion === 'string') {
+            // suggestion이 직접 place ID인 경우
+            placeId = suggestion
+          }
+          
+          if (!placeId) {
+            console.warn('Place ID를 찾을 수 없습니다:', suggestion)
+            return null
+          }
+
+          const place = new Place({ id: placeId })
+          await place.fetchFields({
+            fields: ['id', 'displayName', 'formattedAddress', 'location', 'types', 'rating', 'userRatingCount']
+          })
+
+          // location이 LatLng 객체인지 확인
+          const location = place.location
+          let latitude: number | null = null
+          let longitude: number | null = null
+
+          if (location) {
+            if (typeof location.lat === 'function') {
+              latitude = location.lat()
+            } else {
+              latitude = location.lat
+            }
+            if (typeof location.lng === 'function') {
+              longitude = location.lng()
+            } else {
+              longitude = location.lng
+            }
+          }
+
+          // displayName이 문자열 객체인 경우 처리
+          let displayName = ''
+          if (place.displayName) {
+            if (typeof place.displayName === 'string') {
+              displayName = place.displayName
+            } else if (place.displayName.string) {
+              displayName = place.displayName.string
+            } else {
+              displayName = String(place.displayName)
+            }
+          }
+
+          return {
+            placeId: place.id || placeId,
+            name: displayName,
+            address: place.formattedAddress || '',
+            latitude: latitude,
+            longitude: longitude,
+            googleMapsUrl: `https://www.google.com/maps/place/?q=place_id:${placeId}`,
+            rating: place.rating || null,
+            userRatingsTotal: place.userRatingCount || null,
+            types: place.types || []
+          }
+        } catch (error) {
+          console.warn('Place 상세 정보 가져오기 실패:', error, suggestion)
+          return null
+        }
+      })
+
+      const placeDetails = (await Promise.all(placeDetailsPromises)).filter((place): place is Suggestion => 
+        place !== null && place.latitude !== null && place.longitude !== null
+      )
+      
+      if (placeDetails.length > 0) {
+        // 평점과 리뷰 수를 기반으로 정렬
+        const sortedResults = placeDetails
+          .sort((a, b) => {
+            if (a.rating && !b.rating) return -1
+            if (!a.rating && b.rating) return 1
+            if (a.rating && b.rating) {
+              const scoreA = (a.rating * Math.log((a.userRatingsTotal || 0) + 1))
+              const scoreB = (b.rating * Math.log((b.userRatingsTotal || 0) + 1))
+              return scoreB - scoreA
+            }
+            return 0
+          })
+          .slice(0, 8)
+
+        setSuggestions(sortedResults)
+        setShowSuggestions(true)
+      } else {
+        setSuggestions([])
+        setShowSuggestions(false)
+      }
     } catch (error) {
       console.error('위치 검색 오류:', error)
+      setSuggestions([])
+      setShowSuggestions(false)
+    } finally {
       setIsLoading(false)
     }
   }
@@ -278,19 +452,47 @@ export default function LocationPickerModal({
   }
 
   // 위치 선택
-  const handleLocationSelect = (location: google.maps.places.PlaceResult) => {
+  const handleLocationSelect = (location: Suggestion) => {
+    console.log('handleLocationSelect 호출:', location)
+    
+    // 좌표 확인
     const lat = location.latitude
     const lng = location.longitude
     
+    if (!lat || !lng) {
+      console.warn('선택한 위치에 좌표가 없습니다:', location)
+      setShowSuggestions(false)
+      alert('선택한 위치에 좌표 정보가 없습니다. 다른 위치를 선택해주세요.')
+      return
+    }
+    
+    console.log('좌표 확인됨:', { lat, lng })
+    
+    // 상태 업데이트
     setSelectedLat(lat)
     setSelectedLng(lng)
-    setSearchQuery(location.name)
-    setAddress(location.address)
+    setSearchQuery(location.name || '')
+    setAddress(location.address || '')
     setShowSuggestions(false)
     
-    if (map && marker) {
-      map.setCenter({ lat, lng })
-      marker.setPosition({ lat, lng })
+    // 지도와 마커 업데이트
+    if (map) {
+      const newPosition = { lat, lng }
+      map.setCenter(newPosition)
+      map.setZoom(15)
+      
+      if (marker) {
+        // 마커 타입에 따라 다른 메서드 사용
+        if ('setPosition' in marker) {
+          // 기본 Marker
+          marker.setPosition(newPosition)
+        } else if ('position' in marker) {
+          // AdvancedMarkerElement
+          marker.position = newPosition
+        }
+      }
+      
+      reverseGeocode(lat, lng)
     }
   }
 
@@ -342,13 +544,15 @@ export default function LocationPickerModal({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Element
-      if (!target.closest('.search-container')) {
+      // 검색 컨테이너나 제안 목록 내부 클릭은 무시
+      if (!target.closest('.search-container') && !target.closest('.suggestions-list')) {
         setShowSuggestions(false)
       }
     }
 
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
+    // mousedown 대신 click 이벤트 사용 (버튼 클릭 후 실행되도록)
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
   }, [])
 
   return (
@@ -384,7 +588,7 @@ export default function LocationPickerModal({
                   setShowSuggestions(true)
                 }
               }}
-              placeholder="라스베가스 지역 검색 (예: Strip, Fremont Street, Red Rock Canyon)"
+              placeholder="위치 검색 (예: Grand Canyon, Las Vegas Strip, New York)"
               className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             {isLoading && (
@@ -396,12 +600,22 @@ export default function LocationPickerModal({
 
           {/* 검색 제안 목록 */}
           {showSuggestions && suggestions.length > 0 && (
-            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+            <div className="suggestions-list absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
               {suggestions.map((suggestion, index) => (
                 <button
-                  key={suggestion.placeId}
-                  onClick={() => handleLocationSelect(suggestion)}
-                  className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                  key={suggestion.placeId || `suggestion-${index}`}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    console.log('검색 결과 클릭:', suggestion)
+                    handleLocationSelect(suggestion)
+                  }}
+                  onMouseDown={(e) => {
+                    // 외부 클릭 감지가 먼저 실행되지 않도록
+                    e.stopPropagation()
+                  }}
+                  className="w-full px-4 py-3 text-left hover:bg-blue-50 active:bg-blue-100 border-b border-gray-100 last:border-b-0 cursor-pointer transition-colors"
                 >
                   <div className="flex items-start gap-3">
                     <MapPin className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
@@ -422,9 +636,11 @@ export default function LocationPickerModal({
                             )}
                           </div>
                         )}
-                        <div className="text-xs text-gray-500">
-                          좌표: {suggestion.latitude.toFixed(6)}, {suggestion.longitude.toFixed(6)}
-                        </div>
+                        {suggestion.latitude && suggestion.longitude && (
+                          <div className="text-xs text-gray-500">
+                            좌표: {suggestion.latitude.toFixed(6)}, {suggestion.longitude.toFixed(6)}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -512,8 +728,15 @@ export default function LocationPickerModal({
               setAddress('')
               setSearchQuery('')
               if (map && marker) {
-                map.setCenter(LAS_VEGAS_CENTER)
-                marker.setPosition(LAS_VEGAS_CENTER)
+                // 현재 선택된 위치로 초기화하거나 기본값 사용
+                const resetPosition = currentLat && currentLng 
+                  ? { lat: currentLat, lng: currentLng }
+                  : LAS_VEGAS_CENTER
+                map.setCenter(resetPosition)
+                marker.setPosition(resetPosition)
+                setSelectedLat(resetPosition.lat)
+                setSelectedLng(resetPosition.lng)
+                reverseGeocode(resetPosition.lat, resetPosition.lng)
               }
             }}
             className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"

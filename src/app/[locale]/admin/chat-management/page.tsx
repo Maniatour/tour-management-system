@@ -1462,6 +1462,55 @@ export default function ChatManagementPage() {
     }
   }
 
+  // 지난 투어 채팅방 일괄 비활성화
+  const deactivatePastRooms = async () => {
+    // 현재 라스베가스 날짜 기준으로 오늘 이전의 투어 채팅방 찾기
+    const now = new Date()
+    const lasVegasNow = new Date(now.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+    const todayStr = lasVegasNow.toISOString().split('T')[0] // YYYY-MM-DD 형식
+
+    // 지난 탭에 표시되는 채팅방들 찾기
+    const pastRooms = chatRooms.filter(room => {
+      if (!room.is_active) return false // 이미 비활성화된 것은 제외
+      if (!(room.tour as Record<string, unknown>)?.tour_date) return false
+      const tourDateStr = (room.tour as Record<string, unknown>).tour_date as string
+      return tourDateStr < todayStr
+    })
+
+    if (pastRooms.length === 0) {
+      alert('비활성화할 지난 투어 채팅방이 없습니다.')
+      return
+    }
+
+    if (!confirm(`지난 투어 채팅방 ${pastRooms.length}개를 비활성화하시겠습니까?`)) {
+      return
+    }
+
+    try {
+      const roomIds = pastRooms.map(room => room.id)
+
+      // 해당 채팅방들을 비활성화
+      const { error: updateError } = await supabase
+        .from('chat_rooms')
+        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .in('id', roomIds)
+
+      if (updateError) throw updateError
+
+      alert(`${pastRooms.length}개의 지난 투어 채팅방이 비활성화되었습니다.`)
+      
+      // 채팅방 목록 새로고침
+      await refetchChatRooms()
+      if (activeTab === 'inactive') {
+        setInactiveRoomsData([]) // 비활성화 탭 데이터 초기화하여 다시 로드
+        await fetchInactiveRooms()
+      }
+    } catch (error) {
+      console.error('Error deactivating past rooms:', error)
+      alert('채팅방 비활성화 중 오류가 발생했습니다.')
+    }
+  }
+
   // 채팅방 선택 (비동기, 블로킹하지 않음)
   const selectRoom = (room: ChatRoom) => {
     // 즉시 채팅방 선택 (UI 반응성 향상)
@@ -1692,10 +1741,18 @@ export default function ChatManagementPage() {
             <div>
               <h1 className="text-lg font-semibold text-gray-900">투어 채팅</h1>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2">
               <div className="text-sm text-gray-500">
                 읽지않은 메시지 ({filteredRooms.reduce((sum, room) => sum + room.unread_count, 0)})
               </div>
+              <button
+                onClick={deactivatePastRooms}
+                className="flex items-center justify-center px-2 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                title="지난 투어 채팅방 일괄 비활성화"
+              >
+                <PowerOff size={14} className="mr-1" />
+                <span className="hidden sm:inline">지난 투어 비활성화</span>
+              </button>
               <button
                 onClick={handleRefresh}
                 disabled={refreshing}
