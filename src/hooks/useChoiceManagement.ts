@@ -108,15 +108,20 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
       // dynamic_pricing 테이블에서 choices_pricing 데이터 가져오기
       let query = supabase
         .from('dynamic_pricing')
-        .select('choices_pricing, channel_id, updated_at')
+        .select('choices_pricing, channel_id, updated_at, date')
         .eq('product_id', productId)
         .not('choices_pricing', 'is', null);
 
       // 채널 필터링
-      if (selectedChannelId) {
+      // selectedChannelId가 빈 문자열이거나 없으면 M00001 채널 우선 사용
+      if (selectedChannelId && selectedChannelId.trim() !== '') {
         query = query.eq('channel_id', selectedChannelId);
       } else if (selectedChannelType === 'SELF') {
-        query = query.like('channel_id', 'B%');
+        // SELF 타입이면 M00001 채널 우선 시도
+        query = query.eq('channel_id', 'M00001');
+        // M00001이 없으면 B로 시작하는 채널 시도
+        // (이 부분은 주석 처리하고 M00001만 사용)
+        // query = query.like('channel_id', 'B%');
       }
 
       const { data: pricingData, error: pricingError } = await query
@@ -132,6 +137,13 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
         selectedChannelId,
         selectedChannelType,
         dataCount: pricingData?.length || 0,
+        pricingDataSample: pricingData?.[0] ? {
+          channel_id: pricingData[0].channel_id,
+          date: pricingData[0].date,
+          choicesPricingKeys: Object.keys(typeof pricingData[0].choices_pricing === 'string' 
+            ? JSON.parse(pricingData[0].choices_pricing) 
+            : (pricingData[0].choices_pricing || {}))
+        } : null,
         note: 'dynamic_pricing 테이블에서 로드'
       });
 
@@ -197,6 +209,15 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
             existingChoicesPricing = typeof choicesPricing === 'string'
               ? JSON.parse(choicesPricing)
               : choicesPricing || {};
+            
+            // 디버깅: 파싱된 choices_pricing 로그
+            console.log('파싱된 choices_pricing:', {
+              keys: Object.keys(existingChoicesPricing),
+              sample: Object.entries(existingChoicesPricing).slice(0, 3).map(([key, value]) => ({
+                key,
+                value
+              }))
+            });
           } catch (e) {
             console.warn('기존 choices_pricing 파싱 오류:', e);
           }
@@ -205,20 +226,76 @@ export function useChoiceManagement(productId: string, selectedChannelId?: strin
           combinations.forEach(combination => {
             const matchResult = findChoicePricingData(combination, existingChoicesPricing);
             
+            // 디버깅: 매칭 결과 로그
+            const directMatch = existingChoicesPricing[combination.id];
+            console.log(`초이스 가격 매칭 시도: ${combination.id}`, {
+              combinationId: combination.id,
+              combinationKey: combination.combination_key,
+              matchedKey: matchResult.matchedKey,
+              matchData: matchResult.data,
+              matchDataKeys: matchResult.data ? Object.keys(matchResult.data) : [],
+              matchDataStringified: JSON.stringify(matchResult.data),
+              existingChoicesPricingKeys: Object.keys(existingChoicesPricing),
+              existingChoicesPricingForThisId: directMatch,
+              directMatchStringified: directMatch ? JSON.stringify(directMatch) : 'null',
+              allExistingChoicesPricing: JSON.stringify(existingChoicesPricing)
+            });
+            
             if (matchResult.data && Object.keys(matchResult.data).length > 0) {
               // 기존 가격이 있으면 적용 (기본 가격보다 우선)
-              const adultPrice = matchResult.data.adult || matchResult.data.adult_price;
-              const childPrice = matchResult.data.child || matchResult.data.child_price;
-              const infantPrice = matchResult.data.infant || matchResult.data.infant_price;
+              // || 연산자 대신 명시적으로 확인 (0도 유효한 값이므로)
+              // 먼저 adult_price를 확인하고, 없으면 adult를 확인
+              const adultPrice = matchResult.data.adult_price !== undefined && matchResult.data.adult_price !== null 
+                                ? matchResult.data.adult_price 
+                                : (matchResult.data.adult !== undefined && matchResult.data.adult !== null 
+                                   ? matchResult.data.adult 
+                                   : undefined);
+              const childPrice = matchResult.data.child_price !== undefined && matchResult.data.child_price !== null 
+                                ? matchResult.data.child_price 
+                                : (matchResult.data.child !== undefined && matchResult.data.child !== null 
+                                   ? matchResult.data.child 
+                                   : undefined);
+              const infantPrice = matchResult.data.infant_price !== undefined && matchResult.data.infant_price !== null 
+                                 ? matchResult.data.infant_price 
+                                 : (matchResult.data.infant !== undefined && matchResult.data.infant !== null 
+                                    ? matchResult.data.infant 
+                                    : undefined);
               
-              if (adultPrice !== undefined) combination.adult_price = adultPrice;
-              if (childPrice !== undefined) combination.child_price = childPrice;
-              if (infantPrice !== undefined) combination.infant_price = infantPrice;
+              // 디버깅: 가격 추출 과정 로그
+              console.log(`가격 추출: ${combination.id}`, {
+                rawData: matchResult.data,
+                rawDataStringified: JSON.stringify(matchResult.data),
+                adult_price: matchResult.data.adult_price,
+                adult_price_type: typeof matchResult.data.adult_price,
+                adult: matchResult.data.adult,
+                adult_type: typeof matchResult.data.adult,
+                extractedAdultPrice: adultPrice,
+                extractedChildPrice: childPrice,
+                extractedInfantPrice: infantPrice,
+                allKeys: Object.keys(matchResult.data)
+              });
+              
+              if (adultPrice !== undefined && adultPrice !== null) {
+                combination.adult_price = adultPrice;
+              }
+              if (childPrice !== undefined && childPrice !== null) {
+                combination.child_price = childPrice;
+              }
+              if (infantPrice !== undefined && infantPrice !== null) {
+                combination.infant_price = infantPrice;
+              }
               
               console.log(`기존 가격 적용: ${combination.id} <- ${matchResult.matchedKey}`, {
                 adult: combination.adult_price,
                 child: combination.child_price,
-                infant: combination.infant_price
+                infant: combination.infant_price,
+                rawData: matchResult.data
+              });
+            } else {
+              console.warn(`초이스 가격을 찾지 못함: ${combination.id}`, {
+                combinationId: combination.id,
+                combinationKey: combination.combination_key,
+                existingChoicesPricingKeys: Object.keys(existingChoicesPricing)
               });
             }
           });

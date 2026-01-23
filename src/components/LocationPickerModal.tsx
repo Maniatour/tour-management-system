@@ -280,6 +280,64 @@ export default function LocationPickerModal({
     }
   }, [map, marker, currentLat, currentLng, reverseGeocode])
 
+  // PlacesService를 사용한 대체 검색 방법
+  const searchPlacesWithPlacesService = async (query: string) => {
+    if (!window.google || !window.google.maps || !window.google.maps.places) {
+      console.error('Google Maps Places API를 사용할 수 없습니다.')
+      setSuggestions([])
+      setShowSuggestions(false)
+      setIsLoading(false)
+      return
+    }
+
+    try {
+      const service = new window.google.maps.places.PlacesService(
+        document.createElement('div')
+      )
+
+      const request = {
+        query: query,
+        fields: ['place_id', 'name', 'formatted_address', 'geometry', 'rating', 'user_ratings_total', 'types'],
+        locationBias: { lat: 36.1699, lng: -115.1398, radius: 200000 }
+      }
+
+      service.textSearch(request, (results: google.maps.places.PlaceResult[] | null, status: google.maps.places.PlacesServiceStatus) => {
+        if (status === window.google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
+          const suggestions: Suggestion[] = results.slice(0, 8).map((place) => ({
+            placeId: place.place_id || '',
+            name: place.name || '',
+            address: place.formatted_address || '',
+            latitude: place.geometry?.location?.lat() || null,
+            longitude: place.geometry?.location?.lng() || null,
+            googleMapsUrl: place.url || `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
+            rating: place.rating || null,
+            userRatingsTotal: place.user_ratings_total || null,
+            types: place.types || []
+          })).filter((suggestion): suggestion is Suggestion => 
+            suggestion.latitude !== null && suggestion.longitude !== null
+          )
+
+          if (suggestions.length > 0) {
+            setSuggestions(suggestions)
+            setShowSuggestions(true)
+          } else {
+            setSuggestions([])
+            setShowSuggestions(false)
+          }
+        } else {
+          setSuggestions([])
+          setShowSuggestions(false)
+        }
+        setIsLoading(false)
+      })
+    } catch (error) {
+      console.error('PlacesService 검색 오류:', error)
+      setSuggestions([])
+      setShowSuggestions(false)
+      setIsLoading(false)
+    }
+  }
+
   // 위치 검색 (최신 AutocompleteSuggestion 및 Place API만 사용)
   const searchPlaces = async (query: string) => {
     if (!query.trim() || !window.google || !window.google.maps) return
@@ -287,23 +345,46 @@ export default function LocationPickerModal({
     setIsLoading(true)
     try {
       // 최신 AutocompleteSuggestion API 사용
-      const { AutocompleteSuggestion, AutocompleteSessionToken } = await window.google.maps.importLibrary('places') as any
+      const placesLibrary = await window.google.maps.importLibrary('places') as any
       
-      if (!AutocompleteSuggestion) {
-        console.error('AutocompleteSuggestion API를 사용할 수 없습니다.')
-        setIsLoading(false)
+      if (!placesLibrary || !placesLibrary.AutocompleteSuggestion) {
+        console.warn('AutocompleteSuggestion API를 사용할 수 없습니다. PlacesService로 대체합니다.')
+        // 대체 방법: PlacesService 사용
+        await searchPlacesWithPlacesService(query)
+        return
+      }
+
+      const { AutocompleteSuggestion, AutocompleteSessionToken } = placesLibrary
+      
+      if (!AutocompleteSessionToken) {
+        console.warn('AutocompleteSessionToken을 사용할 수 없습니다. PlacesService로 대체합니다.')
+        await searchPlacesWithPlacesService(query)
         return
       }
 
       // 세션 토큰 생성
-      const sessionToken = new AutocompleteSessionToken()
+      let sessionToken
+      try {
+        sessionToken = new AutocompleteSessionToken()
+      } catch (error) {
+        console.warn('AutocompleteSessionToken 생성 실패, PlacesService로 대체:', error)
+        await searchPlacesWithPlacesService(query)
+        return
+      }
       
       // 자동완성 제안 가져오기
-      const response = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
-        input: query,
-        includedRegionCodes: [], // 빈 배열로 전역 검색
-        sessionToken: sessionToken
-      })
+      let response
+      try {
+        response = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
+          input: query,
+          includedRegionCodes: [], // 빈 배열로 전역 검색
+          sessionToken: sessionToken
+        })
+      } catch (error) {
+        console.warn('AutocompleteSuggestion.fetchAutocompleteSuggestions 실패, PlacesService로 대체:', error)
+        await searchPlacesWithPlacesService(query)
+        return
+      }
 
       // 응답이 배열인지 객체인지 확인
       let suggestionsArray: any[] = []
@@ -328,8 +409,14 @@ export default function LocationPickerModal({
         return
       }
 
-      // Place API로 상세 정보 가져오기
-      const { Place } = await window.google.maps.importLibrary('places') as any
+      // Place API로 상세 정보 가져오기 (이미 가져온 placesLibrary 사용)
+      if (!placesLibrary || !placesLibrary.Place) {
+        console.warn('Place API를 사용할 수 없습니다. PlacesService로 대체합니다.')
+        await searchPlacesWithPlacesService(query)
+        return
+      }
+
+      const { Place } = placesLibrary
       
       const placeDetailsPromises = suggestionsArray.slice(0, 8).map(async (suggestion: any) => {
         try {
@@ -354,51 +441,73 @@ export default function LocationPickerModal({
             return null
           }
 
-          const place = new Place({ id: placeId })
-          await place.fetchFields({
-            fields: ['id', 'displayName', 'formattedAddress', 'location', 'types', 'rating', 'userRatingCount']
-          })
+          let place
+          try {
+            place = new Place({ id: placeId })
+            await place.fetchFields({
+              fields: ['id', 'displayName', 'formattedAddress', 'location', 'types', 'rating', 'userRatingCount']
+            })
+          } catch (placeError) {
+            console.warn('Place 정보 가져오기 실패:', placeError, placeId)
+            return null
+          }
 
           // location이 LatLng 객체인지 확인
-          const location = place.location
+          const location = place?.location
           let latitude: number | null = null
           let longitude: number | null = null
 
           if (location) {
-            if (typeof location.lat === 'function') {
-              latitude = location.lat()
-            } else {
-              latitude = location.lat
+            try {
+              if (typeof location.lat === 'function') {
+                latitude = location.lat()
+              } else if (typeof location.lat === 'number') {
+                latitude = location.lat
+              }
+              if (typeof location.lng === 'function') {
+                longitude = location.lng()
+              } else if (typeof location.lng === 'number') {
+                longitude = location.lng
+              }
+            } catch (locationError) {
+              console.warn('위치 정보 추출 실패:', locationError)
             }
-            if (typeof location.lng === 'function') {
-              longitude = location.lng()
-            } else {
-              longitude = location.lng
-            }
+          }
+
+          if (latitude === null || longitude === null) {
+            console.warn('유효한 좌표를 찾을 수 없습니다:', place)
+            return null
           }
 
           // displayName이 문자열 객체인 경우 처리
           let displayName = ''
-          if (place.displayName) {
-            if (typeof place.displayName === 'string') {
-              displayName = place.displayName
-            } else if (place.displayName.string) {
-              displayName = place.displayName.string
-            } else {
-              displayName = String(place.displayName)
+          if (place?.displayName) {
+            try {
+              if (typeof place.displayName === 'string') {
+                displayName = place.displayName
+              } else if (place.displayName?.string) {
+                displayName = place.displayName.string
+              } else {
+                displayName = String(place.displayName)
+              }
+            } catch (nameError) {
+              console.warn('이름 추출 실패:', nameError)
+              displayName = placeId
             }
+          } else {
+            displayName = placeId
           }
 
           return {
-            placeId: place.id || placeId,
+            placeId: place?.id || placeId,
             name: displayName,
-            address: place.formattedAddress || '',
+            address: place?.formattedAddress || '',
             latitude: latitude,
             longitude: longitude,
             googleMapsUrl: `https://www.google.com/maps/place/?q=place_id:${placeId}`,
-            rating: place.rating || null,
-            userRatingsTotal: place.userRatingCount || null,
-            types: place.types || []
+            rating: place?.rating || null,
+            userRatingsTotal: place?.userRatingCount || null,
+            types: place?.types || []
           }
         } catch (error) {
           console.warn('Place 상세 정보 가져오기 실패:', error, suggestion)
@@ -433,10 +542,15 @@ export default function LocationPickerModal({
       }
     } catch (error) {
       console.error('위치 검색 오류:', error)
-      setSuggestions([])
-      setShowSuggestions(false)
-    } finally {
-      setIsLoading(false)
+      // 최신 API 실패 시 대체 방법 시도
+      try {
+        await searchPlacesWithPlacesService(query)
+      } catch (fallbackError) {
+        console.error('대체 검색 방법도 실패:', fallbackError)
+        setSuggestions([])
+        setShowSuggestions(false)
+        setIsLoading(false)
+      }
     }
   }
 
@@ -733,7 +847,12 @@ export default function LocationPickerModal({
                   ? { lat: currentLat, lng: currentLng }
                   : LAS_VEGAS_CENTER
                 map.setCenter(resetPosition)
-                marker.setPosition(resetPosition)
+                // Marker 타입에 따라 다른 메서드 사용
+                if ('setPosition' in marker) {
+                  marker.setPosition(resetPosition)
+                } else if ('position' in marker) {
+                  marker.position = resetPosition
+                }
                 setSelectedLat(resetPosition.lat)
                 setSelectedLng(resetPosition.lng)
                 reverseGeocode(resetPosition.lat, resetPosition.lng)

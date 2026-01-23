@@ -1213,13 +1213,33 @@ export default function DynamicPricingManager({
             const hasNotIncludedPrice = choiceData.not_included_price !== undefined && choiceData.not_included_price !== null;
             const notIncludedPriceValue = hasNotIncludedPrice ? choiceData.not_included_price : undefined;
             
-            // OTA 판매가가 있거나 불포함 금액이 명시적으로 입력된 경우 포함
+            // 가격이 있는지 확인 (adult_price, child_price, infant_price 중 하나라도 0보다 크면 포함)
+            const hasPrice = (choiceData.adult_price !== undefined && choiceData.adult_price !== null && choiceData.adult_price > 0) ||
+                            (choiceData.adult !== undefined && choiceData.adult !== null && choiceData.adult > 0) ||
+                            (choiceData.child_price !== undefined && choiceData.child_price !== null && choiceData.child_price > 0) ||
+                            (choiceData.child !== undefined && choiceData.child !== null && choiceData.child > 0) ||
+                            (choiceData.infant_price !== undefined && choiceData.infant_price !== null && choiceData.infant_price > 0) ||
+                            (choiceData.infant !== undefined && choiceData.infant !== null && choiceData.infant > 0);
+            
+            // OTA 판매가가 있거나 불포함 금액이 명시적으로 입력된 경우, 또는 가격이 있는 경우 포함
             // 중요: "불포함 사항 없음" 섹션에서는 not_included_price: 0으로 설정되므로 포함됨
-            if (hasOtaSalePrice || hasNotIncludedPrice) {
+            // 중요: 가격이 입력된 경우도 포함 (첫 번째 초이스의 $120 같은 경우)
+            if (hasOtaSalePrice || hasNotIncludedPrice || hasPrice) {
+              // adult_price를 명시적으로 확인 (0도 유효한 값이므로 || 연산자 사용 주의)
+              const adultPrice = choiceData.adult_price !== undefined && choiceData.adult_price !== null 
+                                ? choiceData.adult_price 
+                                : (choiceData.adult !== undefined && choiceData.adult !== null ? choiceData.adult : 0);
+              const childPrice = choiceData.child_price !== undefined && choiceData.child_price !== null 
+                                ? choiceData.child_price 
+                                : (choiceData.child !== undefined && choiceData.child !== null ? choiceData.child : 0);
+              const infantPrice = choiceData.infant_price !== undefined && choiceData.infant_price !== null 
+                                 ? choiceData.infant_price 
+                                 : (choiceData.infant !== undefined && choiceData.infant !== null ? choiceData.infant : 0);
+              
               currentInputChoices[choiceId] = {
-                adult_price: choiceData.adult_price || choiceData.adult || 0,
-                child_price: choiceData.child_price || choiceData.child || 0,
-                infant_price: choiceData.infant_price || choiceData.infant || 0,
+                adult_price: adultPrice,
+                child_price: childPrice,
+                infant_price: infantPrice,
                 ...(hasOtaSalePrice ? { ota_sale_price: choiceData.ota_sale_price } : {}),
                 // 불포함 금액이 명시적으로 입력된 경우만 포함 (0이어도 포함)
                 // 중요: not_included_price: 0인 경우도 명시적으로 포함하여 base 레코드로 분리되도록 함
@@ -2952,7 +2972,11 @@ export default function DynamicPricingManager({
                         </label>
                         <input
                           type="number"
-                          value={(combination.adult_price || 0) === 0 ? '' : (combination.adult_price || 0)}
+                          value={(() => {
+                            const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                            const adultPrice = currentChoiceData.adult_price || currentChoiceData.adult || combination.adult_price || 0;
+                            return adultPrice === 0 ? '' : adultPrice;
+                          })()}
                           onChange={(e) => {
                             const value = e.target.value;
                             if (value === '' || value === '-') {
@@ -3369,7 +3393,11 @@ export default function DynamicPricingManager({
                         </label>
                         <input
                           type="number"
-                          value={(combination.adult_price || 0) === 0 ? '' : (combination.adult_price || 0)}
+                          value={(() => {
+                            const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                            const adultPrice = currentChoiceData.adult_price || currentChoiceData.adult || combination.adult_price || 0;
+                            return adultPrice === 0 ? '' : adultPrice;
+                          })()}
                           onChange={(e) => {
                             const value = e.target.value;
                             if (value === '' || value === '-') {
@@ -3402,7 +3430,11 @@ export default function DynamicPricingManager({
                         </label>
                         <input
                           type="number"
-                          value={(combination.child_price || 0) === 0 ? '' : (combination.child_price || 0)}
+                          value={(() => {
+                            const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                            const childPrice = currentChoiceData.child_price || currentChoiceData.child || combination.child_price || 0;
+                            return childPrice === 0 ? '' : childPrice;
+                          })()}
                           onChange={(e) => {
                             const value = e.target.value;
                             if (value === '' || value === '-') {
@@ -3435,7 +3467,11 @@ export default function DynamicPricingManager({
                         </label>
                         <input
                           type="number"
-                          value={(combination.infant_price || 0) === 0 ? '' : (combination.infant_price || 0)}
+                          value={(() => {
+                            const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                            const infantPrice = currentChoiceData.infant_price || currentChoiceData.infant || combination.infant_price || 0;
+                            return infantPrice === 0 ? '' : infantPrice;
+                          })()}
                           onChange={(e) => {
                             const value = e.target.value;
                             if (value === '' || value === '-') {

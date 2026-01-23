@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
 interface ChoicePricing {
-  combinations: Record<string, {
+  combinations?: Record<string, {
     combination_key: string;
     combination_name: string;
     combination_name_ko: string;
@@ -10,6 +10,8 @@ interface ChoicePricing {
     child_price: number;
     infant_price: number;
   }>;
+  // 새로운 구조도 지원: { choiceId: { adult_price: 76, child_price: 0, infant_price: 0 } }
+  [key: string]: any;
 }
 
 interface PriceHistory {
@@ -52,7 +54,7 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
     markup_amount: 0,
     coupon_percent: 0,
     is_sale_available: true, // 기본값: 판매중
-    choices_pricing: {} as ChoicePricing,
+    choices_pricing: {} as any, // 새로운 구조: { choiceId: { adult_price: 76 } }
     price_adjustment_adult: undefined as number | undefined,
     price_adjustment_child: undefined as number | undefined,
     price_adjustment_infant: undefined as number | undefined
@@ -168,43 +170,43 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
         const latestData = data[0]; // updated_at으로 정렬했으므로 첫 번째가 최신
         
         // choices_pricing 파싱
-        let choicesPricing: ChoicePricing = { combinations: {} };
+        // 새로운 구조를 그대로 유지: { choiceId: { adult_price: 76, child_price: 0, infant_price: 0 } }
+        let choicesPricing: any = {};
         if (latestData.choices_pricing) {
           try {
             const rawChoicesPricing = typeof latestData.choices_pricing === 'string' 
               ? JSON.parse(latestData.choices_pricing) 
               : latestData.choices_pricing;
             
-            // 새로운 구조인지 확인: { choiceId: { adult: 50, child: 30, infant: 20 } }
+            // 새로운 구조인지 확인: { choiceId: { adult: 50, child: 30, infant: 20 } } 또는 { choiceId: { adult_price: 76 } }
             if (rawChoicesPricing && typeof rawChoicesPricing === 'object' && !rawChoicesPricing.combinations) {
-              // 새로운 구조를 기존 구조로 변환
-              choicesPricing = { combinations: {} };
-              Object.entries(rawChoicesPricing).forEach(([choiceId, choiceData]: [string, any]) => {
-                // no_choice 키는 combinations에 포함하지 않고 그대로 유지 (초이스가 없는 상품의 OTA 판매가 및 불포함 금액)
-                if (choiceId === 'no_choice') {
-                  // no_choice는 choices_pricing의 최상위 레벨에 그대로 유지
-                  if (!choicesPricing.no_choice) {
-                    choicesPricing.no_choice = {};
-                  }
-                  choicesPricing.no_choice = choiceData;
-                } else if (choiceData && typeof choiceData === 'object') {
-                  choicesPricing.combinations[choiceId] = {
-                    combination_key: choiceId,
-                    combination_name: choiceId.replace(/_/g, ' '),
-                    combination_name_ko: choiceId.replace(/_/g, ' '),
-                    adult_price: choiceData.adult || choiceData.adult_price || 0,
-                    child_price: choiceData.child || choiceData.child_price || 0,
-                    infant_price: choiceData.infant || choiceData.infant_price || 0
-                  };
-                }
-              });
-            } else {
-              // 기존 구조 그대로 사용
+              // 새로운 구조를 그대로 유지 (DynamicPricingManager에서 직접 사용)
               choicesPricing = rawChoicesPricing;
+            } else if (rawChoicesPricing && typeof rawChoicesPricing === 'object' && rawChoicesPricing.combinations) {
+              // 기존 구조를 새로운 구조로 변환
+              choicesPricing = {};
+              Object.entries(rawChoicesPricing.combinations).forEach(([choiceId, combinationData]: [string, any]) => {
+                choicesPricing[choiceId] = {
+                  adult_price: combinationData.adult_price || 0,
+                  child_price: combinationData.child_price || 0,
+                  infant_price: combinationData.infant_price || 0,
+                  // 하위 호환성을 위해 adult, child, infant도 포함
+                  adult: combinationData.adult_price || 0,
+                  child: combinationData.child_price || 0,
+                  infant: combinationData.infant_price || 0
+                };
+              });
+              // no_choice가 있으면 그대로 유지
+              if (rawChoicesPricing.no_choice) {
+                choicesPricing.no_choice = rawChoicesPricing.no_choice;
+              }
+            } else {
+              // 기타 경우 그대로 사용
+              choicesPricing = rawChoicesPricing || {};
             }
           } catch (error) {
             console.warn('최신 choices_pricing 파싱 오류:', error);
-            choicesPricing = { combinations: {} };
+            choicesPricing = {};
           }
         }
         
@@ -232,7 +234,8 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
           latestData: latestData,
           isSaleAvailable: isSaleAvailable,
           choicesPricing: choicesPricing,
-          combinationsCount: Object.keys(choicesPricing.combinations || {}).length
+          choicesPricingKeys: Object.keys(choicesPricing || {}),
+          combinationsCount: choicesPricing.combinations ? Object.keys(choicesPricing.combinations || {}).length : Object.keys(choicesPricing || {}).length
         });
       } else {
         // 데이터가 없으면 기본값 유지 (이미 초기값이 true로 설정되어 있음)
@@ -246,7 +249,7 @@ export function usePricingData(productId: string, selectedChannelId?: string, se
           markup_amount: 0,
           coupon_percent: 0,
           is_sale_available: true, // 데이터가 없으면 기본값: 판매중
-          choices_pricing: { combinations: {} }
+          choices_pricing: {} // 새로운 구조: 빈 객체
         }));
       }
     } catch (error) {

@@ -543,21 +543,66 @@ export default function TableScheduleAdd({
       placesPromises.push(
         new Promise(async (resolve) => {
           try {
-            const suggestions = await (window.google as any).maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
-              input: query,
-              includedRegionCodes: ['US'],
-              locationBias: {
-                lat: 36.1699, 
-                lng: -115.1398,
-                radius: 200000
-              }
-            })
+            // importLibrary를 사용하여 안전하게 로드
+            if (!window.google || !window.google.maps) {
+              resolve([])
+              return
+            }
+
+            const placesLibrary = await window.google.maps.importLibrary('places') as any
             
-            if (suggestions && suggestions.length > 0) {
-              resolve(suggestions.slice(0, 5).map((suggestion: any) => ({
+            if (!placesLibrary || !placesLibrary.AutocompleteSuggestion || !placesLibrary.AutocompleteSessionToken) {
+              console.log('AutocompleteSuggestion API를 사용할 수 없습니다. 건너뜁니다.')
+              resolve([])
+              return
+            }
+
+            const { AutocompleteSuggestion, AutocompleteSessionToken } = placesLibrary
+            
+            // 세션 토큰 생성
+            let sessionToken
+            try {
+              sessionToken = new AutocompleteSessionToken()
+            } catch (tokenError) {
+              console.log('AutocompleteSessionToken 생성 실패:', tokenError)
+              resolve([])
+              return
+            }
+
+            // 자동완성 제안 가져오기
+            let suggestions
+            try {
+              suggestions = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
+                input: query,
+                includedRegionCodes: ['US'],
+                locationBias: {
+                  lat: 36.1699, 
+                  lng: -115.1398,
+                  radius: 200000
+                },
+                sessionToken: sessionToken
+              })
+            } catch (fetchError) {
+              console.log('AutocompleteSuggestion.fetchAutocompleteSuggestions 실패:', fetchError)
+              resolve([])
+              return
+            }
+
+            // 응답이 배열인지 객체인지 확인
+            let suggestionsArray: any[] = []
+            if (Array.isArray(suggestions)) {
+              suggestionsArray = suggestions
+            } else if (suggestions && Array.isArray(suggestions.suggestions)) {
+              suggestionsArray = suggestions.suggestions
+            } else if (suggestions && suggestions.autocompleteSuggestions) {
+              suggestionsArray = suggestions.autocompleteSuggestions
+            }
+            
+            if (suggestionsArray && suggestionsArray.length > 0) {
+              resolve(suggestionsArray.slice(0, 5).map((suggestion: any) => ({
                 ...suggestion,
                 searchType: 'new_autocomplete',
-                place_id: suggestion.placePrediction?.place?.id || `new_autocomplete_${Date.now()}`,
+                place_id: suggestion.placePrediction?.place?.id || suggestion.placePrediction?.placeId || `new_autocomplete_${Date.now()}`,
                 name: suggestion.text?.text || suggestion.placePrediction?.place?.displayName || '',
                 formatted_address: suggestion.text?.text || '',
                 geometry: suggestion.placePrediction?.place?.location ? {
