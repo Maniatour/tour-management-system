@@ -1022,11 +1022,99 @@ export default function PricingSection({
     }
   }
 
-  // 수익 계산 (Net 가격 - 예약 지출 총합 - 투어 지출 총합)
+  // 초이스별 구매가 총합 계산
+  const calculateChoiceCostTotal = useCallback(async () => {
+    if (!formData.productId || !formData.tourDate || !formData.channelId) {
+      return 0
+    }
+
+    try {
+      // dynamic_pricing에서 choices_pricing 조회
+      const { data: pricingData, error } = await supabase
+        .from('dynamic_pricing')
+        .select('choices_pricing')
+        .eq('product_id', formData.productId)
+        .eq('date', formData.tourDate)
+        .eq('channel_id', formData.channelId)
+        .limit(1)
+
+      if (error || !pricingData || pricingData.length === 0) {
+        return 0
+      }
+
+      const pricing = pricingData[0] as { choices_pricing?: any }
+      if (!pricing.choices_pricing || typeof pricing.choices_pricing !== 'object') {
+        return 0
+      }
+
+      let totalCost = 0
+
+      // 새로운 간결한 초이스 시스템 (selectedChoices가 배열인 경우)
+      if (Array.isArray(formData.selectedChoices)) {
+        formData.selectedChoices.forEach((choice: { choice_id?: string; id?: string; option_id?: string; quantity?: number }) => {
+          const choiceId = choice.choice_id || choice.id
+          const optionId = choice.option_id
+          const quantity = choice.quantity || 1
+
+          // choices_pricing에서 구매가 찾기
+          const choicePricing = pricing.choices_pricing[choiceId] || pricing.choices_pricing[optionId]
+          if (choicePricing) {
+            const adultCost = choicePricing.adult_cost_price || 0
+            const childCost = choicePricing.child_cost_price || 0
+            const infantCost = choicePricing.infant_cost_price || 0
+            
+            // 인원별 구매가 계산
+            totalCost += (adultCost * (formData.adults || 0)) + 
+                        (childCost * (formData.child || 0)) + 
+                        (infantCost * (formData.infant || 0))
+            totalCost *= quantity
+          }
+        })
+      } else if (formData.selectedChoices && typeof formData.selectedChoices === 'object') {
+        // 기존 객체 형태의 selectedChoices 처리
+        Object.entries(formData.selectedChoices).forEach(([key, value]: [string, any]) => {
+          const choiceId = value?.choice_id || value?.id || key
+          const choicePricing = pricing.choices_pricing[choiceId]
+          if (choicePricing) {
+            const adultCost = choicePricing.adult_cost_price || 0
+            const childCost = choicePricing.child_cost_price || 0
+            const infantCost = choicePricing.infant_cost_price || 0
+            
+            totalCost += (adultCost * (formData.adults || 0)) + 
+                        (childCost * (formData.child || 0)) + 
+                        (infantCost * (formData.infant || 0))
+          }
+        })
+      }
+
+      return totalCost
+    } catch (error) {
+      console.error('초이스 구매가 계산 오류:', error)
+      return 0
+    }
+  }, [formData.productId, formData.tourDate, formData.channelId, formData.selectedChoices, formData.adults, formData.child, formData.infant])
+
+  // 초이스 구매가 총합 상태
+  const [choiceCostTotal, setChoiceCostTotal] = useState(0)
+
+  // 초이스 구매가 총합 업데이트
+  useEffect(() => {
+    const updateChoiceCostTotal = async () => {
+      const cost = await calculateChoiceCostTotal()
+      setChoiceCostTotal(cost)
+      // formData에 자동으로 저장 (수동 수정 전까지)
+      if (!(formData as any).choicesCostTotal || (formData as any).choicesCostTotal === 0) {
+        setFormData((prev: any) => ({ ...prev, choicesCostTotal: cost }))
+      }
+    }
+    updateChoiceCostTotal()
+  }, [calculateChoiceCostTotal, formData.choicesCostTotal, setFormData])
+
+  // 수익 계산 (Net 가격 - 예약 지출 총합 - 투어 지출 총합 - 초이스 구매가 총합)
   const calculateProfit = useCallback(() => {
     const netPrice = calculateNetPrice()
-    return netPrice - reservationExpensesTotal - tourExpensesTotal
-  }, [calculateNetPrice, reservationExpensesTotal, tourExpensesTotal])
+    return netPrice - reservationExpensesTotal - tourExpensesTotal - choiceCostTotal
+  }, [calculateNetPrice, reservationExpensesTotal, tourExpensesTotal, choiceCostTotal])
 
   // 커미션 기본값 설정 및 자동 업데이트 (할인 후 상품가 우선, 없으면 OTA 판매가, 없으면 소계)
   const otaSalePrice = formData.onlinePaymentAmount ?? 0
@@ -2861,12 +2949,52 @@ export default function PricingSection({
               
               {/* 초이스 총액 */}
               {(formData.choiceTotal || formData.choicesTotal || 0) > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700">+ {isKorean ? '초이스 총액' : 'Choices Total'}</span>
-                  <span className="text-sm font-medium text-gray-900">
-                    +${(formData.choiceTotal || formData.choicesTotal || 0).toFixed(2)}
-                  </span>
-                </div>
+                <>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium text-gray-700">+ {isKorean ? '초이스 총액' : 'Choices Total'}</span>
+                    <span className="text-sm font-medium text-gray-900">
+                      +${(formData.choiceTotal || formData.choicesTotal || 0).toFixed(2)}
+                    </span>
+                  </div>
+                  {/* 초이스 구매가 (운영 이익 계산용) - 수정 가능 */}
+                  <div className="flex justify-between items-center mb-2 p-2 bg-orange-50 border border-orange-200 rounded">
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-orange-700 mb-1">
+                        {isKorean ? '초이스 구매가 (운영 이익 계산용)' : 'Choices Cost (for Operating Profit)'}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={(((formData as any).choicesCostTotal as number) || choiceCostTotal || 0) === 0 ? '' : (((formData as any).choicesCostTotal as number) || choiceCostTotal || 0)}
+                        onChange={(e) => {
+                          const value = e.target.value
+                          if (value === '' || value === '-') {
+                            setFormData((prev: any) => ({ ...prev, choicesCostTotal: 0 }))
+                            setChoiceCostTotal(0)
+                            return
+                          }
+                          const numValue = parseFloat(value)
+                          if (!isNaN(numValue) && numValue >= 0) {
+                            setFormData((prev: any) => ({ ...prev, choicesCostTotal: numValue }))
+                            setChoiceCostTotal(numValue)
+                          }
+                        }}
+                        className="w-full px-2 py-1 text-sm border border-orange-300 rounded focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-white"
+                        placeholder="자동 불러오기 또는 수동 입력"
+                      />
+                      <p className="text-xs text-orange-600 mt-1">
+                        {isKorean ? '초이스별 구매가가 자동으로 불러와집니다. 필요시 수정 가능합니다.' : 'Choice cost prices are loaded automatically. You can modify if needed.'}
+                      </p>
+                    </div>
+                    <div className="ml-3 text-right">
+                      <div className="text-sm font-medium text-orange-700 mb-1">-</div>
+                      <div className="text-lg font-bold text-orange-700">
+                        ${(((formData as any).choicesCostTotal as number) || choiceCostTotal || 0).toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                </>
               )}
               
               {/* 불포함 가격 */}
@@ -3131,7 +3259,11 @@ export default function PricingSection({
                     totalRevenue -= refundedAmount
                     totalRevenue -= returnedAmount
 
-                    // 운영 이익 = 총 매출 - 선결제 팁
+                    // 초이스 구매가 차감 (운영 이익 계산용)
+                    const choicesCost = ((formData as any).choicesCostTotal as number) || choiceCostTotal || 0
+                    totalRevenue -= choicesCost
+
+                    // 운영 이익 = 총 매출 - 선결제 팁 - 초이스 구매가
                     return (totalRevenue - (formData.prepaymentTip || 0)).toFixed(2)
                   })()}
                 </span>
@@ -3238,7 +3370,7 @@ export default function PricingSection({
                       ${calculateProfit().toFixed(2)}
                     </div>
                     <div className="text-xs text-gray-500">
-                      Net 가격 - 지출 총합{isManiaTour ? ' - 투어 지출' : ''}
+                      Net 가격 - 지출 총합{isManiaTour ? ' - 투어 지출' : ''}{choiceCostTotal > 0 ? ' - 초이스 구매가' : ''}
                     </div>
                   </div>
                 </div>

@@ -273,7 +273,10 @@ export default function DynamicPricingManager({
     loadProductVariants();
   }, [productId, selectedChannel]);
 
-  // 상품 기본 가격 불러오기
+  // 홈페이지 가격 타입 상태
+  const [homepagePricingType, setHomepagePricingType] = useState<'single' | 'separate'>('separate');
+
+  // 상품 기본 가격 및 홈페이지 가격 타입 불러오기
   useEffect(() => {
     const loadProductBasePrice = async () => {
       if (!productId) return;
@@ -281,7 +284,7 @@ export default function DynamicPricingManager({
       try {
         const { data, error } = await supabase
           .from('products')
-          .select('adult_base_price, child_base_price, infant_base_price')
+          .select('adult_base_price, child_base_price, infant_base_price, homepage_pricing_type')
           .eq('id', productId)
           .single();
 
@@ -292,6 +295,9 @@ export default function DynamicPricingManager({
           child: data?.child_base_price || 0,
           infant: data?.infant_base_price || 0
         });
+        
+        // 홈페이지 가격 타입 설정
+        setHomepagePricingType((data as any)?.homepage_pricing_type || 'separate');
       } catch (error) {
         console.error('상품 기본 가격 로드 오류:', error);
       }
@@ -2254,6 +2260,8 @@ export default function DynamicPricingManager({
                   return `$${price.toFixed(2)}`;
                 };
 
+                const isSinglePrice = homepagePricingType === 'single';
+                
                 return (
                   <div className="mb-4">
                     <div className="flex items-center justify-between mb-3">
@@ -2262,6 +2270,9 @@ export default function DynamicPricingManager({
                           홈페이지 가격 정보 (20%할인)
                         </h5>
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-300">
+                          {isSinglePrice ? '단일 가격' : '분리 가격'}
+                        </span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-300">
                           참고용
                         </span>
                       </div>
@@ -2323,18 +2334,18 @@ export default function DynamicPricingManager({
                               infant_price: homepageChoiceData?.infant_price || homepageChoiceData?.infant || 0
                             };
                             
-                            // 기본: 상품 기본가격 (마크업 적용 전)
+                            // 단일 가격인 경우 성인 가격만 사용
                             const basePrice = {
                               adult: baseProductPrice.adult,
-                              child: baseProductPrice.child,
-                              infant: baseProductPrice.infant
+                              child: isSinglePrice ? baseProductPrice.adult : baseProductPrice.child,
+                              infant: isSinglePrice ? baseProductPrice.adult : baseProductPrice.infant
                             };
                             
                             // 초이스: 초이스별 가격 (M00001 채널의 고정값)
                             const choicePriceValue = {
                               adult: choicePrice.adult_price || 0,
-                              child: choicePrice.child_price || 0,
-                              infant: choicePrice.infant_price || 0
+                              child: isSinglePrice ? choicePrice.adult_price || 0 : (choicePrice.child_price || 0),
+                              infant: isSinglePrice ? choicePrice.adult_price || 0 : (choicePrice.infant_price || 0)
                             };
                             
                             // 판매가: 상품 기본가격 + 초이스별 가격
@@ -2380,18 +2391,58 @@ export default function DynamicPricingManager({
                                 </td>
                                 <td className="py-2 px-2 text-right text-gray-700 text-xs font-medium group-hover:text-gray-900">
                                   {formatPrice(basePrice.adult)}
+                                  {!isSinglePrice && (
+                                    <>
+                                      <br />
+                                      <span className="text-gray-500 text-[10px]">아동: {formatPrice(basePrice.child)}</span>
+                                      <br />
+                                      <span className="text-gray-500 text-[10px]">유아: {formatPrice(basePrice.infant)}</span>
+                                    </>
+                                  )}
                                 </td>
                                 <td className="py-2 px-2 text-right text-gray-700 text-xs font-medium group-hover:text-gray-900">
                                   {formatPrice(choicePriceValue.adult)}
+                                  {!isSinglePrice && (
+                                    <>
+                                      <br />
+                                      <span className="text-gray-500 text-[10px]">아동: {formatPrice(choicePriceValue.child)}</span>
+                                      <br />
+                                      <span className="text-gray-500 text-[10px]">유아: {formatPrice(choicePriceValue.infant)}</span>
+                                    </>
+                                  )}
                                 </td>
                                 <td className="py-2 px-2 text-right text-blue-700 text-xs font-bold group-hover:text-blue-900">
                                   {formatPrice(salePrice.adult)}
+                                  {!isSinglePrice && (
+                                    <>
+                                      <br />
+                                      <span className="text-blue-500 text-[10px]">아동: {formatPrice(salePrice.child)}</span>
+                                      <br />
+                                      <span className="text-blue-500 text-[10px]">유아: {formatPrice(salePrice.infant)}</span>
+                                    </>
+                                  )}
                                 </td>
                                 <td className="py-2 px-2 text-right text-indigo-700 text-xs font-bold group-hover:text-indigo-900">
                                   {formatPrice(grossPrice.adult)}
+                                  {!isSinglePrice && (
+                                    <>
+                                      <br />
+                                      <span className="text-indigo-500 text-[10px]">아동: {formatPrice(grossPrice.child)}</span>
+                                      <br />
+                                      <span className="text-indigo-500 text-[10px]">유아: {formatPrice(grossPrice.infant)}</span>
+                                    </>
+                                  )}
                                 </td>
                                 <td className="py-2 px-2 text-right text-emerald-700 text-xs font-extrabold group-hover:text-emerald-900">
                                   {formatPrice(netPrice.adult)}
+                                  {!isSinglePrice && (
+                                    <>
+                                      <br />
+                                      <span className="text-emerald-500 text-[10px]">아동: {formatPrice(netPrice.child)}</span>
+                                      <br />
+                                      <span className="text-emerald-500 text-[10px]">유아: {formatPrice(netPrice.infant)}</span>
+                                    </>
+                                  )}
                                 </td>
                               </tr>
                             );
@@ -2551,6 +2602,10 @@ export default function DynamicPricingManager({
                        name.includes('website') ||
                        name.includes('웹사이트');
               });
+            
+            // 홈페이지 채널이고 단일 가격 타입인지 확인
+            const isHomepageChannelSelected = homepageChannel && selectedChannel === homepageChannel.id;
+            const isHomepageSinglePrice = isHomepageChannelSelected && homepagePricingType === 'single';
             
             // 초이스를 불포함 금액 유무에 따라 분리
             const choicesWithNotIncluded: typeof choiceCombinations = [];
@@ -2964,113 +3019,398 @@ export default function DynamicPricingManager({
                         )}
                       </div>
                     ) : (
-                      // 일반 채널: 기존 가격 입력 필드
-                      <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          성인 가격 ($)
-                        </label>
-                        <input
-                          type="number"
-                          value={(() => {
-                            const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
-                            const adultPrice = currentChoiceData.adult_price || currentChoiceData.adult || combination.adult_price || 0;
-                            return adultPrice === 0 ? '' : adultPrice;
-                          })()}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            if (value === '' || value === '-') {
-                              handleChoicePriceUpdate(combination.id, 'adult_price', 0);
-                              return;
-                            }
-                            const numValue = parseFloat(value);
-                            if (!isNaN(numValue)) {
-                              handleChoicePriceUpdate(combination.id, 'adult_price', numValue);
-                            }
-                          }}
-                          onBlur={(e) => {
-                            const value = e.target.value;
-                            if (value === '' || value === '-') {
-                              handleChoicePriceUpdate(combination.id, 'adult_price', 0);
-                            }
-                          }}
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="0"
-                        />
-                        <div className="text-xs text-gray-500 mt-1">
-                          원래 합산: ${combination.combination_details ? 
-                            combination.combination_details.reduce((sum, detail) => sum + (detail.adult_price || 0), 0) : 
-                            combination.adult_price || 0}
+                      // 일반 채널 또는 홈페이지 채널: 가격 타입에 따라 표시
+                      isHomepageSinglePrice ? (
+                        // 홈페이지 단일 가격 모드
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            판매가 ($) <span className="text-blue-600">(단일 가격)</span>
+                          </label>
+                          <input
+                            type="number"
+                            value={(() => {
+                              const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                              const adultPrice = currentChoiceData.adult_price || currentChoiceData.adult || combination.adult_price || 0;
+                              return adultPrice === 0 ? '' : adultPrice;
+                            })()}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              if (value === '' || value === '-') {
+                                // 단일 가격인 경우 모든 가격을 0으로 설정
+                                handleChoicePriceUpdate(combination.id, 'adult_price', 0);
+                                handleChoicePriceUpdate(combination.id, 'child_price', 0);
+                                handleChoicePriceUpdate(combination.id, 'infant_price', 0);
+                                return;
+                              }
+                              const numValue = parseFloat(value);
+                              if (!isNaN(numValue)) {
+                                // 단일 가격인 경우 모든 가격을 동일하게 설정
+                                handleChoicePriceUpdate(combination.id, 'adult_price', numValue);
+                                handleChoicePriceUpdate(combination.id, 'child_price', numValue);
+                                handleChoicePriceUpdate(combination.id, 'infant_price', numValue);
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const value = e.target.value;
+                              if (value === '' || value === '-') {
+                                handleChoicePriceUpdate(combination.id, 'adult_price', 0);
+                                handleChoicePriceUpdate(combination.id, 'child_price', 0);
+                                handleChoicePriceUpdate(combination.id, 'infant_price', 0);
+                              }
+                            }}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="0"
+                          />
+                          <p className="text-xs text-blue-600 mt-1">성인/아동/유아 모두 동일한 가격이 적용됩니다</p>
+                          <div className="text-xs text-gray-500 mt-1">
+                            원래 합산: ${combination.combination_details ? 
+                              combination.combination_details.reduce((sum, detail) => sum + (detail.adult_price || 0), 0) : 
+                              combination.adult_price || 0}
+                          </div>
                         </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          아동 가격 ($)
-                        </label>
-                        <input
-                          type="number"
-                          value={(combination.child_price || 0) === 0 ? '' : (combination.child_price || 0)}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            if (value === '' || value === '-') {
-                              handleChoicePriceUpdate(combination.id, 'child_price', 0);
-                              return;
-                            }
-                            const numValue = parseFloat(value);
-                            if (!isNaN(numValue)) {
-                              handleChoicePriceUpdate(combination.id, 'child_price', numValue);
-                            }
-                          }}
-                          onBlur={(e) => {
-                            const value = e.target.value;
-                            if (value === '' || value === '-') {
-                              handleChoicePriceUpdate(combination.id, 'child_price', 0);
-                            }
-                          }}
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="0"
-                        />
-                        <div className="text-xs text-gray-500 mt-1">
-                          원래 합산: ${combination.combination_details ? 
-                            combination.combination_details.reduce((sum, detail) => sum + (detail.child_price || 0), 0) : 
-                            combination.child_price || 0}
+                      ) : (
+                        // 분리 가격 모드 (일반 채널 또는 홈페이지 분리 가격)
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              성인 판매가 ($)
+                            </label>
+                            <input
+                              type="number"
+                              value={(() => {
+                                const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                                const adultPrice = currentChoiceData.adult_price || currentChoiceData.adult || combination.adult_price || 0;
+                                return adultPrice === 0 ? '' : adultPrice;
+                              })()}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || value === '-') {
+                                  handleChoicePriceUpdate(combination.id, 'adult_price', 0);
+                                  return;
+                                }
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue)) {
+                                  handleChoicePriceUpdate(combination.id, 'adult_price', numValue);
+                                }
+                              }}
+                              onBlur={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || value === '-') {
+                                  handleChoicePriceUpdate(combination.id, 'adult_price', 0);
+                                }
+                              }}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="0"
+                            />
+                            <div className="text-xs text-gray-500 mt-1">
+                              원래 합산: ${combination.combination_details ? 
+                                combination.combination_details.reduce((sum, detail) => sum + (detail.adult_price || 0), 0) : 
+                                combination.adult_price || 0}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              아동 판매가 ($)
+                            </label>
+                            <input
+                              type="number"
+                              value={(combination.child_price || 0) === 0 ? '' : (combination.child_price || 0)}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || value === '-') {
+                                  handleChoicePriceUpdate(combination.id, 'child_price', 0);
+                                  return;
+                                }
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue)) {
+                                  handleChoicePriceUpdate(combination.id, 'child_price', numValue);
+                                }
+                              }}
+                              onBlur={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || value === '-') {
+                                  handleChoicePriceUpdate(combination.id, 'child_price', 0);
+                                }
+                              }}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="0"
+                            />
+                            <div className="text-xs text-gray-500 mt-1">
+                              원래 합산: ${combination.combination_details ? 
+                                combination.combination_details.reduce((sum, detail) => sum + (detail.child_price || 0), 0) : 
+                                combination.child_price || 0}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              유아 판매가 ($)
+                            </label>
+                            <input
+                              type="number"
+                              value={(combination.infant_price || 0) === 0 ? '' : (combination.infant_price || 0)}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || value === '-') {
+                                  handleChoicePriceUpdate(combination.id, 'infant_price', 0);
+                                  return;
+                                }
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue)) {
+                                  handleChoicePriceUpdate(combination.id, 'infant_price', numValue);
+                                }
+                              }}
+                              onBlur={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || value === '-') {
+                                  handleChoicePriceUpdate(combination.id, 'infant_price', 0);
+                                }
+                              }}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="0"
+                            />
+                            <div className="text-xs text-gray-500 mt-1">
+                              원래 합산: ${combination.combination_details ? 
+                                combination.combination_details.reduce((sum, detail) => sum + (detail.infant_price || 0), 0) : 
+                                combination.infant_price || 0}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          유아 가격 ($)
-                        </label>
-                        <input
-                          type="number"
-                          value={(combination.infant_price || 0) === 0 ? '' : (combination.infant_price || 0)}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            if (value === '' || value === '-') {
-                              handleChoicePriceUpdate(combination.id, 'infant_price', 0);
-                              return;
-                            }
-                            const numValue = parseFloat(value);
-                            if (!isNaN(numValue)) {
-                              handleChoicePriceUpdate(combination.id, 'infant_price', numValue);
-                            }
-                          }}
-                          onBlur={(e) => {
-                            const value = e.target.value;
-                            if (value === '' || value === '-') {
-                              handleChoicePriceUpdate(combination.id, 'infant_price', 0);
-                            }
-                          }}
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="0"
-                        />
-                        <div className="text-xs text-gray-500 mt-1">
-                          원래 합산: ${combination.combination_details ? 
-                            combination.combination_details.reduce((sum, detail) => sum + (detail.infant_price || 0), 0) : 
-                            combination.infant_price || 0}
-                        </div>
-                      </div>
-                    </div>
+                      )
                     )}
+                    {/* 구매가 입력 필드 추가 (모든 채널 공통) */}
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <div className="text-xs font-medium text-gray-700 mb-2">
+                        실 구매가 (운영 이익 계산용)
+                        {isHomepageSinglePrice && (
+                          <span className="ml-2 text-blue-600">(단일 가격)</span>
+                        )}
+                      </div>
+                      {isHomepageSinglePrice ? (
+                        // 단일 가격 모드: 구매가 하나만 입력
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">
+                            구매가 ($)
+                          </label>
+                          <input
+                            type="number"
+                            value={(() => {
+                              const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                              const adultCostPrice = currentChoiceData.adult_cost_price || 0;
+                              return adultCostPrice === 0 ? '' : adultCostPrice;
+                            })()}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const currentPricing = pricingConfig.choices_pricing || {};
+                              const currentChoiceData = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                              
+                              if (value === '' || value === '-') {
+                                updatePricingConfig({
+                                  choices_pricing: {
+                                    ...currentPricing,
+                                    [combination.id]: {
+                                      ...currentChoiceData,
+                                      adult_cost_price: 0,
+                                      child_cost_price: 0,
+                                      infant_cost_price: 0
+                                    }
+                                  }
+                                });
+                                return;
+                              }
+                              const numValue = parseFloat(value);
+                              if (!isNaN(numValue)) {
+                                // 단일 가격인 경우 모든 구매가를 동일하게 설정
+                                updatePricingConfig({
+                                  choices_pricing: {
+                                    ...currentPricing,
+                                    [combination.id]: {
+                                      ...currentChoiceData,
+                                      adult_cost_price: numValue,
+                                      child_cost_price: numValue,
+                                      infant_cost_price: numValue
+                                    }
+                                  }
+                                });
+                              }
+                            }}
+                            className="w-full px-2 py-1 text-sm border border-orange-300 rounded focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-orange-50"
+                            placeholder="예: 107.33"
+                          />
+                          <p className="text-xs text-blue-600 mt-1">성인/아동/유아 모두 동일한 구매가가 적용됩니다</p>
+                        </div>
+                      ) : (
+                        // 분리 가격 모드: 성인/아동/유아 구매가 분리 입력
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                              성인 구매가 ($)
+                            </label>
+                            <input
+                              type="number"
+                              value={(() => {
+                                const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                                const adultCostPrice = currentChoiceData.adult_cost_price || 0;
+                                return adultCostPrice === 0 ? '' : adultCostPrice;
+                              })()}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const currentPricing = pricingConfig.choices_pricing || {};
+                                const currentChoiceData = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                                
+                                if (value === '' || value === '-') {
+                                  updatePricingConfig({
+                                    choices_pricing: {
+                                      ...currentPricing,
+                                      [combination.id]: {
+                                        ...currentChoiceData,
+                                        adult_cost_price: 0
+                                      }
+                                    }
+                                  });
+                                  return;
+                                }
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue)) {
+                                  updatePricingConfig({
+                                    choices_pricing: {
+                                      ...currentPricing,
+                                      [combination.id]: {
+                                        ...currentChoiceData,
+                                        adult_cost_price: numValue
+                                      }
+                                    }
+                                  });
+                                }
+                              }}
+                              className="w-full px-2 py-1 text-sm border border-orange-300 rounded focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-orange-50"
+                              placeholder="예: 107.33"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                              아동 구매가 ($)
+                            </label>
+                            <input
+                              type="number"
+                              value={(() => {
+                                const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                                const childCostPrice = currentChoiceData.child_cost_price || 0;
+                                return childCostPrice === 0 ? '' : childCostPrice;
+                              })()}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const currentPricing = pricingConfig.choices_pricing || {};
+                                const currentChoiceData = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                                
+                                if (value === '' || value === '-') {
+                                  updatePricingConfig({
+                                    choices_pricing: {
+                                      ...currentPricing,
+                                      [combination.id]: {
+                                        ...currentChoiceData,
+                                        child_cost_price: 0
+                                      }
+                                    }
+                                  });
+                                  return;
+                                }
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue)) {
+                                  updatePricingConfig({
+                                    choices_pricing: {
+                                      ...currentPricing,
+                                      [combination.id]: {
+                                        ...currentChoiceData,
+                                        child_cost_price: numValue
+                                      }
+                                    }
+                                  });
+                                }
+                              }}
+                              className="w-full px-2 py-1 text-sm border border-orange-300 rounded focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-orange-50"
+                              placeholder="예: 87.89"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                              유아 구매가 ($)
+                            </label>
+                            <input
+                              type="number"
+                              value={(() => {
+                                const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                                const infantCostPrice = currentChoiceData.infant_cost_price || 0;
+                                return infantCostPrice === 0 ? '' : infantCostPrice;
+                              })()}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const currentPricing = pricingConfig.choices_pricing || {};
+                                const currentChoiceData = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                                
+                                if (value === '' || value === '-') {
+                                  updatePricingConfig({
+                                    choices_pricing: {
+                                      ...currentPricing,
+                                      [combination.id]: {
+                                        ...currentChoiceData,
+                                        infant_cost_price: 0
+                                      }
+                                    }
+                                  });
+                                  return;
+                                }
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue)) {
+                                  updatePricingConfig({
+                                    choices_pricing: {
+                                      ...currentPricing,
+                                      [combination.id]: {
+                                        ...currentChoiceData,
+                                        infant_cost_price: numValue
+                                      }
+                                    }
+                                  });
+                                }
+                              }}
+                              className="w-full px-2 py-1 text-sm border border-orange-300 rounded focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-orange-50"
+                              placeholder="예: 67.45"
+                            />
+                          </div>
+                        </div>
+                      )}
+                      {/* 운영 이익 미리보기 */}
+                      {(() => {
+                        const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                        const adultSalePrice = currentChoiceData.adult_price || currentChoiceData.adult || combination.adult_price || 0;
+                        const childSalePrice = currentChoiceData.child_price || currentChoiceData.child || combination.child_price || 0;
+                        const infantSalePrice = currentChoiceData.infant_price || currentChoiceData.infant || combination.infant_price || 0;
+                        const adultCostPrice = currentChoiceData.adult_cost_price || 0;
+                        const childCostPrice = currentChoiceData.child_cost_price || 0;
+                        const infantCostPrice = currentChoiceData.infant_cost_price || 0;
+                        
+                        const adultProfit = adultSalePrice - adultCostPrice;
+                        const childProfit = childSalePrice - childCostPrice;
+                        const infantProfit = infantSalePrice - infantCostPrice;
+                        
+                        if (adultCostPrice > 0 || childCostPrice > 0 || infantCostPrice > 0) {
+                          return (
+                            <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs">
+                              <div className="font-medium text-green-900 mb-1">예상 운영 이익 (판매가 - 구매가):</div>
+                              {adultCostPrice > 0 && (
+                                <div className="text-green-700">성인: ${adultSalePrice.toFixed(2)} - ${adultCostPrice.toFixed(2)} = <span className="font-semibold">${adultProfit.toFixed(2)}</span></div>
+                              )}
+                              {!isHomepageSinglePrice && childCostPrice > 0 && (
+                                <div className="text-green-700">아동: ${childSalePrice.toFixed(2)} - ${childCostPrice.toFixed(2)} = <span className="font-semibold">${childProfit.toFixed(2)}</span></div>
+                              )}
+                              {!isHomepageSinglePrice && infantCostPrice > 0 && (
+                                <div className="text-green-700">유아: ${infantSalePrice.toFixed(2)} - ${infantCostPrice.toFixed(2)} = <span className="font-semibold">${infantProfit.toFixed(2)}</span></div>
+                              )}
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
                   </div>
                   );
                     })}
@@ -3386,120 +3726,406 @@ export default function DynamicPricingManager({
                         )}
                       </div>
                     ) : (
-                      <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          성인 가격 ($)
-                        </label>
-                        <input
-                          type="number"
-                          value={(() => {
-                            const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
-                            const adultPrice = currentChoiceData.adult_price || currentChoiceData.adult || combination.adult_price || 0;
-                            return adultPrice === 0 ? '' : adultPrice;
-                          })()}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            if (value === '' || value === '-') {
-                              handleChoicePriceUpdate(combination.id, 'adult_price', 0);
-                              return;
-                            }
-                            const numValue = parseFloat(value);
-                            if (!isNaN(numValue)) {
-                              handleChoicePriceUpdate(combination.id, 'adult_price', numValue);
-                            }
-                          }}
-                          onBlur={(e) => {
-                            const value = e.target.value;
-                            if (value === '' || value === '-') {
-                              handleChoicePriceUpdate(combination.id, 'adult_price', 0);
-                            }
-                          }}
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="0"
-                        />
-                        <div className="text-xs text-gray-500 mt-1">
-                          원래 합산: ${combination.combination_details ? 
-                            combination.combination_details.reduce((sum, detail) => sum + (detail.adult_price || 0), 0) : 
-                            combination.adult_price || 0}
+                      // 일반 채널 또는 홈페이지 채널: 가격 타입에 따라 표시
+                      isHomepageSinglePrice ? (
+                        // 홈페이지 단일 가격 모드
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            판매가 ($) <span className="text-blue-600">(단일 가격)</span>
+                          </label>
+                          <input
+                            type="number"
+                            value={(() => {
+                              const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                              const adultPrice = currentChoiceData.adult_price || currentChoiceData.adult || combination.adult_price || 0;
+                              return adultPrice === 0 ? '' : adultPrice;
+                            })()}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              if (value === '' || value === '-') {
+                                // 단일 가격인 경우 모든 가격을 0으로 설정
+                                handleChoicePriceUpdate(combination.id, 'adult_price', 0);
+                                handleChoicePriceUpdate(combination.id, 'child_price', 0);
+                                handleChoicePriceUpdate(combination.id, 'infant_price', 0);
+                                return;
+                              }
+                              const numValue = parseFloat(value);
+                              if (!isNaN(numValue)) {
+                                // 단일 가격인 경우 모든 가격을 동일하게 설정
+                                handleChoicePriceUpdate(combination.id, 'adult_price', numValue);
+                                handleChoicePriceUpdate(combination.id, 'child_price', numValue);
+                                handleChoicePriceUpdate(combination.id, 'infant_price', numValue);
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const value = e.target.value;
+                              if (value === '' || value === '-') {
+                                handleChoicePriceUpdate(combination.id, 'adult_price', 0);
+                                handleChoicePriceUpdate(combination.id, 'child_price', 0);
+                                handleChoicePriceUpdate(combination.id, 'infant_price', 0);
+                              }
+                            }}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="0"
+                          />
+                          <p className="text-xs text-blue-600 mt-1">성인/아동/유아 모두 동일한 가격이 적용됩니다</p>
+                          <div className="text-xs text-gray-500 mt-1">
+                            원래 합산: ${combination.combination_details ? 
+                              combination.combination_details.reduce((sum, detail) => sum + (detail.adult_price || 0), 0) : 
+                              combination.adult_price || 0}
+                          </div>
                         </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          아동 가격 ($)
-                        </label>
-                        <input
-                          type="number"
-                          value={(() => {
-                            const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
-                            const childPrice = currentChoiceData.child_price || currentChoiceData.child || combination.child_price || 0;
-                            return childPrice === 0 ? '' : childPrice;
-                          })()}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            if (value === '' || value === '-') {
-                              handleChoicePriceUpdate(combination.id, 'child_price', 0);
-                              return;
-                            }
-                            const numValue = parseFloat(value);
-                            if (!isNaN(numValue)) {
-                              handleChoicePriceUpdate(combination.id, 'child_price', numValue);
-                            }
-                          }}
-                          onBlur={(e) => {
-                            const value = e.target.value;
-                            if (value === '' || value === '-') {
-                              handleChoicePriceUpdate(combination.id, 'child_price', 0);
-                            }
-                          }}
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="0"
-                        />
-                        <div className="text-xs text-gray-500 mt-1">
-                          원래 합산: ${combination.combination_details ? 
-                            combination.combination_details.reduce((sum, detail) => sum + (detail.child_price || 0), 0) : 
-                            combination.child_price || 0}
+                      ) : (
+                        // 분리 가격 모드 (일반 채널 또는 홈페이지 분리 가격)
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              성인 판매가 ($)
+                            </label>
+                            <input
+                              type="number"
+                              value={(() => {
+                                const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                                const adultPrice = currentChoiceData.adult_price || currentChoiceData.adult || combination.adult_price || 0;
+                                return adultPrice === 0 ? '' : adultPrice;
+                              })()}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || value === '-') {
+                                  handleChoicePriceUpdate(combination.id, 'adult_price', 0);
+                                  return;
+                                }
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue)) {
+                                  handleChoicePriceUpdate(combination.id, 'adult_price', numValue);
+                                }
+                              }}
+                              onBlur={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || value === '-') {
+                                  handleChoicePriceUpdate(combination.id, 'adult_price', 0);
+                                }
+                              }}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="0"
+                            />
+                            <div className="text-xs text-gray-500 mt-1">
+                              원래 합산: ${combination.combination_details ? 
+                                combination.combination_details.reduce((sum, detail) => sum + (detail.adult_price || 0), 0) : 
+                                combination.adult_price || 0}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              아동 판매가 ($)
+                            </label>
+                            <input
+                              type="number"
+                              value={(() => {
+                                const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                                const childPrice = currentChoiceData.child_price || currentChoiceData.child || combination.child_price || 0;
+                                return childPrice === 0 ? '' : childPrice;
+                              })()}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || value === '-') {
+                                  handleChoicePriceUpdate(combination.id, 'child_price', 0);
+                                  return;
+                                }
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue)) {
+                                  handleChoicePriceUpdate(combination.id, 'child_price', numValue);
+                                }
+                              }}
+                              onBlur={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || value === '-') {
+                                  handleChoicePriceUpdate(combination.id, 'child_price', 0);
+                                }
+                              }}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="0"
+                            />
+                            <div className="text-xs text-gray-500 mt-1">
+                              원래 합산: ${combination.combination_details ? 
+                                combination.combination_details.reduce((sum, detail) => sum + (detail.child_price || 0), 0) : 
+                                combination.child_price || 0}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              유아 판매가 ($)
+                            </label>
+                            <input
+                              type="number"
+                              value={(() => {
+                                const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                                const infantPrice = currentChoiceData.infant_price || currentChoiceData.infant || combination.infant_price || 0;
+                                return infantPrice === 0 ? '' : infantPrice;
+                              })()}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || value === '-') {
+                                  handleChoicePriceUpdate(combination.id, 'infant_price', 0);
+                                  return;
+                                }
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue)) {
+                                  handleChoicePriceUpdate(combination.id, 'infant_price', numValue);
+                                }
+                              }}
+                              onBlur={(e) => {
+                                const value = e.target.value;
+                                if (value === '' || value === '-') {
+                                  handleChoicePriceUpdate(combination.id, 'infant_price', 0);
+                                }
+                              }}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="0"
+                            />
+                            <div className="text-xs text-gray-500 mt-1">
+                              원래 합산: ${combination.combination_details ? 
+                                combination.combination_details.reduce((sum, detail) => sum + (detail.infant_price || 0), 0) : 
+                                combination.infant_price || 0}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">
-                          유아 가격 ($)
-                        </label>
-                        <input
-                          type="number"
-                          value={(() => {
-                            const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
-                            const infantPrice = currentChoiceData.infant_price || currentChoiceData.infant || combination.infant_price || 0;
-                            return infantPrice === 0 ? '' : infantPrice;
-                          })()}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            if (value === '' || value === '-') {
-                              handleChoicePriceUpdate(combination.id, 'infant_price', 0);
-                              return;
-                            }
-                            const numValue = parseFloat(value);
-                            if (!isNaN(numValue)) {
-                              handleChoicePriceUpdate(combination.id, 'infant_price', numValue);
-                            }
-                          }}
-                          onBlur={(e) => {
-                            const value = e.target.value;
-                            if (value === '' || value === '-') {
-                              handleChoicePriceUpdate(combination.id, 'infant_price', 0);
-                            }
-                          }}
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="0"
-                        />
-                        <div className="text-xs text-gray-500 mt-1">
-                          원래 합산: ${combination.combination_details ? 
-                            combination.combination_details.reduce((sum, detail) => sum + (detail.infant_price || 0), 0) : 
-                            combination.infant_price || 0}
-                        </div>
-                      </div>
-                    </div>
+                      )
                     )}
+                    {/* 구매가 입력 필드 추가 (모든 채널 공통) */}
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <div className="text-xs font-medium text-gray-700 mb-2">
+                        실 구매가 (운영 이익 계산용)
+                        {isHomepageSinglePrice && (
+                          <span className="ml-2 text-blue-600">(단일 가격)</span>
+                        )}
+                      </div>
+                      {isHomepageSinglePrice ? (
+                        // 단일 가격 모드: 구매가 하나만 입력
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">
+                            구매가 ($)
+                          </label>
+                          <input
+                            type="number"
+                            value={(() => {
+                              const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                              const adultCostPrice = currentChoiceData.adult_cost_price || 0;
+                              return adultCostPrice === 0 ? '' : adultCostPrice;
+                            })()}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              const currentPricing = pricingConfig.choices_pricing || {};
+                              const currentChoiceData = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                              
+                              if (value === '' || value === '-') {
+                                updatePricingConfig({
+                                  choices_pricing: {
+                                    ...currentPricing,
+                                    [combination.id]: {
+                                      ...currentChoiceData,
+                                      adult_cost_price: 0,
+                                      child_cost_price: 0,
+                                      infant_cost_price: 0
+                                    }
+                                  }
+                                });
+                                return;
+                              }
+                              const numValue = parseFloat(value);
+                              if (!isNaN(numValue)) {
+                                // 단일 가격인 경우 모든 구매가를 동일하게 설정
+                                updatePricingConfig({
+                                  choices_pricing: {
+                                    ...currentPricing,
+                                    [combination.id]: {
+                                      ...currentChoiceData,
+                                      adult_cost_price: numValue,
+                                      child_cost_price: numValue,
+                                      infant_cost_price: numValue
+                                    }
+                                  }
+                                });
+                              }
+                            }}
+                            className="w-full px-2 py-1 text-sm border border-orange-300 rounded focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-orange-50"
+                            placeholder="예: 107.33"
+                          />
+                          <p className="text-xs text-blue-600 mt-1">성인/아동/유아 모두 동일한 구매가가 적용됩니다</p>
+                        </div>
+                      ) : (
+                        // 분리 가격 모드: 성인/아동/유아 구매가 분리 입력
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                              성인 구매가 ($)
+                            </label>
+                            <input
+                              type="number"
+                              value={(() => {
+                                const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                                const adultCostPrice = currentChoiceData.adult_cost_price || 0;
+                                return adultCostPrice === 0 ? '' : adultCostPrice;
+                              })()}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const currentPricing = pricingConfig.choices_pricing || {};
+                                const currentChoiceData = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                                
+                                if (value === '' || value === '-') {
+                                  updatePricingConfig({
+                                    choices_pricing: {
+                                      ...currentPricing,
+                                      [combination.id]: {
+                                        ...currentChoiceData,
+                                        adult_cost_price: 0
+                                      }
+                                    }
+                                  });
+                                  return;
+                                }
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue)) {
+                                  updatePricingConfig({
+                                    choices_pricing: {
+                                      ...currentPricing,
+                                      [combination.id]: {
+                                        ...currentChoiceData,
+                                        adult_cost_price: numValue
+                                      }
+                                    }
+                                  });
+                                }
+                              }}
+                              className="w-full px-2 py-1 text-sm border border-orange-300 rounded focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-orange-50"
+                              placeholder="예: 107.33"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                              아동 구매가 ($)
+                            </label>
+                            <input
+                              type="number"
+                              value={(() => {
+                                const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                                const childCostPrice = currentChoiceData.child_cost_price || 0;
+                                return childCostPrice === 0 ? '' : childCostPrice;
+                              })()}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const currentPricing = pricingConfig.choices_pricing || {};
+                                const currentChoiceData = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                                
+                                if (value === '' || value === '-') {
+                                  updatePricingConfig({
+                                    choices_pricing: {
+                                      ...currentPricing,
+                                      [combination.id]: {
+                                        ...currentChoiceData,
+                                        child_cost_price: 0
+                                      }
+                                    }
+                                  });
+                                  return;
+                                }
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue)) {
+                                  updatePricingConfig({
+                                    choices_pricing: {
+                                      ...currentPricing,
+                                      [combination.id]: {
+                                        ...currentChoiceData,
+                                        child_cost_price: numValue
+                                      }
+                                    }
+                                  });
+                                }
+                              }}
+                              className="w-full px-2 py-1 text-sm border border-orange-300 rounded focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-orange-50"
+                              placeholder="예: 87.89"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                              유아 구매가 ($)
+                            </label>
+                            <input
+                              type="number"
+                              value={(() => {
+                                const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                                const infantCostPrice = currentChoiceData.infant_cost_price || 0;
+                                return infantCostPrice === 0 ? '' : infantCostPrice;
+                              })()}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const currentPricing = pricingConfig.choices_pricing || {};
+                                const currentChoiceData = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                                
+                                if (value === '' || value === '-') {
+                                  updatePricingConfig({
+                                    choices_pricing: {
+                                      ...currentPricing,
+                                      [combination.id]: {
+                                        ...currentChoiceData,
+                                        infant_cost_price: 0
+                                      }
+                                    }
+                                  });
+                                  return;
+                                }
+                                const numValue = parseFloat(value);
+                                if (!isNaN(numValue)) {
+                                  updatePricingConfig({
+                                    choices_pricing: {
+                                      ...currentPricing,
+                                      [combination.id]: {
+                                        ...currentChoiceData,
+                                        infant_cost_price: numValue
+                                      }
+                                    }
+                                  });
+                                }
+                              }}
+                              className="w-full px-2 py-1 text-sm border border-orange-300 rounded focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-orange-50"
+                              placeholder="예: 67.45"
+                            />
+                          </div>
+                        </div>
+                      )}
+                      {/* 운영 이익 미리보기 */}
+                      {(() => {
+                        const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                        const adultSalePrice = currentChoiceData.adult_price || currentChoiceData.adult || combination.adult_price || 0;
+                        const childSalePrice = currentChoiceData.child_price || currentChoiceData.child || combination.child_price || 0;
+                        const infantSalePrice = currentChoiceData.infant_price || currentChoiceData.infant || combination.infant_price || 0;
+                        const adultCostPrice = currentChoiceData.adult_cost_price || 0;
+                        const childCostPrice = currentChoiceData.child_cost_price || 0;
+                        const infantCostPrice = currentChoiceData.infant_cost_price || 0;
+                        
+                        const adultProfit = adultSalePrice - adultCostPrice;
+                        const childProfit = childSalePrice - childCostPrice;
+                        const infantProfit = infantSalePrice - infantCostPrice;
+                        
+                        if (adultCostPrice > 0 || childCostPrice > 0 || infantCostPrice > 0) {
+                          return (
+                            <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs">
+                              <div className="font-medium text-green-900 mb-1">예상 운영 이익 (판매가 - 구매가):</div>
+                              {adultCostPrice > 0 && (
+                                <div className="text-green-700">성인: ${adultSalePrice.toFixed(2)} - ${adultCostPrice.toFixed(2)} = <span className="font-semibold">${adultProfit.toFixed(2)}</span></div>
+                              )}
+                              {!isHomepageSinglePrice && childCostPrice > 0 && (
+                                <div className="text-green-700">아동: ${childSalePrice.toFixed(2)} - ${childCostPrice.toFixed(2)} = <span className="font-semibold">${childProfit.toFixed(2)}</span></div>
+                              )}
+                              {!isHomepageSinglePrice && infantCostPrice > 0 && (
+                                <div className="text-green-700">유아: ${infantSalePrice.toFixed(2)} - ${infantCostPrice.toFixed(2)} = <span className="font-semibold">${infantProfit.toFixed(2)}</span></div>
+                              )}
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
                   </div>
                   );
                     })}

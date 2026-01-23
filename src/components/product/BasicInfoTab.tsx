@@ -63,6 +63,7 @@ interface SubCategoryItem {
       customerNameEn?: string
       tags?: string[]
       transportationMethods?: string[]
+      homepagePricingType?: 'single' | 'separate'
     }
   setFormData: <T>(updater: React.SetStateAction<T>) => void
   productId: string
@@ -293,6 +294,7 @@ export default function BasicInfoTab({
             infant_base_price: typeof formData.basePrice === 'object' && formData.basePrice 
               ? formData.basePrice.infant 
               : (formData.basePriceInfant ?? 0),
+            homepage_pricing_type: formData.homepagePricingType || 'separate',
             max_participants: formData.maxParticipants,
             status: formData.status,
             departure_city: formData.departureCity.trim(),
@@ -362,6 +364,7 @@ export default function BasicInfoTab({
             infant_base_price: typeof formData.basePrice === 'object' && formData.basePrice 
               ? formData.basePrice.infant 
               : (formData.basePriceInfant ?? 0),
+            homepage_pricing_type: formData.homepagePricingType || 'separate',
             max_participants: formData.maxParticipants,
             status: formData.status,
             departure_city: formData.departureCity.trim(),
@@ -687,9 +690,14 @@ export default function BasicInfoTab({
   }, [filterSubCategories])
 
   return (
-    <>
-      {/* 상품 기본 정보 */}
-      <div className="space-y-4">
+    <div className="space-y-6">
+      {/* 상품 기본 정보 섹션 */}
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+          <Info className="h-5 w-5 mr-2 text-blue-600" />
+          상품 기본 정보
+        </h3>
+        <div className="space-y-4">
         {/* 상품명 필드들 - 2x2 그리드로 배치 */}
         <div className="space-y-4">
           {/* 내부 한국어, 내부 영어 - 한 줄에 */}
@@ -874,11 +882,16 @@ export default function BasicInfoTab({
             </div>
           </div>
         </div>
-
+        </div>
       </div>
 
-      {/* 출발/도착 정보 - 한 줄에 배치 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {/* 출발/도착 정보 섹션 */}
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+          <Info className="h-5 w-5 mr-2 text-blue-600" />
+          출발/도착 정보
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">출발 도시 *</label>
           <input
@@ -945,10 +958,16 @@ export default function BasicInfoTab({
             <option value="PH">필리핀</option>
           </select>
         </div>
+        </div>
       </div>
-      
-      {/* 운송수단, 투어 언어, 그룹 크기 - 한 줄에 배치 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+      {/* 투어 정보 섹션 */}
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+          <Info className="h-5 w-5 mr-2 text-blue-600" />
+          투어 정보
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* 운송수단 */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">운송수단</label>
@@ -1092,10 +1111,16 @@ export default function BasicInfoTab({
             </label>
           </div>
         </div>
+        </div>
       </div>
-      
-      {/* 연령 기준 - 한 줄에 배치 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+
+      {/* 연령 기준 섹션 */}
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+          <Info className="h-5 w-5 mr-2 text-blue-600" />
+          연령 기준
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">성인 기준 (이상) *</label>
           <input
@@ -1148,109 +1173,202 @@ export default function BasicInfoTab({
           />
           <p className="text-xs text-gray-500 mt-1">세 이하</p>
         </div>
+        </div>
       </div>
 
-      {/* 기본 가격 및 상품 태그 - 한 줄에 배치 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="block text-sm font-medium text-gray-700">기본 가격 ($) *</label>
-            <span className="text-xs text-gray-500">(모든 채널 공통 기본 가격)</span>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs text-gray-600 mb-1">성인</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={(() => {
-                  if (typeof formData.basePrice === 'object' && formData.basePrice) {
-                    return formData.basePrice.adult || 0;
-                  }
-                  return formData.basePriceAdult ?? (typeof formData.basePrice === 'number' ? formData.basePrice : 0);
-                })()}
-                onChange={(e) => {
-                  const adultPrice = parseFloat(e.target.value) || 0;
-                  const childPrice = typeof formData.basePrice === 'object' && formData.basePrice 
-                    ? formData.basePrice.child 
-                    : (formData.basePriceChild ?? 0);
-                  const infantPrice = typeof formData.basePrice === 'object' && formData.basePrice 
-                    ? formData.basePrice.infant 
-                    : (formData.basePriceInfant ?? 0);
-                  setFormData({ 
-                    ...formData, 
-                    basePrice: { adult: adultPrice, child: childPrice, infant: infantPrice },
-                    basePriceAdult: adultPrice
-                  });
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="0"
-                required
-              />
+      {/* 가격 정보 섹션 */}
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+          <Info className="h-5 w-5 mr-2 text-blue-600" />
+          가격 정보
+        </h3>
+        <div className="space-y-4">
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-gray-700">기본 가격 ($) *</label>
+              <span className="text-xs text-gray-500">(모든 채널 공통 기본 가격)</span>
             </div>
-            <div>
-              <label className="block text-xs text-gray-600 mb-1">아동</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={(() => {
-                  if (typeof formData.basePrice === 'object' && formData.basePrice) {
-                    return formData.basePrice.child || 0;
-                  }
-                  return formData.basePriceChild ?? 0;
-                })()}
-                onChange={(e) => {
-                  const childPrice = parseFloat(e.target.value) || 0;
-                  const adultPrice = typeof formData.basePrice === 'object' && formData.basePrice 
-                    ? formData.basePrice.adult 
-                    : (formData.basePriceAdult ?? 0);
-                  const infantPrice = typeof formData.basePrice === 'object' && formData.basePrice 
-                    ? formData.basePrice.infant 
-                    : (formData.basePriceInfant ?? 0);
-                  setFormData({ 
-                    ...formData, 
-                    basePrice: { adult: adultPrice, child: childPrice, infant: infantPrice },
-                    basePriceChild: childPrice
-                  });
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="0"
-                required
-              />
+            
+            {/* 홈페이지 가격 타입 선택 */}
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                홈페이지 가격 타입
+              </label>
+              <div className="flex items-center space-x-4">
+                <label className="flex items-center cursor-pointer">
+                  <input
+                    type="radio"
+                    name="homepagePricingType"
+                    value="separate"
+                    checked={(formData.homepagePricingType || 'separate') === 'separate'}
+                    onChange={(e) => setFormData({ ...formData, homepagePricingType: e.target.value as 'single' | 'separate' })}
+                    className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                  />
+                  <span className="text-sm text-gray-700">성인/아동/유아 분리 가격</span>
+                </label>
+                <label className="flex items-center cursor-pointer">
+                  <input
+                    type="radio"
+                    name="homepagePricingType"
+                    value="single"
+                    checked={formData.homepagePricingType === 'single'}
+                    onChange={(e) => {
+                      const pricingType = e.target.value as 'single' | 'separate';
+                      const currentAdultPrice = typeof formData.basePrice === 'object' && formData.basePrice 
+                        ? formData.basePrice.adult 
+                        : (formData.basePriceAdult ?? (typeof formData.basePrice === 'number' ? formData.basePrice : 0));
+                      // 단일 가격으로 변경 시 아동/유아 가격도 성인 가격과 동일하게 설정
+                      setFormData({ 
+                        ...formData, 
+                        homepagePricingType: pricingType,
+                        basePrice: { adult: currentAdultPrice, child: currentAdultPrice, infant: currentAdultPrice },
+                        basePriceAdult: currentAdultPrice,
+                        basePriceChild: currentAdultPrice,
+                        basePriceInfant: currentAdultPrice
+                      });
+                    }}
+                    className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                  />
+                  <span className="text-sm text-gray-700">단일 가격</span>
+                </label>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                자체 채널 홈페이지에서 표시할 가격 타입을 선택하세요. 단일 가격 선택 시 성인 가격이 모든 인원에게 적용됩니다.
+              </p>
             </div>
-            <div>
-              <label className="block text-xs text-gray-600 mb-1">유아</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={(() => {
-                  if (typeof formData.basePrice === 'object' && formData.basePrice) {
-                    return formData.basePrice.infant || 0;
-                  }
-                  return formData.basePriceInfant ?? 0;
-                })()}
-                onChange={(e) => {
-                  const infantPrice = parseFloat(e.target.value) || 0;
-                  const adultPrice = typeof formData.basePrice === 'object' && formData.basePrice 
-                    ? formData.basePrice.adult 
-                    : (formData.basePriceAdult ?? 0);
-                  const childPrice = typeof formData.basePrice === 'object' && formData.basePrice 
-                    ? formData.basePrice.child 
-                    : (formData.basePriceChild ?? 0);
-                  setFormData({ 
-                    ...formData, 
-                    basePrice: { adult: adultPrice, child: childPrice, infant: infantPrice },
-                    basePriceInfant: infantPrice
-                  });
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="0"
-                required
-              />
-            </div>
+
+            {/* 가격 입력 필드 - 홈페이지 가격 타입에 따라 변동 */}
+            {formData.homepagePricingType === 'single' ? (
+              // 단일 가격 모드
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">
+                  가격 <span className="text-blue-600">(단일 가격)</span>
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={(() => {
+                    if (typeof formData.basePrice === 'object' && formData.basePrice) {
+                      return formData.basePrice.adult || 0;
+                    }
+                    return formData.basePriceAdult ?? (typeof formData.basePrice === 'number' ? formData.basePrice : 0);
+                  })()}
+                  onChange={(e) => {
+                    const price = parseFloat(e.target.value) || 0;
+                    // 단일 가격인 경우 모든 가격을 동일하게 설정
+                    setFormData({ 
+                      ...formData, 
+                      basePrice: { adult: price, child: price, infant: price },
+                      basePriceAdult: price,
+                      basePriceChild: price,
+                      basePriceInfant: price
+                    });
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="0"
+                  required
+                />
+                <p className="text-xs text-blue-600 mt-1">성인/아동/유아 모두 동일한 가격이 적용됩니다</p>
+              </div>
+            ) : (
+              // 분리 가격 모드
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">성인</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={(() => {
+                      if (typeof formData.basePrice === 'object' && formData.basePrice) {
+                        return formData.basePrice.adult || 0;
+                      }
+                      return formData.basePriceAdult ?? (typeof formData.basePrice === 'number' ? formData.basePrice : 0);
+                    })()}
+                    onChange={(e) => {
+                      const adultPrice = parseFloat(e.target.value) || 0;
+                      const childPrice = typeof formData.basePrice === 'object' && formData.basePrice 
+                        ? formData.basePrice.child 
+                        : (formData.basePriceChild ?? 0);
+                      const infantPrice = typeof formData.basePrice === 'object' && formData.basePrice 
+                        ? formData.basePrice.infant 
+                        : (formData.basePriceInfant ?? 0);
+                      setFormData({ 
+                        ...formData, 
+                        basePrice: { adult: adultPrice, child: childPrice, infant: infantPrice },
+                        basePriceAdult: adultPrice
+                      });
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="0"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">아동</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={(() => {
+                      if (typeof formData.basePrice === 'object' && formData.basePrice) {
+                        return formData.basePrice.child || 0;
+                      }
+                      return formData.basePriceChild ?? 0;
+                    })()}
+                    onChange={(e) => {
+                      const childPrice = parseFloat(e.target.value) || 0;
+                      const adultPrice = typeof formData.basePrice === 'object' && formData.basePrice 
+                        ? formData.basePrice.adult 
+                        : (formData.basePriceAdult ?? 0);
+                      const infantPrice = typeof formData.basePrice === 'object' && formData.basePrice 
+                        ? formData.basePrice.infant 
+                        : (formData.basePriceInfant ?? 0);
+                      setFormData({ 
+                        ...formData, 
+                        basePrice: { adult: adultPrice, child: childPrice, infant: infantPrice },
+                        basePriceChild: childPrice
+                      });
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="0"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">유아</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={(() => {
+                      if (typeof formData.basePrice === 'object' && formData.basePrice) {
+                        return formData.basePrice.infant || 0;
+                      }
+                      return formData.basePriceInfant ?? 0;
+                    })()}
+                    onChange={(e) => {
+                      const infantPrice = parseFloat(e.target.value) || 0;
+                      const adultPrice = typeof formData.basePrice === 'object' && formData.basePrice 
+                        ? formData.basePrice.adult 
+                        : (formData.basePriceAdult ?? 0);
+                      const childPrice = typeof formData.basePrice === 'object' && formData.basePrice 
+                        ? formData.basePrice.child 
+                        : (formData.basePriceChild ?? 0);
+                      setFormData({ 
+                        ...formData, 
+                        basePrice: { adult: adultPrice, child: childPrice, infant: infantPrice },
+                        basePriceInfant: infantPrice
+                      });
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="0"
+                    required
+                  />
+                </div>
+              </div>
+            )}
           </div>
           {/* 가격 미리보기 */}
           {!isNewProduct && (
@@ -1335,27 +1453,29 @@ export default function BasicInfoTab({
             </div>
           )}
         </div>
+      </div>
 
-        {/* 상품 태그 */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">상품 태그</label>
-          <TagSelector
-            selectedTags={formData.tags || []}
-            onTagsChange={handleTagsChange}
-            locale={locale}
-            placeholder="태그를 선택하세요"
-          />
-        </div>
+      {/* 상품 태그 섹션 */}
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+          <Info className="h-5 w-5 mr-2 text-blue-600" />
+          상품 태그
+        </h3>
+        <TagSelector
+          selectedTags={formData.tags || []}
+          onTagsChange={handleTagsChange}
+          locale={locale}
+          placeholder="태그를 선택하세요"
+        />
       </div>
 
       {/* 추가 정보 섹션 */}
-      <div className="border-t pt-6 mt-6">
-        <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-          <Info className="h-5 w-5 mr-2" />
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+          <Info className="h-5 w-5 mr-2 text-blue-600" />
           추가 정보
         </h3>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">총 투어 시간 (시간) *</label>
           <input
@@ -1439,15 +1559,15 @@ export default function BasicInfoTab({
           
           <p className="text-xs text-gray-500 mt-1">여러 출발 시간을 추가할 수 있습니다</p>
         </div>
+        </div>
       </div>
 
-
-      {/* 기본 정보 저장 버튼 */}
-      <div className="border-t pt-6 mt-6">
+      {/* 저장 버튼 섹션 */}
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <Info className="h-5 w-5 text-blue-600" />
-            <h3 className="text-lg font-medium text-gray-900">기본 정보</h3>
+            <h3 className="text-lg font-semibold text-gray-900">기본 정보 저장</h3>
           </div>
           <button
             type="button"
@@ -1487,8 +1607,6 @@ export default function BasicInfoTab({
           </p>
         )}
       </div>
-      </div>
-
 
       {/* 카테고리 관리 모달 */}
       <CategoryManagementModal
@@ -1498,6 +1616,6 @@ export default function BasicInfoTab({
         subCategories={subCategories}
         onCategoriesUpdate={handleCategoriesUpdate}
       />
-    </>
+    </div>
   )
 }

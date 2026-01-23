@@ -135,6 +135,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   const [products, setProducts] = useState<Array<{id: string, name: string, name_ko?: string}>>([])
   const [selectedProductId, setSelectedProductId] = useState('')
   const [importData, setImportData] = useState('')
+  const [homepagePricingType, setHomepagePricingType] = useState<'single' | 'separate'>('separate')
 
   // 템플릿에서 초이스 불러오기
   // 초이스 관리 탭에 있는 아이템만 사용 (is_choice_template = true이고 template_group이 있는 것만)
@@ -271,6 +272,37 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
       console.error('상품 목록 로드 오류:', error)
     }
   }, [productId])
+
+  // 홈페이지 가격 타입 불러오기
+  useEffect(() => {
+    const loadHomepagePricingType = async () => {
+      if (!productId || isNewProduct) {
+        setHomepagePricingType('separate')
+        return
+      }
+      
+      try {
+        const { data, error } = await supabase
+          .from('products')
+          .select('homepage_pricing_type')
+          .eq('id', productId)
+          .single()
+
+        if (error) {
+          console.error('홈페이지 가격 타입 로드 오류:', error)
+          setHomepagePricingType('separate')
+          return
+        }
+
+        setHomepagePricingType((data as any)?.homepage_pricing_type || 'separate')
+      } catch (error) {
+        console.error('홈페이지 가격 타입 로드 오류:', error)
+        setHomepagePricingType('separate')
+      }
+    }
+
+    loadHomepagePricingType()
+  }, [productId, isNewProduct])
 
   // 새로운 간결한 초이스 시스템에서 상품의 choices 정보 로드
   const loadProductChoices = useCallback(async () => {
@@ -1796,45 +1828,72 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
 
                            {/* 가격 */}
                            <div className="space-y-2 mb-3">
-                             <label className="block text-xs font-medium text-gray-600">가격</label>
-                             <div className="grid grid-cols-3 gap-2">
+                             <label className="block text-xs font-medium text-gray-600">
+                               가격
+                               {homepagePricingType === 'single' && (
+                                 <span className="ml-2 text-xs text-blue-600 font-normal">(단일 가격)</span>
+                               )}
+                             </label>
+                             {homepagePricingType === 'single' ? (
+                               // 단일 가격 모드
                                <div>
-                                 <label className="block text-xs text-gray-500 mb-1">성인</label>
+                                 <label className="block text-xs text-gray-500 mb-1">가격</label>
                                  <input
                                    type="number"
                                    value={option.adult_price}
                                    onChange={(e) => {
-                                     updateChoiceOption(groupIndex, option.id, 'adult_price', parseInt(e.target.value) || 0)
+                                     const price = parseInt(e.target.value) || 0
+                                     updateChoiceOption(groupIndex, option.id, 'adult_price', price)
+                                     // 단일 가격인 경우 아동/유아 가격도 동일하게 설정
+                                     updateChoiceOption(groupIndex, option.id, 'child_price', price)
+                                     updateChoiceOption(groupIndex, option.id, 'infant_price', price)
                                    }}
                                    placeholder="0"
                                    className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
                                  />
+                                 <p className="text-xs text-gray-500 mt-1">성인/아동/유아 모두 동일한 가격이 적용됩니다</p>
                                </div>
-                               <div>
-                                 <label className="block text-xs text-gray-500 mb-1">아동</label>
-                                 <input
-                                   type="number"
-                                   value={option.child_price}
-                                   onChange={(e) => {
-                                     updateChoiceOption(groupIndex, option.id, 'child_price', parseInt(e.target.value) || 0)
-                                   }}
-                                   placeholder="0"
-                                   className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
-                                 />
+                             ) : (
+                               // 분리 가격 모드
+                               <div className="grid grid-cols-3 gap-2">
+                                 <div>
+                                   <label className="block text-xs text-gray-500 mb-1">성인</label>
+                                   <input
+                                     type="number"
+                                     value={option.adult_price}
+                                     onChange={(e) => {
+                                       updateChoiceOption(groupIndex, option.id, 'adult_price', parseInt(e.target.value) || 0)
+                                     }}
+                                     placeholder="0"
+                                     className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
+                                   />
+                                 </div>
+                                 <div>
+                                   <label className="block text-xs text-gray-500 mb-1">아동</label>
+                                   <input
+                                     type="number"
+                                     value={option.child_price}
+                                     onChange={(e) => {
+                                       updateChoiceOption(groupIndex, option.id, 'child_price', parseInt(e.target.value) || 0)
+                                     }}
+                                     placeholder="0"
+                                     className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
+                                   />
+                                 </div>
+                                 <div>
+                                   <label className="block text-xs text-gray-500 mb-1">유아</label>
+                                   <input
+                                     type="number"
+                                     value={option.infant_price}
+                                     onChange={(e) => {
+                                       updateChoiceOption(groupIndex, option.id, 'infant_price', parseInt(e.target.value) || 0)
+                                     }}
+                                     placeholder="0"
+                                     className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
+                                   />
+                                 </div>
                                </div>
-                               <div>
-                                 <label className="block text-xs text-gray-500 mb-1">유아</label>
-                                 <input
-                                   type="number"
-                                   value={option.infant_price}
-                                   onChange={(e) => {
-                                     updateChoiceOption(groupIndex, option.id, 'infant_price', parseInt(e.target.value) || 0)
-                                   }}
-                                   placeholder="0"
-                                   className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 focus:bg-white"
-                                 />
-                               </div>
-                             </div>
+                             )}
                              <div className="flex items-center justify-between pt-2">
                                {choice.choice_type === 'quantity' && (
                                  <div>

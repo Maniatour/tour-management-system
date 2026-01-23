@@ -233,10 +233,22 @@ export default function TourCostCalculatorPage() {
   const [expandedCourseNodes, setExpandedCourseNodes] = useState<Set<string>>(new Set())
   const [selectedCoursesOrder, setSelectedCoursesOrder] = useState<string[]>([])
   const [isCalculatingRoute, setIsCalculatingRoute] = useState(false)
-  const [savedConfigurations, setSavedConfigurations] = useState<Array<{ name: string; selectedCourses: string[]; order: string[] }>>([])
+  type Template = {
+    id?: string
+    name: string
+    selectedCourses: string[]
+    order: string[]
+    savedAt?: string
+    created_at?: string
+    updated_at?: string
+  }
+  
+  const [savedConfigurations, setSavedConfigurations] = useState<Template[]>([])
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [saveConfigName, setSaveConfigName] = useState('')
   const [showLoadModal, setShowLoadModal] = useState(false)
+  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
+  const [loadingTemplates, setLoadingTemplates] = useState(false)
 
   // 데이터 로드
   useEffect(() => {
@@ -720,100 +732,132 @@ export default function TourCostCalculatorPage() {
     }
   }
 
-  // 저장된 템플릿 불러오기
+  // 저장된 템플릿 불러오기 (데이터베이스에서)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      // 새로운 키로 먼저 시도
-      let saved = localStorage.getItem('tour_cost_calculator_templates')
-      
-      // 기존 키로 마이그레이션 (하위 호환성)
-      if (!saved) {
-        const oldSaved = localStorage.getItem('tour_cost_calculator_configs')
-        if (oldSaved) {
-          saved = oldSaved
-          localStorage.setItem('tour_cost_calculator_templates', saved)
-          localStorage.removeItem('tour_cost_calculator_configs')
-        }
-      }
-      
-      if (saved) {
-        try {
-          const configs = JSON.parse(saved)
-          setSavedConfigurations(configs)
-        } catch (error) {
-          console.error('저장된 템플릿 불러오기 실패:', error)
-        }
-      }
-    }
+    loadTemplates()
   }, [])
 
-  // 템플릿 저장
-  const saveConfiguration = () => {
+  // 템플릿 목록 불러오기
+  const loadTemplates = async () => {
+    setLoadingTemplates(true)
+    try {
+      const { data, error } = await supabase
+        .from('tour_cost_calculator_templates')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      const templates: Template[] = (data || []).map(t => ({
+        id: t.id,
+        name: t.name,
+        selectedCourses: t.selected_courses || [],
+        order: t.course_order || [],
+        savedAt: t.created_at,
+        created_at: t.created_at,
+        updated_at: t.updated_at
+      }))
+
+      setSavedConfigurations(templates)
+    } catch (error) {
+      console.error('템플릿 불러오기 실패:', error)
+      alert('템플릿을 불러오는 중 오류가 발생했습니다.')
+    } finally {
+      setLoadingTemplates(false)
+    }
+  }
+
+  // 템플릿 저장 (데이터베이스에)
+  const saveConfiguration = async () => {
     if (!saveConfigName.trim()) {
       alert('템플릿 제목을 입력해주세요.')
       return
     }
 
-    // 중복 이름 확인
-    const duplicateIndex = savedConfigurations.findIndex(c => c.name === saveConfigName.trim())
-    if (duplicateIndex !== -1) {
-      if (!confirm(`"${saveConfigName.trim()}" 템플릿이 이미 존재합니다. 덮어쓰시겠습니까?`)) {
-        return
-      }
-      // 덮어쓰기
-      const updatedConfigs = [...savedConfigurations]
-      updatedConfigs[duplicateIndex] = {
-        name: saveConfigName.trim(),
-        selectedCourses: Array.from(selectedCourses),
-        order: selectedCoursesOrder,
-        savedAt: new Date().toISOString()
-      }
-      setSavedConfigurations(updatedConfigs)
-      
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('tour_cost_calculator_templates', JSON.stringify(updatedConfigs))
-      }
-    } else {
-      // 새로 저장
-      const config = {
-        name: saveConfigName.trim(),
-        selectedCourses: Array.from(selectedCourses),
-        order: selectedCoursesOrder,
-        savedAt: new Date().toISOString()
+    try {
+      if (editingTemplate && editingTemplate.id) {
+        // 수정 모드
+        const { error } = await supabase
+          .from('tour_cost_calculator_templates')
+          .update({
+            name: saveConfigName.trim(),
+            selected_courses: Array.from(selectedCourses),
+            course_order: selectedCoursesOrder,
+            updated_by: (await supabase.auth.getUser()).data.user?.id
+          })
+          .eq('id', editingTemplate.id)
+
+        if (error) throw error
+        alert('템플릿이 수정되었습니다.')
+      } else {
+        // 새로 저장
+        const { data: { user } } = await supabase.auth.getUser()
+        
+        const { error } = await supabase
+          .from('tour_cost_calculator_templates')
+          .insert({
+            name: saveConfigName.trim(),
+            selected_courses: Array.from(selectedCourses),
+            course_order: selectedCoursesOrder,
+            created_by: user?.id
+          })
+
+        if (error) throw error
+        alert('템플릿이 저장되었습니다.')
       }
 
-      const updatedConfigs = [...savedConfigurations, config]
-      setSavedConfigurations(updatedConfigs)
-      
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('tour_cost_calculator_templates', JSON.stringify(updatedConfigs))
-      }
+      setSaveConfigName('')
+      setEditingTemplate(null)
+      setShowSaveModal(false)
+      await loadTemplates()
+    } catch (error: any) {
+      console.error('템플릿 저장 실패:', error)
+      alert(`템플릿 저장 중 오류가 발생했습니다: ${error.message}`)
     }
-
-    setSaveConfigName('')
-    setShowSaveModal(false)
-    alert('템플릿이 저장되었습니다.')
   }
 
   // 템플릿 불러오기
-  const loadConfiguration = (config: { name: string; selectedCourses: string[]; order: string[] }) => {
-    setSelectedCourses(new Set(config.selectedCourses))
-    setSelectedCoursesOrder(config.order)
+  const loadConfiguration = (template: Template) => {
+    setSelectedCourses(new Set(template.selectedCourses))
+    setSelectedCoursesOrder(template.order)
     setShowLoadModal(false)
-    alert(`"${config.name}" 템플릿을 불러왔습니다.`)
+    alert(`"${template.name}" 템플릿을 불러왔습니다.`)
+  }
+
+  // 템플릿 수정 모드로 열기
+  const editTemplate = (template: Template) => {
+    setEditingTemplate(template)
+    setSaveConfigName(template.name)
+    setSelectedCourses(new Set(template.selectedCourses))
+    setSelectedCoursesOrder(template.order)
+    setShowLoadModal(false)
+    setShowSaveModal(true)
   }
 
   // 템플릿 삭제
-  const deleteConfiguration = (index: number) => {
-    const configName = savedConfigurations[index].name
-    if (confirm(`"${configName}" 템플릿을 삭제하시겠습니까?`)) {
-      const updatedConfigs = savedConfigurations.filter((_, i) => i !== index)
-      setSavedConfigurations(updatedConfigs)
-      
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('tour_cost_calculator_templates', JSON.stringify(updatedConfigs))
-      }
+  const deleteConfiguration = async (template: Template) => {
+    if (!template.id) {
+      alert('삭제할 수 없는 템플릿입니다.')
+      return
+    }
+
+    if (!confirm(`"${template.name}" 템플릿을 삭제하시겠습니까?`)) {
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('tour_cost_calculator_templates')
+        .delete()
+        .eq('id', template.id)
+
+      if (error) throw error
+
       alert('템플릿이 삭제되었습니다.')
+      await loadTemplates()
+    } catch (error: any) {
+      console.error('템플릿 삭제 실패:', error)
+      alert(`템플릿 삭제 중 오류가 발생했습니다: ${error.message}`)
     }
   }
 
@@ -918,6 +962,8 @@ export default function TourCostCalculatorPage() {
                       alert('저장할 투어 코스가 없습니다.')
                       return
                     }
+                    setEditingTemplate(null)
+                    setSaveConfigName('')
                     setShowSaveModal(true)
                   }}
                   className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
@@ -1423,11 +1469,13 @@ export default function TourCostCalculatorPage() {
         </div>
       </div>
 
-      {/* 템플릿 저장 모달 */}
+      {/* 템플릿 저장/수정 모달 */}
       {showSaveModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
-            <h3 className="text-xl font-semibold mb-4">템플릿 저장</h3>
+            <h3 className="text-xl font-semibold mb-4">
+              {editingTemplate ? '템플릿 수정' : '템플릿 저장'}
+            </h3>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 템플릿 제목 *
@@ -1465,12 +1513,13 @@ export default function TourCostCalculatorPage() {
                 onClick={saveConfiguration}
                 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
               >
-                템플릿 저장
+                {editingTemplate ? '수정' : '저장'}
               </button>
               <button
                 onClick={() => {
                   setShowSaveModal(false)
                   setSaveConfigName('')
+                  setEditingTemplate(null)
                 }}
                 className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
               >
@@ -1484,9 +1533,14 @@ export default function TourCostCalculatorPage() {
       {/* 템플릿 불러오기 모달 */}
       {showLoadModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
-            <h3 className="text-xl font-semibold mb-4">템플릿 불러오기</h3>
-            {savedConfigurations.length === 0 ? (
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6">
+            <h3 className="text-xl font-semibold mb-4">템플릿 관리</h3>
+            {loadingTemplates ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
+                <p className="text-gray-500">템플릿을 불러오는 중...</p>
+              </div>
+            ) : savedConfigurations.length === 0 ? (
               <div className="text-center py-8">
                 <Settings className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                 <p className="text-gray-500">저장된 템플릿이 없습니다.</p>
@@ -1496,38 +1550,56 @@ export default function TourCostCalculatorPage() {
               </div>
             ) : (
               <div className="space-y-2 max-h-96 overflow-y-auto mb-4">
-                {savedConfigurations.map((config, index) => (
+                {savedConfigurations.map((template) => (
                   <div
-                    key={index}
+                    key={template.id || template.name}
                     className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-gray-900 truncate">{config.name}</div>
+                      <div className="font-medium text-gray-900 truncate">{template.name}</div>
                       <div className="text-sm text-gray-500 mt-1">
-                        코스 {config.selectedCourses.length}개 • 순서 {config.order.length}개
+                        코스 {template.selectedCourses.length}개 • 순서 {template.order.length}개
                       </div>
-                      {config.savedAt && (
+                      {template.created_at && (
                         <div className="text-xs text-gray-400 mt-1">
-                          {new Date(config.savedAt).toLocaleDateString('ko-KR', {
+                          생성: {new Date(template.created_at).toLocaleDateString('ko-KR', {
                             year: 'numeric',
                             month: 'long',
                             day: 'numeric',
                             hour: '2-digit',
                             minute: '2-digit'
                           })}
+                          {template.updated_at && template.updated_at !== template.created_at && (
+                            <span className="ml-2">
+                              • 수정: {new Date(template.updated_at).toLocaleDateString('ko-KR', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>
                     <div className="flex gap-2 ml-3">
                       <button
-                        onClick={() => loadConfiguration(config)}
+                        onClick={() => loadConfiguration(template)}
                         className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm font-medium whitespace-nowrap"
                         title="템플릿 불러오기"
                       >
                         불러오기
                       </button>
                       <button
-                        onClick={() => deleteConfiguration(index)}
+                        onClick={() => editTemplate(template)}
+                        className="px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-sm whitespace-nowrap"
+                        title="템플릿 수정"
+                      >
+                        수정
+                      </button>
+                      <button
+                        onClick={() => deleteConfiguration(template)}
                         className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-sm whitespace-nowrap"
                         title="템플릿 삭제"
                       >
@@ -1538,12 +1610,23 @@ export default function TourCostCalculatorPage() {
                 ))}
               </div>
             )}
-            <button
-              onClick={() => setShowLoadModal(false)}
-              className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
-            >
-              닫기
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowLoadModal(false)}
+                className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                닫기
+              </button>
+              {!loadingTemplates && savedConfigurations.length > 0 && (
+                <button
+                  onClick={loadTemplates}
+                  className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm"
+                  title="템플릿 목록 새로고침"
+                >
+                  새로고침
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

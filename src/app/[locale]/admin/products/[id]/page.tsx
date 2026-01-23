@@ -306,6 +306,8 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
     useCommonDetails: false,
     // 팀 타입 초기값
     team_type: null,
+    // 홈페이지 가격 타입 초기값
+    homepagePricingType: 'separate' as 'single' | 'separate',
     // product_details 초기값 (다국어 지원)
     productDetails: {
       ko: {
@@ -676,6 +678,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
             transportationMethods: productData.transportation_methods || [],
             useCommonDetails: !!productData.use_common_details,
             team_type: productData.team_type || null,
+            homepagePricingType: (productData as any).homepage_pricing_type || 'separate',
             // product_details 데이터 설정 (다국어 지원)
             productDetails: detailsData ? (() => {
               // 다국어 데이터를 언어별로 매핑
@@ -1225,8 +1228,9 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
           <BasicInfoTab
             formData={{
               ...formData,
-              basePrice: typeof formData.basePrice === 'object' ? formData.basePrice.adult : (formData.basePrice as number || 0)
-            }}
+              basePrice: typeof formData.basePrice === 'object' ? formData.basePrice.adult : (formData.basePrice as number || 0),
+              homepagePricingType: (formData.homepagePricingType || 'separate') as 'single' | 'separate'
+            } as any}
             setFormData={(updater: React.SetStateAction<typeof formData>) => {
               setFormData((prev) => {
                 const next = typeof updater === 'function' ? updater({
