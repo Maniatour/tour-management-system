@@ -823,8 +823,8 @@ export function useTourDetailData() {
           // assignedReservations에서 cancelled 상태 제외
           const activeAssignedReservations = assignedReservations.filter(r => !isCancelled(r.status))
 
-          // otherToursAssignedReservations는 필터링 없이 그대로 사용
-          const activeOtherToursAssignedReservations = otherToursAssignedReservations
+          // otherToursAssignedReservations에서도 cancelled 상태 제외
+          const activeOtherToursAssignedReservations = otherToursAssignedReservations.filter(r => !isCancelled(r.status))
 
           const allOtherStatusReservations = otherStatusReservations
           
@@ -1416,7 +1416,8 @@ export function useTourDetailData() {
 
           // assignedReservations에서 cancelled 상태 제외
           const activeAssignedReservations = assignedReservations.filter(r => !isCancelled(r.status))
-          const activeOtherToursAssignedReservations = otherToursAssignedReservations
+          // otherToursAssignedReservations에서도 cancelled 상태 제외
+          const activeOtherToursAssignedReservations = otherToursAssignedReservations.filter(r => !isCancelled(r.status))
 
           setAssignedReservations(activeAssignedReservations)
           setPendingReservations(pendingReservations)

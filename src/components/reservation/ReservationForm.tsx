@@ -3194,7 +3194,7 @@ export default function ReservationForm({
           {/* 메인 레이아웃 - 모바일 최적화 */}
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 lg:h-[940px]">
             {/* 1열: 고객 정보 수정 - 모바일에서는 전체 너비 */}
-            <div className="col-span-1 lg:col-span-1 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 lg:h-[940px]">
+            <div id="customer-section" className="col-span-1 lg:col-span-1 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 lg:h-[940px]">
               <div>
                 <h3 className="text-sm font-medium text-gray-900 mb-2">고객 정보</h3>
                 {/* 고객 검색 */}
@@ -3339,21 +3339,25 @@ export default function ReservationForm({
               <div>
                 <h3 className="text-sm font-medium text-gray-900 mb-2">예약 정보</h3>
               </div>
-              <TourInfoSection
+              <div id="tour-info-section">
+                <TourInfoSection
                 formData={formData}
                 setFormData={setFormData}
                 pickupHotels={pickupHotels}
                 sanitizeTimeInput={sanitizeTimeInput}
                 t={t}
               />
+              </div>
               
-              <ParticipantsSection
-                formData={formData}
-                setFormData={setFormData}
-                t={t}
-              />
+              <div id="participants-section">
+                <ParticipantsSection
+                  formData={formData}
+                  setFormData={setFormData}
+                  t={t}
+                />
+              </div>
 
-              <div className="space-y-2">
+              <div id="pricing-section" className="space-y-2">
                 <PricingSection
                   formData={formData as any}
                   setFormData={setFormData}
@@ -3379,7 +3383,7 @@ export default function ReservationForm({
               {reservation && (
                 <div className="space-y-4">
                   {/* 상단: 예약 옵션 */}
-                  <div>
+                  <div id="options-section">
                     <ReservationOptionsSection 
                       reservationId={reservation.id} 
                       onTotalPriceChange={setReservationOptionsTotalPrice}
@@ -3389,7 +3393,7 @@ export default function ReservationForm({
                   {/* 하단: 입금 내역과 지출 내역을 2열 그리드로 배치 */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     {/* 왼쪽: 입금 내역 */}
-                    <div>
+                    <div id="payment-section">
                       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
                         <PaymentRecordsList
                           reservationId={reservation.id}
@@ -3399,7 +3403,7 @@ export default function ReservationForm({
                     </div>
                     
                     {/* 오른쪽: 지출 내역 */}
-                    <div>
+                    <div id="expense-section">
                       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
                         <ReservationExpenseManager
                           reservationId={reservation.id}
@@ -3415,7 +3419,7 @@ export default function ReservationForm({
             </div>
 
             {/* 3열: 상품 선택 - 모바일에서는 전체 너비, 데스크톱에서는 1/5 */}
-            <div className="col-span-1 lg:col-span-1 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 lg:h-[940px]">
+            <div id="product-section" className="col-span-1 lg:col-span-1 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 lg:h-[940px]">
               <ProductSelectionSection
                 formData={formData}
                 setFormData={setFormData}
@@ -3456,7 +3460,7 @@ export default function ReservationForm({
 
               {/* 후기 관리 섹션 - 연결된 투어 아래에 배치 */}
               {layout === 'page' && reservation && (
-                <div className="mt-4">
+                <div id="review-section" className="mt-4">
                   <ReviewManagementSection reservationId={reservation.id} />
                 </div>
               )}

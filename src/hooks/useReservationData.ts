@@ -227,6 +227,30 @@ export function useReservationData() {
 
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [loadingProgress, setLoadingProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 })
+  const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, {
+    total_price: number
+    balance_amount: number
+    adult_product_price?: number
+    child_product_price?: number
+    infant_product_price?: number
+    product_price_total?: number
+    coupon_discount?: number
+    additional_discount?: number
+    additional_cost?: number
+    commission_percent?: number
+    commission_amount?: number
+    currency?: string
+  }>>(new Map())
+  const [toursMap, setToursMap] = useState<Map<string, {
+    id: string
+    tour_status: string | null
+    tour_guide_id: string | null
+    assistant_id: string | null
+    reservation_ids: string[]
+    tour_car_id: string | null
+    tour_date: string | null
+    tour_start_datetime: string | null
+  }>>(new Map())
 
   const loading = customersLoading || productsLoading || channelsLoading || productOptionsLoading || optionChoicesLoading || optionsLoading || pickupHotelsLoading || couponsLoading
 
@@ -377,6 +401,153 @@ export function useReservationData() {
 
       setReservations(mappedReservations)
       console.log(`예약 데이터 매핑 완료: ${mappedReservations.length}개`)
+
+      // 모든 reservation_pricing 데이터를 한번에 로딩
+      console.log('reservation_pricing 데이터 로딩 시작...')
+      const reservationIds = mappedReservations.map(r => r.id)
+      if (reservationIds.length > 0) {
+        const chunkSize = 1000 // Supabase 제한 대응
+        const pricingMap = new Map<string, {
+          total_price: number
+          balance_amount: number
+          adult_product_price?: number
+          child_product_price?: number
+          infant_product_price?: number
+          product_price_total?: number
+          coupon_discount?: number
+          additional_discount?: number
+          additional_cost?: number
+          commission_percent?: number
+          commission_amount?: number
+          currency?: string
+        }>()
+
+        for (let i = 0; i < reservationIds.length; i += chunkSize) {
+          const chunk = reservationIds.slice(i, i + chunkSize)
+          
+          const { data: pricingData, error: pricingError } = await supabase
+            .from('reservation_pricing')
+            .select('reservation_id, total_price, balance_amount, adult_product_price, child_product_price, infant_product_price, product_price_total, coupon_discount, additional_discount, additional_cost, commission_percent, commission_amount')
+            .in('reservation_id', chunk)
+
+          if (pricingError) {
+            console.warn('reservation_pricing 조회 오류:', pricingError)
+            continue
+          }
+
+          if (pricingData) {
+            pricingData.forEach((p: {
+              reservation_id: string
+              total_price: number | null
+              balance_amount: number | null
+              adult_product_price: number | null
+              child_product_price: number | null
+              infant_product_price: number | null
+              product_price_total: number | null
+              coupon_discount: number | null
+              additional_discount: number | null
+              additional_cost: number | null
+              commission_percent: number | null
+              commission_amount: number | null
+            }) => {
+              const toNumber = (val: number | null | undefined): number => {
+                if (val === null || val === undefined) return 0
+                if (typeof val === 'string') return parseFloat(val) || 0
+                return val || 0
+              }
+              
+              pricingMap.set(p.reservation_id, {
+                total_price: toNumber(p.total_price),
+                balance_amount: toNumber(p.balance_amount),
+                adult_product_price: toNumber(p.adult_product_price),
+                child_product_price: toNumber(p.child_product_price),
+                infant_product_price: toNumber(p.infant_product_price),
+                product_price_total: toNumber(p.product_price_total),
+                coupon_discount: toNumber(p.coupon_discount),
+                additional_discount: toNumber(p.additional_discount),
+                additional_cost: toNumber(p.additional_cost),
+                commission_percent: toNumber(p.commission_percent),
+                commission_amount: toNumber(p.commission_amount),
+                currency: 'USD'
+              })
+            })
+          }
+        }
+
+        setReservationPricingMap(pricingMap)
+        console.log(`reservation_pricing 데이터 로딩 완료: ${pricingMap.size}개`)
+      }
+
+      // 모든 tours 데이터를 한번에 로딩 (tour_id가 있는 예약들)
+      console.log('tours 데이터 로딩 시작...')
+      const tourIds = new Set<string>()
+      mappedReservations.forEach(r => {
+        if (r.tourId && r.tourId.trim() !== '' && r.tourId !== 'null' && r.tourId !== 'undefined') {
+          tourIds.add(r.tourId.trim())
+        }
+      })
+
+      if (tourIds.size > 0) {
+        const tourIdsArray = Array.from(tourIds)
+        const chunkSize = 1000
+        const toursMap = new Map<string, {
+          id: string
+          tour_status: string | null
+          tour_guide_id: string | null
+          assistant_id: string | null
+          reservation_ids: string[]
+          tour_car_id: string | null
+          tour_date: string | null
+          tour_start_datetime: string | null
+        }>()
+
+        for (let i = 0; i < tourIdsArray.length; i += chunkSize) {
+          const chunk = tourIdsArray.slice(i, i + chunkSize)
+          
+          const { data: toursData, error: toursError } = await supabase
+            .from('tours')
+            .select('id, tour_status, tour_guide_id, assistant_id, reservation_ids, tour_car_id, tour_date, tour_start_datetime')
+            .in('id', chunk)
+
+          if (toursError) {
+            console.warn('tours 조회 오류:', toursError)
+            continue
+          }
+
+          if (toursData) {
+            toursData.forEach((tour: {
+              id: string
+              tour_status: string | null
+              tour_guide_id: string | null
+              assistant_id: string | null
+              reservation_ids: unknown
+              tour_car_id: string | null
+              tour_date: string | null
+              tour_start_datetime: string | null
+            }) => {
+              const reservationIds = Array.isArray(tour.reservation_ids)
+                ? tour.reservation_ids
+                : tour.reservation_ids
+                  ? String(tour.reservation_ids).split(',').map((id: string) => id.trim()).filter((id: string) => id)
+                  : []
+              
+              toursMap.set(tour.id, {
+                id: tour.id,
+                tour_status: tour.tour_status,
+                tour_guide_id: tour.tour_guide_id,
+                assistant_id: tour.assistant_id,
+                reservation_ids: reservationIds,
+                tour_car_id: tour.tour_car_id,
+                tour_date: tour.tour_date,
+                tour_start_datetime: tour.tour_start_datetime
+              })
+            })
+          }
+        }
+
+        setToursMap(toursMap)
+        console.log(`tours 데이터 로딩 완료: ${toursMap.size}개`)
+      }
     } catch (error) {
       console.warn('Error fetching reservations, using fallback data:', error)
       setReservations([])
@@ -399,6 +570,8 @@ export function useReservationData() {
     options,
     pickupHotels,
     coupons,
+    reservationPricingMap,
+    toursMap,
     loading,
     loadingProgress,
     

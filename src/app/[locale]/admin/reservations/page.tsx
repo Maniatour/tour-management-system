@@ -2,10 +2,8 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { Plus, Search, Calendar, MapPin, Users, Grid3X3, CalendarDays, DollarSign, Eye, X, GripVertical, Clock, Mail, ChevronDown, Edit, MessageSquare } from 'lucide-react'
-import ReactCountryFlag from 'react-country-flag'
+import { X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import CustomerForm from '@/components/CustomerForm'
@@ -21,17 +19,23 @@ import PickupHotelModal from '@/components/tour/modals/PickupHotelModal'
 import EmailPreviewModal from '@/components/reservation/EmailPreviewModal'
 import EmailLogsModal from '@/components/reservation/EmailLogsModal'
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
+import ResizableModal from '@/components/reservation/ResizableModal'
+import ReservationsLoadingSpinner from '@/components/reservation/ReservationsLoadingSpinner'
+import ReservationsHeader from '@/components/reservation/ReservationsHeader'
+import ReservationsFilters from '@/components/reservation/ReservationsFilters'
+import WeeklyStatsPanel from '@/components/reservation/WeeklyStatsPanel'
+import { DateGroupHeader } from '@/components/reservation/DateGroupHeader'
+import ReservationsEmptyState from '@/components/reservation/ReservationsEmptyState'
+import ReservationsPagination from '@/components/reservation/ReservationsPagination'
+import { ReservationCardItem } from '@/components/reservation/ReservationCardItem'
 import { useAuth } from '@/contexts/AuthContext'
 import { 
   getPickupHotelDisplay, 
   getCustomerName, 
   getProductName, 
   getChannelName, 
-  getStatusLabel, 
-  getStatusColor, 
   calculateTotalPrice 
 } from '@/utils/reservationUtils'
-import { ResidentStatusIcon } from '@/components/reservation/ResidentStatusIcon'
 import type { 
   Customer, 
   Reservation
@@ -45,8 +49,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const t = useTranslations('reservations')
   const { user } = useAuth()
   
-  // 초이스 옵션별 색상 매핑 함수 (옵션 이름 기준으로 색상 결정)
-  const getGroupColorClasses = (groupId: string, groupName?: string, optionName?: string) => {
+  // 초이스 옵션별 색상 매핑 함수 (옵션 이름 기준으로 색상 결정) - useCallback으로 메모이제이션
+  const getGroupColorClasses = useCallback((groupId: string, groupName?: string, optionName?: string) => {
     // 풍부한 색상 팔레트 (각 옵션마다 다른 색상)
     const colorPalette = [
       "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200",
@@ -75,7 +79,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
     
     return colorPalette[Math.abs(hash) % colorPalette.length]
-  }
+  }, [])
 
   // 새로운 초이스 시스템에서 선택된 옵션을 가져오는 함수
   const getSelectedChoicesFromNewSystem = useCallback(async (reservationId: string) => {
@@ -99,13 +103,30 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         .eq('reservation_id', reservationId)
 
       if (error) {
-        console.error('Error fetching reservation choices:', error)
+        // 에러가 실제로 존재하고 의미 있는 정보가 있을 때만 로깅
+        if (error.message || error.code || error.details) {
+          console.error('Error fetching reservation choices:', {
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code,
+            reservationId
+          })
+        }
         return []
       }
 
       return data || []
     } catch (error) {
-      console.error('Error in getSelectedChoicesFromNewSystem:', error)
+      // 예외가 발생한 경우에만 로깅
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      if (errorMessage && errorMessage !== '{}') {
+        console.error('Error in getSelectedChoicesFromNewSystem:', {
+          errorMessage,
+          errorStack: error instanceof Error ? error.stack : undefined,
+          reservationId
+        })
+      }
       return []
     }
   }, [])
@@ -124,88 +145,6 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       }
     }
   }>>>(new Map())
-
-  // 새로운 초이스 시스템을 사용하는 Choices 표시 컴포넌트
-  const ChoicesDisplay = React.memo(function ChoicesDisplay({ reservation }: { reservation: Reservation }) {
-    const reservationId = reservation.id
-    const [selectedChoices, setSelectedChoices] = useState<Array<{
-      choice_id: string
-      option_id: string
-      quantity: number
-      choice_options: {
-        option_key: string
-        option_name: string
-        option_name_ko: string
-        product_choices: {
-          choice_group_ko: string
-        }
-      }
-    }>>(() => {
-      // 초기값을 캐시에서 가져오기
-      return choicesCacheRef.current.get(reservationId) || []
-    })
-    const [loading, setLoading] = useState(() => {
-      // 캐시에 있으면 로딩 상태 false
-      return !choicesCacheRef.current.has(reservationId)
-    })
-
-    useEffect(() => {
-      // 캐시에 이미 있으면 캐시에서 가져오기
-      if (choicesCacheRef.current.has(reservationId)) {
-        const cachedChoices = choicesCacheRef.current.get(reservationId) || []
-        if (cachedChoices.length > 0) {
-          setSelectedChoices(cachedChoices)
-          setLoading(false)
-          return
-        }
-      }
-
-      // 캐시에 없으면 로드
-      const loadChoices = async () => {
-        try {
-          const choices = await getSelectedChoicesFromNewSystem(reservationId)
-          // 캐시에 저장
-          choicesCacheRef.current.set(reservationId, choices)
-          setSelectedChoices(choices)
-        } catch (error) {
-          console.error('Error loading choices:', error)
-        } finally {
-          setLoading(false)
-        }
-      }
-      
-      setLoading(true)
-      loadChoices()
-    }, [reservationId])
-
-    // 로딩 중이고 데이터가 없을 때만 null 반환
-    if (loading && selectedChoices.length === 0) {
-      return null
-    }
-
-    if (selectedChoices.length === 0) {
-      return null
-    }
-
-    return (
-      <>
-        {selectedChoices.map((choice, index) => {
-          const optionName = choice.choice_options?.option_name_ko || choice.choice_options?.option_name || 'Unknown'
-          const groupName = choice.choice_options?.product_choices?.choice_group_ko || 'Unknown'
-          const badgeClass = getGroupColorClasses(choice.choice_id, groupName, optionName)
-          
-          return (
-            <span key={`${choice.choice_id}-${choice.option_id}-${index}`} className={badgeClass}>
-              ✓ {optionName}
-            </span>
-          )
-        })}
-      </>
-    )
-  }, (prevProps, nextProps) => {
-    // 메모이제이션 비교: reservation.id만 비교
-    return prevProps.reservation.id === nextProps.reservation.id
-  })
 
   const router = useRouter()
   const routeParams = useParams() as { locale?: string }
@@ -226,6 +165,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     options,
     pickupHotels,
     coupons,
+    reservationPricingMap: hookReservationPricingMap,
+    toursMap: hookToursMap,
     loading,
     loadingProgress,
     refreshReservations,
@@ -288,8 +229,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [isFiltersCollapsed, setIsFiltersCollapsed] = useState<boolean>(true) // 필터 접힘/펼침 상태 (기본 접힘)
 
-  // 그룹 접기/펼치기 함수
-  const toggleGroupCollapse = (date: string) => {
+  // 그룹 접기/펼치기 함수 - useCallback으로 메모이제이션
+  const toggleGroupCollapse = useCallback((date: string) => {
     setCollapsedGroups(prev => {
       const newSet = new Set(prev)
       if (newSet.has(date)) {
@@ -299,7 +240,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       }
       return newSet
     })
-  }
+  }, [])
 
   // 주간 통계 아코디언 상태 (기본 접힘)
   const [isWeeklyStatsCollapsed, setIsWeeklyStatsCollapsed] = useState(true)
@@ -348,6 +289,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   // 투어 정보 상태
   const [tourInfoMap, setTourInfoMap] = useState<Map<string, {
     totalPeople: number
+    otherReservationsTotalPeople: number
+    allDateTotalPeople: number
     status: string
     guideName: string
     assistantName: string
@@ -356,9 +299,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     tourStartDatetime: string | null
     isAssigned: boolean
     reservationIds: string[]
+    productId: string | null
   }>>(new Map())
 
-  // reservation_pricing 데이터 상태 (계산식 표시를 위한 모든 필드 포함)
+  // reservation_pricing 데이터는 useReservationData 훅에서 가져옴
+  // hookReservationPricingMap을 사용하되, 로컬 상태도 유지 (필터링/페이지네이션 대응)
   const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, {
     total_price: number
     balance_amount: number
@@ -374,8 +319,15 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     currency?: string
   }>>(new Map())
 
-  // Net Price 계산식 생성 함수
-  const generatePriceCalculation = (reservation: any, pricing: any): string => {
+  // hookReservationPricingMap이 업데이트되면 로컬 상태도 업데이트
+  useEffect(() => {
+    if (hookReservationPricingMap.size > 0) {
+      setReservationPricingMap(hookReservationPricingMap)
+    }
+  }, [hookReservationPricingMap])
+
+  // Net Price 계산식 생성 함수 - useCallback으로 메모이제이션
+  const generatePriceCalculation = useCallback((reservation: any, pricing: any): string => {
     if (!pricing || !pricing.total_price) {
       // pricing이 없으면 기본값 반환
       return ''
@@ -485,7 +437,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
     
     return calculationString
-  }
+  }, [])
 
   // 픽업 시간 수정 모달 상태
   const [showPickupTimeModal, setShowPickupTimeModal] = useState(false)
@@ -508,81 +460,19 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
   }, [searchTerm])
 
-  // 투어 정보 가져오기
+  // 투어 정보 가져오기 (hookToursMap 사용)
   useEffect(() => {
-    const fetchTourInfo = async () => {
-      if (!reservations.length) return
-
-      // reservations에서 tour_id가 있는 예약들을 직접 확인
-      const tourIds = new Set<string>()
-      const reservationsWithTourId = reservations.filter(r => {
-        // tourId 또는 직접 tour_id 확인
-        const tourId = r.tourId || (r as any).tour_id
-        return tourId && tourId.trim() !== '' && tourId !== 'null' && tourId !== 'undefined'
-      })
-      
-      reservationsWithTourId.forEach(reservation => {
-        const tourId = reservation.tourId || (reservation as any).tour_id
-        if (tourId && tourId.trim() !== '') {
-          tourIds.add(tourId.trim())
-        }
-      })
-
-      console.log('투어 ID 수집:', { 
-        totalReservations: reservations.length,
-        reservationsWithTourId: reservationsWithTourId.length,
-        tourIdsCount: tourIds.size, 
-        tourIds: Array.from(tourIds),
-        sampleReservations: reservationsWithTourId.slice(0, 3).map(r => ({
-          id: r.id,
-          tourId: r.tourId,
-          tour_id: (r as any).tour_id
-        }))
-      })
-
-      if (tourIds.size === 0) {
-        console.log('투어 ID가 없어서 투어 정보를 가져오지 않습니다.')
-        setTourInfoMap(new Map()) // 빈 맵으로 초기화
+    const buildTourInfoMap = async () => {
+      if (!reservations.length || hookToursMap.size === 0) {
+        setTourInfoMap(new Map())
         return
       }
 
       try {
-        // 연결된 투어를 투어 상태, 배정 상태와 상관없이 모두 가져옴
-        // Supabase의 .in() 쿼리는 기본적으로 1000개 제한이 있으므로 청크로 나눠서 조회
-        const tourIdsArray = Array.from(tourIds)
-        const chunkSize = 1000 // 한 번에 1000개씩 조회
-        const allTours: any[] = []
-
-        // 투어 ID를 청크로 나눠서 여러 번 조회
-        for (let i = 0; i < tourIdsArray.length; i += chunkSize) {
-          const chunk = tourIdsArray.slice(i, i + chunkSize)
-          
-          const { data: toursChunk, error: chunkError } = await supabase
-            .from('tours')
-            .select('id, tour_status, tour_guide_id, assistant_id, reservation_ids, tour_car_id, tour_date, tour_start_datetime')
-            .in('id', chunk)
-            // 상태 필터링 없음 - 모든 상태의 투어 표시
-
-          if (chunkError) {
-            console.error(`투어 정보 조회 오류 (청크 ${i / chunkSize + 1}):`, chunkError)
-            continue // 오류가 발생해도 다음 청크는 계속 조회
-          }
-
-          if (toursChunk) {
-            allTours.push(...toursChunk)
-          }
-        }
-
-        console.log('투어 정보 조회 성공:', { 
-          totalTourIds: tourIdsArray.length,
-          toursCount: allTours.length, 
-          chunks: Math.ceil(tourIdsArray.length / chunkSize)
-        })
-
-        const tours = allTours
-
         const newTourInfoMap = new Map<string, {
           totalPeople: number
+          otherReservationsTotalPeople: number
+          allDateTotalPeople: number
           status: string
           guideName: string
           assistantName: string
@@ -591,6 +481,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           tourStartDatetime: string | null
           isAssigned: boolean
           reservationIds: string[]
+          productId: string | null
         }>()
 
         // 모든 가이드 이메일과 어시스턴트 이메일 수집
@@ -598,13 +489,15 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         const assistantEmails = new Set<string>()
         const vehicleIds = new Set<string>()
         
-        tours?.forEach(tour => {
+        hookToursMap.forEach(tour => {
           if (tour.tour_guide_id) guideEmails.add(tour.tour_guide_id)
           if (tour.assistant_id) assistantEmails.add(tour.assistant_id)
           if (tour.tour_car_id) vehicleIds.add(tour.tour_car_id)
         })
 
-        // 가이드 정보 일괄 조회 (1000개 제한 대응)
+        const chunkSize = 1000
+
+        // 가이드 정보 일괄 조회
         const guideMap = new Map<string, string>()
         if (guideEmails.size > 0) {
           const guideEmailsArray = Array.from(guideEmails)
@@ -625,7 +518,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           }
         }
 
-        // 어시스턴트 정보 일괄 조회 (1000개 제한 대응)
+        // 어시스턴트 정보 일괄 조회
         const assistantMap = new Map<string, string>()
         if (assistantEmails.size > 0) {
           const assistantEmailsArray = Array.from(assistantEmails)
@@ -646,7 +539,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           }
         }
 
-        // 차량 정보 일괄 조회 (1000개 제한 대응)
+        // 차량 정보 일괄 조회
         const vehicleMap = new Map<string, string>()
         if (vehicleIds.size > 0) {
           try {
@@ -671,8 +564,35 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           }
         }
 
-        // 각 투어에 대해 정보 매핑
-        for (const tour of tours || []) {
+        // 예약 데이터를 ID 기반 Map으로 미리 인덱싱 (O(1) 조회용)
+        const reservationById = new Map<string, Reservation>()
+        const reservationByTourId = new Map<string, Reservation>()
+        reservations.forEach(r => {
+          reservationById.set(r.id, r)
+          if (r.tourId) {
+            reservationByTourId.set(r.tourId, r)
+          }
+        })
+
+        // 같은 tour_date + product_id 조합의 총 인원 수 계산
+        const dateProductTotalPeopleMap = new Map<string, number>()
+        reservations.forEach(r => {
+          const tourDate = r.tourDate || ''
+          const productId = r.productId || ''
+          const statusLower = r.status?.toLowerCase() || ''
+          
+          // 취소된 예약 제외
+          if (statusLower === 'cancelled' || statusLower === 'canceled') {
+            return
+          }
+          
+          const key = `${productId}__${tourDate}`
+          const currentTotal = dateProductTotalPeopleMap.get(key) || 0
+          dateProductTotalPeopleMap.set(key, currentTotal + (r.totalPeople || 0))
+        })
+
+        // 각 투어에 대해 정보 매핑 (최적화된 O(1) 조회 사용)
+        hookToursMap.forEach((tour, tourId) => {
           let guideName = '-'
           let assistantName = '-'
           let vehicleName = '-'
@@ -693,19 +613,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             vehicleName = vehicleMap.get(tour.tour_car_id) || '-'
           }
 
-          // 총 인원 계산 및 reservation_ids 저장
-          let reservationIds: string[] = []
-          if (tour.reservation_ids) {
-            reservationIds = Array.isArray(tour.reservation_ids)
-              ? tour.reservation_ids
-              : String(tour.reservation_ids).split(',').map((id: string) => id.trim()).filter((id: string) => id)
-            
-            // reservation_ids에 있는 예약들의 total_people 합계 계산 (취소된 예약 제외)
-            totalPeople = reservationIds.reduce((sum: number, id: string) => {
-              const reservation = reservations.find(r => r.id === id)
+          // 배정된 투어 인원 계산: reservation_ids의 unique 값으로 예약들의 total_people 합산
+          if (tour.reservation_ids && tour.reservation_ids.length > 0) {
+            const uniqueReservationIds = [...new Set(tour.reservation_ids)]
+            totalPeople = uniqueReservationIds.reduce((sum: number, id: string) => {
+              const reservation = reservationById.get(id)
               if (!reservation) return sum
               
-              // 취소된 예약은 제외
               const statusLower = reservation.status?.toLowerCase() || ''
               if (statusLower === 'cancelled' || statusLower === 'canceled') {
                 return sum
@@ -715,28 +629,41 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             }, 0)
           }
 
-          newTourInfoMap.set(tour.id, {
+          // 관련 예약 찾기 (O(1) 조회)
+          const reservation = reservationByTourId.get(tourId)
+          const productId = reservation?.productId || null
+          const tourDate = tour.tour_date || reservation?.tourDate || ''
+          
+          // allDateTotalPeople: 같은 tour_date + product_id를 가진 모든 예약의 total_people 합산
+          const key = `${productId}__${tourDate}`
+          const allDateTotalPeople = dateProductTotalPeopleMap.get(key) || totalPeople
+
+          newTourInfoMap.set(tourId, {
             totalPeople,
+            otherReservationsTotalPeople: 0, // 성능상 0으로 설정
+            allDateTotalPeople,
             status: tour.tour_status || '-',
             guideName,
             assistantName,
             vehicleName,
             tourDate: tour.tour_date || '',
             tourStartDatetime: tour.tour_start_datetime || null,
-            isAssigned: true, // tour_id가 있으면 배정된 것으로 간주
-            reservationIds: reservationIds
+            isAssigned: true,
+            reservationIds: tour.reservation_ids,
+            productId
           })
-        }
+        })
 
-        console.log('투어 정보 맵 생성 완료:', { mapSize: newTourInfoMap.size, mapEntries: Array.from(newTourInfoMap.entries()) })
+        console.log('투어 정보 맵 생성 완료:', { mapSize: newTourInfoMap.size })
         setTourInfoMap(newTourInfoMap)
       } catch (error) {
-        console.error('투어 정보 조회 중 오류:', error)
+        console.error('투어 정보 맵 생성 중 오류:', error)
       }
     }
 
-    fetchTourInfo()
-  }, [reservations])
+    buildTourInfoMap()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reservations, hookToursMap])
 
   // 필터링 및 정렬 로직 - useMemo로 최적화
   const filteredAndSortedReservations = useMemo(() => {
@@ -1003,95 +930,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const endIndex = groupByDate ? filteredReservations.length : startIndex + itemsPerPage
   const paginatedReservations = groupByDate ? filteredReservations : filteredReservations.slice(startIndex, endIndex)
 
-  // reservation_pricing 데이터 가져오기 (성능 최적화: 페이지네이션된 reservation만)
-  useEffect(() => {
-    const fetchReservationPricing = async () => {
-      // 페이지네이션된 reservation만 가져오기 (성능 최적화)
-      if (!paginatedReservations.length) return
-
-      try {
-        // 현재 페이지의 reservation ID만 가져오기
-        const reservationIds = paginatedReservations.map(r => r.id)
-        if (reservationIds.length === 0) return
-        
-        // URL 길이 제한을 피하기 위해 청크 단위로 나눠서 요청
-        const chunkSize = 50 // 청크 크기 줄임 (성능 최적화)
-        const pricingMap = new Map<string, {
-          total_price: number
-          balance_amount: number
-          adult_product_price?: number
-          child_product_price?: number
-          infant_product_price?: number
-          product_price_total?: number
-          coupon_discount?: number
-          additional_discount?: number
-          additional_cost?: number
-          commission_percent?: number
-          commission_amount?: number
-          currency?: string
-        }>()
-
-        // 청크 단위로 나눠서 요청
-        for (let i = 0; i < reservationIds.length; i += chunkSize) {
-          const chunk = reservationIds.slice(i, i + chunkSize)
-          
-          const { data: pricingData, error } = await supabase
-            .from('reservation_pricing')
-            .select('reservation_id, total_price, balance_amount, adult_product_price, child_product_price, infant_product_price, product_price_total, coupon_discount, additional_discount, additional_cost, commission_percent, commission_amount')
-            .in('reservation_id', chunk)
-
-          if (error) {
-            console.error('reservation_pricing 조회 오류:', error)
-            continue // 다음 청크 계속 처리
-          }
-
-          if (pricingData) {
-            pricingData.forEach((p: {
-              reservation_id: string
-              total_price: number | null
-              balance_amount: number | null
-              adult_product_price: number | null
-              child_product_price: number | null
-              infant_product_price: number | null
-              product_price_total: number | null
-              coupon_discount: number | null
-              additional_discount: number | null
-              additional_cost: number | null
-              commission_percent: number | null
-              commission_amount: number | null
-            }) => {
-              const toNumber = (val: number | null | undefined): number => {
-                if (val === null || val === undefined) return 0
-                if (typeof val === 'string') return parseFloat(val) || 0
-                return val || 0
-              }
-              
-              pricingMap.set(p.reservation_id, {
-                total_price: toNumber(p.total_price),
-                balance_amount: toNumber(p.balance_amount),
-                adult_product_price: toNumber(p.adult_product_price),
-                child_product_price: toNumber(p.child_product_price),
-                infant_product_price: toNumber(p.infant_product_price),
-                product_price_total: toNumber(p.product_price_total),
-                coupon_discount: toNumber(p.coupon_discount),
-                additional_discount: toNumber(p.additional_discount),
-                additional_cost: toNumber(p.additional_cost),
-                commission_percent: toNumber(p.commission_percent),
-                commission_amount: toNumber(p.commission_amount),
-                currency: 'USD' // 기본값 USD (currency 컬럼이 없으므로)
-              })
-            })
-          }
-        }
-
-        setReservationPricingMap(pricingMap)
-      } catch (error) {
-        console.error('reservation_pricing 로드 오류:', error)
-      }
-    }
-
-    fetchReservationPricing()
-  }, [paginatedReservations])
+  // reservation_pricing 데이터는 useReservationData 훅에서 이미 로딩됨
+  // 페이지네이션된 reservation에 대해서만 필터링하여 사용
+  // (hookReservationPricingMap은 모든 reservation에 대한 데이터를 포함)
 
   // 달력뷰용 데이터 변환
   const calendarReservations = useMemo(() => {
@@ -1922,8 +1763,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
   }
 
-  // 투어 생성 함수
-  const handleCreateTour = async (reservation: Reservation) => {
+  // 투어 생성 함수 - useCallback으로 메모이제이션
+  const handleCreateTour = useCallback(async (reservation: Reservation) => {
     try {
       // 먼저 투어가 실제로 존재하는지 다시 한번 확인
       const tourExists = await checkTourExists(reservation.productId, reservation.tourDate)
@@ -1959,30 +1800,30 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       console.error('Error creating tour:', error)
       alert(t('messages.tourCreationError'))
     }
-  }
+  }, [refreshReservations, t])
 
-  // 달력뷰에서 예약 클릭 시 편집 모달 열기
-  const handleCalendarReservationClick = (calendarReservation: { id: string }) => {
+  // 달력뷰에서 예약 클릭 시 편집 모달 열기 - useCallback으로 메모이제이션
+  const handleCalendarReservationClick = useCallback((calendarReservation: { id: string }) => {
     const originalReservation = reservations.find(r => r.id === calendarReservation.id)
     if (originalReservation) {
       setEditingReservation(originalReservation)
     }
-  }
+  }, [reservations])
 
-  // 가격 정보 모달 열기
-  const handlePricingInfoClick = (reservation: Reservation) => {
+  // 가격 정보 모달 열기 - useCallback으로 메모이제이션
+  const handlePricingInfoClick = useCallback((reservation: Reservation) => {
     setPricingModalReservation(reservation)
     setShowPricingModal(true)
-  }
+  }, [])
 
-  // 가격 정보 모달 닫기
-  const handleClosePricingModal = () => {
+  // 가격 정보 모달 닫기 - useCallback으로 메모이제이션
+  const handleClosePricingModal = useCallback(() => {
     setShowPricingModal(false)
     setPricingModalReservation(null)
-  }
+  }, [])
 
-  // 이메일 미리보기 모달 열기
-  const handleOpenEmailPreview = (reservation: Reservation, emailType: 'confirmation' | 'departure' | 'pickup') => {
+  // 이메일 미리보기 모달 열기 - useCallback으로 메모이제이션
+  const handleOpenEmailPreview = useCallback((reservation: Reservation, emailType: 'confirmation' | 'departure' | 'pickup') => {
     const customer = (customers as Customer[]).find(c => c.id === reservation.customerId)
     if (!customer?.email) {
       alert('고객 이메일 주소가 없습니다.')
@@ -2003,10 +1844,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     })
     setShowEmailPreview(true)
     setEmailDropdownOpen(null)
-  }
+  }, [customers])
 
-  // 이메일 실제 발송 함수
-  const handleSendEmailFromPreview = async () => {
+  // 이메일 실제 발송 함수 - useCallback으로 메모이제이션
+  const handleSendEmailFromPreview = useCallback(async () => {
     if (!emailPreviewData) return
 
     setSendingEmail(emailPreviewData.reservationId)
@@ -2089,7 +1930,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     } finally {
       setSendingEmail(null)
     }
-  }
+  }, [emailPreviewData, customers, reservations, user?.email])
 
   // 픽업 시간 수정 모달 열기
   const handlePickupTimeClick = useCallback((reservation: Reservation, e: React.MouseEvent) => {
@@ -2196,6 +2037,46 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     if (lang === 'jp' || lang === '일본어') return 'JP'
     if (lang === 'cn' || lang === '중국어') return 'CN'
     return 'US'
+  }, [])
+
+  // 예약 관련 핸들러 함수들 - useCallback으로 메모이제이션
+  const handlePaymentClick = useCallback((reservation: Reservation) => {
+    setSelectedReservationForPayment(reservation)
+    setShowPaymentRecords(true)
+  }, [])
+
+  const handleDetailClick = useCallback((reservation: Reservation) => {
+    setSelectedReservationForDetail(reservation)
+    setShowReservationDetailModal(true)
+  }, [])
+
+  const handleReviewClick = useCallback((reservation: Reservation) => {
+    setSelectedReservationForReview(reservation)
+    setShowReviewModal(true)
+  }, [])
+
+  const handleEditClick = useCallback((reservationId: string) => {
+    router.push(`/${locale}/admin/reservations/${reservationId}`)
+  }, [router, locale])
+
+  const handleCustomerClick = useCallback((customer: Customer) => {
+    setEditingCustomer(customer)
+  }, [])
+
+  const handleEmailLogsClick = useCallback((reservationId: string) => {
+    setSelectedReservationForEmailLogs(reservationId)
+    setShowEmailLogs(true)
+    setEmailDropdownOpen(null)
+  }, [])
+
+  const handleEmailDropdownToggle = useCallback((reservationId: string | null) => {
+    setEmailDropdownOpen(reservationId)
+  }, [])
+
+  // 검색어 지우기 핸들러 - useCallback으로 메모이제이션
+  const handleClearSearch = useCallback(() => {
+    setSearchTerm('')
+    setDebouncedSearchTerm('')
   }, [])
 
   const handleDeleteReservation = useCallback(async (id: string) => {
@@ -2320,479 +2201,111 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
   // 로딩 화면
   if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-gray-900">{t('title')}</h1>
-        </div>
-        
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">{t('loadingReservationData')}</h3>
-            {loadingProgress.total > 0 && (
-              <div className="space-y-2">
-                <div className="text-sm text-gray-600">
-                  {loadingProgress.current} / {loadingProgress.total} {t('reservationsLoading')}
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${(loadingProgress.current / loadingProgress.total) * 100}%` }}
-                  ></div>
-                </div>
-                <div className="text-xs text-gray-500">
-                  {Math.round((loadingProgress.current / loadingProgress.total) * 100)}% {t('completed')}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    )
+    return <ReservationsLoadingSpinner loadingProgress={loadingProgress} />
   }
 
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* 헤더 - 모바일 최적화 */}
-      <div className="space-y-4">
-        {/* 첫 번째 줄: 타이틀과 액션 버튼들 */}
-        <div className="flex items-center justify-between space-x-2">
-          <div className="flex items-center space-x-3">
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 flex-shrink-0">
-              {customerIdFromUrl ? (
-                <div className="flex items-center space-x-2">
-                  <span>{t('title')}</span>
-                  <span className="text-lg text-gray-500">-</span>
-                  <span className="text-lg text-blue-600">
-                    {getCustomerName(customerIdFromUrl, (customers as Customer[]) || [])}
-                  </span>
-                </div>
-              ) : (
-                t('title')
-              )}
-            </h1>
-            
-            {/* 뷰 전환 버튼 - 제목 바로 오른쪽에 배치 */}
-            <div className="flex items-center space-x-1">
-              <button
-                onClick={() => setViewMode('card')}
-                className={`flex items-center space-x-1 px-2 py-1 rounded-md transition-colors text-xs ${
-                  viewMode === 'card' 
-                    ? 'bg-blue-500 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <Grid3X3 className="w-3 h-3" />
-                <span className="hidden sm:inline">카드</span>
-              </button>
-              <button
-                onClick={() => {
-                  setViewMode('calendar')
-                }}
-                className={`flex items-center space-x-1 px-2 py-1 rounded-md transition-colors text-xs ${
-                  viewMode === 'calendar' 
-                    ? 'bg-blue-500 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                <CalendarDays className="w-3 h-3" />
-                <span className="hidden sm:inline">달력</span>
-              </button>
-            </div>
-          </div>
-          
-          {/* 검색창과 새예약 추가 버튼 */}
-          <div className="flex items-center space-x-2 flex-1 max-w-xs">
-            <div className="relative flex-1">
-              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={14} />
-              <input
-                type="text"
-                placeholder={t('searchPlaceholder')}
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value)
-                  setCurrentPage(1) // 검색 시 첫 페이지로 이동
-                }}
-                className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
-              />
-            </div>
-            <button
-              onClick={() => {
-                // 새 예약 ID 생성
-                const newId = crypto.randomUUID()
-                setNewReservationId(newId)
-                setShowAddForm(true)
-                console.log('새 예약 모달 오픈, 예약 ID 생성:', newId)
-              }}
-              className="bg-blue-600 text-white px-2 sm:px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center space-x-1 text-xs sm:text-sm flex-shrink-0"
-            >
-              <Plus size={14} />
-              <span className="hidden sm:inline">{t('addReservation')}</span>
-              <span className="sm:hidden">추가</span>
-            </button>
-          </div>
-        </div>
-      </div>
+      <ReservationsHeader
+        customerIdFromUrl={customerIdFromUrl}
+        customers={(customers as Customer[]) || []}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        searchTerm={searchTerm}
+        onSearchChange={(term) => {
+          setSearchTerm(term)
+          setCurrentPage(1) // 검색 시 첫 페이지로 이동
+        }}
+        onAddReservation={() => {
+          // 새 예약 ID 생성
+          const newId = crypto.randomUUID()
+          setNewReservationId(newId)
+          setShowAddForm(true)
+          console.log('새 예약 모달 오픈, 예약 ID 생성:', newId)
+        }}
+      />
 
       {/* 검색 및 필터 */}
-      <div className="space-y-4">
-        {/* 필터 접기/펼치기 버튼 */}
-        <button
-          onClick={() => setIsFiltersCollapsed(!isFiltersCollapsed)}
-          className="flex items-center justify-between w-full px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-        >
-          <span className="text-sm font-medium text-gray-700">필터</span>
-          <ChevronDown 
-            className={`w-4 h-4 text-gray-600 transition-transform ${isFiltersCollapsed ? '' : 'rotate-180'}`}
-          />
-        </button>
+      <ReservationsFilters
+        isFiltersCollapsed={isFiltersCollapsed}
+        onToggleFilters={() => setIsFiltersCollapsed(!isFiltersCollapsed)}
+        selectedStatus={selectedStatus}
+        onStatusChange={(status) => {
+          setSelectedStatus(status)
+          setCurrentPage(1)
+        }}
+        selectedChannel={selectedChannel}
+        onChannelChange={(channel) => {
+          setSelectedChannel(channel)
+          setCurrentPage(1)
+        }}
+        channels={(channels as Array<{ id: string; name: string }>) || []}
+        dateRange={dateRange}
+        onDateRangeChange={(range) => {
+          setDateRange(range)
+          setCurrentPage(1)
+        }}
+        sortBy={sortBy}
+        onSortByChange={setSortBy}
+        sortOrder={sortOrder}
+        onSortOrderChange={setSortOrder}
+        groupByDate={groupByDate}
+        onGroupByDateChange={setGroupByDate}
+        itemsPerPage={itemsPerPage}
+        onItemsPerPageChange={(items) => {
+          setItemsPerPage(items)
+          setCurrentPage(1)
+        }}
+        onReset={() => {
+          setSearchTerm('')
+          setSelectedStatus('all')
+          setSelectedChannel('all')
+          setDateRange({start: '', end: ''})
+          setSortBy('created_at')
+          setSortOrder('desc')
+          setGroupByDate(true) // 그룹화 상태도 초기화
+          setCurrentPage(1)
+          setCurrentWeek(0) // 주간 페이지네이션도 현재 주로 초기화
+        }}
+      />
 
-        {/* 고급 필터 - 모바일 최적화 */}
-        {!isFiltersCollapsed && (
-        <div className="space-y-3">
-          {/* 첫 번째 줄: 상태, 채널, 시작일, 종료일 */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
-            <select
-              value={selectedStatus}
-              onChange={(e) => {
-                setSelectedStatus(e.target.value)
-                setCurrentPage(1)
-              }}
-              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
-            >
-              <option value="all">{t('filters.allStatus')}</option>
-              <option value="pending">{t('filters.pending')}</option>
-              <option value="confirmed">{t('filters.confirmed')}</option>
-              <option value="completed">{t('filters.completed')}</option>
-              <option value="cancelled">{t('filters.cancelled')}</option>
-              <option value="recruiting">{t('filters.recruiting')}</option>
-            </select>
-            
-            <select
-              value={selectedChannel}
-              onChange={(e) => {
-                setSelectedChannel(e.target.value)
-                setCurrentPage(1)
-              }}
-              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
-            >
-              <option value="all">{t('filters.allChannel')}</option>
-              {channels?.map((channel: { id: string; name: string }) => (
-                <option key={channel.id} value={channel.id}>{channel.name}</option>
-              ))}
-            </select>
-            
-            <input
-              type="date"
-              value={dateRange.start}
-              onChange={(e) => {
-                setDateRange(prev => ({ ...prev, start: e.target.value }))
-                setCurrentPage(1)
-              }}
-              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
-              placeholder="시작일"
-            />
-            
-            <input
-              type="date"
-              value={dateRange.end}
-              onChange={(e) => {
-                setDateRange(prev => ({ ...prev, end: e.target.value }))
-                setCurrentPage(1)
-              }}
-              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
-              placeholder="종료일"
-            />
-          </div>
-          
-          {/* 두 번째 줄: 정렬, 그룹화, 페이지당, 초기화 */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
-            <div className="flex items-center space-x-1">
-              <label className="text-xs font-medium text-gray-700 whitespace-nowrap">{t('sorting.label')}</label>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'created_at' | 'tour_date' | 'customer_name' | 'product_name')}
-                className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs flex-1"
-              >
-                <option value="created_at">{t('sorting.registrationDate')}</option>
-                <option value="tour_date">{t('sorting.tourDate')}</option>
-                <option value="customer_name">{t('sorting.customerName')}</option>
-                <option value="product_name">{t('sorting.productName')}</option>
-              </select>
-              <button
-                onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
-                className="px-2 py-1.5 border border-gray-300 rounded-md hover:bg-gray-50 focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs"
-              >
-                {sortOrder === 'asc' ? '↑' : '↓'}
-              </button>
-            </div>
+      {/* 주간 페이지네이션 및 통계 통합 패널 - 날짜별 그룹화가 활성화된 경우에만 표시 */}
+      {groupByDate && (
+        <WeeklyStatsPanel
+          currentWeek={currentWeek}
+          onWeekChange={setCurrentWeek}
+          onInitialLoadChange={setIsInitialLoad}
+          isInitialLoad={isInitialLoad}
+          weeklyStats={weeklyStats}
+          isWeeklyStatsCollapsed={isWeeklyStatsCollapsed}
+          onToggleStatsCollapsed={() => setIsWeeklyStatsCollapsed(!isWeeklyStatsCollapsed)}
+          groupedReservations={groupedReservations}
+          formatWeekRange={formatWeekRange}
+        />
+      )}
 
-            <button
-              onClick={() => setGroupByDate(!groupByDate)}
-              className={`px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                groupByDate 
-                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              {groupByDate ? t('grouping.on') : t('grouping.off')}
-            </button>
-            
-            <select
-              value={itemsPerPage}
-              onChange={(e) => {
-                setItemsPerPage(Number(e.target.value))
-                setCurrentPage(1)
-              }}
-              className="px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs"
-            >
-              <option value={10}>10{t('pagination.itemsPerPage')}</option>
-              <option value={20}>20{t('pagination.itemsPerPage')}</option>
-              <option value={50}>50{t('pagination.itemsPerPage')}</option>
-              <option value={100}>100{t('pagination.itemsPerPage')}</option>
-            </select>
-            
-            <button
-              onClick={() => {
-                setSearchTerm('')
-                setSelectedStatus('all')
-                setSelectedChannel('all')
-                setDateRange({start: '', end: ''})
-                setSortBy('created_at')
-                setSortOrder('desc')
-                setGroupByDate(true) // 그룹화 상태도 초기화
-                setCurrentPage(1)
-                setCurrentWeek(0) // 주간 페이지네이션도 현재 주로 초기화
-              }}
-              className="px-2 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:ring-1 focus:ring-blue-500 focus:border-transparent"
-            >
-              {t('pagination.reset')}
-            </button>
-          </div>
-        </div>
-        )}
-        
-        {/* 주간 페이지네이션 및 통계 통합 패널 - 날짜별 그룹화가 활성화된 경우에만 표시 */}
-        {groupByDate && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg">
-            {/* 주간 네비게이션 헤더 - 초컴팩트 모바일 최적화 */}
-            <div className="p-2 sm:p-4 border-b border-blue-200">
-              <div className="flex items-center justify-between">
-                {/* 제목과 통계 정보 - 한 줄에 압축 */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center space-x-2 sm:space-x-4">
-                    <h3 className="text-sm sm:text-lg font-semibold text-blue-900 whitespace-nowrap">
-                      {currentWeek === 0 ? '최근 7일' : 
-                       currentWeek < 0 ? `${Math.abs(currentWeek) * 7}일 전` : 
-                       `${currentWeek * 7}일 후`}
-                    </h3>
-                    <div className="text-xs sm:text-sm text-blue-700 whitespace-nowrap">
-                      {formatWeekRange(currentWeek).display}
-                    </div>
-                  </div>
-                  
-                  {/* 통계 정보 - 한 줄에 압축 */}
-                  <div className="mt-1 flex items-center space-x-3 text-xs">
-                    <span className="text-blue-600">
-                      <span className="font-semibold">{Object.keys(groupedReservations).length}일</span>
-                    </span>
-                    <span className="text-blue-600">
-                      <span className="font-semibold">{Object.values(groupedReservations).flat().length}예약</span>
-                    </span>
-                    <span className="text-green-600">
-                      <span className="font-semibold">{weeklyStats.totalPeople}{t('stats.people')}</span>
-                    </span>
-                    <span className="text-green-600">
-                      <span className="font-semibold">{Math.round(weeklyStats.totalPeople / Math.max(Object.keys(groupedReservations).length, 1))}/일</span>
-                    </span>
-                  </div>
-                </div>
-                
-                {/* 네비게이션 버튼들 - 초컴팩트 */}
-                <div className="flex items-center space-x-1">
-                  <button
-                    onClick={() => {
-                      setIsInitialLoad(false);
-                      setCurrentWeek(prev => prev - 1);
-                    }}
-                    className="px-1.5 py-1 text-xs font-medium text-blue-700 bg-white border border-blue-300 rounded hover:bg-blue-50"
-                  >
-                    ←
-                  </button>
-                  
-                  <button
-                    onClick={() => {
-                      setIsInitialLoad(false);
-                      setCurrentWeek(0);
-                    }}
-                    className={`px-1.5 py-1 text-xs font-medium rounded ${
-                      currentWeek === 0 && !isInitialLoad
-                        ? 'text-white bg-blue-600 border border-blue-600'
-                        : 'text-blue-700 bg-white border border-blue-300 hover:bg-blue-50'
-                    }`}
-                  >
-                    {t('pagination.thisWeek')}
-                  </button>
-                  
-                  <button
-                    onClick={() => {
-                      setIsInitialLoad(false);
-                      setCurrentWeek(prev => prev + 1);
-                    }}
-                    className="px-1.5 py-1 text-xs font-medium text-blue-700 bg-white border border-blue-300 rounded hover:bg-blue-50"
-                  >
-                    →
-                  </button>
-                  
-                  {/* 아코디언 화살표 */}
-                  {weeklyStats.totalReservations > 0 && (
-                    <button
-                      onClick={() => setIsWeeklyStatsCollapsed(!isWeeklyStatsCollapsed)}
-                      className="p-1 text-blue-500 hover:bg-blue-100 rounded transition-colors"
-                    >
-                      <svg 
-                        className={`w-3 h-3 transition-transform ${isWeeklyStatsCollapsed ? 'rotate-180' : ''}`}
-                        fill="none" 
-                        stroke="currentColor" 
-                        viewBox="0 0 24 24"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* 주간 통계 아코디언 - 초컴팩트 모바일 최적화 */}
-            {weeklyStats.totalReservations > 0 && !isWeeklyStatsCollapsed && (
-              <div className="p-2 sm:p-4">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-                  {/* 상품별 인원 통계 */}
-                  <div className="bg-white border border-blue-200 rounded p-2 sm:p-3 shadow-sm">
-                    <h5 className="text-xs font-semibold text-gray-800 mb-1.5 flex items-center">
-                      <svg className="w-3 h-3 mr-1 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                      </svg>
-                      {t('stats.byProduct')}
-                    </h5>
-                    <div className="space-y-0.5">
-                      {weeklyStats.productStats.slice(0, 3).map(([productName, count]) => (
-                        <div key={productName} className="flex justify-between items-center py-0.5 px-1.5 bg-gray-50 rounded text-xs">
-                          <span className="text-gray-700 truncate flex-1 mr-1 text-xs">{productName}</span>
-                          <span className="font-semibold bg-blue-100 text-blue-800 px-1 py-0.5 rounded text-xs">
-                            {count}{t('stats.people')}
-                          </span>
-                        </div>
-                      ))}
-                      {weeklyStats.productStats.length > 3 && (
-                        <div className="text-xs text-gray-500 text-center py-0.5">
-                          +{weeklyStats.productStats.length - 3}개
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {/* 채널별 인원 통계 */}
-                  <div className="bg-white border border-blue-200 rounded p-2 sm:p-3 shadow-sm">
-                    <h5 className="text-xs font-semibold text-gray-800 mb-1.5 flex items-center">
-                      <svg className="w-3 h-3 mr-1 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                      </svg>
-                      {t('stats.byChannel')}
-                    </h5>
-                    <div className="space-y-0.5">
-                      {weeklyStats.channelStats.slice(0, 3).map((channelInfo) => (
-                        <div key={channelInfo.channelId} className="flex justify-between items-center py-0.5 px-1.5 bg-gray-50 rounded text-xs">
-                          <div className="flex items-center space-x-1 flex-1 mr-1">
-                            {channelInfo.favicon_url ? (
-                              <Image 
-                                src={channelInfo.favicon_url} 
-                                alt={`${channelInfo.name} favicon`} 
-                                width={12}
-                                height={12}
-                                className="rounded flex-shrink-0"
-                                style={{ width: 'auto', height: 'auto' }}
-                                onError={(e) => {
-                                  const target = e.target as HTMLImageElement
-                                  target.style.display = 'none'
-                                  const parent = target.parentElement
-                                  if (parent) {
-                                    const fallback = document.createElement('div')
-                                    fallback.className = 'h-3 w-3 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0'
-                                    fallback.innerHTML = '🌐'
-                                    parent.appendChild(fallback)
-                                  }
-                                }}
-                              />
-                            ) : (
-                              <div className="h-3 w-3 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0">
-                                🌐
-                              </div>
-                            )}
-                            <span className="text-gray-700 truncate text-xs">{channelInfo.name}</span>
-                          </div>
-                          <span className="font-semibold bg-green-100 text-green-800 px-1 py-0.5 rounded text-xs">
-                            {channelInfo.count}{t('stats.people')}
-                          </span>
-                        </div>
-                      ))}
-                      {weeklyStats.channelStats.length > 3 && (
-                        <div className="text-xs text-gray-500 text-center py-0.5">
-                          +{weeklyStats.channelStats.length - 3}개
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {/* 상태별 인원 통계 */}
-                  <div className="bg-white border border-blue-200 rounded p-2 sm:p-3 shadow-sm">
-                    <h5 className="text-xs font-semibold text-gray-800 mb-1.5 flex items-center">
-                      <svg className="w-3 h-3 mr-1 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      {t('stats.byStatus')}
-                    </h5>
-                    <div className="space-y-0.5">
-                      {weeklyStats.statusStats.map(([status, count]) => (
-                        <div key={status} className="flex justify-between items-center py-0.5 px-1.5 bg-gray-50 rounded text-xs">
-                          <span className="text-gray-700 truncate flex-1 mr-1 text-xs">{getStatusLabel(status, t)}</span>
-                          <span className="font-semibold bg-purple-100 text-purple-800 px-1 py-0.5 rounded text-xs">
-                            {count}{t('stats.people')}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
+      {/* 결과 정보 */}
+      <div className="text-sm text-gray-600">
+        {groupByDate ? (
+          <>
+            {Object.values(groupedReservations).flat().length}{t('groupingLabels.reservationsGroupedBy')} {Object.keys(groupedReservations).length}{t('groupingLabels.registrationDates')}
+            {Object.values(groupedReservations).flat().length !== reservations.length && (
+              <span className="ml-2 text-blue-600">
+                ({t('groupingLabels.filteredFromTotal')} {reservations.length}{t('stats.more')})
+              </span>
             )}
-          </div>
+          </>
+        ) : (
+          <>
+            Total {filteredReservations.length} {t('stats.reservations')} {startIndex + 1}-{Math.min(endIndex, filteredReservations.length)} {t('stats.more')} displayed
+            {filteredReservations.length !== reservations.length && (
+              <span className="ml-2 text-blue-600">
+                ({t('groupingLabels.filteredFromTotal')} {reservations.length} {t('stats.more')})
+              </span>
+            )}
+          </>
         )}
-
-        {/* 결과 정보 */}
-        <div className="text-sm text-gray-600">
-          {groupByDate ? (
-            <>
-              {Object.values(groupedReservations).flat().length}{t('groupingLabels.reservationsGroupedBy')} {Object.keys(groupedReservations).length}{t('groupingLabels.registrationDates')}
-              {Object.values(groupedReservations).flat().length !== reservations.length && (
-                <span className="ml-2 text-blue-600">
-                  ({t('groupingLabels.filteredFromTotal')} {reservations.length}{t('stats.more')})
-                </span>
-              )}
-            </>
-          ) : (
-            <>
-              Total {filteredReservations.length} {t('stats.reservations')} {startIndex + 1}-{Math.min(endIndex, filteredReservations.length)} {t('stats.more')} displayed
-              {filteredReservations.length !== reservations.length && (
-                <span className="ml-2 text-blue-600">
-                  ({t('groupingLabels.filteredFromTotal')} {reservations.length} {t('stats.more')})
-                </span>
-              )}
-            </>
-          )}
-        </div>
       </div>
 
       {/* 예약 목록 */}
@@ -2813,1356 +2326,159 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           <>
             {filteredReservations.length === 0 ? (
               /* 검색 결과가 없을 때 안내 메시지 */
-              <div className="text-center py-16">
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12">
-                  <Grid3X3 className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    {debouncedSearchTerm.trim() 
-                      ? `"${debouncedSearchTerm}" 검색 결과가 없습니다`
-                      : '선택한 조건에 예약이 없습니다'
-                    }
-                  </h3>
-                  <p className="text-gray-500 mb-6">
-                    {debouncedSearchTerm.trim() 
-                      ? '다른 검색어를 입력하거나 필터 조건을 변경해보세요.'
-                      : (dateRange.start && dateRange.end ? 
-                          `${new Date(dateRange.start).toLocaleDateString('ko-KR')} ~ ${new Date(dateRange.end).toLocaleDateString('ko-KR')} 기간에 등록된 예약이 없습니다.` :
-                          '현재 선택한 필터 조건에 해당하는 예약이 없습니다.')
-                    }
-                  </p>
-                  {debouncedSearchTerm.trim() && (
-                    <button
-                      onClick={() => {
-                        setSearchTerm('')
-                        setDebouncedSearchTerm('')
-                      }}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                    >
-                      검색어 지우기
-                    </button>
-                  )}
-                </div>
-              </div>
+              <ReservationsEmptyState
+                hasSearchTerm={debouncedSearchTerm.trim().length > 0}
+                searchTerm={debouncedSearchTerm}
+                hasDateRange={!!(dateRange.start && dateRange.end)}
+                dateRangeStart={dateRange.start}
+                dateRangeEnd={dateRange.end}
+                onClearSearch={handleClearSearch}
+                variant="grid"
+              />
             ) : groupByDate ? (
           /* 날짜별 그룹화된 카드뷰 */
           <div className="space-y-8">
             {Object.keys(groupedReservations).length === 0 ? (
               /* 예약이 없을 때 안내 메시지 */
-              <div className="text-center py-16">
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12">
-                  <Calendar className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">선택한 기간에 예약이 없습니다</h3>
-                  <p className="text-gray-500 mb-6">
-                    {dateRange.start && dateRange.end ? 
-                      `${new Date(dateRange.start).toLocaleDateString('ko-KR')} ~ ${new Date(dateRange.end).toLocaleDateString('ko-KR')} 기간에 등록된 예약이 없습니다.` :
-                      '현재 선택한 필터 조건에 해당하는 예약이 없습니다.'
-                    }
-                  </p>
-                  <div className="space-y-2 text-sm text-gray-400">
-                    <p>• 다른 날짜 범위를 선택해보세요</p>
-                    <p>• 필터 조건을 변경해보세요</p>
-                    <p>• 새로운 예약을 등록해보세요</p>
-                  </div>
-                </div>
-              </div>
+              <ReservationsEmptyState
+                hasSearchTerm={false}
+                searchTerm=""
+                hasDateRange={!!(dateRange.start && dateRange.end)}
+                dateRangeStart={dateRange.start}
+                dateRangeEnd={dateRange.end}
+                variant="calendar"
+              />
             ) : (
-              Object.entries(groupedReservations).map(([date, reservations]) => (
-              <div key={date} className="space-y-4">
-                {/* 등록일 헤더 */}
-                <div className="bg-gray-50 px-2 sm:px-4 py-2 sm:py-3 rounded-lg border border-gray-200">
-                  <div 
-                    className="flex items-center justify-between cursor-pointer hover:bg-gray-100 rounded-lg p-1 sm:p-2 -m-1 sm:-m-2 transition-colors"
-                    onClick={() => toggleGroupCollapse(date)}
-                  >
-                    <div className="flex items-center space-x-1 sm:space-x-3 flex-1 min-w-0">
-                      <Calendar className="h-3 w-3 sm:h-5 sm:w-5 text-blue-600 flex-shrink-0" />
-                      <h3 className="text-xs sm:text-lg font-semibold text-gray-900 whitespace-nowrap">
-                        {(() => {
-                          // 날짜 문자열(YYYY-MM-DD)을 로컬 시간대 기준으로 파싱
-                          const [year, month, day] = date.split('-').map(Number)
-                          const dateObj = new Date(year, month - 1, day)
-                          return dateObj.toLocaleDateString('ko-KR', { 
-                            year: 'numeric', 
-                            month: 'long', 
-                            day: 'numeric',
-                            weekday: 'long'
-                          })
-                        })()} {t('groupingLabels.registeredOn')}
-                      </h3>
-                      <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
-                        <span className="px-1 sm:px-2 py-0.5 sm:py-1 bg-blue-100 text-blue-800 text-xs sm:text-sm font-medium rounded-full whitespace-nowrap">
-                          {reservations.length}{t('stats.reservations')}
-                        </span>
-                        <span className="px-1 sm:px-2 py-0.5 sm:py-1 bg-green-100 text-green-800 text-xs sm:text-sm font-medium rounded-full whitespace-nowrap">
-                          Total {reservations.reduce((total, reservation) => total + reservation.totalPeople, 0)} {t('stats.people')}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2 flex-shrink-0">
-                      <svg 
-                        className={`w-3 h-3 sm:w-5 sm:h-5 text-gray-500 transition-transform ${collapsedGroups.has(date) ? 'rotate-180' : ''}`}
-                        fill="none" 
-                        stroke="currentColor" 
-                        viewBox="0 0 24 24"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
-                  </div>
+              Object.entries(groupedReservations).map(([date, reservations]) => {
+                const handleToggleCollapse = () => toggleGroupCollapse(date)
+                return (
+                  <div key={date} className="space-y-4">
+                    {/* 등록일 헤더 */}
+                    <DateGroupHeader
+                      date={date}
+                      reservations={reservations as Reservation[]}
+                      isCollapsed={collapsedGroups.has(date)}
+                      onToggleCollapse={handleToggleCollapse}
+                      customers={(customers as Array<{ id: string; name?: string }>) || []}
+                      products={(products as Array<{ id: string; name: string }>) || []}
+                      channels={(channels as Array<{ id: string; name: string; favicon_url?: string }>) || []}
+                    />
                   
-                  {/* 상세 정보 (접혀있지 않을 때만 표시) */}
-                  {!collapsedGroups.has(date) && (
-                    <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {/* 상품별 인원 정보 */}
-                      <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-                        <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
-                          <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                          </svg>
-                          {t('stats.byProduct')} 인원
-                        </h4>
-                        <div className="space-y-2">
-                          {(() => {
-                            const productGroups = reservations.reduce((groups, reservation) => {
-                              const productName = getProductName(reservation.productId, products || [])
-                              if (!groups[productName]) {
-                                groups[productName] = 0
-                              }
-                              groups[productName] += reservation.totalPeople
-                              return groups
-                            }, {} as Record<string, number>)
-                            
-                            return Object.entries(productGroups)
-                              .sort(([,a], [,b]) => b - a)
-                              .map(([productName, count]) => (
-                                <div key={productName} className="flex justify-between items-center py-1 px-2 bg-gray-50 rounded">
-                                  <span className="text-gray-700 text-sm truncate flex-1 mr-2">{productName}</span>
-                                  <span className="font-semibold text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded-full min-w-0">
-                                    {count}{t('stats.people')}
-                                  </span>
-                                </div>
-                              ))
-                          })()}
-                        </div>
-                      </div>
-                      
-                      {/* 채널별 인원 정보 */}
-                      <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-                        <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
-                          <svg className="w-4 h-4 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                          </svg>
-                          {t('stats.byChannel')} 인원
-                        </h4>
-                        <div className="space-y-2">
-                          {(() => {
-                            const channelGroups = reservations.reduce((groups, reservation) => {
-                              const channelName = getChannelName(reservation.channelId, channels || [])
-                              if (!groups[channelName]) {
-                                groups[channelName] = 0
-                              }
-                              groups[channelName] += reservation.totalPeople
-                              return groups
-                            }, {} as Record<string, number>)
-                            
-                            return Object.entries(channelGroups)
-                              .sort(([,a], [,b]) => b - a)
-                              .map(([channelName, count]) => {
-                      const channel = (channels as Array<{ id: string; name: string; favicon_url?: string }>)?.find(c => c.name === channelName)
-                      const channelWithFavicon = channel as { favicon_url?: string; name?: string } | undefined
-                                return (
-                                  <div key={channelName} className="flex justify-between items-center py-1 px-2 bg-gray-50 rounded">
-                                    <div className="flex items-center space-x-2 flex-1 mr-2 min-w-0">
-                                      {channelWithFavicon?.favicon_url ? (
-                                        <Image 
-                                          src={channelWithFavicon.favicon_url} 
-                                          alt={`${channelWithFavicon.name || 'Channel'} favicon`} 
-                                          width={16}
-                                          height={16}
-                                          className="rounded flex-shrink-0"
-                                          style={{ width: 'auto', height: 'auto' }}
-                                          onError={(e) => {
-                                            // 파비콘 로드 실패 시 기본 아이콘으로 대체
-                                            const target = e.target as HTMLImageElement
-                                            target.style.display = 'none'
-                                            const parent = target.parentElement
-                                            if (parent) {
-                                              const fallback = document.createElement('div')
-                                              fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0'
-                                              fallback.innerHTML = '🌐'
-                                              parent.appendChild(fallback)
-                                            }
-                                          }}
-                                        />
-                                      ) : (
-                                        <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs flex-shrink-0">
-                                          🌐
-                                        </div>
-                                      )}
-                                      <span className="text-gray-700 text-sm truncate">{channelName}</span>
-                                    </div>
-                                    <span className="font-semibold text-sm bg-green-100 text-green-800 px-2 py-1 rounded-full min-w-0">
-                                      {count}{t('stats.people')}
-                                    </span>
-                                  </div>
-                                )
-                              })
-                          })()}
-                        </div>
-                      </div>
-                      
-                      {/* 상태별 인원 정보 */}
-                      <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-                        <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
-                          <svg className="w-4 h-4 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          {t('stats.byStatus')} 인원
-                        </h4>
-                        <div className="space-y-2">
-                          {(() => {
-                            const statusGroups = reservations.reduce((groups, reservation) => {
-                              const status = reservation.status
-                              if (!groups[status]) {
-                                groups[status] = 0
-                              }
-                              groups[status] += reservation.totalPeople
-                              return groups
-                            }, {} as Record<string, number>)
-                            
-                            return Object.entries(statusGroups)
-                              .sort(([,a], [,b]) => b - a)
-                              .map(([status, count]) => (
-                                <div key={status} className="flex justify-between items-center py-1 px-2 bg-gray-50 rounded">
-                                  <span className="text-gray-700 text-sm truncate flex-1 mr-2">{getStatusLabel(status, t)}</span>
-                                  <span className="font-semibold text-sm bg-purple-100 text-purple-800 px-2 py-1 rounded-full min-w-0">
-                                    {count}{t('stats.people')}
-                                  </span>
-                                </div>
-                              ))
-                          })()}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                
-                {/* 해당 날짜의 예약 카드들 (항상 표시) */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                  {reservations.map((reservation) => (
-            <div
-              key={reservation.id}
-              className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-200 group"
-            >
-              {/* 카드 헤더 - 상태 표시 */}
-              <div className="p-4 border-b border-gray-100">
-                <div className="flex justify-between items-start mb-3">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(reservation.status)}`}>
-                    {getStatusLabel(reservation.status, t)}
-                  </span>
-                  <div className="flex items-center space-x-2">
-                    {(() => {
-                      const channel = (channels as Array<{ id: string; name: string; favicon_url?: string }>)?.find(c => c.id === reservation.channelId)
-                      const channelWithFavicon = channel as { favicon_url?: string; name?: string } | undefined
-                      return (
-                        <>
-                          {channelWithFavicon?.favicon_url ? (
-                            <Image 
-                              src={channelWithFavicon.favicon_url} 
-                              alt={`${channelWithFavicon.name || 'Channel'} favicon`} 
-                              width={16}
-                              height={16}
-                              className="rounded flex-shrink-0"
-                              style={{ width: 'auto', height: 'auto' }}
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement
-                                target.style.display = 'none'
-                                const parent = target.parentElement
-                                if (parent) {
-                                  const fallback = document.createElement('div')
-                                  fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0'
-                                  fallback.innerHTML = '🌐'
-                                  parent.appendChild(fallback)
-                                }
-                              }}
-                            />
-                          ) : (
-                            <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0">
-                              <span className="text-gray-400 text-xs">🌐</span>
-                            </div>
-                          )}
-                          <span className="text-xs text-gray-600">{getChannelName(reservation.channelId, channels || [])}</span>
-                          <span className="text-xs text-gray-400">RN: {reservation.channelRN}</span>
-                        </>
-                      )
-                    })()}
+                  {/* 해당 날짜의 예약 카드들 (항상 표시) */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {reservations.map((reservation) => (
+                      <ReservationCardItem
+                        key={`${reservation.id}-${tourInfoMap.size}`}
+                        reservation={reservation}
+                        customers={(customers as Customer[]) || []}
+                        products={(products as Array<{ id: string; name: string; sub_category?: string }>) || []}
+                        channels={(channels as Array<{ id: string; name: string; favicon_url?: string }>) || []}
+                        pickupHotels={(pickupHotels as Array<{ id: string; hotel?: string | null; name?: string | null; name_ko?: string | null; pick_up_location?: string | null }>) || []}
+                        productOptions={(productOptions as Array<{ id: string; name: string; is_required?: boolean }>) || []}
+                        optionChoices={(optionChoices as Array<{ id: string; name: string }>) || []}
+                        tourInfoMap={tourInfoMap}
+                        reservationPricingMap={reservationPricingMap}
+                        locale={locale}
+                        emailDropdownOpen={emailDropdownOpen}
+                        sendingEmail={sendingEmail}
+                        onPricingInfoClick={handlePricingInfoClick}
+                        onCreateTour={handleCreateTour}
+                        onPickupTimeClick={handlePickupTimeClick}
+                        onPickupHotelClick={handlePickupHotelClick}
+                        onPaymentClick={handlePaymentClick}
+                        onDetailClick={handleDetailClick}
+                        onReviewClick={handleReviewClick}
+                        onEmailPreview={handleOpenEmailPreview}
+                        onEmailLogsClick={handleEmailLogsClick}
+                        onEmailDropdownToggle={handleEmailDropdownToggle}
+                        onEditClick={handleEditClick}
+                        onCustomerClick={handleCustomerClick}
+                        onRefreshReservations={refreshReservations}
+                        generatePriceCalculation={generatePriceCalculation}
+                        getGroupColorClasses={getGroupColorClasses}
+                        getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}
+                        choicesCacheRef={choicesCacheRef}
+                        showResidentStatusIcon={false}
+                      />
+                    ))}
                   </div>
                 </div>
-                
-                {/* 고객 이름 */}
-                <div className="mb-2">
-                  <div 
-                    className="text-sm font-medium text-gray-900 cursor-pointer hover:text-blue-600 hover:underline flex items-center space-x-2"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const customer = (customers as Customer[]).find(c => c.id === reservation.customerId);
-                      if (customer) {
-                        setEditingCustomer(customer);
-                      }
-                    }}
-                  >
-                    {/* 언어별 국기 아이콘 */}
-                    {(() => {
-                      const customer = (customers as Customer[]).find(c => c.id === reservation.customerId);
-                      if (!customer?.language) return null;
-                      
-                      const language = customer.language.toLowerCase();
-                      if (language === 'kr' || language === 'ko' || language === '한국어') {
-                        return <ReactCountryFlag countryCode="KR" svg className="mr-2" style={{ width: '20px', height: '15px' }} />;
-                      } else if (language === 'en' || language === '영어') {
-                        return <ReactCountryFlag countryCode="US" svg className="mr-2" style={{ width: '20px', height: '15px' }} />;
-                      } else if (language === 'jp' || language === '일본어') {
-                        return <ReactCountryFlag countryCode="JP" svg className="mr-2" style={{ width: '20px', height: '15px' }} />;
-                      } else if (language === 'cn' || language === '중국어') {
-                        return <ReactCountryFlag countryCode="CN" svg className="mr-2" style={{ width: '20px', height: '15px' }} />;
-                      }
-                      return null;
-                    })()}
-                    <span>{getCustomerName(reservation.customerId, (customers as Customer[]) || [])}</span>
-                    {/* 인원 정보 */}
-                    {(() => {
-                      const hasChild = reservation.child > 0
-                      const hasInfant = reservation.infant > 0
-                      const hasAdult = reservation.adults > 0
-                      
-                      // 아동과 유아가 0명이면 성인만 표시
-                      if (!hasAdult) return null
-                      
-                      return (
-                        <span className="flex items-center space-x-1 text-xs text-gray-600 ml-2">
-                          <Users className="h-3 w-3" />
-                          <span>{reservation.adults}명</span>
-                          {hasChild && <span className="text-orange-600">{reservation.child}아</span>}
-                          {hasInfant && <span className="text-blue-600">{reservation.infant}유</span>}
-                        </span>
-                      )
-                    })()}
-                  </div>
-                  <a 
-                    href={`mailto:${(customers as Customer[]).find(c => c.id === reservation.customerId)?.email || ''}`}
-                    onClick={(e) => e.stopPropagation()}
-                    className="text-xs text-gray-500 hover:text-blue-600 hover:underline cursor-pointer block"
-                  >
-                    {(customers as Customer[]).find(c => c.id === reservation.customerId)?.email}
-                  </a>
-                  {/* 전화번호와 등록일 - 같은 줄에 배치 */}
-                  <div className="flex items-center justify-between">
-                    <a 
-                      href={`tel:${(customers as Customer[]).find(c => c.id === reservation.customerId)?.phone || ''}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-xs text-gray-500 hover:text-blue-600 hover:underline cursor-pointer"
-                    >
-                      {(customers as Customer[]).find(c => c.id === reservation.customerId)?.phone || '-'}
-                    </a>
-                    {reservation.addedTime ? (
-                      <span className="text-xs text-gray-500">
-                        {new Date(reservation.addedTime).toLocaleDateString('ko-KR', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric'
-                        })}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-
-              {/* 카드 본문 */}
-              <div className="p-4 space-y-3">
-                {/* 상품 정보 */}
-                <div>
-                  <div className="flex items-center space-x-2 mb-2">
-                    <div className="text-sm font-medium text-gray-900">{getProductName(reservation.productId, products || [])}</div>
-                    
-                    {/* 새로운 초이스 시스템 뱃지 표시 */}
-                    <ChoicesDisplay reservation={reservation} />
-                  </div>
-                  
-                  {/* 기존 selectedOptions 표시 (필요한 경우) */}
-                  {reservation.selectedOptions && Object.keys(reservation.selectedOptions).length > 0 && (
-                    <div className="mt-1 space-y-1">
-                      {Object.entries(reservation.selectedOptions).map(([optionId, choiceIds]) => {
-                        if (!choiceIds || choiceIds.length === 0) return null;
-                        
-                        const option = (productOptions as Array<{ id: string; name: string; is_required?: boolean }>)?.find(opt => opt.id === optionId);
-                        
-                        if (!option) return null;
-                        
-                        // 필수 옵션만 표시 (is_required가 true인 옵션만)
-                        if (!option.is_required) return null;
-                        
-                        // 실제 시스템에서는 choice ID가 옵션 ID와 동일하므로 옵션명을 직접 표시
-                        return (
-                          <div key={optionId} className="text-xs text-gray-600">
-                            <span className="font-medium">{option.name}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* 투어 날짜 및 픽업 시간 */}
-                <div className="flex items-center space-x-2">
-                  <Calendar className="h-4 w-4 text-gray-400" />
-                  {(() => {
-                    const pickupTime = reservation.pickUpTime || ''
-                    let displayDate = reservation.tourDate
-                    
-                    // 픽업 시간이 21시(9PM) 이후면 날짜를 -1일
-                    if (pickupTime) {
-                      const timeMatch = pickupTime.match(/(\d{1,2}):(\d{2})/)
-                      if (timeMatch) {
-                        const hour = parseInt(timeMatch[1], 10)
-                        if (hour >= 21) {
-                          const date = new Date(reservation.tourDate)
-                          date.setDate(date.getDate() - 1)
-                          displayDate = date.toISOString().split('T')[0]
-                        }
-                      }
-                    }
-                    
-                    return (
-                      <>
-                        <span className="text-sm text-gray-900">{displayDate}</span>
-                        {pickupTime && (
-                          <>
-                            <span className="text-gray-400">|</span>
-                            <Clock className="h-4 w-4 text-gray-400" />
-                            <span 
-                              className="text-sm text-gray-900 hover:text-blue-600 hover:underline cursor-pointer"
-                              onClick={(e) => handlePickupTimeClick(reservation, e)}
-                            >
-                              {pickupTime}
-                            </span>
-                          </>
-                        )}
-                      </>
-                    )
-                  })()}
-                </div>
-
-                {/* 픽업 호텔 정보 */}
-                <div className="flex items-center space-x-2">
-                  <MapPin className="h-4 w-4 text-gray-400" />
-                  <span 
-                    className={`text-sm hover:text-blue-600 hover:underline cursor-pointer ${
-                      reservation.pickUpHotel 
-                        ? 'text-gray-900' 
-                        : 'text-gray-500 italic'
-                    }`}
-                    onClick={(e) => handlePickupHotelClick(reservation, e)}
-                  >
-                    {reservation.pickUpHotel 
-                      ? getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels || [])
-                      : '픽업 호텔 미정'
-                    }
-                  </span>
-                </div>
-
-                {/* Net Price 계산식 표시 */}
-                <div className="pt-2 border-t border-gray-100">
-                  {(() => {
-                    const pricing = reservationPricingMap.get(reservation.id)
-                    if (!pricing || !pricing.total_price) {
-                      // pricing 데이터가 없으면 기본 가격 표시
-                      const totalPrice = reservation.totalPrice || reservation.pricingInfo?.totalPrice || calculateTotalPrice(reservation, products || [], optionChoices || [])
-                      return (
-                        <div className="text-xs text-gray-700">
-                          <div className="text-gray-600 break-words font-medium">
-                            ${totalPrice.toLocaleString()}
-                          </div>
-                        </div>
-                      )
-                    }
-                    
-                    const calculationString = generatePriceCalculation(reservation, pricing)
-                    const currency = pricing.currency || 'USD'
-                    const currencySymbol = currency === 'KRW' ? '₩' : '$'
-                    
-                    return (
-                      <div className="text-xs text-gray-700">
-                        <div className="text-gray-600 break-words font-medium">
-                          {calculationString || `${currencySymbol}${pricing.total_price.toFixed(2)}`}
-                        </div>
-                        {pricing.balance_amount > 0 && (
-                          <div className="text-red-600 font-medium mt-1">
-                            Balance: {currencySymbol}{pricing.balance_amount.toFixed(2)}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })()}
-                </div>
-
-                {/* 연결된 투어 정보 */}
-                {(() => {
-                  // 취소된 예약은 연결된 투어를 표시하지 않음
-                  const statusLower = reservation.status?.toLowerCase() || ''
-                  if (statusLower === 'cancelled' || statusLower === 'canceled') {
-                    return null
-                  }
-                  
-                  const tourId = reservation.tourId || (reservation as any).tour_id
-                  if (!tourId || tourId.trim() === '' || tourId === 'null' || tourId === 'undefined' || !tourInfoMap.has(tourId)) {
-                    return null
-                  }
-                  
-                  const tourInfo = tourInfoMap.get(tourId)!
-                  
-                  // 예약 ID가 투어의 reservation_ids에 포함되어 있는지 확인
-                  if (!tourInfo.reservationIds.includes(reservation.id)) {
-                    return null
-                  }
-                  
-                  // 상태 색상
-                  const getStatusColor = (status: string) => {
-                    const statusLower = status.toLowerCase()
-                    if (statusLower === 'confirmed') return 'bg-green-100 text-green-800'
-                    if (statusLower === 'completed') return 'bg-blue-100 text-blue-800'
-                    if (statusLower === 'cancelled') return 'bg-red-100 text-red-800'
-                    return 'bg-gray-100 text-gray-800'
-                  }
-                  
-                  return (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
-                      <div 
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          router.push(`/${locale}/admin/tours/${tourId}`)
-                        }}
-                        className="bg-white border border-gray-200 rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:border-blue-300 transition-colors"
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="text-xs font-semibold text-gray-900">
-                            배정된 투어 ({tourInfo.totalPeople}명)
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            {tourInfo.isAssigned && (
-                              <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                배정됨
-                              </span>
-                            )}
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(tourInfo.status)}`}>
-                              {tourInfo.status}
-                            </span>
-                          </div>
-                        </div>
-                        
-                        <div className="flex flex-wrap items-center gap-2 mt-2">
-                          {tourInfo.guideName !== '-' && (
-                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                              {tourInfo.guideName}
-                            </span>
-                          )}
-                          {tourInfo.assistantName !== '-' && (
-                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">
-                              {tourInfo.assistantName}
-                            </span>
-                          )}
-                          {tourInfo.vehicleName !== '-' && (
-                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                              {tourInfo.vehicleName}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })()}
-
-                {/* 버튼들 - 가장 아래에 배치 */}
-                <div className="mt-3 pt-3 border-t border-gray-200">
-                  <div className="flex items-center flex-wrap gap-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handlePricingInfoClick(reservation);
-                      }}
-                      className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
-                    >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                      </svg>
-                      <span>{t('actions.price')}</span>
-                    </button>
-                    
-                    {/* 투어 생성 버튼 - Mania Tour/Service이고 투어가 없을 때만 표시 */}
-                    {(() => {
-                      const product = (products as Array<{ id: string; sub_category?: string }>)?.find(p => p.id === reservation.productId);
-                      const isManiaTour = product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service';
-                      
-                      // hasExistingTour 필드를 사용하여 투어 존재 여부 확인
-                      if (isManiaTour && !reservation.hasExistingTour) {
-                        return (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCreateTour(reservation);
-                            }}
-                            className="px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md hover:bg-green-100 transition-colors flex items-center space-x-1 border border-green-200"
-                            title="투어 생성"
-                          >
-                            <Plus className="w-3 h-3" />
-                            <span>{t('actions.tour')}</span>
-                          </button>
-                        );
-                      }
-                      return null;
-                    })()}
-
-                    {/* 입금 내역 버튼 */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedReservationForPayment(reservation);
-                        setShowPaymentRecords(true);
-                      }}
-                      className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
-                      title="입금 내역 관리"
-                    >
-                      <DollarSign className="w-3 h-3" />
-                      <span>{t('actions.deposit')}</span>
-                    </button>
-                    
-                    {/* 고객 보기 버튼 */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedReservationForDetail(reservation);
-                        setShowReservationDetailModal(true);
-                      }}
-                      className="px-2 py-1 text-xs bg-purple-50 text-purple-600 rounded-md hover:bg-purple-100 transition-colors flex items-center space-x-1 border border-purple-200"
-                      title="고객 보기"
-                    >
-                      <Eye className="w-3 h-3" />
-                      <span>고객 보기</span>
-                    </button>
-
-                    {/* 후기 관리 버튼 */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedReservationForReview(reservation);
-                        setShowReviewModal(true);
-                      }}
-                      className="px-2 py-1 text-xs bg-pink-50 text-pink-600 rounded-md hover:bg-pink-100 transition-colors flex items-center space-x-1 border border-pink-200"
-                      title="후기 관리"
-                    >
-                      <MessageSquare className="w-3 h-3" />
-                      <span>후기</span>
-                    </button>
-
-                    {/* 이메일 발송 드롭다운 */}
-                    <div className="relative">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEmailDropdownOpen(emailDropdownOpen === reservation.id ? null : reservation.id);
-                        }}
-                        disabled={sendingEmail === reservation.id}
-                        className="px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md hover:bg-green-100 transition-colors flex items-center space-x-1 border border-green-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="이메일 발송"
-                      >
-                        <Mail className="w-3 h-3" />
-                        <span>{sendingEmail === reservation.id ? '발송 중...' : '이메일'}</span>
-                        <ChevronDown className="w-3 h-3" />
-                      </button>
-
-                      {emailDropdownOpen === reservation.id && (
-                        <div 
-                          className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-50"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <button
-                            onClick={() => handleOpenEmailPreview(reservation, 'confirmation')}
-                            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
-                          >
-                            <Mail className="w-3 h-3" />
-                            <span>예약 확인 이메일</span>
-                          </button>
-                          <button
-                            onClick={() => handleOpenEmailPreview(reservation, 'departure')}
-                            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
-                          >
-                            <Mail className="w-3 h-3" />
-                            <span>투어 출발 확정 이메일</span>
-                          </button>
-                          <button
-                            onClick={() => handleOpenEmailPreview(reservation, 'pickup')}
-                            disabled={!reservation.pickUpTime || !reservation.tourDate}
-                            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <Mail className="w-3 h-3" />
-                            <span>픽업 notification 이메일</span>
-                          </button>
-                          <div className="border-t border-gray-200 my-1"></div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedReservationForEmailLogs(reservation.id);
-                              setShowEmailLogs(true);
-                              setEmailDropdownOpen(null);
-                            }}
-                            className="w-full text-left px-3 py-2 text-xs text-blue-600 hover:bg-blue-50 flex items-center space-x-2"
-                          >
-                            <Clock className="w-3 h-3" />
-                            <span>이메일 발송 내역</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 수정 버튼 */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        router.push(`/${locale}/admin/reservations/${reservation.id}`);
-                      }}
-                      className="px-2 py-1 text-xs bg-orange-50 text-orange-600 rounded-md hover:bg-orange-100 transition-colors flex items-center space-x-1 border border-orange-200"
-                      title="예약 수정"
-                    >
-                      <Edit className="w-3 h-3" />
-                      <span>수정</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-                  
-            </div>
-                  ))}
-                </div>
-              </div>
-              ))
-            )}
+                )
+              })
+            )
+            }
           </div>
         ) : (
           /* 일반 카드뷰 - 그룹화된 카드뷰와 동일한 구조 사용 */
           paginatedReservations.length === 0 ? (
             /* 예약이 없을 때 안내 메시지 */
-            <div className="text-center py-16">
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12">
-                <Grid3X3 className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  {debouncedSearchTerm.trim() 
-                    ? `"${debouncedSearchTerm}" 검색 결과가 없습니다`
-                    : '선택한 조건에 예약이 없습니다'
-                  }
-                </h3>
-                <p className="text-gray-500 mb-6">
-                  {debouncedSearchTerm.trim() 
-                    ? '다른 검색어를 입력하거나 필터 조건을 변경해보세요.'
-                    : (dateRange.start && dateRange.end ? 
-                        `${new Date(dateRange.start).toLocaleDateString('ko-KR')} ~ ${new Date(dateRange.end).toLocaleDateString('ko-KR')} 기간에 등록된 예약이 없습니다.` :
-                        '현재 선택한 필터 조건에 해당하는 예약이 없습니다.')
-                  }
-                </p>
-                <div className="space-y-2 text-sm text-gray-400">
-                  {debouncedSearchTerm.trim() ? (
-                    <>
-                      <p>• 다른 검색어를 입력해보세요</p>
-                      <p>• 필터 조건을 변경해보세요</p>
-                      <button
-                        onClick={() => {
-                          setSearchTerm('')
-                          setDebouncedSearchTerm('')
-                        }}
-                        className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                      >
-                        검색어 지우기
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <p>• 다른 날짜 범위를 선택해보세요</p>
-                      <p>• 필터 조건을 변경해보세요</p>
-                      <p>• 새로운 예약을 등록해보세요</p>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
+            <ReservationsEmptyState
+              hasSearchTerm={debouncedSearchTerm.trim().length > 0}
+              searchTerm={debouncedSearchTerm}
+              hasDateRange={!!(dateRange.start && dateRange.end)}
+              dateRangeStart={dateRange.start}
+              dateRangeEnd={dateRange.end}
+              onClearSearch={() => {
+                setSearchTerm('')
+                setDebouncedSearchTerm('')
+              }}
+              variant="grid"
+            />
           ) : (
-            /* 그룹화된 카드뷰와 동일한 구조 사용 (날짜 헤더 없이) */
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {paginatedReservations.map((reservation) => (
-              <div
-                key={reservation.id}
-                className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-200 group"
-              >
-                {/* 카드 헤더 - 상태 표시 */}
-                <div className="p-4 border-b border-gray-100">
-                  <div className="flex justify-between items-start mb-3">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(reservation.status)}`}>
-                      {getStatusLabel(reservation.status, t)}
-                    </span>
-                    <div className="flex items-center space-x-2">
-                      {(() => {
-                        const channel = (channels as Array<{ id: string; name: string; favicon_url?: string }>)?.find(c => c.id === reservation.channelId)
-                        const channelWithFavicon = channel as { favicon_url?: string; name?: string } | undefined
-                        return (
-                          <>
-                            {channelWithFavicon?.favicon_url ? (
-                              <Image 
-                                src={channelWithFavicon.favicon_url} 
-                                alt={`${channelWithFavicon.name || 'Channel'} favicon`} 
-                                width={16}
-                                height={16}
-                                className="rounded flex-shrink-0"
-                                style={{ width: 'auto', height: 'auto' }}
-                                onError={(e) => {
-                                  const target = e.target as HTMLImageElement
-                                  target.style.display = 'none'
-                                  const parent = target.parentElement
-                                  if (parent) {
-                                    const fallback = document.createElement('div')
-                                    fallback.className = 'h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0'
-                                    fallback.innerHTML = '🌐'
-                                    parent.appendChild(fallback)
-                                  }
-                                }}
-                              />
-                            ) : (
-                              <div className="h-4 w-4 rounded bg-gray-100 flex items-center justify-center flex-shrink-0">
-                                <span className="text-gray-400 text-xs">🌐</span>
-                              </div>
-                            )}
-                            <span className="text-xs text-gray-600">{getChannelName(reservation.channelId, channels || [])}</span>
-                            <span className="text-xs text-gray-400">RN: {reservation.channelRN}</span>
-                          </>
-                        )
-                      })()}
-                    </div>
-                  </div>
-                  
-                  {/* 고객 이름 */}
-                  <div className="mb-2">
-                    <div 
-                      className="text-sm font-medium text-gray-900 cursor-pointer hover:text-blue-600 hover:underline flex items-center space-x-2"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const customer = (customers as Customer[]).find(c => c.id === reservation.customerId);
-                        if (customer) {
-                          setEditingCustomer(customer);
-                        }
-                      }}
-                    >
-                      {/* 언어별 국기 아이콘 */}
-                      {(() => {
-                        const customer = (customers as Customer[]).find(c => c.id === reservation.customerId);
-                        if (!customer?.language) return null;
-                        
-                        const language = customer.language.toLowerCase();
-                        if (language === 'kr' || language === 'ko' || language === '한국어') {
-                          return <ReactCountryFlag countryCode="KR" svg className="mr-2" style={{ width: '20px', height: '15px' }} />;
-                        } else if (language === 'en' || language === '영어') {
-                          return <ReactCountryFlag countryCode="US" svg className="mr-2" style={{ width: '20px', height: '15px' }} />;
-                        } else if (language === 'jp' || language === '일본어') {
-                          return <ReactCountryFlag countryCode="JP" svg className="mr-2" style={{ width: '20px', height: '15px' }} />;
-                        } else if (language === 'cn' || language === '중국어') {
-                          return <ReactCountryFlag countryCode="CN" svg className="mr-2" style={{ width: '20px', height: '15px' }} />;
-                        }
-                        return null;
-                      })()}
-                      
-                      {/* 거주 상태 아이콘 */}
-                      <ResidentStatusIcon
-                        reservationId={reservation.id}
-                        customerId={reservation.customerId}
-                        totalPeople={(reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)}
-                        onUpdate={() => {
-                          // 예약 목록 새로고침
-                          refreshReservations()
-                        }}
-                      />
-                      
-                      <span>{getCustomerName(reservation.customerId, (customers as Customer[]) || [])}</span>
-                      {/* 인원 정보 */}
-                      {(() => {
-                        const hasChild = reservation.child > 0
-                        const hasInfant = reservation.infant > 0
-                        const hasAdult = reservation.adults > 0
-                        
-                        // 아동과 유아가 0명이면 성인만 표시
-                        if (!hasAdult) return null
-                        
-                        return (
-                          <span className="flex items-center space-x-1 text-xs text-gray-600 ml-2">
-                            <Users className="h-3 w-3" />
-                            <span>{reservation.adults}명</span>
-                            {hasChild && <span className="text-orange-600">{reservation.child}아</span>}
-                            {hasInfant && <span className="text-blue-600">{reservation.infant}유</span>}
-                          </span>
-                        )
-                      })()}
-                    </div>
-                    <a 
-                      href={`mailto:${(customers as Customer[]).find(c => c.id === reservation.customerId)?.email || ''}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="text-xs text-gray-500 hover:text-blue-600 hover:underline cursor-pointer block"
-                    >
-                      {(customers as Customer[]).find(c => c.id === reservation.customerId)?.email}
-                    </a>
-                    {/* 전화번호와 등록일 - 같은 줄에 배치 */}
-                    <div className="flex items-center justify-between">
-                      <a 
-                        href={`tel:${(customers as Customer[]).find(c => c.id === reservation.customerId)?.phone || ''}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-xs text-gray-500 hover:text-blue-600 hover:underline cursor-pointer"
-                      >
-                        {(customers as Customer[]).find(c => c.id === reservation.customerId)?.phone || '-'}
-                      </a>
-                      {reservation.addedTime ? (
-                        <span className="text-xs text-gray-500">
-                          {new Date(reservation.addedTime).toLocaleDateString('ko-KR', { 
-                            year: 'numeric',
-                            month: 'short', 
-                            day: 'numeric'
-                          })}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 카드 본문 */}
-                <div className="p-4 space-y-3">
-                  {/* 상품 정보 */}
-                  <div>
-                    <div className="flex items-center space-x-2 mb-2">
-                      <div className="text-sm font-medium text-gray-900">{getProductName(reservation.productId, products || [])}</div>
-                      
-                      {/* 새로운 초이스 시스템 뱃지 표시 */}
-                      <ChoicesDisplay reservation={reservation} />
-                    </div>
-                    
-                    {/* 기존 selectedOptions 표시 (필요한 경우) */}
-                    {reservation.selectedOptions && Object.keys(reservation.selectedOptions).length > 0 && (
-                      <div className="mt-1 space-y-1">
-                        {Object.entries(reservation.selectedOptions).map(([optionId, choiceIds]) => {
-                          if (!choiceIds || choiceIds.length === 0) return null;
-                          
-                        const option = (productOptions as Array<{ id: string; name: string; is_required?: boolean }>)?.find(opt => opt.id === optionId);
-                        
-                        if (!option) return null;
-                        
-                        // 필수 옵션만 표시 (is_required가 true인 옵션만)
-                        if (!option.is_required) return null;
-                        
-                        // 실제 시스템에서는 choice ID가 옵션 ID와 동일하므로 옵션명을 직접 표시
-                        return (
-                          <div key={optionId} className="text-xs text-gray-600">
-                            <span className="font-medium">{option.name}</span>
-                          </div>
-                        );
-                        })}
-                      </div>
-                    )}
-
-                  </div>
-
-                  {/* 투어 날짜 및 픽업 시간 */}
-                  <div className="flex items-center space-x-2">
-                    <Calendar className="h-4 w-4 text-gray-400" />
-                    {(() => {
-                      const pickupTime = reservation.pickUpTime || ''
-                      let displayDate = reservation.tourDate
-                      
-                      // 픽업 시간이 21시(9PM) 이후면 날짜를 -1일
-                      if (pickupTime) {
-                        const timeMatch = pickupTime.match(/(\d{1,2}):(\d{2})/)
-                        if (timeMatch) {
-                          const hour = parseInt(timeMatch[1], 10)
-                          if (hour >= 21) {
-                            const date = new Date(reservation.tourDate)
-                            date.setDate(date.getDate() - 1)
-                            displayDate = date.toISOString().split('T')[0]
-                          }
-                        }
-                      }
-                      
-                      return (
-                        <>
-                          <span className="text-sm text-gray-900">{displayDate}</span>
-                          {pickupTime && (
-                            <>
-                              <span className="text-gray-400">|</span>
-                              <Clock className="h-4 w-4 text-gray-400" />
-                              <span 
-                                className="text-sm text-gray-900 hover:text-blue-600 hover:underline cursor-pointer"
-                                onClick={(e) => handlePickupTimeClick(reservation, e)}
-                              >
-                                {pickupTime}
-                              </span>
-                            </>
-                          )}
-                        </>
-                      )
-                    })()}
-                  </div>
-
-                  {/* 픽업 호텔 정보 */}
-                  <div className="flex items-center space-x-2">
-                    <MapPin className="h-4 w-4 text-gray-400" />
-                    <span 
-                      className={`text-sm hover:text-blue-600 hover:underline cursor-pointer ${
-                        reservation.pickUpHotel 
-                          ? 'text-gray-900' 
-                          : 'text-gray-500 italic'
-                      }`}
-                      onClick={(e) => handlePickupHotelClick(reservation, e)}
-                    >
-                      {reservation.pickUpHotel 
-                        ? getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels || [])
-                        : '픽업 호텔 미정'
-                      }
-                    </span>
-                  </div>
-
-                  {/* Net Price 계산식 표시 */}
-                  <div className="pt-2 border-t border-gray-100">
-                    {(() => {
-                      const pricing = reservationPricingMap.get(reservation.id)
-                      if (!pricing || !pricing.total_price) {
-                        // pricing 데이터가 없으면 기본 가격 표시
-                        const totalPrice = reservation.totalPrice || reservation.pricingInfo?.totalPrice || calculateTotalPrice(reservation, products || [], optionChoices || [])
-                        return (
-                          <div className="text-xs text-gray-700">
-                            <div className="text-gray-600 break-words font-medium">
-                              ${totalPrice.toLocaleString()}
-                            </div>
-                          </div>
-                        )
-                      }
-                      
-                      const calculationString = generatePriceCalculation(reservation, pricing)
-                      const currency = pricing.currency || 'USD'
-                      const currencySymbol = currency === 'KRW' ? '₩' : '$'
-                      
-                      return (
-                        <div className="text-xs text-gray-700">
-                          <div className="text-gray-600 break-words font-medium">
-                            {calculationString || `${currencySymbol}${pricing.total_price.toFixed(2)}`}
-                          </div>
-                          {pricing.balance_amount > 0 && (
-                            <div className="text-red-600 font-medium mt-1">
-                              Balance: {currencySymbol}{pricing.balance_amount.toFixed(2)}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })()}
-                  </div>
-                </div>
-
-                {/* 연결된 투어 정보 */}
-                {(() => {
-                  // 취소된 예약은 연결된 투어를 표시하지 않음
-                  const statusLower = reservation.status?.toLowerCase() || ''
-                  if (statusLower === 'cancelled' || statusLower === 'canceled') {
-                    return null
-                  }
-                  
-                  const tourId = reservation.tourId || (reservation as any).tour_id
-                  if (!tourId || tourId.trim() === '' || tourId === 'null' || tourId === 'undefined' || !tourInfoMap.has(tourId)) {
-                    return null
-                  }
-                  
-                  const tourInfo = tourInfoMap.get(tourId)!
-                  
-                  // 예약 ID가 투어의 reservation_ids에 포함되어 있는지 확인
-                  if (!tourInfo.reservationIds.includes(reservation.id)) {
-                    return null
-                  }
-                  
-                  // 상태 색상
-                  const getStatusColor = (status: string) => {
-                    const statusLower = status.toLowerCase()
-                    if (statusLower === 'confirmed') return 'bg-green-100 text-green-800'
-                    if (statusLower === 'completed') return 'bg-blue-100 text-blue-800'
-                    if (statusLower === 'cancelled') return 'bg-red-100 text-red-800'
-                    return 'bg-gray-100 text-gray-800'
-                  }
-                  
-                  return (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
-                      <div 
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          router.push(`/${locale}/admin/tours/${tourId}`)
-                        }}
-                        className="bg-white border border-gray-200 rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:border-blue-300 transition-colors"
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="text-xs font-semibold text-gray-900">
-                            배정된 투어 ({tourInfo.totalPeople}명)
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            {tourInfo.isAssigned && (
-                              <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                배정됨
-                              </span>
-                            )}
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(tourInfo.status)}`}>
-                              {tourInfo.status}
-                            </span>
-                          </div>
-                        </div>
-                        
-                        <div className="flex flex-wrap items-center gap-2 mt-2">
-                          {tourInfo.guideName !== '-' && (
-                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                              {tourInfo.guideName}
-                            </span>
-                          )}
-                          {tourInfo.assistantName !== '-' && (
-                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">
-                              {tourInfo.assistantName}
-                            </span>
-                          )}
-                          {tourInfo.vehicleName !== '-' && (
-                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                              {tourInfo.vehicleName}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })()}
-
-                {/* 버튼들 - 가장 아래에 배치 */}
-                <div className="mt-3 pt-3 border-t border-gray-200">
-                  <div className="flex items-center flex-wrap gap-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handlePricingInfoClick(reservation);
-                      }}
-                      className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
-                    >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                      </svg>
-                      <span>{t('actions.price')}</span>
-                    </button>
-                    
-                    {/* 투어 생성 버튼 - Mania Tour/Service이고 투어가 없을 때만 표시 */}
-                    {(() => {
-                      const product = (products as Array<{ id: string; sub_category?: string }>)?.find(p => p.id === reservation.productId);
-                      const isManiaTour = product?.sub_category === 'Mania Tour' || product?.sub_category === 'Mania Service';
-                      
-                      // hasExistingTour 필드를 사용하여 투어 존재 여부 확인
-                      if (isManiaTour && !reservation.hasExistingTour) {
-                        return (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCreateTour(reservation);
-                            }}
-                            className="px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md hover:bg-green-100 transition-colors flex items-center space-x-1 border border-green-200"
-                            title="투어 생성"
-                          >
-                            <Plus className="w-3 h-3" />
-                            <span>{t('actions.tour')}</span>
-                          </button>
-                        );
-                      }
-                      return null;
-                    })()}
-
-                    {/* 입금 내역 버튼 */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedReservationForPayment(reservation);
-                        setShowPaymentRecords(true);
-                      }}
-                      className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
-                      title="입금 내역 관리"
-                    >
-                      <DollarSign className="w-3 h-3" />
-                      <span>{t('actions.deposit')}</span>
-                    </button>
-                    
-                    {/* 고객 보기 버튼 */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedReservationForDetail(reservation);
-                        setShowReservationDetailModal(true);
-                      }}
-                      className="px-2 py-1 text-xs bg-purple-50 text-purple-600 rounded-md hover:bg-purple-100 transition-colors flex items-center space-x-1 border border-purple-200"
-                      title="고객 보기"
-                    >
-                      <Eye className="w-3 h-3" />
-                      <span>고객 보기</span>
-                    </button>
-
-                    {/* 후기 관리 버튼 */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedReservationForReview(reservation);
-                        setShowReviewModal(true);
-                      }}
-                      className="px-2 py-1 text-xs bg-pink-50 text-pink-600 rounded-md hover:bg-pink-100 transition-colors flex items-center space-x-1 border border-pink-200"
-                      title="후기 관리"
-                    >
-                      <MessageSquare className="w-3 h-3" />
-                      <span>후기</span>
-                    </button>
-
-                    {/* 이메일 발송 드롭다운 */}
-                    <div className="relative">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEmailDropdownOpen(emailDropdownOpen === reservation.id ? null : reservation.id);
-                        }}
-                        disabled={sendingEmail === reservation.id}
-                        className="px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md hover:bg-green-100 transition-colors flex items-center space-x-1 border border-green-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="이메일 발송"
-                      >
-                        <Mail className="w-3 h-3" />
-                        <span>{sendingEmail === reservation.id ? '발송 중...' : '이메일'}</span>
-                        <ChevronDown className="w-3 h-3" />
-                      </button>
-
-                      {emailDropdownOpen === reservation.id && (
-                        <div 
-                          className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200 z-50"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <button
-                            onClick={() => handleOpenEmailPreview(reservation, 'confirmation')}
-                            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
-                          >
-                            <Mail className="w-3 h-3" />
-                            <span>예약 확인 이메일</span>
-                          </button>
-                          <button
-                            onClick={() => handleOpenEmailPreview(reservation, 'departure')}
-                            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
-                          >
-                            <Mail className="w-3 h-3" />
-                            <span>투어 출발 확정 이메일</span>
-                          </button>
-                          <button
-                            onClick={() => handleOpenEmailPreview(reservation, 'pickup')}
-                            disabled={!reservation.pickUpTime || !reservation.tourDate}
-                            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <Mail className="w-3 h-3" />
-                            <span>픽업 notification 이메일</span>
-                          </button>
-                          <div className="border-t border-gray-200 my-1"></div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedReservationForEmailLogs(reservation.id);
-                              setShowEmailLogs(true);
-                              setEmailDropdownOpen(null);
-                            }}
-                            className="w-full text-left px-3 py-2 text-xs text-blue-600 hover:bg-blue-50 flex items-center space-x-2"
-                          >
-                            <Clock className="w-3 h-3" />
-                            <span>이메일 발송 내역</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 수정 버튼 */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        router.push(`/${locale}/admin/reservations/${reservation.id}`);
-                      }}
-                      className="px-2 py-1 text-xs bg-orange-50 text-orange-600 rounded-md hover:bg-orange-100 transition-colors flex items-center space-x-1 border border-orange-200"
-                      title="예약 수정"
-                    >
-                      <Edit className="w-3 h-3" />
-                      <span>수정</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
+                  <ReservationCardItem
+                    key={`${reservation.id}-${tourInfoMap.size}`}
+                    reservation={reservation}
+                    customers={(customers as Customer[]) || []}
+                    products={(products as Array<{ id: string; name: string; sub_category?: string }>) || []}
+                    channels={(channels as Array<{ id: string; name: string; favicon_url?: string }>) || []}
+                    pickupHotels={(pickupHotels as Array<{ id: string; hotel?: string | null; name?: string | null; name_ko?: string | null; pick_up_location?: string | null }>) || []}
+                    productOptions={(productOptions as Array<{ id: string; name: string; is_required?: boolean }>) || []}
+                    optionChoices={(optionChoices as Array<{ id: string; name: string }>) || []}
+                    tourInfoMap={tourInfoMap}
+                    reservationPricingMap={reservationPricingMap}
+                    locale={locale}
+                    emailDropdownOpen={emailDropdownOpen}
+                    sendingEmail={sendingEmail}
+                    onPricingInfoClick={handlePricingInfoClick}
+                    onCreateTour={handleCreateTour}
+                    onPickupTimeClick={handlePickupTimeClick}
+                    onPickupHotelClick={handlePickupHotelClick}
+                    onPaymentClick={handlePaymentClick}
+                    onDetailClick={handleDetailClick}
+                    onReviewClick={handleReviewClick}
+                    onEmailPreview={handleOpenEmailPreview}
+                    onEmailLogsClick={handleEmailLogsClick}
+                    onEmailDropdownToggle={handleEmailDropdownToggle}
+                    onEditClick={handleEditClick}
+                    onCustomerClick={handleCustomerClick}
+                    onRefreshReservations={refreshReservations}
+                    generatePriceCalculation={generatePriceCalculation}
+                    getGroupColorClasses={getGroupColorClasses}
+                    getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}
+                    choicesCacheRef={choicesCacheRef}
+                    showResidentStatusIcon={false}
+                  />
                 ))}
               </div>
             </div>
           )
-        )}
-        
-        {/* 페이지네이션 - 카드뷰에서만 표시 (그룹화되지 않은 경우에만) */}
-        {!groupByDate && totalPages > 1 && (
-          <div className="flex items-center justify-between mt-8">
-            <div className="text-sm text-gray-700">
-              페이지 {currentPage} / {totalPages} (총 {filteredReservations.length}개)
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              {/* 이전 페이지 버튼 */}
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                이전
-              </button>
-              
-              {/* 페이지 번호들 */}
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                let pageNum
-                if (totalPages <= 5) {
-                  pageNum = i + 1
-                } else if (currentPage <= 3) {
-                  pageNum = i + 1
-                } else if (currentPage >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i
-                } else {
-                  pageNum = currentPage - 2 + i
-                }
-                
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => setCurrentPage(pageNum)}
-                    className={`px-3 py-2 text-sm font-medium rounded-md ${
-                      currentPage === pageNum
-                        ? 'text-white bg-blue-600 border border-blue-600'
-                        : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                )
-              })}
-              
-              {/* 다음 페이지 버튼 */}
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages}
-                className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                다음
-              </button>
-            </div>
-          </div>
-          )}
-        </>
+        )
+            }
+          </>
+        )
+      }
+      
+      {/* 페이지네이션 - 카드뷰에서만 표시 (그룹화되지 않은 경우에만) */}
+      {!groupByDate && totalPages > 1 && (
+        <ReservationsPagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredReservations.length}
+          onPageChange={setCurrentPage}
+        />
       )}
 
       {/* 예약 추가/편집 모달 */}
@@ -4433,98 +2749,6 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           </div>
         </div>
       )}
-    </div>
-  )
-}
-
-// 리사이즈 가능한 모달 컴포넌트
-function ResizableModal({
-  isOpen,
-  onClose,
-  title,
-  children,
-  initialHeight,
-  onHeightChange
-}: {
-  isOpen: boolean
-  onClose: () => void
-  title: string
-  children: React.ReactNode
-  initialHeight: number
-  onHeightChange: (height: number) => void
-}) {
-  const [height, setHeight] = useState(initialHeight)
-  const [isResizing, setIsResizing] = useState(false)
-  const modalRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    setHeight(initialHeight)
-  }, [initialHeight])
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault()
-    setIsResizing(true)
-  }
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing) return
-      
-      const windowHeight = window.innerHeight
-      const newHeight = windowHeight - e.clientY
-      const minHeight = 300
-      const maxHeight = windowHeight - 100
-      
-      const clampedHeight = Math.max(minHeight, Math.min(maxHeight, newHeight))
-      setHeight(clampedHeight)
-      onHeightChange(clampedHeight)
-    }
-
-    const handleMouseUp = () => {
-      setIsResizing(false)
-    }
-
-    if (isResizing) {
-      document.addEventListener('mousemove', handleMouseMove)
-      document.addEventListener('mouseup', handleMouseUp)
-    }
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [isResizing, onHeightChange])
-
-  if (!isOpen) return null
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end justify-center z-50 p-4">
-      <div 
-        ref={modalRef}
-        className="bg-white rounded-t-lg shadow-xl w-full max-w-7xl overflow-hidden flex flex-col"
-        style={{ height: `${height}px`, maxHeight: '95vh' }}
-      >
-        {/* 리사이즈 핸들 */}
-        <div
-          onMouseDown={handleMouseDown}
-          className="w-full h-2 bg-gray-200 hover:bg-gray-300 cursor-ns-resize flex items-center justify-center group transition-colors"
-        >
-          <GripVertical className="w-4 h-4 text-gray-400 group-hover:text-gray-600" />
-        </div>
-        
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
-          <h2 className="text-xl font-semibold text-gray-900">{title}</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-        <div className="flex-1 overflow-hidden" style={{ height: `calc(${height}px - 80px)` }}>
-          {children}
-        </div>
-      </div>
     </div>
   )
 }

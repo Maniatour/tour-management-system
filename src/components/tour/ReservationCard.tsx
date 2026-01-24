@@ -110,6 +110,15 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     nonResidentWithPass: 0,
     passCoveredCount: 0
   })
+  const [reservationChoices, setReservationChoices] = useState<Array<{
+    choice_id: string
+    option_id: string
+    option_name?: string
+    option_name_ko?: string
+    option_key?: string
+    choice_group?: string
+    choice_group_ko?: string
+  }>>([])
 
   // 패스 장수에 따라 실제 커버되는 인원 수 계산 (패스 1장 = 4인)
   // 실제 예약 인원을 초과할 수 없음
@@ -620,6 +629,50 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }
   }
 
+  // reservation_choices 테이블에서 초이스 정보 가져오기 (그룹 정보 포함)
+  const fetchReservationChoices = useCallback(async () => {
+    if (!reservation.id) return
+    
+    try {
+      const { data: choicesData, error } = await supabase
+        .from('reservation_choices')
+        .select(`
+          choice_id,
+          option_id,
+          choice_options!inner (
+            option_key,
+            option_name,
+            option_name_ko
+          ),
+          product_choices!inner (
+            choice_group,
+            choice_group_ko
+          )
+        `)
+        .eq('reservation_id', reservation.id)
+      
+      if (error) {
+        console.error('예약 초이스 조회 오류:', error)
+        return
+      }
+      
+      if (choicesData && choicesData.length > 0) {
+        const choices = choicesData.map((item: any) => ({
+          choice_id: item.choice_id,
+          option_id: item.option_id,
+          option_name: item.choice_options?.option_name,
+          option_name_ko: item.choice_options?.option_name_ko,
+          option_key: item.choice_options?.option_key,
+          choice_group: item.product_choices?.choice_group,
+          choice_group_ko: item.product_choices?.choice_group_ko
+        }))
+        setReservationChoices(choices)
+      }
+    } catch (error) {
+      console.error('예약 초이스 조회 중 오류:', error)
+    }
+  }, [reservation.id])
+
   // 컴포넌트 마운트 시 가격 정보, 입금 내역, 채널 정보, 고객 정보 가져오기
   useEffect(() => {
     // 결제 방법 정보 로드
@@ -638,10 +691,11 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       }
       fetchChannelInfo()
       fetchCustomerData()
+      fetchReservationChoices()
     }, delay)
 
     return () => clearTimeout(timeoutId)
-  }, [isStaff, reservation.id, reservation.customer_id, loadPaymentMethods, fetchReservationPricing, fetchChannelInfo, fetchCustomerData])
+  }, [isStaff, reservation.id, reservation.customer_id, loadPaymentMethods, fetchReservationPricing, fetchChannelInfo, fetchCustomerData, fetchReservationChoices])
 
   // 입금 내역 표시 토글
   const togglePaymentRecords = () => {
@@ -749,75 +803,162 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }
   }
 
-  const getChoiceColor = (choiceName: string) => {
-    if (!choiceName) return 'bg-gray-100 text-gray-600'
-    
-    const choiceLower = choiceName.toLowerCase()
-    switch (choiceLower) {
-      case 'x canyon':
-      case 'antelope x canyon':
-      case '앤텔롭 x 캐년':
-        return 'bg-gradient-to-r from-purple-400 to-pink-400 text-white'
-      case 'upper':
-      case 'upper antelope':
-      case '어퍼 앤텔롭':
-        return 'bg-gradient-to-r from-blue-400 to-cyan-400 text-white'
-      case 'lower':
-      case 'lower antelope':
-      case '로워 앤텔롭':
-        return 'bg-gradient-to-r from-emerald-400 to-teal-400 text-white'
-      case 'horseshoe bend':
-      case '호스슈 벤드':
-        return 'bg-gradient-to-r from-orange-400 to-red-400 text-white'
-      case 'grand canyon':
-      case '그랜드 캐년':
-        return 'bg-gradient-to-r from-yellow-400 to-orange-400 text-white'
-      case 'standard':
-      case '기본':
-        return 'bg-gradient-to-r from-slate-400 to-gray-500 text-white'
-      case 'premium':
-      case '프리미엄':
-        return 'bg-gradient-to-r from-amber-400 to-yellow-500 text-white'
-      case 'deluxe':
-      case '디럭스':
-        return 'bg-gradient-to-r from-red-400 to-pink-500 text-white'
-      default:
-        return 'bg-gradient-to-r from-gray-300 to-gray-400 text-white'
+  // 각 옵션별로 다른 색상을 반환하는 함수 (옵션 ID 기반)
+  const getOptionColorClasses = (optionId: string, optionName?: string) => {
+    if (!optionId) {
+      return {
+        bg: 'bg-gray-100',
+        text: 'text-gray-800',
+        border: 'border-gray-200'
+      }
     }
+    
+    // 풍부한 색상 팔레트
+    const colorPalette = [
+      { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-200' },
+      { bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200' },
+      { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-200' },
+      { bg: 'bg-rose-100', text: 'text-rose-800', border: 'border-rose-200' },
+      { bg: 'bg-violet-100', text: 'text-violet-800', border: 'border-violet-200' },
+      { bg: 'bg-cyan-100', text: 'text-cyan-800', border: 'border-cyan-200' },
+      { bg: 'bg-orange-100', text: 'text-orange-800', border: 'border-orange-200' },
+      { bg: 'bg-teal-100', text: 'text-teal-800', border: 'border-teal-200' },
+      { bg: 'bg-pink-100', text: 'text-pink-800', border: 'border-pink-200' },
+      { bg: 'bg-indigo-100', text: 'text-indigo-800', border: 'border-indigo-200' },
+      { bg: 'bg-lime-100', text: 'text-lime-800', border: 'border-lime-200' },
+      { bg: 'bg-fuchsia-100', text: 'text-fuchsia-800', border: 'border-fuchsia-200' },
+      { bg: 'bg-sky-100', text: 'text-sky-800', border: 'border-sky-200' },
+      { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-200' },
+      { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-200' },
+      { bg: 'bg-purple-100', text: 'text-purple-800', border: 'border-purple-200' }
+    ]
+    
+    // 옵션 ID의 해시값으로 색상 선택
+    let hash = 0
+    const idString = optionId + (optionName || '')
+    for (let i = 0; i < idString.length; i++) {
+      hash = idString.charCodeAt(i) + ((hash << 5) - hash)
+    }
+    
+    return colorPalette[Math.abs(hash) % colorPalette.length]
   }
 
-  const getSelectedChoices = () => {
-    if (!reservation.choices) return []
+  const getSelectedChoices = (): Array<{
+    name: string
+    choice_id: string
+    option_id: string
+    choice_group?: string
+    choice_group_ko?: string
+  }> => {
+    const selectedChoices: Array<{
+      name: string
+      choice_id: string
+      choice_group?: string
+      choice_group_ko?: string
+    }> = []
     
-    try {
-      const choicesData = safeJsonParse(reservation.choices)
-      if (!choicesData || typeof choicesData !== 'object') return []
-      
-      const selectedChoices: string[] = []
-      
-      // required 배열에서 선택된 옵션들 찾기
-      const choicesObj = choicesData as Record<string, unknown>
-      if (choicesObj.required && Array.isArray(choicesObj.required)) {
-        (choicesObj.required as Array<Record<string, unknown>>).forEach((choice) => {
-          if (choice.options && Array.isArray(choice.options)) {
-            (choice.options as Array<Record<string, unknown>>).forEach((option) => {
-              if (option.selected || option.is_default) {
-                // 영어 이름 우선, 없으면 한국어 이름
-                const originalName = (option.name as string) || (option.name_ko as string) || 'Unknown'
-                // 간단한 라벨로 변환
-                const simplifiedName = simplifyChoiceLabel(originalName)
-                selectedChoices.push(simplifiedName)
+    // 1. reservation_choices 테이블에서 직접 조회한 데이터 사용 (우선순위 1)
+    if (reservationChoices.length > 0) {
+      reservationChoices.forEach((choice) => {
+        const optionName = choice.option_name_ko || 
+                          choice.option_name || 
+                          choice.option_key || 
+                          'Unknown'
+        const simplifiedName = simplifyChoiceLabel(optionName)
+        const choiceItem: {
+          name: string
+          choice_id: string
+          option_id: string
+          choice_group?: string
+          choice_group_ko?: string
+        } = {
+          name: simplifiedName,
+          choice_id: choice.choice_id,
+          option_id: choice.option_id
+        }
+        if (choice.choice_group) choiceItem.choice_group = choice.choice_group
+        if (choice.choice_group_ko) choiceItem.choice_group_ko = choice.choice_group_ko
+        selectedChoices.push(choiceItem)
+      })
+      return selectedChoices
+    }
+    
+    // 2. reservation.choices JSON 필드에서 파싱 (fallback)
+    if (reservation.choices) {
+      try {
+        const choicesData = safeJsonParse(reservation.choices)
+        if (choicesData && typeof choicesData === 'object') {
+          const choicesObj = choicesData as Record<string, unknown>
+          
+          // 새로운 초이스 시스템: required 배열에 choice_id, option_id가 직접 저장된 경우
+          if (choicesObj.required && Array.isArray(choicesObj.required)) {
+            (choicesObj.required as Array<Record<string, unknown>>).forEach((item) => {
+              // 새로운 시스템: choice_id와 option_id가 직접 있는 경우
+              if (item.option_id && item.choice_id) {
+                // option_id를 사용하여 옵션 이름 찾기
+                const optionName = (item.option_name as string) || 
+                                  (item.option_name_ko as string) || 
+                                  (item.option_key as string) ||
+                                  (item.option_id as string) || 
+                                  'Unknown'
+                const simplifiedName = simplifyChoiceLabel(optionName)
+                const choiceItem: {
+                  name: string
+                  choice_id: string
+                  option_id: string
+                  choice_group?: string
+                  choice_group_ko?: string
+                } = {
+                  name: simplifiedName,
+                  choice_id: item.choice_id as string,
+                  option_id: item.option_id as string
+                }
+                if (item.choice_group && typeof item.choice_group === 'string') {
+                  choiceItem.choice_group = item.choice_group
+                }
+                if (item.choice_group_ko && typeof item.choice_group_ko === 'string') {
+                  choiceItem.choice_group_ko = item.choice_group_ko
+                }
+                selectedChoices.push(choiceItem)
+              } 
+              // 기존 시스템: choice.options 배열에서 selected/is_default 찾기
+              else if (item.options && Array.isArray(item.options)) {
+                (item.options as Array<Record<string, unknown>>).forEach((option) => {
+                  if (option.selected || option.is_default) {
+                    const originalName = (option.name as string) || 
+                                       (option.name_ko as string) || 
+                                       'Unknown'
+                    const simplifiedName = simplifyChoiceLabel(originalName)
+                    const choiceItem: {
+                      name: string
+                      choice_id: string
+                      option_id: string
+                      choice_group?: string
+                      choice_group_ko?: string
+                    } = {
+                      name: simplifiedName,
+                      choice_id: (item.id || item.choice_id || '') as string,
+                      option_id: (option.id || option.option_id || '') as string
+                    }
+                    if (item.group || item.choice_group) {
+                      choiceItem.choice_group = (item.group || item.choice_group) as string
+                    }
+                    if (item.group_ko || item.choice_group_ko) {
+                      choiceItem.choice_group_ko = (item.group_ko || item.choice_group_ko) as string
+                    }
+                    selectedChoices.push(choiceItem)
+                  }
+                })
               }
             })
           }
-        })
+        }
+      } catch (error) {
+        console.error('Error parsing choices:', error)
       }
-      
-      return selectedChoices
-    } catch (error) {
-      console.error('Error parsing choices:', error)
-      return []
     }
+    
+    return selectedChoices
   }
 
   // choice 라벨을 간단하게 변환하는 함수
@@ -1211,12 +1352,19 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             </span>
           </div>
           
-          {/* 선택된 Choices 뱃지들 */}
-          {getSelectedChoices().map((choiceName, index) => (
-            <div key={index} className={`px-2 py-1 rounded-full text-xs font-medium ${getChoiceColor(choiceName)}`}>
-              {choiceName}
-            </div>
-          ))}
+          {/* 선택된 Choices 뱃지들 - 각 옵션별 색상 적용 */}
+          {getSelectedChoices().map((choice, index) => {
+            const colorClasses = getOptionColorClasses(choice.option_id, choice.name)
+            
+            return (
+              <div 
+                key={index} 
+                className={`px-2 py-1 rounded-full text-xs font-medium ${colorClasses.bg} ${colorClasses.text} border ${colorClasses.border}`}
+              >
+                {choice.name}
+              </div>
+            )
+          })}
         </div>
 
         {/* 오른쪽 상단 - 상태 뱃지 */}
@@ -1828,11 +1976,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                    value={residentStatusCounts.nonResidentWithPass}
                    onChange={(e) => {
                      const newPassCount = Number(e.target.value) || 0
-                     const actualPassCovered = calculateActualPassCovered(
-                       newPassCount,
-                       residentStatusCounts.usResident,
-                       residentStatusCounts.nonResident
-                     )
+                    const actualPassCovered = calculateActualPassCovered(
+                      newPassCount,
+                      residentStatusCounts.usResident,
+                      residentStatusCounts.nonResident,
+                      residentStatusCounts.nonResidentUnder16
+                    )
                      setResidentStatusCounts(prev => ({ 
                        ...prev, 
                        nonResidentWithPass: newPassCount,

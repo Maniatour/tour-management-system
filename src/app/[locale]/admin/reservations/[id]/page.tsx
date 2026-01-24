@@ -8,7 +8,7 @@ import ReservationForm from '@/components/reservation/ReservationForm'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { Reservation, Customer } from '@/types/reservation'
 import { useAuth } from '@/contexts/AuthContext'
-import { Eye, X, GripVertical } from 'lucide-react'
+import { Eye, X, GripVertical, Menu, User, Calendar, Users, DollarSign, Settings, CreditCard, Receipt, Star } from 'lucide-react'
 import { getCustomerName } from '@/utils/reservationUtils'
 
 // 리사이즈 가능한 모달 컴포넌트
@@ -138,6 +138,10 @@ export default function ReservationDetailsPage() {
     }
     return 600
   })
+
+  // 플로팅 메뉴 상태
+  const [showFloatingMenu, setShowFloatingMenu] = useState(false)
+  const [activeSection, setActiveSection] = useState<string>('')
 
   // 인증 로딩 중이거나 권한이 없는 경우 로딩 표시
   // useMemo로 안정적으로 계산하여 불필요한 재계산 방지
@@ -468,6 +472,62 @@ export default function ReservationDetailsPage() {
           {/* 권한이 있을 때만 실제 콘텐츠 표시 */}
           {content}
           
+          {/* 모바일 플로팅 메뉴 */}
+          <div className="lg:hidden fixed bottom-20 right-4 z-50">
+            {/* 플로팅 메뉴 버튼 */}
+            <button
+              onClick={() => setShowFloatingMenu(!showFloatingMenu)}
+              className="w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
+            >
+              {showFloatingMenu ? <X size={24} /> : <Menu size={24} />}
+            </button>
+
+            {/* 플로팅 메뉴 드롭다운 */}
+            {showFloatingMenu && (
+              <div className="absolute bottom-16 right-0 bg-white rounded-lg shadow-xl border border-gray-200 max-h-[calc(70vh-80px)] overflow-y-auto w-48 mb-2">
+                <div className="p-2 space-y-1">
+                  {[
+                    { id: 'customer-section', label: '고객 정보', icon: User },
+                    { id: 'tour-info-section', label: '투어 정보', icon: Calendar },
+                    { id: 'participants-section', label: '참가자', icon: Users },
+                    { id: 'pricing-section', label: '가격 정보', icon: DollarSign },
+                    { id: 'product-section', label: '상품 선택', icon: Settings },
+                    { id: 'channel-section', label: '채널', icon: Settings },
+                    { id: 'options-section', label: '옵션', icon: Settings },
+                    { id: 'payment-section', label: '입금 내역', icon: CreditCard },
+                    { id: 'expense-section', label: '지출 내역', icon: Receipt },
+                    { id: 'review-section', label: '리뷰 관리', icon: Star }
+                  ].map((section) => {
+                    const Icon = section.icon
+                    const isActive = activeSection === section.id
+                    
+                    return (
+                      <button
+                        key={section.id}
+                        onClick={() => {
+                          const element = document.getElementById(section.id)
+                          if (element) {
+                            element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                            setActiveSection(section.id)
+                            setShowFloatingMenu(false)
+                          }
+                        }}
+                        className={`w-full flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors text-sm ${
+                          isActive
+                            ? 'bg-blue-50 text-blue-600 font-medium'
+                            : 'text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <Icon size={18} className={isActive ? 'text-blue-600' : 'text-gray-500'} />
+                        <span>{section.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* 예약 상세 모달 (고객 보기) */}
           {showReservationDetailModal && reservation && (() => {
             // 고객의 언어를 가져와서 locale로 변환
