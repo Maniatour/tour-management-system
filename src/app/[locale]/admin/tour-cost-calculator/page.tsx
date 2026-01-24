@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslations } from 'next-intl'
 import { Calculator, MapPin, Car, DollarSign, Settings, Plus, X, Route, Clock, Users, Edit2, Search, ChevronRight, ChevronDown, Folder, FolderOpen, GripVertical, ArrowUp, ArrowDown } from 'lucide-react'
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'
@@ -231,13 +231,26 @@ export default function TourCostCalculatorPage() {
   const [editingCourse, setEditingCourse] = useState<TourCourse | null>(null)
   const [courseSearchTerm, setCourseSearchTerm] = useState<string>('')
   const [expandedCourseNodes, setExpandedCourseNodes] = useState<Set<string>>(new Set())
-  const [selectedCoursesOrder, setSelectedCoursesOrder] = useState<string[]>([])
+  type CourseScheduleItem = {
+    id: string
+    day?: string
+    time?: string
+    duration?: number // 분 단위
+  }
+
+  const [selectedCoursesOrder, setSelectedCoursesOrder] = useState<CourseScheduleItem[]>([])
   const [isCalculatingRoute, setIsCalculatingRoute] = useState(false)
+  const [travelTimes, setTravelTimes] = useState<number[]>([]) // 각 구간별 이동 시간 (초 단위)
+  const [map, setMap] = useState<google.maps.Map | null>(null)
+  const [directionsRenderer, setDirectionsRenderer] = useState<google.maps.DirectionsRenderer | null>(null)
+  const mapRef = useRef<HTMLDivElement>(null)
+  const markersRef = useRef<google.maps.Marker[]>([])
+  
   type Template = {
     id?: string
     name: string
     selectedCourses: string[]
-    order: string[]
+    order: CourseScheduleItem[]
     savedAt?: string
     created_at?: string
     updated_at?: string
@@ -325,11 +338,42 @@ export default function TourCostCalculatorPage() {
 
     // 기존 순서에서 유지할 수 있는 것들은 유지하고, 새로 추가된 것들은 뒤에 추가
     setSelectedCoursesOrder(prev => {
-      const newOrder = prev.filter(id => leafCourses.includes(id))
-      const newItems = sortedCourses.filter(id => !prev.includes(id))
-      return [...newOrder, ...newItems]
+      // 혹시라도 prev에 문자열이 섞여있을 경우를 대비해 정규화
+      const normalizedPrev = prev.map((item: any) => {
+        if (typeof item === 'string') {
+          const course = tourCourses.find(c => c.id === item)
+          return {
+            id: item,
+            duration: course?.duration_hours || 0, // 분 단위
+            day: '',
+            time: ''
+          }
+        }
+        return item
+      })
+
+      const newOrder = normalizedPrev.filter(item => leafCourses.includes(item.id))
+      const newItems = sortedCourses
+        .filter(id => !normalizedPrev.some(item => item.id === id))
+        .map(id => {
+          const course = tourCourses.find(c => c.id === id)
+          return {
+            id,
+            duration: course?.duration_hours || 0, // 분 단위
+            day: '',
+            time: ''
+          }
+        })
+      const finalOrder = [...newOrder, ...newItems]
+      
+      // 선택된 코드가 없으면 지도 경로 초기화
+      if (finalOrder.length === 0 && directionsRenderer) {
+        directionsRenderer.setDirections({ routes: [] } as any)
+      }
+      
+      return finalOrder
     })
-  }, [selectedCourses, tourCourses])
+  }, [selectedCourses, tourCourses, directionsRenderer])
 
   // 모든 상위 부모를 찾는 함수
   const getAllParentIds = (courseId: string, visited = new Set<string>()): string[] => {
@@ -356,6 +400,60 @@ export default function TourCostCalculatorPage() {
     }
     findChildren(courseId)
     return children
+  }
+
+  // 일정 항목 정보 업데이트 함수
+  const updateScheduleItem = (index: number, updates: Partial<CourseScheduleItem>) => {
+    setSelectedCoursesOrder(prev => {
+      const newOrder = [...prev]
+      newOrder[index] = { ...newOrder[index], ...updates }
+      return newOrder
+    })
+  }
+
+  // 일정 시간 자동 계산 함수
+  const autoCalculateTimes = () => {
+    if (selectedCoursesOrder.length === 0) return
+    
+    // travelTimes가 없으면 경로부터 계산하도록 유도
+    if (travelTimes.length === 0) {
+      alert('먼저 "경로 자동 계산"을 눌러 이동 시간을 불러와야 합니다.')
+      return
+    }
+
+    setSelectedCoursesOrder(prev => {
+      // 딥 카피를 위해 새로운 객체들로 구성된 배열 생성
+      const newOrder = prev.map(item => ({ ...item }))
+      
+      for (let i = 1; i < newOrder.length; i++) {
+        const prevItem = newOrder[i-1]
+        const currentItem = newOrder[i]
+        
+        // 같은 날짜인 경우에만 자동 계산 (다른 날짜면 첫 시간 수동 입력 필요)
+        // 날짜 입력이 없으면 동일한 날로 간주
+        const isSameDay = !prevItem.day || !currentItem.day || prevItem.day === currentItem.day
+        
+        if (isSameDay && prevItem.time) {
+          const [hours, minutes] = prevItem.time.split(':').map(Number)
+          let totalMinutes = hours * 60 + minutes
+          
+          // 이전 코스 소요시간 추가
+          totalMinutes += prevItem.duration || 0
+          
+          // 이동 시간 추가 (초 -> 분)
+          const travelTimeSec = travelTimes[i-1] || 0
+          totalMinutes += travelTimeSec / 60
+          
+          // 10분 단위로 올림
+          totalMinutes = Math.ceil(totalMinutes / 10) * 10
+          
+          const newHours = Math.floor(totalMinutes / 60) % 24
+          const newMins = totalMinutes % 60
+          currentItem.time = `${newHours.toString().padStart(2, '0')}:${newMins.toString().padStart(2, '0')}`
+        }
+      }
+      return newOrder
+    })
   }
 
   // 드래그 앤 드롭 핸들러 (가장 하위 포인트만 이동)
@@ -615,16 +713,12 @@ export default function TourCostCalculatorPage() {
     }
   }
 
-  // 총 소요시간 자동 계산 (투어 코스 duration_hours 합산)
+  // 총 소요시간 자동 계산 (일정 항목의 duration 합산 + 이동 시간)
   useEffect(() => {
-    if (selectedCourses.size > 0) {
-      const selected = tourCourses.filter(course => selectedCourses.has(course.id))
-      const totalDuration = selected.reduce((sum, course) => sum + (course.duration_hours || 0), 0)
-      if (totalDuration > 0) {
-        setTotalHours(totalDuration)
-      }
-    }
-  }, [selectedCourses, tourCourses])
+    const courseDurationHours = selectedCoursesOrder.reduce((sum, item) => sum + (item.duration || 0), 0) / 60
+    const travelTimeHours = travelTime || 0
+    setTotalHours(Math.round((courseDurationHours + travelTimeHours) * 10) / 10)
+  }, [selectedCoursesOrder, travelTime])
 
   // 경로 계산 (구글맵) - 선택된 순서대로, 마지막에서 첫 번째로 돌아오는 순환 경로
   const calculateRoute = async () => {
@@ -633,7 +727,7 @@ export default function TourCostCalculatorPage() {
     try {
       // 선택된 순서대로 코스 가져오기
       const selected = selectedCoursesOrder
-        .map(courseId => tourCourses.find(c => c.id === courseId))
+        .map(item => tourCourses.find(c => c.id === item.id))
         .filter(Boolean) as TourCourse[]
       
       const coursesWithLocation = selected.filter(course => 
@@ -684,28 +778,37 @@ export default function TourCostCalculatorPage() {
         optimizeWaypoints: false // 순서를 유지하기 위해 최적화 비활성화
       }
 
-      service.route(request, (result, status) => {
-        setIsCalculatingRoute(false)
-        
-        if (status === 'OK' && result && result.routes && result.routes.length > 0) {
-          let totalDistance = 0
-          let totalDuration = 0
-
-          result.routes[0].legs.forEach(leg => {
-            if (leg.distance) {
-              totalDistance += leg.distance.value / 1609.34 // 미터를 마일로 변환
-            }
-            if (leg.duration) {
-              totalDuration += leg.duration.value / 3600 // 초를 시간으로 변환
-            }
-          })
-
-          setMileage(Math.round(totalDistance * 10) / 10)
-          // 이동 시간 저장 (시간 단위)
-          setTravelTime(Math.round(totalDuration * 10) / 10)
-          // 경로 계산 시 이동 시간도 업데이트 (기존 duration_hours 합산에 이동 시간 추가)
-          const courseDuration = selected.reduce((sum, course) => sum + (course.duration_hours || 0), 0)
-          setTotalHours(Math.round((courseDuration + totalDuration) * 10) / 10)
+          service.route(request, (result, status) => {
+            setIsCalculatingRoute(false)
+            
+            if (status === 'OK' && result && result.routes && result.routes.length > 0) {
+              // 지도에 경로 표시
+              if (directionsRenderer) {
+                directionsRenderer.setDirections(result)
+              }
+    
+              let totalDistance = 0
+              let totalDuration = 0
+              const legDurations: number[] = []
+    
+              result.routes[0].legs.forEach(leg => {
+                if (leg.distance) {
+                  totalDistance += leg.distance.value / 1609.34 // 미터를 마일로 변환
+                }
+                if (leg.duration) {
+                  totalDuration += leg.duration.value / 3600 // 초를 시간으로 변환
+                  legDurations.push(leg.duration.value) // 초 단위 저장
+                }
+              })
+    
+              setTravelTimes(legDurations)
+              setMileage(Math.round(totalDistance * 10) / 10)
+              // 이동 시간 저장 (시간 단위)
+              setTravelTime(Math.round(totalDuration * 10) / 10)
+              
+              // 경로 계산 시 이동 시간도 업데이트 (기존 duration 합산에 이동 시간 추가)
+              const courseDurationHours = selectedCoursesOrder.reduce((sum, item) => sum + (item.duration || 0), 0) / 60
+              setTotalHours(Math.round((courseDurationHours + totalDuration) * 10) / 10)
           
           console.log('경로 계산 완료:', {
             totalDistance: Math.round(totalDistance * 10) / 10,
@@ -819,7 +922,22 @@ export default function TourCostCalculatorPage() {
   // 템플릿 불러오기
   const loadConfiguration = (template: Template) => {
     setSelectedCourses(new Set(template.selectedCourses))
-    setSelectedCoursesOrder(template.order)
+    
+    // 구버전 데이터(단순 ID 배열)인 경우 객체 배열로 변환
+    const normalizedOrder = template.order.map((item: any) => {
+      if (typeof item === 'string') {
+        const course = tourCourses.find(c => c.id === item)
+        return {
+          id: item,
+          duration: course?.duration_hours || 0,
+          day: '',
+          time: ''
+        }
+      }
+      return item
+    })
+    
+    setSelectedCoursesOrder(normalizedOrder)
     setShowLoadModal(false)
     alert(`"${template.name}" 템플릿을 불러왔습니다.`)
   }
@@ -829,7 +947,22 @@ export default function TourCostCalculatorPage() {
     setEditingTemplate(template)
     setSaveConfigName(template.name)
     setSelectedCourses(new Set(template.selectedCourses))
-    setSelectedCoursesOrder(template.order)
+    
+    // 구버전 데이터(단순 ID 배열)인 경우 객체 배열로 변환
+    const normalizedOrder = template.order.map((item: any) => {
+      if (typeof item === 'string') {
+        const course = tourCourses.find(c => c.id === item)
+        return {
+          id: item,
+          duration: course?.duration_hours || 0,
+          day: '',
+          time: ''
+        }
+      }
+      return item
+    })
+    
+    setSelectedCoursesOrder(normalizedOrder)
     setShowLoadModal(false)
     setShowSaveModal(true)
   }
@@ -861,19 +994,149 @@ export default function TourCostCalculatorPage() {
     }
   }
 
-  // Google Maps API 로드
+  // Google Maps API 로드 및 지도 초기화
   useEffect(() => {
-    if (typeof window !== 'undefined' && !window.google) {
+    let isInitialized = false
+
+    const initializeMap = () => {
+      if (isInitialized || !mapRef.current || !window.google || !window.google.maps) return
+
+      // 필수 생성자가 로드되었는지 확인
+      if (!window.google.maps.Map) {
+        setTimeout(initializeMap, 100)
+        return
+      }
+
+      try {
+        const mapOptions: any = {
+          center: { lat: 36.1699, lng: -115.1398 }, // 라스베가스
+          zoom: 8,
+          mapTypeId: 'roadmap'
+        }
+
+        const newMap = new window.google.maps.Map(mapRef.current, mapOptions)
+        setMap(newMap)
+        isInitialized = true
+      } catch (error) {
+        console.error('Google Maps 초기화 중 오류 발생:', error)
+      }
+    }
+
+    if (typeof window !== 'undefined') {
       const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
-      if (apiKey) {
-        const script = document.createElement('script')
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,marker&loading=async`
-        script.async = true
-        script.defer = true
-        document.head.appendChild(script)
+      if (!apiKey || apiKey === 'undefined') return
+
+      if (window.google && window.google.maps && window.google.maps.Map) {
+        initializeMap()
+      } else {
+        const existingScript = document.querySelector('script[src*="maps.googleapis.com"]')
+        if (existingScript) {
+          const checkGoogle = () => {
+            if (window.google && window.google.maps && window.google.maps.Map) {
+              initializeMap()
+            } else {
+              setTimeout(checkGoogle, 100)
+            }
+          }
+          checkGoogle()
+        } else {
+          const script = document.createElement('script')
+          script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,marker&loading=async`
+          script.async = true
+          script.defer = true
+          script.onload = initializeMap
+          document.head.appendChild(script)
+        }
       }
     }
   }, [])
+
+  // DirectionsRenderer 초기화
+  useEffect(() => {
+    if (!map || !window.google || !window.google.maps || !window.google.maps.DirectionsRenderer) return
+
+    const renderer = new window.google.maps.DirectionsRenderer({
+      map: map,
+      suppressMarkers: true, // 마커 관련 에러 방지를 위해 true로 설정
+      polylineOptions: {
+        strokeColor: '#3B82F6',
+        strokeWeight: 5,
+        strokeOpacity: 0.8
+      }
+    })
+
+    setDirectionsRenderer(renderer)
+
+    return () => {
+      renderer.setMap(null)
+    }
+  }, [map])
+
+  // 선택된 코스들에 실시간 마커 표시
+  useEffect(() => {
+    if (!map || !window.google || !window.google.maps) return
+
+    // 기존 마커 제거
+    if (markersRef.current) {
+      markersRef.current.forEach(marker => marker.setMap(null))
+      markersRef.current = []
+    }
+
+    // 좌표가 있는 유효한 코스들만 필터링
+    const selected = selectedCoursesOrder
+      .map(item => tourCourses.find(c => c.id === item.id))
+      .filter((c): c is TourCourse => 
+        !!c && c.start_latitude !== null && c.start_latitude !== undefined &&
+        c.start_longitude !== null && c.start_longitude !== undefined
+      )
+
+    if (selected.length === 0) {
+      if (selectedCoursesOrder.length === 0) {
+        map.setCenter({ lat: 36.1699, lng: -115.1398 })
+        map.setZoom(8)
+      }
+      return
+    }
+
+    const bounds = new window.google.maps.LatLngBounds()
+
+    selected.forEach((course, index) => {
+      const lat = typeof course.start_latitude === 'string' ? parseFloat(course.start_latitude) : Number(course.start_latitude)
+      const lng = typeof course.start_longitude === 'string' ? parseFloat(course.start_longitude) : Number(course.start_longitude)
+      
+      if (isNaN(lat) || isNaN(lng)) return
+
+      const position = { lat, lng }
+      const marker = new window.google.maps.Marker({
+        position,
+        map,
+        label: {
+          text: (index + 1).toString(),
+          color: 'white',
+          fontWeight: 'bold',
+          fontSize: '14px'
+        },
+        title: course.name_ko || course.name_en || '',
+        zIndex: 9999, // 경로 선보다 위에 표시
+        optimized: false // 렌더링 보장
+      })
+      
+      markersRef.current.push(marker)
+      bounds.extend(position)
+    })
+
+    // 모든 마커가 보이도록 지도 범위 조정
+    if (selected.length > 0) {
+      // DirectionsRenderer와 충돌을 피하기 위해 약간의 지연 후 실행
+      const timer = setTimeout(() => {
+        map.fitBounds(bounds)
+        if (selected.length === 1) {
+          map.setZoom(15)
+        }
+      }, 200)
+      return () => clearTimeout(timer)
+    }
+  }, [map, selectedCoursesOrder, tourCourses])
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-7xl">
@@ -1051,18 +1314,43 @@ export default function TourCostCalculatorPage() {
 
           {/* 선택된 투어 코스 순서 */}
           {selectedCourses.size > 0 && selectedCoursesOrder.length > 0 && (
-            <div className="bg-white rounded-lg shadow-sm border p-6">
-              <h2 className="text-xl font-semibold mb-4">선택된 투어 코스 순서</h2>
-              <p className="text-sm text-gray-500 mb-4">드래그하거나 위/아래 버튼으로 순서를 조정하세요</p>
+            <div className="bg-white rounded-lg shadow-sm border p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <h2 className="text-lg font-semibold">선택된 투어 코스 순서</h2>
+                  <p className="text-xs text-gray-500">드래그하거나 위/아래 버튼으로 순서를 조정하세요</p>
+                </div>
+                <button
+                  onClick={autoCalculateTimes}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors text-xs font-medium"
+                  title="이전 코스 시간과 이동 시간을 합산하여 다음 코스 시작 시간을 자동 계산합니다"
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  일정 시간 자동 완성
+                </button>
+              </div>
+
+              {/* 헤더 추가 */}
+              <div className="flex items-center gap-2 px-2 py-1 bg-gray-50 border-x border-t rounded-t-lg text-[10px] font-bold text-gray-500">
+                <div className="w-4 flex-shrink-0" /> {/* 핸들 공간 */}
+                <div className="w-5 flex-shrink-0 text-center">#</div>
+                <div className="w-14 flex-shrink-0 text-center">날짜</div>
+                <div className="w-16 flex-shrink-0 text-center">시작 시간</div>
+                <div className="w-16 flex-shrink-0 text-center">소요(분)</div>
+                <div className="flex-1">코스 제목</div>
+                <div className="w-16 flex-shrink-0" /> {/* 버튼 공간 */}
+              </div>
+
               <DragDropContext onDragEnd={handleDragEnd}>
                 <Droppable droppableId="selected-courses">
                   {(provided) => (
                     <div
                       {...provided.droppableProps}
                       ref={provided.innerRef}
-                      className="space-y-2"
+                      className="space-y-0 border-x border-b rounded-b-lg overflow-hidden"
                     >
-                      {selectedCoursesOrder.map((courseId, index) => {
+                      {selectedCoursesOrder.map((item, index) => {
+                        const courseId = item.id
                         const course = tourCourses.find(c => c.id === courseId)
                         if (!course) return null
 
@@ -1102,8 +1390,8 @@ export default function TourCostCalculatorPage() {
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}
                                 {...provided.dragHandleProps}
-                                className={`flex items-center gap-2 p-2 border rounded-lg bg-white cursor-move ${
-                                  snapshot.isDragging ? 'shadow-lg border-blue-500 opacity-50' : 'border-gray-200 hover:border-gray-300'
+                                className={`flex items-center gap-2 py-1 px-2 border-t first:border-t-0 bg-white cursor-move ${
+                                  snapshot.isDragging ? 'shadow-lg border-blue-500 z-50 opacity-100' : 'border-gray-100 hover:bg-gray-50'
                                 }`}
                                 style={provided.draggableProps.style}
                               >
@@ -1115,77 +1403,103 @@ export default function TourCostCalculatorPage() {
                                 </div>
 
                                 {/* 순서 번호 */}
-                                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center font-semibold text-xs">
+                                <div className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center font-semibold text-[10px]">
                                   {index + 1}
                                 </div>
 
-                                {/* 코스 정보 */}
+                                {/* 날짜/시간/소요시간 입력칸 */}
+                                <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                                  <input
+                                    type="text"
+                                    placeholder="날짜"
+                                    value={item.day || ''}
+                                    onChange={(e) => updateScheduleItem(index, { day: e.target.value })}
+                                    className="w-14 px-1.5 py-0.5 text-[10px] border border-gray-200 rounded focus:border-blue-400 focus:ring-1 focus:ring-blue-100 outline-none text-center"
+                                  />
+                                  <input
+                                    type="time"
+                                    step="600"
+                                    value={item.time || ''}
+                                    onChange={(e) => updateScheduleItem(index, { time: e.target.value })}
+                                    className="w-16 px-1 py-0.5 text-[10px] border border-gray-200 rounded focus:border-blue-400 focus:ring-1 focus:ring-blue-100 outline-none"
+                                  />
+                                  <div className="flex items-center gap-0.5">
+                                    <input
+                                      type="number"
+                                      step="10"
+                                      placeholder="분"
+                                      value={item.duration ?? 0}
+                                      onChange={(e) => updateScheduleItem(index, { duration: parseInt(e.target.value) || 0 })}
+                                      className="w-12 px-1 py-0.5 text-[10px] border border-gray-200 rounded text-right focus:border-blue-400 focus:ring-1 focus:ring-blue-100 outline-none"
+                                    />
+                                    <span className="text-[10px] text-gray-400">m</span>
+                                  </div>
+                                </div>
+
+                                {/* 코스 제목 */}
                                 <div className="flex-1 min-w-0">
-                                  <div className="text-sm font-medium truncate" title={fullPath}>
+                                  <div className="text-xs font-medium truncate text-gray-700" title={fullPath}>
                                     {fullPath}
                                   </div>
-                                  {course.location && (
-                                    <div className="text-xs text-gray-500 truncate">
-                                      {course.location}
-                                    </div>
-                                  )}
                                 </div>
 
                                 {/* 위/아래 버튼 */}
                                 <div 
-                                  className="flex flex-col gap-0.5"
+                                  className="flex flex-row items-center gap-0.5"
                                   onMouseDown={(e) => e.stopPropagation()}
                                   onClick={(e) => e.stopPropagation()}
                                 >
+                                  <div className="flex flex-col -space-y-1 mr-1">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        moveCourse(index, 'up')
+                                      }}
+                                      onMouseDown={(e) => {
+                                        e.stopPropagation()
+                                        e.preventDefault()
+                                      }}
+                                      disabled={index === 0}
+                                      className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                                      title="위로 이동"
+                                    >
+                                      <ArrowUp className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        moveCourse(index, 'down')
+                                      }}
+                                      onMouseDown={(e) => {
+                                        e.stopPropagation()
+                                        e.preventDefault()
+                                      }}
+                                      disabled={index === selectedCoursesOrder.length - 1}
+                                      className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                                      title="아래로 이동"
+                                    >
+                                      <ArrowDown className="w-3 h-3" />
+                                    </button>
+                                  </div>
+
+                                  {/* 제거 버튼 */}
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      moveCourse(index, 'up')
+                                      const newSet = new Set(selectedCourses)
+                                      newSet.delete(courseId)
+                                      setSelectedCourses(newSet)
                                     }}
                                     onMouseDown={(e) => {
                                       e.stopPropagation()
                                       e.preventDefault()
                                     }}
-                                    disabled={index === 0}
-                                    className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                                    title="위로 이동"
+                                    className="p-0.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                                    title="제거"
                                   >
-                                    <ArrowUp className="w-3 h-3" />
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      moveCourse(index, 'down')
-                                    }}
-                                    onMouseDown={(e) => {
-                                      e.stopPropagation()
-                                      e.preventDefault()
-                                    }}
-                                    disabled={index === selectedCoursesOrder.length - 1}
-                                    className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                                    title="아래로 이동"
-                                  >
-                                    <ArrowDown className="w-3 h-3" />
+                                    <X className="w-4 h-4" />
                                   </button>
                                 </div>
-
-                                {/* 제거 버튼 */}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    const newSet = new Set(selectedCourses)
-                                    newSet.delete(courseId)
-                                    setSelectedCourses(newSet)
-                                  }}
-                                  onMouseDown={(e) => {
-                                    e.stopPropagation()
-                                    e.preventDefault()
-                                  }}
-                                  className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
-                                  title="제거"
-                                >
-                                  <X className="w-4 h-4" />
-                                </button>
                               </div>
                             )}
                           </Draggable>
@@ -1202,6 +1516,20 @@ export default function TourCostCalculatorPage() {
           {/* 경로 및 마일리지 */}
           <div className="bg-white rounded-lg shadow-sm border p-6">
             <h2 className="text-xl font-semibold mb-4">3. 경로 및 마일리지</h2>
+            
+            {/* 구글맵 표시 섹션 */}
+            <div className="mb-6 h-[400px] w-full rounded-lg border border-gray-200 overflow-hidden relative bg-gray-50">
+              <div ref={mapRef} className="w-full h-full" />
+              {!map && (
+                <div className="absolute inset-0 flex items-center justify-center text-gray-400">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                    <p>지도를 불러오는 중...</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="flex gap-4">
               <button
                 onClick={calculateRoute}
