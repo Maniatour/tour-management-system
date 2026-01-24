@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Save, Copy, Download, Upload, FileText, Info, Share2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, Trash2, Save, Copy, Download, Upload, FileText, Info, Share2, ChevronDown, ChevronUp, Settings } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
@@ -1255,63 +1255,48 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
   return (
     <div className="space-y-6">
       {/* 헤더 */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h3 className="text-lg font-medium text-gray-900">초이스 관리</h3>
-          <p className="text-sm text-gray-600">상품의 선택 초이스를 관리합니다.</p>
         </div>
-        <div className="flex space-x-2">
+        <div className="flex flex-wrap gap-2 w-full md:w-auto">
           <div className="flex items-center">
             <button
               onClick={() => setShowTemplateModal(true)}
-              className="flex items-center px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              className="flex items-center px-3 py-1.5 text-xs sm:text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
             >
-              <FileText className="w-4 h-4 mr-2" />
+              <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
               템플릿 불러오기
             </button>
             <button
               type="button"
               onClick={() => setShowTemplateInfoModal(true)}
-              className="ml-2 inline-flex items-center justify-center w-8 h-8 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-full transition-colors"
+              className="ml-1 sm:ml-2 inline-flex items-center justify-center w-6 h-6 sm:w-8 sm:h-8 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-full transition-colors"
               title="템플릿 설명 보기"
             >
-              <Info className="w-4 h-4" />
+              <Info className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
           </div>
           <button
             onClick={() => setShowExportTemplateModal(true)}
-            className="flex items-center px-3 py-2 text-sm text-green-700 bg-white border border-green-300 rounded-md hover:bg-green-50"
+            className="flex items-center px-3 py-1.5 text-xs sm:text-sm text-green-700 bg-white border border-green-300 rounded-md hover:bg-green-50"
           >
-            <Share2 className="w-4 h-4 mr-2" />
-            템플릿으로 내보내기
+            <Share2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
+            템플릿 내보내기
           </button>
           <button
             onClick={() => setShowCopyModal(true)}
-            className="flex items-center px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+            className="flex items-center px-3 py-1.5 text-xs sm:text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
           >
-            <Copy className="w-4 h-4 mr-2" />
+            <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
             복사
           </button>
           <button
-            onClick={exportChoices}
-            className="flex items-center px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-          >
-            <Download className="w-4 h-4 mr-2" />
-            내보내기
-          </button>
-          <button
-            onClick={() => setShowImportModal(true)}
-            className="flex items-center px-3 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-          >
-            <Upload className="w-4 h-4 mr-2" />
-            가져오기
-          </button>
-          <button
             onClick={addChoiceGroup}
-            className="flex items-center px-3 py-2 text-sm text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700"
+            className="flex items-center px-3 py-1.5 text-xs sm:text-sm text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 shadow-sm"
           >
-            <Plus className="w-4 h-4 mr-2" />
-            초이스 그룹 추가
+            <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
+            그룹 추가
           </button>
         </div>
       </div>
@@ -1336,7 +1321,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
           {productChoices.map((choice, groupIndex) => (
             <div 
               key={choice.id} 
-              className={`border border-gray-200 rounded-lg p-4 transition-all ${
+              className={`border border-gray-200 rounded-lg p-3 sm:p-4 transition-all ${
                 draggedGroupIndex === groupIndex ? 'opacity-50' : ''
               } ${draggedGroupIndex !== null && draggedGroupIndex !== groupIndex ? 'hover:border-blue-300' : ''}`}
               onDragOver={(e) => {
@@ -1352,61 +1337,85 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
               }}
             >
               {/* 초이스 그룹 헤더 */}
-              <div className="flex justify-between items-start mb-4">
-                <div 
-                  className="flex items-center space-x-2 mr-2 cursor-move hover:text-gray-600 transition-colors" 
-                  title="드래그하여 순서 변경"
-                  draggable
-                  onDragStart={(e) => {
-                    setDraggedGroupIndex(groupIndex)
-                    e.dataTransfer.effectAllowed = 'move'
-                    e.stopPropagation()
-                  }}
-                  onDragEnd={() => {
-                    setDraggedGroupIndex(null)
-                  }}
-                >
-                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
-                  </svg>
+              <div className="flex flex-col gap-4 mb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div 
+                      className="p-1 cursor-move hover:bg-gray-100 rounded transition-colors" 
+                      title="드래그하여 순서 변경"
+                      draggable
+                      onDragStart={(e) => {
+                        setDraggedGroupIndex(groupIndex)
+                        e.dataTransfer.effectAllowed = 'move'
+                        e.stopPropagation()
+                      }}
+                      onDragEnd={() => {
+                        setDraggedGroupIndex(null)
+                      }}
+                    >
+                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                      </svg>
+                    </div>
+                    <span className="text-sm font-semibold text-gray-900">초이스 그룹 {groupIndex + 1}</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={choice.is_required}
+                        onChange={(e) => updateChoiceGroup(groupIndex, 'is_required', e.target.checked)}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="ml-1.5 text-xs sm:text-sm font-medium text-gray-700">필수</span>
+                    </label>
+                    <button
+                      onClick={() => removeChoiceGroup(groupIndex)}
+                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                      title="그룹 삭제"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex-1 space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        초이스 그룹명 (한국어)
-                        <span className="ml-2 text-xs text-gray-500 font-normal">
-                          (ID: {choice.id}, Group: {choice.choice_group})
+                      <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+                        그룹명 (한국어)
+                        <span className="ml-2 text-[10px] text-gray-400 font-normal hidden sm:inline">
+                          (ID: {choice.id.substring(0, 8)}...)
                         </span>
                       </label>
                       <input
                         type="text"
                         value={choice.choice_group_ko}
                         onChange={(e) => updateChoiceGroup(groupIndex, 'choice_group_ko', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="예: 숙박 선택"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        초이스 그룹명 (영어)
+                      <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+                        그룹명 (영어)
                       </label>
                       <input
                         type="text"
                         value={choice.choice_group_en || ''}
                         onChange={(e) => updateChoiceGroup(groupIndex, 'choice_group_en', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="예: Accommodation"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        초이스 타입
+                      <label className="flex items-center text-xs sm:text-sm font-medium text-gray-700 mb-1">
+                        타입
                         <button
                           type="button"
                           onClick={() => setShowTypeInfoModal(true)}
-                          className="ml-2 inline-flex items-center justify-center w-4 h-4 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-full transition-colors"
-                          title="초이스 타입 설명 보기"
+                          className="ml-1.5 inline-flex items-center justify-center w-4 h-4 text-blue-500 hover:bg-blue-50 rounded-full transition-colors"
                         >
                           <Info className="w-3 h-3" />
                         </button>
@@ -1414,7 +1423,7 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                       <select
                         value={choice.choice_type}
                         onChange={(e) => updateChoiceGroup(groupIndex, 'choice_type', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="single">단일 선택</option>
                         <option value="multiple">다중 선택</option>
@@ -1425,78 +1434,64 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                   
                   {/* 초이스 그룹 설명 표시 */}
                   {(choice.description_ko || choice.description_en) && (
-                    <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-2.5 sm:p-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {choice.description_ko && (
                           <div>
-                            <p className="text-xs font-medium text-blue-900 mb-1">설명 (한국어)</p>
-                            <p className="text-sm text-blue-800 whitespace-pre-wrap">{choice.description_ko}</p>
+                            <p className="text-[10px] font-semibold text-blue-900 mb-0.5 uppercase tracking-wider">설명 (KO)</p>
+                            <p className="text-xs sm:text-sm text-blue-800 whitespace-pre-wrap">{choice.description_ko}</p>
                           </div>
                         )}
                         {choice.description_en && (
                           <div>
-                            <p className="text-xs font-medium text-blue-900 mb-1">설명 (영어)</p>
-                            <p className="text-sm text-blue-800 whitespace-pre-wrap">{choice.description_en}</p>
+                            <p className="text-[10px] font-semibold text-blue-900 mb-0.5 uppercase tracking-wider">설명 (EN)</p>
+                            <p className="text-xs sm:text-sm text-blue-800 whitespace-pre-wrap">{choice.description_en}</p>
                           </div>
                         )}
                       </div>
                     </div>
                   )}
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                         설명 (한국어)
                       </label>
                       <textarea
                         value={choice.description_ko || ''}
                         onChange={(e) => updateChoiceGroup(groupIndex, 'description_ko', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                        placeholder="초이스 그룹에 대한 설명을 입력하세요 (한국어)"
-                        rows={3}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                        placeholder="설명을 입력하세요 (한국어)"
+                        rows={2}
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                         설명 (영어)
                       </label>
                       <textarea
                         value={choice.description_en || ''}
                         onChange={(e) => updateChoiceGroup(groupIndex, 'description_en', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                        placeholder="Enter description for this choice group (English)"
-                        rows={3}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                        placeholder="Description (English)"
+                        rows={2}
                       />
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center space-x-4 ml-4">
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={choice.is_required}
-                      onChange={(e) => updateChoiceGroup(groupIndex, 'is_required', e.target.checked)}
-                      className="mr-2"
-                    />
-                    필수 선택
-                  </label>
-                  <button
-                    onClick={() => removeChoiceGroup(groupIndex)}
-                    className="p-2 text-red-600 hover:bg-red-50 rounded-md"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
               </div>
 
               {/* 초이스 목록 */}
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <h4 className="text-sm font-medium text-gray-700">초이스</h4>
-                  <div className="flex items-center gap-2">
+              <div className="space-y-3 mt-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                  <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                    <Settings className="w-4 h-4 text-blue-500" />
+                    초이스 목록
+                  </h4>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
                     <button
                       onClick={() => setAllCardsCollapsed(!allCardsCollapsed)}
-                      className="flex items-center px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 rounded border border-gray-200"
+                      className="flex-1 sm:flex-none flex items-center justify-center px-2 py-1 text-[11px] sm:text-xs text-gray-600 hover:bg-gray-50 rounded border border-gray-200"
                     >
                       {allCardsCollapsed ? (
                         <>
@@ -1512,10 +1507,10 @@ export default function ChoicesTab({ productId, isNewProduct }: ChoicesTabProps)
                     </button>
                     <button
                       onClick={() => addChoiceOption(groupIndex)}
-                      className="flex items-center px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded"
+                      className="flex-1 sm:flex-none flex items-center justify-center px-2 py-1 text-[11px] sm:text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 rounded border border-blue-100"
                     >
                       <Plus className="w-3 h-3 mr-1" />
-                      초이스 추가
+                      항목 추가
                     </button>
                   </div>
                 </div>

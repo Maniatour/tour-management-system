@@ -154,7 +154,22 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
   
   console.log('AdminProductEdit: Auth state:', { user: !!user, authLoading })
   
-  const [activeTab, setActiveTab] = useState('basic')
+  // 세션 스토리지에서 탭 상태 복원 (새로고침 시 유지)
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const savedTab = sessionStorage.getItem(`product-edit-tab-${id}`);
+      return savedTab || 'basic';
+    }
+    return 'basic';
+  });
+  
+  // 탭 변경 시 세션 스토리지에 저장
+  const handleTabChange = useCallback((tabId: string) => {
+    setActiveTab(tabId);
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(`product-edit-tab-${id}`, tabId);
+    }
+  }, [id]);
   const [showManualModal, setShowManualModal] = useState(false)
   const [showAddOptionModal, setShowAddOptionModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
@@ -204,10 +219,13 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
     customerNameKo?: string
     customerNameEn?: string
     tags?: string[]
+    transportationMethods?: string[]
     // 공통 세부정보 사용 여부
     useCommonDetails: boolean
     // 팀 타입
     team_type: 'guide+driver' | '2guide' | null
+    // 홈페이지 가격 타입
+    homepagePricingType?: 'single' | 'separate'
     // product_details 필드들 (다국어 지원)
     productDetails: {
       [languageCode: string]: {
@@ -392,25 +410,28 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
           description_ko?: string | null
           description_en?: string | null
         }
-        const formattedOptions: GlobalOption[] = (data as unknown as OptionRow[]).map((option) => ({
-          id: option.id,
-          name: option.name,
-          category: option.category,
-          description: option.description || '',
-          adultPrice: option.adult_price || 0,
-          childPrice: option.child_price || 0,
-          infantPrice: option.infant_price || 0,
-          priceType: option.price_type,
-          status: option.status,
-          tags: option.tags || [],
-          imageUrl: option.image_url || undefined,
-          imageAlt: option.image_alt || undefined,
-          thumbnailUrl: option.thumbnail_url || undefined,
-          nameKo: option.name_ko || undefined,
-          nameEn: option.name_en || undefined,
-          descriptionKo: option.description_ko || undefined,
-          descriptionEn: option.description_en || undefined
-        }))
+        const formattedOptions: GlobalOption[] = (data as unknown as OptionRow[]).map((option) => {
+          const result: GlobalOption = {
+            id: option.id,
+            name: option.name,
+            category: option.category,
+            description: option.description || '',
+            adultPrice: option.adult_price || 0,
+            childPrice: option.child_price || 0,
+            infantPrice: option.infant_price || 0,
+            priceType: option.price_type,
+            status: option.status,
+            tags: option.tags || []
+          };
+          if (option.image_url) result.imageUrl = option.image_url;
+          if (option.image_alt) result.imageAlt = option.image_alt;
+          if (option.thumbnail_url) result.thumbnailUrl = option.thumbnail_url;
+          if (option.name_ko) result.nameKo = option.name_ko;
+          if (option.name_en) result.nameEn = option.name_en;
+          if (option.description_ko) result.descriptionKo = option.description_ko;
+          if (option.description_en) result.descriptionEn = option.description_en;
+          return result as GlobalOption;
+        })
         setGlobalOptions(formattedOptions)
       }
     } catch (error) {
@@ -1010,8 +1031,8 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         adultPrice: Number(globalOption.adultPrice) || 0,
         childPrice: Number(globalOption.childPrice) || 0,
         infantPrice: Number(globalOption.infantPrice) || 0,
-        imageUrl: globalOption.imageUrl || globalOption.thumbnailUrl,
-        imageAlt: globalOption.imageAlt || globalOption.name,
+        ...(globalOption.imageUrl && { imageUrl: globalOption.imageUrl }),
+        ...(globalOption.imageAlt && { imageAlt: globalOption.imageAlt }),
         choices: [{
           id: `choice-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           name: globalOption.name || '새 선택 항목',
@@ -1146,24 +1167,23 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
             <ArrowLeft size={24} />
           </Link>
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">
+            <h1 className="text-xl sm:text-3xl font-bold text-gray-900">
               {isNewProduct ? '새 상품 추가' : '상품 편집'}
               {productInfo && !isNewProduct && (
-                <span className="ml-3 text-xl font-normal text-gray-600">
+                <span className="ml-2 sm:ml-3 text-lg sm:text-xl font-normal text-gray-600">
                   - {productInfo.name}
                   {productInfo.productCode && (
-                    <span className="ml-2 text-sm text-gray-500">
+                    <span className="ml-1 sm:ml-2 text-xs sm:text-sm text-gray-500">
                       ({productInfo.productCode})
                     </span>
                   )}
                 </span>
               )}
             </h1>
-            <p className="mt-2 text-gray-600">
-              {isNewProduct ? '새로운 투어 상품을 등록합니다' : '상품 정보를 수정합니다'}
+            <p className="mt-1 sm:mt-2 text-sm sm:text-gray-600">
               {productInfo && !isNewProduct && (
-                <span className="ml-2 text-sm text-gray-500">
-                  • {productInfo.category} • {productInfo.subCategory}
+                <span className="text-xs sm:text-sm text-gray-500">
+                  {productInfo.category} • {productInfo.subCategory}
                 </span>
               )}
             </p>
@@ -1172,31 +1192,32 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         
         {/* 액션 버튼들 */}
         {!isNewProduct && (
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {/* 미리보기 버튼 */}
             <button
               onClick={() => setShowPreview(true)}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="flex items-center justify-center gap-1 px-2 py-1.5 sm:px-3 sm:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-[11px] sm:text-sm font-medium"
             >
-              <Eye className="h-4 w-4" />
+              <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               <span>미리보기</span>
             </button>
             
             {/* 삭제 버튼 */}
             <button
               onClick={() => setShowDeleteModal(true)}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center space-x-2 transition-colors"
+              className="flex items-center justify-center gap-1 px-2 py-1.5 sm:px-3 sm:py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors text-[11px] sm:text-sm font-medium"
             >
-              <Trash2 size={20} />
-              <span>상품 삭제</span>
+              <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <span>삭제</span>
             </button>
           </div>
-        )}
+        )
+      }
       </div>
 
       {/* 탭 네비게이션 */}
       <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8 overflow-x-auto">
+        <nav className="-mb-px flex space-x-4 md:space-x-8 overflow-x-auto scrollbar-hide">
           {tabs.map((tab) => {
             const Icon = tab.icon
             // 새 상품일 때는 기본정보 탭만 표시
@@ -1206,15 +1227,16 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center space-x-2 py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+                onClick={() => handleTabChange(tab.id)}
+                className={`flex items-center space-x-1 md:space-x-2 py-2 px-2 md:px-1 border-b-2 font-medium text-xs md:text-sm whitespace-nowrap min-w-fit ${
                   activeTab === tab.id
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                <Icon className="h-4 w-4" />
-                <span>{tab.label}</span>
+                <Icon className="h-3.5 w-3.5 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">{tab.label}</span>
+                <span className="sm:hidden">{tab.label.split(' ')[0]}</span>
               </button>
             )
           })}
@@ -1231,18 +1253,21 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
               basePrice: typeof formData.basePrice === 'object' ? formData.basePrice.adult : (formData.basePrice as number || 0),
               homepagePricingType: (formData.homepagePricingType || 'separate') as 'single' | 'separate'
             } as any}
-            setFormData={(updater: React.SetStateAction<typeof formData>) => {
+            setFormData={(updater: any) => {
               setFormData((prev) => {
                 const next = typeof updater === 'function' ? updater({
                   ...prev,
                   basePrice: typeof prev.basePrice === 'object' ? prev.basePrice.adult : (prev.basePrice as number || 0)
                 } as any) : updater
+                const nextBasePrice = typeof next === 'object' && 'basePrice' in next 
+                  ? (typeof next.basePrice === 'object' 
+                      ? next.basePrice 
+                      : { adult: (next.basePrice as unknown as number) || 0, child: prev.basePrice.child || 0, infant: prev.basePrice.infant || 0 })
+                  : prev.basePrice
                 return {
                   ...prev,
                   ...(next as any),
-                  basePrice: typeof next === 'object' && 'basePrice' in next 
-                    ? { adult: next.basePrice as number || 0, child: prev.basePrice.child || 0, infant: prev.basePrice.infant || 0 }
-                    : prev.basePrice
+                  basePrice: nextBasePrice
                 }
               })
             }}

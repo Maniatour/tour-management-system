@@ -136,6 +136,22 @@ export default function ProductDetailsTab({
   const [copyFromChannel, setCopyFromChannel] = useState<string | null>(null)
   const [channelPricingStats, setChannelPricingStats] = useState<Record<string, Record<string, number>>>({})
   
+  // 채널별 데이터 완성도 상태
+  const [channelCompletionStats, setChannelCompletionStats] = useState<Record<string, {
+    completed: number;
+    total: number;
+    percentage: number;
+    missingFields: string[];
+  }>>({})
+  
+  // 완성도 필터 상태
+  const [completionFilter, setCompletionFilter] = useState<'all' | 'incomplete' | 'empty'>('all')
+  
+  // 복사 모달 상태
+  const [copyModalOpen, setCopyModalOpen] = useState(false)
+  const [copyFieldName, setCopyFieldName] = useState<string | null>(null)
+  const [copyTargetChannels, setCopyTargetChannels] = useState<Record<string, boolean>>({})
+  
   // Variant 관리 상태 (채널별 variant 선택)
   const [channelVariants, setChannelVariants] = useState<Record<string, string>>({}) // channelId -> variant_key
   const [productVariantsByChannel, setProductVariantsByChannel] = useState<Record<string, Array<{
@@ -372,7 +388,7 @@ export default function ProductDetailsTab({
   }, [productId, supabase]);
 
   // 선택된 채널들의 세부 정보 로드
-  const loadSelectedChannelData = useCallback(async () => {
+  const loadSelectedChannelData = useCallback(async (overrideVariants?: Record<string, string>) => {
     const selectedChannelIds = Object.keys(selectedChannels).filter(id => selectedChannels[id])
     if (selectedChannelIds.length === 0) {
       // 채널이 선택되지 않았으면 일반 데이터 로드 (loadProductDetails는 나중에 호출)
@@ -381,6 +397,9 @@ export default function ProductDetailsTab({
 
     setLoadingChannelData(true)
     try {
+      // overrideVariants가 제공되면 사용, 아니면 현재 channelVariants 사용
+      const variantsToUse = overrideVariants || channelVariants
+
       // self 채널과 OTA 채널을 분리
       const selectedChannelsData = selectedChannelIds.map(id => {
         const channel = channels.find(c => c.id === id)
@@ -399,13 +418,13 @@ export default function ProductDetailsTab({
         channelIdsToQuery.push('SELF_GROUP')
         // self 채널의 variant는 첫 번째 선택된 self 채널의 variant 사용
         const firstSelfChannelId = selfChannels[0].id
-        variantKeysByChannel['SELF_GROUP'] = channelVariants[firstSelfChannelId] || 'default'
+        variantKeysByChannel['SELF_GROUP'] = variantsToUse[firstSelfChannelId] || 'default'
       }
       
       // OTA 채널들의 개별 ID 추가
       otaChannels.forEach(channel => {
         channelIdsToQuery.push(channel.id)
-        variantKeysByChannel[channel.id] = channelVariants[channel.id] || 'default'
+        variantKeysByChannel[channel.id] = variantsToUse[channel.id] || 'default'
       })
 
       if (channelIdsToQuery.length === 0) {
@@ -565,7 +584,7 @@ export default function ProductDetailsTab({
     } finally {
       setLoadingChannelData(false)
     }
-  }, [selectedChannels, productId, supabase, setFormData, channels])
+  }, [selectedChannels, productId, supabase, setFormData, channels, channelVariants])
 
   // 채널별 variant 목록 로드
   useEffect(() => {
@@ -581,6 +600,8 @@ export default function ProductDetailsTab({
         variant_name_ko?: string | null;
         variant_name_en?: string | null;
       }>> = {}
+
+      const newChannelVariants: Record<string, string> = { ...channelVariants }
 
       try {
         for (const channelId of selectedChannelIds) {
@@ -607,25 +628,29 @@ export default function ProductDetailsTab({
           
           // 기본 variant 선택 (아직 선택되지 않은 경우)
           if (!channelVariants[channelId]) {
-            setChannelVariants(prev => ({
-              ...prev,
-              [channelId]: variants.length > 0 && variants.find(v => v.variant_key === 'default')
-                ? 'default'
-                : variants.length > 0
-                ? variants[0].variant_key
-                : 'default'
-            }))
+            newChannelVariants[channelId] = variants.length > 0 && variants.find(v => v.variant_key === 'default')
+              ? 'default'
+              : variants.length > 0
+              ? variants[0].variant_key
+              : 'default'
           }
         }
 
         setProductVariantsByChannel(variantsByChannel)
+        
+        // 새로운 variant가 설정된 경우에만 업데이트
+        if (Object.keys(newChannelVariants).length > Object.keys(channelVariants).length ||
+            Object.keys(newChannelVariants).some(key => newChannelVariants[key] !== channelVariants[key])) {
+          setChannelVariants(newChannelVariants)
+        }
       } catch (error) {
         console.error('Variant 목록 로드 중 오류:', error)
       }
     }
 
     loadChannelVariants()
-  }, [selectedChannels, productId, supabase, channelVariants])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedChannels, productId, supabase])
 
   // 채널 선택 토글
   const toggleChannelSelection = (channelId: string) => {
@@ -666,6 +691,164 @@ export default function ProductDetailsTab({
       ...prev,
       [groupType]: !prev[groupType]
     }))
+  }
+
+  // 특정 필드만 복사하는 함수
+  const copyFieldToChannels = async (fieldName: string, toChannelIds: string[]) => {
+    if (!fieldName || toChannelIds.length === 0) return
+
+    try {
+      const selectedChannelIds = Object.keys(selectedChannels).filter(id => selectedChannels[id])
+      if (selectedChannelIds.length === 0) {
+        setSaveMessage('복사할 소스 채널을 선택해주세요.')
+        setTimeout(() => setSaveMessage(''), 3000)
+        return
+      }
+
+      // 현재 선택된 채널 중 첫 번째를 소스로 사용
+      const sourceChannelId = selectedChannelIds[0]
+      const sourceChannel = channels.find(c => c.id === sourceChannelId)
+      const isSourceSelf = sourceChannel?.type === 'self' || sourceChannel?.type === 'SELF'
+      const actualSourceChannelId = isSourceSelf ? 'SELF_GROUP' : sourceChannelId
+      const sourceVariantKey = channelVariants[sourceChannelId] || 'default'
+
+      // 현재 언어의 필드 값 가져오기
+      const currentLang = formData.currentLanguage || 'ko'
+      const currentDetails = getCurrentLanguageDetails()
+      
+      // 복사할 필드 목록 결정
+      const fieldsToCopy: string[] = []
+      if (fieldName === 'slogan') {
+        fieldsToCopy.push('slogan1', 'slogan2', 'slogan3')
+      } else if (fieldName === 'included_not_included') {
+        fieldsToCopy.push('included', 'not_included')
+      } else {
+        fieldsToCopy.push(fieldName)
+      }
+
+      // 복사 대상 채널들을 그룹화
+      const toChannelsData = toChannelIds.map(id => {
+        const channel = channels.find(c => c.id === id)
+        return { id, type: channel?.type || 'unknown' }
+      })
+      const selfTargets = toChannelsData.filter(c => c.type === 'self' || c.type === 'SELF')
+      const otaTargets = toChannelsData.filter(c => c.type !== 'self' && c.type !== 'SELF')
+
+      const channelGroupsToSave: Array<{ channelIds: string[], channelId: string }> = []
+
+      if (selfTargets.length > 0) {
+        channelGroupsToSave.push({
+          channelIds: selfTargets.map(c => c.id),
+          channelId: 'SELF_GROUP'
+        })
+      }
+
+      otaTargets.forEach(channel => {
+        channelGroupsToSave.push({
+          channelIds: [channel.id],
+          channelId: channel.id
+        })
+      })
+
+      const copyPromises = channelGroupsToSave.map(async (group) => {
+        const targetVariantKey = group.channelIds.length === 1
+          ? (channelVariants[group.channelIds[0]] || 'default')
+          : 'default'
+
+        // 기존 데이터 확인
+        const existingResult = await supabase
+          .from('product_details_multilingual')
+          .select('id')
+          .eq('product_id', productId)
+          .eq('channel_id', group.channelId)
+          .eq('language_code', currentLang)
+          .eq('variant_key', targetVariantKey)
+          .maybeSingle() as { data: { id: string } | null; error: { code?: string } | null }
+
+        if (existingResult.error && existingResult.error.code !== 'PGRST116') {
+          throw existingResult.error
+        }
+
+        const existingData = existingResult.data
+
+        const updateData: any = {
+          updated_at: new Date().toISOString()
+        }
+        
+        // 복사할 필드들 추가
+        fieldsToCopy.forEach(field => {
+          updateData[field] = (currentDetails as any)[field]
+        })
+
+        if (existingData) {
+          // 업데이트
+          const { error: updateError } = await supabase
+            .from('product_details_multilingual')
+            // @ts-expect-error - Supabase 타입 추론 문제
+            .update(updateData)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .eq('id', (existingData as any).id)
+
+          if (updateError) throw updateError
+        } else {
+          // 새로 생성 (기본값으로)
+          const insertData: any = {
+            product_id: productId,
+            channel_id: group.channelId,
+            language_code: currentLang,
+            variant_key: targetVariantKey
+          }
+          fieldsToCopy.forEach(field => {
+            insertData[field] = (currentDetails as any)[field]
+          })
+          const { error: insertError } = await (supabase as any)
+            .from('product_details_multilingual')
+            .insert([insertData])
+
+          if (insertError) throw insertError
+        }
+      })
+
+      await Promise.all(copyPromises)
+      loadSelectedChannelData()
+      const fieldLabel = fieldName === 'slogan' ? '슬로건' 
+        : fieldName === 'included_not_included' ? '포함/불포함 정보'
+        : fieldName === 'description' ? '상품 설명'
+        : fieldName === 'pickup_drop_info' ? '픽업/드롭 정보'
+        : fieldName === 'luggage_info' ? '수하물 정보'
+        : fieldName === 'tour_operation_info' ? '투어 운영 정보'
+        : fieldName === 'preparation_info' ? '준비 사항'
+        : fieldName === 'small_group_info' ? '소그룹 정보'
+        : fieldName === 'notice_info' ? '안내사항'
+        : fieldName === 'private_tour_info' ? '단독투어 정보'
+        : fieldName === 'cancellation_policy' ? '취소 정책'
+        : fieldName === 'chat_announcement' ? '채팅 공지'
+        : fieldName
+      setSaveMessage(`${toChannelIds.length}개 채널에 ${fieldLabel}가 복사되었습니다!`)
+      setTimeout(() => setSaveMessage(''), 3000)
+      setCopyModalOpen(false)
+      setCopyTargetChannels({})
+    } catch (error) {
+      console.error('필드 복사 오류:', error)
+      setSaveMessage(`필드 복사 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+      setTimeout(() => setSaveMessage(''), 5000)
+    }
+  }
+
+  // 복사 모달 열기
+  const openCopyModal = (fieldName: string) => {
+    setCopyFieldName(fieldName)
+    // 현재 선택되지 않은 모든 채널을 복사 대상으로 초기화
+    const allChannelIds = channels.map(c => c.id)
+    const selectedChannelIds = Object.keys(selectedChannels).filter(id => selectedChannels[id])
+    const unselectedChannels: Record<string, boolean> = {}
+    allChannelIds.forEach(id => {
+      if (!selectedChannelIds.includes(id)) {
+        unselectedChannels[id] = false
+      }
+    })
+    setCopyTargetChannels(unselectedChannels)
+    setCopyModalOpen(true)
   }
 
   // 채널 간 복사
@@ -942,6 +1125,7 @@ export default function ProductDetailsTab({
         console.log(`채널 그룹 ${channelIdLabel} 저장할 상세 정보:`, {
           channelIds: group.channelIds,
           channelId: group.channelId,
+          variant_key: groupVariantKey,
           private_tour_info: detailsData.private_tour_info,
           private_tour_info_type: typeof detailsData.private_tour_info,
           private_tour_info_length: detailsData.private_tour_info?.length,
@@ -958,11 +1142,6 @@ export default function ProductDetailsTab({
           formData_chat_announcement_length: formData.productDetails?.[currentLang]?.chat_announcement?.length,
           allFields: detailsData
         })
-
-        // 선택된 variant 가져오기 (각 채널별로)
-        const variantKey = group.channelIds.length === 1 
-          ? (channelVariants[group.channelIds[0]] || 'default')
-          : 'default' // 여러 채널이면 default 사용
         
         // 기존 데이터 확인 (product_id, channel_id, language_code, variant_key 조합으로)
         const { data: existingData, error: selectError } = await supabase
@@ -1062,6 +1241,7 @@ export default function ProductDetailsTab({
                     .eq('product_id', productId)
                     .eq('channel_id', group.channelId)
                     .eq('language_code', currentLang)
+                    .eq('variant_key', groupVariantKey)
                     .maybeSingle() as { data: { private_tour_info: string | null; chat_announcement: string | null } | null; error: unknown }
                   
                   if (!verifyError && savedData) {
@@ -1092,6 +1272,8 @@ export default function ProductDetailsTab({
       
       // 저장 후 데이터 새로고침
       loadSelectedChannelData()
+      // 완성도 통계도 새로고침
+      loadChannelCompletionStats()
     } catch (error) {
       console.error('선택된 채널 세부 정보 저장 오류:', error)
       
@@ -1412,12 +1594,127 @@ export default function ProductDetailsTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // 의존성 배열을 비워서 한 번만 실행
 
+  // 채널별 데이터 완성도 계산 함수
+  const loadChannelCompletionStats = useCallback(async () => {
+    if (isNewProduct || !productId || channels.length === 0) {
+      setChannelCompletionStats({})
+      return
+    }
+
+    try {
+      // 현재 선택된 언어 사용
+      const currentLang = formData.currentLanguage || 'ko'
+
+      const completionStats: Record<string, {
+        completed: number;
+        total: number;
+        percentage: number;
+        missingFields: string[];
+      }> = {}
+
+      // 필수 필드 목록
+      const requiredFields = [
+        'slogan1', 'slogan2', 'slogan3',
+        'description',
+        'included', 'not_included',
+        'pickup_drop_info',
+        'luggage_info',
+        'tour_operation_info',
+        'preparation_info',
+        'small_group_info',
+        'notice_info',
+        'private_tour_info',
+        'cancellation_policy',
+        'chat_announcement'
+      ]
+
+      // 각 채널별로 완성도 계산
+      for (const channel of channels) {
+        const channelId = channel.type === 'self' || channel.type === 'SELF' 
+          ? 'SELF_GROUP' 
+          : channel.id
+
+        // 해당 채널의 모든 variant 데이터 가져오기 (현재 선택된 언어 기준)
+        const { data: channelData, error } = await supabase
+          .from('product_details_multilingual')
+          .select('*')
+          .eq('product_id', productId)
+          .eq('channel_id', channelId)
+          .eq('language_code', currentLang) // 현재 선택된 언어 기준으로 계산
+
+        if (error && error.code !== 'PGRST116') {
+          console.error(`채널 ${channel.id} 완성도 계산 오류:`, error)
+          continue
+        }
+
+        // 모든 variant의 데이터를 병합하여 확인
+        const allVariantsData = channelData || []
+        
+        // 각 variant별로 완성도 계산하고, 가장 높은 완성도를 채널 완성도로 사용
+        let maxCompleted = 0
+        let maxTotal = requiredFields.length
+        let maxMissingFields: string[] = []
+
+        if (allVariantsData.length === 0) {
+          // 데이터가 전혀 없는 경우
+          completionStats[channel.id] = {
+            completed: 0,
+            total: maxTotal,
+            percentage: 0,
+            missingFields: requiredFields
+          }
+        } else {
+          // 각 variant별로 완성도 계산
+          const variantCompletions = allVariantsData.map((variantData: any) => {
+            let completed = 0
+            const missing: string[] = []
+
+            requiredFields.forEach(field => {
+              const value = variantData[field]
+              const hasValue = value !== null && value !== undefined && 
+                              (typeof value === 'string' ? value.trim() !== '' : true)
+              
+              if (hasValue) {
+                completed++
+              } else {
+                missing.push(field)
+              }
+            })
+
+            return { completed, missing }
+          })
+
+          // 가장 높은 완성도 찾기
+          const bestCompletion = variantCompletions.reduce((best, current) => 
+            current.completed > best.completed ? current : best
+          , { completed: 0, missing: requiredFields })
+
+          maxCompleted = bestCompletion.completed
+          maxMissingFields = bestCompletion.missing
+        }
+
+        completionStats[channel.id] = {
+          completed: maxCompleted,
+          total: maxTotal,
+          percentage: Math.round((maxCompleted / maxTotal) * 100),
+          missingFields: maxMissingFields
+        }
+      }
+
+      setChannelCompletionStats(completionStats)
+    } catch (error) {
+      console.error('채널별 완성도 계산 오류:', error)
+      setChannelCompletionStats({})
+    }
+  }, [productId, channels, isNewProduct, supabase, formData.currentLanguage])
+
   // 채널 목록이 로드된 후 통계 로드
   useEffect(() => {
     if (channels.length > 0 && !isNewProduct && productId) {
       loadChannelPricingStats()
+      loadChannelCompletionStats()
     }
-  }, [channels.length, isNewProduct, productId, loadChannelPricingStats])
+  }, [channels.length, isNewProduct, productId, loadChannelPricingStats, loadChannelCompletionStats])
 
   // 채널 선택 변경 시 데이터 로드
   useEffect(() => {
@@ -2012,23 +2309,23 @@ export default function ProductDetailsTab({
       {/* 새로운 채널별 세부정보 관리 UI */}
       <div className="bg-white border border-gray-200 rounded-lg">
         {/* 헤더 */}
-        <div className="border-b border-gray-200 p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <h3 className="text-lg font-medium text-gray-900 flex items-center">
-                <Users className="h-5 w-5 mr-2" />
+        <div className="border-b border-gray-200 p-2 md:p-4">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4 w-full lg:w-auto">
+              <h3 className="text-sm font-medium text-gray-900 flex items-center">
+                <Users className="h-3.5 w-3.5 mr-2" />
                 채널별 세부정보 관리
               </h3>
               {/* 언어 선택 스위치 */}
-              <div className="flex items-center space-x-2">
-                <Languages className="h-4 w-4 text-gray-500" />
-                <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
+              <div className="flex items-center space-x-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+                <Languages className="h-3 w-3 text-gray-500 flex-shrink-0" />
+                <div className="flex space-x-1 bg-gray-100 p-0.5 rounded-lg min-w-max">
                   {availableLanguages.map((lang) => (
                     <button
                       key={lang}
                       type="button"
                       onClick={() => handleLanguageChange(lang)}
-                      className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+                      className={`px-1.5 py-0.5 text-[10px] font-medium rounded-md transition-colors ${
                         (formData.currentLanguage || 'ko') === lang
                           ? 'bg-white text-blue-600 shadow-sm'
                           : 'text-gray-600 hover:text-gray-900'
@@ -2043,19 +2340,19 @@ export default function ProductDetailsTab({
                 </div>
               </div>
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex flex-wrap items-center gap-1.5 w-full lg:w-auto">
               {/* 번역 버튼 */}
               <button
                 type="button"
                 onClick={translateCurrentLanguageDetails}
                 disabled={translating || (formData.currentLanguage || 'ko') !== 'ko'}
-                className="flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                className="flex-1 sm:flex-none flex items-center justify-center px-2 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-[11px]"
                 title="한국어 내용을 영어로 번역"
               >
                 {translating ? (
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                 ) : (
-                  <Languages className="h-4 w-4 mr-1" />
+                  <Languages className="h-3 w-3 mr-1" />
                 )}
                 {translating ? '번역 중...' : '번역'}
               </button>
@@ -2064,26 +2361,26 @@ export default function ProductDetailsTab({
                 type="button"
                 onClick={suggestDescription}
                 disabled={suggesting}
-                className="flex items-center px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                className="flex-1 sm:flex-none flex items-center justify-center px-2 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-[11px]"
                 title="ChatGPT로 설명 추천받기"
               >
                 {suggesting ? (
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                 ) : (
-                  <Sparkles className="h-4 w-4 mr-1" />
+                  <Sparkles className="h-3 w-3 mr-1" />
                 )}
                 {suggesting ? '추천 중...' : 'AI 추천'}
               </button>
               {/* 새로고침 버튼 */}
               <button
-                onClick={loadSelectedChannelData}
+                onClick={() => loadSelectedChannelData()}
                 disabled={loadingChannelData}
-                className="flex items-center px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 text-sm"
+                className="flex-1 sm:flex-none flex items-center justify-center px-2 py-1.5 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 text-[11px]"
               >
                 {loadingChannelData ? (
-                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                 ) : (
-                  <FileText className="h-4 w-4 mr-1" />
+                  <FileText className="h-3 w-3 mr-1" />
                 )}
                 새로고침
               </button>
@@ -2091,10 +2388,10 @@ export default function ProductDetailsTab({
           </div>
         </div>
 
-        {/* 좌우 분할 레이아웃 */}
-        <div className="flex h-[800px]">
-          {/* 왼쪽: 채널 선택 및 공통 세부정보 */}
-          <div className="w-1/3 border-r border-gray-200 p-4 overflow-y-auto">
+        {/* 좌우 분할 레이아웃 (모바일에서는 상하 배치) */}
+        <div className="flex flex-col lg:flex-row lg:h-[800px]">
+          {/* 왼쪽: 채널 선택 및 공통 세부정보 (모바일에서는 상단) */}
+          <div className="w-full lg:w-1/3 border-b lg:border-b-0 lg:border-r border-gray-200 p-4 overflow-y-auto max-h-[400px] lg:max-h-full">
             <div className="space-y-6">
               {/* 공통 세부정보 섹션 */}
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
@@ -2156,90 +2453,40 @@ export default function ProductDetailsTab({
                   </span>
                 </div>
 
-              {/* 복사 기능 */}
-              {(() => {
-                const selectedChannelIds = Object.keys(selectedChannels).filter(id => selectedChannels[id])
-                if (selectedChannelIds.length === 0) return null
-                
-                // self 채널과 OTA 채널을 분리
-                const selectedChannelsData = selectedChannelIds.map(id => {
-                  const channel = channels.find(c => c.id === id)
-                  return { id, type: channel?.type || 'unknown', channel }
-                })
-                const selfChannels = selectedChannelsData.filter(c => c.type === 'self' || c.type === 'SELF')
-                const otaChannels = selectedChannelsData.filter(c => c.type !== 'self' && c.type !== 'SELF')
-                
-                // 복사 가능한 소스 목록 생성
-                const copySources: Array<{ id: string, label: string, isSelfGroup: boolean }> = []
-                if (selfChannels.length > 0) {
-                  copySources.push({ id: 'SELF_GROUP', label: 'self 그룹', isSelfGroup: true })
-                }
-                otaChannels.forEach(ch => {
-                  copySources.push({ 
-                    id: ch.id, 
-                    label: `${ch.channel?.name || ch.id} (${ch.type})`, 
-                    isSelfGroup: false 
-                  })
-                })
-                
-                return (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <Copy className="h-4 w-4 text-blue-600" />
-                      <span className="text-sm font-medium text-blue-900">채널 간 복사</span>
-                    </div>
-                    <div className="space-y-2">
-                      <select
-                        value={copyFromChannel || ''}
-                        onChange={(e) => setCopyFromChannel(e.target.value || null)}
-                        className="w-full px-2 py-1 text-sm border border-blue-300 rounded focus:ring-1 focus:ring-blue-500"
-                      >
-                        <option value="">복사할 채널/그룹 선택</option>
-                        {copySources.map(source => (
-                          <option key={source.id} value={source.id}>
-                            {source.label}
-                          </option>
-                        ))}
-                      </select>
-                      {copyFromChannel && (
-                        <button
-                          onClick={() => {
-                            // 복사 대상 채널 목록 생성
-                            const toChannels: string[] = []
-                            
-                            if (copyFromChannel === 'SELF_GROUP') {
-                              // self 그룹에서 복사: self 채널들을 제외한 모든 선택된 채널에 복사
-                              toChannels.push(...otaChannels.map(c => c.id))
-                            } else {
-                              // 개별 채널에서 복사: 복사 소스를 제외한 모든 선택된 채널에 복사
-                              const fromChannel = channels.find(c => c.id === copyFromChannel)
-                              const isFromSelf = fromChannel?.type === 'self' || fromChannel?.type === 'SELF'
-                              
-                              if (isFromSelf) {
-                                // self 채널에서 복사: OTA 채널들에 복사
-                                toChannels.push(...otaChannels.map(c => c.id))
-                              } else {
-                                // OTA 채널에서 복사: 복사 소스를 제외한 모든 채널에 복사
-                                toChannels.push(...selectedChannelIds.filter(id => id !== copyFromChannel))
-                              }
-                            }
-                            
-                            if (toChannels.length > 0) {
-                              copyChannelData(copyFromChannel, toChannels)
-                            } else {
-                              setSaveMessage('복사할 대상 채널이 없습니다.')
-                              setTimeout(() => setSaveMessage(''), 3000)
-                            }
-                          }}
-                          className="w-full px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
-                        >
-                          선택된 다른 채널들에 복사
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })()}
+                {/* 완성도 필터 */}
+                <div className="mb-3 flex space-x-2">
+                  <button
+                    onClick={() => setCompletionFilter('all')}
+                    className={`px-2 py-1 text-xs rounded ${
+                      completionFilter === 'all'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    전체
+                  </button>
+                  <button
+                    onClick={() => setCompletionFilter('incomplete')}
+                    className={`px-2 py-1 text-xs rounded ${
+                      completionFilter === 'incomplete'
+                        ? 'bg-yellow-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    미완성
+                  </button>
+                  <button
+                    onClick={() => setCompletionFilter('empty')}
+                    className={`px-2 py-1 text-xs rounded ${
+                      completionFilter === 'empty'
+                        ? 'bg-red-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    데이터 없음
+                  </button>
+                </div>
+
 
               {/* 채널 그룹들 */}
               {channelGroups.map((group) => {
@@ -2318,26 +2565,32 @@ export default function ProductDetailsTab({
                             stats = channelPricingStats[channel.name];
                           }
                           const statsText = formatPricingStats(stats);
-                          
-                          // 디버깅: 통계가 없는 채널 확인
-                          if (!statsText && Object.keys(channelPricingStats).length > 0) {
-                            console.log(`채널 "${channel.name}" (ID: ${channel.id})에 대한 통계가 없습니다.`, {
-                              channelId: channel.id,
-                              channelName: channel.name,
-                              availableChannelIds: Object.keys(channelPricingStats).filter(k => k.includes(channel.id) || k.includes(channel.name)),
-                              hasStatsById: !!channelPricingStats[channel.id],
-                              hasStatsByName: !!channelPricingStats[channel.name]
-                            });
-                          }
+
+                          // 완성도 정보
+                          const completion = channelCompletionStats[channel.id]
+                          const completionPercentage = completion?.percentage ?? 0
+                          const completionColor = completionPercentage === 0 
+                            ? 'bg-red-100 text-red-700 border-red-300' 
+                            : completionPercentage < 50 
+                            ? 'bg-yellow-100 text-yellow-700 border-yellow-300'
+                            : completionPercentage < 100
+                            ? 'bg-blue-100 text-blue-700 border-blue-300'
+                            : 'bg-green-100 text-green-700 border-green-300'
 
                           const isSelected = selectedChannels[channel.id] || false
                           const variants = productVariantsByChannel[channel.id] || []
                           const selectedVariant = channelVariants[channel.id] || 'default'
                           
+                          // 필터링: 완성도 필터 적용
+                          if (completionFilter === 'empty' && completionPercentage > 0) return null
+                          if (completionFilter === 'incomplete' && completionPercentage === 100) return null
+                          
                           return (
                             <div key={channel.id} className="space-y-1">
                               <label
-                                className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                                className={`flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer ${
+                                  completionPercentage === 0 ? 'border-l-4 border-red-500 bg-red-50' : ''
+                                }`}
                               >
                                 <input
                                   type="checkbox"
@@ -2346,9 +2599,22 @@ export default function ProductDetailsTab({
                                   className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                                 />
                                 <div className="flex flex-col flex-1">
-                                <span className="text-sm text-gray-700">{channel.name}</span>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-sm text-gray-700">{channel.name}</span>
+                                  {completion && (
+                                    <span className={`text-xs px-2 py-0.5 rounded font-medium border ${completionColor}`}>
+                                      {completion.completed}/{completion.total} ({completion.percentage}%)
+                                    </span>
+                                  )}
+                                </div>
                                 {statsText && (
                                   <span className="text-xs text-gray-500 mt-0.5">{statsText}</span>
+                                )}
+                                {completion && completion.missingFields.length > 0 && (
+                                  <span className="text-xs text-gray-400 mt-0.5">
+                                    누락: {completion.missingFields.slice(0, 3).join(', ')}
+                                    {completion.missingFields.length > 3 && ` 외 ${completion.missingFields.length - 3}개`}
+                                  </span>
                                 )}
                               </div>
                               {isSelfGroup && selectedChannels[channel.id] && (
@@ -2364,13 +2630,21 @@ export default function ProductDetailsTab({
                                 </label>
                                 <select
                                   value={selectedVariant}
-                                  onChange={(e) => {
+                                  onChange={async (e) => {
+                                    const newVariantKey = e.target.value
+                                    // Variant 상태 업데이트
                                     setChannelVariants(prev => ({
                                       ...prev,
-                                      [channel.id]: e.target.value
+                                      [channel.id]: newVariantKey
                                     }))
-                                    // Variant 변경 시 해당 variant의 데이터 로드
-                                    loadSelectedChannelData()
+                                    // Variant 변경 시 해당 variant의 데이터 즉시 로드
+                                    // 상태 업데이트를 기다리지 않고 직접 variant 값을 사용하여 로드
+                                    const updatedVariants = {
+                                      ...channelVariants,
+                                      [channel.id]: newVariantKey
+                                    }
+                                    // 업데이트된 variant 값을 직접 전달하여 즉시 데이터 로드
+                                    await loadSelectedChannelData(updatedVariants)
                                   }}
                                   className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                 >
@@ -2394,8 +2668,8 @@ export default function ProductDetailsTab({
             </div>
           </div>
 
-          {/* 오른쪽: 입력 섹션 */}
-          <div className="flex-1 p-4 overflow-y-auto">
+          {/* 오른쪽: 입력 섹션 (모바일에서는 하단) */}
+          <div className="flex-1 p-2 md:p-4 overflow-y-auto">
             {Object.keys(selectedChannels).filter(id => selectedChannels[id]).length === 0 ? (
               <div className="flex items-center justify-center h-full text-gray-500">
                 <div className="text-center">
@@ -2416,7 +2690,17 @@ export default function ProductDetailsTab({
                 {/* 기존 입력 폼들 - 여기에 기존의 모든 입력 필드들이 들어갑니다 */}
                 {/* 슬로건 섹션 */}
                 <div className="space-y-4">
-                  <h4 className="text-md font-medium text-gray-900">슬로건</h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-md font-medium text-gray-900">슬로건</h4>
+                    <button
+                      onClick={() => openCopyModal('slogan')}
+                      className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
+                      title="슬로건을 다른 채널에 복사"
+                    >
+                      <Copy className="h-3 w-3" />
+                      <span>복사</span>
+                    </button>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -2476,7 +2760,17 @@ export default function ProductDetailsTab({
 
                 {/* 포함/불포함 정보 */}
                 <div className="space-y-4">
-                  <h4 className="text-md font-medium text-gray-900">포함/불포함 정보</h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-md font-medium text-gray-900">포함/불포함 정보</h4>
+                    <button
+                      onClick={() => openCopyModal('included_not_included')}
+                      className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
+                      title="포함/불포함 정보를 다른 채널에 복사"
+                    >
+                      <Copy className="h-3 w-3" />
+                      <span>복사</span>
+                    </button>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -2507,7 +2801,17 @@ export default function ProductDetailsTab({
 
                 {/* 픽업/드롭 정보 */}
                 <div className="space-y-4">
-                  <h4 className="text-md font-medium text-gray-900">픽업/드롭 정보</h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-md font-medium text-gray-900">픽업/드롭 정보</h4>
+                    <button
+                      onClick={() => openCopyModal('pickup_drop_info')}
+                      className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
+                      title="픽업/드롭 정보를 다른 채널에 복사"
+                    >
+                      <Copy className="h-3 w-3" />
+                      <span>복사</span>
+                    </button>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       픽업 및 드롭 정보
@@ -2541,7 +2845,17 @@ export default function ProductDetailsTab({
 
                 {/* 투어 운영 정보 */}
                 <div className="space-y-4">
-                  <h4 className="text-md font-medium text-gray-900">투어 운영 정보</h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-md font-medium text-gray-900">투어 운영 정보</h4>
+                    <button
+                      onClick={() => openCopyModal('tour_operation_info')}
+                      className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
+                      title="투어 운영 정보를 다른 채널에 복사"
+                    >
+                      <Copy className="h-3 w-3" />
+                      <span>복사</span>
+                    </button>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       투어 운영 관련 정보
@@ -2575,7 +2889,17 @@ export default function ProductDetailsTab({
 
                 {/* 소그룹 정보 */}
                 <div className="space-y-4">
-                  <h4 className="text-md font-medium text-gray-900">소그룹 정보</h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-md font-medium text-gray-900">소그룹 정보</h4>
+                    <button
+                      onClick={() => openCopyModal('small_group_info')}
+                      className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
+                      title="소그룹 정보를 다른 채널에 복사"
+                    >
+                      <Copy className="h-3 w-3" />
+                      <span>복사</span>
+                    </button>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       소그룹 투어 관련 정보
@@ -2609,7 +2933,17 @@ export default function ProductDetailsTab({
 
                 {/* 단독투어 정보 */}
                 <div className="space-y-4">
-                  <h4 className="text-md font-medium text-gray-900">단독투어 정보</h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-md font-medium text-gray-900">단독투어 정보</h4>
+                    <button
+                      onClick={() => openCopyModal('private_tour_info')}
+                      className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
+                      title="단독투어 정보를 다른 채널에 복사"
+                    >
+                      <Copy className="h-3 w-3" />
+                      <span>복사</span>
+                    </button>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       단독투어 관련 정보
@@ -2657,7 +2991,17 @@ export default function ProductDetailsTab({
 
                 {/* 채팅 공지 */}
                 <div className="space-y-4">
-                  <h4 className="text-md font-medium text-gray-900">채팅 공지</h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-md font-medium text-gray-900">채팅 공지</h4>
+                    <button
+                      onClick={() => openCopyModal('chat_announcement')}
+                      className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
+                      title="채팅 공지를 다른 채널에 복사"
+                    >
+                      <Copy className="h-3 w-3" />
+                      <span>복사</span>
+                    </button>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       채팅방 공지사항
@@ -2802,6 +3146,105 @@ export default function ProductDetailsTab({
           loadCommon()
         }}
       />
+
+      {/* 복사 모달 */}
+      {copyModalOpen && copyFieldName && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                {copyFieldName === 'slogan' ? '슬로건' 
+                  : copyFieldName === 'included_not_included' ? '포함/불포함 정보'
+                  : copyFieldName === 'description' ? '상품 설명'
+                  : copyFieldName === 'pickup_drop_info' ? '픽업/드롭 정보'
+                  : copyFieldName === 'luggage_info' ? '수하물 정보'
+                  : copyFieldName === 'tour_operation_info' ? '투어 운영 정보'
+                  : copyFieldName === 'preparation_info' ? '준비 사항'
+                  : copyFieldName === 'small_group_info' ? '소그룹 정보'
+                  : copyFieldName === 'notice_info' ? '안내사항'
+                  : copyFieldName === 'private_tour_info' ? '단독투어 정보'
+                  : copyFieldName === 'cancellation_policy' ? '취소 정책'
+                  : copyFieldName === 'chat_announcement' ? '채팅 공지'
+                  : copyFieldName} 복사
+              </h3>
+              <button
+                onClick={() => {
+                  setCopyModalOpen(false)
+                  setCopyTargetChannels({})
+                  setCopyFieldName(null)
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ×
+              </button>
+            </div>
+            
+            <p className="text-sm text-gray-600 mb-4">
+              현재 선택된 채널의 내용을 다른 채널에 복사할 수 있습니다. 복사할 채널을 선택해주세요.
+            </p>
+
+            <div className="space-y-2 mb-4 max-h-96 overflow-y-auto">
+              {channelGroups.map((group) => (
+                <div key={group.type} className="border border-gray-200 rounded-lg p-3">
+                  <div className="font-medium text-gray-900 mb-2">
+                    {group.type === 'self' || group.type === 'SELF' ? 'self (그룹)' : group.type}
+                  </div>
+                  <div className="space-y-2">
+                    {group.channels.map((channel) => {
+                      const isSelected = selectedChannels[channel.id]
+                      if (isSelected) return null // 이미 선택된 채널은 제외
+                      
+                      return (
+                        <label key={channel.id} className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded">
+                          <input
+                            type="checkbox"
+                            checked={copyTargetChannels[channel.id] || false}
+                            onChange={(e) => {
+                              setCopyTargetChannels(prev => ({
+                                ...prev,
+                                [channel.id]: e.target.checked
+                              }))
+                            }}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700">{channel.name}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={() => {
+                  setCopyModalOpen(false)
+                  setCopyTargetChannels({})
+                  setCopyFieldName(null)
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                취소
+              </button>
+              <button
+                onClick={() => {
+                  const selectedTargetIds = Object.keys(copyTargetChannels).filter(id => copyTargetChannels[id])
+                  if (selectedTargetIds.length === 0) {
+                    setSaveMessage('복사할 채널을 선택해주세요.')
+                    setTimeout(() => setSaveMessage(''), 3000)
+                    return
+                  }
+                  copyFieldToChannels(copyFieldName, selectedTargetIds)
+                }}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+              >
+                복사하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

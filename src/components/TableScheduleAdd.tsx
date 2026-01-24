@@ -129,6 +129,80 @@ export default function TableScheduleAdd({
   const [isLoadingNearbyPlaces, setIsLoadingNearbyPlaces] = useState(false)
   const [copying, setCopying] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [tourCourses, setTourCourses] = useState<Array<{
+    id: string
+    name_ko: string
+    name_en: string
+    location: string | null
+    start_latitude: number | null
+    start_longitude: number | null
+    end_latitude: number | null
+    end_longitude: number | null
+    start_google_maps_url: string | null
+    end_google_maps_url: string | null
+    point_name: string | null
+  }>>([])
+  const [titleInputMode, setTitleInputMode] = useState<Record<number, 'text' | 'tour_course'>>({})
+  const [selectedTourCourseId, setSelectedTourCourseId] = useState<Record<number, string>>({})
+  const [loadingTourCourses, setLoadingTourCourses] = useState(false)
+
+  // 투어 코스 목록 로드
+  useEffect(() => {
+    const loadTourCourses = async () => {
+      setLoadingTourCourses(true)
+      try {
+        const { data, error } = await supabase
+          .from('tour_courses')
+          .select('id, name_ko, name_en, location, start_latitude, start_longitude, end_latitude, end_longitude, start_google_maps_url, end_google_maps_url, point_name')
+          .eq('is_active', true)
+          .order('name_ko', { ascending: true })
+
+        if (error) throw error
+        setTourCourses(data || [])
+      } catch (error) {
+        console.error('투어 코스 로드 오류:', error)
+      } finally {
+        setLoadingTourCourses(false)
+      }
+    }
+
+    loadTourCourses()
+  }, [])
+
+  // 투어 코스 선택 시 위치 정보 자동 입력
+  const handleTourCourseSelect = (index: number, courseId: string) => {
+    const course = tourCourses.find(c => c.id === courseId)
+    if (!course) return
+
+    // 제목 설정
+    updateSchedule(index, 'title_ko', course.name_ko)
+    updateSchedule(index, 'title_en', course.name_en || course.name_ko)
+
+    // 위치 정보 설정
+    if (course.location) {
+      updateSchedule(index, 'location_ko', course.location)
+      updateSchedule(index, 'location_en', course.location)
+    }
+
+    // 좌표 설정 (start_latitude/longitude 우선, 없으면 end 사용)
+    if (course.start_latitude && course.start_longitude) {
+      updateSchedule(index, 'latitude', course.start_latitude)
+      updateSchedule(index, 'longitude', course.start_longitude)
+    } else if (course.end_latitude && course.end_longitude) {
+      updateSchedule(index, 'latitude', course.end_latitude)
+      updateSchedule(index, 'longitude', course.end_longitude)
+    }
+
+    // 구글 맵 링크 설정 (start_google_maps_url 우선, 없으면 end_google_maps_url 사용)
+    if (course.start_google_maps_url) {
+      updateSchedule(index, 'google_maps_link', course.start_google_maps_url)
+    } else if (course.end_google_maps_url) {
+      updateSchedule(index, 'google_maps_link', course.end_google_maps_url)
+    }
+
+    // 선택된 투어 코스 ID 저장
+    setSelectedTourCourseId(prev => ({ ...prev, [index]: courseId }))
+  }
 
   // 지도 관련 함수들
   const handleMapCoordinateSelect = (lat: number, lng: number, address?: string, googleMapsLink?: string) => {
@@ -1542,39 +1616,64 @@ export default function TableScheduleAdd({
   }
 
   const handleCopySchedules = async () => {
-    if (!selectedProductId || schedules.length === 0) {
-      alert('복사할 제품을 선택하고 일정이 있는지 확인해주세요.')
+    if (!selectedProductId) {
+      alert('복사할 제품을 선택해주세요.')
+      return
+    }
+
+    if (!productId) {
+      alert('현재 상품 정보를 찾을 수 없습니다.')
       return
     }
 
     setCopying(true)
     try {
+      // 현재 상품(productId)의 일정을 데이터베이스에서 가져오기
+      const { data: currentSchedules, error: fetchError } = await supabase
+        .from('product_schedules')
+        .select('*')
+        .eq('product_id', productId)
+        .order('day_number', { ascending: true })
+        .order('order_index', { ascending: true })
+
+      if (fetchError) {
+        console.error('일정 가져오기 오류:', fetchError)
+        alert(`일정을 가져오는 중 오류가 발생했습니다: ${fetchError.message}`)
+        return
+      }
+
+      if (!currentSchedules || currentSchedules.length === 0) {
+        alert('복사할 일정이 없습니다.')
+        return
+      }
+
       // 현재 일정들을 복사하여 새로운 product_id로 설정
-      const copiedSchedules = schedules.map(schedule => ({
-        ...schedule,
-        id: undefined, // 새 ID 생성
-        product_id: selectedProductId,
-        created_at: undefined,
-        updated_at: undefined,
-        // 가이드 역할 정보도 함께 복사 (빈 문자열은 null로 변환)
-        two_guide_schedule: schedule.two_guide_schedule === '' ? null : schedule.two_guide_schedule,
-        guide_driver_schedule: schedule.guide_driver_schedule === '' ? null : schedule.guide_driver_schedule
-      }))
+      const copiedSchedules = (currentSchedules as any[]).map((schedule: any) => {
+        // id, created_at, updated_at 제외하고 나머지 필드 복사
+        const { id, created_at, updated_at, product_id, ...scheduleData } = schedule
+        return {
+          ...scheduleData,
+          product_id: selectedProductId,
+          // 가이드 역할 정보도 함께 복사 (빈 문자열은 null로 변환)
+          two_guide_schedule: schedule.two_guide_schedule === '' ? null : schedule.two_guide_schedule,
+          guide_driver_schedule: schedule.guide_driver_schedule === '' ? null : schedule.guide_driver_schedule
+        } as any
+      })
 
       console.log('복사할 일정 데이터:', copiedSchedules)
 
       // Supabase에 복사된 일정들 저장
-      const { error } = await supabase
+      const { error: insertError } = await (supabase as any)
         .from('product_schedules')
-        .insert(copiedSchedules as any)
+        .insert(copiedSchedules)
 
-      if (error) {
-        console.error('일정 복사 오류:', error)
-        alert(`일정 복사 중 오류가 발생했습니다: ${error.message}`)
+      if (insertError) {
+        console.error('일정 복사 오류:', insertError)
+        alert(`일정 복사 중 오류가 발생했습니다: ${insertError.message}`)
         return
       }
 
-      alert('일정이 성공적으로 복사되었습니다.')
+      alert(`일정 ${copiedSchedules.length}개가 성공적으로 복사되었습니다.`)
       setShowCopyModal(false)
       setSelectedProductId('')
     } catch (error) {
@@ -2044,20 +2143,78 @@ export default function TableScheduleAdd({
               {/* 제목과 설명 필드 */}
               <div className="flex items-center" style={{ gap: '10px' }}>
                 {/* 제목 필드 */}
-                <div className="flex-1 min-w-0">
-                  <input
-                    type="text"
-                    value={showEnglishFields ? (schedule.title_en || '') : (schedule.title_ko || '')}
-                    onChange={(e) => {
-                      if (showEnglishFields) {
-                        updateSchedule(index, 'title_en', e.target.value)
-                      } else {
-                        updateSchedule(index, 'title_ko', e.target.value)
-                      }
-                    }}
-                    className="w-full h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    placeholder={showEnglishFields ? "English title" : "한국어 제목"}
-                  />
+                <div className="flex-1 min-w-0 flex items-center gap-2">
+                  {/* 입력 모드 선택 버튼 */}
+                  <div className="flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const currentMode = titleInputMode[index] || 'text'
+                        const newMode = currentMode === 'text' ? 'tour_course' : 'text'
+                        setTitleInputMode(prev => ({ ...prev, [index]: newMode }))
+                        if (newMode === 'text') {
+                          // 텍스트 모드로 전환 시 선택된 투어 코스 초기화
+                          setSelectedTourCourseId(prev => {
+                            const updated = { ...prev }
+                            delete updated[index]
+                            return updated
+                          })
+                        }
+                      }}
+                      className={`px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                        (titleInputMode[index] || 'text') === 'tour_course'
+                          ? 'bg-blue-100 border-blue-300 text-blue-700'
+                          : 'bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100'
+                      }`}
+                      title={(titleInputMode[index] || 'text') === 'text' ? '투어 코스 선택 모드로 전환' : '텍스트 입력 모드로 전환'}
+                    >
+                      {(titleInputMode[index] || 'text') === 'text' ? '📝' : '🗺️'}
+                    </button>
+                  </div>
+
+                  {/* 제목 입력 필드 또는 투어 코스 선택 */}
+                  {(titleInputMode[index] || 'text') === 'text' ? (
+                    <input
+                      type="text"
+                      value={showEnglishFields ? (schedule.title_en || '') : (schedule.title_ko || '')}
+                      onChange={(e) => {
+                        if (showEnglishFields) {
+                          updateSchedule(index, 'title_en', e.target.value)
+                        } else {
+                          updateSchedule(index, 'title_ko', e.target.value)
+                        }
+                      }}
+                      className="flex-1 h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      placeholder={showEnglishFields ? "English title" : "한국어 제목"}
+                    />
+                  ) : (
+                    <select
+                      value={selectedTourCourseId[index] || ''}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          handleTourCourseSelect(index, e.target.value)
+                        } else {
+                          setSelectedTourCourseId(prev => {
+                            const updated = { ...prev }
+                            delete updated[index]
+                            return updated
+                          })
+                        }
+                      }}
+                      className="flex-1 h-8 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="">투어 코스 선택</option>
+                      {loadingTourCourses ? (
+                        <option disabled>로딩 중...</option>
+                      ) : (
+                        tourCourses.map((course) => (
+                          <option key={course.id} value={course.id}>
+                            {course.name_ko} {course.name_en && `(${course.name_en})`}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  )}
                 </div>
 
                 {/* 설명 필드 */}
@@ -2988,7 +3145,7 @@ export default function TableScheduleAdd({
             
             <div className="mb-4">
               <p className="text-sm text-gray-600 mb-3">
-                현재 일정을 다른 제품으로 복사합니다. ({schedules.length}개 일정)
+                현재 상품의 일정을 다른 제품으로 복사합니다.
               </p>
               
               <label className="block text-sm font-medium text-gray-700 mb-2">

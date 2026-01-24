@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { MapPin, Search, Check, X, Plus, Folder, FolderOpen, ChevronRight, ChevronDown, Edit } from 'lucide-react'
+import { MapPin, Search, Check, X, Plus, Folder, FolderOpen, ChevronRight, ChevronDown, Edit, ArrowUp, ArrowDown } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import TourCourseEditModal from '@/components/TourCourseEditModal'
 
@@ -197,6 +197,7 @@ const TreeItem = ({
 export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesTabProps) {
   const [tourCourses, setTourCourses] = useState<TourCourse[]>([])
   const [selectedCourses, setSelectedCourses] = useState<Set<string>>(new Set())
+  const [selectedCoursesOrder, setSelectedCoursesOrder] = useState<string[]>([])
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
@@ -235,13 +236,16 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
       try {
         const { data, error } = await supabase
           .from('product_tour_courses')
-          .select('tour_course_id')
+          .select('tour_course_id, order')
           .eq('product_id', productId)
+          .order('order', { ascending: true })
 
         if (error) throw error
 
         const selectedIds = new Set(data?.map(item => item.tour_course_id) || [])
+        const order = data?.map(item => item.tour_course_id) || []
         setSelectedCourses(selectedIds)
+        setSelectedCoursesOrder(order)
       } catch (error) {
         console.error('상품 투어 코스 로드 오류:', error)
       }
@@ -279,6 +283,23 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
     setExpandedNodes(newExpanded)
   }
 
+  // 선택된 코스 순서 동기화
+  useEffect(() => {
+    const selectedArray = Array.from(selectedCourses)
+    
+    if (selectedArray.length === 0) {
+      setSelectedCoursesOrder([])
+      return
+    }
+
+    // 기존 순서에서 유지할 수 있는 것들은 유지하고, 새로 추가된 것들은 뒤에 추가
+    setSelectedCoursesOrder(prev => {
+      const newOrder = prev.filter(id => selectedCourses.has(id))
+      const newItems = selectedArray.filter(id => !prev.includes(id))
+      return [...newOrder, ...newItems]
+    })
+  }, [selectedCourses])
+
   // 투어 코스 선택
   const handleSelectCourse = (course: TourCourse) => {
     const newSelected = new Set(selectedCourses)
@@ -291,6 +312,7 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
     const newSelected = new Set(selectedCourses)
     newSelected.delete(courseId)
     setSelectedCourses(newSelected)
+    setSelectedCoursesOrder(prev => prev.filter(id => id !== courseId))
   }
 
   // 전체 선택/해제
@@ -311,6 +333,26 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
 
   const handleDeselectAll = () => {
     setSelectedCourses(new Set())
+    setSelectedCoursesOrder([])
+  }
+
+  // 순서 변경 함수들
+  const moveCourseUp = (index: number) => {
+    if (index === 0) return
+    const newOrder = [...selectedCoursesOrder]
+    const temp = newOrder[index]
+    newOrder[index] = newOrder[index - 1]
+    newOrder[index - 1] = temp
+    setSelectedCoursesOrder(newOrder)
+  }
+
+  const moveCourseDown = (index: number) => {
+    if (index === selectedCoursesOrder.length - 1) return
+    const newOrder = [...selectedCoursesOrder]
+    const temp = newOrder[index]
+    newOrder[index] = newOrder[index + 1]
+    newOrder[index + 1] = temp
+    setSelectedCoursesOrder(newOrder)
   }
 
   // 투어 코스 편집 모달 열기
@@ -371,11 +413,12 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
 
       if (deleteError) throw deleteError
 
-      // 새로운 연결 추가
-      if (selectedCourses.size > 0) {
-        const insertData = Array.from(selectedCourses).map(courseId => ({
+      // 새로운 연결 추가 (순서 정보 포함)
+      if (selectedCoursesOrder.length > 0) {
+        const insertData = selectedCoursesOrder.map((courseId, index) => ({
           product_id: productId,
-          tour_course_id: courseId
+          tour_course_id: courseId,
+          order: index
         }))
 
         const { error: insertError } = await supabase
@@ -520,47 +563,81 @@ export default function TourCoursesTab({ productId, isNewProduct }: TourCoursesT
             </div>
             
             <div className="h-[500px] overflow-y-auto">
-              {selectedCourses.size > 0 ? (
+              {selectedCoursesOrder.length > 0 ? (
                 <div className="p-4 space-y-3">
-                  {Array.from(selectedCourses).map(courseId => {
+                  {selectedCoursesOrder.map((courseId, index) => {
                     const course = tourCourses.find(c => c.id === courseId)
                     if (!course) return null
                     
                     return (
                       <div key={courseId} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-gray-900 truncate">
-                              {course.team_name_ko || course.name_ko}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2 flex-1 min-w-0">
+                            {/* 순서 번호 */}
+                            <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-semibold">
+                              {index + 1}
                             </div>
-                            {course.team_name_en && course.team_name_en !== course.team_name_ko && (
-                              <div className="text-xs text-gray-500 truncate">
-                                {course.team_name_en}
+                            
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium text-gray-900 truncate">
+                                {course.team_name_ko || course.name_ko}
                               </div>
-                            )}
-                            {course.customer_name_ko && (
-                              <div className="text-xs text-blue-600 truncate mt-1">
-                                고객용: {course.customer_name_ko}
-                              </div>
-                            )}
-                            {course.customer_name_en && (
-                              <div className="text-xs text-blue-500 truncate">
-                                고객용(EN): {course.customer_name_en}
-                              </div>
-                            )}
-                            {course.location && (
-                              <div className="text-xs text-gray-400 truncate flex items-center gap-1 mt-1">
-                                <MapPin className="w-3 h-3" />
-                                {course.location}
-                              </div>
-                            )}
-                            {course.category && (
-                              <div className="text-xs text-blue-600 mt-1">
-                                카테고리: {course.category}
-                              </div>
-                            )}
+                              {course.team_name_en && course.team_name_en !== course.team_name_ko && (
+                                <div className="text-xs text-gray-500 truncate">
+                                  {course.team_name_en}
+                                </div>
+                              )}
+                              {course.customer_name_ko && (
+                                <div className="text-xs text-blue-600 truncate mt-1">
+                                  고객용: {course.customer_name_ko}
+                                </div>
+                              )}
+                              {course.customer_name_en && (
+                                <div className="text-xs text-blue-500 truncate">
+                                  고객용(EN): {course.customer_name_en}
+                                </div>
+                              )}
+                              {course.location && (
+                                <div className="text-xs text-gray-400 truncate flex items-center gap-1 mt-1">
+                                  <MapPin className="w-3 h-3" />
+                                  {course.location}
+                                </div>
+                              )}
+                              {course.category && (
+                                <div className="text-xs text-blue-600 mt-1">
+                                  카테고리: {course.category}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                          <div className="flex items-center gap-1">
+                          
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            {/* 순서 변경 버튼 */}
+                            <div className="flex flex-col gap-1 mr-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  moveCourseUp(index)
+                                }}
+                                disabled={index === 0}
+                                className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                                title="위로 이동"
+                              >
+                                <ArrowUp className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  moveCourseDown(index)
+                                }}
+                                disabled={index === selectedCoursesOrder.length - 1}
+                                className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+                                title="아래로 이동"
+                              >
+                                <ArrowDown className="w-3 h-3" />
+                              </button>
+                            </div>
+                            
                             <button
                               onClick={() => handleOpenEditModal(course)}
                               className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded"

@@ -3,7 +3,9 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { 
   Calendar,
-  List
+  List,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { SimplePricingRuleDto, SimplePricingRule, DateRangeSelection } from '@/lib/types/dynamic-pricing';
@@ -220,6 +222,19 @@ export default function DynamicPricingManager({
     variant_name_en?: string | null;
   }>>([]);
 
+  // 채널별 포함/불포함 내역 상태
+  const [channelIncludedNotIncluded, setChannelIncludedNotIncluded] = useState<{
+    included_ko: string;
+    included_en: string;
+    not_included_ko: string;
+    not_included_en: string;
+  }>({
+    included_ko: '',
+    included_en: '',
+    not_included_ko: '',
+    not_included_en: ''
+  });
+
   // Variant 목록 불러오기
   useEffect(() => {
     const loadProductVariants = async () => {
@@ -268,8 +283,189 @@ export default function DynamicPricingManager({
     loadProductVariants();
   }, [productId, selectedChannel]);
 
+  // 채널별 포함/불포함 내역 불러오기
+  useEffect(() => {
+    const loadChannelIncludedNotIncluded = async () => {
+      if (!productId || !selectedChannel) {
+        setChannelIncludedNotIncluded({
+          included_ko: '',
+          included_en: '',
+          not_included_ko: '',
+          not_included_en: ''
+        });
+        return;
+      }
+
+      try {
+        // 채널 타입 확인 (self 채널은 'SELF_GROUP'으로 조회)
+        const channel = channelGroups
+          .flatMap(group => group.channels)
+          .find(ch => ch.id === selectedChannel);
+        
+        const channelId = channel?.type === 'self' || channel?.type === 'SELF' 
+          ? 'SELF_GROUP' 
+          : selectedChannel;
+
+        // 한국어와 영어 데이터 가져오기
+        const [koData, enData] = await Promise.all([
+          supabase
+            .from('product_details_multilingual')
+            .select('included, not_included')
+            .eq('product_id', productId)
+            .eq('channel_id', channelId)
+            .eq('language_code', 'ko')
+            .eq('variant_key', selectedVariant)
+            .maybeSingle(),
+          supabase
+            .from('product_details_multilingual')
+            .select('included, not_included')
+            .eq('product_id', productId)
+            .eq('channel_id', channelId)
+            .eq('language_code', 'en')
+            .eq('variant_key', selectedVariant)
+            .maybeSingle()
+        ]);
+
+        setChannelIncludedNotIncluded({
+          included_ko: (koData.data as any)?.included || '',
+          included_en: (enData.data as any)?.included || '',
+          not_included_ko: (koData.data as any)?.not_included || '',
+          not_included_en: (enData.data as any)?.not_included || ''
+        });
+      } catch (error) {
+        console.error('채널별 포함/불포함 내역 로드 오류:', error);
+        setChannelIncludedNotIncluded({
+          included_ko: '',
+          included_en: '',
+          not_included_ko: '',
+          not_included_en: ''
+        });
+      }
+    };
+
+    loadChannelIncludedNotIncluded();
+  }, [productId, selectedChannel, selectedVariant, channelGroups]);
+
+  // 채널별 포함/불포함 내역 저장
+  const saveChannelIncludedNotIncluded = async () => {
+    if (!productId || !selectedChannel) return;
+
+    try {
+      const channel = channelGroups
+        .flatMap(group => group.channels)
+        .find(ch => ch.id === selectedChannel);
+      
+      const channelId = channel?.type === 'self' || channel?.type === 'SELF' 
+        ? 'SELF_GROUP' 
+        : selectedChannel;
+
+      // 한국어와 영어 데이터 저장
+      const savePromises = [
+        // 한국어
+        (async () => {
+          const existingKoResult = await supabase
+            .from('product_details_multilingual')
+            .select('id')
+            .eq('product_id', productId)
+            .eq('channel_id', channelId)
+            .eq('language_code', 'ko')
+            .eq('variant_key', selectedVariant)
+            .maybeSingle() as { data: { id: string } | null; error: { code?: string } | null };
+
+          if (existingKoResult.error && existingKoResult.error.code !== 'PGRST116') {
+            throw existingKoResult.error;
+          }
+
+          const existingKo = existingKoResult.data;
+
+          const koData = {
+            included: channelIncludedNotIncluded.included_ko || null,
+            not_included: channelIncludedNotIncluded.not_included_ko || null,
+            updated_at: new Date().toISOString()
+          };
+
+          if (existingKo) {
+            const { error: updateError } = await (supabase as any)
+              .from('product_details_multilingual')
+              .update(koData)
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              .eq('id', (existingKo as any).id);
+            if (updateError) throw updateError;
+          } else {
+            const { error: insertError } = await (supabase as any)
+              .from('product_details_multilingual')
+              .insert([{
+                product_id: productId,
+                channel_id: channelId,
+                language_code: 'ko',
+                variant_key: selectedVariant,
+                ...koData
+              }]);
+            if (insertError) throw insertError;
+          }
+        })(),
+        // 영어
+        (async () => {
+          const existingEnResult = await supabase
+            .from('product_details_multilingual')
+            .select('id')
+            .eq('product_id', productId)
+            .eq('channel_id', channelId)
+            .eq('language_code', 'en')
+            .eq('variant_key', selectedVariant)
+            .maybeSingle() as { data: { id: string } | null; error: { code?: string } | null };
+
+          if (existingEnResult.error && existingEnResult.error.code !== 'PGRST116') {
+            throw existingEnResult.error;
+          }
+
+          const existingEn = existingEnResult.data;
+
+          const enData = {
+            included: channelIncludedNotIncluded.included_en || null,
+            not_included: channelIncludedNotIncluded.not_included_en || null,
+            updated_at: new Date().toISOString()
+          };
+
+          if (existingEn) {
+            const { error: updateError } = await supabase
+              .from('product_details_multilingual')
+              // @ts-expect-error - Supabase 타입 추론 문제
+              .update(enData)
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              .eq('id', (existingEn as any).id);
+            if (updateError) throw updateError;
+          } else {
+            const { error: insertError } = await (supabase as any)
+              .from('product_details_multilingual')
+              .insert([{
+                product_id: productId,
+                channel_id: channelId,
+                language_code: 'en',
+                variant_key: selectedVariant,
+                ...enData
+              }]);
+            if (insertError) throw insertError;
+          }
+        })()
+      ];
+
+      await Promise.all(savePromises);
+      setMessage('포함/불포함 내역이 저장되었습니다.');
+    } catch (error) {
+      console.error('포함/불포함 내역 저장 오류:', error);
+      setMessage('포함/불포함 내역 저장 중 오류가 발생했습니다.');
+    }
+  };
+
   // 홈페이지 가격 타입 상태
   const [homepagePricingType, setHomepagePricingType] = useState<'single' | 'separate'>('separate');
+
+  // 상품 sub_category 상태
+  const [productSubCategory, setProductSubCategory] = useState<string | null>(null);
+  
+  // 홈페이지 가격 정보 테이블 접기/펼치기 상태
+  const [isHomepagePriceTableExpanded, setIsHomepagePriceTableExpanded] = useState(false);
 
   // 상품 기본 가격 및 홈페이지 가격 타입 불러오기
   useEffect(() => {
@@ -279,7 +475,7 @@ export default function DynamicPricingManager({
       try {
         const { data, error } = await supabase
           .from('products')
-          .select('adult_base_price, child_base_price, infant_base_price, homepage_pricing_type')
+          .select('adult_base_price, child_base_price, infant_base_price, homepage_pricing_type, sub_category')
           .eq('id', productId)
           .single();
 
@@ -293,6 +489,9 @@ export default function DynamicPricingManager({
         
         // 홈페이지 가격 타입 설정
         setHomepagePricingType((data as any)?.homepage_pricing_type || 'separate');
+        
+        // sub_category 설정
+        setProductSubCategory((data as any)?.sub_category || null);
       } catch (error) {
         console.error('상품 기본 가격 로드 오류:', error);
       }
@@ -2021,7 +2220,18 @@ export default function DynamicPricingManager({
 
           {/* 포함/불포함 내역 */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-            <h4 className="text-md font-semibold text-gray-900 mb-4">포함/불포함 내역</h4>
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-md font-semibold text-gray-900">포함/불포함 내역</h4>
+              <button
+                onClick={saveChannelIncludedNotIncluded}
+                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                저장
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-4">
+              채널별 상세 설정의 포함/불포함 내역을 가져와 수정할 수 있습니다.
+            </p>
             
             <div className="space-y-4">
                 {/* 포함 내역 */}
@@ -2030,8 +2240,11 @@ export default function DynamicPricingManager({
                     포함 내역 (한국어)
                   </label>
                   <textarea
-                    value={(pricingConfig as Record<string, unknown>).inclusions_ko as string || ''}
-                    onChange={(e) => handlePricingConfigUpdate({ inclusions_ko: e.target.value })}
+                    value={channelIncludedNotIncluded.included_ko}
+                    onChange={(e) => setChannelIncludedNotIncluded(prev => ({
+                      ...prev,
+                      included_ko: e.target.value
+                    }))}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                     rows={3}
                     placeholder="포함된 내용을 입력하세요"
@@ -2043,8 +2256,11 @@ export default function DynamicPricingManager({
                     포함 내역 (영어)
                   </label>
                   <textarea
-                    value={(pricingConfig as Record<string, unknown>).inclusions_en as string || ''}
-                    onChange={(e) => handlePricingConfigUpdate({ inclusions_en: e.target.value })}
+                    value={channelIncludedNotIncluded.included_en}
+                    onChange={(e) => setChannelIncludedNotIncluded(prev => ({
+                      ...prev,
+                      included_en: e.target.value
+                    }))}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                     rows={3}
                     placeholder="Enter included items"
@@ -2057,8 +2273,11 @@ export default function DynamicPricingManager({
                     불포함 내역 (한국어)
                   </label>
                   <textarea
-                    value={((pricingConfig as Record<string, unknown>).exclusions_ko as string) || ''}
-                    onChange={(e) => handlePricingConfigUpdate({ exclusions_ko: e.target.value })}
+                    value={channelIncludedNotIncluded.not_included_ko}
+                    onChange={(e) => setChannelIncludedNotIncluded(prev => ({
+                      ...prev,
+                      not_included_ko: e.target.value
+                    }))}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                     rows={3}
                     placeholder="불포함된 내용을 입력하세요"
@@ -2070,8 +2289,11 @@ export default function DynamicPricingManager({
                     불포함 내역 (영어)
                   </label>
                   <textarea
-                    value={(pricingConfig as Record<string, unknown>).exclusions_en as string || ''}
-                    onChange={(e) => handlePricingConfigUpdate({ exclusions_en: e.target.value })}
+                    value={channelIncludedNotIncluded.not_included_en}
+                    onChange={(e) => setChannelIncludedNotIncluded(prev => ({
+                      ...prev,
+                      not_included_en: e.target.value
+                    }))}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                     rows={3}
                     placeholder="Enter excluded items"
@@ -2211,9 +2433,19 @@ export default function DynamicPricingManager({
                   <div className="mb-4">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center space-x-2">
-                        <h5 className="text-sm font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-                          홈페이지 가격 정보 (20%할인)
-                        </h5>
+                        <button
+                          onClick={() => setIsHomepagePriceTableExpanded(!isHomepagePriceTableExpanded)}
+                          className="flex items-center space-x-2 hover:opacity-80 transition-opacity"
+                        >
+                          {isHomepagePriceTableExpanded ? (
+                            <ChevronUp className="h-4 w-4 text-purple-600" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4 text-purple-600" />
+                          )}
+                          <h5 className="text-sm font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                            홈페이지 가격 정보 (20%할인)
+                          </h5>
+                        </button>
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-300">
                           {isSinglePrice ? '단일 가격' : '분리 가격'}
                         </span>
@@ -2222,7 +2454,8 @@ export default function DynamicPricingManager({
                         </span>
                       </div>
                     </div>
-                    <div className="overflow-x-auto rounded-xl shadow-lg border border-purple-200 bg-white">
+                    {isHomepagePriceTableExpanded && (
+                      <div className="overflow-x-auto rounded-xl shadow-lg border border-purple-200 bg-white">
                       <table className="w-full text-xs">
                         <thead>
                           <tr className="bg-gradient-to-r from-purple-600 via-purple-500 to-pink-500">
@@ -2394,7 +2627,8 @@ export default function DynamicPricingManager({
                           })}
                         </tbody>
                       </table>
-                    </div>
+                      </div>
+                    )}
                   </div>
                 );
               })()}
@@ -3178,10 +3412,11 @@ export default function DynamicPricingManager({
                         </div>
                       )
                     )}
-                    {/* 구매가 입력 필드 추가 (모든 채널 공통) */}
-                    <div className="mt-3 pt-3 border-t border-gray-200">
-                      <div className="text-xs font-medium text-gray-700 mb-2">
-                        실 구매가 (운영 이익 계산용)
+                    {/* 구매가 입력 필드 추가 (모든 채널 공통) - Mania Tour 제외 */}
+                    {productSubCategory !== 'Mania Tour' && (
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <div className="text-xs font-medium text-gray-700 mb-2">
+                          실 구매가 (운영 이익 계산용)
                         {isHomepageSinglePrice && (
                           <span className="ml-2 text-blue-600">(단일 가격)</span>
                         )}
@@ -3411,7 +3646,8 @@ export default function DynamicPricingManager({
                         }
                         return null;
                       })()}
-                    </div>
+                      </div>
+                    )}
                   </div>
                   );
                     })}

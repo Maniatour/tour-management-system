@@ -223,30 +223,30 @@ export default function OptionsTab({
 
   return (
     <>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center space-x-3">
-          <h3 className="text-lg font-medium text-gray-900 flex items-center">
-            <Settings className="h-5 w-5 text-purple-600 mr-2" />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div className="flex items-center space-x-2 sm:space-x-3">
+          <h3 className="text-base sm:text-lg font-medium text-gray-900 flex items-center">
+            <Settings className="h-4 w-4 sm:h-5 sm:w-5 text-purple-600 mr-1.5 sm:mr-2" />
             옵션 관리
           </h3>
-          <span className="text-sm text-gray-500">
+          <span className="text-xs sm:text-sm text-gray-500">
             {formData.productOptions.length}개 옵션
           </span>
         </div>
-        <div className="flex space-x-2">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => setAllCardsCollapsed(!allCardsCollapsed)}
-            className="px-3 py-2 text-sm text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2"
+            className="flex-1 sm:flex-none flex items-center justify-center px-2.5 py-1.5 sm:px-3 sm:py-2 text-[11px] sm:text-sm text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 space-x-1 sm:space-x-2"
           >
             {allCardsCollapsed ? (
               <>
-                <ChevronDown className="h-4 w-4" />
+                <ChevronDown className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 <span>상세보기</span>
               </>
             ) : (
               <>
-                <ChevronUp className="h-4 w-4" />
+                <ChevronUp className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 <span>접어보기</span>
               </>
             )}
@@ -254,9 +254,9 @@ export default function OptionsTab({
           <button
             type="button"
             onClick={() => setShowAddOptionModal(true)}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center space-x-2"
+            className="flex-1 sm:flex-none flex items-center justify-center px-3 py-1.5 sm:px-4 sm:py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 shadow-sm space-x-1 sm:space-x-2 text-[11px] sm:text-sm font-medium"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             <span>옵션 추가</span>
           </button>
         </div>
@@ -516,19 +516,19 @@ export default function OptionsTab({
 
       {/* 옵션 관리 저장 버튼 */}
       <div className="border-t pt-6 mt-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center space-x-2">
-            <Settings className="h-5 w-5 text-purple-600" />
-            <h3 className="text-lg font-medium text-gray-900">옵션 관리</h3>
+            <Settings className="h-4 w-4 sm:h-5 sm:w-5 text-purple-600" />
+            <h3 className="text-base sm:text-lg font-medium text-gray-900">옵션 관리</h3>
           </div>
           <button
             type="button"
             onClick={handleSaveOptions}
             disabled={saving || isNewProduct}
-            className={`px-6 py-2 rounded-lg font-medium flex items-center space-x-2 transition-colors ${
+            className={`w-full sm:w-auto px-4 sm:px-6 py-2 rounded-lg text-sm sm:text-base font-medium flex items-center justify-center space-x-2 transition-colors ${
               saving || isNewProduct
                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-purple-600 text-white hover:bg-purple-700'
+                : 'bg-purple-600 text-white hover:bg-purple-700 shadow-sm'
             }`}
           >
             <Save className="h-4 w-4" />

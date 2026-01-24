@@ -346,12 +346,12 @@ export default function ProductFaqTab({
   return (
     <div className="space-y-6">
       {/* 헤더 */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h3 className="text-lg font-medium text-gray-900 flex items-center">
           <HelpCircle className="h-5 w-5 mr-2" />
           자주 묻는 질문 (FAQ)
         </h3>
-        <div className="flex items-center space-x-4">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           {saveMessage && (
             <div className={`flex items-center text-sm ${
               saveMessage.includes('성공') || saveMessage.includes('저장') || saveMessage.includes('번역') ? 'text-green-600' : 'text-red-600'
@@ -485,17 +485,17 @@ export default function ProductFaqTab({
         <div className="space-y-4">
           {faqs.map((faq, index) => (
             <div key={faq.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-              <div className="w-full px-6 py-4 bg-gray-50 hover:bg-gray-100 transition-colors flex items-center justify-between">
+              <div className="w-full px-3 sm:px-6 py-3 sm:py-4 bg-gray-50 hover:bg-gray-100 transition-colors flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
                 <div 
-                  className="flex items-center space-x-3 flex-1 cursor-pointer"
+                  className="flex items-start sm:items-center space-x-2 sm:space-x-3 flex-1 cursor-pointer min-w-0"
                   onClick={() => toggleFaqExpansion(faq.id!)}
                 >
-                  <span className="text-sm font-medium text-gray-500">Q{index + 1}</span>
-                  <h4 className="text-left font-medium text-gray-900">
+                  <span className="text-sm font-medium text-gray-500 flex-shrink-0">Q{index + 1}</span>
+                  <h4 className="text-left font-medium text-gray-900 text-sm sm:text-base break-words">
                     {showEnglishFields ? (faq.question_en || faq.question) : faq.question}
                   </h4>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 flex-shrink-0">
                   <div className="flex space-x-1">
                     <button
                       type="button"
@@ -568,11 +568,11 @@ export default function ProductFaqTab({
               </div>
               
               {expandedFaqs.has(faq.id!) && (
-                <div className="px-6 py-4 bg-white border-t border-gray-200">
-                  <div className="flex items-start space-x-3">
-                    <span className="text-sm font-medium text-gray-500 mt-1">A</span>
-                    <div className="flex-1">
-                      <p className="text-gray-700 whitespace-pre-wrap">
+                <div className="px-3 sm:px-6 py-4 bg-white border-t border-gray-200">
+                  <div className="flex items-start space-x-2 sm:space-x-3">
+                    <span className="text-sm font-medium text-gray-500 mt-1 flex-shrink-0">A</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm sm:text-base text-gray-700 whitespace-pre-wrap break-words">
                         {showEnglishFields ? (faq.answer_en || faq.answer) : faq.answer}
                       </p>
                     </div>

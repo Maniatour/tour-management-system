@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import { Calendar, Plus, Eye, Users, MapPin } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -310,7 +310,7 @@ export default function ProductScheduleTab({
           description_ko: scheduleData.description_ko,
           description_en: scheduleData.description_en
         })
-        const { error: updateError } = await supabase
+        const { error: updateError } = await (supabase as any)
           .from('product_schedules')
           .update({
             ...scheduleData,
@@ -322,7 +322,7 @@ export default function ProductScheduleTab({
             // description 필드 명시적으로 포함
             description_ko: scheduleData.description_ko || null,
             description_en: scheduleData.description_en || null
-          } as any)
+          })
           .eq('id', id!)
 
         if (updateError) {
@@ -386,12 +386,12 @@ export default function ProductScheduleTab({
   return (
     <div className="space-y-6">
       {/* 헤더 */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h3 className="text-lg font-semibold text-gray-900 flex items-center">
           <Calendar className="h-5 w-5 mr-2" />
           {getText('투어 일정 관리', 'Tour Schedule Management')}
         </h3>
-        <div className="flex items-center space-x-4">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           {/* 언어 전환 버튼 */}
           <div className="flex items-center space-x-2">
             <button
@@ -471,16 +471,16 @@ export default function ProductScheduleTab({
                 <div className="space-y-2">
                   {schedules.map((schedule) => (
                     <div key={schedule.id} className="bg-white border border-gray-200 rounded-lg p-3">
-                      <div className="flex items-center space-x-3">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
                         {/* 썸네일 */}
-                        <div className="w-12 h-8 flex-shrink-0 flex items-center justify-center">
+                        <div className="w-full sm:w-12 h-20 sm:h-8 flex-shrink-0 flex items-center justify-center">
                           {schedule.thumbnail_url ? (
                             <Image 
                               src={schedule.thumbnail_url} 
                               alt="썸네일" 
                               width={48}
                               height={32}
-                              className="w-full h-full object-cover rounded border"
+                              className="w-full h-full sm:w-12 sm:h-8 object-cover rounded border"
                               style={{ width: 'auto', height: 'auto' }}
                             />
                           ) : (
@@ -490,23 +490,25 @@ export default function ProductScheduleTab({
                           )}
                         </div>
                         
-                        {/* 시간 */}
-                        <div className="w-28 flex-shrink-0 flex items-center justify-center">
-                          <span className="text-sm text-gray-600 font-medium whitespace-nowrap">
-                            {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
-                            {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
-                          </span>
-                        </div>
-                        
-                        {/* 소요시간 */}
-                        <div className="w-16 flex-shrink-0 flex items-center justify-center">
-                          <span className="text-sm text-gray-500">
-                            {schedule.duration_minutes && schedule.duration_minutes > 0 ? `${schedule.duration_minutes}분` : ''}
-                          </span>
+                        {/* 시간과 소요시간 */}
+                        <div className="flex items-center gap-3 sm:gap-0 sm:flex-col sm:w-28 flex-shrink-0">
+                          <div className="flex items-center justify-center">
+                            <span className="text-sm text-gray-600 font-medium whitespace-nowrap">
+                              {schedule.start_time ? schedule.start_time.substring(0, 5) : ''}
+                              {schedule.end_time && ` - ${schedule.end_time.substring(0, 5)}`}
+                            </span>
+                          </div>
+                          {schedule.duration_minutes && schedule.duration_minutes > 0 && (
+                            <div className="flex items-center justify-center">
+                              <span className="text-xs sm:text-sm text-gray-500">
+                                {schedule.duration_minutes}분
+                              </span>
+                            </div>
+                          )}
                         </div>
                         
                         {/* 제목과 설명 */}
-                        <div className="flex-1 min-w-0">
+                        <div className="flex-1 min-w-0 w-full sm:w-auto">
                           <div className="font-medium text-gray-900 text-sm leading-tight">
                             {getScheduleText(schedule, 'title')}
                           </div>

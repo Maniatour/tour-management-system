@@ -256,6 +256,7 @@ export interface Database {
           id: string
           product_id: string
           tour_course_id: string
+          order: number | null
           created_at: string | null
           updated_at: string | null
         }
@@ -263,6 +264,7 @@ export interface Database {
           id?: string
           product_id: string
           tour_course_id: string
+          order?: number | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -270,6 +272,7 @@ export interface Database {
           id?: string
           product_id?: string
           tour_course_id?: string
+          order?: number | null
           created_at?: string | null
           updated_at?: string | null
         }
