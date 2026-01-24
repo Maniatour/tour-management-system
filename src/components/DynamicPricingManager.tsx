@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { 
   Calendar,
   List
@@ -14,8 +14,7 @@ import { useChannelManagement } from '@/hooks/useChannelManagement';
 import { useChoiceManagement } from '@/hooks/useChoiceManagement';
 import { usePricingData } from '@/hooks/usePricingData';
 import { usePriceCalculation } from '@/hooks/usePriceCalculation';
-import { calculateHomepageNetPrice, findHomepageChoiceData } from '@/utils/homepagePriceCalculator';
-import { findChoicePricingData } from '@/utils/choicePricingMatcher';
+import { findHomepageChoiceData } from '@/utils/homepagePriceCalculator';
 
 // UI 컴포넌트들
 import { ChannelSelector } from './dynamic-pricing/ChannelSelector';
@@ -191,8 +190,7 @@ export default function DynamicPricingManager({
     pricingConfig: calculationConfig,
     updatePricingConfig: updateCalculationConfig,
     updateChoicePricing,
-    currentCalculation,
-    choiceCalculations
+    currentCalculation
   } = usePriceCalculation();
 
   // 상품 기본 가격 상태
@@ -249,7 +247,7 @@ export default function DynamicPricingManager({
           return;
         }
 
-        const variants = (data || []).map(item => ({
+        const variants = ((data || []) as any[]).map((item: any) => ({
           variant_key: item.variant_key || 'default',
           variant_name_ko: item.variant_name_ko,
           variant_name_en: item.variant_name_en
@@ -291,9 +289,9 @@ export default function DynamicPricingManager({
         if (error) throw error;
 
         setProductBasePrice({
-          adult: data?.adult_base_price || 0,
-          child: data?.child_base_price || 0,
-          infant: data?.infant_base_price || 0
+          adult: (data as any)?.adult_base_price || 0,
+          child: (data as any)?.child_base_price || 0,
+          infant: (data as any)?.infant_base_price || 0
         });
         
         // 홈페이지 가격 타입 설정
@@ -324,7 +322,7 @@ export default function DynamicPricingManager({
           .maybeSingle();
         
         // choices_pricing이 null이 아닌 레코드가 없으면, null 포함하여 다시 시도
-        if (!data || !data.choices_pricing) {
+        if (!data || !(data as any).choices_pricing) {
           const { data: fallbackData, error: fallbackError } = await supabase
             .from('dynamic_pricing')
             .select('markup_amount, markup_percent, choices_pricing, date')
@@ -340,8 +338,7 @@ export default function DynamicPricingManager({
           }
           
           if (fallbackData) {
-            const processedData = fallbackData;
-            const processedError = null;
+            const processedData = fallbackData as any;
             
             // choices_pricing 처리
             let choicesPricing = processedData.choices_pricing;
@@ -377,8 +374,9 @@ export default function DynamicPricingManager({
         }
 
         if (data) {
+          const dataAny = data as any;
           // choices_pricing이 문자열인 경우 파싱
-          let choicesPricing = data.choices_pricing;
+          let choicesPricing = dataAny.choices_pricing;
           if (typeof choicesPricing === 'string') {
             try {
               choicesPricing = JSON.parse(choicesPricing);
@@ -389,16 +387,16 @@ export default function DynamicPricingManager({
           }
           
           console.log('✅ 홈페이지 가격 설정 로드 성공 (M00001):', {
-            markup_amount: data.markup_amount,
-            markup_percent: data.markup_percent,
+            markup_amount: dataAny.markup_amount,
+            markup_percent: dataAny.markup_percent,
             choices_pricing_keys: Object.keys(choicesPricing || {}),
             choices_pricing_sample: Object.entries(choicesPricing || {}).slice(0, 2),
-            date: data.date
+            date: dataAny.date
           });
           
           setHomepagePricingConfig({
-            markup_amount: data.markup_amount || 0,
-            markup_percent: data.markup_percent || 0,
+            markup_amount: dataAny.markup_amount || 0,
+            markup_percent: dataAny.markup_percent || 0,
             choices_pricing: (choicesPricing as Record<string, any>) || {}
           });
         } else {
@@ -433,8 +431,8 @@ export default function DynamicPricingManager({
     }
     
     // 모든 요일이 선택된 경우 (7개) - 전체 기간 저장
-    const allDaysSelected = selection.selectedDays.length === 7 && 
-      selection.selectedDays.every(day => [0, 1, 2, 3, 4, 5, 6].includes(day));
+    // const allDaysSelected = selection.selectedDays.length === 7 && 
+    //   selection.selectedDays.every(day => [0, 1, 2, 3, 4, 5, 6].includes(day));
     
     // 날짜 문자열을 직접 파싱하여 시간대 문제 방지
     const [startYear, startMonth, startDay] = selection.startDate.split('-').map(Number);
@@ -636,14 +634,15 @@ export default function DynamicPricingManager({
       });
       
       // 새로운 구조: { choiceId: { adult: 50, child: 30, infant: 20 } }
-      Object.entries(pricingConfig.choices_pricing).forEach(([choiceId, choiceData]: [string, Record<string, unknown>]) => {
-        if (choiceData && typeof choiceData === 'object') {
-          const adultPrice = (choiceData as Record<string, unknown>).adult as number || 
-                           (choiceData as Record<string, unknown>).adult_price as number || 0;
-          const childPrice = (choiceData as Record<string, unknown>).child as number || 
-                           (choiceData as Record<string, unknown>).child_price as number || 0;
-          const infantPrice = (choiceData as Record<string, unknown>).infant as number || 
-                            (choiceData as Record<string, unknown>).infant_price as number || 0;
+      Object.entries(pricingConfig.choices_pricing as Record<string, any>).forEach(([choiceId, choiceData]) => {
+        const choiceDataTyped = choiceData as any;
+        if (choiceDataTyped && typeof choiceDataTyped === 'object') {
+          const adultPrice = (choiceDataTyped as Record<string, unknown>).adult as number || 
+                           (choiceDataTyped as Record<string, unknown>).adult_price as number || 0;
+          const childPrice = (choiceDataTyped as Record<string, unknown>).child as number || 
+                           (choiceDataTyped as Record<string, unknown>).child_price as number || 0;
+          const infantPrice = (choiceDataTyped as Record<string, unknown>).infant as number || 
+                            (choiceDataTyped as Record<string, unknown>).infant_price as number || 0;
           
           // 초이스 조합 가격 업데이트
           updateChoiceCombinationPrice(choiceId, 'adult_price', adultPrice);
@@ -1099,8 +1098,12 @@ export default function DynamicPricingManager({
   // 가격 규칙 저장 핸들러
   const handleSavePricingRule = useCallback(async () => {
     if (selectedDates.length === 0 || (!selectedChannelType && !selectedChannel)) {
+      setMessage('날짜와 채널을 선택해주세요.');
       return;
     }
+
+    // 저장 시작 메시지
+    setMessage('가격 규칙을 저장하는 중입니다...');
 
     let channelIds: string[] = [];
     
@@ -1152,7 +1155,7 @@ export default function DynamicPricingManager({
             .eq('date', date);
           
           if (existingRules && existingRules.length > 0) {
-            existingRules.forEach(existingRule => {
+            existingRules.forEach((existingRule: any) => {
               let existingChoicesPricing: Record<string, any> = {};
               if (existingRule.choices_pricing) {
                 try {
@@ -1558,88 +1561,130 @@ export default function DynamicPricingManager({
       }))
     });
 
-    // 규칙이 5개 이상이면 배치 저장 사용 (자체 채널이든 OTA 채널이든 상관없이)
-    // 불포함 금액이나 choices_pricing이 있어도 배치 저장 사용
-    if (rulesData.length >= 5) {
-      console.log(`배치 저장 시작: ${rulesData.length}개 규칙`);
-      
-      try {
-        await savePricingRulesBatch(rulesData, (completed, total) => {
-          setBatchProgress({ completed, total });
-        });
+    // 저장할 규칙이 없으면 메시지 표시
+    if (rulesData.length === 0) {
+      setMessage('저장할 가격 규칙이 없습니다. 가격 정보를 입력해주세요.');
+      return;
+    }
+
+    try {
+      // 규칙이 5개 이상이면 배치 저장 사용 (자체 채널이든 OTA 채널이든 상관없이)
+      // 불포함 금액이나 choices_pricing이 있어도 배치 저장 사용
+      if (rulesData.length >= 5) {
+        console.log(`배치 저장 시작: ${rulesData.length}개 규칙`);
         
-        setBatchProgress(null); // 진행률 초기화
-        setMessage(`전체 ${rulesData.length}개 가격 규칙이 성공적으로 저장되었습니다.`);
+        try {
+          await savePricingRulesBatch(rulesData, (completed, total) => {
+            setBatchProgress({ completed, total });
+          });
+          
+          setBatchProgress(null); // 진행률 초기화
+          setMessage(`✅ 전체 ${rulesData.length}개 가격 규칙이 성공적으로 저장되었습니다.`);
+          
+          // 저장 완료 후 저장된 데이터 확인
+          const savedBaseRules = rulesData.filter(r => r.price_type === 'base');
+          const savedDynamicRules = rulesData.filter(r => r.price_type === 'dynamic');
+          console.log('저장 완료 - 저장된 레코드 요약:', {
+            total: rulesData.length,
+            baseCount: savedBaseRules.length,
+            dynamicCount: savedDynamicRules.length,
+            baseRules: savedBaseRules.map(r => ({
+              date: r.date,
+              channel_id: r.channel_id,
+              choicesCount: Object.keys(r.choices_pricing || {}).length
+            })),
+            dynamicRules: savedDynamicRules.map(r => ({
+              date: r.date,
+              channel_id: r.channel_id,
+              choicesCount: Object.keys(r.choices_pricing || {}).length
+            }))
+          });
+          
+          // 저장 완료 후 데이터 새로고침 (데이터베이스 반영 시간 고려)
+          await new Promise(resolve => setTimeout(resolve, 300)); // 300ms 대기
+          await loadDynamicPricingData();
+          await loadChannelPricingStats();
+          
+          // 추가로 한 번 더 로드하여 확실하게 반영
+          setTimeout(async () => {
+            await loadDynamicPricingData();
+          }, 500);
+        } catch (error) {
+          console.error('배치 저장 실패:', error);
+          setBatchProgress(null);
+          setMessage('⚠️ 배치 저장에 실패했습니다. 개별 저장을 시도합니다...');
+          
+          // 배치 저장 실패 시 개별 저장으로 폴백
+          let savedCount = 0;
+          let failedCount = 0;
+          for (const ruleData of rulesData) {
+            try {
+              await savePricingRule(ruleData, false);
+              savedCount++;
+            } catch (err) {
+              console.error('가격 규칙 저장 실패:', err);
+              failedCount++;
+            }
+          }
+          
+          if (savedCount === rulesData.length) {
+            setMessage(`✅ 전체 ${rulesData.length}개 가격 규칙이 성공적으로 저장되었습니다.`);
+            // 저장 완료 후 데이터 새로고침 (데이터베이스 반영 시간 고려)
+            await new Promise(resolve => setTimeout(resolve, 300)); // 300ms 대기
+            await loadDynamicPricingData();
+            // 추가로 한 번 더 로드하여 확실하게 반영
+            setTimeout(async () => {
+              await loadDynamicPricingData();
+            }, 500);
+          } else {
+            setMessage(`⚠️ ${savedCount}/${rulesData.length}개 가격 규칙이 저장되었습니다. (${failedCount}개 실패)`);
+            // 일부 저장 완료 후에도 데이터 새로고침
+            await new Promise(resolve => setTimeout(resolve, 300));
+            await loadDynamicPricingData();
+          }
+          await loadChannelPricingStats();
+        }
+      } else {
+        // 규칙이 적은 경우 개별 저장
+        console.log(`개별 저장 시작: ${rulesData.length}개 규칙`);
         
-        // 저장 완료 후 저장된 데이터 확인
-        const savedBaseRules = rulesData.filter(r => r.price_type === 'base');
-        const savedDynamicRules = rulesData.filter(r => r.price_type === 'dynamic');
-        console.log('저장 완료 - 저장된 레코드 요약:', {
-          total: rulesData.length,
-          baseCount: savedBaseRules.length,
-          dynamicCount: savedDynamicRules.length,
-          baseRules: savedBaseRules.map(r => ({
-            date: r.date,
-            channel_id: r.channel_id,
-            choicesCount: Object.keys(r.choices_pricing || {}).length
-          })),
-          dynamicRules: savedDynamicRules.map(r => ({
-            date: r.date,
-            channel_id: r.channel_id,
-            choicesCount: Object.keys(r.choices_pricing || {}).length
-          }))
-        });
-        
-        // 저장 완료 후 통계 다시 로드
-        await loadChannelPricingStats();
-      } catch (error) {
-        console.error('배치 저장 실패:', error);
-        setBatchProgress(null);
-        setMessage('배치 저장에 실패했습니다. 개별 저장을 시도합니다.');
-        
-        // 배치 저장 실패 시 개별 저장으로 폴백
         let savedCount = 0;
+        let failedCount = 0;
         for (const ruleData of rulesData) {
           try {
             await savePricingRule(ruleData, false);
             savedCount++;
-          } catch (err) {
-            console.error('가격 규칙 저장 실패:', err);
+          } catch (error) {
+            console.error('가격 규칙 저장 실패:', error);
+            failedCount++;
           }
         }
         
         if (savedCount === rulesData.length) {
-          setMessage(`전체 ${rulesData.length}개 가격 규칙이 성공적으로 저장되었습니다.`);
+          setMessage(`✅ 전체 ${rulesData.length}개 가격 규칙이 성공적으로 저장되었습니다.`);
+          // 저장 완료 후 데이터 새로고침 (데이터베이스 반영 시간 고려)
+          await new Promise(resolve => setTimeout(resolve, 300)); // 300ms 대기
+          await loadDynamicPricingData();
+          await loadChannelPricingStats();
+          // 추가로 한 번 더 로드하여 확실하게 반영
+          setTimeout(async () => {
+            await loadDynamicPricingData();
+          }, 500);
+        } else if (savedCount > 0) {
+          setMessage(`⚠️ ${savedCount}/${rulesData.length}개 가격 규칙이 저장되었습니다. (${failedCount}개 실패)`);
+          // 일부 저장 완료 후에도 데이터 새로고침
+          await new Promise(resolve => setTimeout(resolve, 300));
+          await loadDynamicPricingData();
+          await loadChannelPricingStats();
         } else {
-          setMessage(`${savedCount}/${rulesData.length}개 가격 규칙이 저장되었습니다.`);
-        }
-        await loadChannelPricingStats();
-      }
-    } else {
-      // 규칙이 적은 경우 개별 저장
-      console.log(`개별 저장 시작: ${rulesData.length}개 규칙`);
-      
-      let savedCount = 0;
-      for (const ruleData of rulesData) {
-        try {
-          await savePricingRule(ruleData, false);
-          savedCount++;
-        } catch (error) {
-          console.error('가격 규칙 저장 실패:', error);
+          setMessage(`❌ 가격 규칙 저장에 실패했습니다. (${failedCount}개 실패)`);
         }
       }
-      
-      if (savedCount === rulesData.length) {
-        setMessage(`전체 ${rulesData.length}개 가격 규칙이 성공적으로 저장되었습니다.`);
-        // 저장 완료 후 통계 다시 로드
-        await loadChannelPricingStats();
-      } else {
-        setMessage(`${savedCount}/${rulesData.length}개 가격 규칙이 저장되었습니다.`);
-        // 일부 저장 완료 후에도 통계 다시 로드
-        await loadChannelPricingStats();
-      }
+    } catch (error) {
+      console.error('가격 규칙 저장 중 오류 발생:', error);
+      setMessage(`❌ 가격 규칙 저장 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
     }
-  }, [selectedDates, selectedChannelType, selectedChannel, channelGroups, pricingConfig, calculationConfig, productId, savePricingRule, savePricingRulesBatch, setMessage, loadChannelPricingStats]);
+  }, [selectedDates, selectedChannelType, selectedChannel, channelGroups, pricingConfig, calculationConfig, productId, savePricingRule, savePricingRulesBatch, setMessage, loadChannelPricingStats, loadDynamicPricingData]);
 
   // 규칙 편집 핸들러
   const handleEditRule = useCallback((rule: SimplePricingRule) => {
@@ -1668,7 +1713,7 @@ export default function DynamicPricingManager({
       is_sale_available: rule.is_sale_available,
       not_included_price: rule.not_included_price || 0,
       choices_pricing: choicesPricing
-    });
+    } as any);
     
     setSelectedDates([rule.date]);
     handleChannelSelect(rule.channel_id);
@@ -1776,13 +1821,14 @@ export default function DynamicPricingManager({
       }
 
       if (data) {
+        const dataAny = data as any;
         // commission_percent를 commission_rate로 매핑
         const channelData = {
-          ...data,
-          commission_rate: data.commission_percent || data.commission || data.commission_rate || 0,
-          is_active: data.status === 'active' || data.is_active === true,
-          website: data.website || data.website_url || '',
-          pricing_type: data.pricing_type || 'separate'
+          ...dataAny,
+          commission_rate: dataAny.commission_percent || dataAny.commission || dataAny.commission_rate || 0,
+          is_active: dataAny.status === 'active' || dataAny.is_active === true,
+          website: dataAny.website || dataAny.website_url || '',
+          pricing_type: dataAny.pricing_type || 'separate'
         };
         setEditingChannel(channelData as typeof editingChannel);
       }
@@ -1793,27 +1839,26 @@ export default function DynamicPricingManager({
   }, []);
 
   // 채널 수정 핸들러
-  const handleEditChannel = useCallback(async (channel: Omit<typeof editingChannel, 'id' | 'created_at'>) => {
+  const handleEditChannel = useCallback(async (channel: any) => {
     if (!editingChannel) return;
 
     try {
       // commission_rate를 commission_percent로 매핑, is_active를 status로 매핑, website 필드 사용
-      const channelAny = channel as any;
       const channelData: any = {
-        name: channel.name,
-        type: channel.type,
-        website: channelAny.website || channel.website_url || '',
-        customer_website: channel.customer_website || '',
-        admin_website: channel.admin_website || '',
-        commission_percent: channelAny.commission_rate || 0,
-        status: channel.is_active ? 'active' : 'inactive',
-        description: channel.description || '',
-        favicon_url: channel.favicon_url || '',
-        manager_name: channel.manager_name || '',
-        manager_contact: channel.manager_contact || '',
-        contract_url: channel.contract_url || '',
-        commission_base_price_only: channelAny.commission_base_price_only ?? false,
-        pricing_type: channelAny.pricing_type || 'separate'
+        name: (channel as any).name,
+        type: (channel as any).type,
+        website: (channel as any).website || (channel as any).website_url || '',
+        customer_website: (channel as any).customer_website || '',
+        admin_website: (channel as any).admin_website || '',
+        commission_percent: (channel as any).commission_rate || 0,
+        status: (channel as any).is_active ? 'active' : 'inactive',
+        description: (channel as any).description || '',
+        favicon_url: (channel as any).favicon_url || '',
+        manager_name: (channel as any).manager_name || '',
+        manager_contact: (channel as any).manager_contact || '',
+        contract_url: (channel as any).contract_url || '',
+        commission_base_price_only: (channel as any).commission_base_price_only ?? false,
+        pricing_type: (channel as any).pricing_type || 'separate'
       };
       
       console.log('DynamicPricingManager handleEditChannel - Saving channel data:', channelData);
@@ -1821,7 +1866,7 @@ export default function DynamicPricingManager({
 
       const { error } = await supabase
         .from('channels')
-        .update(channelData)
+        .update(channelData as any)
         .eq('id', editingChannel.id);
 
       if (error) {
@@ -2062,6 +2107,7 @@ export default function DynamicPricingManager({
               notIncludedFilter={notIncludedFilter}
               onNotIncludedFilterChange={setNotIncludedFilter}
               productBasePrice={productBasePrice}
+              selectedVariant={selectedVariant}
             />
           ) : (
             <PricingListView
@@ -2302,7 +2348,7 @@ export default function DynamicPricingManager({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {choiceCombinations.map((combination, index) => {
+                          {choiceCombinations.map((combination) => {
                             const combinationName = combination.combination_name_ko || combination.combination_name || combination.id;
                             
                             // 홈페이지 가격 계산
@@ -2647,7 +2693,7 @@ export default function DynamicPricingManager({
                   const couponPercent = pricingConfig.coupon_percent || 0;
                   
                   // 채널 설정 확인 (foundChannel 사용)
-                  const commissionBasePriceOnly = (foundChannel as any)?.commission_base_price_only || false;
+                  // const commissionBasePriceOnly = (foundChannel as any)?.commission_base_price_only || false;
                   
                   // 초이스 가격 가져오기
                   const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
@@ -2674,6 +2720,9 @@ export default function DynamicPricingManager({
                       choicePrice = detailsTotal;
                     }
                   }
+                  
+                  // 채널 설정 확인
+                  const commissionBasePriceOnly = (foundChannel as any)?.commission_base_price_only || false;
                   
                   // 디버깅: 초이스 가격 확인
                   console.log('초이스 가격 계산:', {
@@ -3435,7 +3484,7 @@ export default function DynamicPricingManager({
                   const couponPercent = pricingConfig.coupon_percent || 0;
                   
                   // 채널 설정 확인 (foundChannel 사용)
-                  const commissionBasePriceOnly = (foundChannel as any)?.commission_base_price_only || false;
+                  // const commissionBasePriceOnly = (foundChannel as any)?.commission_base_price_only || false;
                   
                   // 초이스 가격 가져오기
                   const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
@@ -3446,22 +3495,22 @@ export default function DynamicPricingManager({
                     ? choiceNotIncludedPrice 
                     : ((pricingConfig as any)?.not_included_price || 0);
                   
-                  // 여러 소스에서 초이스 가격 가져오기
-                  let choicePrice = currentChoiceData.adult_price || 
-                                   currentChoiceData.adult || 
-                                   combination.adult_price || 
-                                   0;
+                  // 여러 소스에서 초이스 가격 가져오기 (사용하지 않지만 계산에 필요할 수 있음)
+                  // let choicePrice = currentChoiceData.adult_price || 
+                  //                  currentChoiceData.adult || 
+                  //                  combination.adult_price || 
+                  //                  0;
                   
                   // combination_details가 있으면 합계 계산
-                  if (combination.combination_details && combination.combination_details.length > 0) {
-                    const detailsTotal = combination.combination_details.reduce((sum: number, detail: any) => {
-                      return sum + (detail.adult_price || 0);
-                    }, 0);
-                    // combination_details의 합계가 있으면 사용 (더 정확함)
-                    if (detailsTotal > 0) {
-                      choicePrice = detailsTotal;
-                    }
-                  }
+                  // if (combination.combination_details && combination.combination_details.length > 0) {
+                  //   const detailsTotal = combination.combination_details.reduce((sum: number, detail: any) => {
+                  //     return sum + (detail.adult_price || 0);
+                  //   }, 0);
+                  //   // combination_details의 합계가 있으면 사용 (더 정확함)
+                  //   if (detailsTotal > 0) {
+                  //     choicePrice = detailsTotal;
+                  //   }
+                  // }
                   
                   // Net Price 계산
                   let netPrice = 0;
@@ -4142,10 +4191,10 @@ export default function DynamicPricingManager({
             const foundChannel = selectedChannel ? channelGroups
               .flatMap(group => group.channels)
               .find(ch => ch.id === selectedChannel) : null;
-            const isOTAChannel = foundChannel && (
-              (foundChannel as any).type?.toLowerCase() === 'ota' || 
-              (foundChannel as any).category === 'OTA'
-            );
+            // const isOTAChannel = foundChannel && (
+            //   (foundChannel as any).type?.toLowerCase() === 'ota' || 
+            //   (foundChannel as any).category === 'OTA'
+            // );
             const isHomepageChannel = foundChannel && (
               (foundChannel as any).id === 'M00001' ||
               (foundChannel as any).id?.toLowerCase() === 'm00001' ||

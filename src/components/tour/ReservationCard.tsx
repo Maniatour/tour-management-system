@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Check, X, Users, Clock, Building, DollarSign, Wallet, Home, Plane, PlaneTakeoff, HelpCircle, CheckCircle2, AlertCircle, XCircle, Circle, MessageSquare } from 'lucide-react'
+// @ts-expect-error - react-country-flag 라이브러리의 타입 정의가 없음
 import ReactCountryFlag from 'react-country-flag'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
@@ -101,7 +102,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   const [channelInfo, setChannelInfo] = useState<{ name: string; favicon?: string; has_not_included_price?: boolean; commission_base_price_only?: boolean } | null>(null)
   const [customerData, setCustomerData] = useState<{ id: string; resident_status: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null } | null>(null)
   const [paymentMethodMap, setPaymentMethodMap] = useState<Record<string, string>>({})
-  const [residentStatusDropdownOpen, setResidentStatusDropdownOpen] = useState<string | null>(null)
+  // setResidentStatusDropdownOpen는 사용되지만 residentStatusDropdownOpen은 현재 읽히지 않음
+  const [_residentStatusDropdownOpen, setResidentStatusDropdownOpen] = useState<string | null>(null)
   const [showResidentStatusModal, setShowResidentStatusModal] = useState(false)
   const [residentStatusCounts, setResidentStatusCounts] = useState({
     usResident: 0,
@@ -154,8 +156,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           
           if (!customerError && customer) {
             setCustomerData({
-              id: customer.id,
-              resident_status: customer.resident_status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
+              id: (customer as any).id,
+              resident_status: (customer as any).resident_status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
             })
           }
         }
@@ -217,7 +219,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         
         setCustomerData({
           id: reservation.id, // reservation_id를 id로 사용
-          resident_status: mostCommonStatus as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | 'non_resident_under_16' | null
+          resident_status: (mostCommonStatus === 'non_resident_under_16' ? 'non_resident' : mostCommonStatus) as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
         })
       } else {
         // reservation_customers에 데이터가 없으면 customers 테이블에서 가져오기 (fallback)
@@ -230,8 +232,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           
           if (!customerError && customer) {
             setCustomerData({
-              id: customer.id,
-              resident_status: customer.resident_status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
+              id: (customer as any).id,
+              resident_status: (customer as any).resident_status as 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null
             })
           }
         }
@@ -345,7 +347,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       if (error) throw error
       
       const methodMap: Record<string, string> = {}
-      data?.forEach(pm => {
+      data?.forEach((pm: any) => {
         // ID로 조회 시 방법명(method)만 반환
         methodMap[pm.id] = pm.method
         // 방법명으로도 매핑 (payment_records에 방법명이 직접 저장된 경우 대비)
@@ -549,7 +551,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   }
 
   // 거주 상태 업데이트 핸들러 (reservation_customers 테이블 업데이트) - 기존 함수는 유지 (하위 호환성)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // @ts-expect-error - 하위 호환성을 위해 유지하지만 현재 사용되지 않음
   const handleUpdateResidentStatus = async (reservationId: string, newStatus: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null) => {
     try {
       // reservation_customers 테이블에서 해당 예약의 모든 레코드 가져오기
@@ -581,13 +583,13 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       } else if (existingRecords && existingRecords.length > 0) {
         // 기존 레코드가 있으면 모든 레코드의 상태를 업데이트
         const updatePromises = existingRecords.map((record: any) => 
-          supabase
-            .from('reservation_customers' as any)
+          (supabase as any)
+            .from('reservation_customers')
             .update({ 
               resident_status: newStatus,
               // 패스 보유 상태가 아니면 pass_covered_count를 0으로 설정
               pass_covered_count: newStatus === 'non_resident_with_pass' ? (record.pass_covered_count || 0) : 0
-            } as any)
+            })
             .eq('id', record.id)
         )
         
@@ -730,12 +732,20 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         throw new Error('픽업 정보 저장에 실패했습니다.')
       }
 
-      // 성공 시 부모 컴포넌트에 새로고침 요청
-      if (onRefresh) {
-        await onRefresh()
-      }
+      await response.json()
       
       console.log('픽업 정보가 저장되었습니다:', { reservationId, pickupTime, pickupHotel })
+
+      // 성공 시 부모 컴포넌트에 새로고침 요청 (예약 카드뷰와 픽업 스케줄 업데이트)
+      if (onRefresh) {
+        try {
+          await onRefresh()
+          console.log('예약 데이터 새로고침 완료')
+        } catch (refreshError) {
+          console.error('데이터 새로고침 중 오류:', refreshError)
+          // 새로고침 실패해도 저장은 성공했으므로 계속 진행
+        }
+      }
       
     } catch (error) {
       console.error('픽업 정보 저장 오류:', error)
@@ -752,8 +762,10 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   
   const flagCode = getFlagCode(customerLanguage)
 
-  const getReservationStatusColor = (status: string) => {
-    switch (status?.toLowerCase()) {
+  // 나중에 사용될 수 있으므로 유지 (현재는 사용되지 않음)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
+  const getReservationStatusColor = (_status: string): string => {
+    switch (_status?.toLowerCase()) {
       case 'confirmed':
         return 'bg-green-100 text-green-800'
       case 'recruiting':
@@ -768,6 +780,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         return 'bg-gray-100 text-gray-800'
     }
   }
+  
+  // 사용하지 않는 함수이지만 나중에 사용될 수 있으므로 유지
+  void getReservationStatusColor
 
   const getStatusIcon = (status: string) => {
     switch (status?.toLowerCase()) {
@@ -853,6 +868,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     const selectedChoices: Array<{
       name: string
       choice_id: string
+      option_id: string
       choice_group?: string
       choice_group_ko?: string
     }> = []
@@ -1238,13 +1254,13 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         
         // deposit_amount를 현재 값 + balanceAmount로 업데이트
         // balance_amount를 0으로 업데이트
-        const { error: updateError } = await supabase
+        const { error: updateError } = await (supabase as any)
           .from('reservation_pricing')
           .update({ 
             deposit_amount: currentDepositAmount + balanceAmount,
             balance_amount: 0,
             updated_at: new Date().toISOString()
-          } as any)
+          })
           .eq('id', existingPricing.id)
 
         if (updateError) {
@@ -1372,7 +1388,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           {/* 상태 뱃지 - 아이콘으로 표시하고 호버시 텍스트 */}
           {showStatus && reservation.status && (
             <div className="relative group">
-              <div className="p-1 rounded-full hover:bg-gray-100 rounded transition-colors">
+              <div className="p-1 rounded-full hover:bg-gray-100 transition-colors">
                 {getStatusIcon(reservation.status)}
               </div>
               <div className="absolute bottom-full right-0 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">

@@ -102,6 +102,7 @@ interface PricingCalendarProps {
     child: number;
     infant: number;
   };
+  selectedVariant?: string;
 }
 
 export const PricingCalendar = memo(function PricingCalendar({
@@ -117,7 +118,8 @@ export const PricingCalendar = memo(function PricingCalendar({
   channelInfo,
   notIncludedFilter = 'all',
   onNotIncludedFilterChange,
-  productBasePrice = { adult: 0, child: 0, infant: 0 }
+  productBasePrice = { adult: 0, child: 0, infant: 0 },
+  selectedVariant = 'default'
 }: PricingCalendarProps) {
   const [selectedChoice, setSelectedChoice] = useState<string>('');
   const [selectedPriceTypes, setSelectedPriceTypes] = useState<Set<string>>(
@@ -239,6 +241,22 @@ export const PricingCalendar = memo(function PricingCalendar({
       }
     }
 
+    // variant_key로 필터링
+    if (selectedVariant && selectedVariant !== 'default') {
+      filteredRules = filteredRules.filter(r => r.variant_key === selectedVariant);
+      if (filteredRules.length === 0) {
+        return undefined;
+      }
+    } else {
+      // selectedVariant가 'default'이거나 없으면 variant_key가 null, undefined, 'default'인 규칙만 선택
+      filteredRules = filteredRules.filter(r => 
+        !r.variant_key || r.variant_key === 'default' || r.variant_key === ''
+      );
+      if (filteredRules.length === 0) {
+        return undefined;
+      }
+    }
+
     // notIncludedFilter에 따라 price_type 필터링
     if (notIncludedFilter === 'with') {
       // 불포함 사항 있음: price_type='dynamic' 또는 not_included_price > 0
@@ -320,11 +338,11 @@ export const PricingCalendar = memo(function PricingCalendar({
 
     // 필터가 'all'이거나 필터링 결과가 없으면 첫 번째 규칙 반환
     return filteredRules[0];
-  }, [selectedChannelId, selectedChannelType, notIncludedFilter]);
+  }, [selectedChannelId, selectedChannelType, notIncludedFilter, selectedVariant]);
 
   // 날짜별 단일 가격 정보 가져오기 (최대 판매가, 할인 가격, Net Price)
   // 초이스 선택 및 필터 기능 포함
-  const getSinglePriceForDate = (date: string): {
+  const getSinglePriceForDate = useCallback((date: string): {
     maxSalePrice: number;
     discountPrice: number;
     netPrice: number;
@@ -380,14 +398,25 @@ export const PricingCalendar = memo(function PricingCalendar({
         
         // 초이스가 없는 경우 (no_choice) 처리
         if (choicesData['no_choice']) {
+          // selectedChoice가 명시적으로 선택되어 있고 'no_choice'가 아니면 가격 없음
+          if (selectedChoice && selectedChoice !== '' && selectedChoice !== 'no_choice') {
+            return null;
+          }
           const noChoiceData = choicesData['no_choice'];
           otaSalePrice = noChoiceData?.ota_sale_price || 0;
           choicePrice = 0;
         } else {
-          // 선택된 초이스 ID 결정 (선택된 초이스가 있으면 사용, 없으면 첫 번째 초이스)
-          // selectedChoice가 빈 문자열이거나 없으면 첫 번째 초이스 사용
+          // 선택된 초이스 ID 결정
           let choiceId = selectedChoice;
-          if (!choiceId || choiceId === '') {
+          
+          // selectedChoice가 명시적으로 선택되어 있는 경우
+          if (choiceId && choiceId !== '') {
+            // 선택된 초이스의 가격 데이터가 없으면 null 반환
+            if (!choicesData[choiceId]) {
+              return null;
+            }
+          } else {
+            // selectedChoice가 선택되지 않았을 때만 첫 번째 초이스 사용
             const firstChoiceId = Object.keys(choicesData)[0];
             if (firstChoiceId && firstChoiceId !== 'no_choice') {
               choiceId = firstChoiceId;
@@ -398,11 +427,17 @@ export const PricingCalendar = memo(function PricingCalendar({
             const choiceData = choicesData[choiceId];
             otaSalePrice = choiceData?.ota_sale_price || 0;
             choicePrice = choiceData?.adult_price || choiceData?.adult || 0;
+          } else if (selectedChoice && selectedChoice !== '') {
+            // 명시적으로 선택된 초이스인데 데이터가 없으면 null 반환
+            return null;
           }
         }
       } catch (e) {
         console.warn('choices_pricing 파싱 오류:', e);
       }
+    } else if (selectedChoice && selectedChoice !== '') {
+      // choices_pricing이 없는데 초이스가 선택되어 있으면 가격 없음
+      return null;
     }
     
     // 5. 불포함 금액 확인 (초이스별 불포함 금액 우선, 없으면 동적 가격의 기본 not_included_price 사용)
@@ -412,7 +447,7 @@ export const PricingCalendar = memo(function PricingCalendar({
         const choicesData = typeof rule.choices_pricing === 'string' 
           ? JSON.parse(rule.choices_pricing) 
           : rule.choices_pricing;
-        // 선택된 초이스 ID 결정 (선택된 초이스가 있으면 사용, 없으면 첫 번째 초이스)
+        // 선택된 초이스 ID 결정
         let choiceId = selectedChoice;
         if (!choiceId || choiceId === '') {
           const firstChoiceId = Object.keys(choicesData)[0];
@@ -420,6 +455,7 @@ export const PricingCalendar = memo(function PricingCalendar({
             choiceId = firstChoiceId;
           }
         }
+        // 선택된 초이스의 불포함 금액이 있으면 사용
         if (choiceId && choicesData[choiceId] && choicesData[choiceId].not_included_price !== undefined) {
           notIncludedPrice = choicesData[choiceId].not_included_price || 0;
         }
@@ -483,7 +519,7 @@ export const PricingCalendar = memo(function PricingCalendar({
       netPrice: Math.round(netPrice * 100) / 100,
       isOTA
     };
-  };
+  }, [selectedChoice, selectedVariant, pickRuleForChannel, getPricingForDate, channelInfo, productBasePrice, selectedChannelId, selectedChannelType]);
 
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
@@ -531,6 +567,7 @@ export const PricingCalendar = memo(function PricingCalendar({
     // dynamicPricingData에서 해당 날짜에 데이터가 있는지 확인 (필터 고려)
     const normalizedSearchDate = normalizeDateValue(dateString);
     let hasDataForDate = false;
+    let hasRuleButNoPrice = false; // 규칙은 있지만 선택된 초이스/variant에 맞는 가격이 없는 경우
     
     if (normalizedSearchDate && normalizedPricingMap[normalizedSearchDate]) {
       const rulesForDate = normalizedPricingMap[normalizedSearchDate];
@@ -556,6 +593,11 @@ export const PricingCalendar = memo(function PricingCalendar({
           });
         }
       }
+      
+      // 규칙은 있지만 선택된 초이스나 variant에 맞는 가격이 없는 경우
+      if (hasDataForDate && !singlePrice) {
+        hasRuleButNoPrice = true;
+      }
     }
 
     return (
@@ -571,9 +613,9 @@ export const PricingCalendar = memo(function PricingCalendar({
         <div className="absolute top-1 right-1 text-xs text-gray-500">{day}</div>
         
         {/* 가격 표시 (선택된 항목만 표시) */}
-        {hasDataForDate ? (
+        {hasDataForDate || hasRuleButNoPrice ? (
           <div className="absolute bottom-1 left-1 text-xs space-y-0.5">
-            {singlePrice && (
+            {singlePrice ? (
               <>
                 {selectedPriceTypes.has('maxSalePrice') && singlePrice.maxSalePrice > 0 && (
                   <div className="text-green-600 font-semibold">${singlePrice.maxSalePrice.toFixed(2)}</div>
@@ -589,8 +631,8 @@ export const PricingCalendar = memo(function PricingCalendar({
                   <div className="text-gray-400 text-[10px]">가격 없음</div>
                 )}
               </>
-            )}
-            {!singlePrice && (
+            ) : (
+              /* 선택된 초이스나 variant에 맞는 가격이 없을 때 */
               <div className="text-gray-400 text-[10px]">가격 없음</div>
             )}
           </div>

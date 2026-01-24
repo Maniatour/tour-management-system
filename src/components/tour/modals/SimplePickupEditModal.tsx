@@ -41,9 +41,13 @@ export const SimplePickupEditModal: React.FC<SimplePickupEditModalProps> = ({
     setLoading(true)
     try {
       await onSave(reservation.id, pickupTime, pickupHotel)
+      // 저장 완료 후 약간의 지연을 두어 데이터 새로고침이 완료되도록 함
+      await new Promise(resolve => setTimeout(resolve, 300))
       onClose()
     } catch (error) {
       console.error('픽업 정보 저장 오류:', error)
+      // 에러가 발생해도 모달은 닫음
+      onClose()
     } finally {
       setLoading(false)
     }
