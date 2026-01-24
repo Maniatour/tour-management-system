@@ -30,6 +30,7 @@ interface BulkPricingRow {
   id: string;
   channelId: string;
   channelName: string;
+  variantKey: string; // Variant 선택
   startDate: string;
   endDate: string;
   adultPrice: number;
@@ -45,6 +46,7 @@ interface BulkPricingRow {
   markupPercent: number;
   notIncludedPrice: number;
   otaSalePrice: Record<string, number>; // OTA 판매가 (초이스별)
+  choiceNotIncludedPrice: Record<string, number>; // 초이스별 불포함 금액
   choicePricing: Record<string, {
     adult: number;
     child: number;
@@ -81,6 +83,13 @@ export default function BulkPricingTableModal({
     child: 0,
     infant: 0
   });
+  
+  // Variant 목록 상태 (채널별로 다를 수 있음)
+  const [productVariants, setProductVariants] = useState<Array<{
+    variant_key: string;
+    variant_name_ko?: string | null;
+    variant_name_en?: string | null;
+  }>>([]);
 
   const { savePricingRulesBatch } = useDynamicPricing({
     productId,
@@ -124,7 +133,12 @@ export default function BulkPricingTableModal({
   }, [productId, isOpen]);
 
 
-  // OTA 채널만 필터링
+  // 모든 채널 사용 (OTA 채널만 필터링하지 않음)
+  const allChannels = useMemo(() => {
+    return channels;
+  }, [channels]);
+  
+  // OTA 채널만 필터링 (기존 로직 유지)
   const otaChannels = useMemo(() => {
     return channels.filter(ch => {
       const type = ch.type?.toLowerCase() || '';
@@ -132,16 +146,71 @@ export default function BulkPricingTableModal({
       return type === 'ota' || category === 'ota';
     });
   }, [channels]);
+  
+  // Variant 목록 불러오기 (선택된 채널에 따라)
+  useEffect(() => {
+    const loadProductVariants = async () => {
+      if (!productId || rows.length === 0) {
+        setProductVariants([{ variant_key: 'default' }]);
+        return;
+      }
+
+      // 첫 번째 행의 채널 ID 사용 (또는 모든 행의 채널 ID 수집)
+      const channelIds = [...new Set(rows.map(row => row.channelId).filter(Boolean))];
+      if (channelIds.length === 0) {
+        setProductVariants([{ variant_key: 'default' }]);
+        return;
+      }
+
+      try {
+        // 첫 번째 채널의 variant만 로드 (또는 모든 채널의 variant 합치기)
+        const { data, error } = await supabase
+          .from('channel_products')
+          .select('variant_key, variant_name_ko, variant_name_en')
+          .eq('product_id', productId)
+          .in('channel_id', channelIds)
+          .eq('is_active', true)
+          .order('variant_key');
+
+        if (error) {
+          console.error('Variant 목록 로드 실패:', error);
+          setProductVariants([{ variant_key: 'default' }]);
+          return;
+        }
+
+        const variants = ((data || []) as any[]).map((item: any) => ({
+          variant_key: item.variant_key || 'default',
+          variant_name_ko: item.variant_name_ko,
+          variant_name_en: item.variant_name_en
+        }));
+
+        // 중복 제거
+        const uniqueVariants = Array.from(
+          new Map(variants.map(v => [v.variant_key, v])).values()
+        );
+
+        setProductVariants(uniqueVariants.length > 0 ? uniqueVariants : [{ variant_key: 'default' }]);
+      } catch (error) {
+        console.error('Variant 목록 로드 중 오류:', error);
+        setProductVariants([{ variant_key: 'default' }]);
+      }
+    };
+
+    if (isOpen) {
+      loadProductVariants();
+    }
+  }, [productId, isOpen, rows]);
 
   // 행 추가
   const handleAddRow = useCallback(() => {
-    const defaultChannel = otaChannels.length > 0 ? otaChannels[0] : null;
+    const defaultChannel = allChannels.length > 0 ? allChannels[0] : null;
     const defaultCommissionPercent = defaultChannel?.commission_percent || 0;
     
     const newRow: BulkPricingRow = {
       id: `row-${Date.now()}`,
       channelId: defaultChannel?.id || '',
       channelName: defaultChannel?.name || '',
+      variantKey: 'default',
       startDate: '',
       endDate: '',
       adultPrice: productBasePrice.adult,
@@ -157,10 +226,11 @@ export default function BulkPricingTableModal({
       markupPercent: 0,
       notIncludedPrice: 0,
       otaSalePrice: {},
+      choiceNotIncludedPrice: {},
       choicePricing: {}
     };
     setRows([...rows, newRow]);
-  }, [rows, otaChannels, productBasePrice]);
+  }, [rows, allChannels, productBasePrice]);
 
   // 행 삭제
   const handleDeleteRow = useCallback((rowId: string) => {
@@ -249,40 +319,83 @@ export default function BulkPricingTableModal({
             child_price: number;
             infant_price: number;
             ota_sale_price?: number;
+            not_included_price?: number;
           }> = {};
 
-          // 초이스가 있는 경우
-          Object.entries(row.choicePricing).forEach(([choiceId, prices]) => {
-            choicesPricing[choiceId] = {
-              adult_price: prices.adult || 0,
-              child_price: prices.child || 0,
-              infant_price: prices.infant || 0
-            };
-            
-            // OTA 판매가가 있으면 추가
-            const otaSalePrice = row.otaSalePrice[choiceId] || 0;
-            if (otaSalePrice > 0) {
-              choicesPricing[choiceId].ota_sale_price = otaSalePrice;
-            }
-          });
+          // choiceCombinations를 순회하면서 각 초이스별로 가격 정보 수집
+          if (choiceCombinations && choiceCombinations.length > 0) {
+            choiceCombinations.forEach((choice) => {
+              const choiceId = choice.id;
+              
+              // OTA 판매가 또는 불포함 금액이 있으면 choices_pricing에 추가
+              const otaSalePrice = row.otaSalePrice[choiceId];
+              const choiceNotIncludedPrice = row.choiceNotIncludedPrice[choiceId];
+              
+              // OTA 판매가가 있거나 불포함 금액이 있으면 초이스 정보 추가
+              if ((otaSalePrice !== undefined && otaSalePrice !== null && otaSalePrice > 0) ||
+                  (choiceNotIncludedPrice !== undefined && choiceNotIncludedPrice !== null && choiceNotIncludedPrice > 0)) {
+                
+                // 초이스의 기본 가격 정보 가져오기 (choiceCombination에서 또는 row.choicePricing에서)
+                const choicePricingData = row.choicePricing[choiceId];
+                const adultPrice = choicePricingData?.adult ?? choice.adult_price ?? 0;
+                const childPrice = choicePricingData?.child ?? choice.child_price ?? 0;
+                const infantPrice = choicePricingData?.infant ?? choice.infant_price ?? 0;
+                
+                choicesPricing[choiceId] = {
+                  adult_price: adultPrice,
+                  child_price: childPrice,
+                  infant_price: infantPrice
+                };
+                
+                // OTA 판매가가 있으면 추가
+                if (otaSalePrice !== undefined && otaSalePrice !== null && otaSalePrice > 0) {
+                  choicesPricing[choiceId].ota_sale_price = otaSalePrice;
+                }
+                
+                // 초이스별 불포함 금액이 있으면 추가
+                if (choiceNotIncludedPrice !== undefined && choiceNotIncludedPrice !== null && choiceNotIncludedPrice > 0) {
+                  choicesPricing[choiceId].not_included_price = choiceNotIncludedPrice;
+                }
+              }
+            });
+          }
 
           // 초이스가 없을 때 OTA 판매가 처리
           const noChoiceKey = 'no_choice';
-          const noChoiceOtaSalePrice = row.otaSalePrice[noChoiceKey] || 0;
-          if (noChoiceOtaSalePrice > 0 && Object.keys(choicesPricing).length === 0) {
-            // 초이스가 없고 OTA 판매가가 있으면 기본 가격 구조에 추가
-            choicesPricing[''] = {
+          const noChoiceOtaSalePrice = row.otaSalePrice[noChoiceKey];
+          const noChoiceNotIncludedPrice = row.choiceNotIncludedPrice[noChoiceKey];
+          
+          // 초이스가 없고 (OTA 판매가가 있거나 불포함 금액이 있으면) 기본 가격 구조에 추가
+          if ((noChoiceOtaSalePrice !== undefined && noChoiceOtaSalePrice !== null && noChoiceOtaSalePrice > 0) ||
+              (noChoiceNotIncludedPrice !== undefined && noChoiceNotIncludedPrice !== null && noChoiceNotIncludedPrice > 0)) {
+            const noChoicePricing: {
+              adult_price: number;
+              child_price: number;
+              infant_price: number;
+              ota_sale_price?: number;
+              not_included_price?: number;
+            } = {
               adult_price: row.adultPrice || 0,
               child_price: row.childPrice || 0,
-              infant_price: row.infantPrice || 0,
-              ota_sale_price: noChoiceOtaSalePrice
+              infant_price: row.infantPrice || 0
             };
+            
+            if (noChoiceOtaSalePrice !== undefined && noChoiceOtaSalePrice !== null && noChoiceOtaSalePrice > 0) {
+              noChoicePricing.ota_sale_price = noChoiceOtaSalePrice;
+            }
+            
+            if (noChoiceNotIncludedPrice !== undefined && noChoiceNotIncludedPrice !== null && noChoiceNotIncludedPrice > 0) {
+              noChoicePricing.not_included_price = noChoiceNotIncludedPrice;
+            }
+            
+            choicesPricing[''] = noChoicePricing;
           }
 
           const ruleData: SimplePricingRuleDto = {
             product_id: productId,
             channel_id: row.channelId,
             date: dateString,
+            variant_key: row.variantKey || 'default',
             adult_price: row.adultPrice,
             child_price: row.childPrice,
             infant_price: row.infantPrice,
@@ -365,6 +478,9 @@ export default function BulkPricingTableModal({
                       <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 sticky left-0 bg-gray-50 z-10" rowSpan={2} style={{ minWidth: '150px', width: '150px' }}>
                         채널명
                       </th>
+                      <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300" rowSpan={2} style={{ minWidth: '120px', width: '120px' }}>
+                        Variant
+                      </th>
                       <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300" rowSpan={2} style={{ minWidth: '100px', width: '100px' }}>
                         시작일
                       </th>
@@ -382,6 +498,10 @@ export default function BulkPricingTableModal({
                             {/* OTA 판매가 컬럼 */}
                             <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-pink-50" rowSpan={2}>
                               OTA 판매가
+                            </th>
+                            {/* 불포함 금액 컬럼 (초이스별) */}
+                            <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-orange-50" rowSpan={2}>
+                              불포함 금액 ($)
                             </th>
                             <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-cyan-50" rowSpan={2}>
                               수수료 (%)
@@ -440,7 +560,7 @@ export default function BulkPricingTableModal({
                   <tbody className="bg-white divide-y divide-gray-200">
                     {rows.length === 0 ? (
                       <tr>
-                        <td colSpan={18} className="px-4 py-8 text-center text-gray-500">
+                        <td colSpan={20} className="px-4 py-8 text-center text-gray-500">
                           <div className="space-y-2">
                             <p>행이 없습니다. &quot;행 추가&quot; 버튼을 클릭하여 행을 추가하세요.</p>
                             {(() => {
@@ -503,7 +623,7 @@ export default function BulkPricingTableModal({
                                   className="w-full px-1.5 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                 >
                                   <option value="">선택</option>
-                                  {otaChannels.map((channel, channelIndex) => (
+                                  {allChannels.map((channel, channelIndex) => (
                                     <option key={`channel-${channel.id}-${channelIndex}`} value={channel.id}>
                                       {channel.name}
                                     </option>
@@ -511,7 +631,7 @@ export default function BulkPricingTableModal({
                                 </select>
                                 {/* 채널 정보 표시 */}
                                 {(() => {
-                                  const selectedChannel = otaChannels.find(ch => ch.id === row.channelId);
+                                  const selectedChannel = allChannels.find(ch => ch.id === row.channelId);
                                   if (!selectedChannel) return null;
                                   
                                   const notIncludedType = selectedChannel?.not_included_type || 'none';
@@ -537,6 +657,20 @@ export default function BulkPricingTableModal({
                                   );
                                 })()}
                               </div>
+                            </td>
+                            {/* Variant 선택 */}
+                            <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-gray-50" rowSpan={rowSpanValue} style={{ minWidth: '120px', width: '120px' }}>
+                              <select
+                                value={row.variantKey || 'default'}
+                                onChange={(e) => handleUpdateRow(row.id, 'variantKey', e.target.value)}
+                                className="w-full px-1.5 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                              >
+                                {productVariants.map((variant) => (
+                                  <option key={variant.variant_key} value={variant.variant_key}>
+                                    {variant.variant_name_ko || variant.variant_name_en || variant.variant_key}
+                                  </option>
+                                ))}
+                              </select>
                             </td>
                             {/* 시작일 */}
                             <td className="px-2 py-1.5 whitespace-nowrap text-xs border-r border-gray-300 bg-gray-50" rowSpan={rowSpanValue} style={{ minWidth: '100px', width: '100px' }}>
@@ -567,7 +701,7 @@ export default function BulkPricingTableModal({
                               // 홈페이지 = (기본 가격 + 초이스 가격) × 0.8
                               // 차액 = Net Price - 홈페이지
                               
-                              const selectedChannel = otaChannels.find(ch => ch.id === row.channelId);
+                              const selectedChannel = allChannels.find(ch => ch.id === row.channelId);
                               const commissionBasePriceOnly = selectedChannel?.commission_base_price_only || false;
                               const notIncludedType = selectedChannel?.not_included_type || 'none';
                               
@@ -630,17 +764,37 @@ export default function BulkPricingTableModal({
                                   {/* OTA 판매가 입력 필드 */}
                                   <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-pink-50" style={{ minWidth: '80px', width: '80px' }}>
                                     <input
-                                      type="number"
-                                      value={row.otaSalePrice[firstChoice.id] || ''}
+                                      type="text"
+                                      value={(() => {
+                                        const price = row.otaSalePrice[firstChoice.id];
+                                        return price === undefined || price === null || price === 0 ? '' : String(price);
+                                      })()}
                                       onChange={(e) => {
-                                        const value = Number(e.target.value) || 0;
+                                        const value = e.target.value;
+                                        const numValue = value === '' || value === '-' ? 0 : parseFloat(value.replace(/[^\d.-]/g, ''));
                                         setRows(rows.map(r => {
                                           if (r.id === row.id) {
                                             return { 
                                               ...r, 
                                               otaSalePrice: {
                                                 ...r.otaSalePrice,
-                                                [firstChoice.id]: value
+                                                [firstChoice.id]: isNaN(numValue) ? 0 : numValue
+                                              }
+                                            };
+                                          }
+                                          return r;
+                                        }));
+                                      }}
+                                      onBlur={(e) => {
+                                        const value = e.target.value;
+                                        const numValue = value === '' || value === '-' ? 0 : parseFloat(value.replace(/[^\d.-]/g, ''));
+                                        setRows(rows.map(r => {
+                                          if (r.id === row.id) {
+                                            return { 
+                                              ...r, 
+                                              otaSalePrice: {
+                                                ...r.otaSalePrice,
+                                                [firstChoice.id]: isNaN(numValue) ? 0 : numValue
                                               }
                                             };
                                           }
@@ -650,6 +804,51 @@ export default function BulkPricingTableModal({
                                       className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                       step="0.01"
                                       placeholder="OTA 판매가"
+                                    />
+                                  </td>
+                                  {/* 불포함 금액 입력 필드 (초이스별) */}
+                                  <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50" style={{ minWidth: '80px', width: '80px' }}>
+                                    <input
+                                      type="text"
+                                      value={(() => {
+                                        const price = row.choiceNotIncludedPrice[firstChoice.id];
+                                        return price === undefined || price === null || price === 0 ? '' : String(price);
+                                      })()}
+                                      onChange={(e) => {
+                                        const value = e.target.value;
+                                        const numValue = value === '' || value === '-' ? 0 : parseFloat(value.replace(/[^\d.-]/g, ''));
+                                        setRows(rows.map(r => {
+                                          if (r.id === row.id) {
+                                            return { 
+                                              ...r, 
+                                              choiceNotIncludedPrice: {
+                                                ...r.choiceNotIncludedPrice,
+                                                [firstChoice.id]: isNaN(numValue) ? 0 : numValue
+                                              }
+                                            };
+                                          }
+                                          return r;
+                                        }));
+                                      }}
+                                      onBlur={(e) => {
+                                        const value = e.target.value;
+                                        const numValue = value === '' || value === '-' ? 0 : parseFloat(value.replace(/[^\d.-]/g, ''));
+                                        setRows(rows.map(r => {
+                                          if (r.id === row.id) {
+                                            return { 
+                                              ...r, 
+                                              choiceNotIncludedPrice: {
+                                                ...r.choiceNotIncludedPrice,
+                                                [firstChoice.id]: isNaN(numValue) ? 0 : numValue
+                                              }
+                                            };
+                                          }
+                                          return r;
+                                        }));
+                                      }}
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      step="0.01"
+                                      placeholder="0"
                                     />
                                   </td>
                                   {/* 수수료/쿠폰/불포함 금액 입력 필드 */}
@@ -783,17 +982,37 @@ export default function BulkPricingTableModal({
                                   {/* OTA 판매가 입력 필드 */}
                                   <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-pink-50" style={{ minWidth: '80px', width: '80px' }}>
                                     <input
-                                      type="number"
-                                      value={row.otaSalePrice[noChoiceKey] || ''}
+                                      type="text"
+                                      value={(() => {
+                                        const price = row.otaSalePrice[noChoiceKey];
+                                        return price === undefined || price === null || price === 0 ? '' : String(price);
+                                      })()}
                                       onChange={(e) => {
-                                        const value = Number(e.target.value) || 0;
+                                        const value = e.target.value;
+                                        const numValue = value === '' || value === '-' ? 0 : parseFloat(value.replace(/[^\d.-]/g, ''));
                                         setRows(rows.map(r => {
                                           if (r.id === row.id) {
                                             return { 
                                               ...r, 
                                               otaSalePrice: {
                                                 ...r.otaSalePrice,
-                                                [noChoiceKey]: value
+                                                [noChoiceKey]: isNaN(numValue) ? 0 : numValue
+                                              }
+                                            };
+                                          }
+                                          return r;
+                                        }));
+                                      }}
+                                      onBlur={(e) => {
+                                        const value = e.target.value;
+                                        const numValue = value === '' || value === '-' ? 0 : parseFloat(value.replace(/[^\d.-]/g, ''));
+                                        setRows(rows.map(r => {
+                                          if (r.id === row.id) {
+                                            return { 
+                                              ...r, 
+                                              otaSalePrice: {
+                                                ...r.otaSalePrice,
+                                                [noChoiceKey]: isNaN(numValue) ? 0 : numValue
                                               }
                                             };
                                           }
@@ -803,6 +1022,51 @@ export default function BulkPricingTableModal({
                                       className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                       step="0.01"
                                       placeholder="OTA 판매가"
+                                    />
+                                  </td>
+                                  {/* 불포함 금액 입력 필드 (초이스 없음) */}
+                                  <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50" style={{ minWidth: '80px', width: '80px' }}>
+                                    <input
+                                      type="text"
+                                      value={(() => {
+                                        const price = row.choiceNotIncludedPrice[noChoiceKey];
+                                        return price === undefined || price === null || price === 0 ? '' : String(price);
+                                      })()}
+                                      onChange={(e) => {
+                                        const value = e.target.value;
+                                        const numValue = value === '' || value === '-' ? 0 : parseFloat(value.replace(/[^\d.-]/g, ''));
+                                        setRows(rows.map(r => {
+                                          if (r.id === row.id) {
+                                            return { 
+                                              ...r, 
+                                              choiceNotIncludedPrice: {
+                                                ...r.choiceNotIncludedPrice,
+                                                [noChoiceKey]: isNaN(numValue) ? 0 : numValue
+                                              }
+                                            };
+                                          }
+                                          return r;
+                                        }));
+                                      }}
+                                      onBlur={(e) => {
+                                        const value = e.target.value;
+                                        const numValue = value === '' || value === '-' ? 0 : parseFloat(value.replace(/[^\d.-]/g, ''));
+                                        setRows(rows.map(r => {
+                                          if (r.id === row.id) {
+                                            return { 
+                                              ...r, 
+                                              choiceNotIncludedPrice: {
+                                                ...r.choiceNotIncludedPrice,
+                                                [noChoiceKey]: isNaN(numValue) ? 0 : numValue
+                                              }
+                                            };
+                                          }
+                                          return r;
+                                        }));
+                                      }}
+                                      className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                      step="0.01"
+                                      placeholder="0"
                                     />
                                   </td>
                                   {/* 수수료/쿠폰/불포함 금액 입력 필드 */}
@@ -892,7 +1156,7 @@ export default function BulkPricingTableModal({
                           {/* 초이스별 서브 행들 */}
                           {choiceCombinations.slice(1).map((choice, choiceIndex) => {
                             // 계산식 업데이트 (첫 번째 초이스와 동일) - 단일 가격 모드
-                            const selectedChannel = otaChannels.find(ch => ch.id === row.channelId);
+                            const selectedChannel = allChannels.find(ch => ch.id === row.channelId);
                             const commissionBasePriceOnly = selectedChannel?.commission_base_price_only || false;
                             const notIncludedType = selectedChannel?.not_included_type || 'none';
                             
@@ -955,17 +1219,37 @@ export default function BulkPricingTableModal({
                                 {/* OTA 판매가 입력 필드 */}
                                 <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-pink-50" style={{ minWidth: '80px', width: '80px' }}>
                                   <input
-                                    type="number"
-                                    value={row.otaSalePrice[choice.id] || ''}
+                                    type="text"
+                                    value={(() => {
+                                      const price = row.otaSalePrice[choice.id];
+                                      return price === undefined || price === null || price === 0 ? '' : String(price);
+                                    })()}
                                     onChange={(e) => {
-                                      const value = Number(e.target.value) || 0;
+                                      const value = e.target.value;
+                                      const numValue = value === '' || value === '-' ? 0 : parseFloat(value.replace(/[^\d.-]/g, ''));
                                       setRows(rows.map(r => {
                                         if (r.id === row.id) {
                                           return { 
                                             ...r, 
                                             otaSalePrice: {
                                               ...r.otaSalePrice,
-                                              [choice.id]: value
+                                              [choice.id]: isNaN(numValue) ? 0 : numValue
+                                            }
+                                          };
+                                        }
+                                        return r;
+                                      }));
+                                    }}
+                                    onBlur={(e) => {
+                                      const value = e.target.value;
+                                      const numValue = value === '' || value === '-' ? 0 : parseFloat(value.replace(/[^\d.-]/g, ''));
+                                      setRows(rows.map(r => {
+                                        if (r.id === row.id) {
+                                          return { 
+                                            ...r, 
+                                            otaSalePrice: {
+                                              ...r.otaSalePrice,
+                                              [choice.id]: isNaN(numValue) ? 0 : numValue
                                             }
                                           };
                                         }
@@ -975,6 +1259,51 @@ export default function BulkPricingTableModal({
                                     className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                     step="0.01"
                                     placeholder="OTA 판매가"
+                                  />
+                                </td>
+                                {/* 불포함 금액 입력 필드 (초이스별) */}
+                                <td className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-300 bg-orange-50" style={{ minWidth: '80px', width: '80px' }}>
+                                  <input
+                                    type="text"
+                                    value={(() => {
+                                      const price = row.choiceNotIncludedPrice[choice.id];
+                                      return price === undefined || price === null || price === 0 ? '' : String(price);
+                                    })()}
+                                    onChange={(e) => {
+                                      const value = e.target.value;
+                                      const numValue = value === '' || value === '-' ? 0 : parseFloat(value.replace(/[^\d.-]/g, ''));
+                                      setRows(rows.map(r => {
+                                        if (r.id === row.id) {
+                                          return { 
+                                            ...r, 
+                                            choiceNotIncludedPrice: {
+                                              ...r.choiceNotIncludedPrice,
+                                              [choice.id]: isNaN(numValue) ? 0 : numValue
+                                            }
+                                          };
+                                        }
+                                        return r;
+                                      }));
+                                    }}
+                                    onBlur={(e) => {
+                                      const value = e.target.value;
+                                      const numValue = value === '' || value === '-' ? 0 : parseFloat(value.replace(/[^\d.-]/g, ''));
+                                      setRows(rows.map(r => {
+                                        if (r.id === row.id) {
+                                          return { 
+                                            ...r, 
+                                            choiceNotIncludedPrice: {
+                                              ...r.choiceNotIncludedPrice,
+                                              [choice.id]: isNaN(numValue) ? 0 : numValue
+                                            }
+                                          };
+                                        }
+                                        return r;
+                                      }));
+                                    }}
+                                    className="w-full px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    step="0.01"
+                                    placeholder="0"
                                   />
                                 </td>
                                 {/* 수수료/쿠폰/불포함 금액 입력 필드 */}

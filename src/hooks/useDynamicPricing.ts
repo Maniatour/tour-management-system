@@ -363,6 +363,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
         const batchPromises = batch.map(async (ruleData) => {
           try {
             // 기존 레코드 확인 (choices_pricing 포함)
+            const variantKey = ruleData.variant_key || 'default';
             const { data: existingData, error: selectError } = await supabase
               .from('dynamic_pricing')
               .select('id, choices_pricing, price_type')
@@ -370,6 +371,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
               .eq('channel_id', ruleData.channel_id)
               .eq('date', ruleData.date)
               .eq('price_type', ruleData.price_type || 'dynamic') // price_type으로도 필터링
+              .eq('variant_key', variantKey) // variant_key로도 필터링
               .maybeSingle();
 
             if (existingData && !selectError) {
@@ -392,6 +394,7 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
                 channel_id: ruleData.channel_id,
                 date: ruleData.date,
                 price_type: ruleData.price_type !== undefined ? ruleData.price_type : (fullExistingData.price_type || 'dynamic'), // price_type 필드 추가
+                variant_key: ruleData.variant_key !== undefined ? ruleData.variant_key : (fullExistingData.variant_key || 'default'), // variant_key 필드 추가
                 
                 // 전달된 필드만 업데이트, 전달되지 않은 필드는 기존 값 유지
                 adult_price: ruleData.adult_price !== undefined ? ruleData.adult_price : fullExistingData.adult_price,

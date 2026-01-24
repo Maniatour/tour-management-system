@@ -87,9 +87,6 @@ export default function DynamicPricingManager({
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [dateRangeSelection, setDateRangeSelection] = useState<DateRangeSelection | null>(null);
   
-  // 불포함 사항 필터 상태
-  const [notIncludedFilter, setNotIncludedFilter] = useState<'all' | 'with' | 'without'>('all');
-  
   // 판매 상태 모달 상태
   const [isSaleStatusModalOpen, setIsSaleStatusModalOpen] = useState(false);
   
@@ -1152,7 +1149,8 @@ export default function DynamicPricingManager({
             .select('price_type, choices_pricing')
             .eq('product_id', productId)
             .eq('channel_id', channelId)
-            .eq('date', date);
+            .eq('date', date)
+            .eq('variant_key', selectedVariant || 'default');
           
           if (existingRules && existingRules.length > 0) {
             existingRules.forEach((existingRule: any) => {
@@ -1885,115 +1883,18 @@ export default function DynamicPricingManager({
     }
   }, [editingChannel, loadChannels]);
 
-  // 불포함 금액이 있는지 확인하는 함수
-  const hasNotIncludedPrice = (rule: SimplePricingRule): boolean => {
-    // price_type이 'dynamic'이면 불포함 사항 있음
-    if (rule.price_type === 'dynamic') {
-      return true;
-    }
-    
-    // 기본 not_included_price 확인
-    if (rule.not_included_price && rule.not_included_price > 0) {
-      return true;
-    }
-    
-    // choices_pricing에서 not_included_price 확인
-    if (rule.choices_pricing) {
-      try {
-        const choicesPricing = typeof rule.choices_pricing === 'string'
-          ? JSON.parse(rule.choices_pricing)
-          : rule.choices_pricing;
-        
-        for (const choiceData of Object.values(choicesPricing as Record<string, any>)) {
-          if (choiceData.not_included_price && choiceData.not_included_price > 0) {
-            return true;
-          }
-        }
-      } catch (e) {
-        console.warn('choices_pricing 파싱 오류:', e);
-      }
-    }
-    
-    return false;
-  };
-
-  // 불포함 사항 필터 자동 설정
-  useEffect(() => {
-    if (dynamicPricingData.length === 0) {
-      return;
-    }
-
-    // 모든 규칙을 확인하여 불포함 사항이 있는 규칙과 없는 규칙이 있는지 확인
-    let hasWithNotIncluded = false;
-    let hasWithoutNotIncluded = false;
-
-    for (const { rules } of dynamicPricingData) {
-      for (const rule of rules) {
-        const hasNotIncluded = hasNotIncludedPrice(rule);
-        if (hasNotIncluded) {
-          hasWithNotIncluded = true;
-        } else {
-          hasWithoutNotIncluded = true;
-        }
-        
-        // 둘 다 찾았으면 더 이상 확인할 필요 없음
-        if (hasWithNotIncluded && hasWithoutNotIncluded) {
-          break;
-        }
-      }
-      
-      if (hasWithNotIncluded && hasWithoutNotIncluded) {
-        break;
-      }
-    }
-
-    // 필터 자동 설정 (현재 값과 다를 때만 변경하여 무한 루프 방지)
-    if (hasWithNotIncluded && hasWithoutNotIncluded) {
-      // 둘 다 있으면 "불포함 사항 있음" 선택
-      if (notIncludedFilter !== 'with') {
-        setNotIncludedFilter('with');
-      }
-    } else if (hasWithNotIncluded) {
-      // 불포함 사항 있는 것만 있으면 "불포함 사항 있음" 선택
-      if (notIncludedFilter !== 'with') {
-        setNotIncludedFilter('with');
-      }
-    } else if (hasWithoutNotIncluded) {
-      // 불포함 사항 없는 것만 있으면 "불포함 사항 없음" 선택
-      if (notIncludedFilter !== 'without') {
-        setNotIncludedFilter('without');
-      }
-    }
-    // 둘 다 없으면 'all'로 유지 (변경하지 않음)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dynamicPricingData]);
-
   // 현재 월의 데이터 필터링
   const currentMonthData = useMemo(() => {
     const year = currentMonth.getUTCFullYear();
     const month = currentMonth.getUTCMonth() + 1;
     
-    // 먼저 현재 월의 데이터 필터링
-    let filtered = dynamicPricingData.filter(({ date }) => {
+    // 현재 월의 데이터 필터링 (항상 전체 표시)
+    return dynamicPricingData.filter(({ date }) => {
       const parts = extractYearMonth(date);
       if (!parts) return false;
       return parts.year === year && parts.month === month;
     });
-    
-    // 불포함 사항 필터 적용
-    if (notIncludedFilter !== 'all') {
-      filtered = filtered.map(({ date, rules }) => {
-        const filteredRules = rules.filter(rule => {
-          const hasNotIncluded = hasNotIncludedPrice(rule);
-          return notIncludedFilter === 'with' ? hasNotIncluded : !hasNotIncluded;
-        });
-        
-        return { date, rules: filteredRules };
-      }).filter(({ rules }) => rules.length > 0); // 규칙이 있는 날짜만 유지
-    }
-    
-    return filtered;
-  }, [dynamicPricingData, currentMonth, notIncludedFilter]);
+  }, [dynamicPricingData, currentMonth]);
 
   return (
     <div className="space-y-6">
@@ -2104,8 +2005,6 @@ export default function DynamicPricingManager({
               channelInfo={selectedChannel ? channelGroups
                 .flatMap(group => group.channels)
                 .find(ch => ch.id === selectedChannel) || null : null}
-              notIncludedFilter={notIncludedFilter}
-              onNotIncludedFilterChange={setNotIncludedFilter}
               productBasePrice={productBasePrice}
               selectedVariant={selectedVariant}
             />
@@ -3816,33 +3715,6 @@ export default function DynamicPricingManager({
             onDelete={handleDeleteSelectedDates}
             canDelete={selectedDates.length > 0}
           />
-
-          {/* 선택된 날짜 정보 */}
-          {selectedDates.length > 0 && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-sm font-medium text-blue-900">
-                    선택된 날짜 ({selectedDates.length}개)
-                  </h4>
-                  <p className="text-sm text-blue-700 mt-1">
-                    {selectedDates.map(date => {
-                      // 날짜 문자열을 직접 파싱하여 타임존 변환 문제 방지
-                      const [year, month, day] = date.split('-');
-                      const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-                      return dateObj.toLocaleDateString('ko-KR');
-                    }).join(', ')}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setSelectedDates([])}
-                  className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                >
-                  선택 해제
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 

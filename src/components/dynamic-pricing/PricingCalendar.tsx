@@ -95,8 +95,6 @@ interface PricingCalendarProps {
     commission_base_price_only?: boolean;
     [key: string]: unknown;
   } | null;
-  notIncludedFilter?: 'all' | 'with' | 'without';
-  onNotIncludedFilterChange?: (filter: 'all' | 'with' | 'without') => void;
   productBasePrice?: {
     adult: number;
     child: number;
@@ -116,8 +114,6 @@ export const PricingCalendar = memo(function PricingCalendar({
   selectedChannelId,
   selectedChannelType,
   channelInfo,
-  notIncludedFilter = 'all',
-  onNotIncludedFilterChange,
   productBasePrice = { adult: 0, child: 0, infant: 0 },
   selectedVariant = 'default'
 }: PricingCalendarProps) {
@@ -257,88 +253,9 @@ export const PricingCalendar = memo(function PricingCalendar({
       }
     }
 
-    // notIncludedFilter에 따라 price_type 필터링
-    if (notIncludedFilter === 'with') {
-      // 불포함 사항 있음: price_type='dynamic' 또는 not_included_price > 0
-      const withNotIncluded = filteredRules.filter(rule => {
-        if (rule.price_type === 'dynamic') return true;
-        if (rule.not_included_price && rule.not_included_price > 0) return true;
-        // choices_pricing에서 확인
-        if (rule.choices_pricing) {
-          try {
-            const choicesData = typeof rule.choices_pricing === 'string' 
-              ? JSON.parse(rule.choices_pricing) 
-              : rule.choices_pricing;
-            for (const choiceData of Object.values(choicesData as Record<string, any>)) {
-              if (choiceData.not_included_price && choiceData.not_included_price > 0) {
-                return true;
-              }
-            }
-          } catch (e) {
-            // 파싱 오류 무시
-          }
-        }
-        return false;
-      });
-      if (withNotIncluded.length > 0) {
-        return withNotIncluded[0];
-      }
-    } else if (notIncludedFilter === 'without') {
-      // 불포함 사항 없음: price_type='base' 또는 not_included_price = 0
-      const withoutNotIncluded = filteredRules.filter(rule => {
-        // price_type이 'base'이면 무조건 포함
-        if (rule.price_type === 'base') {
-          return true;
-        }
-        
-        // price_type이 'dynamic'이면 제외
-        if (rule.price_type === 'dynamic') {
-          return false;
-        }
-        
-        // price_type이 없거나 다른 값인 경우, not_included_price와 choices_pricing 확인
-        if (rule.not_included_price === 0 || !rule.not_included_price) {
-          // choices_pricing에서도 확인
-          if (rule.choices_pricing) {
-            try {
-              const choicesData = typeof rule.choices_pricing === 'string' 
-                ? JSON.parse(rule.choices_pricing) 
-                : rule.choices_pricing;
-              for (const choiceData of Object.values(choicesData as Record<string, any>)) {
-                if (choiceData.not_included_price && choiceData.not_included_price > 0) {
-                  return false; // 하나라도 불포함 금액이 있으면 제외
-                }
-              }
-            } catch (e) {
-              // 파싱 오류 무시
-            }
-          }
-          return true;
-        }
-        return false;
-      });
-      
-      // 디버깅: 필터링 결과 확인
-      if (filteredRules.length > 0 && withoutNotIncluded.length === 0) {
-        console.log('불포함 사항 없음 필터 - 매칭되는 규칙 없음:', {
-          filteredRulesCount: filteredRules.length,
-          rules: filteredRules.map(r => ({
-            id: r.id,
-            price_type: r.price_type,
-            not_included_price: r.not_included_price,
-            hasChoicesPricing: !!r.choices_pricing
-          }))
-        });
-      }
-      
-      if (withoutNotIncluded.length > 0) {
-        return withoutNotIncluded[0];
-      }
-    }
-
-    // 필터가 'all'이거나 필터링 결과가 없으면 첫 번째 규칙 반환
+    // 항상 첫 번째 규칙 반환 (필터링 없음)
     return filteredRules[0];
-  }, [selectedChannelId, selectedChannelType, notIncludedFilter, selectedVariant]);
+  }, [selectedChannelId, selectedChannelType, selectedVariant]);
 
   // 날짜별 단일 가격 정보 가져오기 (최대 판매가, 할인 가격, Net Price)
   // 초이스 선택 및 필터 기능 포함
@@ -572,27 +489,8 @@ export const PricingCalendar = memo(function PricingCalendar({
     if (normalizedSearchDate && normalizedPricingMap[normalizedSearchDate]) {
       const rulesForDate = normalizedPricingMap[normalizedSearchDate];
       
-      // 필터가 'all'이면 모든 규칙이 있으면 데이터 있음
-      if (notIncludedFilter === 'all') {
-        hasDataForDate = rulesForDate.length > 0;
-      } else {
-        // 필터에 맞는 규칙이 있는지 확인
-        const filteredRule = pickRuleForChannel(rulesForDate);
-        hasDataForDate = filteredRule !== undefined;
-        
-        // 디버깅: 필터에 맞는 규칙이 없을 때
-        if (!hasDataForDate && rulesForDate.length > 0 && notIncludedFilter === 'without') {
-          console.log(`날짜 ${dateString} - 불포함 사항 없음 필터 매칭 실패:`, {
-            rulesCount: rulesForDate.length,
-            rules: rulesForDate.map(r => ({
-              id: r.id,
-              price_type: r.price_type,
-              channel_id: r.channel_id,
-              not_included_price: r.not_included_price
-            }))
-          });
-        }
-      }
+      // 항상 모든 규칙이 있으면 데이터 있음
+      hasDataForDate = rulesForDate.length > 0;
       
       // 규칙은 있지만 선택된 초이스나 variant에 맞는 가격이 없는 경우
       if (hasDataForDate && !singlePrice) {
@@ -692,18 +590,6 @@ export const PricingCalendar = memo(function PricingCalendar({
               </select>
               <ChevronDown className="absolute right-1.5 top-1.5 h-3 w-3 text-gray-400 pointer-events-none" />
             </div>
-            {/* 불포함 사항 필터 드롭다운 */}
-            {onNotIncludedFilterChange && (
-              <select
-                value={notIncludedFilter}
-                onChange={(e) => onNotIncludedFilterChange(e.target.value as 'all' | 'with' | 'without')}
-                className="px-2 py-1 text-xs border border-gray-300 rounded bg-white text-gray-700 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">전체</option>
-                <option value="with">불포함 사항 있음</option>
-                <option value="without">불포함 사항 없음</option>
-              </select>
-            )}
           </div>
           
           {/* 가격 범례 (다중 선택 가능) */}
