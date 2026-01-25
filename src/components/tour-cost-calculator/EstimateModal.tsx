@@ -79,7 +79,7 @@ interface EstimateModalProps {
 }
 
 const formatUSD = (usd: number): string => {
-  return `$${usd.toFixed(2)}`
+  return `$${usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 // 모든 부모 이름을 계층적으로 가져오는 함수
@@ -102,8 +102,8 @@ const getFullCoursePath = (course: TourCourseInfo, tourCourses: TourCourseInfo[]
       break
     }
     
-    const parentId = current.parent_id
-    const parent = tourCourses.find(c => c.id === parentId)
+    const parentId = current.parent_id as string
+    const parent = tourCourses.find((c: TourCourseInfo) => c.id === parentId)
     if (parent) {
       current = parent
     } else {
@@ -1054,7 +1054,7 @@ export default function EstimateModal({
             <div class="map-header">
               <div class="map-header-content">
                 <span style="font-size: 11px; font-weight: 500; color: #374151;">${isEnglish ? 'Total Mileage' : '총 마일리지'}</span>
-                <span style="font-size: 11px; font-weight: 600; color: #111827;">${mileage ? `${mileage.toFixed(1)} ${isEnglish ? 'miles' : '마일'}` : 'N/A'}</span>
+                <span style="font-size: 11px; font-weight: 600; color: #111827;">${mileage ? `${mileage.toFixed(1)} ${isEnglish ? 'miles' : '마일'} (${(mileage * 1.60934).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km)` : 'N/A'}</span>
               </div>
             </div>
             <div class="map-image-wrapper">
@@ -1704,7 +1704,7 @@ export default function EstimateModal({
             <div class="map-header">
               <div class="map-header-content">
                 <span style="font-size: 15px; font-weight: 500; color: #374151;">${locale === 'en' ? 'Total Mileage' : '총 마일리지'}</span>
-                <span style="font-size: 15px; font-weight: 600; color: #111827;">${mileage ? `${mileage.toFixed(1)} ${locale === 'en' ? 'miles' : '마일'}` : 'N/A'}</span>
+                <span style="font-size: 15px; font-weight: 600; color: #111827;">${mileage ? `${mileage.toFixed(1)} ${locale === 'en' ? 'miles' : '마일'} (${(mileage * 1.60934).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km)` : 'N/A'}</span>
               </div>
             </div>
             <div class="map-image-wrapper">
@@ -2718,7 +2718,7 @@ export default function EstimateModal({
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-gray-700">총 마일리지</span>
                   <span className="text-sm font-semibold text-gray-900">
-                    {mileage ? `${mileage.toFixed(1)} 마일` : 'N/A'}
+                    {mileage ? `${mileage.toFixed(1)} 마일 (${(mileage * 1.60934).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km)` : 'N/A'}
                   </span>
                 </div>
               </div>
