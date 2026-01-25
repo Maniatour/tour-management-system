@@ -21,7 +21,8 @@ import {
   Receipt,
   X,
   Upload,
-  XCircle
+  XCircle,
+  Calculator
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
@@ -291,8 +292,11 @@ export default function AdminCustomers() {
   const [showInvoiceListModal, setShowInvoiceListModal] = useState(false)
   const [selectedCustomerForInvoiceList, setSelectedCustomerForInvoiceList] = useState<Customer | null>(null)
   const [customerInvoices, setCustomerInvoices] = useState<any[]>([])
+  const [customerEstimates, setCustomerEstimates] = useState<any[]>([])
   const [loadingInvoices, setLoadingInvoices] = useState(false)
+  const [loadingEstimates, setLoadingEstimates] = useState(false)
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null)
+  const [documentCounts, setDocumentCounts] = useState<Record<string, number>>({})
   const [residentStatusDropdownOpen, setResidentStatusDropdownOpen] = useState<string | null>(null)
   const [showPassUploadModal, setShowPassUploadModal] = useState(false)
   const [selectedCustomerForPassUpload, setSelectedCustomerForPassUpload] = useState<Customer | null>(null)
@@ -318,10 +322,109 @@ export default function AdminCustomers() {
     setShowInvoiceModal(true)
   }
 
-  // 인보이스 목록 보기 함수
-  const handleViewInvoices = (customer: Customer) => {
+  // Estimate 삭제 함수
+  const handleDeleteEstimate = useCallback(async (estimateId: string, pdfFilePath: string | null) => {
+    if (!confirm(locale === 'ko' ? 'Estimate를 삭제하시겠습니까?' : 'Are you sure you want to delete this estimate?')) {
+      return
+    }
+
+    try {
+      // Storage에서 PDF 파일 삭제
+      if (pdfFilePath) {
+        const { error: storageError } = await supabase.storage
+          .from('customer-documents')
+          .remove([pdfFilePath])
+
+        if (storageError) {
+          console.error('PDF 파일 삭제 오류:', storageError)
+          // Storage 삭제 실패해도 DB 삭제는 계속 진행
+        }
+      }
+
+      // estimates 테이블에서 삭제
+      const { error: deleteError } = await supabase
+        .from('estimates')
+        .delete()
+        .eq('id', estimateId)
+
+      if (deleteError) {
+        console.error('Estimate 삭제 오류:', deleteError)
+        alert(locale === 'ko' ? 'Estimate 삭제 중 오류가 발생했습니다.' : 'Error deleting estimate.')
+        return
+      }
+
+      // 문서 목록 새로고침
+      if (selectedCustomerForInvoiceList) {
+        await handleViewDocuments(selectedCustomerForInvoiceList)
+      }
+
+      // 문서 갯수 새로고침
+      await fetchDocumentCounts()
+
+      alert(locale === 'ko' ? 'Estimate가 삭제되었습니다.' : 'Estimate has been deleted.')
+    } catch (error) {
+      console.error('Estimate 삭제 중 오류:', error)
+      alert(locale === 'ko' ? 'Estimate 삭제 중 오류가 발생했습니다.' : 'Error deleting estimate.')
+    }
+  }, [locale, selectedCustomerForInvoiceList])
+
+  // 문서 목록 보기 함수 (인보이스 + Estimate)
+  const handleViewDocuments = async (customer: Customer) => {
     setSelectedCustomerForInvoiceList(customer)
     setShowInvoiceListModal(true)
+    
+    // 인보이스 로드
+    setLoadingInvoices(true)
+    try {
+      const { data: invoices, error } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('customer_id', customer.id)
+        .order('created_at', { ascending: false })
+      
+      if (error) throw error
+      setCustomerInvoices(invoices || [])
+    } catch (error) {
+      console.error('인보이스 로드 오류:', error)
+      setCustomerInvoices([])
+    } finally {
+      setLoadingInvoices(false)
+    }
+    
+    // Estimate 로드
+    setLoadingEstimates(true)
+    try {
+      // config_id 컬럼이 없을 수 있으므로, 먼저 전체 컬럼을 선택하고 config_id는 별도로 처리
+      const { data: estimates, error } = await supabase
+        .from('estimates')
+        .select('*')
+        .eq('customer_id', customer.id)
+        .order('created_at', { ascending: false })
+      
+      if (error) {
+        // config_id 컬럼이 없는 경우, config_id 없이 다시 시도
+        if (error.code === '42703' && error.message?.includes('config_id')) {
+          const { data: estimatesWithoutConfig, error: error2 } = await supabase
+            .from('estimates')
+            .select('*')
+            .eq('customer_id', customer.id)
+            .order('created_at', { ascending: false })
+          
+          if (error2) throw error2
+          // config_id가 없는 경우 null로 설정
+          setCustomerEstimates((estimatesWithoutConfig || []).map((est: any) => ({ ...est, config_id: null })))
+        } else {
+          throw error
+        }
+      } else {
+        setCustomerEstimates(estimates || [])
+      }
+    } catch (error) {
+      console.error('Estimate 로드 오류:', error)
+      setCustomerEstimates([])
+    } finally {
+      setLoadingEstimates(false)
+    }
   }
 
 
@@ -332,6 +435,51 @@ export default function AdminCustomers() {
   }
 
   // 고객 목록 불러오기 (모든 고객을 가져오기 위해 페이지네이션 사용)
+
+  // 고객별 문서 갯수 가져오기
+  const fetchDocumentCounts = useCallback(async () => {
+    try {
+      // 모든 인보이스 가져오기
+      const { data: invoices, error: invoiceError } = await supabase
+        .from('invoices')
+        .select('customer_id')
+      
+      // 모든 Estimate 가져오기
+      const { data: estimates, error: estimateError } = await supabase
+        .from('estimates')
+        .select('customer_id')
+      
+      if (invoiceError || estimateError) {
+        console.error('문서 갯수 로드 오류:', invoiceError || estimateError)
+        return
+      }
+      
+      // 고객별 문서 갯수 계산
+      const counts: Record<string, number> = {}
+      
+      // 인보이스 갯수
+      if (invoices && Array.isArray(invoices)) {
+        invoices.forEach((invoice: any) => {
+          if (invoice?.customer_id) {
+            counts[invoice.customer_id] = (counts[invoice.customer_id] || 0) + 1
+          }
+        })
+      }
+      
+      // Estimate 갯수
+      if (estimates && Array.isArray(estimates)) {
+        estimates.forEach((estimate: any) => {
+          if (estimate?.customer_id) {
+            counts[estimate.customer_id] = (counts[estimate.customer_id] || 0) + 1
+          }
+        })
+      }
+      
+      setDocumentCounts(counts)
+    } catch (error) {
+      console.error('문서 갯수 로드 오류:', error)
+    }
+  }, [])
 
   // 고객별 예약 정보 가져오기
   const fetchReservationInfo = useCallback(async () => {
@@ -1058,7 +1206,8 @@ export default function AdminCustomers() {
   // 컴포넌트 마운트 시 예약 정보 불러오기
   useEffect(() => {
     fetchReservationInfo()
-  }, [fetchReservationInfo])
+    fetchDocumentCounts()
+  }, [fetchReservationInfo, fetchDocumentCounts])
 
   // 검색된 고객 목록
   const filteredCustomers = (customers || []).filter(customer => {
@@ -1697,43 +1846,46 @@ export default function AdminCustomers() {
                           </div>
                         )}
 
-                        {/* 예약 추가 및 인보이스 버튼 */}
-                        <div className="mt-2 space-y-2">
+                        {/* 예약 추가, 인보이스 생성, 문서 버튼 */}
+                        <div className="mt-2 grid grid-cols-3 gap-1.5">
                           <button
                             onClick={(e) => {
                               e.stopPropagation() // 카드 클릭 이벤트 방지
                               handleAddReservation(customer)
                             }}
-                            className="w-full flex items-center justify-center space-x-2 py-2 px-3 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg transition-colors duration-200"
+                            className="flex items-center justify-center space-x-0.5 py-1 px-1.5 bg-green-600 hover:bg-green-700 text-white text-[10px] font-medium rounded-md transition-colors duration-200"
                             title={t('customerCard.addReservation')}
                           >
-                            <BookOpen className="h-3 w-3" />
-                            <span>{t('customerCard.addReservation')}</span>
+                            <BookOpen className="h-2.5 w-2.5" />
+                            <span className="hidden sm:inline">{t('customerCard.addReservation')}</span>
                           </button>
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation() // 카드 클릭 이벤트 방지
-                                handleCreateInvoice(customer)
-                              }}
-                              className="flex items-center justify-center space-x-1 py-2 px-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors duration-200"
-                              title={t('customerCard.createInvoice')}
-                            >
-                              <Receipt className="h-3 w-3" />
-                              <span>{t('customerCard.createInvoice')}</span>
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation() // 카드 클릭 이벤트 방지
-                                handleViewInvoices(customer)
-                              }}
-                              className="flex items-center justify-center space-x-1 py-2 px-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-lg transition-colors duration-200"
-                              title={locale === 'ko' ? '인보이스 목록' : 'Invoice List'}
-                            >
-                              <FileText className="h-3 w-3" />
-                              <span>{locale === 'ko' ? '인보이스' : 'Invoices'}</span>
-                            </button>
-                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation() // 카드 클릭 이벤트 방지
+                              handleCreateInvoice(customer)
+                            }}
+                            className="flex items-center justify-center space-x-0.5 py-1 px-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-medium rounded-md transition-colors duration-200"
+                            title={t('customerCard.createInvoice')}
+                          >
+                            <Receipt className="h-2.5 w-2.5" />
+                            <span className="hidden sm:inline">{t('customerCard.createInvoice')}</span>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation() // 카드 클릭 이벤트 방지
+                              handleViewDocuments(customer)
+                            }}
+                            className="flex items-center justify-center space-x-0.5 py-1 px-1.5 bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-medium rounded-md transition-colors duration-200 relative"
+                            title={locale === 'ko' ? '문서 목록' : 'Documents'}
+                          >
+                            <FileText className="h-2.5 w-2.5" />
+                            <span className="hidden sm:inline">{locale === 'ko' ? '문서' : 'Documents'}</span>
+                            {documentCounts[customer.id] > 0 && (
+                              <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[8px] font-bold rounded-full h-3.5 w-3.5 flex items-center justify-center">
+                                {documentCounts[customer.id]}
+                              </span>
+                            )}
+                          </button>
                         </div>
 
                       </div>
@@ -1904,29 +2056,32 @@ export default function AdminCustomers() {
             setShowInvoiceModal(false)
             setSelectedCustomerForInvoice(null)
             setSelectedInvoiceId(null)
-            // 인보이스 목록 새로고침
+            // 문서 목록 새로고침
             if (selectedCustomerForInvoiceList) {
-              handleViewInvoices(selectedCustomerForInvoiceList)
+              handleViewDocuments(selectedCustomerForInvoiceList)
             }
+            // 문서 갯수 새로고침
+            fetchDocumentCounts()
           }}
           locale={locale}
           savedInvoiceId={selectedInvoiceId}
         />
       )}
 
-      {/* 인보이스 목록 모달 */}
+      {/* 문서 목록 모달 (인보이스 + Estimate) */}
       {showInvoiceListModal && selectedCustomerForInvoiceList && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b">
               <h2 className="text-2xl font-bold text-gray-900">
-                {locale === 'ko' ? `${selectedCustomerForInvoiceList.name}님의 인보이스` : `${selectedCustomerForInvoiceList.name}'s Invoices`}
+                {locale === 'ko' ? `${selectedCustomerForInvoiceList.name}님의 문서` : `${selectedCustomerForInvoiceList.name}'s Documents`}
               </h2>
               <button
                 onClick={() => {
                   setShowInvoiceListModal(false)
                   setSelectedCustomerForInvoiceList(null)
                   setCustomerInvoices([])
+                  setCustomerEstimates([])
                 }}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
               >
@@ -1935,47 +2090,127 @@ export default function AdminCustomers() {
             </div>
             
             <div className="p-6">
-              {loadingInvoices ? (
+              {(loadingInvoices || loadingEstimates) ? (
                 <div className="text-center py-8">
                   <p className="text-gray-500">{locale === 'ko' ? '로딩 중...' : 'Loading...'}</p>
                 </div>
-              ) : customerInvoices.length === 0 ? (
+              ) : customerInvoices.length === 0 && customerEstimates.length === 0 ? (
                 <div className="text-center py-8">
-                  <p className="text-gray-500">{locale === 'ko' ? '저장된 인보이스가 없습니다.' : 'No saved invoices.'}</p>
+                  <p className="text-gray-500">{locale === 'ko' ? '저장된 문서가 없습니다.' : 'No saved documents.'}</p>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {customerInvoices.map((invoice) => (
-                    <div
-                      key={invoice.id}
-                      className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors cursor-pointer"
-                      onClick={() => {
-                        // 인보이스 상세 보기 모달 열기
-                        setSelectedCustomerForInvoice(selectedCustomerForInvoiceList)
-                        setSelectedInvoiceId(invoice.id)
-                        setShowInvoiceModal(true)
-                        setShowInvoiceListModal(false)
-                      }}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="font-semibold text-gray-900">{invoice.invoice_number}</h3>
-                          <p className="text-sm text-gray-600">
-                            {new Date(invoice.invoice_date).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-lg text-blue-600">${parseFloat(invoice.total).toFixed(2)}</p>
-                          <p className="text-xs text-gray-500">
-                            {invoice.status === 'sent' ? (locale === 'ko' ? '발송됨' : 'Sent') :
-                             invoice.status === 'paid' ? (locale === 'ko' ? '결제완료' : 'Paid') :
-                             invoice.status === 'draft' ? (locale === 'ko' ? '초안' : 'Draft') :
-                             invoice.status || (locale === 'ko' ? '초안' : 'Draft')}
-                          </p>
-                        </div>
+                <div className="space-y-6">
+                  {/* 인보이스 섹션 */}
+                  {customerInvoices.length > 0 && (
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                        {locale === 'ko' ? '인보이스' : 'Invoices'}
+                      </h3>
+                      <div className="space-y-4">
+                        {customerInvoices.map((invoice) => (
+                          <div
+                            key={invoice.id}
+                            className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors cursor-pointer"
+                            onClick={() => {
+                              // 인보이스 상세 보기 모달 열기
+                              setSelectedCustomerForInvoice(selectedCustomerForInvoiceList)
+                              setSelectedInvoiceId(invoice.id)
+                              setShowInvoiceModal(true)
+                              setShowInvoiceListModal(false)
+                            }}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <h3 className="font-semibold text-gray-900">{invoice.invoice_number}</h3>
+                                <p className="text-sm text-gray-600">
+                                  {new Date(invoice.invoice_date).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-bold text-lg text-blue-600">${parseFloat(invoice.total).toFixed(2)}</p>
+                                <p className="text-xs text-gray-500">
+                                  {invoice.status === 'sent' ? (locale === 'ko' ? '발송됨' : 'Sent') :
+                                   invoice.status === 'paid' ? (locale === 'ko' ? '결제완료' : 'Paid') :
+                                   invoice.status === 'draft' ? (locale === 'ko' ? '초안' : 'Draft') :
+                                   invoice.status || (locale === 'ko' ? '초안' : 'Draft')}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  ))}
+                  )}
+
+                  {/* Estimate 섹션 */}
+                  {customerEstimates.length > 0 && (
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                        {locale === 'ko' ? 'Estimate' : 'Estimates'}
+                      </h3>
+                      <div className="space-y-4">
+                        {customerEstimates.map((estimate) => (
+                          <div
+                            key={estimate.id}
+                            className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <h3 className="font-semibold text-gray-900">{estimate.estimate_number}</h3>
+                                <div className="mt-1 space-y-1">
+                                  <p className="text-sm text-gray-600">
+                                    {locale === 'ko' ? 'Estimate 날짜' : 'Estimate Date'}: {new Date(estimate.estimate_date).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}
+                                  </p>
+                                  {estimate.created_at && (
+                                    <p className="text-xs text-gray-500">
+                                      {locale === 'ko' ? '생성 시간' : 'Created'}: {new Date(estimate.created_at).toLocaleString(locale === 'ko' ? 'ko-KR' : 'en-US', {
+                                        year: 'numeric',
+                                        month: '2-digit',
+                                        day: '2-digit',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      })}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                {estimate.pdf_url && (
+                                  <a
+                                    href={estimate.pdf_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg transition-colors"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {locale === 'ko' ? 'PDF 보기' : 'View PDF'}
+                                  </a>
+                                )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleDeleteEstimate(estimate.id, estimate.pdf_file_path)
+                                  }}
+                                  className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-lg transition-colors flex items-center gap-1"
+                                  title={locale === 'ko' ? '삭제' : 'Delete'}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                  {locale === 'ko' ? '삭제' : 'Delete'}
+                                </button>
+                                <p className="text-xs text-gray-500">
+                                  {estimate.status === 'sent' ? (locale === 'ko' ? '발송됨' : 'Sent') :
+                                   estimate.status === 'accepted' ? (locale === 'ko' ? '승인됨' : 'Accepted') :
+                                   estimate.status === 'rejected' ? (locale === 'ko' ? '거절됨' : 'Rejected') :
+                                   estimate.status === 'draft' ? (locale === 'ko' ? '초안' : 'Draft') :
+                                   estimate.status || (locale === 'ko' ? '초안' : 'Draft')}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

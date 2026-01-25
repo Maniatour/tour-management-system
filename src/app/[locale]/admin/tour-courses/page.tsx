@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { 
   Search, 
   Edit, 
@@ -121,6 +121,7 @@ export default function TourCoursesPage() {
   const [selectedCourse, setSelectedCourse] = useState<TourCourse | null>(null)
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
   const [coursePhotos, setCoursePhotos] = useState<TourCoursePhoto[]>([])
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   // 데이터 로드
   const { 
@@ -215,6 +216,10 @@ export default function TourCoursesPage() {
 
   // 트리 노드 토글
   const toggleNode = (nodeId: string) => {
+    // 스크롤 위치 저장
+    const scrollContainer = scrollContainerRef.current
+    const scrollTop = scrollContainer?.scrollTop || 0
+    
     const newExpanded = new Set(expandedNodes)
     if (newExpanded.has(nodeId)) {
       newExpanded.delete(nodeId)
@@ -222,6 +227,13 @@ export default function TourCoursesPage() {
       newExpanded.add(nodeId)
     }
     setExpandedNodes(newExpanded)
+    
+    // 다음 렌더링 후 스크롤 위치 복원
+    setTimeout(() => {
+      if (scrollContainer) {
+        scrollContainer.scrollTop = scrollTop
+      }
+    }, 0)
   }
 
   // 투어 코스 복사
@@ -408,6 +420,12 @@ export default function TourCoursesPage() {
                     가격 없음
                   </span>
                 )}
+                {/* 소요 시간 뱃지 */}
+                {course.duration_hours !== null && course.duration_hours !== undefined && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                    {course.duration_hours}분
+                  </span>
+                )}
               </div>
               {course.team_name_en && course.team_name_en !== course.team_name_ko && (
                 <div className="text-sm text-gray-500">
@@ -559,7 +577,7 @@ export default function TourCoursesPage() {
             <div className="p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">투어 코스 목록</h2>
             </div>
-            <div className="p-4 max-h-[800px] overflow-y-auto">
+            <div ref={scrollContainerRef} className="p-4 max-h-[800px] overflow-y-auto">
               {hierarchicalCourses.length > 0 ? (
                 <div className="space-y-0">
                   {hierarchicalCourses.map((course) => (
@@ -812,6 +830,10 @@ export default function TourCoursesPage() {
           setShowEditModal(false)
           invalidateCoursesCache()
           refetchCourses()
+          // 선택된 코스도 업데이트
+          if (selectedCourse?.id === updatedCourse.id) {
+            setSelectedCourse(updatedCourse)
+          }
         }}
       />
 

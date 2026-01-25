@@ -290,7 +290,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
   const [categories, setCategories] = useState<TourCourseCategory[]>([])
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
-  const [activeTab, setActiveTab] = useState<'basic' | 'photos'>('basic')
+  // 탭 제거 - 사진 관리는 위치 및 상세 정보 하단에 표시
   const [photos, setPhotos] = useState<TourCoursePhoto[]>([])
   const [uploading, setUploading] = useState(false)
   const [dragActive, setDragActive] = useState(false)
@@ -385,7 +385,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         start_longitude: course.start_longitude?.toString() || '',
         end_latitude: course.end_latitude?.toString() || '',
         end_longitude: course.end_longitude?.toString() || '',
-        duration_hours: course.duration_hours || 60,
+        duration_hours: course.duration_hours !== null && course.duration_hours !== undefined ? course.duration_hours : 60,
         distance: course.distance || 0,
         difficulty_level: course.difficulty_level || 'easy',
         price_type: course.price_type === null ? 'none' : (course.price_type || 'per_person'),
@@ -642,7 +642,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         start_longitude: formData.start_longitude ? parseFloat(formData.start_longitude) : null,
         end_latitude: formData.end_latitude ? parseFloat(formData.end_latitude) : null,
         end_longitude: formData.end_longitude ? parseFloat(formData.end_longitude) : null,
-        duration_hours: formData.duration_hours,
+        duration_hours: formData.duration_hours !== null && formData.duration_hours !== undefined ? formData.duration_hours : null,
         distance: formData.distance || null,
         difficulty_level: formData.difficulty_level,
         price_type: formData.price_type === 'none' ? null : formData.price_type,
@@ -733,33 +733,8 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
           </button>
         </div>
 
-        {/* 탭 네비게이션 */}
-        <div className="flex space-x-1 mb-6">
-          <button
-            onClick={() => setActiveTab('basic')}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-              activeTab === 'basic'
-                ? 'bg-blue-100 text-blue-700 border border-blue-200'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            기본 정보
-          </button>
-          <button
-            onClick={() => setActiveTab('photos')}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-              activeTab === 'photos'
-                ? 'bg-blue-100 text-blue-700 border border-blue-200'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            사진 관리
-          </button>
-        </div>
-
-        {/* 탭 컨텐츠 */}
-        {activeTab === 'basic' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* 기본 정보 */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* 기본 정보 */}
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-900">계층 구조</h3>
@@ -1179,7 +1154,21 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
               }
             })()}
 
-            {/* 소요 시간 및 거리 (액티비티 카테고리일 때만 표시) */}
+            {/* 소요 시간 (항상 표시) */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                소요 시간 (분)
+              </label>
+              <input
+                type="number"
+                value={formData.duration_hours}
+                onChange={(e) => updateFormData({ duration_hours: parseInt(e.target.value) || 0 })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="60"
+              />
+            </div>
+
+            {/* 거리 (액티비티 카테고리일 때만 표시) */}
             {(() => {
               const selectedCategory = categories.find(cat => cat.id === formData.category_id)
               const isActivity = selectedCategory?.name_ko?.toLowerCase().includes('액티비티') || 
@@ -1189,32 +1178,18 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
               
               if (isActivity) {
                 return (
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        소요 시간 (분)
-                      </label>
-                      <input
-                        type="number"
-                        value={formData.duration_hours}
-                        onChange={(e) => updateFormData({ duration_hours: parseInt(e.target.value) || 0 })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="60"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        거리 (mile)
-                      </label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={formData.distance}
-                        onChange={(e) => updateFormData({ distance: parseFloat(e.target.value) || 0 })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="5.2"
-                      />
-                    </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      거리 (mile)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={formData.distance}
+                      onChange={(e) => updateFormData({ distance: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="5.2"
+                    />
                   </div>
                 )
               }
@@ -1403,120 +1378,121 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                 활성화
               </label>
             </div>
+
+            {/* 사진 관리 */}
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">사진 관리</h3>
+              
+              {(!course?.id || course.id === '') && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <p className="text-yellow-800 text-sm">
+                    투어 코스를 먼저 저장한 후 사진을 업로드할 수 있습니다.
+                  </p>
+                </div>
+              )}
+              
+              {/* 업로드 영역 */}
+              {course?.id && course.id !== '' && (
+                <div
+                  className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
+                    dragActive
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-300 hover:border-gray-400'
+                  }`}
+                  onDragEnter={handleDrag}
+                  onDragLeave={handleDrag}
+                  onDragOver={handleDrag}
+                  onDrop={handleDrop}
+                >
+                  <div className="flex items-center justify-center gap-3">
+                    <Upload className="w-5 h-5 text-gray-400" />
+                    <div className="flex-1">
+                      <p className="text-sm text-gray-600 mb-1">
+                        사진을 드래그하거나 클릭하여 업로드
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        JPG, PNG, GIF (최대 10MB)
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
+                      className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap"
+                    >
+                      {uploading ? '업로드 중...' : '파일 선택'}
+                    </button>
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
+                    className="hidden"
+                  />
+                </div>
+              )}
+
+              {/* 사진 목록 */}
+              {photos.length > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mt-4">
+                  {photos.map((photo) => (
+                    <div key={photo.id} className="relative group">
+                      <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
+                        <img
+                          src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${photo.photo_url}`}
+                          alt={photo.photo_alt_ko || photo.photo_alt_en || 'Tour course photo'}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      
+                      {/* 대표 사진 표시 */}
+                      {photo.is_primary && (
+                        <div className="absolute top-2 left-2 bg-yellow-500 text-white px-2 py-1 rounded text-xs font-medium">
+                          대표
+                        </div>
+                      )}
+                      
+                      {/* 액션 버튼들 */}
+                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                        <div className="flex gap-2">
+                          {!photo.is_primary && (
+                            <button
+                              onClick={() => handleSetPrimary(photo.id)}
+                              className="p-2 bg-yellow-500 text-white rounded-full hover:bg-yellow-600"
+                              title="대표 사진으로 설정"
+                            >
+                              <Star className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDeletePhoto(photo.id)}
+                            className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600"
+                            title="삭제"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {/* 파일 정보 */}
+                      <div className="mt-2 text-xs text-gray-500 truncate">
+                        {photo.photo_alt_ko || photo.photo_alt_en || 'Photo'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {photos.length === 0 && course?.id && course.id !== '' && (
+                <div className="text-center py-8 text-gray-500">
+                  <ImageIcon className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                  <p>업로드된 사진이 없습니다</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-        )}
-
-        {/* 사진 관리 탭 */}
-        {activeTab === 'photos' && (
-          <div className="space-y-6">
-            <h3 className="text-lg font-semibold text-gray-900">사진 관리</h3>
-            
-            {(!course?.id || course.id === '') && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <p className="text-yellow-800 text-sm">
-                  투어 코스를 먼저 저장한 후 사진을 업로드할 수 있습니다.
-                </p>
-              </div>
-            )}
-            
-            {/* 업로드 영역 */}
-            {course?.id && course.id !== '' && (
-              <div
-                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                  dragActive
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-300 hover:border-gray-400'
-                }`}
-                onDragEnter={handleDrag}
-                onDragLeave={handleDrag}
-                onDragOver={handleDrag}
-                onDrop={handleDrop}
-              >
-                <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600 mb-2">
-                  사진을 드래그하여 업로드하거나 클릭하여 선택하세요
-                </p>
-                <p className="text-sm text-gray-500 mb-4">
-                  JPG, PNG, GIF 파일 (최대 10MB)
-                </p>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {uploading ? '업로드 중...' : '파일 선택'}
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept="image/*"
-                  onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
-                  className="hidden"
-                />
-              </div>
-            )}
-
-            {/* 사진 목록 */}
-            {photos.length > 0 && (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {photos.map((photo) => (
-                  <div key={photo.id} className="relative group">
-                    <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
-                      <img
-                        src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${photo.photo_url}`}
-                        alt={photo.photo_alt_ko || photo.photo_alt_en || 'Tour course photo'}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    
-                    {/* 대표 사진 표시 */}
-                    {photo.is_primary && (
-                      <div className="absolute top-2 left-2 bg-yellow-500 text-white px-2 py-1 rounded text-xs font-medium">
-                        대표
-                      </div>
-                    )}
-                    
-                    {/* 액션 버튼들 */}
-                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
-                      <div className="flex gap-2">
-                        {!photo.is_primary && (
-                          <button
-                            onClick={() => handleSetPrimary(photo.id)}
-                            className="p-2 bg-yellow-500 text-white rounded-full hover:bg-yellow-600"
-                            title="대표 사진으로 설정"
-                          >
-                            <Star className="w-4 h-4" />
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handleDeletePhoto(photo.id)}
-                          className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600"
-                          title="삭제"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                    
-                    {/* 파일 정보 */}
-                    <div className="mt-2 text-xs text-gray-500 truncate">
-                      {photo.photo_alt_ko || photo.photo_alt_en || 'Photo'}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {photos.length === 0 && (
-              <div className="text-center py-8 text-gray-500">
-                <ImageIcon className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                <p>업로드된 사진이 없습니다</p>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* 버튼 */}
         <div className="flex gap-2 mt-6">

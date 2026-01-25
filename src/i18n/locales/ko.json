@@ -600,7 +600,7 @@
       "languageNotSelected": "언어가 선택되지 않음",
       "invalidLanguage": "유효하지 않은 언어 설정",
       "languageError": "언어 설정 오류",
-      "createInvoice": "인보이스 생성"
+      "createInvoice": "+인보이스"
     },
     "invoice": {
       "title": "인보이스",

@@ -1,19 +1,25 @@
 'use client'
 
-import React, { useState, useEffect, useMemo, useRef } from 'react'
-import { useTranslations } from 'next-intl'
-import { Calculator, MapPin, Car, DollarSign, Settings, Plus, X, Route, Clock, Users, Edit2, Search, ChevronRight, ChevronDown, Folder, FolderOpen, GripVertical, ArrowUp, ArrowDown } from 'lucide-react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { useLocale } from 'next-intl'
+import { useSearchParams } from 'next/navigation'
+import { Calculator, Settings, Plus, X, Route, Clock, Search, GripVertical, ArrowUp, ArrowDown, Save, RefreshCw, FileText, ExternalLink, Trash2 } from 'lucide-react'
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'
 import { supabase } from '@/lib/supabase'
-import type { Database } from '@/lib/supabase'
+import type { Database } from '@/lib/database.types'
 import TourCourseEditModal from '@/components/TourCourseEditModal'
+import EstimateModal from '@/components/tour-cost-calculator/EstimateModal'
+import CourseTreeItem from '@/components/tour-cost-calculator/CourseTreeItem'
+import VehicleSettingsModal from '@/components/tour-cost-calculator/VehicleSettingsModal'
+import SaveConfigModal from '@/components/tour-cost-calculator/SaveConfigModal'
+import LoadConfigModal from '@/components/tour-cost-calculator/LoadConfigModal'
+import TemplateSaveModal from '@/components/tour-cost-calculator/TemplateSaveModal'
+import TemplateLoadModal from '@/components/tour-cost-calculator/TemplateLoadModal'
+import DaySelectModal from '@/components/tour-cost-calculator/DaySelectModal'
+import EntranceFeeDetailModal from '@/components/tour-cost-calculator/EntranceFeeDetailModal'
+import type { VehicleRentalSetting } from '@/components/tour-cost-calculator/VehicleSettingsModal'
 
-// Google Maps 타입 정의
-declare global {
-  interface Window {
-    google: typeof google
-  }
-}
+// Google Maps 타입 정의 - 다른 파일의 타입 선언과 충돌을 피하기 위해 any 사용
 
 type Product = Database['public']['Tables']['products']['Row']
 type TourCourse = Database['public']['Tables']['tour_courses']['Row'] & {
@@ -21,17 +27,9 @@ type TourCourse = Database['public']['Tables']['tour_courses']['Row'] & {
   price_minivan?: number | null
   price_9seater?: number | null
   price_13seater?: number | null
-}
-
-type VehicleRentalSetting = {
-  id: string
-  vehicle_type: 'minivan' | '9seater' | '13seater'
-  daily_rental_rate: number
-  mpg: number
-}
-
-type SelectedCourse = TourCourse & {
-  selected: boolean
+  children?: TourCourse[]
+  parent?: TourCourse
+  level?: number
 }
 
 type MarginType = 'default' | 'low_season' | 'high_season' | 'failed_recruitment'
@@ -45,168 +43,10 @@ const MARGIN_RATES: Record<MarginType, { min: number; max: number; default: numb
 
 const TIP_RATE = 0.15 // 15%
 
-// 트리 아이템 컴포넌트
-const CourseTreeItem = ({ 
-  course, 
-  level = 0,
-  expandedNodes,
-  selectedCourses,
-  onToggle,
-  onSelect,
-  onDeselect,
-  onEdit
-}: { 
-  course: TourCourse
-  level?: number
-  expandedNodes: Set<string>
-  selectedCourses: Set<string>
-  onToggle: (id: string) => void
-  onSelect: (course: TourCourse) => void
-  onDeselect: (courseId: string) => void
-  onEdit: (course: TourCourse) => void
-}) => {
-  const hasChildren = course.children && course.children.length > 0
-  const isExpanded = expandedNodes.has(course.id)
-  const isSelected = selectedCourses.has(course.id)
-  
-  const hasPrice = course.price_type === 'per_vehicle'
-    ? (course.price_minivan || course.price_9seater || course.price_13seater)
-    : (course.price_adult || course.price_child || course.price_infant)
-  
-  const getPriceDisplay = () => {
-    if (course.price_type === 'per_vehicle') {
-      const prices = []
-      if (course.price_minivan) prices.push(`미니밴: $${course.price_minivan}`)
-      if (course.price_9seater) prices.push(`9인승: $${course.price_9seater}`)
-      if (course.price_13seater) prices.push(`13인승: $${course.price_13seater}`)
-      return prices.length > 0 ? prices.join(' / ') : null
-    } else {
-      const prices = []
-      if (course.price_adult) prices.push(`성인: $${course.price_adult}`)
-      if (course.price_child) prices.push(`아동: $${course.price_child}`)
-      if (course.price_infant) prices.push(`유아: $${course.price_infant}`)
-      return prices.length > 0 ? prices.join(' / ') : null
-    }
-  }
-
-  const priceDisplay = getPriceDisplay()
-
-  return (
-    <div>
-      <div 
-        className={`flex items-center gap-1.5 px-2 py-1 border rounded hover:bg-gray-50 ${
-          isSelected ? 'bg-blue-50 border-blue-500' : 'border-gray-200'
-        }`}
-        style={{ marginLeft: `${level * 12}px` }}
-      >
-        {/* 확장/축소 버튼 */}
-        {hasChildren ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onToggle(course.id)
-            }}
-            className="w-3.5 h-3.5 flex items-center justify-center text-gray-500 hover:text-gray-700 flex-shrink-0"
-          >
-            {isExpanded ? (
-              <ChevronDown className="w-3 h-3" />
-            ) : (
-              <ChevronRight className="w-3 h-3" />
-            )}
-          </button>
-        ) : (
-          <div className="w-3.5 h-3.5 flex-shrink-0"></div>
-        )}
-        
-        {/* 체크박스 */}
-        <input
-          type="checkbox"
-          checked={isSelected}
-          onChange={(e) => {
-            e.stopPropagation()
-            if (isSelected) {
-              onDeselect(course.id)
-            } else {
-              onSelect(course)
-            }
-          }}
-          className="w-3.5 h-3.5 text-blue-600 rounded cursor-pointer flex-shrink-0"
-          onClick={(e) => e.stopPropagation()}
-        />
-        
-        {/* 폴더/파일 아이콘 */}
-        <div className="flex items-center flex-shrink-0">
-          {hasChildren ? (
-            isExpanded ? (
-              <FolderOpen className="w-3 h-3 text-blue-500" />
-            ) : (
-              <Folder className="w-3 h-3 text-blue-500" />
-            )
-          ) : (
-            <MapPin className="w-3 h-3 text-gray-400" />
-          )}
-        </div>
-        
-        {/* 이름 및 정보 */}
-        <div className="flex-1 min-w-0 flex items-center gap-2">
-          <div className="flex-1 min-w-0 flex items-center gap-2">
-            <div className="text-xs font-medium truncate">{course.name_ko || course.name_en}</div>
-            {/* 위치 정보 아이콘 */}
-            {(course.location || course.start_latitude || course.google_maps_url) ? (
-              <MapPin className="w-3 h-3 text-green-500 flex-shrink-0" title="위치 정보 있음" />
-            ) : (
-              <MapPin className="w-3 h-3 text-gray-300 flex-shrink-0" title="위치 정보 없음" />
-            )}
-            {course.location && (
-              <span className="text-xs text-gray-400 truncate">{course.location}</span>
-            )}
-            {priceDisplay ? (
-              <span className="text-xs text-green-600 font-medium whitespace-nowrap">
-                • {priceDisplay}
-              </span>
-            ) : (
-              <span className="text-xs text-red-500 whitespace-nowrap">• 입장료 미설정</span>
-            )}
-          </div>
-          
-          {/* 편집 버튼 (하나만) */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onEdit(course)
-            }}
-            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors flex-shrink-0"
-            title="투어 코스 편집"
-          >
-            <Edit2 className="w-3 h-3" />
-          </button>
-        </div>
-      </div>
-      
-      {/* 하위 항목들 */}
-      {hasChildren && isExpanded && (
-        <div className="mt-1 space-y-1">
-          {course.children!.map((child) => (
-            <CourseTreeItem
-              key={child.id}
-              course={child}
-              level={level + 1}
-              expandedNodes={expandedNodes}
-              selectedCourses={selectedCourses}
-              onToggle={onToggle}
-              onSelect={onSelect}
-              onDeselect={onDeselect}
-              onEdit={onEdit}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 export default function TourCostCalculatorPage() {
-  const t = useTranslations('common')
+  const locale = useLocale()
+  const searchParams = useSearchParams()
   
   // 기본 상태
   const [tourType, setTourType] = useState<'product' | 'custom'>('product')
@@ -218,8 +58,8 @@ export default function TourCostCalculatorPage() {
   const [vehicleType, setVehicleType] = useState<'minivan' | '9seater' | '13seater'>('minivan')
   const [vehicleSettings, setVehicleSettings] = useState<VehicleRentalSetting[]>([])
   const [showVehicleSettingsModal, setShowVehicleSettingsModal] = useState(false)
-  const [editingVehicleType, setEditingVehicleType] = useState<'minivan' | '9seater' | '13seater' | null>(null)
-  const [gasPrice, setGasPrice] = useState<number>(0)
+  const [_editingVehicleType, setEditingVehicleType] = useState<'minivan' | '9seater' | '13seater' | null>(null)
+  const [gasPrice, setGasPrice] = useState<number>(4.00)
   const [mileage, setMileage] = useState<number | null>(null)
   const [travelTime, setTravelTime] = useState<number | null>(null) // 이동 시간 (시간 단위)
   const [totalHours, setTotalHours] = useState<number>(0)
@@ -241,10 +81,10 @@ export default function TourCostCalculatorPage() {
   const [selectedCoursesOrder, setSelectedCoursesOrder] = useState<CourseScheduleItem[]>([])
   const [isCalculatingRoute, setIsCalculatingRoute] = useState(false)
   const [travelTimes, setTravelTimes] = useState<number[]>([]) // 각 구간별 이동 시간 (초 단위)
-  const [map, setMap] = useState<google.maps.Map | null>(null)
-  const [directionsRenderer, setDirectionsRenderer] = useState<google.maps.DirectionsRenderer | null>(null)
+  const [map, setMap] = useState<any>(null)
+  const [directionsRenderer, setDirectionsRenderer] = useState<any>(null)
   const mapRef = useRef<HTMLDivElement>(null)
-  const markersRef = useRef<google.maps.Marker[]>([])
+  const markersRef = useRef<any[]>([])
   
   type Template = {
     id?: string
@@ -262,6 +102,155 @@ export default function TourCostCalculatorPage() {
   const [showLoadModal, setShowLoadModal] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
   const [loadingTemplates, setLoadingTemplates] = useState(false)
+  const [showDaySelectModal, setShowDaySelectModal] = useState(false)
+  const [editingDayIndex, setEditingDayIndex] = useState<number | null>(null)
+  const [showEntranceFeeDetailModal, setShowEntranceFeeDetailModal] = useState(false)
+  const [showEstimateModal, setShowEstimateModal] = useState(false)
+  const [tourCourseDescription, setTourCourseDescription] = useState('')
+  const [scheduleDescription, setScheduleDescription] = useState('')
+  const [estimateCustomer, setEstimateCustomer] = useState<{ id?: string; name: string; email: string; phone?: string | null } | null>(null)
+  
+  // 고객 정보 및 설정 저장
+  const [selectedCustomer, setSelectedCustomer] = useState<{ id: string; name: string; email: string; phone: string | null } | null>(null)
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
+  const [allCustomers, setAllCustomers] = useState<Array<{id: string, name: string, email: string, phone: string | null}>>([])
+  const [savedConfigs, setSavedConfigs] = useState<Array<{id: string, name: string, customer_id: string | null, created_at: string}>>([])
+  const [showSaveConfigModal, setShowSaveConfigModal] = useState(false)
+  const [showLoadConfigModal, setShowLoadConfigModal] = useState(false)
+  const [configName, setConfigName] = useState('')
+  const [currentConfigId, setCurrentConfigId] = useState<string | null>(null)
+  const [pendingConfigRestore, setPendingConfigRestore] = useState<{
+    selectedCourses: string[]
+    courseOrder: CourseScheduleItem[]
+  } | null>(null)
+  const customerSearchRef = useRef<HTMLDivElement>(null)
+  
+  // 고객 문서 목록 상태
+  const [customerDocuments, setCustomerDocuments] = useState<{invoices: any[], estimates: any[]}>({ invoices: [], estimates: [] })
+  const [loadingDocuments, setLoadingDocuments] = useState(false)
+  
+  // 기타 금액 타입
+  type OtherExpense = {
+    id: string
+    name: string
+    amount: number
+  }
+  const [otherExpenses, setOtherExpenses] = useState<OtherExpense[]>([])
+  
+  // 호텔 숙박인지 확인하는 함수
+  const isHotelAccommodation = (course: TourCourse | undefined): boolean => {
+    if (!course) return false
+    const category = course.category?.toLowerCase() || ''
+    const name = (course.name_ko || course.name_en || '').toLowerCase()
+    return category.includes('숙박') || 
+           category.includes('hotel') || 
+           category.includes('accommodation') ||
+           name.includes('호텔') ||
+           name.includes('hotel') ||
+           name.includes('숙박')
+  }
+
+  // 입장료 상세 내역
+  type EntranceFeeDetail = {
+    courseName: string
+    priceType: string
+    unitPrice: number
+    quantity: number
+    total: number
+  }
+  
+  const entranceFeeDetails = useMemo(() => {
+    const details: EntranceFeeDetail[] = []
+    // 호텔 숙박 제외
+    const selected = tourCourses.filter(course => selectedCourses.has(course.id) && !isHotelAccommodation(course))
+    
+    selected.forEach(course => {
+      if (course.price_type === 'per_vehicle') {
+        let price = 0
+        let priceType = ''
+        if (vehicleType === 'minivan' && course.price_minivan) {
+          price = course.price_minivan
+          priceType = '미니밴'
+        } else if (vehicleType === '9seater' && course.price_9seater) {
+          price = course.price_9seater
+          priceType = '9인승'
+        } else if (vehicleType === '13seater' && course.price_13seater) {
+          price = course.price_13seater
+          priceType = '13인승'
+        }
+        if (price > 0) {
+          details.push({
+            courseName: course.name_ko || course.name_en,
+            priceType: `차량별 (${priceType})`,
+            unitPrice: price,
+            quantity: 1,
+            total: price
+          })
+        }
+      } else {
+        // 인원별 가격
+        if (course.price_adult) {
+          details.push({
+            courseName: course.name_ko || course.name_en,
+            priceType: '인원별 (성인)',
+            unitPrice: course.price_adult,
+            quantity: participantCount,
+            total: course.price_adult * participantCount
+          })
+        }
+        // 아동/유아 가격은 별도 입력 필요하므로 여기서는 성인 기준만 계산
+      }
+    })
+    
+    return details
+  }, [selectedCourses, tourCourses, vehicleType, participantCount])
+
+  // 호텔 숙박비 상세 내역
+  const hotelAccommodationDetails = useMemo(() => {
+    const details: EntranceFeeDetail[] = []
+    // 호텔 숙박만
+    const selected = tourCourses.filter(course => selectedCourses.has(course.id) && isHotelAccommodation(course))
+    
+    selected.forEach(course => {
+      if (course.price_type === 'per_vehicle') {
+        let price = 0
+        let priceType = ''
+        if (vehicleType === 'minivan' && course.price_minivan) {
+          price = course.price_minivan
+          priceType = '미니밴'
+        } else if (vehicleType === '9seater' && course.price_9seater) {
+          price = course.price_9seater
+          priceType = '9인승'
+        } else if (vehicleType === '13seater' && course.price_13seater) {
+          price = course.price_13seater
+          priceType = '13인승'
+        }
+        if (price > 0) {
+          details.push({
+            courseName: course.name_ko || course.name_en,
+            priceType: `차량별 (${priceType})`,
+            unitPrice: price,
+            quantity: 1,
+            total: price
+          })
+        }
+      } else {
+        // 인원별 가격
+        if (course.price_adult) {
+          details.push({
+            courseName: course.name_ko || course.name_en,
+            priceType: '인원별 (성인)',
+            unitPrice: course.price_adult,
+            quantity: participantCount,
+            total: course.price_adult * participantCount
+          })
+        }
+      }
+    })
+    
+    return details
+  }, [selectedCourses, tourCourses, vehicleType, participantCount])
 
   // 데이터 로드
   useEffect(() => {
@@ -282,6 +271,23 @@ export default function TourCostCalculatorPage() {
     }
   }, [tourType, selectedProductId])
 
+  // 설정 복원: 코스 데이터가 로드된 후 선택된 코스와 순서 복원
+  useEffect(() => {
+    if (pendingConfigRestore && tourCourses.length > 0) {
+      // 코스 데이터가 로드된 후에만 복원
+      // selectedCourses를 먼저 설정
+      setSelectedCourses(new Set(pendingConfigRestore.selectedCourses))
+      
+      // courseOrder를 즉시 복원 (동기화 useEffect가 pendingConfigRestore를 체크하므로 실행되지 않음)
+      setSelectedCoursesOrder(pendingConfigRestore.courseOrder)
+      
+      // 복원 완료 후 pendingConfigRestore 초기화 (다음 렌더링 사이클에서)
+      setTimeout(() => {
+        setPendingConfigRestore(null)
+      }, 100)
+    }
+  }, [pendingConfigRestore, tourCourses])
+
   // 참가 인원에 따라 차량 타입 자동 선택
   useEffect(() => {
     if (participantCount >= 1 && participantCount <= 5) {
@@ -295,6 +301,9 @@ export default function TourCostCalculatorPage() {
 
   // 선택된 코스 순서 동기화 (가장 하위 포인트만 표시)
   useEffect(() => {
+    // 설정 복원 중이면 동기화하지 않음
+    if (pendingConfigRestore) return
+    
     const selectedArray = Array.from(selectedCourses)
     
     if (selectedArray.length === 0) {
@@ -373,7 +382,7 @@ export default function TourCostCalculatorPage() {
       
       return finalOrder
     })
-  }, [selectedCourses, tourCourses, directionsRenderer])
+  }, [selectedCourses, tourCourses, directionsRenderer, pendingConfigRestore])
 
   // 모든 상위 부모를 찾는 함수
   const getAllParentIds = (courseId: string, visited = new Set<string>()): string[] => {
@@ -425,12 +434,45 @@ export default function TourCostCalculatorPage() {
       // 딥 카피를 위해 새로운 객체들로 구성된 배열 생성
       const newOrder = prev.map(item => ({ ...item }))
       
+      // 첫 번째 항목의 일차 설정 (없으면 1일)
+      if (!newOrder[0].day) {
+        newOrder[0].day = '1일'
+      }
+      
+      let currentDay = 1
+      
       for (let i = 1; i < newOrder.length; i++) {
         const prevItem = newOrder[i-1]
         const currentItem = newOrder[i]
+        const prevCourse = tourCourses.find(c => c.id === prevItem.id)
         
-        // 같은 날짜인 경우에만 자동 계산 (다른 날짜면 첫 시간 수동 입력 필요)
-        // 날짜 입력이 없으면 동일한 날로 간주
+        // 이전 코스가 호텔 숙박인지 확인
+        if (isHotelAccommodation(prevCourse)) {
+          // 호텔 숙박 다음은 다음날
+          currentDay++
+          currentItem.day = `${currentDay}일`
+          
+          // 다음날 시작 시간이 입력되어 있으면 그 시간부터 계산
+          if (currentItem.time) {
+            // 사용자가 입력한 시간을 기준으로 계산
+            continue
+          }
+          // 다음날 시작 시간이 없으면 계산하지 않음 (사용자가 입력해야 함)
+          continue
+        }
+        
+        // 호텔 숙박 전까지는 같은 일차
+        if (!currentItem.day) {
+          currentItem.day = `${currentDay}일`
+        } else {
+          // 일차에서 숫자 추출
+          const dayMatch = currentItem.day.match(/(\d+)일/)
+          if (dayMatch) {
+            currentDay = parseInt(dayMatch[1])
+          }
+        }
+        
+        // 같은 날짜인 경우에만 자동 계산
         const isSameDay = !prevItem.day || !currentItem.day || prevItem.day === currentItem.day
         
         if (isSameDay && prevItem.time) {
@@ -450,6 +492,9 @@ export default function TourCostCalculatorPage() {
           const newHours = Math.floor(totalMinutes / 60) % 24
           const newMins = totalMinutes % 60
           currentItem.time = `${newHours.toString().padStart(2, '0')}:${newMins.toString().padStart(2, '0')}`
+        } else if (isSameDay && !prevItem.time) {
+          // 이전 항목에 시간이 없으면 계산하지 않음
+          continue
         }
       }
       return newOrder
@@ -502,7 +547,7 @@ export default function TourCostCalculatorPage() {
         .order('name_ko', { ascending: true })
 
       if (error) throw error
-      setTourCourses(data || [])
+      setTourCourses((data || []) as TourCourse[])
     } catch (error) {
       console.error('투어 코스 로드 오류:', error)
     }
@@ -518,7 +563,7 @@ export default function TourCostCalculatorPage() {
 
       if (error) throw error
 
-      const selectedIds = new Set(data?.map(item => item.tour_course_id) || [])
+      const selectedIds = new Set(data?.map((item: any) => item.tour_course_id) ?? [])
       setSelectedCourses(selectedIds)
     } catch (error) {
       console.error('상품 투어 코스 선택 상태 로드 오류:', error)
@@ -533,7 +578,10 @@ export default function TourCostCalculatorPage() {
         .order('vehicle_type', { ascending: true })
 
       if (error) throw error
-      setVehicleSettings(data || [])
+      setVehicleSettings((data || []).map(item => ({
+        ...item,
+        vehicle_type: item.vehicle_type as 'minivan' | '9seater' | '13seater'
+      })))
     } catch (error) {
       console.error('차량 설정 로드 오류:', error)
     }
@@ -567,7 +615,7 @@ export default function TourCostCalculatorPage() {
     const calculateLevels = (course: TourCourse, level: number = 0) => {
       course.level = level
       if (course.children) {
-        course.children.forEach(child => calculateLevels(child, level + 1))
+        course.children.forEach((child: TourCourse) => calculateLevels(child, level + 1))
       }
     }
 
@@ -608,11 +656,55 @@ export default function TourCostCalculatorPage() {
     setExpandedCourseNodes(newExpanded)
   }
 
-  // 입장료 계산
+  // 일정 일수 계산
+  const numberOfDays = useMemo(() => {
+    if (selectedCoursesOrder.length === 0) return 1
+    const days = selectedCoursesOrder
+      .map(item => {
+        if (!item.day) return 0
+        const match = item.day.match(/(\d+)일/)
+        return match ? parseInt(match[1]) : 0
+      })
+      .filter(day => day > 0)
+    return days.length > 0 ? Math.max(...days) : 1
+  }, [selectedCoursesOrder])
+
+  // 호텔 숙박비 계산 (호텔 숙박 + 가이드 숙박비)
+  const hotelAccommodationCost = useMemo(() => {
+    let total = 0
+    const selected = tourCourses.filter(course => selectedCourses.has(course.id) && isHotelAccommodation(course))
+
+    selected.forEach(course => {
+      if (course.price_type === 'per_vehicle') {
+        // 차량별 가격
+        if (vehicleType === 'minivan' && course.price_minivan) {
+          total += course.price_minivan
+        } else if (vehicleType === '9seater' && course.price_9seater) {
+          total += course.price_9seater
+        } else if (vehicleType === '13seater' && course.price_13seater) {
+          total += course.price_13seater
+        }
+      } else {
+        // 인원별 가격 (기본)
+        if (course.price_adult) {
+          total += course.price_adult * participantCount
+        }
+      }
+    })
+
+    // 가이드 숙박비 추가 (1박당 $100)
+    // 1박2일 = 1박, 2박3일 = 2박
+    const guideAccommodationCost = numberOfDays > 1 ? (numberOfDays - 1) * 100 : 0
+    total += guideAccommodationCost
+
+    return total
+  }, [selectedCourses, tourCourses, vehicleType, participantCount, numberOfDays])
+
+  // 입장료 계산 (호텔 숙박 제외)
   const entranceFees = useMemo(() => {
     let total = 0
     // 모든 투어 코스에서 선택된 것들 찾기 (평면 리스트에서)
-    const selected = tourCourses.filter(course => selectedCourses.has(course.id))
+    const selected = tourCourses.filter(course => selectedCourses.has(course.id) && !isHotelAccommodation(course))
 
     selected.forEach(course => {
       if (course.price_type === 'per_vehicle') {
@@ -636,11 +728,12 @@ export default function TourCostCalculatorPage() {
     return total
   }, [selectedCourses, tourCourses, vehicleType, participantCount])
 
-  // 차량 렌트비
+  // 차량 렌트비 (일수에 따라 계산)
   const vehicleRentalCost = useMemo(() => {
     const setting = vehicleSettings.find(s => s.vehicle_type === vehicleType)
-    return setting?.daily_rental_rate || 0
-  }, [vehicleSettings, vehicleType])
+    const dailyRate = setting?.daily_rental_rate || 0
+    return dailyRate * numberOfDays
+  }, [vehicleSettings, vehicleType, numberOfDays])
 
   // 주유비 계산
   const fuelCost = useMemo(() => {
@@ -657,15 +750,15 @@ export default function TourCostCalculatorPage() {
     return totalHours * guideHourlyRate
   }, [guideFee, totalHours, guideHourlyRate])
 
-  // 총 실비
-  const totalCost = useMemo(() => {
-    return entranceFees + vehicleRentalCost + fuelCost + calculatedGuideFee
-  }, [entranceFees, vehicleRentalCost, fuelCost, calculatedGuideFee])
+  // 기타 금액 합계
+  const otherExpensesTotal = useMemo(() => {
+    return otherExpenses.reduce((sum, expense) => sum + expense.amount, 0)
+  }, [otherExpenses])
 
-  // 팁 계산
-  const tipAmount = useMemo(() => {
-    return totalCost * TIP_RATE
-  }, [totalCost])
+  // 총 실비 (기타 금액 제외)
+  const totalCost = useMemo(() => {
+    return entranceFees + hotelAccommodationCost + vehicleRentalCost + fuelCost + calculatedGuideFee
+  }, [entranceFees, hotelAccommodationCost, vehicleRentalCost, fuelCost, calculatedGuideFee])
 
   // 마진율
   const marginRate = useMemo(() => {
@@ -675,20 +768,453 @@ export default function TourCostCalculatorPage() {
     return MARGIN_RATES[marginType].default
   }, [marginType, customMarginRate])
 
-  // 판매가 (팁 제외)
+  // 판매가 (팁 제외, 기타 금액 제외)
   const sellingPrice = useMemo(() => {
     return totalCost / (1 - marginRate / 100)
   }, [totalCost, marginRate])
 
+  // 추가 비용 (기타 금액, 마진율 적용 안함)
+  const additionalCost = useMemo(() => {
+    return otherExpensesTotal
+  }, [otherExpensesTotal])
+
+  // 팁 계산 전 총액 (판매가 + 추가비용)
+  const totalBeforeTip = useMemo(() => {
+    return sellingPrice + additionalCost
+  }, [sellingPrice, additionalCost])
+
+  // 팁 계산 (판매가 + 추가비용 기준)
+  const tipAmount = useMemo(() => {
+    return totalBeforeTip * TIP_RATE
+  }, [totalBeforeTip])
+
   // 팁 포함 판매가
   const sellingPriceWithTip = useMemo(() => {
-    return sellingPrice + tipAmount
-  }, [sellingPrice, tipAmount])
+    return totalBeforeTip + tipAmount
+  }, [totalBeforeTip, tipAmount])
 
   // 마진 금액
   const marginAmount = useMemo(() => {
     return sellingPrice - totalCost
   }, [sellingPrice, totalCost])
+
+  // 고객 목록 가져오기
+  useEffect(() => {
+    const fetchCustomers = async () => {
+      try {
+        let customers: Array<{id: string, name: string, email: string | null, phone: string | null}> = []
+        let from = 0
+        const batchSize = 1000
+        let hasMore = true
+
+        while (hasMore) {
+          const { data, error } = await supabase
+            .from('customers')
+            .select('id, name, email, phone')
+            .order('created_at', { ascending: false })
+            .range(from, from + batchSize - 1)
+
+          if (error) {
+            console.error('고객 목록 조회 오류:', error)
+            break
+          }
+
+          if (data && data.length > 0) {
+            customers = [...customers, ...data]
+            from += batchSize
+            hasMore = data.length === batchSize
+          } else {
+            hasMore = false
+          }
+        }
+
+        setAllCustomers(customers.filter((c): c is {id: string, name: string, email: string, phone: string | null} => c.email !== null))
+      } catch (error) {
+        console.error('고객 목록 조회 오류:', error)
+      }
+    }
+
+    fetchCustomers()
+  }, [])
+
+  // 저장된 설정 목록 가져오기
+  const loadSavedConfigs = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('tour_cost_calculator_configs')
+        .select('id, name, customer_id, created_at')
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (error) throw error
+      const validConfigs = (data || []).map(item => ({
+        ...item,
+        created_at: item.created_at || new Date().toISOString()
+      })) as Array<{id: string, name: string, customer_id: string | null, created_at: string}>
+      setSavedConfigs(validConfigs)
+    } catch (error) {
+      console.error('저장된 설정 목록 로드 오류:', error)
+    }
+  }
+
+  // URL 파라미터에서 config_id를 받아서 자동으로 불러오기
+  useEffect(() => {
+    const configId = searchParams.get('config_id')
+    if (configId && allCustomers.length > 0) {
+      loadConfiguration(configId)
+      // URL에서 파라미터 제거 (한 번만 실행되도록)
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href)
+        url.searchParams.delete('config_id')
+        window.history.replaceState({}, '', url.toString())
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
+  // 설정 저장
+  const saveConfiguration = async (editingConfigId?: string) => {
+    if (!configName.trim()) {
+      alert(locale === 'ko' ? '설정 이름을 입력해주세요.' : 'Please enter a configuration name.')
+      return
+    }
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      const configData = {
+        customer_id: selectedCustomer?.id || null,
+        name: configName.trim(),
+        tour_type: tourType,
+        selected_product_id: selectedProductId || null,
+        selected_courses: Array.from(selectedCourses),
+        course_order: selectedCoursesOrder,
+        participant_count: participantCount,
+        vehicle_type: vehicleType,
+        gas_price: gasPrice,
+        mileage: mileage || null,
+        travel_time: travelTime || null,
+        guide_hourly_rate: guideHourlyRate,
+        guide_fee: guideFee || null,
+        margin_type: marginType,
+        custom_margin_rate: customMarginRate,
+        other_expenses: otherExpenses,
+        updated_by: user?.id || null
+      }
+
+      if (editingConfigId) {
+        // 기존 설정 덮어쓰기
+        const { error } = await (supabase as any)
+          .from('tour_cost_calculator_configs')
+          .update(configData)
+          .eq('id', editingConfigId)
+
+        if (error) throw error
+        alert(locale === 'ko' ? '설정이 업데이트되었습니다.' : 'Configuration updated.')
+      } else {
+        // 새 설정 추가
+        const { error } = await supabase
+          .from('tour_cost_calculator_configs')
+          .insert({
+            ...configData,
+            created_by: user?.id || null
+          } as Database['public']['Tables']['tour_cost_calculator_configs']['Insert'])
+
+        if (error) throw error
+        alert(locale === 'ko' ? '설정이 저장되었습니다.' : 'Configuration saved.')
+      }
+
+      setShowSaveConfigModal(false)
+      setConfigName('')
+      await loadSavedConfigs()
+    } catch (error) {
+      console.error('설정 저장 오류:', error)
+      alert(locale === 'ko' ? '설정 저장 중 오류가 발생했습니다.' : 'Error saving configuration.')
+    }
+  }
+
+  // 설정 불러오기
+  const loadConfiguration = async (configId: string) => {
+    try {
+      const { data, error } = await (supabase as any)
+        .from('tour_cost_calculator_configs')
+        .select('*')
+        .eq('id', configId)
+        .single()
+
+      if (error) throw error
+      if (!data) return
+
+      // 타입 단언을 통해 config 변수 타입 명시
+      type ConfigRow = {
+        tour_type?: string
+        selected_product_id?: string | null
+        selected_courses?: string[]
+        course_order?: any[]
+        participant_count?: number
+        vehicle_type?: string
+        gas_price?: number
+        mileage?: number | null
+        travel_time?: number | null
+        guide_hourly_rate?: number
+        guide_fee?: number | null
+        margin_type?: string
+        custom_margin_rate?: number
+        other_expenses?: any[]
+        customer_id?: string | null
+      }
+      const config = data as ConfigRow
+
+      // 투어 타입과 상품 ID 먼저 설정
+      if (config.tour_type) setTourType(config.tour_type as 'product' | 'custom')
+      
+      // 코스 데이터를 먼저 로드
+      await loadAllTourCourses()
+      
+      // 상품 ID 설정 (이것이 useEffect를 트리거하여 loadProductSelectedCourses를 호출함)
+      // 하지만 우리는 저장된 selectedCourses를 사용해야 하므로, 나중에 복원할 예정
+      if (data.selected_product_id) {
+        setSelectedProductId(data.selected_product_id)
+        // useEffect가 완료될 때까지 잠시 대기
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+
+      // 코스 선택 및 순서를 나중에 복원하기 위해 저장
+      if (data.selected_courses && Array.isArray(data.selected_courses) && 
+          data.course_order && Array.isArray(data.course_order)) {
+        setPendingConfigRestore({
+          selectedCourses: data.selected_courses,
+          courseOrder: data.course_order
+        })
+      } else {
+        // course_order가 없으면 selectedCourses만 복원
+        if (data.selected_courses && Array.isArray(data.selected_courses)) {
+          setSelectedCourses(new Set(data.selected_courses))
+        }
+        if (data.course_order && Array.isArray(data.course_order)) {
+          setSelectedCoursesOrder(data.course_order)
+        }
+      }
+      
+      // 나머지 설정 복원
+      if (data.participant_count) setParticipantCount(data.participant_count)
+      if (data.vehicle_type) setVehicleType(data.vehicle_type as 'minivan' | '9seater' | '13seater')
+      if (data.gas_price) setGasPrice(Number(data.gas_price))
+      if (data.mileage) setMileage(Number(data.mileage))
+      if (data.travel_time) setTravelTime(Number(data.travel_time))
+      if (data.guide_hourly_rate) setGuideHourlyRate(Number(data.guide_hourly_rate))
+      if (data.guide_fee) setGuideFee(Number(data.guide_fee))
+      if (data.margin_type) setMarginType(data.margin_type as MarginType)
+      if (data.custom_margin_rate) setCustomMarginRate(Number(data.custom_margin_rate))
+      if (data.other_expenses && Array.isArray(data.other_expenses)) {
+        setOtherExpenses(data.other_expenses)
+      }
+
+      // 고객 정보 복원
+      if (data.customer_id) {
+        const customer = allCustomers.find(c => c.id === data.customer_id)
+        if (customer) {
+          setSelectedCustomer(customer)
+          setCustomerSearch(customer.name)
+          setEstimateCustomer(customer)
+        }
+      }
+
+      // 현재 설정 ID 저장
+      setCurrentConfigId(configId)
+
+      setShowLoadConfigModal(false)
+      alert(locale === 'ko' ? '설정을 불러왔습니다.' : 'Configuration loaded.')
+    } catch (error) {
+      console.error('설정 불러오기 오류:', error)
+      alert(locale === 'ko' ? '설정 불러오기 중 오류가 발생했습니다.' : 'Error loading configuration.')
+    }
+  }
+
+  // 외부 클릭 시 고객 검색 드롭다운 닫기
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (customerSearchRef.current && !customerSearchRef.current.contains(event.target as Node)) {
+        setShowCustomerDropdown(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
+
+  // 컴포넌트 마운트 시 저장된 설정 목록 로드
+  useEffect(() => {
+    loadSavedConfigs()
+  }, [])
+
+  // 고객 문서 목록 가져오기
+  const fetchCustomerDocuments = async () => {
+    if (!selectedCustomer?.id) {
+      setCustomerDocuments({ invoices: [], estimates: [] })
+      return
+    }
+
+    setLoadingDocuments(true)
+    try {
+      const [invoicesResult, estimatesResult] = await Promise.all([
+        supabase
+          .from('invoices')
+          .select('*')
+          .eq('customer_id', selectedCustomer.id)
+          .order('created_at', { ascending: false })
+          .limit(10),
+        supabase
+          .from('estimates')
+          .select('*')
+          .eq('customer_id', selectedCustomer.id)
+          .order('created_at', { ascending: false })
+          .limit(10)
+      ])
+
+      setCustomerDocuments({
+        invoices: invoicesResult.data || [],
+        estimates: estimatesResult.data || []
+      })
+    } catch (error) {
+      console.error('문서 로드 오류:', error)
+      setCustomerDocuments({ invoices: [], estimates: [] })
+    } finally {
+      setLoadingDocuments(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchCustomerDocuments()
+  }, [selectedCustomer?.id])
+
+  // 인보이스 삭제 함수
+  const handleDeleteInvoice = async (invoiceId: string, pdfFilePath: string | null) => {
+    if (!confirm(locale === 'ko' ? '인보이스를 삭제하시겠습니까?' : 'Are you sure you want to delete this invoice?')) {
+      return
+    }
+
+    try {
+      // Storage에서 PDF 파일 삭제
+      if (pdfFilePath) {
+        try {
+          const { error: storageError } = await supabase.storage
+            .from('customer-documents')
+            .remove([pdfFilePath])
+
+          if (storageError) {
+            console.error('PDF 파일 삭제 오류:', storageError)
+            // Storage 삭제 실패해도 DB 삭제는 계속 진행
+          }
+        } catch (storageError) {
+          console.error('PDF 파일 삭제 중 오류:', storageError)
+        }
+      }
+
+      // invoices 테이블에서 삭제
+      const { error: deleteError } = await supabase
+        .from('invoices')
+        .delete()
+        .eq('id', invoiceId)
+
+      if (deleteError) {
+        console.error('인보이스 삭제 오류:', deleteError)
+        alert(locale === 'ko' ? '인보이스 삭제 중 오류가 발생했습니다.' : 'Error deleting invoice.')
+        return
+      }
+
+      // 문서 목록 새로고침
+      const [invoicesResult, estimatesResult] = await Promise.all([
+        supabase
+          .from('invoices')
+          .select('*')
+          .eq('customer_id', selectedCustomer!.id)
+          .order('created_at', { ascending: false })
+          .limit(10),
+        supabase
+          .from('estimates')
+          .select('*')
+          .eq('customer_id', selectedCustomer!.id)
+          .order('created_at', { ascending: false })
+          .limit(10)
+      ])
+
+      setCustomerDocuments({
+        invoices: invoicesResult.data || [],
+        estimates: estimatesResult.data || []
+      })
+
+      alert(locale === 'ko' ? '인보이스가 삭제되었습니다.' : 'Invoice has been deleted.')
+    } catch (error) {
+      console.error('인보이스 삭제 중 오류:', error)
+      alert(locale === 'ko' ? '인보이스 삭제 중 오류가 발생했습니다.' : 'Error deleting invoice.')
+    }
+  }
+
+  // Estimate 삭제 함수
+  const handleDeleteEstimate = async (estimateId: string, pdfFilePath: string | null) => {
+    if (!confirm(locale === 'ko' ? 'Estimate를 삭제하시겠습니까?' : 'Are you sure you want to delete this estimate?')) {
+      return
+    }
+
+    try {
+      // Storage에서 PDF 파일 삭제
+      if (pdfFilePath) {
+        try {
+          const { error: storageError } = await supabase.storage
+            .from('customer-documents')
+            .remove([pdfFilePath])
+
+          if (storageError) {
+            console.error('PDF 파일 삭제 오류:', storageError)
+            // Storage 삭제 실패해도 DB 삭제는 계속 진행
+          }
+        } catch (storageError) {
+          console.error('PDF 파일 삭제 중 오류:', storageError)
+        }
+      }
+
+      // estimates 테이블에서 삭제
+      const { error: deleteError } = await supabase
+        .from('estimates')
+        .delete()
+        .eq('id', estimateId)
+
+      if (deleteError) {
+        console.error('Estimate 삭제 오류:', deleteError)
+        alert(locale === 'ko' ? 'Estimate 삭제 중 오류가 발생했습니다.' : 'Error deleting estimate.')
+        return
+      }
+
+      // 문서 목록 새로고침
+      const [invoicesResult, estimatesResult] = await Promise.all([
+        supabase
+          .from('invoices')
+          .select('*')
+          .eq('customer_id', selectedCustomer!.id)
+          .order('created_at', { ascending: false })
+          .limit(10),
+        supabase
+          .from('estimates')
+          .select('*')
+          .eq('customer_id', selectedCustomer!.id)
+          .order('created_at', { ascending: false })
+          .limit(10)
+      ])
+
+      setCustomerDocuments({
+        invoices: invoicesResult.data || [],
+        estimates: estimatesResult.data || []
+      })
+
+      alert(locale === 'ko' ? 'Estimate가 삭제되었습니다.' : 'Estimate has been deleted.')
+    } catch (error) {
+      console.error('Estimate 삭제 중 오류:', error)
+      alert(locale === 'ko' ? 'Estimate 삭제 중 오류가 발생했습니다.' : 'Error deleting estimate.')
+    }
+  }
 
   // 차량 설정 저장
   const saveVehicleSetting = async (type: 'minivan' | '9seater' | '13seater', dailyRate: number, mpg: number) => {
@@ -699,7 +1225,7 @@ export default function TourCostCalculatorPage() {
           vehicle_type: type,
           daily_rental_rate: dailyRate,
           mpg: mpg
-        }, {
+        } as Database['public']['Tables']['vehicle_rental_settings']['Insert'], {
           onConflict: 'vehicle_type'
         })
 
@@ -731,7 +1257,7 @@ export default function TourCostCalculatorPage() {
         .filter(Boolean) as TourCourse[]
       
       const coursesWithLocation = selected.filter(course => 
-        (course.start_latitude && course.start_longitude) || course.google_maps_url
+        (course.start_latitude && course.start_longitude)
       )
 
       if (coursesWithLocation.length < 2) {
@@ -763,22 +1289,22 @@ export default function TourCostCalculatorPage() {
         return
       }
 
-      const service = new window.google.maps.DirectionsService()
+      const service = new (window.google.maps as any).DirectionsService()
       
       // 순환 경로: 첫 번째 지점에서 시작해서 마지막 지점까지 가고, 다시 첫 번째 지점으로 돌아옴
       const origin = waypoints[0]
       const destination = waypoints[0] // 첫 번째 지점으로 돌아옴
       const intermediateWaypoints = waypoints.slice(1).map(wp => ({ location: wp }))
 
-      const request: google.maps.DirectionsRequest = {
+      const request: any = {
         origin: origin,
         destination: destination,
         waypoints: intermediateWaypoints,
-        travelMode: window.google.maps.TravelMode.DRIVING,
+        travelMode: (window.google.maps as any).TravelMode.DRIVING,
         optimizeWaypoints: false // 순서를 유지하기 위해 최적화 비활성화
       }
 
-          service.route(request, (result, status) => {
+          service.route(request, (result: any, status: string) => {
             setIsCalculatingRoute(false)
             
             if (status === 'OK' && result && result.routes && result.routes.length > 0) {
@@ -791,7 +1317,7 @@ export default function TourCostCalculatorPage() {
               let totalDuration = 0
               const legDurations: number[] = []
     
-              result.routes[0].legs.forEach(leg => {
+              result.routes[0].legs.forEach((leg: any) => {
                 if (leg.distance) {
                   totalDistance += leg.distance.value / 1609.34 // 미터를 마일로 변환
                 }
@@ -802,7 +1328,9 @@ export default function TourCostCalculatorPage() {
               })
     
               setTravelTimes(legDurations)
-              setMileage(Math.round(totalDistance * 10) / 10)
+              // 마일리지에 5% 추가
+              const mileageWithBuffer = totalDistance * 1.05
+              setMileage(Math.round(mileageWithBuffer * 10) / 10)
               // 이동 시간 저장 (시간 단위)
               setTravelTime(Math.round(totalDuration * 10) / 10)
               
@@ -844,14 +1372,14 @@ export default function TourCostCalculatorPage() {
   const loadTemplates = async () => {
     setLoadingTemplates(true)
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('tour_cost_calculator_templates')
         .select('*')
         .order('created_at', { ascending: false })
 
       if (error) throw error
 
-      const templates: Template[] = (data || []).map(t => ({
+      const templates: Template[] = (data || []).map((t: any) => ({
         id: t.id,
         name: t.name,
         selectedCourses: t.selected_courses || [],
@@ -871,7 +1399,7 @@ export default function TourCostCalculatorPage() {
   }
 
   // 템플릿 저장 (데이터베이스에)
-  const saveConfiguration = async () => {
+  const saveTemplate = async () => {
     if (!saveConfigName.trim()) {
       alert('템플릿 제목을 입력해주세요.')
       return
@@ -880,7 +1408,7 @@ export default function TourCostCalculatorPage() {
     try {
       if (editingTemplate && editingTemplate.id) {
         // 수정 모드
-        const { error } = await supabase
+        const { error } = await (supabase as any)
           .from('tour_cost_calculator_templates')
           .update({
             name: saveConfigName.trim(),
@@ -896,7 +1424,7 @@ export default function TourCostCalculatorPage() {
         // 새로 저장
         const { data: { user } } = await supabase.auth.getUser()
         
-        const { error } = await supabase
+        const { error } = await (supabase as any)
           .from('tour_cost_calculator_templates')
           .insert({
             name: saveConfigName.trim(),
@@ -920,8 +1448,23 @@ export default function TourCostCalculatorPage() {
   }
 
   // 템플릿 불러오기
-  const loadConfiguration = (template: Template) => {
-    setSelectedCourses(new Set(template.selectedCourses))
+  const loadTemplate = (template: Template) => {
+    const selectedCoursesSet = new Set(template.selectedCourses)
+    setSelectedCourses(selectedCoursesSet)
+    
+    // 선택된 코스들의 모든 부모 노드를 찾아서 확장
+    const parentIdsToExpand = new Set<string>()
+    template.selectedCourses.forEach(courseId => {
+      const parentIds = getAllParentIds(courseId)
+      parentIds.forEach(parentId => parentIdsToExpand.add(parentId))
+    })
+    
+    // 기존 확장된 노드에 부모 노드들 추가
+    setExpandedCourseNodes(prev => {
+      const newExpanded = new Set(prev)
+      parentIdsToExpand.forEach(id => newExpanded.add(id))
+      return newExpanded
+    })
     
     // 구버전 데이터(단순 ID 배열)인 경우 객체 배열로 변환
     const normalizedOrder = template.order.map((item: any) => {
@@ -1053,9 +1596,10 @@ export default function TourCostCalculatorPage() {
 
   // DirectionsRenderer 초기화
   useEffect(() => {
-    if (!map || !window.google || !window.google.maps || !window.google.maps.DirectionsRenderer) return
+    if (!map || !window.google || !window.google.maps) return
+    if (!(window.google.maps as any).DirectionsRenderer) return
 
-    const renderer = new window.google.maps.DirectionsRenderer({
+    const renderer = new (window.google.maps as any).DirectionsRenderer({
       map: map,
       suppressMarkers: true, // 마커 관련 에러 방지를 위해 true로 설정
       polylineOptions: {
@@ -1074,7 +1618,7 @@ export default function TourCostCalculatorPage() {
 
   // 선택된 코스들에 실시간 마커 표시
   useEffect(() => {
-    if (!map || !window.google || !window.google.maps) return
+    if (!map || !window.google || !window.google.maps) return undefined
 
     // 기존 마커 제거
     if (markersRef.current) {
@@ -1095,10 +1639,10 @@ export default function TourCostCalculatorPage() {
         map.setCenter({ lat: 36.1699, lng: -115.1398 })
         map.setZoom(8)
       }
-      return
+      return undefined
     }
 
-    const bounds = new window.google.maps.LatLngBounds()
+    const bounds = new (window.google.maps as any).LatLngBounds()
 
     selected.forEach((course, index) => {
       const lat = typeof course.start_latitude === 'string' ? parseFloat(course.start_latitude) : Number(course.start_latitude)
@@ -1107,7 +1651,7 @@ export default function TourCostCalculatorPage() {
       if (isNaN(lat) || isNaN(lng)) return
 
       const position = { lat, lng }
-      const marker = new window.google.maps.Marker({
+      const marker = new (window.google.maps as any).Marker({
         position,
         map,
         label: {
@@ -1126,26 +1670,38 @@ export default function TourCostCalculatorPage() {
     })
 
     // 모든 마커가 보이도록 지도 범위 조정
-    if (selected.length > 0) {
-      // DirectionsRenderer와 충돌을 피하기 위해 약간의 지연 후 실행
-      const timer = setTimeout(() => {
-        map.fitBounds(bounds)
-        if (selected.length === 1) {
-          map.setZoom(15)
-        }
-      }, 200)
-      return () => clearTimeout(timer)
-    }
+    // DirectionsRenderer와 충돌을 피하기 위해 약간의 지연 후 실행
+    const timer = setTimeout(() => {
+      map.fitBounds(bounds)
+      if (selected.length === 1) {
+        map.setZoom(15)
+      }
+    }, 200)
+    return () => clearTimeout(timer)
   }, [map, selectedCoursesOrder, tourCourses])
 
+  // Estimate 모달을 위한 코스 데이터 준비
+  const estimateCourses = useMemo(() => {
+    return selectedCoursesOrder.map(item => {
+      const course = tourCourses.find(c => c.id === item.id)
+      return {
+        courseId: item.id,
+        courseName: course ? (course.name_ko || course.name_en || '') : '',
+        day: item.day || '',
+        time: item.time || '',
+        duration: item.duration !== undefined ? item.duration : null
+      }
+    })
+  }, [selectedCoursesOrder, tourCourses])
+
   return (
-    <div className="container mx-auto px-4 py-6 max-w-7xl">
-      <div className="mb-6">
+    <div className="container mx-auto px-4 py-3 max-w-7xl">
+      <div className="mb-4">
         <div className="flex items-center gap-3 mb-2">
-          <Calculator className="w-8 h-8 text-blue-600" />
-          <h1 className="text-3xl font-bold text-gray-900">투어 비용 계산기</h1>
+          <Calculator className="w-6 h-6 text-blue-600" />
+          <h1 className="text-xl font-bold text-gray-900">투어 비용 계산기</h1>
         </div>
-        <p className="text-gray-600">단독/맞춤 투어의 스케줄 및 비용을 계산합니다.</p>
+        <p className="text-sm text-gray-600">단독/맞춤 투어의 스케줄 및 비용을 계산합니다.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1197,7 +1753,7 @@ export default function TourCostCalculatorPage() {
                   <option value="">상품을 선택하세요</option>
                   {products.map(product => (
                     <option key={product.id} value={product.id}>
-                      {product.name_ko || product.name_en}
+                      {product.name || product.name_en}
                     </option>
                   ))}
                 </select>
@@ -1206,9 +1762,10 @@ export default function TourCostCalculatorPage() {
           </div>
 
           {/* 투어 코스 선택 */}
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">2. 투어 코스 선택</h2>
+          {(tourType === 'product' && selectedProductId) || tourType === 'custom' ? (
+            <div className="bg-white rounded-lg shadow-sm border p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold">2. 투어 코스 선택</h2>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setShowLoadModal(true)}
@@ -1295,7 +1852,7 @@ export default function TourCostCalculatorPage() {
                       setSelectedCourses(newSet)
                     }}
                     onEdit={(course) => {
-                      setEditingCourse(course)
+                      setEditingCourse(course as any)
                       setShowCourseEditModal(true)
                     }}
                   />
@@ -1310,10 +1867,18 @@ export default function TourCostCalculatorPage() {
                 </div>
               )}
             </div>
-          </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg shadow-sm border p-6">
+              <div className="text-center text-gray-500 py-8">
+                <p className="text-lg font-medium mb-2">투어 타입을 선택해주세요</p>
+                <p className="text-sm">위에서 "투어 상품 선택" 또는 "맞춤 투어"를 선택하면 투어 코스를 선택할 수 있습니다.</p>
+              </div>
+            </div>
+          )}
 
           {/* 선택된 투어 코스 순서 */}
-          {selectedCourses.size > 0 && selectedCoursesOrder.length > 0 && (
+          {((tourType === 'product' && selectedProductId) || tourType === 'custom') && selectedCourses.size > 0 && selectedCoursesOrder.length > 0 && (
             <div className="bg-white rounded-lg shadow-sm border p-4">
               <div className="flex items-center justify-between mb-2">
                 <div>
@@ -1334,8 +1899,8 @@ export default function TourCostCalculatorPage() {
               <div className="flex items-center gap-2 px-2 py-1 bg-gray-50 border-x border-t rounded-t-lg text-[10px] font-bold text-gray-500">
                 <div className="w-4 flex-shrink-0" /> {/* 핸들 공간 */}
                 <div className="w-5 flex-shrink-0 text-center">#</div>
-                <div className="w-14 flex-shrink-0 text-center">날짜</div>
-                <div className="w-16 flex-shrink-0 text-center">시작 시간</div>
+                <div className="w-16 flex-shrink-0 text-center">일차</div>
+                <div className="w-20 flex-shrink-0 text-center">시작 시간</div>
                 <div className="w-16 flex-shrink-0 text-center">소요(분)</div>
                 <div className="flex-1">코스 제목</div>
                 <div className="w-16 flex-shrink-0" /> {/* 버튼 공간 */}
@@ -1409,19 +1974,23 @@ export default function TourCostCalculatorPage() {
 
                                 {/* 날짜/시간/소요시간 입력칸 */}
                                 <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                                  <input
-                                    type="text"
-                                    placeholder="날짜"
-                                    value={item.day || ''}
-                                    onChange={(e) => updateScheduleItem(index, { day: e.target.value })}
-                                    className="w-14 px-1.5 py-0.5 text-[10px] border border-gray-200 rounded focus:border-blue-400 focus:ring-1 focus:ring-blue-100 outline-none text-center"
-                                  />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setEditingDayIndex(index)
+                                      setShowDaySelectModal(true)
+                                    }}
+                                    className="w-16 px-1.5 py-0.5 text-[10px] border border-gray-200 rounded focus:border-blue-400 focus:ring-1 focus:ring-blue-100 outline-none text-center bg-white hover:bg-gray-50 transition-colors"
+                                  >
+                                    {item.day || '일차'}
+                                  </button>
                                   <input
                                     type="time"
-                                    step="600"
+                                    step="60"
                                     value={item.time || ''}
                                     onChange={(e) => updateScheduleItem(index, { time: e.target.value })}
-                                    className="w-16 px-1 py-0.5 text-[10px] border border-gray-200 rounded focus:border-blue-400 focus:ring-1 focus:ring-blue-100 outline-none"
+                                    className="w-20 px-1 py-0.5 text-[10px] border border-gray-200 rounded focus:border-blue-400 focus:ring-1 focus:ring-blue-100 outline-none"
                                   />
                                   <div className="flex items-center gap-0.5">
                                     <input
@@ -1580,124 +2149,17 @@ export default function TourCostCalculatorPage() {
               </div>
             )}
           </div>
+        </div>
 
-          {/* 인원 및 차량 정보 */}
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h2 className="text-xl font-semibold mb-4">4. 인원 및 차량 정보</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  참가 인원
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={participantCount}
-                  onChange={(e) => setParticipantCount(parseInt(e.target.value) || 1)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  차량 타입
-                  <span className="ml-2 text-xs text-gray-500 font-normal">
-                    (인원에 따라 자동 선택)
-                  </span>
-                </label>
-                <select
-                  value={vehicleType}
-                  onChange={(e) => setVehicleType(e.target.value as 'minivan' | '9seater' | '13seater')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="minivan">미니밴 (1~5인)</option>
-                  <option value="9seater">9인승 (6~9인)</option>
-                  <option value="13seater">13인승 (10인 이상)</option>
-                </select>
-              </div>
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  계산된 주유비
-                </label>
-                <div className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg font-medium text-gray-900">
-                  ${fuelCost.toFixed(2)}
-                </div>
-                <div className="mt-1 text-xs text-gray-500">
-                  차량: {vehicleType === 'minivan' ? '미니밴' : vehicleType === '9seater' ? '9인승' : '13인승'} | 
-                  MPG: {vehicleSettings.find(s => s.vehicle_type === vehicleType)?.mpg || 0} | 
-                  마일리지: {mileage || 0} 마일
-                </div>
-              </div>
-              <div className="flex items-end">
-                <button
-                  onClick={() => setShowVehicleSettingsModal(true)}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors border border-blue-200"
-                >
-                  <Settings className="w-4 h-4" />
-                  차량 렌트비 설정
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* 가이드비 */}
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h2 className="text-xl font-semibold mb-4">5. 가이드비</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  총 소요 시간 (시간)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  value={totalHours}
-                  onChange={(e) => setTotalHours(parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  시급 (USD/시간)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={guideHourlyRate}
-                  onChange={(e) => setGuideHourlyRate(parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-            </div>
-            <div className="mt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                또는 가이드비 직접 입력 (USD)
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={guideFee || ''}
-                onChange={(e) => setGuideFee(e.target.value ? parseFloat(e.target.value) : null)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="직접 입력 시 시급 계산 무시"
-              />
-            </div>
-            <div className="mt-2 text-sm text-gray-500">
-              계산된 가이드비: ${calculatedGuideFee.toFixed(2)}
-            </div>
-          </div>
-
-          {/* 마진율 설정 */}
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h2 className="text-xl font-semibold mb-4">6. 마진율 설정</h2>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  마진율 타입
+        {/* 오른쪽: 계산 결과 */}
+        <div className="lg:col-span-1">
+          {/* 기본 정보 */}
+          <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold">4. 기본 정보</h2>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-medium text-gray-700 whitespace-nowrap">
+                  마진율:
                 </label>
                 <select
                   value={marginType}
@@ -1707,19 +2169,14 @@ export default function TourCostCalculatorPage() {
                       setCustomMarginRate(MARGIN_RATES[e.target.value as MarginType].default)
                     }
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="default">기본 (30%)</option>
                   <option value="low_season">비수기 (20%)</option>
                   <option value="high_season">성수기 (40%)</option>
                   <option value="failed_recruitment">동행모집 실패 (10-20%)</option>
                 </select>
-              </div>
-              {marginType === 'failed_recruitment' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    마진율 (10-20%)
-                  </label>
+                {marginType === 'failed_recruitment' && (
                   <input
                     type="number"
                     min="10"
@@ -1727,34 +2184,293 @@ export default function TourCostCalculatorPage() {
                     step="0.1"
                     value={customMarginRate}
                     onChange={(e) => setCustomMarginRate(parseFloat(e.target.value) || 15)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-20 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="10-20"
+                  />
+                )}
+              </div>
+            </div>
+            
+            <div className="space-y-4">
+              {/* 고객 정보 */}
+              <div>
+                <h3 className="text-sm font-medium text-gray-800 mb-2">고객 정보</h3>
+                <div className="relative" ref={customerSearchRef}>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    고객 검색
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={customerSearch}
+                      onChange={(e) => {
+                        setCustomerSearch(e.target.value)
+                        setShowCustomerDropdown(true)
+                        if (e.target.value === '') {
+                          setSelectedCustomer(null)
+                          setEstimateCustomer(null)
+                        }
+                      }}
+                      onFocus={() => setShowCustomerDropdown(true)}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="고객 이름 또는 이메일로 검색..."
+                    />
+                    {customerSearch && (
+                      <button
+                        onClick={() => {
+                          setCustomerSearch('')
+                          setSelectedCustomer(null)
+                          setEstimateCustomer(null)
+                          setShowCustomerDropdown(false)
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  {showCustomerDropdown && customerSearch && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                      {allCustomers
+                        .filter(customer => 
+                          (customer.name || '').toLowerCase().includes(customerSearch.toLowerCase()) ||
+                          (customer.email || '').toLowerCase().includes(customerSearch.toLowerCase())
+                        )
+                        .slice(0, 10)
+                        .map(customer => (
+                          <div
+                            key={customer.id}
+                            onClick={() => {
+                              setSelectedCustomer(customer)
+                              setEstimateCustomer(customer)
+                              setCustomerSearch(customer.name)
+                              setShowCustomerDropdown(false)
+                            }}
+                            className="px-3 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
+                          >
+                            <div className="font-medium text-sm">{customer.name}</div>
+                            <div className="text-xs text-gray-500">{customer.email}</div>
+                            {customer.phone && (
+                              <div className="text-xs text-gray-400">{customer.phone}</div>
+                            )}
+                          </div>
+                        ))}
+                      {allCustomers.filter(customer => 
+                        (customer.name || '').toLowerCase().includes(customerSearch.toLowerCase()) ||
+                        (customer.email || '').toLowerCase().includes(customerSearch.toLowerCase())
+                      ).length === 0 && (
+                        <div className="px-3 py-2 text-sm text-gray-500">
+                          검색 결과가 없습니다.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 인원 및 차량 정보 */}
+              <div className="grid grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    참가 인원
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={participantCount}
+                    onChange={(e) => setParticipantCount(parseInt(e.target.value) || 1)}
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
-              )}
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    차량 타입
+                    <span className="ml-1 text-[10px] text-gray-500 font-normal">
+                      (자동)
+                    </span>
+                  </label>
+                  <select
+                    value={vehicleType}
+                    onChange={(e) => setVehicleType(e.target.value as 'minivan' | '9seater' | '13seater')}
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="minivan">미니밴 (1~5인)</option>
+                    <option value="9seater">9인승 (6~9인)</option>
+                    <option value="13seater">13인승 (10인 이상)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    계산된 주유비
+                  </label>
+                  <div className="px-2 py-1.5 text-sm bg-gray-50 border border-gray-300 rounded font-medium text-gray-900">
+                    ${fuelCost.toFixed(2)}
+                  </div>
+                </div>
+                <div className="flex items-end">
+                  <button
+                    onClick={() => setShowVehicleSettingsModal(true)}
+                    className="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors border border-blue-200"
+                  >
+                    <Settings className="w-3 h-3" />
+                    차량 설정
+                  </button>
+                </div>
+              </div>
+              <div className="text-[10px] text-gray-500 -mt-2">
+                차량: {vehicleType === 'minivan' ? '미니밴' : vehicleType === '9seater' ? '9인승' : '13인승'} | 
+                MPG: {vehicleSettings.find(s => s.vehicle_type === vehicleType)?.mpg || 0} | 
+                마일리지: {mileage || 0} 마일
+              </div>
+
+              {/* 가이드비 */}
+              <div className="pt-3 border-t border-gray-200">
+                <h3 className="text-sm font-medium text-gray-800 mb-2">가이드비</h3>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      총 소요 시간 (시간)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={totalHours}
+                      onChange={(e) => setTotalHours(parseFloat(e.target.value) || 0)}
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      시급 (USD/시간)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={guideHourlyRate}
+                      onChange={(e) => setGuideHourlyRate(parseFloat(e.target.value) || 0)}
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      또는 직접 입력 (USD)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={guideFee || ''}
+                      onChange={(e) => setGuideFee(e.target.value ? parseFloat(e.target.value) : null)}
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="직접 입력"
+                    />
+                  </div>
+                </div>
+                <div className="mt-1.5 text-xs text-gray-500">
+                  계산된 가이드비: ${calculatedGuideFee.toFixed(2)}
+                </div>
+              </div>
+
+
+              {/* 기타 금액 */}
+              <div className="pt-3 border-t border-gray-200">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-medium text-gray-800">기타 금액</h3>
+                  <button
+                    onClick={() => {
+                      setOtherExpenses([...otherExpenses, { id: crypto.randomUUID(), name: '', amount: 0 }])
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                  >
+                    <Plus className="w-3 h-3" />
+                    추가
+                  </button>
+                </div>
+                {otherExpenses.length > 0 && (
+                  <div className="space-y-1.5">
+                    {otherExpenses.map((expense, index) => (
+                      <div key={expense.id} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={expense.name}
+                          onChange={(e) => {
+                            const updated = [...otherExpenses]
+                            updated[index].name = e.target.value
+                            setOtherExpenses(updated)
+                          }}
+                          placeholder="항목명"
+                          className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={expense.amount || ''}
+                          onChange={(e) => {
+                            const updated = [...otherExpenses]
+                            updated[index].amount = parseFloat(e.target.value) || 0
+                            setOtherExpenses(updated)
+                          }}
+                          placeholder="금액"
+                          className="w-24 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <button
+                          onClick={() => {
+                            setOtherExpenses(otherExpenses.filter((_, i) => i !== index))
+                          }}
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
+                          title="삭제"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    {otherExpensesTotal > 0 && (
+                      <div className="mt-2 text-xs font-medium text-gray-700">
+                        기타 금액 합계: ${otherExpensesTotal.toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {otherExpenses.length === 0 && (
+                  <p className="text-xs text-gray-500">기타 금액이 없습니다. 추가 버튼을 눌러 항목을 추가하세요.</p>
+                )}
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* 오른쪽: 계산 결과 */}
-        <div className="lg:col-span-1">
-          <div className="bg-white rounded-lg shadow-sm border p-6 sticky top-6">
-            <h2 className="text-xl font-semibold mb-4">비용 계산 결과</h2>
+          {/* 비용 계산 결과 */}
+          <div className="bg-white rounded-lg shadow-sm border p-6 sticky top-20">
+            <h2 className="text-lg font-semibold mb-3">비용 계산 결과</h2>
             
             <div className="space-y-4">
               <div className="border-b pb-4">
                 <div className="flex justify-between mb-2">
-                  <span className="text-gray-600">입장료 합계</span>
+                  <button
+                    onClick={() => setShowEntranceFeeDetailModal(true)}
+                    className="text-gray-600 hover:text-blue-600 hover:underline cursor-pointer text-left"
+                  >
+                    입장료 합계
+                  </button>
                   <span className="font-medium">${entranceFees.toFixed(2)}</span>
                 </div>
+                {hotelAccommodationCost > 0 && (
+                  <div className="flex justify-between mb-2">
+                    <span className="text-gray-600">호텔 숙박비</span>
+                    <span className="font-medium">${hotelAccommodationCost.toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between mb-2">
-                  <span className="text-gray-600">차량 렌트비</span>
+                  <span className="text-gray-600">차량 렌트비 {numberOfDays > 1 && `(${numberOfDays}일)`}</span>
                   <span className="font-medium">${vehicleRentalCost.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between mb-2">
                   <span className="text-gray-600">주유비</span>
                   <span className="font-medium">${fuelCost.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between mb-2">
                   <span className="text-gray-600">가이드비</span>
                   <span className="font-medium">${calculatedGuideFee.toFixed(2)}</span>
                 </div>
@@ -1776,6 +2492,24 @@ export default function TourCostCalculatorPage() {
                   <span className="text-gray-600">판매가 (팁 제외)</span>
                   <span className="font-medium">${sellingPrice.toFixed(2)}</span>
                 </div>
+                {otherExpenses.length > 0 && (
+                  <>
+                    {otherExpenses.map((expense) => (
+                      expense.amount > 0 && (
+                        <div key={expense.id} className="flex justify-between mb-1 ml-4">
+                          <span className="text-gray-600 text-sm">
+                            + 추가비용 ({expense.name || '항목명 없음'})
+                          </span>
+                          <span className="font-medium text-sm">+${expense.amount.toFixed(2)}</span>
+                        </div>
+                      )
+                    ))}
+                    <div className="flex justify-between mb-2 mt-2 pt-2 border-t border-gray-200">
+                      <span className="text-gray-700 font-medium">총합</span>
+                      <span className="font-semibold">${totalBeforeTip.toFixed(2)}</span>
+                    </div>
+                  </>
+                )}
                 <div className="flex justify-between mb-2">
                   <span className="text-gray-600">팁 (15%)</span>
                   <span className="font-medium">${tipAmount.toFixed(2)}</span>
@@ -1792,187 +2526,315 @@ export default function TourCostCalculatorPage() {
                   <span className="text-purple-600">${marginAmount.toFixed(2)}</span>
                 </div>
               </div>
-            </div>
+
+              {/* 고객 문서 목록 */}
+              {selectedCustomer && (
+                <div className="mt-6 pt-6 border-t">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold flex items-center gap-2">
+                      <FileText className="w-4 h-4" />
+                      {locale === 'ko' ? '고객 문서' : 'Customer Documents'}
+                    </h3>
+                    <button
+                      onClick={fetchCustomerDocuments}
+                      disabled={loadingDocuments}
+                      className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={locale === 'ko' ? '새로고침' : 'Refresh'}
+                    >
+                      <RefreshCw className={`w-4 h-4 ${loadingDocuments ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
+                  {loadingDocuments ? (
+                    <div className="text-center py-4 text-gray-500 text-xs border border-gray-200 rounded-lg bg-gray-50">
+                      {locale === 'ko' ? '로딩 중...' : 'Loading...'}
+                    </div>
+                  ) : customerDocuments.invoices.length === 0 && customerDocuments.estimates.length === 0 ? (
+                    <div className="text-center py-4 text-gray-500 text-xs border border-gray-200 rounded-lg bg-gray-50">
+                      {locale === 'ko' ? '저장된 문서가 없습니다.' : 'No saved documents.'}
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* 인보이스 섹션 */}
+                      {customerDocuments.invoices.length > 0 && (
+                        <div>
+                          <h4 className="text-xs font-semibold text-gray-700 mb-2">
+                            {locale === 'ko' ? '인보이스' : 'Invoices'} ({customerDocuments.invoices.length})
+                          </h4>
+                          <div className="space-y-1.5">
+                            {customerDocuments.invoices.map((invoice) => (
+                              <div
+                                key={invoice.id}
+                                className="flex items-center justify-between p-2 bg-gray-50 border border-gray-200 rounded-md hover:bg-gray-100 text-xs"
+                              >
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium text-gray-900 truncate">{invoice.invoice_number}</p>
+                                  <p className="text-gray-500">
+                                    {new Date(invoice.invoice_date).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}
+                                  </p>
+                                  {invoice.created_at && (
+                                    <p className="text-gray-400 text-[10px]">
+                                      {new Date(invoice.created_at).toLocaleString(locale === 'ko' ? 'ko-KR' : 'en-US', {
+                                        year: 'numeric',
+                                        month: '2-digit',
+                                        day: '2-digit',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      })}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-semibold text-blue-600">
+                                    ${parseFloat(invoice.total || 0).toFixed(2)}
+                                  </span>
+                                  {invoice.pdf_url && (
+                                    <a
+                                      href={invoice.pdf_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="p-1 text-blue-600 hover:text-blue-700"
+                                      title={locale === 'ko' ? 'PDF 보기' : 'View PDF'}
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <ExternalLink className="h-3 w-3" />
+                                    </a>
+                                  )}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleDeleteInvoice(invoice.id, invoice.pdf_file_path)
+                                    }}
+                                    className="p-1 text-red-600 hover:text-red-700"
+                                    title={locale === 'ko' ? '삭제' : 'Delete'}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Estimate 섹션 */}
+                      {customerDocuments.estimates.length > 0 && (
+                        <div>
+                          <h4 className="text-xs font-semibold text-gray-700 mb-2">
+                            {locale === 'ko' ? 'Estimate' : 'Estimates'} ({customerDocuments.estimates.length})
+                          </h4>
+                          <div className="space-y-1.5">
+                            {customerDocuments.estimates.map((estimate) => (
+                              <div
+                                key={estimate.id}
+                                className="flex items-center justify-between p-2 bg-gray-50 border border-gray-200 rounded-md hover:bg-gray-100 text-xs"
+                              >
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium text-gray-900 truncate">{estimate.estimate_number}</p>
+                                  <p className="text-gray-500">
+                                    {new Date(estimate.estimate_date).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')}
+                                  </p>
+                                  {estimate.created_at && (
+                                    <p className="text-gray-400 text-[10px]">
+                                      {new Date(estimate.created_at).toLocaleString(locale === 'ko' ? 'ko-KR' : 'en-US', {
+                                        year: 'numeric',
+                                        month: '2-digit',
+                                        day: '2-digit',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      })}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  {estimate.pdf_url && (
+                                    <a
+                                      href={estimate.pdf_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="p-1 text-blue-600 hover:text-blue-700"
+                                      title={locale === 'ko' ? 'PDF 보기' : 'View PDF'}
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <ExternalLink className="h-3 w-3" />
+                                    </a>
+                                  )}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleDeleteEstimate(estimate.id, estimate.pdf_file_path)
+                                    }}
+                                    className="p-1 text-red-600 hover:text-red-700"
+                                    title={locale === 'ko' ? '삭제' : 'Delete'}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Estimate 및 설정 저장/불러오기 버튼 */}
+              <div className="mt-6 pt-6 border-t space-y-2">
+                <button
+                  onClick={() => {
+                    console.log('Estimate 버튼 클릭됨', { showEstimateModal, selectedCoursesOrderLength: selectedCoursesOrder.length })
+                    setShowEstimateModal(true)
+                  }}
+                  disabled={selectedCoursesOrder.length === 0}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <FileText className="w-5 h-5" />
+                  <span>Estimate</span>
+                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => {
+                      if (!selectedCustomer) {
+                        alert(locale === 'ko' ? '고객을 선택해주세요.' : 'Please select a customer.')
+                        return
+                      }
+                      setConfigName('')
+                      setShowSaveConfigModal(true)
+                    }}
+                    disabled={!selectedCustomer || selectedCoursesOrder.length === 0}
+                    className="flex items-center justify-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>설정 저장</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowLoadConfigModal(true)
+                    }}
+                    disabled={savedConfigs.length === 0}
+                    className="flex items-center justify-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  >
+                    <Search className="w-4 h-4" />
+                    <span>설정 불러오기</span>
+                  </button>
+                </div>
+              </div>
           </div>
         </div>
       </div>
 
-      {/* 템플릿 저장/수정 모달 */}
-      {showSaveModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
-            <h3 className="text-xl font-semibold mb-4">
-              {editingTemplate ? '템플릿 수정' : '템플릿 저장'}
-            </h3>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                템플릿 제목 *
-              </label>
-              <input
-                type="text"
-                value={saveConfigName}
-                onChange={(e) => setSaveConfigName(e.target.value)}
-                placeholder="예: 그랜드캐년 투어, 라스베가스 시내 투어"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter') {
-                    saveConfiguration()
-                  }
-                }}
-                autoFocus
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                템플릿 제목을 입력하여 현재 선택된 투어 코스와 순서를 저장합니다.
-              </p>
-            </div>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-              <div className="text-sm text-blue-900">
-                <div className="font-medium mb-1">저장할 내용:</div>
-                <div className="text-blue-700">
-                  • 선택된 코스: <span className="font-semibold">{selectedCourses.size}개</span>
-                </div>
-                <div className="text-blue-700">
-                  • 순서: <span className="font-semibold">{selectedCoursesOrder.length}개</span>
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={saveConfiguration}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-              >
-                {editingTemplate ? '수정' : '저장'}
-              </button>
-              <button
-                onClick={() => {
-                  setShowSaveModal(false)
-                  setSaveConfigName('')
-                  setEditingTemplate(null)
-                }}
-                className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
-              >
-                취소
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 템플릿 불러오기 모달 */}
-      {showLoadModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl p-6">
-            <h3 className="text-xl font-semibold mb-4">템플릿 관리</h3>
-            {loadingTemplates ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
-                <p className="text-gray-500">템플릿을 불러오는 중...</p>
-              </div>
-            ) : savedConfigurations.length === 0 ? (
-              <div className="text-center py-8">
-                <Settings className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">저장된 템플릿이 없습니다.</p>
-                <p className="text-sm text-gray-400 mt-2">
-                  템플릿 저장 버튼을 눌러 템플릿을 만들어보세요.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-96 overflow-y-auto mb-4">
-                {savedConfigurations.map((template) => (
-                  <div
-                    key={template.id || template.name}
-                    className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-gray-900 truncate">{template.name}</div>
-                      <div className="text-sm text-gray-500 mt-1">
-                        코스 {template.selectedCourses.length}개 • 순서 {template.order.length}개
-                      </div>
-                      {template.created_at && (
-                        <div className="text-xs text-gray-400 mt-1">
-                          생성: {new Date(template.created_at).toLocaleDateString('ko-KR', {
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                          {template.updated_at && template.updated_at !== template.created_at && (
-                            <span className="ml-2">
-                              • 수정: {new Date(template.updated_at).toLocaleDateString('ko-KR', {
-                                year: 'numeric',
-                                month: 'long',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex gap-2 ml-3">
-                      <button
-                        onClick={() => loadConfiguration(template)}
-                        className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm font-medium whitespace-nowrap"
-                        title="템플릿 불러오기"
-                      >
-                        불러오기
-                      </button>
-                      <button
-                        onClick={() => editTemplate(template)}
-                        className="px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-sm whitespace-nowrap"
-                        title="템플릿 수정"
-                      >
-                        수정
-                      </button>
-                      <button
-                        onClick={() => deleteConfiguration(template)}
-                        className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-sm whitespace-nowrap"
-                        title="템플릿 삭제"
-                      >
-                        삭제
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowLoadModal(false)}
-                className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
-              >
-                닫기
-              </button>
-              {!loadingTemplates && savedConfigurations.length > 0 && (
-                <button
-                  onClick={loadTemplates}
-                  className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm"
-                  title="템플릿 목록 새로고침"
-                >
-                  새로고침
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 차량 렌트비 설정 모달 */}
-      {showVehicleSettingsModal && (
-        <VehicleSettingsModal
-          isOpen={showVehicleSettingsModal}
-          onClose={() => {
-            setShowVehicleSettingsModal(false)
-            setEditingVehicleType(null)
-          }}
-          vehicleSettings={vehicleSettings}
-          onSave={saveVehicleSetting}
-          gasPrice={gasPrice}
-          onGasPriceChange={setGasPrice}
+      {/* Estimate 모달 */}
+      {showEstimateModal && (
+        <EstimateModal
+          customer={estimateCustomer}
+          courses={estimateCourses}
+          tourCourses={tourCourses as any}
+          mileage={mileage}
+          locale={locale}
+          tourCourseDescription={tourCourseDescription}
+          scheduleDescription={scheduleDescription}
+          totalCost={totalCost}
+          entranceFees={entranceFees}
+          hotelAccommodationCost={hotelAccommodationCost}
+          vehicleRentalCost={vehicleRentalCost}
+          fuelCost={fuelCost}
+          guideFee={calculatedGuideFee}
+          otherExpenses={otherExpenses}
+          otherExpensesTotal={otherExpensesTotal}
+          participantCount={participantCount}
+          vehicleType={vehicleType}
+          numberOfDays={numberOfDays}
+          sellingPrice={sellingPrice}
+          additionalCost={additionalCost}
+          totalBeforeTip={totalBeforeTip}
+          tipAmount={tipAmount}
+          sellingPriceWithTip={sellingPriceWithTip}
+          configId={currentConfigId}
+          onClose={() => setShowEstimateModal(false)}
+          onTourCourseDescriptionChange={setTourCourseDescription}
+          onScheduleDescriptionChange={setScheduleDescription}
         />
       )}
+
+      {/* 설정 저장 모달 */}
+      <SaveConfigModal
+        isOpen={showSaveConfigModal}
+        configName={configName}
+        onConfigNameChange={setConfigName}
+        selectedCustomer={selectedCustomer}
+        savedConfigs={savedConfigs}
+        allCustomers={allCustomers}
+        onSave={saveConfiguration}
+        onClose={() => {
+          setConfigName('')
+          setShowSaveConfigModal(false)
+        }}
+        locale={locale}
+      />
+
+      {/* 설정 불러오기 모달 */}
+      <LoadConfigModal
+        isOpen={showLoadConfigModal}
+        savedConfigs={savedConfigs}
+        allCustomers={allCustomers}
+        onLoad={loadConfiguration}
+        onClose={() => setShowLoadConfigModal(false)}
+        locale={locale}
+      />
+
+      {/* 템플릿 저장/수정 모달 */}
+      <TemplateSaveModal
+        isOpen={showSaveModal}
+        editingTemplate={editingTemplate}
+        saveConfigName={saveConfigName}
+        onSaveConfigNameChange={setSaveConfigName}
+        savedConfigurations={savedConfigurations}
+        selectedCoursesCount={selectedCourses.size}
+        selectedCoursesOrderCount={selectedCoursesOrder.length}
+        onSelectTemplate={(template) => {
+          if (template) {
+            setEditingTemplate(template)
+            setSaveConfigName(template.name)
+          } else {
+            setEditingTemplate(null)
+            setSaveConfigName('')
+          }
+        }}
+        onSave={saveTemplate}
+        onClose={() => {
+          setShowSaveModal(false)
+          setSaveConfigName('')
+          setEditingTemplate(null)
+        }}
+        locale={locale}
+      />
+
+      {/* 템플릿 불러오기 모달 */}
+      <TemplateLoadModal
+        isOpen={showLoadModal}
+        loadingTemplates={loadingTemplates}
+        savedConfigurations={savedConfigurations}
+        onLoad={loadTemplate}
+        onEdit={editTemplate}
+        onDelete={deleteConfiguration}
+        onRefresh={loadTemplates}
+        onClose={() => setShowLoadModal(false)}
+        locale={locale}
+      />
+
+      {/* 차량 렌트비 설정 모달 */}
+      <VehicleSettingsModal
+        isOpen={showVehicleSettingsModal}
+        onClose={() => {
+          setShowVehicleSettingsModal(false)
+          setEditingVehicleType(null)
+        }}
+        vehicleSettings={vehicleSettings}
+        onSave={saveVehicleSetting}
+        gasPrice={gasPrice}
+        onGasPriceChange={setGasPrice}
+      />
 
       {/* 투어 코스 수정 모달 */}
       <TourCourseEditModal
@@ -1981,8 +2843,8 @@ export default function TourCostCalculatorPage() {
           setShowCourseEditModal(false)
           setEditingCourse(null)
         }}
-        course={editingCourse}
-        onSave={async (updatedCourse) => {
+        course={editingCourse as any}
+        onSave={async () => {
           // 투어 코스 목록 새로고침
           await loadAllTourCourses()
           // 상품 선택 모드인 경우 선택 상태도 다시 로드
@@ -1993,168 +2855,41 @@ export default function TourCostCalculatorPage() {
           setEditingCourse(null)
         }}
       />
-    </div>
-  )
-}
 
-// 차량 렌트비 설정 모달 컴포넌트
-function VehicleSettingsModal({
-  isOpen,
-  onClose,
-  vehicleSettings,
-  onSave,
-  gasPrice,
-  onGasPriceChange
-}: {
-  isOpen: boolean
-  onClose: () => void
-  vehicleSettings: VehicleRentalSetting[]
-  onSave: (type: 'minivan' | '9seater' | '13seater', dailyRate: number, mpg: number) => Promise<void>
-  gasPrice: number
-  onGasPriceChange: (price: number) => void
-}) {
-  const [editingType, setEditingType] = useState<'minivan' | '9seater' | '13seater' | null>(null)
-  const [dailyRate, setDailyRate] = useState<number>(0)
-  const [mpg, setMpg] = useState<number>(0)
+      {/* 일차 선택 모달 */}
+      <DaySelectModal
+        isOpen={showDaySelectModal}
+        editingDayIndex={editingDayIndex}
+        onSelectDay={(dayIndex, day) => {
+          updateScheduleItem(dayIndex, { day })
+          setShowDaySelectModal(false)
+          setEditingDayIndex(null)
+        }}
+        onClearDay={(dayIndex) => {
+          updateScheduleItem(dayIndex, { day: '' })
+          setShowDaySelectModal(false)
+          setEditingDayIndex(null)
+        }}
+        onClose={() => {
+          setShowDaySelectModal(false)
+          setEditingDayIndex(null)
+        }}
+        locale={locale}
+      />
 
-  useEffect(() => {
-    if (editingType) {
-      const setting = vehicleSettings.find(s => s.vehicle_type === editingType)
-      if (setting) {
-        setDailyRate(setting.daily_rental_rate)
-        setMpg(setting.mpg)
-      } else {
-        setDailyRate(0)
-        setMpg(0)
-      }
-    }
-  }, [editingType, vehicleSettings])
-
-  if (!isOpen) return null
-
-  const vehicleTypes: Array<{ type: 'minivan' | '9seater' | '13seater'; label: string }> = [
-    { type: 'minivan', label: '미니밴' },
-    { type: '9seater', label: '9인승' },
-    { type: '13seater', label: '13인승' }
-  ]
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xl font-semibold">차량 렌트비 설정</h3>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          {/* 현재 기름값 입력 */}
-          <div className="border rounded-lg p-4 bg-blue-50">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              현재 기름값 (갤런당 USD)
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={gasPrice}
-              onChange={(e) => onGasPriceChange(parseFloat(e.target.value) || 0)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-            />
-          </div>
-
-          {vehicleTypes.map(({ type, label }) => {
-            const setting = vehicleSettings.find(s => s.vehicle_type === type)
-            const isEditing = editingType === type
-
-            return (
-              <div key={type} className="border rounded-lg p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="font-medium">{label}</h4>
-                  {!isEditing && (
-                    <button
-                      onClick={() => setEditingType(type)}
-                      className="text-sm text-blue-600 hover:text-blue-700"
-                    >
-                      편집
-                    </button>
-                  )}
-                </div>
-
-                {isEditing ? (
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        일일 평균 렌트비 (USD)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={dailyRate}
-                        onChange={(e) => setDailyRate(parseFloat(e.target.value) || 0)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        MPG (Miles Per Gallon)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={mpg}
-                        onChange={(e) => setMpg(parseFloat(e.target.value) || 0)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => onSave(type, dailyRate, mpg)}
-                        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                      >
-                        저장
-                      </button>
-                      <button
-                        onClick={() => {
-                          setEditingType(null)
-                          const setting = vehicleSettings.find(s => s.vehicle_type === type)
-                          if (setting) {
-                            setDailyRate(setting.daily_rental_rate)
-                            setMpg(setting.mpg)
-                          }
-                        }}
-                        className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
-                      >
-                        취소
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-sm text-gray-600">
-                    <div>일일 렌트비: ${setting?.daily_rental_rate.toFixed(2) || '0.00'}</div>
-                    <div>MPG: {setting?.mpg.toFixed(2) || '0.00'}</div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-
-        <div className="mt-6">
-          <button
-            onClick={onClose}
-            className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
-          >
-            닫기
-          </button>
-        </div>
+      {/* 입장료 상세 내역 모달 */}
+      <EntranceFeeDetailModal
+        isOpen={showEntranceFeeDetailModal}
+        entranceFeeDetails={entranceFeeDetails}
+        hotelAccommodationDetails={hotelAccommodationDetails}
+        entranceFees={entranceFees}
+        hotelAccommodationCost={hotelAccommodationCost}
+        numberOfDays={numberOfDays}
+        onClose={() => setShowEntranceFeeDetailModal(false)}
+        locale={locale}
+      />
       </div>
     </div>
   )
 }
+

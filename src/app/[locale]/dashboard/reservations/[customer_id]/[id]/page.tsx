@@ -2740,7 +2740,7 @@ export default function CustomerReservations() {
                 {reservation.event_note && (
                   <div className="border-t border-gray-200 pt-4 mt-4">
                     <h4 className="text-sm font-medium text-gray-900 mb-2">{t('specialNotes')}</h4>
-                    <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-md">
+                    <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-md whitespace-pre-wrap">
                       {reservation.event_note}
                     </p>
                   </div>
