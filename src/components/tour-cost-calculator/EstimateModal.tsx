@@ -82,6 +82,38 @@ const formatUSD = (usd: number): string => {
   return `$${usd.toFixed(2)}`
 }
 
+// 모든 부모 이름을 계층적으로 가져오는 함수
+const getFullCoursePath = (course: TourCourseInfo, tourCourses: TourCourseInfo[], isEnglish: boolean): string => {
+  const path: string[] = []
+  let current: TourCourseInfo | undefined = course
+  const visited = new Set<string>() // 순환 참조 방지
+  
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id)
+    const courseName = isEnglish 
+      ? (current.customer_name_en || current.customer_name_ko || current.name_en || current.name_ko || '')
+      : (current.customer_name_ko || current.customer_name_en || current.name_ko || current.name_en || '')
+    
+    if (courseName.trim()) {
+      path.unshift(courseName)
+    }
+    
+    if (!current || !current.parent_id) {
+      break
+    }
+    
+    const parentId = current.parent_id
+    const parent = tourCourses.find(c => c.id === parentId)
+    if (parent) {
+      current = parent
+    } else {
+      break
+    }
+  }
+  
+  return path.join(' > ')
+}
+
 export default function EstimateModal({
   customer,
   courses,
@@ -1817,19 +1849,7 @@ export default function EstimateModal({
 
       if (validCourses.length > 0) {
         const courseDescriptionsHTML = validCourses.map(course => {
-          const parentName = course.parent 
-            ? (locale === 'en' 
-                ? (course.parent.customer_name_en || course.parent.customer_name_ko || '')
-                : (course.parent.customer_name_ko || course.parent.customer_name_en || ''))
-            : null
-          
-          const courseName = locale === 'en' 
-            ? (course.customer_name_en || course.customer_name_ko || '')
-            : (course.customer_name_ko || course.customer_name_en || '')
-          
-          const fullCourseName = parentName 
-            ? `${parentName} - ${courseName}`
-            : courseName
+          const fullCourseName = getFullCoursePath(course, tourCourses, locale === 'en')
           
           const courseDescription = locale === 'en'
             ? (course.customer_description_en || course.customer_description_ko || '')
@@ -2115,19 +2135,7 @@ export default function EstimateModal({
     if (validCourses.length > 0) {
       text += isEnglish ? 'Tour Course Description\n' : '투어 코스 설명\n'
       validCourses.forEach(course => {
-        const parentName = course.parent 
-          ? (isEnglish 
-              ? (course.parent.customer_name_en || course.parent.customer_name_ko || '')
-              : (course.parent.customer_name_ko || course.parent.customer_name_en || ''))
-          : null
-        
-        const courseName = isEnglish 
-          ? (course.customer_name_en || course.customer_name_ko || '')
-          : (course.customer_name_ko || course.customer_name_en || '')
-        
-        const fullCourseName = parentName 
-          ? `${parentName} - ${courseName}`
-          : courseName
+        const fullCourseName = getFullCoursePath(course, tourCourses, isEnglish)
         
         const courseDescription = isEnglish
           ? (course.customer_description_en || course.customer_description_ko || '')
@@ -2362,22 +2370,8 @@ export default function EstimateModal({
             if (validCourses.length === 0) return ''
 
             const courseDescriptions = validCourses.map(course => {
-              // 상위 카테고리 이름 가져오기
-              const parentName = course.parent 
-                ? (isEnglish 
-                    ? (course.parent.customer_name_en || course.parent.customer_name_ko || '')
-                    : (course.parent.customer_name_ko || course.parent.customer_name_en || ''))
-                : null
-              
-              // 포인트 이름
-              const courseName = isEnglish 
-                ? (course.customer_name_en || course.customer_name_ko || '')
-                : (course.customer_name_ko || course.customer_name_en || '')
-              
-              // 상위 카테고리 포함한 전체 이름
-              const fullCourseName = parentName 
-                ? `${parentName} - ${courseName}`
-                : courseName
+              // 전체 경로 가져오기
+              const fullCourseName = getFullCoursePath(course, tourCourses, isEnglish)
               
               const courseDescription = isEnglish
                 ? (course.customer_description_en || course.customer_description_ko || '')
@@ -2662,22 +2656,8 @@ export default function EstimateModal({
                 return validCourses.map((course) => {
                   const isEnglish = locale === 'en'
                   
-                  // 상위 카테고리 이름 가져오기
-                  const parentName = course.parent 
-                    ? (isEnglish 
-                        ? (course.parent.customer_name_en || course.parent.customer_name_ko || '')
-                        : (course.parent.customer_name_ko || course.parent.customer_name_en || ''))
-                    : null
-                  
-                  // 포인트 이름
-                  const courseName = isEnglish 
-                    ? (course.customer_name_en || course.customer_name_ko || '')
-                    : (course.customer_name_ko || course.customer_name_en || '')
-                  
-                  // 상위 카테고리 포함한 전체 이름
-                  const fullCourseName = parentName 
-                    ? `${parentName} - ${courseName}`
-                    : courseName
+                  // 모든 부모 이름을 계층적으로 가져오기
+                  const fullCourseName = getFullCoursePath(course, tourCourses, isEnglish)
                   
                   const courseDescription = isEnglish
                     ? (course.customer_description_en || course.customer_description_ko || '')

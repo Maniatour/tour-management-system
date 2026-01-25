@@ -2256,22 +2256,41 @@ export default function TourCostCalculatorPage() {
                 return validCourses.map((course) => {
                   const isEnglish = locale === 'en'
                   
-                  // 상위 카테고리 이름 가져오기
-                  const parentName = course.parent 
-                    ? (isEnglish 
-                        ? (course.parent.customer_name_en || course.parent.customer_name_ko || '')
-                        : (course.parent.customer_name_ko || course.parent.customer_name_en || ''))
-                    : null
+                  // 모든 부모 이름을 계층적으로 가져오기
+                  const getFullPath = (currentCourse: TourCourse): string[] => {
+                    const path: string[] = []
+                    let current: TourCourse | undefined = currentCourse
+                    const visited = new Set<string>() // 순환 참조 방지
+                    
+                    while (current && !visited.has(current.id)) {
+                      visited.add(current.id)
+                      const courseName = isEnglish 
+                        ? (current.customer_name_en || current.customer_name_ko || current.name_en || current.name_ko || '')
+                        : (current.customer_name_ko || current.customer_name_en || current.name_ko || current.name_en || '')
+                      
+                      if (courseName.trim()) {
+                        path.unshift(courseName)
+                      }
+                      
+                      if (!current || !current.parent_id) {
+                        break
+                      }
+                      
+                      const parentId = current.parent_id
+                      const parent = tourCourses.find((c: TourCourse) => c.id === parentId)
+                      if (parent) {
+                        current = parent
+                      } else {
+                        break
+                      }
+                    }
+                    
+                    return path
+                  }
                   
-                  // 포인트 이름
-                  const courseName = isEnglish 
-                    ? (course.customer_name_en || course.customer_name_ko || '')
-                    : (course.customer_name_ko || course.customer_name_en || '')
-                  
-                  // 상위 카테고리 포함한 전체 이름
-                  const fullCourseName = parentName 
-                    ? `${parentName} - ${courseName}`
-                    : courseName
+                  // 전체 경로 가져오기
+                  const pathNames = getFullPath(course)
+                  const fullCourseName = pathNames.join(' > ')
                   
                   const courseDescription = isEnglish
                     ? (course.customer_description_en || course.customer_description_ko || '')
