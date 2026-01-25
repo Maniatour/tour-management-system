@@ -40,6 +40,12 @@ type TourCourseInfo = Database['public']['Tables']['tour_courses']['Row'] & {
   category?: string | null
   parent?: TourCourseInfo | null
   children?: TourCourseInfo[]
+  photos?: Array<{
+    id: string
+    photo_url: string | null
+    thumbnail_url: string | null
+    is_primary: boolean | null
+  }> | null
 }
 
 interface EstimateModalProps {
@@ -604,13 +610,36 @@ export default function EstimateModal({
         ? (course.customer_description_en || course.customer_description_ko || '')
         : (course.customer_description_ko || course.customer_description_en || '')
 
-      let html = ''
+      // 사진 URL 가져오기 (대표 사진 우선, 없으면 첫 번째 사진)
+      const primaryPhoto = course.photos?.find(p => p.is_primary) || course.photos?.[0]
+      const photoUrl = primaryPhoto?.photo_url || primaryPhoto?.thumbnail_url || null
+      
+      // 사진 URL이 상대 경로인 경우 절대 경로로 변환
+      let fullPhotoUrl = photoUrl
+      if (photoUrl && !photoUrl.startsWith('http')) {
+        fullPhotoUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${photoUrl}`
+      }
+
+      let html = '<div style="display: flex; gap: 16px; margin-bottom: 24px; align-items: flex-start;">'
+      
+      // 왼쪽: 사진
+      if (fullPhotoUrl) {
+        html += `<div style="flex: 0 0 200px;">
+          <img src="${fullPhotoUrl}" alt="${fullCourseName || 'Course image'}" style="width: 200px; height: 150px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb;" />
+        </div>`
+      }
+      
+      // 오른쪽: 제목과 설명
+      html += '<div style="flex: 1;">'
       if (fullCourseName && fullCourseName.trim() !== '') {
-        html += `<div style="font-weight: bold; color: #111827; margin-bottom: 8px;">${fullCourseName}</div>`
+        html += `<div style="font-weight: bold; color: #111827; margin-bottom: 8px; font-size: 14px;">${fullCourseName}</div>`
       }
       if (courseDescription && courseDescription.trim() !== '') {
-        html += `<div style="color: #374151; line-height: 1.6; margin-bottom: 16px;">${courseDescription.replace(/\n/g, '<br>')}</div>`
+        html += `<div style="color: #374151; line-height: 1.6; margin-bottom: 0;">${courseDescription.replace(/\n/g, '<br>')}</div>`
       }
+      html += '</div>'
+      html += '</div>'
+      
       return html
     }).join('')
 
@@ -1806,13 +1835,36 @@ export default function EstimateModal({
             ? (course.customer_description_en || course.customer_description_ko || '')
             : (course.customer_description_ko || course.customer_description_en || '')
 
-          let html = ''
+          // 사진 URL 가져오기 (대표 사진 우선, 없으면 첫 번째 사진)
+          const primaryPhoto = course.photos?.find(p => p.is_primary) || course.photos?.[0]
+          const photoUrl = primaryPhoto?.photo_url || primaryPhoto?.thumbnail_url || null
+          
+          // 사진 URL이 상대 경로인 경우 절대 경로로 변환
+          let fullPhotoUrl = photoUrl
+          if (photoUrl && !photoUrl.startsWith('http')) {
+            fullPhotoUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${photoUrl}`
+          }
+
+          let html = '<div style="display: flex; gap: 16px; margin-bottom: 24px; align-items: flex-start;">'
+          
+          // 왼쪽: 사진
+          if (fullPhotoUrl) {
+            html += `<div style="flex: 0 0 200px;">
+              <img src="${fullPhotoUrl}" alt="${fullCourseName || 'Course image'}" style="width: 200px; height: 150px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb;" />
+            </div>`
+          }
+          
+          // 오른쪽: 제목과 설명
+          html += '<div style="flex: 1;">'
           if (fullCourseName && fullCourseName.trim() !== '') {
-            html += `<div style="font-weight: bold; color: #111827; margin-bottom: 8px;">${fullCourseName}</div>`
+            html += `<div style="font-weight: bold; color: #111827; margin-bottom: 8px; font-size: 14px;">${fullCourseName}</div>`
           }
           if (courseDescription && courseDescription.trim() !== '') {
-            html += `<div style="color: #374151; line-height: 1.6; margin-bottom: 16px;">${courseDescription.replace(/\n/g, '<br>')}</div>`
+            html += `<div style="color: #374151; line-height: 1.6; margin-bottom: 0;">${courseDescription.replace(/\n/g, '<br>')}</div>`
           }
+          html += '</div>'
+          html += '</div>'
+          
           return html
         }).join('')
 
@@ -2331,10 +2383,23 @@ export default function EstimateModal({
                 ? (course.customer_description_en || course.customer_description_ko || '')
                 : (course.customer_description_ko || course.customer_description_en || '')
 
+              // 사진 URL 가져오기 (대표 사진 우선, 없으면 첫 번째 사진)
+              const primaryPhoto = course.photos?.find(p => p.is_primary) || course.photos?.[0]
+              const photoUrl = primaryPhoto?.photo_url || primaryPhoto?.thumbnail_url || null
+              
+              // 사진 URL이 상대 경로인 경우 절대 경로로 변환
+              let fullPhotoUrl = photoUrl
+              if (photoUrl && !photoUrl.startsWith('http')) {
+                fullPhotoUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${photoUrl}`
+              }
+              
               return `
-                <div style="margin-bottom: 20px; padding: 15px; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
-                  ${fullCourseName && fullCourseName.trim() !== '' ? `<h4 style="font-weight: bold; color: #111827; margin-bottom: 10px;">${fullCourseName}</h4>` : ''}
-                  ${courseDescription && courseDescription.trim() !== '' ? `<p style="color: #374151; line-height: 1.6;">${courseDescription.replace(/\n/g, '<br>')}</p>` : ''}
+                <div style="display: flex; gap: 16px; margin-bottom: 24px; align-items: flex-start; padding-bottom: 16px; border-bottom: 1px solid #e5e7eb;">
+                  ${fullPhotoUrl ? `<div style="flex: 0 0 200px;"><img src="${fullPhotoUrl}" alt="${fullCourseName || 'Course image'}" style="width: 200px; height: 150px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb;" /></div>` : ''}
+                  <div style="flex: 1;">
+                    ${fullCourseName && fullCourseName.trim() !== '' ? `<h4 style="font-weight: bold; color: #111827; margin-bottom: 8px; font-size: 14px;">${fullCourseName}</h4>` : ''}
+                    ${courseDescription && courseDescription.trim() !== '' ? `<p style="color: #374151; line-height: 1.6; margin-bottom: 0;">${courseDescription.replace(/\n/g, '<br>')}</p>` : ''}
+                  </div>
                 </div>
               `
             }).join('')
@@ -2618,18 +2683,43 @@ export default function EstimateModal({
                     ? (course.customer_description_en || course.customer_description_ko || '')
                     : (course.customer_description_ko || course.customer_description_en || '')
 
+                  // 사진 URL 가져오기 (대표 사진 우선, 없으면 첫 번째 사진)
+                  const primaryPhoto = course.photos?.find(p => p.is_primary) || course.photos?.[0]
+                  const photoUrl = primaryPhoto?.photo_url || primaryPhoto?.thumbnail_url || null
+                  
+                  // 사진 URL이 상대 경로인 경우 절대 경로로 변환
+                  let fullPhotoUrl = photoUrl
+                  if (photoUrl && !photoUrl.startsWith('http')) {
+                    fullPhotoUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${photoUrl}`
+                  }
+
                   return (
                     <div key={course.id} className="bg-white border border-gray-200 rounded-lg p-4">
-                      {fullCourseName.trim() !== '' && (
-                        <div className="font-semibold text-gray-900 mb-2">
-                          {fullCourseName}
+                      <div className="flex gap-4 items-start">
+                        {/* 왼쪽: 사진 */}
+                        {fullPhotoUrl && (
+                          <div className="flex-shrink-0 w-48">
+                            <img 
+                              src={fullPhotoUrl} 
+                              alt={fullCourseName || 'Course image'} 
+                              className="w-full h-36 object-cover rounded-lg border border-gray-200"
+                            />
+                          </div>
+                        )}
+                        {/* 오른쪽: 제목과 설명 */}
+                        <div className="flex-1 min-w-0">
+                          {fullCourseName.trim() !== '' && (
+                            <div className="font-semibold text-gray-900 mb-2">
+                              {fullCourseName}
+                            </div>
+                          )}
+                          {courseDescription && courseDescription.trim() !== '' && (
+                            <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                              {courseDescription}
+                            </div>
+                          )}
                         </div>
-                      )}
-                      {courseDescription && courseDescription.trim() !== '' && (
-                        <div className="text-sm text-gray-700 whitespace-pre-wrap">
-                          {courseDescription}
-                        </div>
-                      )}
+                      </div>
                     </div>
                   )
                 })

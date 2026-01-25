@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useLocale } from 'next-intl'
 import { useSearchParams } from 'next/navigation'
-import { Calculator, Settings, Plus, X, Route, Clock, Search, GripVertical, ArrowUp, ArrowDown, Save, RefreshCw, FileText, ExternalLink, Trash2 } from 'lucide-react'
+import { Calculator, Settings, Plus, X, Route, Clock, Search, GripVertical, ArrowUp, ArrowDown, Save, RefreshCw, FileText, ExternalLink, Trash2, MapPin } from 'lucide-react'
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
@@ -30,6 +30,12 @@ type TourCourse = Database['public']['Tables']['tour_courses']['Row'] & {
   children?: TourCourse[]
   parent?: TourCourse
   level?: number
+  photos?: Array<{
+    id: string
+    photo_url: string | null
+    thumbnail_url: string | null
+    is_primary: boolean | null
+  }> | null
 }
 
 type MarginType = 'default' | 'low_season' | 'high_season' | 'failed_recruitment'
@@ -547,7 +553,49 @@ export default function TourCostCalculatorPage() {
         .order('name_ko', { ascending: true })
 
       if (error) throw error
-      setTourCourses((data || []) as TourCourse[])
+      
+      // 사진 정보 가져오기
+      const courseIds = (data || []).map(c => c.id)
+      if (courseIds.length > 0) {
+        const { data: photosData } = await supabase
+          .from('tour_course_photos')
+          .select('id, course_id, photo_url, thumbnail_url, is_primary')
+          .in('course_id', courseIds)
+          .order('is_primary', { ascending: false })
+          .order('sort_order', { ascending: true })
+
+        // 코스별로 사진 그룹화
+        const photosByCourse = new Map<string, Array<{
+          id: string
+          photo_url: string | null
+          thumbnail_url: string | null
+          is_primary: boolean | null
+        }>>()
+        
+        photosData?.forEach(photo => {
+          if (photo.course_id) {
+            if (!photosByCourse.has(photo.course_id)) {
+              photosByCourse.set(photo.course_id, [])
+            }
+            photosByCourse.get(photo.course_id)?.push({
+              id: photo.id,
+              photo_url: photo.photo_url,
+              thumbnail_url: photo.thumbnail_url,
+              is_primary: photo.is_primary
+            })
+          }
+        })
+
+        // 코스에 사진 정보 추가
+        const coursesWithPhotos = (data || []).map(course => ({
+          ...course,
+          photos: photosByCourse.get(course.id) || null
+        }))
+        
+        setTourCourses(coursesWithPhotos as TourCourse[])
+      } else {
+        setTourCourses((data || []) as TourCourse[])
+      }
     } catch (error) {
       console.error('투어 코스 로드 오류:', error)
     }
@@ -1694,6 +1742,11 @@ export default function TourCostCalculatorPage() {
     })
   }, [selectedCoursesOrder, tourCourses])
 
+  // Estimate 모달을 위한 코스 데이터 (사진 포함)
+  const tourCoursesWithPhotos = useMemo(() => {
+    return tourCourses
+  }, [tourCourses])
+
   return (
     <div className="container mx-auto px-4 py-3 max-w-7xl">
       <div className="mb-4">
@@ -2148,6 +2201,124 @@ export default function TourCostCalculatorPage() {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* 투어 코스 설명 */}
+          <div className="bg-white rounded-lg shadow-sm border p-6 mt-6">
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+              <MapPin className="w-5 h-5" />
+              투어 코스 설명
+            </h2>
+            <div className="border border-gray-200 rounded-lg p-4 space-y-4 bg-gray-50">
+              {(() => {
+                // 선택된 코스 ID 목록과 순서 유지
+                const courseOrderMap = new Map<string, number>()
+                selectedCoursesOrder.forEach((c, index) => {
+                  courseOrderMap.set(c.id, index)
+                })
+                
+                // 카테고리가 "포인트"인 코스만 필터링
+                const pointCourses = tourCourses.filter(course => {
+                  const category = course.category?.toLowerCase() || ''
+                  return courseOrderMap.has(course.id) && 
+                         (category.includes('포인트') || category.includes('point'))
+                })
+
+                // 이름과 설명이 모두 있는 코스만 필터링
+                const validCourses = pointCourses.filter(course => {
+                  const isEnglish = locale === 'en'
+                  const courseName = isEnglish 
+                    ? (course.customer_name_en || course.customer_name_ko || '')
+                    : (course.customer_name_ko || course.customer_name_en || '')
+                  const courseDescription = isEnglish
+                    ? (course.customer_description_en || course.customer_description_ko || '')
+                    : (course.customer_description_ko || course.customer_description_en || '')
+                  
+                  // 이름 또는 설명 중 하나라도 있으면 포함
+                  return courseName.trim() !== '' || courseDescription.trim() !== ''
+                })
+
+                // 스케줄 순서대로 정렬
+                validCourses.sort((a, b) => {
+                  const orderA = courseOrderMap.get(a.id) ?? Infinity
+                  const orderB = courseOrderMap.get(b.id) ?? Infinity
+                  return orderA - orderB
+                })
+
+                if (validCourses.length === 0) {
+                  return (
+                    <p className="text-sm text-gray-500 text-center py-4">
+                      카테고리가 "포인트"인 투어 코스가 없습니다.
+                    </p>
+                  )
+                }
+
+                return validCourses.map((course) => {
+                  const isEnglish = locale === 'en'
+                  
+                  // 상위 카테고리 이름 가져오기
+                  const parentName = course.parent 
+                    ? (isEnglish 
+                        ? (course.parent.customer_name_en || course.parent.customer_name_ko || '')
+                        : (course.parent.customer_name_ko || course.parent.customer_name_en || ''))
+                    : null
+                  
+                  // 포인트 이름
+                  const courseName = isEnglish 
+                    ? (course.customer_name_en || course.customer_name_ko || '')
+                    : (course.customer_name_ko || course.customer_name_en || '')
+                  
+                  // 상위 카테고리 포함한 전체 이름
+                  const fullCourseName = parentName 
+                    ? `${parentName} - ${courseName}`
+                    : courseName
+                  
+                  const courseDescription = isEnglish
+                    ? (course.customer_description_en || course.customer_description_ko || '')
+                    : (course.customer_description_ko || course.customer_description_en || '')
+
+                  // 사진 URL 가져오기 (대표 사진 우선, 없으면 첫 번째 사진)
+                  const primaryPhoto = course.photos?.find(p => p.is_primary) || course.photos?.[0]
+                  const photoUrl = primaryPhoto?.photo_url || primaryPhoto?.thumbnail_url || null
+                  
+                  // 사진 URL이 상대 경로인 경우 절대 경로로 변환
+                  let fullPhotoUrl = photoUrl
+                  if (photoUrl && !photoUrl.startsWith('http')) {
+                    fullPhotoUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${photoUrl}`
+                  }
+
+                  return (
+                    <div key={course.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                      <div className="flex gap-4 items-start">
+                        {/* 왼쪽: 사진 */}
+                        {fullPhotoUrl && (
+                          <div className="flex-shrink-0 w-48">
+                            <img 
+                              src={fullPhotoUrl} 
+                              alt={fullCourseName || 'Course image'} 
+                              className="w-full h-36 object-cover rounded-lg border border-gray-200"
+                            />
+                          </div>
+                        )}
+                        {/* 오른쪽: 제목과 설명 */}
+                        <div className="flex-1 min-w-0">
+                          {fullCourseName.trim() !== '' && (
+                            <div className="font-semibold text-gray-900 mb-2">
+                              {fullCourseName}
+                            </div>
+                          )}
+                          {courseDescription && courseDescription.trim() !== '' && (
+                            <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                              {courseDescription}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              })()}
+            </div>
           </div>
         </div>
 
@@ -2729,7 +2900,7 @@ export default function TourCostCalculatorPage() {
         <EstimateModal
           customer={estimateCustomer}
           courses={estimateCourses}
-          tourCourses={tourCourses as any}
+          tourCourses={tourCoursesWithPhotos as any}
           mileage={mileage}
           locale={locale}
           tourCourseDescription={tourCourseDescription}
