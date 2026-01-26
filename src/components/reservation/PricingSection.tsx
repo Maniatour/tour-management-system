@@ -1683,27 +1683,20 @@ export default function PricingSection({
                       value={formData.adultProductPrice || ''}
                       onChange={(e) => {
                         const salePrice = Number(e.target.value) || 0
-                        const notIncluded = formData.not_included_price || 0
-                        const adultTotalPrice = salePrice + notIncluded
+                        // 상품 가격 총합 계산 (불포함 가격 제외)
+                        const childPrice = isSinglePrice ? salePrice : (formData.childProductPrice || 0)
+                        const infantPrice = isSinglePrice ? salePrice : (formData.infantProductPrice || 0)
                         
-                        // 단일 가격 모드일 때는 모든 가격이 동일
-                        // 단일 가격 모드가 아닐 때는 각각의 판매가에 불포함 가격을 더함
-                        const childSalePrice = formData.childProductPrice || 0
-                        const infantSalePrice = formData.infantProductPrice || 0
-                        const childTotalPrice = isSinglePrice ? adultTotalPrice : (childSalePrice + notIncluded)
-                        const infantTotalPrice = isSinglePrice ? adultTotalPrice : (infantSalePrice + notIncluded)
-                        
-                        // 상품 가격 총합 계산 (불포함 가격 포함)
-                        const newProductPriceTotal = (adultTotalPrice * formData.adults) + 
-                                                     (childTotalPrice * formData.child) + 
-                                                     (infantTotalPrice * formData.infant)
+                        const newProductPriceTotal = (salePrice * formData.adults) + 
+                                                     (childPrice * formData.child) + 
+                                                     (infantPrice * formData.infant)
                         setFormData({ 
                           ...formData, 
                           adultProductPrice: salePrice,
                           // 단일 가격 모드일 때는 아동/유아 가격도 동일하게 설정
                           ...(isSinglePrice ? {
-                            childProductPrice: adultTotalPrice,
-                            infantProductPrice: adultTotalPrice
+                            childProductPrice: salePrice,
+                            infantProductPrice: salePrice
                           } : {}),
                           productPriceTotal: newProductPriceTotal
                         })
@@ -1722,28 +1715,19 @@ export default function PricingSection({
                       value={formData.not_included_price || ''}
                       onChange={(e) => {
                         const notIncluded = Number(e.target.value) || 0
+                        // 상품 가격 총합 계산 (불포함 가격 제외)
                         const salePrice = formData.adultProductPrice || 0
-                        const adultTotalPrice = salePrice + notIncluded
-                        
-                        // 단일 가격 모드일 때는 모든 가격이 동일
-                        // 단일 가격 모드가 아닐 때는 각각의 판매가에 불포함 가격을 더함
                         const childSalePrice = formData.childProductPrice || 0
                         const infantSalePrice = formData.infantProductPrice || 0
-                        const childTotalPrice = isSinglePrice ? adultTotalPrice : (childSalePrice + notIncluded)
-                        const infantTotalPrice = isSinglePrice ? adultTotalPrice : (infantSalePrice + notIncluded)
+                        const childPrice = isSinglePrice ? salePrice : childSalePrice
+                        const infantPrice = isSinglePrice ? salePrice : infantSalePrice
                         
-                        // 상품 가격 총합 계산 (불포함 가격 포함)
-                        const newProductPriceTotal = (adultTotalPrice * formData.adults) + 
-                                                     (childTotalPrice * formData.child) + 
-                                                     (infantTotalPrice * formData.infant)
+                        const newProductPriceTotal = (salePrice * formData.adults) + 
+                                                     (childPrice * formData.child) + 
+                                                     (infantPrice * formData.infant)
                         setFormData({ 
                           ...formData, 
                           not_included_price: notIncluded,
-                          // 단일 가격 모드일 때는 아동/유아 가격도 동일하게 설정
-                          ...(isSinglePrice ? {
-                            childProductPrice: adultTotalPrice,
-                            infantProductPrice: adultTotalPrice
-                          } : {}),
                           productPriceTotal: newProductPriceTotal
                         })
                       }}
@@ -1757,28 +1741,28 @@ export default function PricingSection({
                     <span className="text-xs text-gray-500 w-16"></span>
                     <span className="text-xs text-gray-500">=</span>
                     <span className="font-medium text-xs text-blue-600">
-                      ${((formData.adultProductPrice || 0) + (formData.not_included_price || 0)).toFixed(2)}
+                      ${(formData.adultProductPrice || 0).toFixed(2)}
                     </span>
                   </div>
                 </div>
                 {/* 성인 가격 x 인원수 */}
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-gray-600">
-                    성인 [${((formData.adultProductPrice || 0) + (formData.not_included_price || 0)).toFixed(2)}]
+                    성인 [${(formData.adultProductPrice || 0).toFixed(2)}]
                   </span>
                   <div className="flex items-center space-x-1">
                     {isSinglePrice ? (
                       <>
                         <span className="text-gray-500">x{formData.adults + formData.child + formData.infant}</span>
                         <span className="font-medium">
-                          = ${(((formData.adultProductPrice || 0) + (formData.not_included_price || 0)) * (formData.adults + formData.child + formData.infant)).toFixed(2)}
+                          = ${((formData.adultProductPrice || 0) * (formData.adults + formData.child + formData.infant)).toFixed(2)}
                         </span>
                       </>
                     ) : (
                       <>
                         <span className="text-gray-500">x{formData.adults}</span>
                         <span className="font-medium">
-                          = ${(((formData.adultProductPrice || 0) + (formData.not_included_price || 0)) * formData.adults).toFixed(2)}
+                          = ${((formData.adultProductPrice || 0) * formData.adults).toFixed(2)}
                         </span>
                       </>
                     )}
@@ -1815,7 +1799,7 @@ export default function PricingSection({
                         placeholder="0"
                       />
                       <span className="text-gray-500">x{formData.child}</span>
-                      <span className="font-medium">${(((formData.childProductPrice || 0) + (formData.not_included_price || 0)) * formData.child).toFixed(2)}</span>
+                      <span className="font-medium">${((formData.childProductPrice || 0) * formData.child).toFixed(2)}</span>
                     </div>
                   </div>
                   <div className="flex items-center justify-between text-xs">
@@ -1845,7 +1829,7 @@ export default function PricingSection({
                         placeholder="0"
                       />
                       <span className="text-gray-500">x{formData.infant}</span>
-                      <span className="font-medium">${(((formData.infantProductPrice || 0) + (formData.not_included_price || 0)) * formData.infant).toFixed(2)}</span>
+                      <span className="font-medium">${((formData.infantProductPrice || 0) * formData.infant).toFixed(2)}</span>
                     </div>
                   </div>
                 </>

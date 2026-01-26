@@ -2420,12 +2420,11 @@ export default function ReservationForm({
 
   // 가격 계산 함수들
   const calculateProductPriceTotal = useCallback(() => {
-    // 불포함 가격 포함하여 계산
-    const notIncluded = formData.not_included_price || 0
-    return ((formData.adultProductPrice + notIncluded) * formData.adults) + 
-           ((formData.childProductPrice + notIncluded) * formData.child) + 
-           ((formData.infantProductPrice + notIncluded) * formData.infant)
-  }, [formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.adults, formData.child, formData.infant, formData.not_included_price])
+    // 불포함 가격 제외하여 계산 (불포함 가격은 별도로 표시됨)
+    return (formData.adultProductPrice * formData.adults) + 
+           (formData.childProductPrice * formData.child) + 
+           (formData.infantProductPrice * formData.infant)
+  }, [formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.adults, formData.child, formData.infant])
 
   const calculateRequiredOptionTotal = useCallback(() => {
     let total = 0
@@ -2788,11 +2787,10 @@ export default function ReservationForm({
 
   // 상품 가격 또는 인원 수가 변경될 때 productPriceTotal 및 subtotal 자동 업데이트
   useEffect(() => {
-    // 불포함 가격 포함하여 계산
-    const notIncluded = formData.not_included_price || 0
-    const newProductPriceTotal = ((formData.adultProductPrice + notIncluded) * formData.adults) + 
-                                 ((formData.childProductPrice + notIncluded) * formData.child) + 
-                                 ((formData.infantProductPrice + notIncluded) * formData.infant)
+    // 불포함 가격 제외하여 계산 (불포함 가격은 별도로 표시됨)
+    const newProductPriceTotal = (formData.adultProductPrice * formData.adults) + 
+                                 (formData.childProductPrice * formData.child) + 
+                                 (formData.infantProductPrice * formData.infant)
     
     // productPriceTotal이 다를 때만 업데이트 (무한 루프 방지)
     if (Math.abs(newProductPriceTotal - formData.productPriceTotal) > 0.01) {
@@ -2819,7 +2817,7 @@ export default function ReservationForm({
         subtotal: newSubtotal
       }))
     }
-  }, [formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.adults, formData.child, formData.infant, formData.not_included_price, formData.choicesTotal, formData.priceType, formData.choiceNotIncludedTotal, calculateRequiredOptionTotal, calculateOptionTotal])
+  }, [formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.adults, formData.child, formData.infant, formData.choicesTotal, formData.priceType, formData.choiceNotIncludedTotal, calculateRequiredOptionTotal, calculateOptionTotal])
 
   // 예약 옵션 총 가격이 변경될 때 가격 재계산 (편집 모드에서는 자동 저장 방지)
   useEffect(() => {
