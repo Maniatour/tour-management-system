@@ -35,14 +35,19 @@ const fetchWithRetry = async (
       const timeoutId = setTimeout(() => controller.abort(), 30000)
 
       // 헤더를 안전하게 병합
+      // Supabase 클라이언트가 설정한 헤더를 보존하면서 필요한 헤더만 추가
       const headers = new Headers(options.headers)
+      
       // Connection 헤더가 없으면 추가 (기존 헤더를 덮어쓰지 않음)
       if (!headers.has('Connection')) {
         headers.set('Connection', 'keep-alive')
       }
+      
       // Accept 헤더 추가 (406 에러 방지)
+      // Supabase PostgREST는 application/json 또는 application/vnd.pgjson.object+json을 지원
+      // 기존 Accept 헤더가 있으면 그대로 사용, 없으면 Supabase가 지원하는 모든 형식 포함
       if (!headers.has('Accept')) {
-        headers.set('Accept', 'application/json')
+        headers.set('Accept', 'application/json, application/vnd.pgjson.object+json, application/vnd.pgjson.array+json')
       }
 
       // 기존 signal이 있으면 타임아웃과 함께 사용

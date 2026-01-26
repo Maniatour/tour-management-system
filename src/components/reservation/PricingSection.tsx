@@ -112,6 +112,7 @@ interface PricingSectionProps {
     discount_type: 'percentage' | 'fixed'
     percentage_value?: number | null
     fixed_value?: number | null
+    channel_id?: string | null
   }>
   getOptionalOptionsForProduct: (productId: string) => ProductOption[]
   options: Option[]
@@ -622,6 +623,18 @@ export default function PricingSection({
 
   // 잔액 자동 계산 (고객 총 결제금액 - 보증금 - 잔금 수령)
   // depositAmount, 고객 총 결제금액, 초이스 총액이 변경될 때 잔액을 자동으로 업데이트
+  const prevBalanceDepsRef = useRef({
+    depositAmount: formData.depositAmount,
+    calculatedBalanceReceivedTotal,
+    choiceTotal: formData.choiceTotal,
+    choicesTotal: formData.choicesTotal,
+    notIncludedPrice: (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant),
+    adults: formData.adults,
+    child: formData.child,
+    infant: formData.infant,
+    onSiteBalanceAmount: formData.onSiteBalanceAmount
+  })
+  
   useEffect(() => {
     const totalCustomerPayment = calculateTotalCustomerPayment()
     const totalPaid = formData.depositAmount + calculatedBalanceReceivedTotal
@@ -630,32 +643,60 @@ export default function PricingSection({
     // 불포함 가격 계산
     const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
     
-    // 잔액이 설정되지 않았거나 0일 때, 불포함 가격을 기본값으로 설정
-    // 또는 초이스가 변경되어 재계산이 필요한 경우 업데이트
-    // 초이스 변경을 감지하기 위해 현재 계산된 잔액과 기존 잔액의 차이를 확인
-    const balanceDifference = Math.abs((formData.onSiteBalanceAmount || 0) - calculatedBalance)
-    
-    if (formData.onSiteBalanceAmount === undefined || 
-        formData.onSiteBalanceAmount === null || 
-        formData.onSiteBalanceAmount === 0) {
-      // 잔액이 없으면 불포함 가격을 기본값으로 설정
-      setFormData((prev: typeof formData) => ({
-        ...prev,
-        onSiteBalanceAmount: notIncludedPrice > 0 ? notIncludedPrice : calculatedBalance,
-        balanceAmount: notIncludedPrice > 0 ? notIncludedPrice : calculatedBalance
-      }))
-    } else if (balanceDifference > 0.01) {
-      // 초이스 변경 등으로 재계산이 필요한 경우
-      setFormData((prev: typeof formData) => ({
-        ...prev,
-        onSiteBalanceAmount: calculatedBalance,
-        balanceAmount: calculatedBalance
-      }))
+    // 의존성 변경 확인 (onSiteBalanceAmount는 제외)
+    const currentDeps = {
+      depositAmount: formData.depositAmount,
+      calculatedBalanceReceivedTotal,
+      choiceTotal: formData.choiceTotal,
+      choicesTotal: formData.choicesTotal,
+      notIncludedPrice,
+      adults: formData.adults,
+      child: formData.child,
+      infant: formData.infant
     }
-  }, [calculateTotalCustomerPayment, formData.depositAmount, calculatedBalanceReceivedTotal, formData.choiceTotal, formData.choicesTotal, formData.onSiteBalanceAmount, formData.not_included_price, formData.adults, formData.child, formData.infant, setFormData])
+    
+    const depsChanged = 
+      prevBalanceDepsRef.current.depositAmount !== currentDeps.depositAmount ||
+      prevBalanceDepsRef.current.calculatedBalanceReceivedTotal !== currentDeps.calculatedBalanceReceivedTotal ||
+      prevBalanceDepsRef.current.choiceTotal !== currentDeps.choiceTotal ||
+      prevBalanceDepsRef.current.choicesTotal !== currentDeps.choicesTotal ||
+      Math.abs(prevBalanceDepsRef.current.notIncludedPrice - currentDeps.notIncludedPrice) > 0.01 ||
+      prevBalanceDepsRef.current.adults !== currentDeps.adults ||
+      prevBalanceDepsRef.current.child !== currentDeps.child ||
+      prevBalanceDepsRef.current.infant !== currentDeps.infant
+    
+    // 의존성이 변경되었을 때만 업데이트
+    if (depsChanged) {
+      const currentBalance = prevBalanceDepsRef.current.onSiteBalanceAmount ?? formData.onSiteBalanceAmount ?? 0
+      const balanceDifference = Math.abs(currentBalance - calculatedBalance)
+      
+      // 잔액이 설정되지 않았거나 0일 때, 또는 계산된 잔액과 차이가 0.01 이상일 때만 업데이트
+      if (currentBalance === 0 || currentBalance === undefined || currentBalance === null) {
+        // 잔액이 없으면 불포함 가격을 기본값으로 설정
+        const newBalance = notIncludedPrice > 0 ? notIncludedPrice : calculatedBalance
+        setFormData((prev: typeof formData) => ({
+          ...prev,
+          onSiteBalanceAmount: newBalance,
+          balanceAmount: newBalance
+        }))
+        prevBalanceDepsRef.current = { ...currentDeps, onSiteBalanceAmount: newBalance }
+      } else if (balanceDifference > 0.01) {
+        // 초이스 변경 등으로 재계산이 필요한 경우
+        setFormData((prev: typeof formData) => ({
+          ...prev,
+          onSiteBalanceAmount: calculatedBalance,
+          balanceAmount: calculatedBalance
+        }))
+        prevBalanceDepsRef.current = { ...currentDeps, onSiteBalanceAmount: calculatedBalance }
+      } else {
+        // 의존성은 변경되었지만 잔액 차이가 작으면 의존성만 업데이트
+        prevBalanceDepsRef.current = { ...currentDeps, onSiteBalanceAmount: currentBalance }
+      }
+    }
+  }, [calculateTotalCustomerPayment, formData.depositAmount, calculatedBalanceReceivedTotal, formData.choiceTotal, formData.choicesTotal, formData.not_included_price, formData.adults, formData.child, formData.infant, setFormData])
 
   // depositAmount를 할인 후 상품가격으로 자동 업데이트 (상품 가격이나 쿠폰 변경 시)
-  // OTA 채널이거나 입금 내역이 있는 경우에는 실행하지 않음 (입금 내역이 우선)
+  // OTA 채널의 경우 OTA 판매가를 depositAmount로 설정하고, 채널 결제 금액과 수수료도 함께 업데이트
   useEffect(() => {
     // OTA 채널 여부 확인
     const selectedChannel = channels.find((c: { id: string }) => c.id === formData.channelId)
@@ -669,38 +710,78 @@ export default function PricingSection({
       (selectedChannel as any).name?.toLowerCase().includes('getyourguide')
     )
     
-    // OTA 채널이거나 입금 내역이 있는 경우에는 이 useEffect를 실행하지 않음
-    if (isOTAChannel || formData.depositAmount > 0) {
-      return
-    }
+    // 채널의 commission_percent 가져오기
+    const channelCommissionPercent = selectedChannel 
+      ? (() => {
+          const ch = selectedChannel as any
+          return ch.commission_percent || ch.commission_rate || ch.commission || 0
+        })()
+      : 0
     
     if (formData.productPriceTotal > 0) {
-      // 할인 후 상품가 계산 (불포함 가격 제외하지 않음)
-      // 할인 후 상품가 = 상품 가격 총합 - 쿠폰 할인 - 추가 할인
+      // 할인 후 상품가 계산 (불포함 가격 제외)
+      // 할인 후 상품가 = OTA 판매가 - 쿠폰 할인 - 추가 할인
       const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
+      
       if (discountedPrice > 0) {
-        // depositAmount가 0이거나, 현재 값이 이전 할인 후 상품가와 다를 때 업데이트
-        // (사용자가 수동으로 변경한 경우를 방지하기 위해 현재 값이 할인 후 상품가와 비슷하면 업데이트)
         const currentDeposit = formData.depositAmount || 0
         const priceDifference = Math.abs(currentDeposit - discountedPrice)
         
-        // depositAmount가 0이거나, 현재 값이 할인 후 상품가와 차이가 0.01 이상이면 업데이트
-        if (currentDeposit === 0 || priceDifference > 0.01) {
-          // 잔액도 함께 계산하여 업데이트
-          const totalCustomerPayment = calculateTotalCustomerPayment()
-          const totalPaid = discountedPrice + calculatedBalanceReceivedTotal
-          const calculatedBalance = Math.max(0, totalCustomerPayment - totalPaid)
+        // OTA 채널의 경우: depositAmount, onlinePaymentAmount, commission_base_price 모두 업데이트
+        if (isOTAChannel) {
+          // depositAmount가 0이거나, 현재 값이 할인 후 상품가와 차이가 0.01 이상이면 업데이트
+          if (currentDeposit === 0 || priceDifference > 0.01) {
+            // 잔액도 함께 계산하여 업데이트
+            const totalCustomerPayment = calculateTotalCustomerPayment()
+            const totalPaid = discountedPrice + calculatedBalanceReceivedTotal
+            const calculatedBalance = Math.max(0, totalCustomerPayment - totalPaid)
+            
+            // 채널 결제 금액 계산 (Returned 차감)
+            const adjustedBasePrice = Math.max(0, discountedPrice - returnedAmount)
+            
+            // 채널 수수료 계산 (commission_amount가 0일 때만)
+            const currentCommissionAmount = formData.commission_amount || 0
+            const commissionPercent = (formData.commission_percent && formData.commission_percent > 0) 
+              ? formData.commission_percent 
+              : (channelCommissionPercent || 0)
+            const calculatedCommission = (currentCommissionAmount === 0 && commissionPercent > 0 && adjustedBasePrice > 0)
+              ? adjustedBasePrice * (commissionPercent / 100)
+              : currentCommissionAmount
+            
+            setFormData((prev: typeof formData) => ({
+              ...prev,
+              depositAmount: discountedPrice,
+              onlinePaymentAmount: discountedPrice,
+              commission_base_price: discountedPrice,
+              commission_amount: calculatedCommission,
+              onSiteBalanceAmount: calculatedBalance,
+              balanceAmount: calculatedBalance
+            }))
+          }
+        } else {
+          // 일반 채널: 입금 내역이 있는 경우에는 업데이트하지 않음
+          if (formData.depositAmount > 0) {
+            return
+          }
           
-          setFormData((prev: typeof formData) => ({
-            ...prev,
-            depositAmount: discountedPrice,
-            onSiteBalanceAmount: calculatedBalance,
-            balanceAmount: calculatedBalance
-          }))
+          // depositAmount가 0이거나, 현재 값이 할인 후 상품가와 차이가 0.01 이상이면 업데이트
+          if (currentDeposit === 0 || priceDifference > 0.01) {
+            // 잔액도 함께 계산하여 업데이트
+            const totalCustomerPayment = calculateTotalCustomerPayment()
+            const totalPaid = discountedPrice + calculatedBalanceReceivedTotal
+            const calculatedBalance = Math.max(0, totalCustomerPayment - totalPaid)
+            
+            setFormData((prev: typeof formData) => ({
+              ...prev,
+              depositAmount: discountedPrice,
+              onSiteBalanceAmount: calculatedBalance,
+              balanceAmount: calculatedBalance
+            }))
+          }
         }
       }
     }
-  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.depositAmount, formData.channelId, formData.not_included_price, formData.adults, formData.child, formData.infant, channels, calculateTotalCustomerPayment, calculatedBalanceReceivedTotal, setFormData])
+  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.depositAmount, formData.channelId, formData.not_included_price, formData.adults, formData.child, formData.infant, formData.commission_amount, formData.commission_percent, channels, returnedAmount, calculateTotalCustomerPayment, calculatedBalanceReceivedTotal, setFormData])
 
   // 선택된 채널 정보 가져오기
   const selectedChannel = channels?.find(ch => ch.id === formData.channelId)
@@ -1152,6 +1233,25 @@ export default function PricingSection({
       })
     }
   }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.not_included_price, formData.adults, formData.child, formData.infant, isOTAChannel, isChannelPaymentAmountFocused, setFormData])
+
+  // 채널 변경 시 선택된 쿠폰이 해당 채널에 속하지 않으면 쿠폰 초기화
+  useEffect(() => {
+    if (formData.couponCode && formData.channelId) {
+      const selectedCoupon = coupons.find(c => 
+        c.coupon_code && 
+        c.coupon_code.trim().toLowerCase() === formData.couponCode.trim().toLowerCase()
+      )
+      
+      // 선택된 쿠폰이 있고, 쿠폰에 채널이 지정되어 있으며, 선택된 채널과 일치하지 않으면 초기화
+      if (selectedCoupon && selectedCoupon.channel_id && selectedCoupon.channel_id !== formData.channelId) {
+        setFormData((prev: typeof formData) => ({
+          ...prev,
+          couponCode: '',
+          couponDiscount: 0
+        }))
+      }
+    }
+  }, [formData.channelId, formData.couponCode, coupons, setFormData])
 
   // 인원 변경 시 쿠폰 할인 재계산 (percentage 타입 쿠폰만)
   useEffect(() => {
@@ -1741,7 +1841,7 @@ export default function PricingSection({
                     <span className="text-xs text-gray-500 w-16"></span>
                     <span className="text-xs text-gray-500">=</span>
                     <span className="font-medium text-xs text-blue-600">
-                      ${(formData.adultProductPrice || 0).toFixed(2)}
+                      ${((formData.adultProductPrice || 0) + (formData.not_included_price || 0)).toFixed(2)}
                     </span>
                   </div>
                 </div>
@@ -1835,8 +1935,15 @@ export default function PricingSection({
                 </>
               )}
               <div className="border-t pt-1 flex justify-between items-center">
-                <span className="text-sm font-medium text-gray-900">합계</span>
-                <span className="text-sm font-bold text-blue-600">${formData.productPriceTotal.toFixed(2)}</span>
+                <span className="text-sm font-medium text-gray-900">상품 가격 합계</span>
+                <span className="text-sm font-bold text-blue-600">
+                  ${(() => {
+                    // 판매가 + 불포함 가격 = 상품 가격 합계
+                    const salePriceTotal = formData.productPriceTotal || 0
+                    const notIncludedTotal = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+                    return (salePriceTotal + notIncludedTotal).toFixed(2)
+                  })()}
+                </span>
               </div>
             </div>
           </div>
@@ -1959,7 +2066,13 @@ export default function PricingSection({
                   value={formData.couponCode}
                   onChange={(e) => {
                     const selectedCouponCode = e.target.value
-                    const selectedCoupon = coupons.find(coupon => 
+                    // 필터링된 쿠폰 목록에서 찾기
+                    const filteredCoupons = coupons.filter(coupon => 
+                      !formData.channelId || 
+                      !coupon.channel_id || 
+                      coupon.channel_id === formData.channelId
+                    )
+                    const selectedCoupon = filteredCoupons.find(coupon => 
                       coupon.coupon_code && 
                       coupon.coupon_code.trim().toLowerCase() === selectedCouponCode.trim().toLowerCase()
                     )
@@ -1981,20 +2094,27 @@ export default function PricingSection({
                   className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
                 >
                   <option value="">쿠폰 선택</option>
-                  {coupons.map((coupon) => {
-                    let discountText = '할인 정보 없음'
-                    if (coupon.discount_type === 'percentage' && coupon.percentage_value) {
-                      discountText = `${coupon.percentage_value}%`
-                    } else if (coupon.discount_type === 'fixed' && coupon.fixed_value) {
-                      discountText = `$${coupon.fixed_value}`
-                    }
-                    
-                    return (
-                      <option key={coupon.id} value={coupon.coupon_code || ''}>
-                        {coupon.coupon_code} ({discountText})
-                      </option>
+                  {coupons
+                    .filter(coupon => 
+                      // 채널이 선택되지 않았거나, 쿠폰에 채널이 지정되지 않았거나, 선택된 채널과 일치하는 경우만 표시
+                      !formData.channelId || 
+                      !coupon.channel_id || 
+                      coupon.channel_id === formData.channelId
                     )
-                  })}
+                    .map((coupon) => {
+                      let discountText = '할인 정보 없음'
+                      if (coupon.discount_type === 'percentage' && coupon.percentage_value) {
+                        discountText = `${coupon.percentage_value}%`
+                      } else if (coupon.discount_type === 'fixed' && coupon.fixed_value) {
+                        discountText = `$${coupon.fixed_value}`
+                      }
+                      
+                      return (
+                        <option key={coupon.id} value={coupon.coupon_code || ''}>
+                          {coupon.coupon_code} ({discountText})
+                        </option>
+                      )
+                    })}
                 </select>
                 {/* 선택된 쿠폰 정보 표시 */}
                 {formData.couponCode && (() => {
@@ -2133,15 +2253,14 @@ export default function PricingSection({
                 <span className="ml-2 text-xs text-gray-500">(Customer View)</span>
               </div>
               
-              {/* 기본 가격 (판매가만, 불포함 가격 제외) */}
+              {/* 기본 가격 (OTA 판매가) */}
               <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-gray-700">{isKorean ? '기본 가격' : 'Base Price'}</span>
+                <span className="text-sm text-gray-700">{isKorean ? 'OTA 판매가' : 'OTA Sale Price'}</span>
                 <span className="text-sm font-medium text-gray-900">
                   ${(() => {
-                    // 불포함 가격 계산
-                    const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
-                    // 판매가만 계산 (불포함 가격 제외)
-                    return (formData.productPriceTotal - notIncludedPrice).toFixed(2)
+                    // OTA 판매가 = productPriceTotal (판매가 * 인원, 불포함 가격 제외)
+                    // productPriceTotal은 이미 판매가만 포함하고 있음
+                    return formData.productPriceTotal.toFixed(2)
                   })()}
                 </span>
               </div>
@@ -2161,7 +2280,8 @@ export default function PricingSection({
                 <span className="text-sm text-gray-700">{isKorean ? '할인 후 상품가' : 'Discounted Product Price'}</span>
                 <span className="text-sm font-medium text-gray-900">
                   ${(() => {
-                    // 할인 후 상품가 = 상품 가격 총합 - 쿠폰 할인 - 추가 할인
+                    // 할인 후 상품가 = OTA 판매가 - 쿠폰 할인 - 추가 할인
+                    // productPriceTotal은 이미 판매가만 포함하고 있음 (불포함 가격 제외)
                     const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
                     return discountedPrice.toFixed(2)
                   })()}
@@ -2455,11 +2575,10 @@ export default function PricingSection({
                         }
                         
                         if (isOTAChannel) {
-                          // OTA 채널: 할인 후 상품가 계산 (불포함 가격 제외)
-                          const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
-                          const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount - notIncludedPrice
+                          // OTA 채널: 할인 후 상품가 계산 (불포함 가격 제외하지 않음, productPriceTotal이 이미 판매가만 포함)
+                          const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
                           // onlinePaymentAmount가 없거나 0이면 할인 후 상품가를 기본값으로 사용
-                          const baseAmount = formData.onlinePaymentAmount || (discountedPrice > 0 ? discountedPrice : 0)
+                          const baseAmount = formData.onlinePaymentAmount || formData.depositAmount || (discountedPrice > 0 ? discountedPrice : 0)
                           // Returned가 있으면 차감
                           return Math.max(0, baseAmount - returnedAmount).toFixed(2)
                         } else {
@@ -2491,9 +2610,8 @@ export default function PricingSection({
                         
                         if (isOTAChannel) {
                           // OTA 채널 로직
-                          // 할인 후 상품가 계산 (불포함 가격 제외)
-                          const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
-                          const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount - notIncludedPrice
+                          // 할인 후 상품가 계산 (불포함 가격 제외하지 않음, productPriceTotal이 이미 판매가만 포함)
+                          const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
                           const defaultBasePrice = discountedPrice > 0 ? discountedPrice : formData.subtotal
                           const commissionBasePrice = formData.commission_base_price !== undefined
                             ? formData.commission_base_price

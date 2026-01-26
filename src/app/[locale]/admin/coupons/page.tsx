@@ -29,6 +29,8 @@ export default function CouponsPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null)
   const [products, setProducts] = useState<{id: string, name: string}[]>([])
+  const [channels, setChannels] = useState<{id: string, name: string}[]>([])
+  const [selectedChannelFilter, setSelectedChannelFilter] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'table' | 'card'>('card')
 
   // 쿠폰 목록 조회
@@ -65,6 +67,22 @@ export default function CouponsPage() {
     }
   }
 
+  // 채널 목록 조회
+  const fetchChannels = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('channels')
+        .select('id, name')
+        .eq('status', 'active')
+        .order('name')
+      
+      if (error) throw error
+      setChannels(data || [])
+    } catch (error) {
+      console.error('채널 목록 조회 오류:', error)
+    }
+  }
+
   // 상품 ID를 상품 이름으로 변환
   const getProductNames = (productIds: string | null) => {
     if (!productIds) return '전체 상품'
@@ -82,9 +100,17 @@ export default function CouponsPage() {
     return `${names.slice(0, 2).join(', ')} 외 ${names.length - 2}개`
   }
 
+  // 채널 ID를 채널 이름으로 변환
+  const getChannelName = (channelId: string | null) => {
+    if (!channelId) return '전체 채널'
+    const channel = channels.find(c => c.id === channelId)
+    return channel ? channel.name : channelId
+  }
+
   useEffect(() => {
     fetchCoupons()
     fetchProducts()
+    fetchChannels()
   }, [])
 
   // 쿠폰 추가
@@ -179,9 +205,27 @@ export default function CouponsPage() {
     const matchesSearch = (coupon.coupon_code && coupon.coupon_code.toLowerCase().includes(searchTerm.toLowerCase())) ||
                          (coupon.description && coupon.description.toLowerCase().includes(searchTerm.toLowerCase()))
     const matchesStatus = statusFilter === 'all' || coupon.status === statusFilter
+    let matchesChannel = true
+    if (selectedChannelFilter === 'none') {
+      matchesChannel = coupon.channel_id === null
+    } else if (selectedChannelFilter !== null) {
+      matchesChannel = coupon.channel_id === selectedChannelFilter
+    }
     
-    return matchesSearch && matchesStatus
+    return matchesSearch && matchesStatus && matchesChannel
   })
+
+  // 채널별 쿠폰 개수 계산
+  const getCouponCountByChannel = (channelId: string | null) => {
+    return coupons.filter(coupon => {
+      const matchesSearch = (coupon.coupon_code && coupon.coupon_code.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                           (coupon.description && coupon.description.toLowerCase().includes(searchTerm.toLowerCase()))
+      const matchesStatus = statusFilter === 'all' || coupon.status === statusFilter
+      const matchesChannel = channelId === null ? coupon.channel_id === null : coupon.channel_id === channelId
+      
+      return matchesSearch && matchesStatus && matchesChannel
+    }).length
+  }
 
   return (
     <div className="space-y-6">
@@ -252,6 +296,62 @@ export default function CouponsPage() {
               <option value="inactive">비활성</option>
             </select>
           </div>
+        </div>
+      </div>
+
+      {/* 채널별 탭 */}
+      <div className="bg-white p-4 rounded-lg shadow">
+        <div className="flex items-center space-x-2 overflow-x-auto pb-2">
+          <button
+            onClick={() => setSelectedChannelFilter(null)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+              selectedChannelFilter === null
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            전체 ({getCouponCountByChannel(null)})
+          </button>
+          {channels
+            .filter(channel => getCouponCountByChannel(channel.id) > 0)
+            .map((channel) => (
+              <button
+                key={channel.id}
+                onClick={() => setSelectedChannelFilter(channel.id)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                  selectedChannelFilter === channel.id
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {channel.name} ({getCouponCountByChannel(channel.id)})
+              </button>
+            ))}
+          {(() => {
+            const noChannelCount = coupons.filter(coupon => {
+              const matchesSearch = (coupon.coupon_code && coupon.coupon_code.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                                   (coupon.description && coupon.description.toLowerCase().includes(searchTerm.toLowerCase()))
+              const matchesStatus = statusFilter === 'all' || coupon.status === statusFilter
+              const matchesChannel = coupon.channel_id === null
+              
+              return matchesSearch && matchesStatus && matchesChannel
+            }).length
+            
+            if (noChannelCount === 0) return null
+            
+            return (
+              <button
+                onClick={() => setSelectedChannelFilter('none')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                  selectedChannelFilter === 'none'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                채널 미지정 ({noChannelCount})
+              </button>
+            )
+          })()}
         </div>
       </div>
 
@@ -426,6 +526,11 @@ export default function CouponsPage() {
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-gray-500">적용 상품</span>
                         <span className="font-medium text-purple-600">{getProductNames(coupon.product_id)}</span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">적용 채널</span>
+                        <span className="font-medium text-orange-600">{getChannelName(coupon.channel_id)}</span>
                       </div>
                       
                       <div className="flex items-center justify-between text-sm">

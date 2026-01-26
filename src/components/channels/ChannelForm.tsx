@@ -148,7 +148,14 @@ export function ChannelForm({ channel, onSubmit, onCancel, onDelete, onManagePro
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.favicon')}</label>
             <div className="flex items-center space-x-3">
               {formData.favicon_url ? (
-                <Image src={formData.favicon_url} alt="favicon preview" width={32} height={32} className="w-8 h-8 rounded" />
+                <Image 
+                  src={formData.favicon_url} 
+                  alt="favicon preview" 
+                  width={32} 
+                  height={32} 
+                  className="rounded"
+                  style={{ width: '32px', height: '32px' }}
+                />
               ) : (
                 <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs">-</div>
               )}

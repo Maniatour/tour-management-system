@@ -71,12 +71,12 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     }
   }, [isOpen, reservation])
 
-  // pricingData가 로드된 후 쿠폰 로드
+  // pricingData가 로드된 후 쿠폰 로드 (채널 변경 시에도 다시 로드)
   useEffect(() => {
-    if (pricingData) {
+    if (pricingData && reservation) {
       loadCoupons()
     }
-  }, [pricingData])
+  }, [pricingData, reservation?.channelId])
 
   const loadPricingData = async () => {
     if (!reservation) return
@@ -208,10 +208,18 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
 
   const loadCoupons = async () => {
     try {
+      if (!reservation?.channelId) {
+        // 채널이 선택되지 않은 경우 빈 배열 설정
+        setCoupons([])
+        return
+      }
+
+      // 채널별 쿠폰 필터링: 해당 채널의 쿠폰 또는 채널이 지정되지 않은 쿠폰
       const { data, error } = await supabase
         .from('coupons')
         .select('*')
         .eq('status', 'active')
+        .or(`channel_id.eq.${reservation.channelId},channel_id.is.null`)
         .order('coupon_code')
 
       if (error) throw error

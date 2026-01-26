@@ -12,7 +12,8 @@ import {
   HelpCircle,
   BookOpen,
   Plus,
-  Copy
+  Copy,
+  Star
 } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
@@ -40,42 +41,44 @@ interface TourCourse {
   id: string
   name_ko: string
   name_en: string
-  team_name_ko?: string
-  team_name_en?: string
-  customer_name_ko?: string
-  customer_name_en?: string
-  team_description_ko?: string
-  team_description_en?: string
-  customer_description_ko?: string
-  customer_description_en?: string
-  internal_note?: string
-  location?: string
-  category?: string
-  category_id?: string
-  point_name?: string
-  start_latitude?: number
-  start_longitude?: number
-  end_latitude?: number
-  end_longitude?: number
-  duration_hours?: number
-  distance?: number
-  difficulty_level?: 'easy' | 'medium' | 'hard'
-  price_adult?: number
-  price_child?: number
-  price_infant?: number
+  team_name_ko?: string | null
+  team_name_en?: string | null
+  customer_name_ko?: string | null
+  customer_name_en?: string | null
+  team_description_ko?: string | null
+  team_description_en?: string | null
+  customer_description_ko?: string | null
+  customer_description_en?: string | null
+  internal_note?: string | null
+  location?: string | null
+  category?: string | null
+  category_id?: string | null
+  point_name?: string | null
+  start_latitude?: number | null
+  start_longitude?: number | null
+  end_latitude?: number | null
+  end_longitude?: number | null
+  duration_hours?: number | null
+  distance?: number | null
+  difficulty_level?: 'easy' | 'medium' | 'hard' | null
+  price_adult?: number | null
+  price_child?: number | null
+  price_infant?: number | null
   price_type?: 'per_person' | 'per_vehicle' | 'none' | null
   is_active: boolean
-  parent_id?: string
+  is_favorite?: boolean | null
+  favorite_order?: number | null
+  parent_id?: string | null
   children?: TourCourse[]
   parent?: TourCourse
   photos?: TourCoursePhoto[]
   // 추가 필드들 (데이터베이스에서 가져오는 필드들)
   product_id?: string | null
-  level?: number
+  level?: number | null
   description_ko?: string | null
   description_en?: string | null
-  created_at?: string
-  updated_at?: string
+  created_at?: string | null
+  updated_at?: string | null
 }
 
 interface TourCoursePhoto {
@@ -275,6 +278,57 @@ export default function TourCoursesPage() {
     }
   }
 
+  // 즐겨찾기 토글
+  const toggleFavorite = async (course: TourCourse, e: React.MouseEvent) => {
+    e.stopPropagation()
+    
+    const newFavoriteStatus = !(course.is_favorite || false)
+    
+    try {
+      let favoriteOrder: number | null = null
+      
+      if (newFavoriteStatus) {
+        // 즐겨찾기 추가 시 순서 설정
+        const { data: favorites } = await supabase
+          .from('tour_courses')
+          .select('favorite_order')
+          .eq('is_favorite', true)
+          .not('favorite_order', 'is', null)
+          .order('favorite_order', { ascending: false })
+          .limit(1)
+        
+        favoriteOrder = favorites && favorites.length > 0 
+          ? ((favorites[0] as any)?.favorite_order || 0) + 1 
+          : 0
+      }
+      
+      const { error } = await supabase
+        .from('tour_courses')
+        .update({
+          is_favorite: newFavoriteStatus,
+          favorite_order: favoriteOrder
+        } as any)
+        .eq('id', course.id)
+
+      if (error) throw error
+
+      invalidateCoursesCache()
+      refetchCourses()
+      
+      // 선택된 코스도 업데이트
+      if (selectedCourse?.id === course.id) {
+        setSelectedCourse({
+          ...selectedCourse,
+          is_favorite: newFavoriteStatus,
+          favorite_order: favoriteOrder
+        } as TourCourse)
+      }
+    } catch (error) {
+      console.error('즐겨찾기 토글 오류:', error)
+      alert('즐겨찾기 설정 중 오류가 발생했습니다.')
+    }
+  }
+
   // 카테고리 선택 콜백
   const handleCategorySelect = () => {
     // 카테고리 선택 로직 (필요시 구현)
@@ -441,6 +495,17 @@ export default function TourCoursesPage() {
           </div>
           
           <div className="flex items-center gap-1">
+            <button
+              onClick={(e) => toggleFavorite(course, e)}
+              className={`p-1 rounded ${
+                course.is_favorite
+                  ? 'text-yellow-500 hover:bg-yellow-50'
+                  : 'text-gray-400 hover:text-yellow-500 hover:bg-yellow-50'
+              }`}
+              title={course.is_favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+            >
+              <Star className={`w-4 h-4 ${course.is_favorite ? 'fill-current' : ''}`} />
+            </button>
             <button
               onClick={(e) => {
                 e.stopPropagation()

@@ -652,7 +652,12 @@ export default function PickupScheduleEmailPreviewModal({
     setDownloading(true)
     try {
       const customerName = emailContent.customer?.name || 'customer'
-      const fileName = `픽업_스케줄_${customerName}_${new Date().toISOString().split('T')[0]}.pdf`
+      // 영문 파일명으로 생성 (한글 제거 및 영문 변환)
+      const sanitizedCustomerName = customerName
+        .replace(/[^a-zA-Z0-9]/g, '_') // 한글 및 특수문자를 언더스코어로 변환
+        .substring(0, 30) // 최대 30자로 제한
+      const dateStr = new Date().toISOString().split('T')[0]
+      const fileName = `Pickup_notification_${sanitizedCustomerName}_${dateStr}.pdf`
 
       // html2pdf.js 옵션 설정 (링크 클릭 가능)
       const opt = {
@@ -719,7 +724,12 @@ export default function PickupScheduleEmailPreviewModal({
         pdf.addImage(imgData, 'JPEG', imgX, imgY, imgWidth * 0.264583 * ratio, imgHeight * 0.264583 * ratio, undefined, 'FAST')
 
         const customerName = emailContent.customer?.name || 'customer'
-        const fileName = `픽업_스케줄_${customerName}_${new Date().toISOString().split('T')[0]}.pdf`
+        // 영문 파일명으로 생성 (한글 제거 및 영문 변환)
+        const sanitizedCustomerName = customerName
+          .replace(/[^a-zA-Z0-9]/g, '_') // 한글 및 특수문자를 언더스코어로 변환
+          .substring(0, 30) // 최대 30자로 제한
+        const dateStr = new Date().toISOString().split('T')[0]
+        const fileName = `Pickup_notification_${sanitizedCustomerName}_${dateStr}.pdf`
         pdf.save(fileName)
       } catch (fallbackError) {
         console.error('PDF 폴백 다운로드 오류:', fallbackError)

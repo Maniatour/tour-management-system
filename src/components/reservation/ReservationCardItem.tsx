@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { Plus, Calendar, MapPin, Users, DollarSign, Eye, Clock, Mail, ChevronDown, Edit, MessageSquare } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
+// @ts-expect-error - react-country-flag 라이브러리의 타입 정의가 없음
+import ReactCountryFlag from 'react-country-flag'
 import { 
   getPickupHotelDisplay, 
   getCustomerName, 
@@ -202,17 +204,28 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               const customer = customers.find(c => c.id === reservation.customerId)
               if (!customer?.language) return null
               
-              const language = customer.language.toLowerCase()
-              if (language === 'kr' || language === 'ko' || language === '한국어') {
-                return <span className="mr-2 text-xs">🇰🇷</span>
-              } else if (language === 'en' || language === '영어') {
-                return <span className="mr-2 text-xs">🇺🇸</span>
-              } else if (language === 'jp' || language === '일본어') {
-                return <span className="mr-2 text-xs">🇯🇵</span>
-              } else if (language === 'cn' || language === '중국어') {
-                return <span className="mr-2 text-xs">🇨🇳</span>
+              const getLanguageFlag = (language: string): string => {
+                const lang = language.toLowerCase()
+                if (lang === 'kr' || lang === 'ko' || lang === '한국어') return 'KR'
+                if (lang === 'en' || lang === '영어') return 'US'
+                if (lang === 'jp' || lang === '일본어') return 'JP'
+                if (lang === 'cn' || lang === '중국어') return 'CN'
+                return 'US'
               }
-              return null
+              
+              const flagCode = getLanguageFlag(customer.language)
+              return (
+                <ReactCountryFlag
+                  countryCode={flagCode}
+                  svg
+                  style={{
+                    width: '16px',
+                    height: '12px',
+                    borderRadius: '2px',
+                    marginRight: '6px'
+                  }}
+                />
+              )
             })()}
             
             {/* 거주 상태 아이콘 */}

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
-import { Star, MapPin, Users, Calendar, Clock, Heart, Share2, Phone, Mail, ArrowLeft, X, Info, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Star, MapPin, Users, Calendar, Clock, Heart, Share2, ArrowLeft, X, Info, ChevronLeft, ChevronRight, CheckCircle2, XCircle, Car, Luggage, Settings, Lightbulb, Users2, AlertTriangle, Shield, Megaphone } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
 import ProductFaqDisplay from '@/components/ProductFaqDisplay'
@@ -156,6 +156,44 @@ interface ProductChoice {
   choice_thumbnail_url?: string | null
   choice_description_ko?: string | null
   choice_description_en?: string | null
+}
+
+// 포함/불포함 정보를 파싱하여 각 항목 앞에 이모지를 추가하는 함수
+function formatInclusionList(text: string, isIncluded: boolean): string {
+  if (!text) return ''
+  
+  const emoji = isIncluded ? '✓' : '✗'
+  const lines = text.split('\n')
+  const formattedLines: string[] = []
+  
+  for (const line of lines) {
+    const trimmed = line.trim()
+    
+    // 빈 줄은 그대로 유지
+    if (!trimmed) {
+      formattedLines.push(line)
+      continue
+    }
+    
+    // 이미 이모지가 있으면 추가하지 않음
+    if (trimmed.startsWith('✓') || trimmed.startsWith('✗') || trimmed.startsWith('✅') || trimmed.startsWith('❌')) {
+      formattedLines.push(line)
+      continue
+    }
+    
+    // 마크다운 리스트 항목 처리 (-, *, 숫자)
+    const listItemMatch = line.match(/^(\s*)([-*]|\d+\.)\s+(.+)$/)
+    if (listItemMatch) {
+      const [, indent, marker, content] = listItemMatch
+      formattedLines.push(`${indent}${marker} ${emoji} ${content}`)
+      continue
+    }
+    
+    // 일반 텍스트 줄도 이모지 추가
+    formattedLines.push(`${emoji} ${line}`)
+  }
+  
+  return formattedLines.join('\n')
 }
 
 // 계층 구조 경로를 생성하는 함수
@@ -1488,116 +1526,113 @@ export default function ProductDetailPage() {
               <div className="p-4 sm:p-6">
                 {/* 개요 탭 */}
                 {activeTab === 'overview' && (
-                  <div className="space-y-6">
-                    {/* 슬로건 표시 */}
-                    {productDetails && (
-                      <div className="space-y-4">
-                        {productDetails.slogan1 && (
-                          <div className="text-2xl font-bold text-blue-600">
-                            {productDetails.slogan1}
-                          </div>
-                        )}
-                        {productDetails.slogan2 && (
-                          <div className="text-lg font-semibold text-gray-800">
-                            {productDetails.slogan2}
-                          </div>
-                        )}
-                        {productDetails.slogan3 && (
-                          <div className="text-base text-gray-600">
-                            {productDetails.slogan3}
-                          </div>
-                        )}
+                  <div className="space-y-8">
+                    {/* 슬로건 섹션 */}
+                    {productDetails && (productDetails.slogan1 || productDetails.slogan2 || productDetails.slogan3) && (
+                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
+                        <div className="space-y-3">
+                          {productDetails.slogan1 && (
+                            <div className="text-3xl font-bold text-blue-700">
+                              {productDetails.slogan1}
+                            </div>
+                          )}
+                          {productDetails.slogan2 && (
+                            <div className="text-xl font-semibold text-gray-800">
+                              {productDetails.slogan2}
+                            </div>
+                          )}
+                          {productDetails.slogan3 && (
+                            <div className="text-base text-gray-700">
+                              {productDetails.slogan3}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
 
-                    {/* 투어 소개 */}
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">{isEnglish ? 'Tour Overview' : '투어 소개'}</h3>
+                    {/* 투어 소개 섹션 */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                      <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-200">
+                        <div className="p-2 bg-blue-100 rounded-lg">
+                          <Info className="h-5 w-5 text-blue-600" />
+                        </div>
+                        <h3 className="text-xl font-semibold text-gray-900">{isEnglish ? 'Tour Overview' : '투어 소개'}</h3>
+                      </div>
                       <div 
-                        className="text-gray-700 leading-relaxed"
+                        className="text-gray-700 leading-relaxed prose prose-sm max-w-none"
                         dangerouslySetInnerHTML={{ 
                           __html: markdownToHtml(productDetails?.description || product.description || getCustomerDisplayName(product) || '') 
                         }}
                       />
                     </div>
 
-                    {/* 기본 정보 */}
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-3">{isEnglish ? 'Key Information' : '기본 정보'}</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="flex items-center space-x-3">
-                          <Calendar className="h-5 w-5 text-blue-500" />
-                          <div>
-                            <span className="text-sm text-gray-600">{isEnglish ? 'Duration' : '기간'}</span>
-                            <p className="font-medium">{formatDuration(product.duration)}</p>
+                    {/* 기본 정보 섹션 */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                      <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-200">
+                        <div className="p-2 bg-green-100 rounded-lg">
+                          <Settings className="h-5 w-5 text-green-600" />
+                        </div>
+                        <h3 className="text-xl font-semibold text-gray-900">{isEnglish ? 'Key Information' : '기본 정보'}</h3>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="flex items-start space-x-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                          <div className="p-3 bg-blue-100 rounded-lg flex-shrink-0">
+                            <Calendar className="h-6 w-6 text-blue-600" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm font-medium text-gray-600 block mb-1">{isEnglish ? 'Duration' : '기간'}</span>
+                            <p className="text-lg font-semibold text-gray-900">{formatDuration(product.duration)}</p>
                           </div>
                         </div>
-                        <div className="flex items-center space-x-3">
-                          <Users className="h-5 w-5 text-green-500" />
-                          <div>
-                            <span className="text-sm text-gray-600">{isEnglish ? 'Maximum Participants' : '최대 참가자'}</span>
-                            <p className="font-medium">
+                        <div className="flex items-start space-x-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                          <div className="p-3 bg-green-100 rounded-lg flex-shrink-0">
+                            <Users className="h-6 w-6 text-green-600" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm font-medium text-gray-600 block mb-1">{isEnglish ? 'Maximum Participants' : '최대 참가자'}</span>
+                            <p className="text-lg font-semibold text-gray-900">
                               {product.max_participants || 0}
                               {isEnglish ? ' people' : '명'}
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center space-x-3">
-                          <MapPin className="h-5 w-5 text-red-500" />
-                          <div>
-                            <span className="text-sm text-gray-600">{isEnglish ? 'Category' : '카테고리'}</span>
-                            <p className="font-medium">{getCategoryLabel(product.category || '')}</p>
+                        <div className="flex items-start space-x-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                          <div className="p-3 bg-red-100 rounded-lg flex-shrink-0">
+                            <MapPin className="h-6 w-6 text-red-600" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm font-medium text-gray-600 block mb-1">{isEnglish ? 'Category' : '카테고리'}</span>
+                            <p className="text-lg font-semibold text-gray-900">{getCategoryLabel(product.category || '')}</p>
                           </div>
                         </div>
                         {product.group_size && (
-                          <div className="flex items-center space-x-3">
-                            <Users className="h-5 w-5 text-purple-500" />
-                            <div>
-                              <span className="text-sm text-gray-600">{isEnglish ? 'Group Size' : '그룹 크기'}</span>
-                              <p className="font-medium">{product.group_size}</p>
+                          <div className="flex items-start space-x-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                            <div className="p-3 bg-purple-100 rounded-lg flex-shrink-0">
+                              <Users2 className="h-6 w-6 text-purple-600" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <span className="text-sm font-medium text-gray-600 block mb-1">{isEnglish ? 'Group Size' : '그룹 크기'}</span>
+                              <p className="text-lg font-semibold text-gray-900">{product.group_size}</p>
                             </div>
                           </div>
                         )}
                       </div>
                     </div>
 
-                    {/* 포함/불포함 정보 */}
-                    {(productDetails?.included || productDetails?.not_included) && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {productDetails.included && (
-                          <div>
-                            <h3 className="text-lg font-semibold text-gray-900 mb-3">{isEnglish ? 'Included' : '포함 사항'}</h3>
-                            <div 
-                              className="text-gray-700"
-                              dangerouslySetInnerHTML={{ 
-                                __html: markdownToHtml(productDetails.included || '') 
-                              }}
-                            />
+                    {/* 태그 섹션 */}
+                    {((product.tags && product.tags.length > 0) || (productDetails?.tags && productDetails.tags.length > 0)) && (
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-200">
+                          <div className="p-2 bg-yellow-100 rounded-lg">
+                            <Lightbulb className="h-5 w-5 text-yellow-600" />
                           </div>
-                        )}
-                        {productDetails.not_included && (
-                          <div>
-                            <h3 className="text-lg font-semibold text-gray-900 mb-3">{isEnglish ? 'Excluded' : '불포함 사항'}</h3>
-                            <div 
-                              className="text-gray-700"
-                              dangerouslySetInnerHTML={{ 
-                                __html: markdownToHtml(productDetails.not_included || '') 
-                              }}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* 태그 */}
-                    {(product.tags && product.tags.length > 0) || (productDetails?.tags && productDetails.tags.length > 0) && (
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900 mb-3">{isEnglish ? 'Tags' : '태그'}</h3>
-                        <div className="flex flex-wrap gap-2">
+                          <h3 className="text-xl font-semibold text-gray-900">{isEnglish ? 'Tags' : '태그'}</h3>
+                        </div>
+                        <div className="flex flex-wrap gap-3">
                           {(productDetails?.tags || product.tags || []).map((tag, index) => (
                             <span
                               key={index}
-                              className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800"
+                              className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 border border-blue-200 hover:from-blue-100 hover:to-indigo-100 transition-colors"
                             >
                               {tag}
                             </span>
@@ -1610,58 +1645,194 @@ export default function ProductDetailPage() {
 
                 {/* 일정 탭 */}
                 {activeTab === 'itinerary' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {tourCourses.length > 0 ? (
-                      tourCourses.map((productTourCourse) => {
-                        const tourCourse = productTourCourse.tour_course
-                        if (!tourCourse) return null
-                        
-                        // 고객용 이름 (로케일에 따라)
-                        const customerName = locale === 'en' 
-                          ? (tourCourse.customer_name_en || tourCourse.name_en || tourCourse.name_ko || tourCourse.name)
-                          : (tourCourse.customer_name_ko || tourCourse.name_ko || tourCourse.name)
-                        
-                        // 고객용 설명 (로케일에 따라)
-                        const customerDescription = locale === 'en'
-                          ? (tourCourse.customer_description_en || tourCourse.description)
-                          : (tourCourse.customer_description_ko || tourCourse.description)
-                        
-                        // 난이도 (difficulty_level 우선, 없으면 difficulty 사용)
-                        const difficulty = tourCourse.difficulty_level || tourCourse.difficulty
-                        
-                        // 사진 가져오기 (tour_course의 photos 또는 tourCoursePhotos에서)
-                        const coursePhotos = (tourCourse.photos || tourCoursePhotos.filter(p => p.course_id === tourCourse.id))
-                          .sort((a, b) => {
-                            // is_primary 우선, 그 다음 sort_order
-                            if (a.is_primary && !b.is_primary) return -1
-                            if (!a.is_primary && b.is_primary) return 1
-                            return (a.sort_order || 0) - (b.sort_order || 0)
-                          })
-                        
-                        return (
-                          <TourCourseCard
-                            key={productTourCourse.id}
-                            productTourCourse={productTourCourse}
-                            tourCourse={tourCourse}
-                            coursePhotos={coursePhotos}
-                            customerName={customerName}
-                            customerDescription={customerDescription}
-                            difficulty={difficulty}
-                            locale={locale}
-                            isEnglish={isEnglish}
-                            getDifficultyColor={getDifficultyColor}
-                            getDifficultyLabel={getDifficultyLabel}
-                            allCoursesMap={tourCoursesMap}
-                          />
-                        )
-                      })
-                    ) : (
-                      <div className="text-center py-8">
-                        <Calendar className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                        <p className="text-lg font-medium text-gray-900">{isEnglish ? 'Schedule information is not available yet' : '일정 정보가 없습니다'}</p>
-                        <p className="text-gray-600">{isEnglish ? 'Please add tour course details.' : '투어 코스 정보를 추가해주세요'}</p>
+                  <div>
+                    {/* 투어 코스 설명 */}
+                    <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
+                      <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                        <MapPin className="w-5 h-5" />
+                        {isEnglish ? 'Tour Course Description' : '투어 코스 설명'}
+                      </h2>
+                      <div className="border border-gray-200 rounded-lg p-4 space-y-4 bg-gray-50">
+                        {tourCourses.length > 0 ? (
+                          (() => {
+                            // 모든 부모 이름을 계층적으로 가져오는 함수
+                            const getFullCoursePath = (course: TourCourse, isEnglish: boolean): string => {
+                              const path: string[] = []
+                              let current: TourCourse | undefined = course
+                              const visited = new Set<string>() // 순환 참조 방지
+                              
+                              while (current && !visited.has(current.id)) {
+                                visited.add(current.id)
+                                const courseName = isEnglish 
+                                  ? (current.customer_name_en || current.customer_name_ko || current.name_en || current.name_ko || '')
+                                  : (current.customer_name_ko || current.customer_name_en || current.name_ko || current.name_en || '')
+                                
+                                if (courseName.trim()) {
+                                  path.unshift(courseName)
+                                }
+                                
+                                if (!current || !current.parent_id) {
+                                  break
+                                }
+                                
+                                const parentId: string | null = current.parent_id
+                                const parent: TourCourse | undefined = tourCourses.find((ptc) => ptc.tour_course?.id === parentId)?.tour_course
+                                if (parent) {
+                                  current = parent
+                                } else {
+                                  break
+                                }
+                              }
+                              
+                              return path.join(' > ')
+                            }
+
+                            // 이름과 설명이 모두 있는 코스만 필터링
+                            const validCourses = tourCourses
+                              .map(ptc => ptc.tour_course)
+                              .filter((course): course is TourCourse => {
+                                if (!course) return false
+                                const courseName = isEnglish 
+                                  ? (course.customer_name_en || course.customer_name_ko || course.name_en || course.name_ko || '')
+                                  : (course.customer_name_ko || course.customer_name_en || course.name_ko || course.name_en || '')
+                                const courseDescription = isEnglish
+                                  ? (course.customer_description_en || course.customer_description_ko || '')
+                                  : (course.customer_description_ko || course.customer_description_en || '')
+                                
+                                // 이름 또는 설명 중 하나라도 있으면 포함
+                                return courseName.trim() !== '' || courseDescription.trim() !== ''
+                              })
+
+                            if (validCourses.length === 0) {
+                              return (
+                                <p className="text-sm text-gray-500 text-center py-4">
+                                  {isEnglish ? 'No tour course information available.' : '투어 코스 정보가 없습니다.'}
+                                </p>
+                              )
+                            }
+
+                            // 부모별로 그룹화
+                            const groupedCourses = new Map<string, TourCourse[]>()
+                            validCourses.forEach(course => {
+                              const parentId = course.parent_id || 'root'
+                              if (!groupedCourses.has(parentId)) {
+                                groupedCourses.set(parentId, [])
+                              }
+                              groupedCourses.get(parentId)!.push(course)
+                            })
+
+                            // 그룹별로 렌더링
+                            const result: JSX.Element[] = []
+                            groupedCourses.forEach((courses, parentId) => {
+                              // 부모 이름 가져오기
+                              let groupHeader = ''
+                              if (parentId !== 'root') {
+                                const parentCourse = tourCourses.find(ptc => ptc.tour_course?.id === parentId)?.tour_course
+                                if (parentCourse) {
+                                  const parentName = isEnglish 
+                                    ? (parentCourse.customer_name_en || parentCourse.customer_name_ko || parentCourse.name_en || parentCourse.name_ko || '')
+                                    : (parentCourse.customer_name_ko || parentCourse.customer_name_en || parentCourse.name_ko || parentCourse.name_en || '')
+                                  
+                                  // 부모의 부모도 확인하여 전체 경로 생성
+                                  if (parentCourse.parent_id) {
+                                    const grandParent = tourCourses.find(ptc => ptc.tour_course?.id === parentCourse.parent_id)?.tour_course
+                                    if (grandParent) {
+                                      const grandParentName = isEnglish 
+                                        ? (grandParent.customer_name_en || grandParent.customer_name_ko || grandParent.name_en || grandParent.name_ko || '')
+                                        : (grandParent.customer_name_ko || grandParent.customer_name_en || grandParent.name_ko || grandParent.name_en || '')
+                                      if (grandParentName.trim()) {
+                                        groupHeader = `${grandParentName} > ${parentName}`
+                                      } else {
+                                        groupHeader = parentName
+                                      }
+                                    } else {
+                                      groupHeader = parentName
+                                    }
+                                  } else {
+                                    groupHeader = parentName
+                                  }
+                                }
+                              }
+
+                              // 그룹 헤더 추가
+                              if (groupHeader && courses.length > 0) {
+                                result.push(
+                                  <div key={`group-${parentId}`} className="bg-gray-100 border border-gray-200 rounded-lg p-3 mb-4">
+                                    <div className="font-semibold text-gray-900">{groupHeader}</div>
+                                  </div>
+                                )
+                              }
+
+                              // 각 코스 렌더링
+                              courses.forEach(course => {
+                                const fullCourseName = getFullCoursePath(course, isEnglish)
+                                
+                                const courseDescription = isEnglish
+                                  ? (course.customer_description_en || course.customer_description_ko || '')
+                                  : (course.customer_description_ko || course.customer_description_en || '')
+
+                                // 사진 가져오기
+                                const coursePhotos = (course.photos || tourCoursePhotos.filter(p => p.course_id === course.id))
+                                  .sort((a, b) => {
+                                    if (a.is_primary && !b.is_primary) return -1
+                                    if (!a.is_primary && b.is_primary) return 1
+                                    return (a.sort_order || 0) - (b.sort_order || 0)
+                                  })
+
+                                // 대표 사진 우선, 없으면 첫 번째 사진
+                                const primaryPhoto = coursePhotos.find(p => p.is_primary) || coursePhotos[0]
+                                const photoUrl = primaryPhoto?.photo_url || primaryPhoto?.thumbnail_url || null
+                                
+                                // 사진 URL이 상대 경로인 경우 절대 경로로 변환
+                                let fullPhotoUrl = photoUrl
+                                if (photoUrl && !photoUrl.startsWith('http')) {
+                                  fullPhotoUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/tour-course-photos/${photoUrl}`
+                                }
+
+                                result.push(
+                                  <div key={course.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                                    <div className="flex gap-4 items-start">
+                                      {/* 왼쪽: 사진 */}
+                                      {fullPhotoUrl && (
+                                        <div className="flex-shrink-0 w-48">
+                                          <img 
+                                            src={fullPhotoUrl} 
+                                            alt={fullCourseName || 'Course image'} 
+                                            className="w-full h-36 object-cover rounded-lg border border-gray-200"
+                                          />
+                                        </div>
+                                      )}
+                                      {/* 오른쪽: 제목과 설명 */}
+                                      <div className="flex-1 min-w-0">
+                                        {fullCourseName.trim() !== '' && (
+                                          <div className="font-semibold text-gray-900 mb-2">
+                                            {fullCourseName}
+                                          </div>
+                                        )}
+                                        {courseDescription && courseDescription.trim() !== '' && (
+                                          <div 
+                                            className="text-sm text-gray-700 whitespace-pre-wrap"
+                                            dangerouslySetInnerHTML={{ 
+                                              __html: markdownToHtml(courseDescription) 
+                                            }}
+                                          />
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )
+                              })
+                            })
+
+                            return result
+                          })()
+                        ) : (
+                          <p className="text-sm text-gray-500 text-center py-4">
+                            {isEnglish ? 'No tour course information available.' : '투어 코스 정보가 없습니다.'}
+                          </p>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
                 )}
 
@@ -1843,32 +2014,48 @@ export default function ProductDetailPage() {
                       <div className="space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           {productDetails?.included && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Included' : '포함 사항'}</h4>
-                              <div 
-                                className="text-sm text-gray-600 bg-green-50 p-4 rounded-lg"
-                                dangerouslySetInnerHTML={{ 
-                                  __html: markdownToHtml(productDetails.included || '') 
-                                }}
-                              />
+                            <div className="group relative overflow-hidden bg-white border border-green-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
+                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 via-green-500 to-green-600"></div>
+                              <div className="p-6">
+                                <div className="flex items-center gap-3 mb-4">
+                                  <div className="p-2 bg-gradient-to-br from-green-100 to-green-200 rounded-lg">
+                                    <CheckCircle2 className="w-5 h-5 text-green-600" />
+                                  </div>
+                                  <h4 className="text-lg font-semibold text-gray-900">{isEnglish ? 'Included' : '포함 사항'}</h4>
+                                </div>
+                                <div 
+                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                                  dangerouslySetInnerHTML={{ 
+                                    __html: markdownToHtml(productDetails.included || '') 
+                                  }}
+                                />
+                              </div>
                             </div>
                           )}
                           {productDetails?.not_included && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Excluded' : '불포함 사항'}</h4>
-                              <div 
-                                className="text-sm text-gray-600 bg-red-50 p-4 rounded-lg"
-                                dangerouslySetInnerHTML={{ 
-                                  __html: markdownToHtml(productDetails.not_included || '') 
-                                }}
-                              />
+                            <div className="group relative overflow-hidden bg-white border border-red-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
+                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-400 via-red-500 to-red-600"></div>
+                              <div className="p-6">
+                                <div className="flex items-center gap-3 mb-4">
+                                  <div className="p-2 bg-gradient-to-br from-red-100 to-red-200 rounded-lg">
+                                    <XCircle className="w-5 h-5 text-red-600" />
+                                  </div>
+                                  <h4 className="text-lg font-semibold text-gray-900">{isEnglish ? 'Excluded' : '불포함 사항'}</h4>
+                                </div>
+                                <div 
+                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                                  dangerouslySetInnerHTML={{ 
+                                    __html: markdownToHtml(productDetails.not_included || '') 
+                                  }}
+                                />
+                              </div>
                             </div>
                           )}
                         </div>
                         
                         {!productDetails?.included && !productDetails?.not_included && (
-                          <div className="text-center py-8">
-                            <div className="text-gray-400 mb-2">📋</div>
+                          <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
+                            <div className="text-gray-400 mb-2 text-4xl">📋</div>
                             <p className="text-gray-600">{isEnglish ? 'No inclusion or exclusion details available' : '포함/불포함 정보가 없습니다'}</p>
                           </div>
                         )}
@@ -1878,76 +2065,124 @@ export default function ProductDetailPage() {
                     {/* 운영정보 탭 */}
                     {activeDetailTab === 'logistics' && (
                       <div className="space-y-6">
-                        <div className="space-y-6">
+                        <div className="grid grid-cols-1 gap-6">
                           {productDetails?.pickup_drop_info && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Pickup & Drop-off Information' : '픽업/드롭 정보'}</h4>
-                              <div 
-                                className="text-sm text-gray-600 bg-blue-50 p-4 rounded-lg"
-                                dangerouslySetInnerHTML={{ 
-                                  __html: markdownToHtml(productDetails.pickup_drop_info || '') 
-                                }}
-                              />
+                            <div className="group relative overflow-hidden bg-white border border-blue-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
+                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600"></div>
+                              <div className="p-6">
+                                <div className="flex items-center gap-3 mb-4">
+                                  <div className="p-2 bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg">
+                                    <Car className="w-5 h-5 text-blue-600" />
+                                  </div>
+                                  <h4 className="text-lg font-semibold text-gray-900">{isEnglish ? 'Pickup & Drop-off Information' : '픽업/드롭 정보'}</h4>
+                                </div>
+                                <div 
+                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                                  dangerouslySetInnerHTML={{ 
+                                    __html: markdownToHtml(productDetails.pickup_drop_info || '') 
+                                  }}
+                                />
+                              </div>
                             </div>
                           )}
                           
                           {productDetails?.luggage_info && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Luggage Information' : '짐 정보'}</h4>
-                              <div 
-                                className="text-sm text-gray-600 bg-yellow-50 p-4 rounded-lg"
-                                dangerouslySetInnerHTML={{ 
-                                  __html: markdownToHtml(productDetails.luggage_info || '') 
-                                }}
-                              />
+                            <div className="group relative overflow-hidden bg-white border border-yellow-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
+                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-600"></div>
+                              <div className="p-6">
+                                <div className="flex items-center gap-3 mb-4">
+                                  <div className="p-2 bg-gradient-to-br from-yellow-100 to-yellow-200 rounded-lg">
+                                    <Luggage className="w-5 h-5 text-yellow-600" />
+                                  </div>
+                                  <h4 className="text-lg font-semibold text-gray-900">{isEnglish ? 'Luggage Information' : '짐 정보'}</h4>
+                                </div>
+                                <div 
+                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                                  dangerouslySetInnerHTML={{ 
+                                    __html: markdownToHtml(productDetails.luggage_info || '') 
+                                  }}
+                                />
+                              </div>
                             </div>
                           )}
                           
                           {productDetails?.tour_operation_info && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Tour Operations' : '투어 운영 정보'}</h4>
-                              <div 
-                                className="text-sm text-gray-600 bg-purple-50 p-4 rounded-lg"
-                                dangerouslySetInnerHTML={{ 
-                                  __html: markdownToHtml(productDetails.tour_operation_info || '') 
-                                }}
-                              />
+                            <div className="group relative overflow-hidden bg-white border border-purple-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
+                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-400 via-purple-500 to-purple-600"></div>
+                              <div className="p-6">
+                                <div className="flex items-center gap-3 mb-4">
+                                  <div className="p-2 bg-gradient-to-br from-purple-100 to-purple-200 rounded-lg">
+                                    <Settings className="w-5 h-5 text-purple-600" />
+                                  </div>
+                                  <h4 className="text-lg font-semibold text-gray-900">{isEnglish ? 'Tour Operations' : '투어 운영 정보'}</h4>
+                                </div>
+                                <div 
+                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                                  dangerouslySetInnerHTML={{ 
+                                    __html: markdownToHtml(productDetails.tour_operation_info || '') 
+                                  }}
+                                />
+                              </div>
                             </div>
                           )}
                           
                           {productDetails?.preparation_info && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Preparation Tips' : '준비사항'}</h4>
-                              <div 
-                                className="text-sm text-gray-600 bg-orange-50 p-4 rounded-lg"
-                                dangerouslySetInnerHTML={{ 
-                                  __html: markdownToHtml(productDetails.preparation_info || '') 
-                                }}
-                              />
+                            <div className="group relative overflow-hidden bg-white border border-orange-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
+                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600"></div>
+                              <div className="p-6">
+                                <div className="flex items-center gap-3 mb-4">
+                                  <div className="p-2 bg-gradient-to-br from-orange-100 to-orange-200 rounded-lg">
+                                    <Lightbulb className="w-5 h-5 text-orange-600" />
+                                  </div>
+                                  <h4 className="text-lg font-semibold text-gray-900">{isEnglish ? 'Preparation Tips' : '준비사항'}</h4>
+                                </div>
+                                <div 
+                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                                  dangerouslySetInnerHTML={{ 
+                                    __html: markdownToHtml(productDetails.preparation_info || '') 
+                                  }}
+                                />
+                              </div>
                             </div>
                           )}
                           
                           {productDetails?.small_group_info && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Small Group Details' : '소그룹 정보'}</h4>
-                              <div 
-                                className="text-sm text-gray-600 bg-indigo-50 p-4 rounded-lg"
-                                dangerouslySetInnerHTML={{ 
-                                  __html: markdownToHtml(productDetails.small_group_info || '') 
-                                }}
-                              />
+                            <div className="group relative overflow-hidden bg-white border border-indigo-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
+                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-400 via-indigo-500 to-indigo-600"></div>
+                              <div className="p-6">
+                                <div className="flex items-center gap-3 mb-4">
+                                  <div className="p-2 bg-gradient-to-br from-indigo-100 to-indigo-200 rounded-lg">
+                                    <Users2 className="w-5 h-5 text-indigo-600" />
+                                  </div>
+                                  <h4 className="text-lg font-semibold text-gray-900">{isEnglish ? 'Small Group Details' : '소그룹 정보'}</h4>
+                                </div>
+                                <div 
+                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                                  dangerouslySetInnerHTML={{ 
+                                    __html: markdownToHtml(productDetails.small_group_info || '') 
+                                  }}
+                                />
+                              </div>
                             </div>
                           )}
                           
                           {productDetails?.notice_info && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Important Notes' : '주의사항'}</h4>
-                              <div 
-                                className="text-sm text-gray-600 bg-red-50 p-4 rounded-lg"
-                                dangerouslySetInnerHTML={{ 
-                                  __html: markdownToHtml(productDetails.notice_info || '') 
-                                }}
-                              />
+                            <div className="group relative overflow-hidden bg-white border border-red-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
+                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-400 via-red-500 to-red-600"></div>
+                              <div className="p-6">
+                                <div className="flex items-center gap-3 mb-4">
+                                  <div className="p-2 bg-gradient-to-br from-red-100 to-red-200 rounded-lg">
+                                    <AlertTriangle className="w-5 h-5 text-red-600" />
+                                  </div>
+                                  <h4 className="text-lg font-semibold text-gray-900">{isEnglish ? 'Important Notes' : '주의사항'}</h4>
+                                </div>
+                                <div 
+                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                                  dangerouslySetInnerHTML={{ 
+                                    __html: markdownToHtml(productDetails.notice_info || '') 
+                                  }}
+                                />
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1955,8 +2190,8 @@ export default function ProductDetailPage() {
                         {!productDetails?.pickup_drop_info && !productDetails?.luggage_info && 
                          !productDetails?.tour_operation_info && !productDetails?.preparation_info && 
                          !productDetails?.small_group_info && !productDetails?.notice_info && (
-                          <div className="text-center py-8">
-                            <div className="text-gray-400 mb-2">🚌</div>
+                          <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
+                            <div className="text-gray-400 mb-2 text-4xl">🚌</div>
                             <p className="text-gray-600">{isEnglish ? 'No logistics information available' : '운영 정보가 없습니다'}</p>
                           </div>
                         )}
@@ -1968,46 +2203,70 @@ export default function ProductDetailPage() {
                       <div className="space-y-6">
                         <div className="grid grid-cols-1 gap-6">
                           {productDetails?.private_tour_info && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Private Tour Information' : '프라이빗 투어 정보'}</h4>
-                              <div 
-                                className="text-sm text-gray-600 bg-purple-50 p-4 rounded-lg"
-                                dangerouslySetInnerHTML={{ 
-                                  __html: markdownToHtml(productDetails.private_tour_info || '') 
-                                }}
-                              />
+                            <div className="group relative overflow-hidden bg-white border border-purple-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
+                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-400 via-purple-500 to-purple-600"></div>
+                              <div className="p-6">
+                                <div className="flex items-center gap-3 mb-4">
+                                  <div className="p-2 bg-gradient-to-br from-purple-100 to-purple-200 rounded-lg">
+                                    <Users className="w-5 h-5 text-purple-600" />
+                                  </div>
+                                  <h4 className="text-lg font-semibold text-gray-900">{isEnglish ? 'Private Tour Information' : '프라이빗 투어 정보'}</h4>
+                                </div>
+                                <div 
+                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                                  dangerouslySetInnerHTML={{ 
+                                    __html: markdownToHtml(productDetails.private_tour_info || '') 
+                                  }}
+                                />
+                              </div>
                             </div>
                           )}
                           
                           {productDetails?.cancellation_policy && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Cancellation Policy' : '취소 정책'}</h4>
-                              <div 
-                                className="text-sm text-gray-600 bg-red-50 p-4 rounded-lg"
-                                dangerouslySetInnerHTML={{ 
-                                  __html: markdownToHtml(productDetails.cancellation_policy || '') 
-                                }}
-                              />
+                            <div className="group relative overflow-hidden bg-white border border-red-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
+                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-400 via-red-500 to-red-600"></div>
+                              <div className="p-6">
+                                <div className="flex items-center gap-3 mb-4">
+                                  <div className="p-2 bg-gradient-to-br from-red-100 to-red-200 rounded-lg">
+                                    <Shield className="w-5 h-5 text-red-600" />
+                                  </div>
+                                  <h4 className="text-lg font-semibold text-gray-900">{isEnglish ? 'Cancellation Policy' : '취소 정책'}</h4>
+                                </div>
+                                <div 
+                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                                  dangerouslySetInnerHTML={{ 
+                                    __html: markdownToHtml(productDetails.cancellation_policy || '') 
+                                  }}
+                                />
+                              </div>
                             </div>
                           )}
                           
                           {productDetails?.chat_announcement && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 mb-3">{isEnglish ? 'Announcements' : '공지사항'}</h4>
-                              <div 
-                                className="text-sm text-gray-600 bg-blue-50 p-4 rounded-lg"
-                                dangerouslySetInnerHTML={{ 
-                                  __html: markdownToHtml(productDetails.chat_announcement || '') 
-                                }}
-                              />
+                            <div className="group relative overflow-hidden bg-white border border-blue-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
+                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600"></div>
+                              <div className="p-6">
+                                <div className="flex items-center gap-3 mb-4">
+                                  <div className="p-2 bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg">
+                                    <Megaphone className="w-5 h-5 text-blue-600" />
+                                  </div>
+                                  <h4 className="text-lg font-semibold text-gray-900">{isEnglish ? 'Announcements' : '공지사항'}</h4>
+                                </div>
+                                <div 
+                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                                  dangerouslySetInnerHTML={{ 
+                                    __html: markdownToHtml(productDetails.chat_announcement || '') 
+                                  }}
+                                />
+                              </div>
                             </div>
                           )}
                         </div>
                         
                         {!productDetails?.private_tour_info && !productDetails?.cancellation_policy && 
                          !productDetails?.chat_announcement && (
-                          <div className="text-center py-8">
-                            <div className="text-gray-400 mb-2">📋</div>
+                          <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
+                            <div className="text-gray-400 mb-2 text-4xl">📋</div>
                             <p className="text-gray-600">{isEnglish ? 'No policy information available' : '정책 정보가 없습니다'}</p>
                           </div>
                         )}
@@ -2140,39 +2399,44 @@ export default function ProductDetailPage() {
                   {isEnglish ? 'Contact Us' : '문의하기'}
                 </button>
               </div>
+
+              {/* 포함 사항 섹션 */}
+              {productDetails?.included && (
+                <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-lg shadow-sm border-2 border-emerald-200 p-6 mt-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2.5 bg-emerald-500 rounded-lg shadow-sm">
+                      <CheckCircle2 className="h-5 w-5 text-white" />
+                    </div>
+                    <h3 className="text-lg font-bold text-emerald-800">{isEnglish ? 'Included' : '포함 사항'}</h3>
+                  </div>
+                  <div 
+                    className="text-sm text-gray-800 prose prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{ 
+                      __html: markdownToHtml(formatInclusionList(productDetails.included || '', true)) 
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* 불포함 사항 섹션 */}
+              {productDetails?.not_included && (
+                <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-lg shadow-sm border-2 border-red-200 p-6 mt-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2.5 bg-red-500 rounded-lg shadow-sm">
+                      <XCircle className="h-5 w-5 text-white" />
+                    </div>
+                    <h3 className="text-lg font-bold text-red-800">{isEnglish ? 'Excluded' : '불포함 사항'}</h3>
+                  </div>
+                  <div 
+                    className="text-sm text-gray-800 prose prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{ 
+                      __html: markdownToHtml(formatInclusionList(productDetails.not_included || '', false)) 
+                    }}
+                  />
+                </div>
+              )}
             </div>
 
-            {/* 연락처 정보 */}
-            <div className="bg-white rounded-lg shadow-sm border p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">{isEnglish ? 'Contact' : '연락처'}</h3>
-              <div className="space-y-3">
-                <div className="flex items-center text-gray-700">
-                  <Phone size={16} className="mr-3" />
-                  <span>010-1234-5678</span>
-                </div>
-                <div className="flex items-center text-gray-700">
-                  <Mail size={16} className="mr-3" />
-                  <span>info@tourtour.com</span>
-                </div>
-              </div>
-            </div>
-
-            {/* 리뷰 요약 */}
-            <div className="bg-white rounded-lg shadow-sm border p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-gray-900">{isEnglish ? 'Reviews' : '리뷰'}</h3>
-                <div className="flex items-center">
-                  <Star className="h-4 w-4 text-yellow-400 mr-1" />
-                  <span className="font-medium">4.5</span>
-                </div>
-              </div>
-              <div className="text-sm text-gray-600">
-                {isEnglish ? '12 reviews' : '12개의 리뷰'}
-              </div>
-              <button className="w-full mt-3 text-blue-600 hover:text-blue-700 text-sm font-medium">
-                {isEnglish ? 'View all reviews' : '모든 리뷰 보기'}
-              </button>
-            </div>
           </div>
         </div>
       </div>
