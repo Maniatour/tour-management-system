@@ -44,6 +44,7 @@ interface SimpleChoiceSelectorProps {
   onSelectionChange: (selections: SelectedChoice[]) => void;
   onPeopleChange?: (adults: number, children: number, infants: number) => void;
   initialSelections?: SelectedChoice[];
+  isOTAChannel?: boolean; // OTA 채널 여부
 }
 
 export default function SimpleChoiceSelector({
@@ -53,7 +54,8 @@ export default function SimpleChoiceSelector({
   infants,
   onSelectionChange,
   onPeopleChange,
-  initialSelections = []
+  initialSelections = [],
+  isOTAChannel = false
 }: SimpleChoiceSelectorProps) {
   const [selections, setSelections] = useState<SelectedChoice[]>(initialSelections);
   const [errors, setErrors] = useState<string[]>([]);
@@ -128,6 +130,16 @@ export default function SimpleChoiceSelector({
           const choice = choices.find(c => c.id === s.choice_id);
           const option = choice?.options?.find(o => o.id === s.option_id);
           
+          // OTA 채널인 경우 total_price를 0으로 설정
+          if (isOTAChannel) {
+            return {
+              ...s,
+              option_key: s.option_key || '',
+              option_name_ko: s.option_name_ko || '',
+              total_price: 0
+            };
+          }
+          
           // 저장된 total_price와 자동 계산된 가격을 비교하여 수동 수정 여부 판단
           if (choice && option && s.total_price !== undefined && s.total_price !== null) {
             const isResidentStatusChoice = choice.choice_group_ko?.includes('거주자') || 
@@ -194,7 +206,7 @@ export default function SimpleChoiceSelector({
         prevInitialSelectionsRef.current = [...initialSelections];
       }
     }
-  }, [initialSelections, selections, choices, adults, children, infants]);
+  }, [initialSelections, selections, choices, adults, children, infants, isOTAChannel]);
   
   // selections 상태 변경 추적 및 부모 컴포넌트에 알림
   useEffect(() => {
@@ -249,6 +261,9 @@ export default function SimpleChoiceSelector({
     isUserActionRef.current = true; // 사용자 액션임을 표시
     lastUserActionTimeRef.current = Date.now(); // 사용자 액션 타임스탬프 저장
     
+    // OTA 채널인 경우 total_price를 0으로 설정
+    const finalTotalPrice = isOTAChannel ? 0 : totalPrice;
+    
     setSelections(prev => {
       const newSelections = prev.filter(s => !(s.choice_id === choiceId && s.option_id === optionId));
       
@@ -259,19 +274,21 @@ export default function SimpleChoiceSelector({
           option_key: optionKey,
           option_name_ko: optionNameKo,
           quantity,
-          total_price: totalPrice
+          total_price: finalTotalPrice
         });
       }
       
       console.log('SimpleChoiceSelector: handleSelectionChange - 새로운 selections 계산됨 (사용자 액션)', {
         newSelectionsCount: newSelections.length,
-        newSelections: newSelections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, quantity: s.quantity })),
-        prevCount: prev.length
+        newSelections: newSelections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, quantity: s.quantity, total_price: s.total_price })),
+        prevCount: prev.length,
+        isOTAChannel,
+        finalTotalPrice
       });
       
       return newSelections;
     });
-  }, []);
+  }, [isOTAChannel]);
 
   // 가격 계산 함수
   const calculatePrice = useCallback((
@@ -377,6 +394,11 @@ export default function SimpleChoiceSelector({
   // 단, 수동으로 수정한 가격은 자동 계산에서 제외
   useEffect(() => {
     const updatedSelections = selections.map(selection => {
+      // OTA 채널인 경우 total_price를 0으로 설정
+      if (isOTAChannel) {
+        return { ...selection, total_price: 0 };
+      }
+      
       const choice = choices.find(c => c.id === selection.choice_id);
       if (!choice) return selection;
       
@@ -412,7 +434,7 @@ export default function SimpleChoiceSelector({
       onSelectionChange(updatedSelections);
       setSelections(updatedSelections);
     }
-  }, [adults, children, infants, choices, selections, onSelectionChange, manuallyEditedPrices]);
+  }, [adults, children, infants, choices, selections, onSelectionChange, manuallyEditedPrices, isOTAChannel]);
 
   return (
     <div className="space-y-3">
@@ -446,16 +468,19 @@ export default function SimpleChoiceSelector({
                   s.choice_id === choice.id && s.option_id === option.id
                 );
                 const currentQuantity = currentSelection?.quantity || 0;
-                // 단일 선택 초이스의 경우: 선택 여부와 관계없이 인원 수에 따른 총액 계산
+                // OTA 채널인 경우 가격 계산을 하지 않고 0으로 설정
                 let totalPrice = 0;
-                if (choice.choice_type === 'single' && !isResidentStatusChoice) {
-                  // 단일 선택 초이스: 성인, 아동, 유아 가격에 각각의 인원 수를 곱해서 총액 계산
-                  totalPrice = (adults * option.adult_price) + 
-                              (children * option.child_price) + 
-                              (infants * option.infant_price);
-                } else {
-                  // multiple/quantity 타입 또는 거주자 구분 초이스: 기존 로직 사용
-                  totalPrice = calculatePrice(option, currentQuantity, adults, children, infants, isResidentStatusChoice);
+                if (!isOTAChannel) {
+                  // 단일 선택 초이스의 경우: 선택 여부와 관계없이 인원 수에 따른 총액 계산
+                  if (choice.choice_type === 'single' && !isResidentStatusChoice) {
+                    // 단일 선택 초이스: 성인, 아동, 유아 가격에 각각의 인원 수를 곱해서 총액 계산
+                    totalPrice = (adults * option.adult_price) + 
+                                (children * option.child_price) + 
+                                (infants * option.infant_price);
+                  } else {
+                    // multiple/quantity 타입 또는 거주자 구분 초이스: 기존 로직 사용
+                    totalPrice = calculatePrice(option, currentQuantity, adults, children, infants, isResidentStatusChoice);
+                  }
                 }
                 
                 // 디버깅: 첫 번째 옵션만 로그 출력
@@ -713,7 +738,7 @@ export default function SimpleChoiceSelector({
                             <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
                             <input
                               type="number"
-                              value={currentSelection?.total_price !== undefined ? currentSelection.total_price : totalPrice}
+                              value={currentSelection?.total_price !== undefined && currentSelection.total_price !== null ? currentSelection.total_price : 0}
                               onChange={(e) => {
                                 e.stopPropagation();
                                 const inputValue = e.target.value;
@@ -743,7 +768,7 @@ export default function SimpleChoiceSelector({
                         </div>
                       ) : (
                         <div className="text-sm font-medium text-gray-500">
-                          ${totalPrice.toLocaleString()}
+                          ${isOTAChannel ? 0 : totalPrice.toLocaleString()}
                         </div>
                       )}
                     </div>

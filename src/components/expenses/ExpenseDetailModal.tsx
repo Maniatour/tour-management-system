@@ -1,12 +1,12 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { X, Save, Edit2, Check, XCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
 interface ExpenseItem {
   id: string
-  amount: number
+  amount: number | null
   paid_for: string
   paid_to?: string
   description?: string
@@ -41,9 +41,15 @@ export default function ExpenseDetailModal({
       loadExpenses()
       loadStandardCategories()
     }
-  }, [isOpen, category, dateRange])
+  }, [isOpen, loadExpenses, loadStandardCategories])
 
-  const loadStandardCategories = async () => {
+  // 카테고리 정규화 함수 (대소문자, 띄어쓰기 무시)
+  const normalizeCategory = useCallback((cat: string | null | undefined): string => {
+    if (!cat) return '기타'
+    return cat.toLowerCase().replace(/\s+/g, '').trim()
+  }, [])
+
+  const loadStandardCategories = useCallback(async () => {
     try {
       const { data } = await supabase
         .from('expense_standard_categories')
@@ -55,19 +61,24 @@ export default function ExpenseDetailModal({
     } catch (error) {
       console.error('표준 카테고리 로드 오류:', error)
     }
-  }
+  }, [])
 
-  // 카테고리 정규화 함수 (대소문자, 띄어쓰기 무시)
-  const normalizeCategory = (cat: string | null | undefined): string => {
-    if (!cat) return '기타'
-    return cat.toLowerCase().replace(/\s+/g, '').trim()
-  }
-
-  const loadExpenses = async () => {
+  const loadExpenses = useCallback(async () => {
     setLoading(true)
     try {
-      const startISO = new Date(dateRange.start + 'T00:00:00').toISOString()
-      const endISO = new Date(dateRange.end + 'T23:59:59.999').toISOString()
+      // 날짜 형식 검증 및 ISO 문자열 생성
+      const startDate = new Date(dateRange.start + 'T00:00:00')
+      const endDate = new Date(dateRange.end + 'T23:59:59.999')
+      
+      // 유효하지 않은 날짜인 경우 에러 처리
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        console.error('유효하지 않은 날짜 범위:', dateRange)
+        setExpenses([])
+        return
+      }
+
+      const startISO = startDate.toISOString()
+      const endISO = endDate.toISOString()
 
       const allExpenses: ExpenseItem[] = []
       
@@ -93,8 +104,20 @@ export default function ExpenseDetailModal({
           .lte('submit_on', endISO)
       ])
 
+      // 에러 로깅 및 처리
+      if (tourExpensesResult.error) {
+        console.error('tour_expenses 조회 오류:', tourExpensesResult.error)
+      }
+      if (reservationExpensesResult.error) {
+        console.error('reservation_expenses 조회 오류:', reservationExpensesResult.error)
+      }
+      if (companyExpensesResult.error) {
+        console.error('company_expenses 조회 오류:', companyExpensesResult.error)
+      }
+
+      // 에러가 발생한 경우 빈 배열로 처리
       // tour_expenses 필터링 (대소문자, 띄어쓰기 무시)
-      const tourExpenses = (tourExpensesResult.data || []).filter(e => {
+      const tourExpenses = (tourExpensesResult.error ? [] : (tourExpensesResult.data || [])).filter(e => {
         const paidFor = normalizeCategory(e.paid_for)
         return paidFor === normalizedCategory
       })
@@ -104,7 +127,7 @@ export default function ExpenseDetailModal({
       })
 
       // reservation_expenses 필터링 (대소문자, 띄어쓰기 무시)
-      const reservationExpenses = (reservationExpensesResult.data || []).filter(e => {
+      const reservationExpenses = (reservationExpensesResult.error ? [] : (reservationExpensesResult.data || [])).filter(e => {
         const paidFor = normalizeCategory(e.paid_for)
         return paidFor === normalizedCategory
       })
@@ -114,7 +137,7 @@ export default function ExpenseDetailModal({
       })
 
       // company_expenses 필터링 (대소문자, 띄어쓰기 무시)
-      const companyExpenses = (companyExpensesResult.data || []).filter(e => {
+      const companyExpenses = (companyExpensesResult.error ? [] : (companyExpensesResult.data || [])).filter(e => {
         const cat = normalizeCategory(e.category)
         return cat === normalizedCategory
       })
@@ -139,7 +162,7 @@ export default function ExpenseDetailModal({
     } finally {
       setLoading(false)
     }
-  }
+  }, [dateRange, category, normalizeCategory])
 
   const handleEdit = (expense: ExpenseItem) => {
     setEditingId(expense.id)
@@ -253,7 +276,7 @@ export default function ExpenseDetailModal({
     }
   }
 
-  const totalAmount = expenses.reduce((sum, e) => sum + (e.amount || 0), 0)
+  const totalAmount = expenses.reduce((sum, e) => sum + (e.amount ?? 0), 0)
 
   if (!isOpen) return null
 
@@ -374,7 +397,7 @@ export default function ExpenseDetailModal({
                       {expense.paid_to || '-'}
                     </td>
                     <td className="px-4 py-3 text-sm text-right font-medium">
-                      ${expense.amount.toLocaleString()}
+                      ${(expense.amount ?? 0).toLocaleString()}
                     </td>
                     <td className="px-4 py-3 text-center">
                       {editingId === expense.id ? (

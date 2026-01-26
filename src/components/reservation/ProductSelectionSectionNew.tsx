@@ -78,6 +78,7 @@ interface ProductSelectionSectionProps {
   layout?: 'modal' | 'page'
   onAccordionToggle?: (isExpanded: boolean) => void
   isEditMode?: boolean // 편집 모드 여부
+  channels?: Array<{ id: string; type?: string; category?: string; name?: string }> // 채널 정보 추가
 }
 
 const ProductSelectionSection = memo(function ProductSelectionSection({
@@ -88,7 +89,8 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
   t,
   layout = 'modal',
   onAccordionToggle,
-  isEditMode = false
+  isEditMode = false,
+  channels = []
 }: ProductSelectionSectionProps) {
   
   // 이전 상품 ID를 추적하여 무한 루프 방지
@@ -285,24 +287,37 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
       selections: selections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, quantity: s.quantity })),
     });
     
-    const choicesTotal = selections.reduce((sum, selection) => sum + (selection.total_price || 0), 0);
+    // OTA 채널인지 확인
+    const selectedChannel = channels.find(c => c.id === formData.channelId);
+    const isOTAChannel = selectedChannel && (
+      (selectedChannel.type || '').toLowerCase() === 'ota' || 
+      (selectedChannel.category || '').toLowerCase() === 'ota'
+    );
+    
+    // OTA 채널인 경우 모든 초이스의 total_price를 0으로 설정
+    const processedSelections = isOTAChannel
+      ? selections.map(s => ({ ...s, total_price: 0 }))
+      : selections;
+    
+    const choicesTotal = processedSelections.reduce((sum, selection) => sum + (selection.total_price || 0), 0);
     
     setFormData(prev => {
       console.log('ProductSelectionSectionNew: setFormData 실행', {
         prevSelectedChoicesCount: Array.isArray(prev.selectedChoices) ? prev.selectedChoices.length : 0,
         prevSelectedChoicesType: Array.isArray(prev.selectedChoices) ? 'array' : typeof prev.selectedChoices,
-        newSelectionsCount: selections.length,
+        newSelectionsCount: processedSelections.length,
         choicesTotal,
-        newSelections: selections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id }))
+        isOTAChannel,
+        newSelections: processedSelections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, total_price: s.total_price }))
       });
       
       return {
         ...prev,
-        selectedChoices: selections,
+        selectedChoices: processedSelections,
         choicesTotal
       };
     });
-  }, [setFormData]);
+  }, [setFormData, formData.channelId, channels]);
   
   // 상품이 변경될 때 choice 데이터 로드 (편집 모드에서는 기존 데이터 보존)
   useEffect(() => {
@@ -424,6 +439,13 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
                 infants={formData.infant || 0}
                 onSelectionChange={handleSelectionChange}
                 initialSelections={formData.selectedChoices || []}
+                isOTAChannel={(() => {
+                  const selectedChannel = channels.find(c => c.id === formData.channelId);
+                  return selectedChannel && (
+                    (selectedChannel.type || '').toLowerCase() === 'ota' || 
+                    (selectedChannel.category || '').toLowerCase() === 'ota'
+                  );
+                })()}
               />
               <div className="mt-4 text-right">
                 <span className="text-sm font-medium text-gray-900">

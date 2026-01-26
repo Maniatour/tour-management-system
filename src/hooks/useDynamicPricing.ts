@@ -202,14 +202,13 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
       // variant_key 기본값 설정
       const variantKey = ruleData.variant_key || 'default';
       
-      // 먼저 기존 레코드가 있는지 확인 (choices_pricing 포함, price_type, variant_key 포함)
+      // 먼저 기존 레코드가 있는지 확인 (variant_key만으로 확인, price_type 구분 없음)
       const { data: existingData, error: selectError } = await supabase
         .from('dynamic_pricing')
         .select('id, choices_pricing')
         .eq('product_id', ruleData.product_id)
         .eq('channel_id', ruleData.channel_id)
         .eq('date', ruleData.date)
-        .eq('price_type', priceType)
         .eq('variant_key', variantKey)
         .maybeSingle();
 
@@ -439,18 +438,43 @@ export function useDynamicPricing({ productId, selectedChannelId, selectedChanne
                   newParsed = ruleData.choices_pricing as Record<string, any>;
                 }
                 
-                // 각 초이스별로 깊은 병합 (not_included_price, ota_sale_price 등 보존)
-                const mergedChoicesPricing: Record<string, any> = { ...existingParsed };
+                // 각 초이스별로 깊은 병합 (ota_sale_price, not_included_price만 보존, adult_price, child_price, infant_price는 제거)
+                const mergedChoicesPricing: Record<string, any> = {};
+                
+                // 기존 데이터에서 ota_sale_price와 not_included_price만 추출
+                Object.entries(existingParsed).forEach(([choiceId, existingChoiceData]) => {
+                  const cleanedData: { ota_sale_price?: number; not_included_price?: number } = {};
+                  if (existingChoiceData.ota_sale_price !== undefined && existingChoiceData.ota_sale_price !== null) {
+                    cleanedData.ota_sale_price = existingChoiceData.ota_sale_price;
+                  }
+                  if (existingChoiceData.not_included_price !== undefined && existingChoiceData.not_included_price !== null) {
+                    cleanedData.not_included_price = existingChoiceData.not_included_price;
+                  }
+                  if (Object.keys(cleanedData).length > 0) {
+                    mergedChoicesPricing[choiceId] = cleanedData;
+                  }
+                });
+                
+                // 새로운 데이터로 덮어쓰기 (ota_sale_price와 not_included_price만)
                 Object.entries(newParsed).forEach(([choiceId, newChoiceData]) => {
-                  if (existingParsed[choiceId]) {
-                    // 기존 초이스가 있으면 깊은 병합
-                    mergedChoicesPricing[choiceId] = {
-                      ...existingParsed[choiceId],
-                      ...newChoiceData
-                    };
-                  } else {
-                    // 새로운 초이스는 그대로 추가
-                    mergedChoicesPricing[choiceId] = newChoiceData;
+                  const cleanedData: { ota_sale_price?: number; not_included_price?: number } = {};
+                  if (newChoiceData.ota_sale_price !== undefined && newChoiceData.ota_sale_price !== null) {
+                    cleanedData.ota_sale_price = newChoiceData.ota_sale_price;
+                  }
+                  if (newChoiceData.not_included_price !== undefined && newChoiceData.not_included_price !== null) {
+                    cleanedData.not_included_price = newChoiceData.not_included_price;
+                  }
+                  
+                  // 기존 데이터와 병합
+                  if (mergedChoicesPricing[choiceId]) {
+                    if (cleanedData.ota_sale_price !== undefined) {
+                      mergedChoicesPricing[choiceId].ota_sale_price = cleanedData.ota_sale_price;
+                    }
+                    if (cleanedData.not_included_price !== undefined) {
+                      mergedChoicesPricing[choiceId].not_included_price = cleanedData.not_included_price;
+                    }
+                  } else if (Object.keys(cleanedData).length > 0) {
+                    mergedChoicesPricing[choiceId] = cleanedData;
                   }
                 });
                 

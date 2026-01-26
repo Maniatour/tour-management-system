@@ -101,6 +101,8 @@ interface PricingCalendarProps {
     infant: number;
   };
   selectedVariant?: string;
+  productId?: string;
+  onDateClick?: (date: string) => void;
 }
 
 export const PricingCalendar = memo(function PricingCalendar({
@@ -115,7 +117,9 @@ export const PricingCalendar = memo(function PricingCalendar({
   selectedChannelType,
   channelInfo,
   productBasePrice = { adult: 0, child: 0, infant: 0 },
-  selectedVariant = 'default'
+  selectedVariant = 'default',
+  productId,
+  onDateClick
 }: PricingCalendarProps) {
   const [selectedChoice, setSelectedChoice] = useState<string>('');
   const [selectedPriceTypes, setSelectedPriceTypes] = useState<Set<string>>(
@@ -463,9 +467,16 @@ export const PricingCalendar = memo(function PricingCalendar({
     return normalizedSelectedDates.has(normalizedSearchDate);
   };
 
-  const handleDateClick = (day: number) => {
+  const handleDateClick = (day: number, event: React.MouseEvent) => {
     const dateString = getDateString(day);
-    onDateSelect(dateString);
+    
+    // 날짜 클릭 시 히스토리 모달 열기 (onDateClick이 있는 경우)
+    if (onDateClick && typeof onDateClick === 'function') {
+      onDateClick(dateString);
+    } else {
+      // onDateClick이 없으면 기존 동작 (날짜 선택)
+      onDateSelect(dateString);
+    }
   };
 
   const handleDateMouseDown = (day: number, index: number) => {
@@ -501,11 +512,12 @@ export const PricingCalendar = memo(function PricingCalendar({
     return (
       <button
         key={day}
-        onClick={() => handleDateClick(day)}
+        onClick={(e) => handleDateClick(day, e)}
         onMouseDown={() => handleDateMouseDown(day, 0)}
+        title={hasDataForDate ? '클릭: 가격 히스토리 보기' : '날짜 선택'}
         className={`relative p-2 h-20 border border-gray-200 hover:bg-gray-50 transition-colors ${
           isSelected ? 'bg-blue-100 border-blue-300' : ''
-        } ${isToday ? 'ring-2 ring-blue-500' : ''}`}
+        } ${isToday ? 'ring-2 ring-blue-500' : ''} ${hasDataForDate ? 'cursor-pointer' : ''}`}
       >
         {/* 날짜를 오른쪽 상단에 작은 글씨로 표시 */}
         <div className="absolute top-1 right-1 text-xs text-gray-500">{day}</div>

@@ -187,8 +187,8 @@ export default function PricingSection({
         return
       }
 
-      const total = data?.reduce((sum: number, expense: { amount?: number }) => sum + (expense.amount || 0), 0) || 0
-      console.log('PricingSection: 계산된 지출 총합:', total, '개별 지출:', data?.map((e: { id: string; amount: number; paid_for: string; status: string }) => ({ id: e.id, amount: e.amount, paid_for: e.paid_for, status: e.status })))
+      const total = data?.reduce((sum: number, expense: { amount: number | null }) => sum + (expense.amount || 0), 0) || 0
+      console.log('PricingSection: 계산된 지출 총합:', total, '개별 지출:', data?.map((e: { id: string; amount: number | null; paid_for: string | null; status: string | null }) => ({ id: e.id, amount: e.amount || 0, paid_for: e.paid_for || '', status: e.status || '' })))
       setReservationExpensesTotal(total)
     } catch (error) {
       console.error('예약 지출 조회 중 오류:', error)
@@ -868,13 +868,14 @@ export default function PricingSection({
     }
 
     try {
-      // dynamic_pricing에서 choices_pricing 조회
+      // dynamic_pricing에서 choices_pricing 조회 (가장 최근 업데이트된 값 사용)
       const { data: pricingData, error } = await supabase
         .from('dynamic_pricing')
-        .select('choices_pricing, not_included_price')
+        .select('choices_pricing, not_included_price, updated_at')
         .eq('product_id', formData.productId)
         .eq('date', formData.tourDate)
         .eq('channel_id', formData.channelId)
+        .order('updated_at', { ascending: false })
         .limit(1)
 
       if (error || !pricingData || pricingData.length === 0) {
@@ -1029,13 +1030,14 @@ export default function PricingSection({
     }
 
     try {
-      // dynamic_pricing에서 choices_pricing 조회
+      // dynamic_pricing에서 choices_pricing 조회 (가장 최근 업데이트된 값 사용)
       const { data: pricingData, error } = await supabase
         .from('dynamic_pricing')
-        .select('choices_pricing')
+        .select('choices_pricing, updated_at')
         .eq('product_id', formData.productId)
         .eq('date', formData.tourDate)
         .eq('channel_id', formData.channelId)
+        .order('updated_at', { ascending: false })
         .limit(1)
 
       if (error || !pricingData || pricingData.length === 0) {
@@ -1057,7 +1059,7 @@ export default function PricingSection({
           const quantity = choice.quantity || 1
 
           // choices_pricing에서 구매가 찾기
-          const choicePricing = pricing.choices_pricing[choiceId] || pricing.choices_pricing[optionId]
+          const choicePricing = (choiceId && pricing.choices_pricing[choiceId]) || (optionId && pricing.choices_pricing[optionId])
           if (choicePricing) {
             const adultCost = choicePricing.adult_cost_price || 0
             const childCost = choicePricing.child_cost_price || 0
@@ -1103,12 +1105,12 @@ export default function PricingSection({
       const cost = await calculateChoiceCostTotal()
       setChoiceCostTotal(cost)
       // formData에 자동으로 저장 (수동 수정 전까지)
-      if (!(formData as any).choicesCostTotal || (formData as any).choicesCostTotal === 0) {
-        setFormData((prev: any) => ({ ...prev, choicesCostTotal: cost }))
+      if (!(formData as any).choicesTotal || (formData as any).choicesTotal === 0) {
+        setFormData((prev: any) => ({ ...prev, choicesTotal: cost }))
       }
     }
     updateChoiceCostTotal()
-  }, [calculateChoiceCostTotal, formData.choicesCostTotal, setFormData])
+  }, [calculateChoiceCostTotal, formData.choicesTotal, setFormData])
 
   // 수익 계산 (Net 가격 - 예약 지출 총합 - 투어 지출 총합 - 초이스 구매가 총합)
   const calculateProfit = useCallback(() => {

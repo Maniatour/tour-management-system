@@ -27,6 +27,7 @@ import { DateRangeSelector } from './dynamic-pricing/DateRangeSelector';
 import { PriceCalculator } from './dynamic-pricing/PriceCalculator';
 import { SaleStatusModal } from './dynamic-pricing/SaleStatusModal';
 import BulkPricingTableModal from './dynamic-pricing/BulkPricingTableModal';
+import PricingHistoryModal from './dynamic-pricing/PricingHistoryModal';
 import { ChannelForm } from './channels/ChannelForm';
 
 const DATE_PARTS_REGEX = /(\d{4})[-\/.](\d{1,2})/;
@@ -94,6 +95,10 @@ export default function DynamicPricingManager({
   
   // 가격 일괄 추가 테이블 뷰 모달 상태
   const [isBulkPricingModalOpen, setIsBulkPricingModalOpen] = useState(false);
+  
+  // 가격 히스토리 모달 상태
+  const [isPricingHistoryModalOpen, setIsPricingHistoryModalOpen] = useState(false);
+  const [pricingHistoryDate, setPricingHistoryDate] = useState<string>('');
   
   // 배치 저장 진행률 상태
   const [batchProgress, setBatchProgress] = useState<{ completed: number; total: number } | null>(null);
@@ -430,7 +435,6 @@ export default function DynamicPricingManager({
           if (existingEn) {
             const { error: updateError } = await supabase
               .from('product_details_multilingual')
-              // @ts-expect-error - Supabase 타입 추론 문제
               .update(enData)
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               .eq('id', (existingEn as any).id);
@@ -1332,20 +1336,27 @@ export default function DynamicPricingManager({
           ((pricingConfig.infant_price ?? 0) - productBasePrice.infant);
 
         // 초이스별 가격 데이터 수집 (나중에 기존 레코드와 병합)
-        const allChoicesPricing: Record<string, { adult_price: number; child_price: number; infant_price: number; ota_sale_price?: number; not_included_price?: number; }> = {};
+        const allChoicesPricing: Record<string, { adult_price?: number; child_price?: number; infant_price?: number; ota_sale_price?: number; not_included_price?: number; }> = {};
         
         // calculationConfig.choicePricing에서 기본 가격 정보 가져오기 (나중에 병합할 때 사용)
         // 실제로는 아래에서 기존 레코드와 현재 입력값을 병합할 때 사용됨
         
-        // 기존 저장된 레코드에서 초이스 가격 정보 가져오기 (같은 날짜, 같은 채널)
-        // 중요: 기존 레코드의 불포함 금액이 있는 초이스는 유지하고, 현재 입력값으로 덮어쓰지 않음
-        const existingDynamicChoices: Record<string, any> = {};
-        const existingBaseChoices: Record<string, any> = {};
+        // 선택된 채널의 pricing_type 확인 (기존 레코드 로드 전에 확인)
+        let foundChannel = null;
+        for (const group of channelGroups) {
+          foundChannel = group.channels.find(ch => ch.id === channelId);
+          if (foundChannel) break;
+        }
+        const channelPricingType = (foundChannel as any)?.pricing_type || 'separate';
+        const isChannelSinglePrice = channelPricingType === 'single';
+        
+        // 기존 저장된 레코드에서 초이스 가격 정보 가져오기 (같은 날짜, 같은 채널, 같은 variant)
+        const existingChoices: Record<string, any> = {};
         
         try {
           const { data: existingRules } = await supabase
             .from('dynamic_pricing')
-            .select('price_type, choices_pricing')
+            .select('choices_pricing')
             .eq('product_id', productId)
             .eq('channel_id', channelId)
             .eq('date', date)
@@ -1364,25 +1375,18 @@ export default function DynamicPricingManager({
                 }
               }
               
-              // price_type별로 분리하여 저장
+              // 모든 초이스를 통합하여 저장 (price_type 구분 없음)
+              // 모든 채널에서 ota_sale_price와 not_included_price만 저장 (adult_price, child_price, infant_price는 제거)
               Object.entries(existingChoicesPricing).forEach(([choiceId, choiceData]: [string, any]) => {
-                if (existingRule.price_type === 'dynamic') {
-                  // dynamic 레코드의 초이스는 불포함 금액이 있는 버전으로 유지
-                  existingDynamicChoices[choiceId] = {
-                    adult_price: choiceData.adult_price || choiceData.adult || 0,
-                    child_price: choiceData.child_price || choiceData.child || 0,
-                    infant_price: choiceData.infant_price || choiceData.infant || 0,
-                    ...(choiceData.ota_sale_price ? { ota_sale_price: choiceData.ota_sale_price } : {}),
-                    ...(choiceData.not_included_price !== undefined && choiceData.not_included_price !== null ? { not_included_price: choiceData.not_included_price } : {})
-                  };
-                } else if (existingRule.price_type === 'base') {
-                  // base 레코드의 초이스는 불포함 금액이 없는 버전으로 유지
-                  existingBaseChoices[choiceId] = {
-                    adult_price: choiceData.adult_price || choiceData.adult || 0,
-                    child_price: choiceData.child_price || choiceData.child || 0,
-                    infant_price: choiceData.infant_price || choiceData.infant || 0,
-                    ...(choiceData.ota_sale_price ? { ota_sale_price: choiceData.ota_sale_price } : {})
-                  };
+                const cleanedData: { ota_sale_price?: number; not_included_price?: number } = {};
+                if (choiceData.ota_sale_price !== undefined && choiceData.ota_sale_price !== null) {
+                  cleanedData.ota_sale_price = choiceData.ota_sale_price;
+                }
+                if (choiceData.not_included_price !== undefined && choiceData.not_included_price !== null) {
+                  cleanedData.not_included_price = choiceData.not_included_price;
+                }
+                if (Object.keys(cleanedData).length > 0) {
+                  existingChoices[choiceId] = cleanedData;
                 }
               });
             });
@@ -1391,247 +1395,83 @@ export default function DynamicPricingManager({
           console.warn('기존 레코드 로드 오류:', e);
         }
         
-        // pricingConfig.choices_pricing에서 현재 입력값 가져오기
-        // 중요: 같은 초이스 ID에 대해 불포함 금액이 있는 버전과 없는 버전을 모두 수집
-        // "불포함 사항 없음" 섹션의 초이스는 not_included_price: 0으로 설정됨
-        // "불포함 사항 있음" 섹션의 초이스는 not_included_price > 0으로 설정됨
-        
-        // 디버깅: pricingConfig.choices_pricing 전체 내용 확인
-        console.log('pricingConfig.choices_pricing 전체:', {
-          date,
-          channel_id: channelId,
-          choicesPricing: pricingConfig.choices_pricing,
-          choicesPricingEntries: pricingConfig.choices_pricing ? Object.entries(pricingConfig.choices_pricing as Record<string, any>).map(([choiceId, data]) => ({
-            choiceId,
-            ota_sale_price: data.ota_sale_price,
-            not_included_price: data.not_included_price,
-            hasNotIncludedPrice: data.not_included_price !== undefined && data.not_included_price !== null,
-            isZero: data.not_included_price === 0,
-            isGreaterThanZero: data.not_included_price > 0
-          })) : []
-        });
-        
+        // 2. 현재 입력된 초이스 가격 정보 (pricingConfig.choices_pricing)
         const currentInputChoices: Record<string, any> = {};
-        if (pricingConfig.choices_pricing) {
-          Object.entries(pricingConfig.choices_pricing as Record<string, any>).forEach(([choiceId, choiceData]) => {
-            const hasOtaSalePrice = choiceData.ota_sale_price !== undefined && choiceData.ota_sale_price !== null && choiceData.ota_sale_price > 0;
-            // not_included_price가 명시적으로 설정된 경우 (0이어도 포함)
-            const hasNotIncludedPrice = choiceData.not_included_price !== undefined && choiceData.not_included_price !== null;
-            const notIncludedPriceValue = hasNotIncludedPrice ? choiceData.not_included_price : undefined;
-            
-            // 가격이 있는지 확인 (adult_price, child_price, infant_price 중 하나라도 0보다 크면 포함)
-            const hasPrice = (choiceData.adult_price !== undefined && choiceData.adult_price !== null && choiceData.adult_price > 0) ||
-                            (choiceData.adult !== undefined && choiceData.adult !== null && choiceData.adult > 0) ||
-                            (choiceData.child_price !== undefined && choiceData.child_price !== null && choiceData.child_price > 0) ||
-                            (choiceData.child !== undefined && choiceData.child !== null && choiceData.child > 0) ||
-                            (choiceData.infant_price !== undefined && choiceData.infant_price !== null && choiceData.infant_price > 0) ||
-                            (choiceData.infant !== undefined && choiceData.infant !== null && choiceData.infant > 0);
-            
-            // OTA 판매가가 있거나 불포함 금액이 명시적으로 입력된 경우, 또는 가격이 있는 경우 포함
-            // 중요: "불포함 사항 없음" 섹션에서는 not_included_price: 0으로 설정되므로 포함됨
-            // 중요: 가격이 입력된 경우도 포함 (첫 번째 초이스의 $120 같은 경우)
-            if (hasOtaSalePrice || hasNotIncludedPrice || hasPrice) {
-              // adult_price를 명시적으로 확인 (0도 유효한 값이므로 || 연산자 사용 주의)
-              const adultPrice = choiceData.adult_price !== undefined && choiceData.adult_price !== null 
-                                ? choiceData.adult_price 
-                                : (choiceData.adult !== undefined && choiceData.adult !== null ? choiceData.adult : 0);
-              const childPrice = choiceData.child_price !== undefined && choiceData.child_price !== null 
-                                ? choiceData.child_price 
-                                : (choiceData.child !== undefined && choiceData.child !== null ? choiceData.child : 0);
-              const infantPrice = choiceData.infant_price !== undefined && choiceData.infant_price !== null 
-                                 ? choiceData.infant_price 
-                                 : (choiceData.infant !== undefined && choiceData.infant !== null ? choiceData.infant : 0);
-              
-              currentInputChoices[choiceId] = {
-                adult_price: adultPrice,
-                child_price: childPrice,
-                infant_price: infantPrice,
-                ...(hasOtaSalePrice ? { ota_sale_price: choiceData.ota_sale_price } : {}),
-                // 불포함 금액이 명시적으로 입력된 경우만 포함 (0이어도 포함)
-                // 중요: not_included_price: 0인 경우도 명시적으로 포함하여 base 레코드로 분리되도록 함
-                ...(hasNotIncludedPrice ? { not_included_price: notIncludedPriceValue } : {})
-              };
-            }
-          });
+        if (pricingConfig.choices_pricing && typeof pricingConfig.choices_pricing === 'object') {
+          Object.assign(currentInputChoices, pricingConfig.choices_pricing);
         }
         
-        // 디버깅: 현재 입력값 확인
-        console.log('현재 입력값 수집:', {
-          date,
-          channel_id: channelId,
-          currentInputChoicesCount: Object.keys(currentInputChoices).length,
-          currentInputChoices: Object.entries(currentInputChoices).map(([choiceId, data]) => ({
-            choiceId,
-            hasOtaSalePrice: !!data.ota_sale_price,
-            otaSalePrice: data.ota_sale_price,
-            hasNotIncludedPrice: data.not_included_price !== undefined,
-            notIncludedPrice: data.not_included_price,
-            notIncludedPriceType: typeof data.not_included_price,
-            willBeDynamic: data.not_included_price !== undefined && data.not_included_price !== null && data.not_included_price > 0,
-            willBeBase: !(data.not_included_price !== undefined && data.not_included_price !== null && data.not_included_price > 0)
-          }))
-        });
-        
-        // allChoicesPricing에 병합: 기존 dynamic 초이스 + 기존 base 초이스 + 현재 입력값
-        // 중요: 같은 초이스 ID에 대해 불포함 금액이 있는 버전과 없는 버전을 모두 유지
-        // - 기존 dynamic 초이스는 그대로 유지 (불포함 금액이 있는 버전)
-        // - 기존 base 초이스는 그대로 유지 (불포함 금액이 없는 버전)
-        // - 현재 입력값은 불포함 금액 유무에 따라 적절한 버전으로 추가
-        
-        // 1. 기존 dynamic 초이스 추가 (불포함 금액이 있는 버전)
-        Object.entries(existingDynamicChoices).forEach(([choiceId, choiceData]) => {
-          allChoicesPricing[choiceId] = { ...choiceData };
-        });
-        
-        // 2. 기존 base 초이스 추가 (불포함 금액이 없는 버전)
-        // 단, 현재 입력값에 같은 초이스가 있고 불포함 금액이 0이면 현재 입력값 사용
-        Object.entries(existingBaseChoices).forEach(([choiceId, choiceData]) => {
-          const currentInput = currentInputChoices[choiceId];
-          if (currentInput && (currentInput.not_included_price === 0 || !currentInput.not_included_price)) {
-            // 현재 입력값이 있고 불포함 금액이 0이면 현재 입력값 사용
-            allChoicesPricing[choiceId] = { ...currentInput };
-          } else if (!allChoicesPricing[choiceId]) {
-            // 기존 base 초이스 유지 (불포함 금액이 없는 버전)
-            allChoicesPricing[choiceId] = { ...choiceData };
+        // 3. 모든 초이스를 하나로 합치기 (기존 + 현재 입력)
+        // 기존 초이스를 먼저 추가하고, adult_price, child_price, infant_price는 제거하고 ota_sale_price와 not_included_price만 유지
+        Object.entries(existingChoices).forEach(([choiceId, choiceData]) => {
+          const cleanedData: { ota_sale_price?: number; not_included_price?: number } = {};
+          if (choiceData.ota_sale_price !== undefined && choiceData.ota_sale_price !== null) {
+            cleanedData.ota_sale_price = choiceData.ota_sale_price;
+          }
+          if (choiceData.not_included_price !== undefined && choiceData.not_included_price !== null) {
+            cleanedData.not_included_price = choiceData.not_included_price;
+          }
+          if (Object.keys(cleanedData).length > 0) {
+            allChoicesPricing[choiceId] = cleanedData as any;
           }
         });
         
-        // 3. 현재 입력값 추가 (기존에 없는 초이스이거나, 불포함 금액이 있는 경우)
+        // 현재 입력값으로 덮어쓰기 (현재 입력값이 우선)
+        // 모든 채널에서 OTA 판매가와 불포함 금액만 저장 (adult_price, child_price, infant_price는 저장하지 않음)
         Object.entries(currentInputChoices).forEach(([choiceId, choiceData]) => {
-          const hasNotIncludedPrice = choiceData.not_included_price !== undefined && 
-                                     choiceData.not_included_price !== null && 
-                                     choiceData.not_included_price > 0;
+          const cleanedChoiceData: any = {};
           
-          if (hasNotIncludedPrice) {
-            // 불포함 금액이 있는 경우: dynamic 버전으로 추가 (기존 dynamic 초이스가 있으면 덮어쓰기)
-            allChoicesPricing[choiceId] = { ...choiceData };
-          } else if (!allChoicesPricing[choiceId]) {
-            // 불포함 금액이 없고 기존에 없는 경우: base 버전으로 추가
-            allChoicesPricing[choiceId] = { ...choiceData };
+          // OTA 판매가가 있으면 포함
+          if (choiceData.ota_sale_price !== undefined && choiceData.ota_sale_price !== null && choiceData.ota_sale_price > 0) {
+            cleanedChoiceData.ota_sale_price = choiceData.ota_sale_price;
           }
-        });
-        
-        // calculationConfig.choicePricing에서 가져온 초이스도 추가 (아직 없는 경우)
-        Object.entries(calculationConfig.choicePricing).forEach(([choiceId, choice]) => {
-          if (!allChoicesPricing[choiceId]) {
-            const currentChoiceData = (pricingConfig.choices_pricing as any)?.[choiceId] || {};
-            allChoicesPricing[choiceId] = {
-              adult_price: choice.adult_price,
-              child_price: choice.child_price,
-              infant_price: choice.infant_price,
-              ...(currentChoiceData.ota_sale_price ? { ota_sale_price: currentChoiceData.ota_sale_price } : {}),
-              ...(currentChoiceData.not_included_price !== undefined && currentChoiceData.not_included_price !== null ? { not_included_price: currentChoiceData.not_included_price } : {})
-            };
+          
+          // 불포함 가격이 있으면 포함 (0이어도 명시적으로 입력한 경우 포함)
+          if (choiceData.not_included_price !== undefined && choiceData.not_included_price !== null) {
+            cleanedChoiceData.not_included_price = choiceData.not_included_price;
           }
-        });
-        
-        // 불포함 금액 유무에 따라 초이스를 분리
-        // 중요: 같은 초이스 ID에 대해 불포함 금액이 있는 버전과 없는 버전을 모두 유지
-        const dynamicChoicesPricing: Record<string, { adult_price: number; child_price: number; infant_price: number; ota_sale_price?: number; not_included_price?: number; }> = {};
-        const baseChoicesPricing: Record<string, { adult_price: number; child_price: number; infant_price: number; ota_sale_price?: number; not_included_price?: number; }> = {};
-        
-        // 현재 입력값에서 dynamic 타입 초이스가 있는지 확인
-        const hasDynamicInput = Object.values(currentInputChoices).some(choiceData => {
-          return choiceData.not_included_price !== undefined && 
-                 choiceData.not_included_price !== null && 
-                 choiceData.not_included_price > 0;
-        });
-        
-        // 1. 기존 dynamic 초이스 추가 (불포함 금액이 있는 버전)
-        // 중요: 현재 입력값에 dynamic 타입 초이스가 있거나, 기존 dynamic 초이스가 있고 현재 입력값이 같은 초이스 ID를 업데이트하지 않는 경우에만 유지
-        if (hasDynamicInput) {
-          // 현재 입력값에 dynamic 타입 초이스가 있으면 기존 dynamic 초이스도 유지
-          Object.entries(existingDynamicChoices).forEach(([choiceId, choiceData]) => {
-            // 현재 입력값에 같은 초이스가 없거나, 현재 입력값이 dynamic 타입인 경우에만 추가
-            const currentInput = currentInputChoices[choiceId];
-            if (!currentInput || (currentInput.not_included_price !== undefined && currentInput.not_included_price !== null && currentInput.not_included_price > 0)) {
-              dynamicChoicesPricing[choiceId] = { ...choiceData };
+          
+          // 기존 데이터와 병합 (기존 데이터의 OTA 판매가와 불포함 가격만 유지)
+          if (Object.keys(cleanedChoiceData).length > 0) {
+            const mergedData: any = { ...cleanedChoiceData };
+            // 기존 데이터에서 OTA 판매가와 불포함 가격만 가져오기
+            if (allChoicesPricing[choiceId]) {
+              if (allChoicesPricing[choiceId].ota_sale_price && !cleanedChoiceData.ota_sale_price) {
+                mergedData.ota_sale_price = allChoicesPricing[choiceId].ota_sale_price;
+              }
+              if (allChoicesPricing[choiceId].not_included_price !== undefined && cleanedChoiceData.not_included_price === undefined) {
+                mergedData.not_included_price = allChoicesPricing[choiceId].not_included_price;
+              }
             }
-          });
-        }
-        // 현재 입력값에 dynamic 타입 초이스가 없으면 기존 dynamic 초이스는 추가하지 않음
-        
-        // 2. 기존 base 초이스 추가 (불포함 금액이 없는 버전) - 항상 유지
-        Object.entries(existingBaseChoices).forEach(([choiceId, choiceData]) => {
-          baseChoicesPricing[choiceId] = { ...choiceData };
-        });
-        
-        // 3. 현재 입력값 추가
-        // 현재 입력값은 불포함 금액 유무에 따라 적절한 레코드에 추가
-        // 기존 레코드가 있어도 현재 입력값으로 업데이트 (같은 초이스 ID라도 불포함 금액 유무에 따라 별도 레코드에 저장)
-        Object.entries(currentInputChoices).forEach(([choiceId, choiceData]) => {
-          // not_included_price가 명시적으로 설정되어 있고 0보다 큰 경우만 dynamic
-          // not_included_price가 0이거나 undefined/null이면 base
-          const hasNotIncludedPrice = choiceData.not_included_price !== undefined && 
-                                     choiceData.not_included_price !== null && 
-                                     choiceData.not_included_price > 0;
-          
-          // not_included_price가 명시적으로 0으로 설정된 경우도 인식
-          const hasExplicitZero = choiceData.not_included_price === 0;
-          
-          // 디버깅: 각 초이스의 분리 결정 확인
-          console.log(`초이스 ${choiceId} 분리 결정:`, {
-            choiceId,
-            not_included_price: choiceData.not_included_price,
-            hasNotIncludedPrice,
-            hasExplicitZero,
-            willGoToDynamic: hasNotIncludedPrice,
-            willGoToBase: !hasNotIncludedPrice || hasExplicitZero,
-            ota_sale_price: choiceData.ota_sale_price
-          });
-          
-          if (hasNotIncludedPrice) {
-            // 불포함 금액이 있는 경우: dynamic 레코드에 추가/업데이트
-            dynamicChoicesPricing[choiceId] = { ...choiceData };
-            console.log(`  -> dynamicChoicesPricing에 추가됨`);
-          } else {
-            // 불포함 금액이 없는 경우 (0이거나 undefined/null): base 레코드에 추가/업데이트
-            // not_included_price 필드를 제거하여 base 레코드에 저장
-            const { not_included_price, ...baseChoiceData } = choiceData;
-            baseChoicesPricing[choiceId] = { ...baseChoiceData };
-            console.log(`  -> baseChoicesPricing에 추가됨`, baseChoiceData);
-          }
-        });
-        
-        // 4. calculationConfig.choicePricing에서 가져온 기본 가격 정보 추가 (아직 없는 경우)
-        // 이 초이스들은 현재 입력값이나 기존 레코드에 없는 경우에만 추가
-        Object.entries(calculationConfig.choicePricing).forEach(([choiceId, choice]) => {
-          const currentChoiceData = (pricingConfig.choices_pricing as any)?.[choiceId] || {};
-          const hasNotIncludedPrice = currentChoiceData.not_included_price !== undefined && 
-                                     currentChoiceData.not_included_price !== null && 
-                                     currentChoiceData.not_included_price > 0;
-          
-          // dynamicChoicesPricing과 baseChoicesPricing 모두에 없으면 추가
-          if (!dynamicChoicesPricing[choiceId] && !baseChoicesPricing[choiceId]) {
-            if (hasNotIncludedPrice) {
-              dynamicChoicesPricing[choiceId] = {
-                adult_price: choice.adult_price,
-                child_price: choice.child_price,
-                infant_price: choice.infant_price,
-                ...(currentChoiceData.ota_sale_price ? { ota_sale_price: currentChoiceData.ota_sale_price } : {}),
-                not_included_price: currentChoiceData.not_included_price
-              };
+            allChoicesPricing[choiceId] = mergedData;
+          } else if (allChoicesPricing[choiceId]) {
+            // 입력값이 없어도 기존 데이터는 유지 (OTA 판매가와 불포함 가격만)
+            const existingData = allChoicesPricing[choiceId];
+            const cleanedData: { ota_sale_price?: number; not_included_price?: number } = {};
+            if (existingData.ota_sale_price !== undefined && existingData.ota_sale_price !== null) {
+              cleanedData.ota_sale_price = existingData.ota_sale_price;
+            }
+            if (existingData.not_included_price !== undefined && existingData.not_included_price !== null) {
+              cleanedData.not_included_price = existingData.not_included_price;
+            }
+            if (Object.keys(cleanedData).length > 0) {
+              allChoicesPricing[choiceId] = cleanedData as any;
             } else {
-              baseChoicesPricing[choiceId] = {
-                adult_price: choice.adult_price,
-                child_price: choice.child_price,
-                infant_price: choice.infant_price,
-                ...(currentChoiceData.ota_sale_price ? { ota_sale_price: currentChoiceData.ota_sale_price } : {})
-              };
+              delete allChoicesPricing[choiceId];
             }
           }
         });
         
-        // 디버깅: 분리된 초이스 확인
-        console.log('초이스 분리 결과:', {
+        // calculationConfig.choicePricing에서 기본 가격 정보는 추가하지 않음
+        // 사용자가 명시적으로 입력한 값만 저장
+        
+        // 디버깅: 통합된 초이스 확인
+        console.log('초이스 통합 결과:', {
           date,
           channel_id: channelId,
-          dynamicChoicesCount: Object.keys(dynamicChoicesPricing).length,
-          baseChoicesCount: Object.keys(baseChoicesPricing).length,
-          dynamicChoices: Object.keys(dynamicChoicesPricing),
-          baseChoices: Object.keys(baseChoicesPricing),
-          existingDynamicCount: Object.keys(existingDynamicChoices).length,
-          existingBaseCount: Object.keys(existingBaseChoices).length,
+          choicesCount: Object.keys(allChoicesPricing).length,
+          choices: Object.keys(allChoicesPricing),
+          existingCount: Object.keys(existingChoices).length,
           currentInputCount: Object.keys(currentInputChoices).length
         });
         
@@ -1658,93 +1498,54 @@ export default function DynamicPricingManager({
           exclusions_en: ((pricingConfig as Record<string, unknown>).exclusions_en as string) || null,
         };
         
-        // 불포함 금액이 있는 초이스가 있으면 dynamic 레코드 생성
-        if (Object.keys(dynamicChoicesPricing).length > 0) {
-          const dynamicRuleData: SimplePricingRuleDto = {
-            ...commonFields,
-            price_type: 'dynamic',
-            not_included_price: ((pricingConfig as Record<string, unknown>).not_included_price as number) || 0,
-            choices_pricing: dynamicChoicesPricing
-          };
-          rulesData.push(dynamicRuleData);
-          console.log('저장할 dynamic 레코드:', {
-            date: dynamicRuleData.date,
-            channel_id: dynamicRuleData.channel_id,
-            price_type: dynamicRuleData.price_type,
-            choicesCount: Object.keys(dynamicChoicesPricing).length,
-            choices: Object.keys(dynamicChoicesPricing)
-          });
-        }
+        // 모든 초이스를 하나의 레코드에 저장 (price_type 구분 없음)
+        const notIncludedPrice = ((pricingConfig as Record<string, unknown>).not_included_price as number) || 0;
         
-        // 불포함 금액이 없는 초이스가 있으면 base 레코드 생성
-        if (Object.keys(baseChoicesPricing).length > 0) {
-          const baseRuleData: SimplePricingRuleDto = {
-            ...commonFields,
-            price_type: 'base',
-            not_included_price: 0,
-            choices_pricing: baseChoicesPricing
-          };
-          rulesData.push(baseRuleData);
-          console.log('저장할 base 레코드:', {
-            date: baseRuleData.date,
-            channel_id: baseRuleData.channel_id,
-            price_type: baseRuleData.price_type,
-            choicesCount: Object.keys(baseChoicesPricing).length,
-            choices: Object.keys(baseChoicesPricing)
-          });
-        }
+        // no_choice 키가 있는지 확인 (초이스가 없는 상품의 OTA 판매가 및 불포함 금액)
+        const noChoiceKey = 'no_choice';
+        const noChoiceData = (pricingConfig.choices_pricing as any)?.[noChoiceKey];
         
-        // 초이스가 없는 경우 기본 레코드 하나만 생성 (기존 로직 유지)
-        if (Object.keys(allChoicesPricing).length === 0) {
-          const notIncludedPrice = ((pricingConfig as Record<string, unknown>).not_included_price as number) || 0;
-          const priceType = notIncludedPrice > 0 ? 'dynamic' : 'base';
+        // no_choice 데이터가 있으면 allChoicesPricing에 포함 (ota_sale_price와 not_included_price만 저장)
+        if (noChoiceData && Object.keys(allChoicesPricing).length === 0) {
+          const noChoiceNotIncludedPrice = noChoiceData.not_included_price !== undefined && noChoiceData.not_included_price !== null
+            ? noChoiceData.not_included_price
+            : notIncludedPrice;
           
-          // no_choice 키가 있는지 확인 (초이스가 없는 상품의 OTA 판매가 및 불포함 금액)
-          const noChoiceKey = 'no_choice';
-          const noChoiceData = (pricingConfig.choices_pricing as any)?.[noChoiceKey];
-          const choicesPricingForNoChoice: Record<string, any> = {};
+          const noChoiceCleanedData: { ota_sale_price?: number; not_included_price?: number } = {};
           
-          // no_choice 데이터가 있으면 choices_pricing에 포함
-          if (noChoiceData) {
-            const noChoiceNotIncludedPrice = noChoiceData.not_included_price !== undefined && noChoiceData.not_included_price !== null
-              ? noChoiceData.not_included_price
-              : notIncludedPrice;
-            
-            // no_choice의 불포함 금액이 있으면 그것을 우선 사용
-            const finalNotIncludedPrice = noChoiceNotIncludedPrice > 0 ? noChoiceNotIncludedPrice : notIncludedPrice;
-            const finalPriceType = finalNotIncludedPrice > 0 ? 'dynamic' : 'base';
-            
-            // OTA 판매가가 있으면 choices_pricing에 포함
-            if (noChoiceData.ota_sale_price !== undefined && noChoiceData.ota_sale_price !== null && noChoiceData.ota_sale_price > 0) {
-              choicesPricingForNoChoice[noChoiceKey] = {
-                ota_sale_price: noChoiceData.ota_sale_price,
-                ...(finalNotIncludedPrice > 0 ? { not_included_price: finalNotIncludedPrice } : {})
-              };
-            } else if (finalNotIncludedPrice > 0) {
-              // OTA 판매가는 없지만 불포함 금액이 있으면 choices_pricing에 포함
-              choicesPricingForNoChoice[noChoiceKey] = {
-                not_included_price: finalNotIncludedPrice
-              };
-            }
-            
-            const defaultRuleData: SimplePricingRuleDto = {
-              ...commonFields,
-              price_type: finalPriceType,
-              not_included_price: finalNotIncludedPrice,
-              choices_pricing: choicesPricingForNoChoice
-            };
-            rulesData.push(defaultRuleData);
-          } else {
-            // no_choice 데이터가 없으면 기존 로직 사용
-            const defaultRuleData: SimplePricingRuleDto = {
-              ...commonFields,
-              price_type: priceType,
-              not_included_price: notIncludedPrice,
-              choices_pricing: {}
-            };
-            rulesData.push(defaultRuleData);
+          // OTA 판매가가 있으면 choices_pricing에 포함
+          if (noChoiceData.ota_sale_price !== undefined && noChoiceData.ota_sale_price !== null && noChoiceData.ota_sale_price > 0) {
+            noChoiceCleanedData.ota_sale_price = noChoiceData.ota_sale_price;
+          }
+          
+          // 불포함 금액이 있으면 choices_pricing에 포함
+          if (noChoiceNotIncludedPrice !== undefined && noChoiceNotIncludedPrice !== null) {
+            noChoiceCleanedData.not_included_price = noChoiceNotIncludedPrice;
+          }
+          
+          if (Object.keys(noChoiceCleanedData).length > 0) {
+            allChoicesPricing[noChoiceKey] = noChoiceCleanedData;
           }
         }
+        
+        // 하나의 레코드만 생성 (price_type은 'dynamic'으로 고정, 불포함 금액은 초이스별로 관리)
+        // 단일 가격 채널의 경우 adult_price, child_price, infant_price가 없을 수 있으므로 타입 단언 사용
+        const ruleData = {
+          ...commonFields,
+          price_type: 'dynamic' as const, // 항상 'dynamic'으로 설정
+          not_included_price: notIncludedPrice,
+          choices_pricing: allChoicesPricing
+        } as SimplePricingRuleDto;
+        rulesData.push(ruleData);
+        
+        console.log('저장할 레코드:', {
+          date: ruleData.date,
+          channel_id: ruleData.channel_id,
+          variant_key: ruleData.variant_key,
+          price_type: ruleData.price_type,
+          choicesCount: Object.keys(allChoicesPricing).length,
+          choices: Object.keys(allChoicesPricing)
+        });
       }
     }
 
@@ -1779,20 +1580,12 @@ export default function DynamicPricingManager({
           setMessage(`✅ 전체 ${rulesData.length}개 가격 규칙이 성공적으로 저장되었습니다.`);
           
           // 저장 완료 후 저장된 데이터 확인
-          const savedBaseRules = rulesData.filter(r => r.price_type === 'base');
-          const savedDynamicRules = rulesData.filter(r => r.price_type === 'dynamic');
           console.log('저장 완료 - 저장된 레코드 요약:', {
             total: rulesData.length,
-            baseCount: savedBaseRules.length,
-            dynamicCount: savedDynamicRules.length,
-            baseRules: savedBaseRules.map(r => ({
+            rules: rulesData.map(r => ({
               date: r.date,
               channel_id: r.channel_id,
-              choicesCount: Object.keys(r.choices_pricing || {}).length
-            })),
-            dynamicRules: savedDynamicRules.map(r => ({
-              date: r.date,
-              channel_id: r.channel_id,
+              variant_key: r.variant_key,
               choicesCount: Object.keys(r.choices_pricing || {}).length
             }))
           });
@@ -2206,6 +1999,11 @@ export default function DynamicPricingManager({
                 .find(ch => ch.id === selectedChannel) || null : null}
               productBasePrice={productBasePrice}
               selectedVariant={selectedVariant}
+              productId={productId}
+              onDateClick={(date) => {
+                setPricingHistoryDate(date)
+                setIsPricingHistoryModalOpen(true)
+              }}
             />
           ) : (
             <PricingListView
@@ -3995,6 +3793,26 @@ export default function DynamicPricingManager({
           channel={editingChannel}
           onSubmit={handleEditChannel}
           onCancel={() => setEditingChannel(null)}
+        />
+      )}
+
+      {/* 가격 히스토리 모달 */}
+      {isPricingHistoryModalOpen && selectedChannel && (
+        <PricingHistoryModal
+          isOpen={isPricingHistoryModalOpen}
+          onClose={() => setIsPricingHistoryModalOpen(false)}
+          productId={productId}
+          date={pricingHistoryDate}
+          channelId={selectedChannel}
+          variantKey={selectedVariant}
+          choiceCombinations={choiceCombinations}
+          {...(channelGroups
+            .flatMap(group => group.channels)
+            .find(ch => ch.id === selectedChannel)?.name && {
+            channelName: channelGroups
+              .flatMap(group => group.channels)
+              .find(ch => ch.id === selectedChannel)?.name
+          })}
         />
       )}
     </div>
