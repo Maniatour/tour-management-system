@@ -255,20 +255,14 @@ export const PricingCalendar = memo(function PricingCalendar({
       }
     }
 
-    // variant_key로 필터링
-    if (selectedVariant && selectedVariant !== 'default') {
-      filteredRules = filteredRules.filter(r => r.variant_key === selectedVariant);
-      if (filteredRules.length === 0) {
-        return undefined;
-      }
-    } else {
-      // selectedVariant가 'default'이거나 없으면 variant_key가 null, undefined, 'default'인 규칙만 선택
-      filteredRules = filteredRules.filter(r => 
-        !r.variant_key || r.variant_key === 'default' || r.variant_key === ''
-      );
-      if (filteredRules.length === 0) {
-        return undefined;
-      }
+    // variant_key로 필터링 (null/빈 문자열은 'default'로 정규화하여 비교)
+    const normSelected = (selectedVariant ?? '').toString().trim() || 'default';
+    filteredRules = filteredRules.filter(r => {
+      const normRuleKey = (r.variant_key ?? '').toString().trim() || 'default';
+      return normRuleKey === normSelected;
+    });
+    if (filteredRules.length === 0) {
+      return undefined;
     }
 
     // 항상 첫 번째 규칙 반환 (필터링 없음)

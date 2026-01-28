@@ -700,7 +700,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setPermissions(null)
         setLoading(false)
         setIsInitialized(true)
-      }, 200) // 200ms 지연으로 증가
+      }, 600) // 새로고침 시 세션 복원(INITIAL_SESSION) 대기 후 미인증 판단
     }
     
     checkStoredTokens().catch(error => {
