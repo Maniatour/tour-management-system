@@ -240,12 +240,25 @@ export default function DynamicPricingManager({
     not_included_en: ''
   });
 
-  // Variant 목록 불러오기
+  // 해당 채널 쿠폰 목록 (캘린더 쿠폰 선택기용)
+  const [channelCoupons, setChannelCoupons] = useState<Array<{
+    id: string;
+    coupon_code: string;
+    percentage_value?: number | null;
+    fixed_value?: number | null;
+    discount_type?: string | null;
+  }>>([]);
+
+  // Variant 목록 불러오기 (선택한 채널의 channel_products만 조회, 채널 전환 시 이전 요청 무시)
   useEffect(() => {
+    let cancelled = false;
+
     const loadProductVariants = async () => {
       if (!productId || !selectedChannel) {
-        setProductVariants([]);
-        setSelectedVariant('default');
+        if (!cancelled) {
+          setProductVariants([]);
+          setSelectedVariant('default');
+        }
         return;
       }
 
@@ -257,6 +270,11 @@ export default function DynamicPricingManager({
           .eq('channel_id', selectedChannel)
           .eq('is_active', true)
           .order('variant_key');
+
+        // 채널 전환으로 이 effect가 정리됐으면 이 응답 무시 (다른 채널 variant가 선택지에 섞이지 않도록)
+        if (cancelled) {
+          return;
+        }
 
         if (error) {
           console.error('Variant 목록 로드 실패:', error);
@@ -279,14 +297,49 @@ export default function DynamicPricingManager({
           setSelectedVariant('default');
         }
       } catch (error) {
-        console.error('Variant 목록 로드 중 오류:', error);
-        setProductVariants([{ variant_key: 'default' }]);
-        setSelectedVariant('default');
+        if (!cancelled) {
+          console.error('Variant 목록 로드 중 오류:', error);
+          setProductVariants([{ variant_key: 'default' }]);
+          setSelectedVariant('default');
+        }
       }
     };
 
     loadProductVariants();
+    return () => {
+      cancelled = true;
+    };
   }, [productId, selectedChannel]);
+
+  // 해당 채널 쿠폰 목록 로드 (캘린더 상단 쿠폰 선택기)
+  useEffect(() => {
+    if (!selectedChannel) {
+      setChannelCoupons([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('coupons')
+        .select('id, coupon_code, percentage_value, fixed_value, discount_type')
+        .eq('status', 'active')
+        .or(`channel_id.is.null,channel_id.eq.${selectedChannel}`);
+      if (cancelled) return;
+      if (error) {
+        console.warn('채널 쿠폰 로드 실패:', error);
+        setChannelCoupons([]);
+        return;
+      }
+      setChannelCoupons((data || []).map((r: any) => ({
+        id: r.id,
+        coupon_code: r.coupon_code ?? '',
+        percentage_value: r.percentage_value,
+        fixed_value: r.fixed_value,
+        discount_type: r.discount_type
+      })));
+    })();
+    return () => { cancelled = true; };
+  }, [selectedChannel]);
 
   // 채널별 포함/불포함 내역 불러오기
   useEffect(() => {
@@ -2000,6 +2053,7 @@ export default function DynamicPricingManager({
               productBasePrice={productBasePrice}
               selectedVariant={selectedVariant}
               productId={productId}
+              channelCoupons={channelCoupons}
               onDateClick={(date) => {
                 setPricingHistoryDate(date)
                 setIsPricingHistoryModalOpen(true)

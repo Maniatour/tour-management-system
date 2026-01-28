@@ -103,6 +103,14 @@ interface PricingCalendarProps {
   selectedVariant?: string;
   productId?: string;
   onDateClick?: (date: string) => void;
+  /** 해당 채널의 쿠폰 목록 (캘린더 상단 쿠폰 선택기용) */
+  channelCoupons?: Array<{
+    id: string;
+    coupon_code: string;
+    percentage_value?: number | null;
+    fixed_value?: number | null;
+    discount_type?: string | null;
+  }>;
 }
 
 export const PricingCalendar = memo(function PricingCalendar({
@@ -119,12 +127,17 @@ export const PricingCalendar = memo(function PricingCalendar({
   productBasePrice = { adult: 0, child: 0, infant: 0 },
   selectedVariant = 'default',
   productId,
-  onDateClick
+  onDateClick,
+  channelCoupons = []
 }: PricingCalendarProps) {
   const [selectedChoice, setSelectedChoice] = useState<string>('');
   const [selectedPriceTypes, setSelectedPriceTypes] = useState<Set<string>>(
     new Set(['maxSalePrice', 'discountPrice', 'netPrice']) // 기본값: 모두 선택
   );
+  /** 캘린더 상단 쿠폰 선택 (선택 시 해당 쿠폰 %로 손님 지불가/Net Price 재계산) */
+  const [selectedCouponId, setSelectedCouponId] = useState<string>('');
+  /** 날짜 셀 호버 시 가격 계산식 툴팁용 */
+  const [hoveredDate, setHoveredDate] = useState<string | null>(null);
 
   // 초이스 조합이 로드되면 첫 번째 초이스를 기본값으로 선택
   useEffect(() => {
@@ -184,6 +197,7 @@ export const PricingCalendar = memo(function PricingCalendar({
   }, [selectedDates]);
 
   const todayString = useMemo(() => normalizeDateValue(new Date()), []);
+
   const priceTooltip = useMemo(
     () =>
       [
@@ -261,13 +275,30 @@ export const PricingCalendar = memo(function PricingCalendar({
     return filteredRules[0];
   }, [selectedChannelId, selectedChannelType, selectedVariant]);
 
-  // 날짜별 단일 가격 정보 가져오기 (최대 판매가, 할인 가격, Net Price)
-  // 초이스 선택 및 필터 기능 포함
+  // 쿠폰 선택 시 적용할 할인 % (percentage 타입만 반영, 없으면 rule 값 사용)
+  const effectiveCouponPercent = selectedCouponId && channelCoupons?.length
+    ? (() => {
+        const c = channelCoupons.find(c => c.id === selectedCouponId);
+        return c?.discount_type === 'percentage' && c?.percentage_value != null ? c.percentage_value : null;
+      })()
+    : null;
+
+  // 날짜별 단일 가격 정보 가져오기 (최대 판매가, 할인 가격, Net Price) + 툴팁용 breakdown
+  // 쿠폰 선택기가 있으면 해당 쿠폰 %로 손님 지불가·Net Price 계산
   const getSinglePriceForDate = useCallback((date: string): {
     maxSalePrice: number;
     discountPrice: number;
     netPrice: number;
     isOTA: boolean;
+    /** 마우스 오버 툴팁용: OTA판매가, 불포함, 수수료%, 적용 쿠폰%, 손님 지불가, Net Price */
+    breakdown?: {
+      otaSalePrice: number;
+      notIncludedPrice: number;
+      commissionPercent: number;
+      couponPercentUsed: number;
+      customerPay: number;
+      netPrice: number;
+    };
   } | null => {
     // 1. 날짜 정규화 및 데이터 찾기
     const pricingRules = getPricingForDate(date);
@@ -303,53 +334,51 @@ export const PricingCalendar = memo(function PricingCalendar({
     const isOTA = selectedChannelType === 'OTA' || 
                   (channelInfo && (channelInfo as any).type?.toLowerCase() === 'ota');
     
-    // 4. 초이스 가격 정보 가져오기
+    // 4. 초이스 가격 정보 가져오기 (OTA 판매가·불포함 금액 모두 초이스별 설정에서 로드)
+    // 기본 가격의 불포함 금액은 "초이스가 없는 상품"에서만 사용. 초이스가 있으면 반드시 초이스별 값을 사용.
     let otaSalePrice = 0;
     let choicePrice = 0;
+    let notIncludedPrice = rule.not_included_price ?? 0; // 초이스 없을 때만 사용
     // rule.adult_price는 증차감 금액(price_adjustment)이므로, 실제 기본 가격은 상품 기본 가격을 사용
     const priceAdjustment = rule.adult_price || 0;
     const basePrice = productBasePrice.adult + priceAdjustment;
     
     if (rule.choices_pricing) {
       try {
-        // choices_pricing 파싱
         const choicesData = typeof rule.choices_pricing === 'string' 
           ? JSON.parse(rule.choices_pricing) 
           : rule.choices_pricing;
         
-        // 초이스가 없는 경우 (no_choice) 처리
+        // 초이스가 없는 경우 (no_choice) — 기본 가격/불포함 사용
         if (choicesData['no_choice']) {
-          // selectedChoice가 명시적으로 선택되어 있고 'no_choice'가 아니면 가격 없음
           if (selectedChoice && selectedChoice !== '' && selectedChoice !== 'no_choice') {
             return null;
           }
           const noChoiceData = choicesData['no_choice'];
-          otaSalePrice = noChoiceData?.ota_sale_price || 0;
+          otaSalePrice = noChoiceData?.ota_sale_price ?? 0;
           choicePrice = 0;
+          // no_choice = 초이스 없는 상품 → 기본 가격 쪽 불포함 금액 사용
+          notIncludedPrice = noChoiceData?.not_included_price ?? rule.not_included_price ?? 0;
         } else {
-          // 선택된 초이스 ID 결정
+          // 초이스가 있는 상품 — 반드시 초이스별 가격 설정에서 OTA 판매가·불포함 금액 로드
           let choiceId = selectedChoice;
-          
-          // selectedChoice가 명시적으로 선택되어 있는 경우
-          if (choiceId && choiceId !== '') {
-            // 선택된 초이스의 가격 데이터가 없으면 null 반환
-            if (!choicesData[choiceId]) {
-              return null;
-            }
+          if (choiceId && choiceId !== '' && choicesData[choiceId]) {
+            // 매칭된 초이스 사용
+          } else if (choiceId && choiceId !== '') {
+            const firstChoiceId = Object.keys(choicesData).find(k => k !== 'no_choice');
+            if (firstChoiceId) choiceId = firstChoiceId;
           } else {
-            // selectedChoice가 선택되지 않았을 때만 첫 번째 초이스 사용
-            const firstChoiceId = Object.keys(choicesData)[0];
-            if (firstChoiceId && firstChoiceId !== 'no_choice') {
-              choiceId = firstChoiceId;
-            }
+            const firstChoiceId = Object.keys(choicesData).find(k => k !== 'no_choice');
+            if (firstChoiceId) choiceId = firstChoiceId;
           }
           
           if (choiceId && choicesData[choiceId]) {
             const choiceData = choicesData[choiceId];
-            otaSalePrice = choiceData?.ota_sale_price || 0;
-            choicePrice = choiceData?.adult_price || choiceData?.adult || 0;
-          } else if (selectedChoice && selectedChoice !== '') {
-            // 명시적으로 선택된 초이스인데 데이터가 없으면 null 반환
+            otaSalePrice = choiceData?.ota_sale_price ?? 0;
+            choicePrice = choiceData?.adult_price ?? choiceData?.adult ?? 0;
+            // 초이스별 가격 설정에 있는 불포함 금액 사용 (기본 가격 불포함은 초이스 없는 상품 전용)
+            notIncludedPrice = choiceData?.not_included_price ?? 0;
+          } else if (selectedChoice && selectedChoice !== '' && Object.keys(choicesData).filter(k => k !== 'no_choice').length === 0) {
             return null;
           }
         }
@@ -357,32 +386,7 @@ export const PricingCalendar = memo(function PricingCalendar({
         console.warn('choices_pricing 파싱 오류:', e);
       }
     } else if (selectedChoice && selectedChoice !== '') {
-      // choices_pricing이 없는데 초이스가 선택되어 있으면 가격 없음
       return null;
-    }
-    
-    // 5. 불포함 금액 확인 (초이스별 불포함 금액 우선, 없으면 동적 가격의 기본 not_included_price 사용)
-    let notIncludedPrice = rule.not_included_price || 0;
-    if (rule.choices_pricing) {
-      try {
-        const choicesData = typeof rule.choices_pricing === 'string' 
-          ? JSON.parse(rule.choices_pricing) 
-          : rule.choices_pricing;
-        // 선택된 초이스 ID 결정
-        let choiceId = selectedChoice;
-        if (!choiceId || choiceId === '') {
-          const firstChoiceId = Object.keys(choicesData)[0];
-          if (firstChoiceId) {
-            choiceId = firstChoiceId;
-          }
-        }
-        // 선택된 초이스의 불포함 금액이 있으면 사용
-        if (choiceId && choicesData[choiceId] && choicesData[choiceId].not_included_price !== undefined) {
-          notIncludedPrice = choicesData[choiceId].not_included_price || 0;
-        }
-      } catch (e) {
-        console.warn('choices_pricing에서 불포함 금액 파싱 오류:', e);
-      }
     }
     
     // 6. 최대 판매가 계산
@@ -412,35 +416,57 @@ export const PricingCalendar = memo(function PricingCalendar({
       }
     }
     
-    // 7. 할인 가격 계산 (최대 판매가 × (1 - 쿠폰%))
-    const couponPercent = rule.coupon_percent || 0;
-    const discountPrice = maxSalePrice * (1 - couponPercent / 100);
-    
+    // 7. 적용 쿠폰 % (캘린더 쿠폰 선택기 우선, 없으면 rule 값)
+    const couponPercentUsed = effectiveCouponPercent !== null ? effectiveCouponPercent : (rule.coupon_percent || 0);
+    // 할인 가격 = 최대 판매가 × (1 - 쿠폰%)
+    const discountPrice = maxSalePrice * (1 - couponPercentUsed / 100);
+
     // 8. Net Price 계산
     let netPrice = 0;
     const commissionPercent = rule.commission_percent || 0;
     const commissionBasePriceOnly = channelInfo?.commission_base_price_only || false;
-    
+
     if ((isOTA || isHomepageChannel) && otaSalePrice > 0) {
-      // OTA 채널 또는 홈페이지 채널인 경우: 기본 계산 후 불포함 금액 추가
-      const baseNetPrice = otaSalePrice * (1 - couponPercent / 100) * (1 - commissionPercent / 100);
-      // 불포함 금액이 있으면 항상 Net Price에 추가
+      // OTA/홈페이지: OTA판매가 × (1 - 쿠폰%) × (1 - 수수료%) + 불포함
+      const baseNetPrice = otaSalePrice * (1 - couponPercentUsed / 100) * (1 - commissionPercent / 100);
       netPrice = baseNetPrice + notIncludedPrice;
     } else {
-      // 일반 채널: 할인 가격 × (1 - 수수료%) + 불포함 금액
       const baseNetPrice = discountPrice * (1 - commissionPercent / 100);
-      // 불포함 금액이 있으면 항상 Net Price에 추가
       netPrice = baseNetPrice + notIncludedPrice;
     }
-    
-    // 9. 결과 반환 (소수점 2자리로 반올림)
+
+    // 손님 지불가 = (OTA 판매가 × (1 - 쿠폰%) 또는 OTA 판매가) + 불포함 금액
+    const customerPay = (otaSalePrice * (1 - couponPercentUsed / 100)) + notIncludedPrice;
+
+    // 9. 결과 반환 (소수점 2자리) + 툴팁용 breakdown
     return {
       maxSalePrice: Math.round(maxSalePrice * 100) / 100,
       discountPrice: Math.round(discountPrice * 100) / 100,
       netPrice: Math.round(netPrice * 100) / 100,
-      isOTA
+      isOTA,
+      breakdown: {
+        otaSalePrice: Math.round(otaSalePrice * 100) / 100,
+        notIncludedPrice: Math.round(notIncludedPrice * 100) / 100,
+        commissionPercent,
+        couponPercentUsed,
+        customerPay: Math.round(customerPay * 100) / 100,
+        netPrice: Math.round(netPrice * 100) / 100
+      }
     };
-  }, [selectedChoice, selectedVariant, pickRuleForChannel, getPricingForDate, channelInfo, productBasePrice, selectedChannelId, selectedChannelType]);
+  }, [selectedChoice, selectedVariant, pickRuleForChannel, getPricingForDate, channelInfo, productBasePrice, selectedChannelId, selectedChannelType, effectiveCouponPercent]);
+
+  /** 날짜 셀 호버 시 가격 계산식 툴팁 텍스트 */
+  const getBreakdownTooltipText = useCallback((b: { otaSalePrice: number; notIncludedPrice: number; commissionPercent: number; couponPercentUsed: number; customerPay: number; netPrice: number } | undefined) => {
+    if (!b) return '';
+    const { otaSalePrice, notIncludedPrice, commissionPercent, couponPercentUsed, customerPay, netPrice } = b;
+    const head = [`OTA 판매가 = $${otaSalePrice.toFixed(2)}`, `불포함 금액 = $${notIncludedPrice.toFixed(2)}`, `수수료(%) = ${commissionPercent}%`];
+    if (couponPercentUsed > 0) head.push(`쿠폰(%) = ${couponPercentUsed}%`);
+    if (couponPercentUsed > 0) {
+      const afterCoupon = otaSalePrice * (1 - couponPercentUsed / 100);
+      return [...head, '', `손님 지불가: $${otaSalePrice.toFixed(2)} × (1 - ${couponPercentUsed}%) + $${notIncludedPrice.toFixed(2)} = $${afterCoupon.toFixed(2)} + $${notIncludedPrice.toFixed(2)} = $${customerPay.toFixed(2)}`, `Net Price: $${afterCoupon.toFixed(2)} × (1 - ${commissionPercent}%) + $${notIncludedPrice.toFixed(2)} = $${netPrice.toFixed(2)}`].join('\n');
+    }
+    return [...head, '', `손님 지불가: $${otaSalePrice.toFixed(2)} + $${notIncludedPrice.toFixed(2)} = $${customerPay.toFixed(2)}`, `Net Price: $${otaSalePrice.toFixed(2)} × (1 - ${commissionPercent}%) + $${notIncludedPrice.toFixed(2)} = $${netPrice.toFixed(2)}`].join('\n');
+  }, []);
 
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
@@ -509,16 +535,31 @@ export const PricingCalendar = memo(function PricingCalendar({
       }
     }
 
+    const breakdownTooltipText = singlePrice?.breakdown ? getBreakdownTooltipText(singlePrice.breakdown) : '';
+
     return (
       <button
         key={day}
+        type="button"
         onClick={(e) => handleDateClick(day, e)}
         onMouseDown={() => handleDateMouseDown(day, 0)}
+        onMouseEnter={() => setHoveredDate(dateString)}
+        onMouseLeave={() => setHoveredDate(null)}
         title={hasDataForDate ? '클릭: 가격 히스토리 보기' : '날짜 선택'}
         className={`relative p-2 h-20 border border-gray-200 hover:bg-gray-50 transition-colors ${
           isSelected ? 'bg-blue-100 border-blue-300' : ''
         } ${isToday ? 'ring-2 ring-blue-500' : ''} ${hasDataForDate ? 'cursor-pointer' : ''}`}
       >
+        {/* 마우스 오버 시 가격 계산식 툴팁 */}
+        {hoveredDate === dateString && breakdownTooltipText && (
+          <div className="absolute bottom-full left-0 right-0 mb-1 z-[100] p-3 bg-gray-900 text-white text-xs rounded shadow-lg pointer-events-none min-w-[300px] w-max max-w-[90vw]">
+            <div className="space-y-1">
+              {breakdownTooltipText.split('\n').map((line, i) => (
+                <div key={i} className="whitespace-nowrap leading-tight">{line || '\u00A0'}</div>
+              ))}
+            </div>
+          </div>
+        )}
         {/* 날짜를 오른쪽 상단에 작은 글씨로 표시 */}
         <div className="absolute top-1 right-1 text-xs text-gray-500">{day}</div>
         
@@ -586,7 +627,7 @@ export const PricingCalendar = memo(function PricingCalendar({
       {/* 초이스 선택 드롭다운 및 불포함 사항 필터 */}
       {choiceCombinations.length > 0 && (selectedChannelId || selectedChannelType) && (
         <div className="p-4 border-b border-gray-200">
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="relative">
               <select
                 value={selectedChoice}
@@ -602,6 +643,30 @@ export const PricingCalendar = memo(function PricingCalendar({
               </select>
               <ChevronDown className="absolute right-1.5 top-1.5 h-3 w-3 text-gray-400 pointer-events-none" />
             </div>
+            {/* 해당 채널 쿠폰 선택 (선택 시 손님 지불가 / Net Price에 반영) */}
+            {selectedChannelId && (
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-600 whitespace-nowrap">쿠폰</label>
+                <div className="relative">
+                  <select
+                    value={selectedCouponId}
+                    onChange={(e) => setSelectedCouponId(e.target.value)}
+                    className="appearance-none bg-white border border-gray-300 rounded-md px-2 py-1 pr-6 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    title="쿠폰 선택 시 손님 지불가·Net Price가 해당 할인률로 재계산됩니다"
+                  >
+                    <option value="">쿠폰 없음</option>
+                    {(channelCoupons || []).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.coupon_code}
+                        {c.discount_type === 'percentage' && c.percentage_value != null ? ` (${c.percentage_value}%)` : ''}
+                        {c.discount_type === 'fixed' && c.fixed_value != null ? ` ($${c.fixed_value})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-1.5 top-1.5 h-3 w-3 text-gray-400 pointer-events-none" />
+                </div>
+              </div>
+            )}
           </div>
           
           {/* 가격 범례 (다중 선택 가능) */}
