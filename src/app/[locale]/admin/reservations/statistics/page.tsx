@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react'
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { Calendar, BarChart3, TrendingUp, Users, Package, Link, CheckCircle, Clock, XCircle, Receipt, Search } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useReservationData } from '@/hooks/useReservationData'
@@ -61,11 +61,20 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   const { authUser } = useAuth()
   const [isSuper, setIsSuper] = useState(false)
   const [isCheckingPermission, setIsCheckingPermission] = useState(true)
+
+  // team 테이블에 없거나 배포 환경 차이로 조회 실패 시에도 Super로 인정할 이메일 (소문자로 비교)
+  const SUPER_ADMIN_EMAILS = ['wooyong.shim09@gmail.com']
   
   // 권한 체크
   useEffect(() => {
     const checkPermission = async () => {
       if (!authUser?.email) {
+        setIsCheckingPermission(false)
+        return
+      }
+      const emailLower = authUser.email.toLowerCase().trim()
+      if (SUPER_ADMIN_EMAILS.some((e) => e.toLowerCase() === emailLower)) {
+        setIsSuper(true)
         setIsCheckingPermission(false)
         return
       }
@@ -84,7 +93,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
           return
         }
         
-        const position = (teamData as any).position?.toLowerCase()
+        const position = String((teamData as any).position ?? '').toLowerCase().trim()
         setIsSuper(position === 'super')
       } catch (error) {
         console.error('권한 체크 오류:', error)
@@ -125,6 +134,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   // 상태 필터를 소문자로 변경 (데이터베이스와 일치)
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>(['pending', 'confirmed', 'completed'])
   const [searchQuery, setSearchQuery] = useState<string>('')
+  const endDateInputRef = useRef<HTMLInputElement>(null)
 
   // 통계 데이터 계산
   const statisticsData = useMemo((): StatisticsData => {
@@ -362,24 +372,76 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   }, [selectedChart, statisticsData])
 
   // 시간 범위 변경 핸들러
-  const handleTimeRangeChange = (newTimeRange: TimeRange) => {
-    setTimeRange(newTimeRange)
+  // 프리셋 적용 (일별: 어제/오늘, 월별: 이번달/지난달, 연간: 2025/2024/2023)
+  const applyPreset = useCallback((preset: 'daily_yesterday' | 'daily_today' | 'monthly_this' | 'monthly_last' | 'yearly_2025' | 'yearly_2024' | 'yearly_2023') => {
     const today = new Date()
-    let startDate: Date
-    
-    if (newTimeRange === 'daily') {
-      startDate = new Date(today)
-    } else if (newTimeRange === 'monthly') {
-      startDate = new Date(today.getFullYear(), today.getMonth(), 1)
+    const toYmd = (d: Date) => d.toISOString().split('T')[0]
+    let range: TimeRange
+    let start: string
+    let end: string
+
+    if (preset === 'daily_yesterday') {
+      const yesterday = new Date(today)
+      yesterday.setDate(yesterday.getDate() - 1)
+      range = 'daily'
+      start = end = toYmd(yesterday)
+    } else if (preset === 'daily_today') {
+      range = 'daily'
+      start = end = toYmd(today)
+    } else if (preset === 'monthly_this') {
+      range = 'monthly'
+      start = toYmd(new Date(today.getFullYear(), today.getMonth(), 1))
+      end = toYmd(today)
+    } else if (preset === 'monthly_last') {
+      range = 'monthly'
+      const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+      const lastDay = new Date(today.getFullYear(), today.getMonth(), 0)
+      start = toYmd(lastMonth)
+      end = toYmd(lastDay)
+    } else if (preset === 'yearly_2025') {
+      range = 'yearly'
+      start = '2025-01-01'
+      end = '2025-12-31'
+    } else if (preset === 'yearly_2024') {
+      range = 'yearly'
+      start = '2024-01-01'
+      end = '2024-12-31'
     } else {
-      startDate = new Date(today.getFullYear(), 0, 1)
+      range = 'yearly'
+      start = '2023-01-01'
+      end = '2023-12-31'
     }
-    
-    setDateRange({
-      start: startDate.toISOString().split('T')[0],
-      end: today.toISOString().split('T')[0]
-    })
-  }
+    setTimeRange(range)
+    setDateRange({ start, end })
+  }, [])
+
+  // 현재 선택이 해당 프리셋과 일치하는지
+  const isPresetActive = useCallback((preset: 'daily_yesterday' | 'daily_today' | 'monthly_this' | 'monthly_last' | 'yearly_2025' | 'yearly_2024' | 'yearly_2023') => {
+    if (preset === 'daily_yesterday' || preset === 'daily_today') {
+      if (timeRange !== 'daily') return false
+      if (dateRange.start !== dateRange.end) return false
+      const today = new Date().toISOString().split('T')[0]
+      const yesterday = new Date(Date.now() - 864e5).toISOString().split('T')[0]
+      return preset === 'daily_today' ? dateRange.start === today : dateRange.start === yesterday
+    }
+    if (preset === 'monthly_this' || preset === 'monthly_last') {
+      if (timeRange !== 'monthly') return false
+      const today = new Date()
+      if (preset === 'monthly_this') {
+        const first = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0]
+        return dateRange.start === first && dateRange.end === today.toISOString().split('T')[0]
+      }
+      const lastFirst = new Date(today.getFullYear(), today.getMonth() - 1, 1).toISOString().split('T')[0]
+      const lastEnd = new Date(today.getFullYear(), today.getMonth(), 0).toISOString().split('T')[0]
+      return dateRange.start === lastFirst && dateRange.end === lastEnd
+    }
+    if (preset.startsWith('yearly_')) {
+      if (timeRange !== 'yearly') return false
+      const year = preset.replace('yearly_', '')
+      return dateRange.start === `${year}-01-01` && dateRange.end === `${year}-12-31`
+    }
+    return false
+  }, [timeRange, dateRange])
 
   if (isCheckingPermission || loading) {
     return (
@@ -416,30 +478,53 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
         </button>
       </div>
 
-      {/* 탭 네비게이션 */}
+      {/* 탭 네비게이션 + 검색 (탭 메뉴줄 오른쪽 끝에 검색) */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8 px-6">
-            {[
-              { key: 'reservations', label: '예약 통계', icon: BarChart3 },
-              { key: 'tours', label: '투어 통계', icon: TrendingUp },
-              { key: 'settlement', label: '예약 정산', icon: Receipt },
-              { key: 'channelSettlement', label: '채널별 정산', icon: Receipt }
-            ].map(({ key, label, icon: Icon }) => (
-              <button
-                key={key}
-                onClick={() => setActiveTab(key as TabType)}
-                className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === key
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <Icon size={20} />
-                <span>{label}</span>
-              </button>
-            ))}
-          </nav>
+          <div className="flex items-center justify-between px-6">
+            <nav className="-mb-px flex space-x-8">
+              {[
+                { key: 'reservations', label: '예약 통계', icon: BarChart3 },
+                { key: 'tours', label: '투어 통계', icon: TrendingUp },
+                { key: 'settlement', label: '예약 정산', icon: Receipt },
+                { key: 'channelSettlement', label: '채널별 정산', icon: Receipt }
+              ].map(({ key, label, icon: Icon }) => (
+                <button
+                  key={key}
+                  onClick={() => setActiveTab(key as TabType)}
+                  className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === key
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <Icon size={20} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </nav>
+            <div className="flex items-center gap-2 py-2 flex-shrink-0">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="고객명, 채널RN, 상품명, 날짜 검색..."
+                  className="pl-9 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[240px] text-sm"
+                />
+              </div>
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="px-2 py-2 text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap"
+                >
+                  초기화
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -499,65 +584,100 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
             </div>
           </div>
 
-          {/* 시간 범위 선택 */}
-          <div className="flex items-center space-x-2 flex-shrink-0">
-            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">시간 범위:</label>
-            <div className="flex space-x-1">
-              {(['daily', 'monthly', 'yearly'] as TimeRange[]).map((range) => (
-                <button
-                  key={range}
-                  onClick={() => handleTimeRangeChange(range)}
-                  className={`px-3 py-1 text-sm rounded-md transition-colors whitespace-nowrap ${
-                    timeRange === range
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  {range === 'daily' ? '일별' : range === 'monthly' ? '월별' : '연간별'}
-                </button>
-              ))}
+          {/* 시간 범위 프리셋: 일별 / 월별 / 연간별 버튼 */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 flex-shrink-0">
+            <div className="flex items-center gap-1">
+              <span className="text-sm font-medium text-gray-700 whitespace-nowrap mr-1">일별</span>
+              <button
+                onClick={() => applyPreset('daily_yesterday')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
+                  isPresetActive('daily_yesterday') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                어제
+              </button>
+              <button
+                onClick={() => applyPreset('daily_today')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
+                  isPresetActive('daily_today') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                오늘
+              </button>
             </div>
-          </div>
-
-          {/* 날짜 선택 */}
-          <div className="flex items-center space-x-2 flex-shrink-0">
-            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">기간:</label>
-            <input
-              type="date"
-              value={dateRange.start}
-              onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent flex-shrink-0"
-            />
-            <span className="text-gray-500">~</span>
-            <input
-              type="date"
-              value={dateRange.end}
-              onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent flex-shrink-0"
-            />
-          </div>
-
-          {/* 검색 기능 */}
-          <div className="flex items-center space-x-2 flex-shrink-0">
-            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">검색:</label>
-            <div className="relative flex-shrink-0">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <div className="flex items-center gap-1">
+              <span className="text-sm font-medium text-gray-700 whitespace-nowrap mr-1">월별</span>
+              <button
+                onClick={() => applyPreset('monthly_this')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
+                  isPresetActive('monthly_this') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                이번 달
+              </button>
+              <button
+                onClick={() => applyPreset('monthly_last')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
+                  isPresetActive('monthly_last') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                지난 달
+              </button>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-sm font-medium text-gray-700 whitespace-nowrap mr-1">연간별</span>
+              <button
+                onClick={() => applyPreset('yearly_2025')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
+                  isPresetActive('yearly_2025') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                2025
+              </button>
+              <button
+                onClick={() => applyPreset('yearly_2024')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
+                  isPresetActive('yearly_2024') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                2024
+              </button>
+              <button
+                onClick={() => applyPreset('yearly_2023')}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
+                  isPresetActive('yearly_2023') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                2023
+              </button>
+            </div>
+            <div className="flex items-center gap-1 border-l border-gray-200 pl-3">
+              <span className="text-sm font-medium text-gray-500 whitespace-nowrap">기간 직접 선택:</span>
               <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="고객명, 채널RN, 상품명, 날짜 검색..."
-                className="pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[280px] flex-shrink-0"
+                type="date"
+                value={dateRange.start}
+                onChange={(e) => {
+                  const start = e.target.value
+                  setDateRange(prev => ({ ...prev, start }))
+                  // 시작일 선택 후 종료일 달력 자동 오픈
+                  setTimeout(() => {
+                    endDateInputRef.current?.focus()
+                    if (typeof endDateInputRef.current?.showPicker === 'function') {
+                      endDateInputRef.current.showPicker()
+                    }
+                  }, 100)
+                }}
+                className="px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent flex-shrink-0"
+              />
+              <span className="text-gray-400">~</span>
+              <input
+                ref={endDateInputRef}
+                type="date"
+                value={dateRange.end}
+                onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                className="px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent flex-shrink-0"
               />
             </div>
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="px-3 py-2 text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap"
-              >
-                초기화
-              </button>
-            )}
           </div>
         </div>
       </div>
