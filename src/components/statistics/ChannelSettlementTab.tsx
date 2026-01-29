@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl'
 import { useReservationData } from '@/hooks/useReservationData'
 import { getChannelName, getProductName, getCustomerName, getStatusColor } from '@/utils/reservationUtils'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/contexts/AuthContext'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 import type { Reservation } from '@/types/reservation'
@@ -51,13 +52,21 @@ interface ReservationItem {
   tax?: number
   depositAmount?: number
   balanceAmount?: number
+  /** 입금내역 (Partner Received) 합계 */
+  partnerReceivedAmount?: number
+  /** 채널 정산 금액 (예약 가격 계산과 동일) */
+  channelSettlementAmount?: number
+  amountAudited?: boolean
+  amountAuditedAt?: string | null
+  amountAuditedBy?: string | null
 }
 
 // TourItem을 ReservationItem과 동일하게 사용
 
 export default function ChannelSettlementTab({ dateRange, selectedChannelId, selectedStatuses, searchQuery = '' }: ChannelSettlementTabProps) {
   const t = useTranslations('reservations')
-  
+  const { authUser } = useAuth()
+
   const {
     reservations,
     customers,
@@ -87,6 +96,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
     tax: number
     depositAmount: number
     balanceAmount: number
+    choicesTotal: number
   }>>({})
   const [pricesLoading, setPricesLoading] = useState(false)
   const [activeDetailTab, setActiveDetailTab] = useState<'reservations' | 'tours'>('reservations')
@@ -96,6 +106,8 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
   const [expandedChannels, setExpandedChannels] = useState<Set<string>>(new Set())
   const [selectedChannelIdForFilter, setSelectedChannelIdForFilter] = useState<string>('')
   const [isChannelModalOpen, setIsChannelModalOpen] = useState(false)
+  const [partnerReceivedByReservation, setPartnerReceivedByReservation] = useState<Record<string, number>>({})
+  const [reservationAudit, setReservationAudit] = useState<Record<string, { amount_audited: boolean; amount_audited_at: string | null; amount_audited_by: string | null }>>({})
 
   // 예약 클릭 시 수정 모달 열기
   const openReservationEditModal = useCallback((reservationId: string) => {
@@ -244,6 +256,24 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
       alert(t('messages.reservationUpdateError') + (error instanceof Error ? error.message : 'Unknown error'))
     }
   }, [editingReservation, refreshReservations, t])
+
+  // 금액 Audit 체크박스 토글 (Net Price vs 입금내역 더블체크 기록)
+  const handleToggleAmountAudit = useCallback(async (reservationId: string, checked: boolean) => {
+    try {
+      const payload: { amount_audited: boolean; amount_audited_at: string | null; amount_audited_by: string | null } = checked
+        ? { amount_audited: true, amount_audited_at: new Date().toISOString(), amount_audited_by: authUser?.email ?? null }
+        : { amount_audited: false, amount_audited_at: null, amount_audited_by: null }
+      const { error } = await (supabase as any).from('reservations').update(payload).eq('id', reservationId)
+      if (error) {
+        alert('Audit 상태 저장 오류: ' + error.message)
+        return
+      }
+      setReservationAudit(prev => ({ ...prev, [reservationId]: { amount_audited: payload.amount_audited, amount_audited_at: payload.amount_audited_at, amount_audited_by: payload.amount_audited_by } }))
+    } catch (err) {
+      console.error('handleToggleAmountAudit:', err)
+      alert('Audit 상태 저장 중 오류가 발생했습니다.')
+    }
+  }, [authUser?.email])
 
   const handleDeleteReservation = useCallback(async (id: string) => {
     if (!confirm(t('deleteConfirm'))) return
@@ -414,6 +444,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
           tax: number
           depositAmount: number
           balanceAmount: number
+          choicesTotal: number
         }> = {}
 
         // URL 길이 제한을 피하기 위해 청크 단위로 나눠서 요청 (한 번에 최대 100개씩)
@@ -423,7 +454,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
           
           const { data: pricingData, error } = await supabase
             .from('reservation_pricing')
-            .select('reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount')
+            .select('reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount, choices_total')
             .in('reservation_id', chunk)
 
           if (error) {
@@ -444,9 +475,49 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
               additionalCost: p.additional_cost || 0,
               tax: p.tax || 0,
               depositAmount: p.deposit_amount || 0,
-              balanceAmount: p.balance_amount || 0
+              balanceAmount: p.balance_amount || 0,
+              choicesTotal: p.choices_total ?? 0
             }
           })
+        }
+
+        // 입금내역 (Partner Received) 합계 조회
+        const partnerReceivedMap: Record<string, number> = {}
+        for (let i = 0; i < reservationIds.length; i += chunkSize) {
+          const chunk = reservationIds.slice(i, i + chunkSize)
+          const { data: paymentData } = await supabase
+            .from('payment_records')
+            .select('reservation_id, amount')
+            .in('reservation_id', chunk)
+            .eq('payment_status', 'Partner Received')
+          paymentData?.forEach((row: { reservation_id: string; amount: number | null }) => {
+            const rid = row.reservation_id
+            const amt = row.amount ?? 0
+            partnerReceivedMap[rid] = (partnerReceivedMap[rid] ?? 0) + amt
+          })
+        }
+        setPartnerReceivedByReservation(prev => ({ ...prev, ...partnerReceivedMap }))
+
+        // 금액 Audit 여부 조회 (amount_audited, amount_audited_at, amount_audited_by)
+        const auditMap: Record<string, { amount_audited: boolean; amount_audited_at: string | null; amount_audited_by: string | null }> = {}
+        try {
+          for (let i = 0; i < reservationIds.length; i += chunkSize) {
+            const chunk = reservationIds.slice(i, i + chunkSize)
+            const { data: auditData } = await supabase
+              .from('reservations')
+              .select('id, amount_audited, amount_audited_at, amount_audited_by')
+              .in('id', chunk)
+            auditData?.forEach((row: any) => {
+              auditMap[row.id] = {
+                amount_audited: !!row.amount_audited,
+                amount_audited_at: row.amount_audited_at ?? null,
+                amount_audited_by: row.amount_audited_by ?? null
+              }
+            })
+          }
+          setReservationAudit(prev => ({ ...prev, ...auditMap }))
+        } catch {
+          // 컬럼 미존재 시 무시
         }
 
         setReservationPrices(pricesMap)
@@ -477,8 +548,11 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
         additionalCost: 0,
         tax: 0,
         depositAmount: 0,
-        balanceAmount: 0
+        balanceAmount: 0,
+        choicesTotal: 0
       }
+      const productSubtotal = (pricing.productPriceTotal || 0) - Math.abs(pricing.couponDiscount || 0)
+      const channelSettlementAmount = Math.max(0, productSubtotal - (pricing.choicesTotal ?? 0) - (pricing.commissionAmount || 0))
       return {
         id: reservation.id,
         tourDate: reservation.tourDate,
@@ -504,7 +578,12 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
         additionalCost: pricing.additionalCost,
         tax: pricing.tax,
         depositAmount: pricing.depositAmount,
-        balanceAmount: pricing.balanceAmount
+        balanceAmount: pricing.balanceAmount,
+        partnerReceivedAmount: partnerReceivedByReservation[reservation.id] ?? 0,
+        channelSettlementAmount,
+        amountAudited: reservationAudit[reservation.id]?.amount_audited ?? false,
+        amountAuditedAt: reservationAudit[reservation.id]?.amount_audited_at ?? null,
+        amountAuditedBy: reservationAudit[reservation.id]?.amount_audited_by ?? null
       }
     })
     
@@ -514,7 +593,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
       const dateB = new Date(b.registrationDate).getTime()
       return reservationSortOrder === 'asc' ? dateA - dateB : dateB - dateA
     })
-  }, [filteredReservations, customers, products, reservationPrices, reservationPricingData, reservationSortOrder])
+  }, [filteredReservations, customers, products, reservationPrices, reservationPricingData, reservationSortOrder, partnerReceivedByReservation, reservationAudit])
 
   // 선택된 채널의 투어 진행 내역 가져오기 (투어 날짜 기준 예약 목록)
   useEffect(() => {
@@ -588,6 +667,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
           tax: number
           depositAmount: number
           balanceAmount: number
+          choicesTotal: number
         }> = {}
 
         // URL 길이 제한을 피하기 위해 청크 단위로 나눠서 요청 (한 번에 최대 100개씩)
@@ -598,7 +678,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
             
             const { data: pricingData, error } = await supabase
               .from('reservation_pricing')
-              .select('reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount')
+              .select('reservation_id, total_price, adult_product_price, product_price_total, option_total, subtotal, commission_amount, coupon_discount, additional_discount, additional_cost, tax, deposit_amount, balance_amount, choices_total')
               .in('reservation_id', chunk)
 
             if (error) {
@@ -619,10 +699,46 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                 additionalCost: p.additional_cost || 0,
                 tax: p.tax || 0,
                 depositAmount: p.deposit_amount || 0,
-                balanceAmount: p.balance_amount || 0
+                balanceAmount: p.balance_amount || 0,
+                choicesTotal: p.choices_total ?? 0
               }
             })
           }
+        }
+
+        // 입금내역 (Partner Received) 및 Audit 조회 (투어 탭용)
+        const partnerReceivedMap: Record<string, number> = {}
+        const auditMap: Record<string, { amount_audited: boolean; amount_audited_at: string | null; amount_audited_by: string | null }> = {}
+        if (reservationIds.length > 0) {
+          const chunkSize = 100
+          for (let i = 0; i < reservationIds.length; i += chunkSize) {
+            const chunk = reservationIds.slice(i, i + chunkSize)
+            const { data: paymentData } = await supabase
+              .from('payment_records')
+              .select('reservation_id, amount')
+              .in('reservation_id', chunk)
+              .eq('payment_status', 'Partner Received')
+            paymentData?.forEach((row: { reservation_id: string; amount: number | null }) => {
+              const rid = row.reservation_id
+              const amt = row.amount ?? 0
+              partnerReceivedMap[rid] = (partnerReceivedMap[rid] ?? 0) + amt
+            })
+            try {
+              const { data: auditData } = await supabase
+                .from('reservations')
+                .select('id, amount_audited, amount_audited_at, amount_audited_by')
+                .in('id', chunk)
+              auditData?.forEach((row: any) => {
+                auditMap[row.id] = {
+                  amount_audited: !!row.amount_audited,
+                  amount_audited_at: row.amount_audited_at ?? null,
+                  amount_audited_by: row.amount_audited_by ?? null
+                }
+              })
+            } catch { /* 컬럼 미존재 시 무시 */ }
+          }
+          setPartnerReceivedByReservation(prev => ({ ...prev, ...partnerReceivedMap }))
+          setReservationAudit(prev => ({ ...prev, ...auditMap }))
         }
 
         // 예약 아이템으로 변환
@@ -638,8 +754,11 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
             additionalCost: 0,
             tax: 0,
             depositAmount: 0,
-            balanceAmount: 0
+            balanceAmount: 0,
+            choicesTotal: 0
           }
+          const productSubtotal = (pricing.productPriceTotal || 0) - Math.abs(pricing.couponDiscount || 0)
+          const channelSettlementAmount = Math.max(0, productSubtotal - (pricing.choicesTotal ?? 0) - (pricing.commissionAmount || 0))
           return {
           id: reservation.id,
           tourDate: reservation.tourDate,
@@ -667,7 +786,12 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
             additionalCost: pricing.additionalCost,
             tax: pricing.tax,
             depositAmount: pricing.depositAmount,
-            balanceAmount: pricing.balanceAmount
+            balanceAmount: pricing.balanceAmount,
+            partnerReceivedAmount: partnerReceivedMap[reservation.id] ?? 0,
+            channelSettlementAmount,
+            amountAudited: auditMap[reservation.id]?.amount_audited ?? false,
+            amountAuditedAt: auditMap[reservation.id]?.amount_audited_at ?? null,
+            amountAuditedBy: auditMap[reservation.id]?.amount_audited_by ?? null
           }
         })
 
@@ -681,7 +805,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
     }
 
     fetchTourReservations()
-  }, [reservations, selectedChannelId, selectedStatuses, dateRange, customers, products, searchQuery])
+  }, [reservations, selectedChannelId, selectedStatuses, dateRange, customers, products, channels, searchQuery])
 
   // 투어 내역 정렬
   const sortedTourItems = useMemo(() => {
@@ -1139,8 +1263,11 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                               additionalCost: 0,
                               tax: 0,
                               depositAmount: 0,
-                              balanceAmount: 0
+                              balanceAmount: 0,
+                              choicesTotal: 0
                             }
+                            const productSubtotal = (pricing.productPriceTotal || 0) - Math.abs(pricing.couponDiscount || 0)
+                            const channelSettlementAmount = Math.max(0, productSubtotal - (pricing.choicesTotal ?? 0) - (pricing.commissionAmount || 0))
                             return {
                               id: reservation.id,
                               tourDate: reservation.tourDate,
@@ -1155,7 +1282,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                               infant: reservation.infant || 0,
                               status: reservation.status,
                               channelRN: reservation.channelRN || '',
-                              totalPrice: 0,
+                              totalPrice: reservationPrices[reservation.id] || 0,
                               adultPrice: pricing.adultPrice,
                               productPriceTotal: pricing.productPriceTotal,
                               optionTotal: pricing.optionTotal,
@@ -1166,7 +1293,12 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                               additionalCost: pricing.additionalCost,
                               tax: pricing.tax,
                               depositAmount: pricing.depositAmount,
-                              balanceAmount: pricing.balanceAmount
+                              balanceAmount: pricing.balanceAmount,
+                              partnerReceivedAmount: partnerReceivedByReservation[reservation.id] ?? 0,
+                              channelSettlementAmount,
+                              amountAudited: reservationAudit[reservation.id]?.amount_audited ?? false,
+                              amountAuditedAt: reservationAudit[reservation.id]?.amount_audited_at ?? null,
+                              amountAuditedBy: reservationAudit[reservation.id]?.amount_audited_by ?? null
                             }
                           }).sort((a, b) => {
                             const dateA = new Date(a.registrationDate).getTime()
@@ -1239,12 +1371,15 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">총 가격</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">옵션 총합</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Net 가격</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">입금내역 (Partner Received)</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">채널 정산 금액</th>
+                                        <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase w-20">Audit</th>
                                       </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
                                       {channelItems.length === 0 ? (
                                         <tr>
-                                          <td colSpan={15} className="px-2 py-3 text-center text-gray-500 text-xs">
+                                          <td colSpan={18} className="px-2 py-3 text-center text-gray-500 text-xs">
                                             예약 내역이 없습니다.
                                           </td>
                                         </tr>
@@ -1254,6 +1389,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                           const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
                                           const totalPrice = grandTotal - (item.commissionAmount || 0)
                                           const netPrice = totalPrice + (item.optionTotal || 0)
+                                          const auditTooltip = item.amountAudited && (item.amountAuditedBy || item.amountAuditedAt)
+                                            ? `Audit: ${item.amountAuditedBy ?? '-'} / ${item.amountAuditedAt ? new Date(item.amountAuditedAt).toLocaleString('ko-KR') : '-'}`
+                                            : '금액 더블체크 완료 시 체크'
                                           return (
                                             <tr 
                                               key={`${channel.id}-${item.id}-${idx}`} 
@@ -1310,8 +1448,22 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                               </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right w-24">
                                                 ${netPrice.toLocaleString()}
-                        </td>
-                      </tr>
+                                              </td>
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-teal-600 text-right w-24">
+                                                ${(item.partnerReceivedAmount ?? 0).toLocaleString()}
+                                              </td>
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-amber-600 text-right w-24">
+                                                ${(item.channelSettlementAmount ?? 0).toLocaleString()}
+                                              </td>
+                                              <td className="px-2 py-2 whitespace-nowrap text-center w-20" onClick={e => e.stopPropagation()} title={auditTooltip}>
+                                                <input
+                                                  type="checkbox"
+                                                  checked={!!item.amountAudited}
+                                                  onChange={e => handleToggleAmountAudit(item.id, e.target.checked)}
+                                                  className="rounded border-gray-300"
+                                                />
+                                              </td>
+                                            </tr>
                                           )
                                         })
                   )}
@@ -1358,6 +1510,13 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                         <td className="px-2 py-2 text-xs font-semibold text-purple-600 text-right">
                                           ${channelStats.netPrice.toLocaleString()}
                                         </td>
+                                        <td className="px-2 py-2 text-xs font-semibold text-teal-600 text-right">
+                                          ${channelItems.reduce((sum, item) => sum + (item.partnerReceivedAmount ?? 0), 0).toLocaleString()}
+                                        </td>
+                                        <td className="px-2 py-2 text-xs font-semibold text-amber-600 text-right">
+                                          ${channelItems.reduce((sum, item) => sum + (item.channelSettlementAmount ?? 0), 0).toLocaleString()}
+                                        </td>
+                                        <td className="px-2 py-2 text-xs text-gray-500 text-center">—</td>
                   </tr>
                 </tfoot>
               </table>
@@ -1464,12 +1623,15 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">총 가격</th>
                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">옵션 총합</th>
                                 <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Net 가격</th>
+                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">입금내역 (Partner Received)</th>
+                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">채널 정산 금액</th>
+                                <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase w-20">Audit</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                               {allTourItems.length === 0 ? (
                       <tr>
-                                  <td colSpan={16} className="px-2 py-3 text-center text-gray-500 text-xs">
+                                  <td colSpan={19} className="px-2 py-3 text-center text-gray-500 text-xs">
                                     투어 진행 내역이 없습니다.
                         </td>
                       </tr>
@@ -1479,6 +1641,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                   const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
                                   const totalPrice = grandTotal - (item.commissionAmount || 0)
                                   const netPrice = totalPrice + (item.optionTotal || 0)
+                                  const auditTooltip = item.amountAudited && (item.amountAuditedBy || item.amountAuditedAt)
+                                    ? `Audit: ${item.amountAuditedBy ?? '-'} / ${item.amountAuditedAt ? new Date(item.amountAuditedAt).toLocaleString('ko-KR') : '-'}`
+                                    : '금액 더블체크 완료 시 체크'
                                   return (
                                     <tr 
                                       key={`self-tour-${item.id}-${idx}`} 
@@ -1539,6 +1704,20 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right w-24">
                                         ${netPrice.toLocaleString()}
                                       </td>
+                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-teal-600 text-right w-24">
+                                        ${(item.partnerReceivedAmount ?? 0).toLocaleString()}
+                                      </td>
+                                      <td className="px-2 py-2 whitespace-nowrap text-xs text-amber-600 text-right w-24">
+                                        ${(item.channelSettlementAmount ?? 0).toLocaleString()}
+                                      </td>
+                                      <td className="px-2 py-2 whitespace-nowrap text-center w-20" onClick={e => e.stopPropagation()} title={auditTooltip}>
+                                        <input
+                                          type="checkbox"
+                                          checked={!!item.amountAudited}
+                                          onChange={e => handleToggleAmountAudit(item.id, e.target.checked)}
+                                          className="rounded border-gray-300"
+                                        />
+                                      </td>
                                     </tr>
                                   )
                                 })
@@ -1586,6 +1765,13 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                 <td className="px-2 py-2 text-xs font-semibold text-purple-600 text-right">
                                   ${groupTotal.toLocaleString()}
                                 </td>
+                                <td className="px-2 py-2 text-xs font-semibold text-teal-600 text-right">
+                                  ${allTourItems.reduce((sum, item) => sum + (item.partnerReceivedAmount ?? 0), 0).toLocaleString()}
+                                </td>
+                                <td className="px-2 py-2 text-xs font-semibold text-amber-600 text-right">
+                                  ${allTourItems.reduce((sum, item) => sum + (item.channelSettlementAmount ?? 0), 0).toLocaleString()}
+                                </td>
+                                <td className="px-2 py-2 text-xs text-gray-500 text-center">—</td>
                               </tr>
                             </tfoot>
                           </table>
@@ -1696,12 +1882,15 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">총 가격</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-20">옵션 총합</th>
                                         <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">Net 가격</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">입금내역 (Partner Received)</th>
+                                        <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase w-24">채널 정산 금액</th>
+                                        <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase w-20">Audit</th>
                                       </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
                                       {sortedChannelItems.length === 0 ? (
                                         <tr>
-                                          <td colSpan={15} className="px-2 py-3 text-center text-gray-500 text-xs">
+                                          <td colSpan={18} className="px-2 py-3 text-center text-gray-500 text-xs">
                                             투어 진행 내역이 없습니다.
                                           </td>
                                         </tr>
@@ -1711,6 +1900,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                           const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
                                           const totalPrice = grandTotal - (item.commissionAmount || 0)
                                           const netPrice = totalPrice + (item.optionTotal || 0)
+                                          const auditTooltip = item.amountAudited && (item.amountAuditedBy || item.amountAuditedAt)
+                                            ? `Audit: ${item.amountAuditedBy ?? '-'} / ${item.amountAuditedAt ? new Date(item.amountAuditedAt).toLocaleString('ko-KR') : '-'}`
+                                            : '금액 더블체크 완료 시 체크'
                                           return (
                                             <tr 
                                               key={`${channel.id}-tour-${item.id}-${idx}`} 
@@ -1767,8 +1959,22 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                               </td>
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-purple-600 font-semibold text-right w-24">
                                                 ${netPrice.toLocaleString()}
-                          </td>
-                        </tr>
+                                              </td>
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-teal-600 text-right w-24">
+                                                ${(item.partnerReceivedAmount ?? 0).toLocaleString()}
+                                              </td>
+                                              <td className="px-2 py-2 whitespace-nowrap text-xs text-amber-600 text-right w-24">
+                                                ${(item.channelSettlementAmount ?? 0).toLocaleString()}
+                                              </td>
+                                              <td className="px-2 py-2 whitespace-nowrap text-center w-20" onClick={e => e.stopPropagation()} title={auditTooltip}>
+                                                <input
+                                                  type="checkbox"
+                                                  checked={!!item.amountAudited}
+                                                  onChange={e => handleToggleAmountAudit(item.id, e.target.checked)}
+                                                  className="rounded border-gray-300"
+                                                />
+                                              </td>
+                                            </tr>
                                           )
                                         })
                     )}
@@ -1815,6 +2021,13 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                         <td className="px-2 py-2 text-xs font-semibold text-purple-600 text-right">
                                           ${channelStats.netPrice.toLocaleString()}
                                         </td>
+                                        <td className="px-2 py-2 text-xs font-semibold text-teal-600 text-right">
+                                          ${sortedChannelItems.reduce((sum, item) => sum + (item.partnerReceivedAmount ?? 0), 0).toLocaleString()}
+                                        </td>
+                                        <td className="px-2 py-2 text-xs font-semibold text-amber-600 text-right">
+                                          ${sortedChannelItems.reduce((sum, item) => sum + (item.channelSettlementAmount ?? 0), 0).toLocaleString()}
+                                        </td>
+                                        <td className="px-2 py-2 text-xs text-gray-500 text-center">—</td>
                     </tr>
                   </tfoot>
                 </table>
