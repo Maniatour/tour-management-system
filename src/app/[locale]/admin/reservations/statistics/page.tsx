@@ -756,6 +756,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
           selectedChannelId={selectedChannelId} 
           selectedStatuses={selectedStatuses}
           searchQuery={searchQuery}
+          isSuper={isSuper}
         />
       )}
     </div>

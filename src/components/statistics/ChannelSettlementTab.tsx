@@ -16,6 +16,8 @@ interface ChannelSettlementTabProps {
   selectedChannelId?: string // 더 이상 사용하지 않지만 호환성을 위해 유지
   selectedStatuses: string[]
   searchQuery?: string
+  /** team.position === 'super' 일 때만 Audit 체크박스 클릭 가능 */
+  isSuper?: boolean
 }
 
 interface ChannelGroup {
@@ -63,7 +65,7 @@ interface ReservationItem {
 
 // TourItem을 ReservationItem과 동일하게 사용
 
-export default function ChannelSettlementTab({ dateRange, selectedChannelId, selectedStatuses, searchQuery = '' }: ChannelSettlementTabProps) {
+export default function ChannelSettlementTab({ dateRange, selectedChannelId, selectedStatuses, searchQuery = '', isSuper = false }: ChannelSettlementTabProps) {
   const t = useTranslations('reservations')
   const { authUser } = useAuth()
 
@@ -1389,9 +1391,11 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                           const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
                                           const totalPrice = grandTotal - (item.commissionAmount || 0)
                                           const netPrice = totalPrice + (item.optionTotal || 0)
-                                          const auditTooltip = item.amountAudited && (item.amountAuditedBy || item.amountAuditedAt)
-                                            ? `Audit: ${item.amountAuditedBy ?? '-'} / ${item.amountAuditedAt ? new Date(item.amountAuditedAt).toLocaleString('ko-KR') : '-'}`
-                                            : '금액 더블체크 완료 시 체크'
+                                          const auditTooltip = !isSuper
+                                            ? 'Super 권한이 있는 사용자만 Audit 할 수 있습니다'
+                                            : item.amountAudited && (item.amountAuditedBy || item.amountAuditedAt)
+                                              ? `Audit: ${item.amountAuditedBy ?? '-'} / ${item.amountAuditedAt ? new Date(item.amountAuditedAt).toLocaleString('ko-KR') : '-'}`
+                                              : '금액 더블체크 완료 시 체크'
                                           return (
                                             <tr 
                                               key={`${channel.id}-${item.id}-${idx}`} 
@@ -1459,8 +1463,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                                 <input
                                                   type="checkbox"
                                                   checked={!!item.amountAudited}
+                                                  disabled={!isSuper}
                                                   onChange={e => handleToggleAmountAudit(item.id, e.target.checked)}
-                                                  className="rounded border-gray-300"
+                                                  className="rounded border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 />
                                               </td>
                                             </tr>
@@ -1641,9 +1646,11 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                   const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
                                   const totalPrice = grandTotal - (item.commissionAmount || 0)
                                   const netPrice = totalPrice + (item.optionTotal || 0)
-                                  const auditTooltip = item.amountAudited && (item.amountAuditedBy || item.amountAuditedAt)
-                                    ? `Audit: ${item.amountAuditedBy ?? '-'} / ${item.amountAuditedAt ? new Date(item.amountAuditedAt).toLocaleString('ko-KR') : '-'}`
-                                    : '금액 더블체크 완료 시 체크'
+                                  const auditTooltip = !isSuper
+                                    ? 'Super 권한이 있는 사용자만 Audit 할 수 있습니다'
+                                    : item.amountAudited && (item.amountAuditedBy || item.amountAuditedAt)
+                                      ? `Audit: ${item.amountAuditedBy ?? '-'} / ${item.amountAuditedAt ? new Date(item.amountAuditedAt).toLocaleString('ko-KR') : '-'}`
+                                      : '금액 더블체크 완료 시 체크'
                                   return (
                                     <tr 
                                       key={`self-tour-${item.id}-${idx}`} 
@@ -1714,8 +1721,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                         <input
                                           type="checkbox"
                                           checked={!!item.amountAudited}
+                                          disabled={!isSuper}
                                           onChange={e => handleToggleAmountAudit(item.id, e.target.checked)}
-                                          className="rounded border-gray-300"
+                                          className="rounded border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
                                         />
                                       </td>
                                     </tr>
@@ -1900,9 +1908,11 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                           const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
                                           const totalPrice = grandTotal - (item.commissionAmount || 0)
                                           const netPrice = totalPrice + (item.optionTotal || 0)
-                                          const auditTooltip = item.amountAudited && (item.amountAuditedBy || item.amountAuditedAt)
-                                            ? `Audit: ${item.amountAuditedBy ?? '-'} / ${item.amountAuditedAt ? new Date(item.amountAuditedAt).toLocaleString('ko-KR') : '-'}`
-                                            : '금액 더블체크 완료 시 체크'
+                                          const auditTooltip = !isSuper
+                                            ? 'Super 권한이 있는 사용자만 Audit 할 수 있습니다'
+                                            : item.amountAudited && (item.amountAuditedBy || item.amountAuditedAt)
+                                              ? `Audit: ${item.amountAuditedBy ?? '-'} / ${item.amountAuditedAt ? new Date(item.amountAuditedAt).toLocaleString('ko-KR') : '-'}`
+                                              : '금액 더블체크 완료 시 체크'
                                           return (
                                             <tr 
                                               key={`${channel.id}-tour-${item.id}-${idx}`} 
@@ -1970,8 +1980,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                                 <input
                                                   type="checkbox"
                                                   checked={!!item.amountAudited}
+                                                  disabled={!isSuper}
                                                   onChange={e => handleToggleAmountAudit(item.id, e.target.checked)}
-                                                  className="rounded border-gray-300"
+                                                  className="rounded border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 />
                                               </td>
                                             </tr>
