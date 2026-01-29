@@ -13,7 +13,9 @@ import type { Reservation } from '@/types/reservation'
 
 interface ChannelSettlementTabProps {
   dateRange: { start: string; end: string }
-  selectedChannelId?: string // 더 이상 사용하지 않지만 호환성을 위해 유지
+  /** 채널 필터 (부모/URL과 연동). 변경 시 onChannelChange 호출 */
+  selectedChannelId?: string
+  onChannelChange?: (channelId: string) => void
   selectedStatuses: string[]
   searchQuery?: string
   /** team.position === 'super' 일 때만 Audit 체크박스 클릭 가능 */
@@ -64,10 +66,16 @@ interface ReservationItem {
 }
 
 // TourItem을 ReservationItem과 동일하게 사용
+// 배포/team 조회 실패 시에도 Audit 가능하도록 Super 관리자 이메일 직접 확인
+const SUPER_ADMIN_EMAILS = ['wooyong.shim09@gmail.com']
 
-export default function ChannelSettlementTab({ dateRange, selectedChannelId, selectedStatuses, searchQuery = '', isSuper = false }: ChannelSettlementTabProps) {
+export default function ChannelSettlementTab({ dateRange, selectedChannelId = '', onChannelChange, selectedStatuses, searchQuery = '', isSuper = false }: ChannelSettlementTabProps) {
   const t = useTranslations('reservations')
   const { authUser } = useAuth()
+  const isSuperByEmail = Boolean(
+    authUser?.email && SUPER_ADMIN_EMAILS.some((e) => e.toLowerCase() === authUser.email!.toLowerCase().trim())
+  )
+  const canAudit = isSuper || isSuperByEmail
 
   const {
     reservations,
@@ -106,8 +114,8 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
   const [tourSortOrder, setTourSortOrder] = useState<'asc' | 'desc'>('asc')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [expandedChannels, setExpandedChannels] = useState<Set<string>>(new Set())
-  const [selectedChannelIdForFilter, setSelectedChannelIdForFilter] = useState<string>('')
   const [isChannelModalOpen, setIsChannelModalOpen] = useState(false)
+  const channelFilter = selectedChannelId ?? ''
   const [partnerReceivedByReservation, setPartnerReceivedByReservation] = useState<Record<string, number>>({})
   const [reservationAudit, setReservationAudit] = useState<Record<string, { amount_audited: boolean; amount_audited_at: string | null; amount_audited_by: string | null }>>({})
 
@@ -363,7 +371,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
   const filteredReservations = useMemo(() => {
     return reservations.filter(reservation => {
       // 채널 필터 (선택된 경우에만)
-      if (selectedChannelIdForFilter && reservation.channelId !== selectedChannelIdForFilter) return false
+      if (channelFilter && reservation.channelId !== channelFilter) return false
       
       // 상태 필터 (선택된 경우에만)
       if (selectedStatuses.length > 0 && !selectedStatuses.includes(reservation.status)) return false
@@ -403,7 +411,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
 
       return true
     })
-  }, [reservations, selectedStatuses, dateRange, searchQuery, customers, products, selectedChannelIdForFilter])
+  }, [reservations, selectedStatuses, dateRange, searchQuery, customers, products, channelFilter])
 
   // 채널별로 예약 필터링하는 헬퍼 함수
   const getReservationsByChannel = useCallback((channelId: string) => {
@@ -841,9 +849,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
 
   // 선택된 채널명 가져오기 (early return 이전에 위치해야 함)
   const selectedChannelName = useMemo(() => {
-    if (!selectedChannelIdForFilter) return '전체 채널'
-    return getChannelName(selectedChannelIdForFilter, channels || []) || '알 수 없는 채널'
-  }, [selectedChannelIdForFilter, channels])
+    if (!channelFilter) return '전체 채널'
+    return getChannelName(channelFilter, channels || []) || '알 수 없는 채널'
+  }, [channelFilter, channels])
 
   if (reservationsLoading) {
     return (
@@ -868,9 +876,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
               {selectedChannelName}
               <ChevronDown className="h-4 w-4" />
             </button>
-            {selectedChannelIdForFilter && (
+            {channelFilter && (
               <button
-                onClick={() => setSelectedChannelIdForFilter('')}
+                onClick={() => onChannelChange?.('')}
                 className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
                 title="필터 제거"
               >
@@ -1391,10 +1399,13 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                           const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
                                           const totalPrice = grandTotal - (item.commissionAmount || 0)
                                           const netPrice = totalPrice + (item.optionTotal || 0)
-                                          const auditTooltip = !isSuper
+                                          const effectiveAudited = reservationAudit[item.id]?.amount_audited ?? item.amountAudited
+                                          const effectiveAuditedAt = reservationAudit[item.id]?.amount_audited_at ?? item.amountAuditedAt
+                                          const effectiveAuditedBy = reservationAudit[item.id]?.amount_audited_by ?? item.amountAuditedBy
+                                          const auditTooltip = !canAudit
                                             ? 'Super 권한이 있는 사용자만 Audit 할 수 있습니다'
-                                            : item.amountAudited && (item.amountAuditedBy || item.amountAuditedAt)
-                                              ? `Audit: ${item.amountAuditedBy ?? '-'} / ${item.amountAuditedAt ? new Date(item.amountAuditedAt).toLocaleString('ko-KR') : '-'}`
+                                            : effectiveAudited && (effectiveAuditedBy || effectiveAuditedAt)
+                                              ? `Audit: ${effectiveAuditedBy ?? '-'} / ${effectiveAuditedAt ? new Date(effectiveAuditedAt).toLocaleString('ko-KR') : '-'}`
                                               : '금액 더블체크 완료 시 체크'
                                           return (
                                             <tr 
@@ -1462,8 +1473,9 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                               <td className="px-2 py-2 whitespace-nowrap text-center w-20" onClick={e => e.stopPropagation()} title={auditTooltip}>
                                                 <input
                                                   type="checkbox"
-                                                  checked={!!item.amountAudited}
-                                                  disabled={!isSuper}
+                                                  checked={!!effectiveAudited}
+                                                  disabled={!canAudit}
+                                                  onClick={e => e.stopPropagation()}
                                                   onChange={e => handleToggleAmountAudit(item.id, e.target.checked)}
                                                   className="rounded border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 />
@@ -1646,16 +1658,22 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                   const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
                                   const totalPrice = grandTotal - (item.commissionAmount || 0)
                                   const netPrice = totalPrice + (item.optionTotal || 0)
-                                  const auditTooltip = !isSuper
+                                  const effectiveAudited = reservationAudit[item.id]?.amount_audited ?? item.amountAudited
+                                  const effectiveAuditedAt = reservationAudit[item.id]?.amount_audited_at ?? item.amountAuditedAt
+                                  const effectiveAuditedBy = reservationAudit[item.id]?.amount_audited_by ?? item.amountAuditedBy
+                                  const auditTooltip = !canAudit
                                     ? 'Super 권한이 있는 사용자만 Audit 할 수 있습니다'
-                                    : item.amountAudited && (item.amountAuditedBy || item.amountAuditedAt)
-                                      ? `Audit: ${item.amountAuditedBy ?? '-'} / ${item.amountAuditedAt ? new Date(item.amountAuditedAt).toLocaleString('ko-KR') : '-'}`
+                                    : effectiveAudited && (effectiveAuditedBy || effectiveAuditedAt)
+                                      ? `Audit: ${effectiveAuditedBy ?? '-'} / ${effectiveAuditedAt ? new Date(effectiveAuditedAt).toLocaleString('ko-KR') : '-'}`
                                       : '금액 더블체크 완료 시 체크'
                                   return (
                                     <tr 
                                       key={`self-tour-${item.id}-${idx}`} 
                           className="hover:bg-gray-50 cursor-pointer transition-colors"
-                          onClick={() => openReservationEditModal(item.id)}
+                          onClick={(e) => {
+                            if ((e.target as HTMLElement).closest('[data-audit-cell]')) return
+                            openReservationEditModal(item.id)
+                          }}
                         >
                                       <td className="px-2 py-2 whitespace-nowrap text-xs w-20">
                                         <span className={`px-1.5 py-0.5 rounded text-xs ${getStatusColor(item.status)}`}>
@@ -1717,11 +1735,11 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                       <td className="px-2 py-2 whitespace-nowrap text-xs text-amber-600 text-right w-24">
                                         ${(item.channelSettlementAmount ?? 0).toLocaleString()}
                                       </td>
-                                      <td className="px-2 py-2 whitespace-nowrap text-center w-20" onClick={e => e.stopPropagation()} title={auditTooltip}>
+                                      <td data-audit-cell className="px-2 py-2 whitespace-nowrap text-center w-20" onClick={e => e.stopPropagation()} title={auditTooltip}>
                                         <input
                                           type="checkbox"
-                                          checked={!!item.amountAudited}
-                                          disabled={!isSuper}
+                                          checked={!!effectiveAudited}
+                                          disabled={!canAudit}
                                           onChange={e => handleToggleAmountAudit(item.id, e.target.checked)}
                                           className="rounded border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
                                         />
@@ -1908,16 +1926,22 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                           const grandTotal = (item.productPriceTotal || 0) - discountTotal + (item.additionalCost || 0)
                                           const totalPrice = grandTotal - (item.commissionAmount || 0)
                                           const netPrice = totalPrice + (item.optionTotal || 0)
-                                          const auditTooltip = !isSuper
+                                          const effectiveAudited = reservationAudit[item.id]?.amount_audited ?? item.amountAudited
+                                          const effectiveAuditedAt = reservationAudit[item.id]?.amount_audited_at ?? item.amountAuditedAt
+                                          const effectiveAuditedBy = reservationAudit[item.id]?.amount_audited_by ?? item.amountAuditedBy
+                                          const auditTooltip = !canAudit
                                             ? 'Super 권한이 있는 사용자만 Audit 할 수 있습니다'
-                                            : item.amountAudited && (item.amountAuditedBy || item.amountAuditedAt)
-                                              ? `Audit: ${item.amountAuditedBy ?? '-'} / ${item.amountAuditedAt ? new Date(item.amountAuditedAt).toLocaleString('ko-KR') : '-'}`
+                                            : effectiveAudited && (effectiveAuditedBy || effectiveAuditedAt)
+                                              ? `Audit: ${effectiveAuditedBy ?? '-'} / ${effectiveAuditedAt ? new Date(effectiveAuditedAt).toLocaleString('ko-KR') : '-'}`
                                               : '금액 더블체크 완료 시 체크'
                                           return (
                                             <tr 
                                               key={`${channel.id}-tour-${item.id}-${idx}`} 
                                               className="hover:bg-gray-50 cursor-pointer transition-colors"
-                                              onClick={() => openReservationEditModal(item.id)}
+                                              onClick={(e) => {
+                                                if ((e.target as HTMLElement).closest('[data-audit-cell]')) return
+                                                openReservationEditModal(item.id)
+                                              }}
                                             >
                                               <td className="px-2 py-2 whitespace-nowrap text-xs w-20">
                                                 <span className={`px-1.5 py-0.5 rounded text-xs ${getStatusColor(item.status)}`}>
@@ -1976,11 +2000,11 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                               <td className="px-2 py-2 whitespace-nowrap text-xs text-amber-600 text-right w-24">
                                                 ${(item.channelSettlementAmount ?? 0).toLocaleString()}
                                               </td>
-                                              <td className="px-2 py-2 whitespace-nowrap text-center w-20" onClick={e => e.stopPropagation()} title={auditTooltip}>
+                                              <td data-audit-cell className="px-2 py-2 whitespace-nowrap text-center w-20" onClick={e => e.stopPropagation()} title={auditTooltip}>
                                                 <input
                                                   type="checkbox"
-                                                  checked={!!item.amountAudited}
-                                                  disabled={!isSuper}
+                                                  checked={!!effectiveAudited}
+                                                  disabled={!canAudit}
                                                   onChange={e => handleToggleAmountAudit(item.id, e.target.checked)}
                                                   className="rounded border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 />
@@ -2075,11 +2099,11 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                 {/* 전체 채널 옵션 */}
                 <button
                   onClick={() => {
-                    setSelectedChannelIdForFilter('')
+                    onChannelChange?.('')
                     setIsChannelModalOpen(false)
                   }}
                   className={`w-full text-left px-4 py-3 rounded-lg border-2 transition-colors ${
-                    !selectedChannelIdForFilter
+                    !channelFilter
                       ? 'border-blue-500 bg-blue-50 text-blue-700'
                       : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                   }`}
@@ -2099,11 +2123,11 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                         <button
                           key={channel.id}
                           onClick={() => {
-                            setSelectedChannelIdForFilter(channel.id)
+                            onChannelChange?.(channel.id)
                             setIsChannelModalOpen(false)
                           }}
                           className={`w-full text-left px-4 py-3 rounded-lg border-2 transition-colors ${
-                            selectedChannelIdForFilter === channel.id
+                            channelFilter === channel.id
                               ? 'border-blue-500 bg-blue-50 text-blue-700'
                               : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                           }`}

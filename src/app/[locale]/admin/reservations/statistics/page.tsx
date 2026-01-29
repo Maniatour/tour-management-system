@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { Calendar, BarChart3, TrendingUp, Users, Package, Link, CheckCircle, Clock, XCircle, Receipt, Search } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useReservationData } from '@/hooks/useReservationData'
@@ -56,9 +57,21 @@ interface StatisticsData {
   }>
 }
 
+const getDefaultDateRange = () => {
+  const today = new Date()
+  const thirtyDaysAgo = new Date(today)
+  thirtyDaysAgo.setDate(today.getDate() - 30)
+  return { start: thirtyDaysAgo.toISOString().split('T')[0], end: today.toISOString().split('T')[0] }
+}
+
+const VALID_TABS = ['reservations', 'tours', 'settlement', 'channelSettlement'] as const
+
 export default function AdminReservationStatistics({ }: AdminReservationStatisticsProps) {
   const t = useTranslations('reservations')
   const { authUser } = useAuth()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
   const [isSuper, setIsSuper] = useState(false)
   const [isCheckingPermission, setIsCheckingPermission] = useState(true)
 
@@ -116,25 +129,40 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
     refreshReservations
   } = useReservationData()
 
-  // 상태 관리
-  const [activeTab, setActiveTab] = useState<TabType>('reservations')
+  // 상태 관리 (URL 쿼리에서 복원해 새로고침 시 탭/검색/기간 유지)
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    const t = searchParams.get('tab')
+    return (t && VALID_TABS.includes(t as TabType)) ? t as TabType : 'reservations'
+  })
   const [timeRange, setTimeRange] = useState<TimeRange>('daily')
   const [selectedChart, setSelectedChart] = useState<ChartType>('channel')
-  // 기본 날짜 범위를 최근 30일로 설정
   const [dateRange, setDateRange] = useState<{start: string, end: string}>(() => {
-    const today = new Date()
-    const thirtyDaysAgo = new Date(today)
-    thirtyDaysAgo.setDate(today.getDate() - 30)
-    return {
-      start: thirtyDaysAgo.toISOString().split('T')[0],
-      end: today.toISOString().split('T')[0]
-    }
+    const start = searchParams.get('start')
+    const end = searchParams.get('end')
+    if (start && end) return { start, end }
+    return getDefaultDateRange()
   })
-  const [selectedChannelId, setSelectedChannelId] = useState<string>('') // 모든 탭용 단일 선택
-  // 상태 필터를 소문자로 변경 (데이터베이스와 일치)
-  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(['pending', 'confirmed', 'completed'])
-  const [searchQuery, setSearchQuery] = useState<string>('')
+  const [selectedChannelId, setSelectedChannelId] = useState<string>(() => searchParams.get('channel') ?? '')
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(() => {
+    const s = searchParams.get('statuses')
+    if (s && s.trim()) return s.split(',').map((x) => x.trim()).filter(Boolean)
+    return ['pending', 'confirmed', 'completed']
+  })
+  const [searchQuery, setSearchQuery] = useState<string>(() => searchParams.get('q') ?? '')
   const endDateInputRef = useRef<HTMLInputElement>(null)
+
+  // 탭/검색/기간/채널/상태 변경 시 URL 동기화 (브라우저 새로고침 시 복원용)
+  useEffect(() => {
+    const params = new URLSearchParams()
+    params.set('tab', activeTab)
+    params.set('start', dateRange.start)
+    params.set('end', dateRange.end)
+    if (searchQuery.trim()) params.set('q', searchQuery.trim())
+    if (selectedChannelId) params.set('channel', selectedChannelId)
+    if (selectedStatuses.length > 0) params.set('statuses', selectedStatuses.join(','))
+    const qs = params.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+  }, [activeTab, searchQuery, dateRange, selectedChannelId, selectedStatuses, pathname, router])
 
   // 통계 데이터 계산
   const statisticsData = useMemo((): StatisticsData => {
@@ -874,6 +902,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
         <ChannelSettlementTab 
           dateRange={dateRange} 
           selectedChannelId={selectedChannelId} 
+          onChannelChange={setSelectedChannelId}
           selectedStatuses={selectedStatuses}
           searchQuery={searchQuery}
           isSuper={isSuper}
