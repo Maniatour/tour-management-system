@@ -2,10 +2,13 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import { DollarSign, Users, Calendar, Search, ChevronDown, ChevronRight, X, Filter } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { useReservationData } from '@/hooks/useReservationData'
 import { getChannelName, getProductName, getCustomerName, getStatusColor } from '@/utils/reservationUtils'
 import { supabase } from '@/lib/supabase'
-import { useParams, useRouter } from 'next/navigation'
+import ReservationForm from '@/components/reservation/ReservationForm'
+import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
+import type { Reservation } from '@/types/reservation'
 
 interface ChannelSettlementTabProps {
   dateRange: { start: string; end: string }
@@ -53,17 +56,22 @@ interface ReservationItem {
 // TourItem을 ReservationItem과 동일하게 사용
 
 export default function ChannelSettlementTab({ dateRange, selectedChannelId, selectedStatuses, searchQuery = '' }: ChannelSettlementTabProps) {
-  const params = useParams()
-  const router = useRouter()
-  const locale = params.locale as string || 'ko'
+  const t = useTranslations('reservations')
   
   const {
     reservations,
     customers,
     products,
     channels,
+    productOptions,
+    options,
+    pickupHotels,
+    coupons,
+    refreshReservations,
+    refreshCustomers,
     loading: reservationsLoading
   } = useReservationData()
+  const [editingReservation, setEditingReservation] = useState<Reservation | null>(null)
   const [toursLoading, setToursLoading] = useState(false)
   const [tourItems, setTourItems] = useState<ReservationItem[]>([])
   const [reservationPrices, setReservationPrices] = useState<Record<string, number>>({})
@@ -88,6 +96,171 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
   const [expandedChannels, setExpandedChannels] = useState<Set<string>>(new Set())
   const [selectedChannelIdForFilter, setSelectedChannelIdForFilter] = useState<string>('')
   const [isChannelModalOpen, setIsChannelModalOpen] = useState(false)
+
+  // 예약 클릭 시 수정 모달 열기
+  const openReservationEditModal = useCallback((reservationId: string) => {
+    const reservation = reservations.find(r => r.id === reservationId)
+    setEditingReservation(reservation ? (reservation as Reservation) : null)
+  }, [reservations])
+
+  const handleEditReservation = useCallback(async (reservation: Omit<Reservation, 'id'>) => {
+    if (!editingReservation) return
+    try {
+      const reservationData = {
+        customer_id: reservation.customerId,
+        product_id: reservation.productId,
+        tour_date: reservation.tourDate,
+        tour_time: reservation.tourTime || null,
+        event_note: reservation.eventNote,
+        pickup_hotel: reservation.pickUpHotel,
+        pickup_time: reservation.pickUpTime || null,
+        adults: reservation.adults,
+        child: reservation.child,
+        infant: reservation.infant,
+        total_people: reservation.totalPeople,
+        channel_id: reservation.channelId,
+        channel_rn: reservation.channelRN,
+        added_by: reservation.addedBy,
+        tour_id: reservation.tourId,
+        status: reservation.status,
+        selected_options: reservation.selectedOptions,
+        selected_option_prices: reservation.selectedOptionPrices,
+        is_private_tour: reservation.isPrivateTour || false,
+        choices: reservation.choices,
+        variant_key: (reservation as any).variantKey || 'default'
+      }
+      const { error } = await (supabase as any).from('reservations').update(reservationData as any).eq('id', editingReservation.id)
+      if (error) {
+        alert(t('messages.reservationUpdateError') + error.message)
+        return
+      }
+      try {
+        await supabase.from('reservation_choices').delete().eq('reservation_id', editingReservation.id)
+        let choicesToSave: Array<{ reservation_id: string; choice_id: string; option_id: string; quantity: number; total_price: number }> = []
+        if (Array.isArray((reservation as any).selectedChoices) && (reservation as any).selectedChoices.length > 0) {
+          for (const choice of (reservation as any).selectedChoices) {
+            if (choice.choice_id && choice.option_id) {
+              choicesToSave.push({
+                reservation_id: editingReservation.id,
+                choice_id: choice.choice_id,
+                option_id: choice.option_id,
+                quantity: choice.quantity || 1,
+                total_price: choice.total_price !== undefined && choice.total_price !== null ? Number(choice.total_price) : 0
+              })
+            }
+          }
+        }
+        if (choicesToSave.length === 0 && reservation.choices?.required && Array.isArray(reservation.choices.required)) {
+          for (const choice of reservation.choices.required) {
+            if (choice.choice_id && choice.option_id) {
+              choicesToSave.push({
+                reservation_id: editingReservation.id,
+                choice_id: choice.choice_id,
+                option_id: choice.option_id,
+                quantity: choice.quantity || 1,
+                total_price: choice.total_price || 0
+              })
+            }
+          }
+        }
+        if (choicesToSave.length > 0) {
+          await (supabase as any).from('reservation_choices').insert(choicesToSave)
+        }
+      } catch {
+        // 초이스 저장 실패해도 예약 수정은 성공
+      }
+      try {
+        await supabase.from('reservation_customers').delete().eq('reservation_id', editingReservation.id)
+        const reservationCustomers: any[] = []
+        let orderIndex = 0
+        const usResidentCount = (reservation as any).usResidentCount || 0
+        for (let i = 0; i < usResidentCount; i++) {
+          reservationCustomers.push({ reservation_id: editingReservation.id, customer_id: reservation.customerId, resident_status: 'us_resident', pass_covered_count: 0, order_index: orderIndex++ })
+        }
+        const nonResidentCount = (reservation as any).nonResidentCount || 0
+        for (let i = 0; i < nonResidentCount; i++) {
+          reservationCustomers.push({ reservation_id: editingReservation.id, customer_id: reservation.customerId, resident_status: 'non_resident', pass_covered_count: 0, order_index: orderIndex++ })
+        }
+        const nonResidentUnder16Count = (reservation as any).nonResidentUnder16Count || 0
+        for (let i = 0; i < nonResidentUnder16Count; i++) {
+          reservationCustomers.push({ reservation_id: editingReservation.id, customer_id: reservation.customerId, resident_status: 'non_resident_under_16', pass_covered_count: 0, order_index: orderIndex++ })
+        }
+        const nonResidentWithPassCount = (reservation as any).nonResidentWithPassCount || 0
+        for (let i = 0; i < nonResidentWithPassCount; i++) {
+          reservationCustomers.push({ reservation_id: editingReservation.id, customer_id: reservation.customerId, resident_status: 'non_resident_with_pass', pass_covered_count: 4, order_index: orderIndex++ })
+        }
+        if (reservationCustomers.length > 0) {
+          await supabase.from('reservation_customers').insert(reservationCustomers as any)
+        }
+      } catch {
+        // reservation_customers 실패해도 예약 수정은 성공
+      }
+      if (reservation.pricingInfo) {
+        try {
+          const pricingInfo = reservation.pricingInfo as any
+          await supabase.from('reservation_pricing').upsert({
+            reservation_id: editingReservation.id,
+            adult_product_price: pricingInfo.adultProductPrice,
+            child_product_price: pricingInfo.childProductPrice,
+            infant_product_price: pricingInfo.infantProductPrice,
+            product_price_total: pricingInfo.productPriceTotal,
+            not_included_price: pricingInfo.not_included_price || 0,
+            required_options: pricingInfo.requiredOptions,
+            required_option_total: pricingInfo.requiredOptionTotal,
+            choices: pricingInfo.choices || {},
+            choices_total: pricingInfo.choicesTotal || 0,
+            subtotal: pricingInfo.subtotal,
+            coupon_code: pricingInfo.couponCode,
+            coupon_discount: pricingInfo.couponDiscount,
+            additional_discount: pricingInfo.additionalDiscount,
+            additional_cost: pricingInfo.additionalCost,
+            card_fee: pricingInfo.cardFee,
+            tax: pricingInfo.tax,
+            prepayment_cost: pricingInfo.prepaymentCost,
+            prepayment_tip: pricingInfo.prepaymentTip,
+            selected_options: pricingInfo.selectedOptionalOptions,
+            option_total: pricingInfo.optionTotal,
+            total_price: pricingInfo.totalPrice,
+            deposit_amount: pricingInfo.depositAmount,
+            balance_amount: pricingInfo.balanceAmount,
+            private_tour_additional_cost: pricingInfo.privateTourAdditionalCost,
+            commission_percent: pricingInfo.commission_percent || 0,
+            commission_amount: pricingInfo.commission_amount || 0
+          } as any, { onConflict: 'reservation_id', ignoreDuplicates: false })
+        } catch {
+          // 가격 저장 실패해도 예약 수정은 성공
+        }
+      }
+      try {
+        await autoCreateOrUpdateTour(reservation.productId, reservation.tourDate, editingReservation.id, reservation.isPrivateTour)
+      } catch {
+        // 투어 생성 실패해도 예약 수정은 성공
+      }
+      await refreshReservations()
+      setEditingReservation(null)
+      alert(t('messages.reservationUpdated'))
+    } catch (error) {
+      console.error('Error updating reservation:', error)
+      alert(t('messages.reservationUpdateError') + (error instanceof Error ? error.message : 'Unknown error'))
+    }
+  }, [editingReservation, refreshReservations, t])
+
+  const handleDeleteReservation = useCallback(async (id: string) => {
+    if (!confirm(t('deleteConfirm'))) return
+    try {
+      const { error } = await supabase.from('reservations').delete().eq('id', id)
+      if (error) {
+        alert('예약 삭제 중 오류가 발생했습니다: ' + error.message)
+        return
+      }
+      await refreshReservations()
+      setEditingReservation(null)
+      alert('예약이 성공적으로 삭제되었습니다!')
+    } catch (error) {
+      console.error('Error deleting reservation:', error)
+      alert('예약 삭제 중 오류가 발생했습니다.')
+    }
+  }, [refreshReservations, t])
 
   // 채널 그룹화
   const channelGroups = useMemo((): ChannelGroup[] => {
@@ -812,7 +985,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                      <tr 
                                        key={`self-${item.id}-${idx}`} 
                         className="hover:bg-gray-50 cursor-pointer transition-colors"
-                        onClick={() => router.push(`/${locale}/admin/reservations/${item.id}`)}
+                        onClick={() => openReservationEditModal(item.id)}
                       >
                                        <td className="px-2 py-2 whitespace-nowrap text-xs w-20">
                                          <span className={`px-1.5 py-0.5 rounded text-xs ${getStatusColor(item.status)}`}>
@@ -1085,7 +1258,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                             <tr 
                                               key={`${channel.id}-${item.id}-${idx}`} 
                                               className="hover:bg-gray-50 cursor-pointer transition-colors"
-                                              onClick={() => router.push(`/${locale}/admin/reservations/${item.id}`)}
+                                              onClick={() => openReservationEditModal(item.id)}
                                             >
                                               <td className="px-2 py-2 whitespace-nowrap text-xs w-20">
                                                 <span className={`px-1.5 py-0.5 rounded text-xs ${getStatusColor(item.status)}`}>
@@ -1310,7 +1483,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                     <tr 
                                       key={`self-tour-${item.id}-${idx}`} 
                           className="hover:bg-gray-50 cursor-pointer transition-colors"
-                          onClick={() => router.push(`/${locale}/admin/reservations/${item.id}`)}
+                          onClick={() => openReservationEditModal(item.id)}
                         >
                                       <td className="px-2 py-2 whitespace-nowrap text-xs w-20">
                                         <span className={`px-1.5 py-0.5 rounded text-xs ${getStatusColor(item.status)}`}>
@@ -1542,7 +1715,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
                                             <tr 
                                               key={`${channel.id}-tour-${item.id}-${idx}`} 
                                               className="hover:bg-gray-50 cursor-pointer transition-colors"
-                                              onClick={() => router.push(`/${locale}/admin/reservations/${item.id}`)}
+                                              onClick={() => openReservationEditModal(item.id)}
                                             >
                                               <td className="px-2 py-2 whitespace-nowrap text-xs w-20">
                                                 <span className={`px-1.5 py-0.5 rounded text-xs ${getStatusColor(item.status)}`}>
@@ -1740,6 +1913,25 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId, sel
             </div>
           </div>
         </div>
+      )}
+
+      {/* 예약 수정 모달 */}
+      {editingReservation && (
+        <ReservationForm
+          reservation={editingReservation}
+          customers={customers || []}
+          products={products || []}
+          channels={(channels || []) as any}
+          productOptions={productOptions || []}
+          options={options || []}
+          pickupHotels={(pickupHotels || []) as any}
+          coupons={(coupons || []) as any}
+          onSubmit={handleEditReservation}
+          onCancel={() => setEditingReservation(null)}
+          onRefreshCustomers={refreshCustomers}
+          onDelete={handleDeleteReservation}
+          layout="modal"
+        />
       )}
     </div>
   )
