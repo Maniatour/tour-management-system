@@ -230,13 +230,13 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
 
     // 이미지 파일 검증
     if (!file.type.startsWith('image/')) {
-      alert('이미지 파일만 업로드할 수 있습니다.')
+      alert(t('imageOnly'))
       return null
     }
 
     // 파일 크기 제한 (2MB)
     if (file.size > 2 * 1024 * 1024) {
-      alert('파일 크기는 2MB 이하여야 합니다.')
+      alert(t('fileSizeMax'))
       return null
     }
 
@@ -256,7 +256,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
 
       if (uploadError) {
         console.error('Icon upload error:', uploadError)
-        alert('아이콘 업로드 중 오류가 발생했습니다.')
+        alert(t('iconUploadError'))
         return null
       }
 
@@ -267,7 +267,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
       return publicUrl
     } catch (error) {
       console.error('Icon upload error:', error)
-      alert('아이콘 업로드 중 오류가 발생했습니다.')
+      alert(t('iconUploadError'))
       return null
     } finally {
       setUploadingIcon(false)
@@ -306,13 +306,13 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
 
       if (error) {
         console.error('Error updating tag icon:', error)
-        alert('아이콘 업데이트 중 오류가 발생했습니다.')
+        alert(t('iconUpdateError'))
         return
       }
 
       await fetchTags()
       setEditingIconTagId(null)
-      alert('아이콘이 업데이트되었습니다.')
+      alert(t('iconUpdated'))
     } catch (error) {
       console.error('Error updating tag icon:', error)
     }
@@ -320,7 +320,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
 
   // 태그 아이콘 삭제
   const handleDeleteTagIcon = async (tagId: string) => {
-    if (!confirm('아이콘을 삭제하시겠습니까?')) return
+    if (!confirm(t('deleteIconConfirm'))) return
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -331,12 +331,12 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
 
       if (error) {
         console.error('Error deleting tag icon:', error)
-        alert('아이콘 삭제 중 오류가 발생했습니다.')
+        alert(t('iconDeleteError'))
         return
       }
 
       await fetchTags()
-      alert('아이콘이 삭제되었습니다.')
+      alert(t('iconDeleted'))
     } catch (error) {
       console.error('Error deleting tag icon:', error)
     }
@@ -475,11 +475,11 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
   // 기존 상품 태그를 tags 테이블로 마이그레이션
   const migrateProductTags = async () => {
     if (unmigratedTags.length === 0) {
-      alert('마이그레이션할 태그가 없습니다.')
+      alert(t('noTagsToMigrate'))
       return
     }
 
-    if (!confirm(`${unmigratedTags.length}개의 태그를 마이그레이션하시겠습니까?`)) {
+    if (!confirm(t('migrateConfirm', { count: unmigratedTags.length }))) {
       return
     }
 
@@ -565,12 +565,12 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
         }
       }
 
-      alert(`마이그레이션 완료: ${successCount}개 성공, ${errorCount}개 실패`)
+      alert(t('migrateDone', { success: successCount, error: errorCount }))
       await fetchTags()
       await fetchUnmigratedTags()
     } catch (error) {
       console.error('마이그레이션 오류:', error)
-      alert('마이그레이션 중 오류가 발생했습니다.')
+      alert(t('migrateError'))
     } finally {
       setMigrating(false)
     }
@@ -586,7 +586,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
     <div className="space-y-6">
       {/* 헤더 */}
       <div>
-        <h2 className="text-2xl font-bold mb-4">태그 & 번역 관리</h2>
+        <h2 className="text-2xl font-bold mb-4">{t('title')}</h2>
         
         {/* 탭 네비게이션 */}
         <div className="border-b border-gray-200">
@@ -599,7 +599,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              태그 관리
+              {t('tabTags')}
             </button>
             <button
               onClick={() => setActiveTab('translations')}
@@ -609,7 +609,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              번역 관리
+              {t('tabTranslations')}
             </button>
             <button
               onClick={() => setActiveTab('json')}
@@ -619,7 +619,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              JSON 동기화
+              {t('tabJsonSync')}
             </button>
           </nav>
         </div>
@@ -636,7 +636,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                   onClick={() => setShowUnmigratedTags(!showUnmigratedTags)}
                   className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 flex items-center space-x-2"
                 >
-                  <span>기존 상품 태그 ({unmigratedTags.length}개)</span>
+                  <span>{t('unmigratedCount', { count: unmigratedTags.length })}</span>
                 </button>
               )}
               <button
@@ -654,14 +654,14 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <div className="flex justify-between items-center mb-3">
                 <h4 className="font-semibold text-yellow-800">
-                  마이그레이션되지 않은 상품 태그 ({unmigratedTags.length}개)
+                  {t('unmigratedTitle', { count: unmigratedTags.length })}
                 </h4>
                 <button
                   onClick={migrateProductTags}
                   disabled={migrating}
                   className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {migrating ? '마이그레이션 중...' : '모두 마이그레이션'}
+                  {migrating ? t('migrating') : t('migrateAll')}
                 </button>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -675,8 +675,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                 ))}
               </div>
               <p className="text-xs text-yellow-700 mt-2">
-                이러한 태그들은 상품에 사용되고 있지만 중앙 태그 관리 시스템에 등록되지 않았습니다.
-                &quot;모두 마이그레이션&quot; 버튼을 클릭하여 tags 테이블로 이동시킬 수 있습니다.
+                {t('unmigratedDescription')}
               </p>
             </div>
           )}
@@ -694,7 +693,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  아이콘
+                  {t('icon')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   {t('tagKey')}
@@ -728,14 +727,14 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                             <button
                               onClick={() => setEditingIconTagId(tag.id)}
                               className="text-white p-1 hover:text-blue-300"
-                              title="아이콘 변경"
+                              title={t('iconChange')}
                             >
                               <Edit2 size={12} />
                             </button>
                             <button
                               onClick={() => handleDeleteTagIcon(tag.id)}
                               className="text-white p-1 hover:text-red-300"
-                              title="아이콘 삭제"
+                              title={t('iconDelete')}
                             >
                               <Trash2 size={12} />
                             </button>
@@ -745,7 +744,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                         <button
                           onClick={() => setEditingIconTagId(tag.id)}
                           className="w-8 h-8 border-2 border-dashed border-gray-300 rounded flex items-center justify-center text-gray-400 hover:border-blue-500 hover:text-blue-500 transition-colors"
-                          title="아이콘 추가"
+                          title={t('iconAdd')}
                         >
                           <ImageIcon size={16} />
                         </button>
@@ -894,7 +893,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
               {/* 아이콘 업로드 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  태그 아이콘 (선택사항)
+                  {t('tagIconOptional')}
                 </label>
                 <div className="flex items-center space-x-4">
                   {/* 미리보기 */}
@@ -928,10 +927,10 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                       className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
                     >
                       <Upload size={16} />
-                      <span>{uploadingIcon ? '업로드 중...' : '아이콘 업로드'}</span>
+                      <span>{uploadingIcon ? t('uploading') : t('iconUpload')}</span>
                     </button>
                     <p className="text-xs text-gray-500 mt-1">
-                      PNG, JPG, SVG (최대 2MB)
+                      {t('iconFormatHint')}
                     </p>
                     {newTagIconUrl && (
                       <button
@@ -942,7 +941,7 @@ export default function TagTranslationManager({ locale }: TagTranslationManagerP
                         }}
                         className="text-xs text-red-600 hover:text-red-700 mt-1"
                       >
-                        아이콘 제거
+                        {t('removeIcon')}
                       </button>
                     )}
                   </div>

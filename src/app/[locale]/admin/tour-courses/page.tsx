@@ -15,7 +15,7 @@ import {
   Copy,
   Star
 } from 'lucide-react'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import CategoryManagementModal from '@/components/CategoryManagementModal'
@@ -111,8 +111,36 @@ interface TourCourseCategory {
   updated_at: string
 }
 
+function getCourseDisplayName(course: TourCourse, locale: string): string {
+  const en = course.team_name_en || course.name_en || ''
+  const ko = course.team_name_ko || course.name_ko || ''
+  return locale === 'en' ? (en || ko) : (ko || en)
+}
+
+function getCourseSecondaryName(course: TourCourse, locale: string): string | null {
+  const en = course.team_name_en || course.name_en || ''
+  const ko = course.team_name_ko || course.name_ko || ''
+  if (locale === 'en') return ko && ko !== en ? ko : null
+  return en && en !== ko ? en : null
+}
+
+function getCategoryDisplayName(
+  categoryValue: string | null | undefined,
+  categories: TourCourseCategory[] | undefined,
+  locale: string
+): string {
+  if (!categoryValue) return ''
+  const cat = Array.isArray(categories)
+    ? categories.find((c) => c.name_ko === categoryValue || c.name_en === categoryValue)
+    : null
+  if (!cat) return categoryValue
+  return locale === 'en' ? (cat.name_en || cat.name_ko) : (cat.name_ko || cat.name_en)
+}
+
 export default function TourCoursesPage() {
-  const t = useTranslations()
+  const t = useTranslations('tourCourses')
+  const tCommon = useTranslations('common')
+  const locale = useLocale()
   const [searchTerm, setSearchTerm] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [difficultyFilter, setDifficultyFilter] = useState('all')
@@ -244,10 +272,10 @@ export default function TourCoursesPage() {
     const copiedCourse: TourCourse = {
       ...course,
       id: '', // 새 코스는 빈 ID로 시작
-      name_ko: `${course.team_name_ko || course.name_ko} (복사본)`,
-      name_en: `${course.team_name_en || course.name_en} (Copy)`,
-      team_name_ko: `${course.team_name_ko || course.name_ko} (복사본)`,
-      team_name_en: `${course.team_name_en || course.name_en} (Copy)`,
+      name_ko: `${course.team_name_ko || course.name_ko} ${t('copySuffix')}`,
+      name_en: `${course.team_name_en || course.name_en} ${t('copySuffix')}`,
+      team_name_ko: `${course.team_name_ko || course.name_ko} ${t('copySuffix')}`,
+      team_name_en: `${course.team_name_en || course.name_en} ${t('copySuffix')}`,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }
@@ -257,7 +285,7 @@ export default function TourCoursesPage() {
 
   // 투어 코스 삭제
   const deleteCourse = async (course: TourCourse) => {
-    if (!confirm(`"${course.team_name_ko || course.name_ko}" 투어 코스를 삭제하시겠습니까?`)) return
+    if (!confirm(t('deleteConfirm', { name: getCourseDisplayName(course, locale) }))) return
 
     try {
       const { error } = await supabase
@@ -273,8 +301,8 @@ export default function TourCoursesPage() {
         setSelectedCourse(null)
       }
     } catch (error) {
-      console.error('투어 코스 삭제 오류:', error)
-      alert('투어 코스 삭제 중 오류가 발생했습니다.')
+      console.error('Tour course delete error:', error)
+      alert(t('deleteError'))
     }
   }
 
@@ -324,8 +352,8 @@ export default function TourCoursesPage() {
         } as TourCourse)
       }
     } catch (error) {
-      console.error('즐겨찾기 토글 오류:', error)
-      alert('즐겨찾기 설정 중 오류가 발생했습니다.')
+      console.error('Favorite toggle error:', error)
+      alert(t('favoriteError'))
     }
   }
 
@@ -451,12 +479,12 @@ export default function TourCoursesPage() {
             <div className="flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="font-medium text-gray-900">
-                  {course.team_name_ko || course.name_ko}
+                  {getCourseDisplayName(course, locale)}
                 </div>
                 {/* 카테고리 뱃지 */}
                 {course.category && (
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getCategoryBadgeColor(course.category)}`}>
-                    {course.category}
+                    {getCategoryDisplayName(course.category, categories ?? undefined, locale)}
                   </span>
                 )}
                 {/* 가격 설정 방식 뱃지 */}
@@ -466,24 +494,24 @@ export default function TourCoursesPage() {
                       ? 'bg-green-100 text-green-800' 
                       : 'bg-purple-100 text-purple-800'
                   }`}>
-                    {course.price_type === 'per_person' ? '인원별' : '차량별'}
+                    {course.price_type === 'per_person' ? t('pricePerPerson') : t('pricePerVehicle')}
                   </span>
                 )}
                 {(!course.price_type || course.price_type === 'none') && (
                   <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
-                    가격 없음
+                    {t('noPrice')}
                   </span>
                 )}
                 {/* 소요 시간 뱃지 */}
                 {course.duration_hours !== null && course.duration_hours !== undefined && (
                   <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                    {course.duration_hours}분
+                    {t('minutes', { count: course.duration_hours })}
                   </span>
                 )}
               </div>
-              {course.team_name_en && course.team_name_en !== course.team_name_ko && (
+              {getCourseSecondaryName(course, locale) && (
                 <div className="text-sm text-gray-500">
-                  {course.team_name_en}
+                  {getCourseSecondaryName(course, locale)}
                 </div>
               )}
               {course.location && (
@@ -502,7 +530,7 @@ export default function TourCoursesPage() {
                   ? 'text-yellow-500 hover:bg-yellow-50'
                   : 'text-gray-400 hover:text-yellow-500 hover:bg-yellow-50'
               }`}
-              title={course.is_favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+              title={course.is_favorite ? t('favoriteRemove') : t('favoriteAdd')}
             >
               <Star className={`w-4 h-4 ${course.is_favorite ? 'fill-current' : ''}`} />
             </button>
@@ -512,7 +540,7 @@ export default function TourCoursesPage() {
                 startEdit(course)
               }}
               className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded"
-              title="편집"
+              title={t('edit')}
             >
               <Edit className="w-4 h-4" />
             </button>
@@ -522,7 +550,7 @@ export default function TourCoursesPage() {
                 copyCourse(course)
               }}
               className="p-1 text-gray-400 hover:text-green-500 hover:bg-green-50 rounded"
-              title="복사"
+              title={t('copy')}
             >
               <Copy className="w-4 h-4" />
             </button>
@@ -532,7 +560,7 @@ export default function TourCoursesPage() {
                 deleteCourse(course)
               }}
               className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
-              title="삭제"
+              title={t('delete')}
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -553,7 +581,7 @@ export default function TourCoursesPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">{t('common.loading')}</div>
+        <div className="text-gray-500">{tCommon('loading')}</div>
       </div>
     )
   }
@@ -561,7 +589,7 @@ export default function TourCoursesPage() {
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-red-500">오류가 발생했습니다: {error.message}</div>
+        <div className="text-red-500">{t('errorOccurred')}: {error.message}</div>
       </div>
     )
   }
@@ -569,28 +597,28 @@ export default function TourCoursesPage() {
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">투어 코스 관리</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
         <div className="flex gap-2">
           <button
             onClick={createNewCourse}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
           >
             <Plus className="w-4 h-4" />
-            투어 코스 추가
+            {t('addCourse')}
           </button>
           <button
             onClick={() => setShowHelpModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
           >
             <HelpCircle className="w-4 h-4" />
-            도움말
+            {t('help')}
           </button>
           <button
             onClick={() => setShowCategoryModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             <Settings className="w-4 h-4" />
-            카테고리 관리
+            {t('categoryManagement')}
           </button>
         </div>
       </div>
@@ -603,7 +631,7 @@ export default function TourCoursesPage() {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <input
                 type="text"
-                placeholder="투어 코스 검색..."
+                placeholder={t('searchPlaceholder')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -615,10 +643,10 @@ export default function TourCoursesPage() {
             onChange={(e) => setCategoryFilter(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
-            <option value="all">모든 카테고리</option>
+            <option value="all">{t('allCategories')}</option>
             {Array.isArray(categories) && categories.map((category: TourCourseCategory) => (
               <option key={category.id} value={category.name_ko}>
-                {category.name_ko}
+                {locale === 'en' ? (category.name_en || category.name_ko) : (category.name_ko || category.name_en)}
               </option>
             ))}
           </select>
@@ -627,10 +655,10 @@ export default function TourCoursesPage() {
             onChange={(e) => setDifficultyFilter(e.target.value)}
             className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
-            <option value="all">모든 난이도</option>
-            <option value="easy">쉬움</option>
-            <option value="medium">보통</option>
-            <option value="hard">어려움</option>
+            <option value="all">{t('allDifficulties')}</option>
+            <option value="easy">{t('difficulty.easy')}</option>
+            <option value="medium">{t('difficulty.medium')}</option>
+            <option value="hard">{t('difficulty.hard')}</option>
           </select>
         </div>
       </div>
@@ -640,7 +668,7 @@ export default function TourCoursesPage() {
         <div className="lg:col-span-2">
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">투어 코스 목록</h2>
+              <h2 className="text-lg font-semibold text-gray-900">{t('courseList')}</h2>
             </div>
             <div ref={scrollContainerRef} className="p-4 max-h-[800px] overflow-y-auto">
               {hierarchicalCourses.length > 0 ? (
@@ -652,7 +680,7 @@ export default function TourCoursesPage() {
               ) : (
                 <div className="text-center py-8 text-gray-500">
                   <MapPin className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                  <p>투어 코스가 없습니다</p>
+                  <p>{t('noCourses')}</p>
                 </div>
               )}
             </div>
@@ -663,7 +691,7 @@ export default function TourCoursesPage() {
         <div className="lg:col-span-1">
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">상세 정보</h2>
+              <h2 className="text-lg font-semibold text-gray-900">{t('detailInfo')}</h2>
             </div>
             <div className="p-4 max-h-[800px] overflow-y-auto">
               {selectedCourse ? (
@@ -671,21 +699,21 @@ export default function TourCoursesPage() {
                   {/* 기본 정보 */}
                   <div>
                     <h3 className="font-medium text-gray-900 mb-2">
-                      {selectedCourse.team_name_ko || selectedCourse.name_ko}
+                      {getCourseDisplayName(selectedCourse, locale)}
                     </h3>
-                    {selectedCourse.team_name_en && selectedCourse.team_name_en !== selectedCourse.team_name_ko && (
+                    {getCourseSecondaryName(selectedCourse, locale) && (
                       <p className="text-sm text-gray-500 mb-2">
-                        {selectedCourse.team_name_en}
+                        {getCourseSecondaryName(selectedCourse, locale)}
                       </p>
                     )}
                     {selectedCourse.customer_name_ko && (
                       <p className="text-sm text-blue-600 mb-1">
-                        고객용: {selectedCourse.customer_name_ko}
+                        {t('customerLabelKo')}: {selectedCourse.customer_name_ko}
                       </p>
                     )}
                     {selectedCourse.customer_name_en && (
                       <p className="text-sm text-blue-600">
-                        Customer: {selectedCourse.customer_name_en}
+                        {t('customerLabelEn')}: {selectedCourse.customer_name_en}
                       </p>
                     )}
                   </div>
@@ -699,26 +727,26 @@ export default function TourCoursesPage() {
                   )}
                   {selectedCourse.point_name && (
                     <div className="text-sm text-gray-600">
-                      📍 포인트: {selectedCourse.point_name}
+                      📍 {t('point')}: {selectedCourse.point_name}
                     </div>
                   )}
 
                   {/* 좌표 정보 */}
                   {(selectedCourse.start_latitude || selectedCourse.start_longitude) && (
                     <div className="text-sm text-gray-600">
-                      <div>시작 좌표: {selectedCourse.start_latitude}, {selectedCourse.start_longitude}</div>
+                      <div>{t('startCoords')}: {selectedCourse.start_latitude}, {selectedCourse.start_longitude}</div>
                     </div>
                   )}
                   {(selectedCourse.end_latitude || selectedCourse.end_longitude) && (
                     <div className="text-sm text-gray-600">
-                      <div>종료 좌표: {selectedCourse.end_latitude}, {selectedCourse.end_longitude}</div>
+                      <div>{t('endCoords')}: {selectedCourse.end_latitude}, {selectedCourse.end_longitude}</div>
                     </div>
                   )}
 
                   {/* 설명 정보 */}
                   {selectedCourse.team_description_ko && (
                     <div className="text-sm">
-                      <div className="font-medium text-gray-700 mb-1">팀원용 설명 (한국어)</div>
+                      <div className="font-medium text-gray-700 mb-1">{t('teamDescKo')}</div>
                       <div className="text-gray-600 bg-gray-50 p-2 rounded text-xs">
                         {selectedCourse.team_description_ko}
                       </div>
@@ -726,7 +754,7 @@ export default function TourCoursesPage() {
                   )}
                   {selectedCourse.team_description_en && (
                     <div className="text-sm">
-                      <div className="font-medium text-gray-700 mb-1">팀원용 설명 (영어)</div>
+                      <div className="font-medium text-gray-700 mb-1">{t('teamDescEn')}</div>
                       <div className="text-gray-600 bg-gray-50 p-2 rounded text-xs">
                         {selectedCourse.team_description_en}
                       </div>
@@ -734,7 +762,7 @@ export default function TourCoursesPage() {
                   )}
                   {selectedCourse.customer_description_ko && (
                     <div className="text-sm">
-                      <div className="font-medium text-gray-700 mb-1">고객용 설명 (한국어)</div>
+                      <div className="font-medium text-gray-700 mb-1">{t('customerDescKo')}</div>
                       <div className="text-gray-600 bg-blue-50 p-2 rounded text-xs">
                         {selectedCourse.customer_description_ko}
                       </div>
@@ -742,7 +770,7 @@ export default function TourCoursesPage() {
                   )}
                   {selectedCourse.customer_description_en && (
                     <div className="text-sm">
-                      <div className="font-medium text-gray-700 mb-1">고객용 설명 (영어)</div>
+                      <div className="font-medium text-gray-700 mb-1">{t('customerDescEn')}</div>
                       <div className="text-gray-600 bg-blue-50 p-2 rounded text-xs">
                         {selectedCourse.customer_description_en}
                       </div>
@@ -753,7 +781,7 @@ export default function TourCoursesPage() {
                   <div className="text-sm">
                     <div className="font-medium text-gray-700 mb-2 flex items-center">
                       <ImageIcon className="w-4 h-4 mr-1" />
-                      사진 ({coursePhotos.length}장)
+                      {t('photos')} ({t('photosCount', { count: coursePhotos.length })})
                     </div>
                     {coursePhotos.length > 0 ? (
                       <div className="grid grid-cols-2 gap-2">
@@ -783,9 +811,9 @@ export default function TourCoursesPage() {
                       </div>
                     ) : (
                       <div className="text-gray-500 text-xs bg-gray-50 p-3 rounded text-center">
-                        등록된 사진이 없습니다.
+                        {t('noPhotos')}
                         <br />
-                        편집 버튼을 눌러 사진을 추가해보세요.
+                        {t('noPhotosHint')}
                       </div>
                     )}
                   </div>
@@ -793,24 +821,24 @@ export default function TourCoursesPage() {
                   {/* 상세 정보 */}
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <div>
-                      <span className="font-medium text-gray-700">소요시간:</span>
-                      <span className="text-gray-600 ml-1">{selectedCourse.duration_hours}분</span>
+                      <span className="font-medium text-gray-700">{t('duration')}:</span>
+                      <span className="text-gray-600 ml-1">{t('minutes', { count: selectedCourse.duration_hours ?? 0 })}</span>
                     </div>
                     <div>
-                      <span className="font-medium text-gray-700">난이도:</span>
+                      <span className="font-medium text-gray-700">{t('difficultyLabel')}:</span>
                       <span className="text-gray-600 ml-1">
-                        {selectedCourse.difficulty_level === 'easy' ? '쉬움' : 
-                         selectedCourse.difficulty_level === 'medium' ? '보통' : '어려움'}
+                        {selectedCourse.difficulty_level === 'easy' ? t('difficulty.easy') : 
+                         selectedCourse.difficulty_level === 'medium' ? t('difficulty.medium') : t('difficulty.hard')}
                       </span>
                     </div>
                     <div>
-                      <span className="font-medium text-gray-700">카테고리:</span>
-                      <span className="text-gray-600 ml-1">{selectedCourse.category || '미분류'}</span>
+                      <span className="font-medium text-gray-700">{t('categoryLabel')}:</span>
+                      <span className="text-gray-600 ml-1">{getCategoryDisplayName(selectedCourse.category, categories ?? undefined, locale) || t('uncategorized')}</span>
                     </div>
                     <div>
-                      <span className="font-medium text-gray-700">상태:</span>
+                      <span className="font-medium text-gray-700">{t('statusLabel')}:</span>
                       <span className={`ml-1 ${selectedCourse.is_active ? 'text-green-600' : 'text-red-600'}`}>
-                        {selectedCourse.is_active ? '활성' : '비활성'}
+                        {selectedCourse.is_active ? t('active') : t('inactive')}
                       </span>
                     </div>
                   </div>
@@ -818,23 +846,23 @@ export default function TourCoursesPage() {
                   {/* 가격 정보 */}
                   {(selectedCourse.price_adult || selectedCourse.price_child || selectedCourse.price_infant) && (
                     <div className="text-sm">
-                      <div className="font-medium text-gray-700 mb-1">가격 정보</div>
+                      <div className="font-medium text-gray-700 mb-1">{t('priceInfo')}</div>
                       <div className="grid grid-cols-3 gap-2 text-xs">
                         {selectedCourse.price_adult && (
                           <div className="bg-gray-50 p-2 rounded">
-                            <div className="font-medium">성인</div>
+                            <div className="font-medium">{t('adult')}</div>
                             <div className="text-gray-600">${selectedCourse.price_adult}</div>
                           </div>
                         )}
                         {selectedCourse.price_child && (
                           <div className="bg-gray-50 p-2 rounded">
-                            <div className="font-medium">어린이</div>
+                            <div className="font-medium">{t('child')}</div>
                             <div className="text-gray-600">${selectedCourse.price_child}</div>
                           </div>
                         )}
                         {selectedCourse.price_infant && (
                           <div className="bg-gray-50 p-2 rounded">
-                            <div className="font-medium">유아</div>
+                            <div className="font-medium">{t('infant')}</div>
                             <div className="text-gray-600">${selectedCourse.price_infant}</div>
                           </div>
                         )}
@@ -845,7 +873,7 @@ export default function TourCoursesPage() {
                   {/* 내부 노트 */}
                   {selectedCourse.internal_note && (
                     <div className="text-sm">
-                      <div className="font-medium text-gray-700 mb-1">내부 노트</div>
+                      <div className="font-medium text-gray-700 mb-1">{t('internalNote')}</div>
                       <div className="text-gray-600 bg-yellow-50 p-2 rounded text-xs border-l-4 border-yellow-400">
                         {selectedCourse.internal_note}
                       </div>
@@ -858,26 +886,26 @@ export default function TourCoursesPage() {
                       onClick={() => startEdit(selectedCourse)}
                       className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
                     >
-                      편집
+                      {t('edit')}
                     </button>
                     <button
                       onClick={() => copyCourse(selectedCourse)}
                       className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
                     >
-                      복사
+                      {t('copy')}
                     </button>
                     <button
                       onClick={() => deleteCourse(selectedCourse)}
                       className="flex-1 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
                     >
-                      삭제
+                      {t('delete')}
                     </button>
                   </div>
                 </div>
               ) : (
                 <div className="text-center py-8 text-gray-500">
                   <ImageIcon className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                  <p>투어 코스를 선택하세요</p>
+                  <p>{t('selectCourse')}</p>
                 </div>
               )}
             </div>
@@ -928,7 +956,7 @@ export default function TourCoursesPage() {
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
                   <BookOpen className="w-6 h-6" />
-                  투어 코스 관리 업데이트 가이드
+                  {t('helpTitle')}
                 </h2>
                 <button
                   onClick={() => setShowHelpModal(false)}
@@ -940,24 +968,24 @@ export default function TourCoursesPage() {
 
               <div className="space-y-6">
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h3 className="text-lg font-semibold text-blue-900 mb-2">새로운 기능</h3>
+                  <h3 className="text-lg font-semibold text-blue-900 mb-2">{t('newFeatures')}</h3>
                   <ul className="space-y-2 text-blue-800">
-                    <li>• 통합된 편집 모달: 기본 정보와 사진 관리를 하나의 모달에서 처리</li>
-                    <li>• 사진 업로드: 드래그 앤 드롭으로 쉽게 사진 업로드</li>
-                    <li>• 대표 사진 설정: 여러 사진 중 대표 사진 선택 가능</li>
-                    <li>• 계층적 구조: 부모-자식 관계로 투어 코스 구성</li>
+                    <li>• {t('helpFeature1')}</li>
+                    <li>• {t('helpFeature2')}</li>
+                    <li>• {t('helpFeature3')}</li>
+                    <li>• {t('helpFeature4')}</li>
                   </ul>
                 </div>
 
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <h3 className="text-lg font-semibold text-green-900 mb-2">사용 방법</h3>
+                  <h3 className="text-lg font-semibold text-green-900 mb-2">{t('usage')}</h3>
                   <ol className="space-y-2 text-green-800">
-                    <li>1. 좌측 목록에서 편집하고 싶은 투어 코스의 편집 버튼 클릭</li>
-                    <li>2. 기본 정보 탭에서 투어 코스의 기본 정보 수정</li>
-                    <li>3. 사진 관리 탭으로 전환하여 사진 업로드 및 관리</li>
-                    <li>4. 드래그 앤 드롭으로 사진 업로드 또는 파일 선택 버튼 클릭</li>
-                    <li>5. 대표 사진 설정 및 불필요한 사진 삭제</li>
-                    <li>6. 저장 버튼으로 모든 변경사항 저장</li>
+                    <li>1. {t('helpStep1')}</li>
+                    <li>2. {t('helpStep2')}</li>
+                    <li>3. {t('helpStep3')}</li>
+                    <li>4. {t('helpStep4')}</li>
+                    <li>5. {t('helpStep5')}</li>
+                    <li>6. {t('helpStep6')}</li>
                   </ol>
                 </div>
               </div>

@@ -442,10 +442,10 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('products'), href: `/${locale}/admin/products`, icon: BookOpen },
     { name: t('options'), href: `/${locale}/admin/options`, icon: Settings },
     { name: t('courses'), href: `/${locale}/admin/tour-courses`, icon: Globe },
-    { name: '투어 비용 계산기', href: `/${locale}/admin/tour-cost-calculator`, icon: TrendingUp },
+    { name: tAdmin('tourCostCalculator'), href: `/${locale}/admin/tour-cost-calculator`, icon: TrendingUp },
     { name: t('channels'), href: `/${locale}/admin/channels`, icon: Settings },
     { name: t('coupons'), href: `/${locale}/admin/coupons`, icon: Ticket },
-    { name: '태그 번역 관리', href: `/${locale}/admin/tag-translations`, icon: Tag },
+    { name: tAdmin('tagTranslationManagement'), href: `/${locale}/admin/tag-translations`, icon: Tag },
     { name: t('pickupHotels'), href: `/${locale}/admin/pickup-hotels`, icon: Building },
     { name: t('vehicles'), href: `/${locale}/admin/vehicles`, icon: Car },
     { name: tAdmin('vehicleMaintenanceManagement'), href: `/${locale}/admin/vehicle-maintenance`, icon: Wrench },
@@ -458,9 +458,9 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: t('supplierSettlement'), href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
     // 예약 통계는 Super 권한만 표시
     ...(isSuper ? [{ name: t('reservationStats'), href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 }] : []),
-    { name: '지출 관리', href: `/${locale}/admin/expenses`, icon: DollarSign },
+    { name: tAdmin('expenseManagement'), href: `/${locale}/admin/expenses`, icon: DollarSign },
     // 파트너 자금 관리 (info@maniatour.com만 표시)
-    ...(authUser?.email?.toLowerCase() === 'info@maniatour.com' ? [{ name: '파트너 자금 관리', href: `/${locale}/admin/partner-funds`, icon: Users }] : []),
+    ...(authUser?.email?.toLowerCase() === 'info@maniatour.com' ? [{ name: tAdmin('partnerFundManagement'), href: `/${locale}/admin/partner-funds`, icon: Users }] : []),
     { name: tAdmin('paymentMethodManagement'), href: `/${locale}/admin/payment-methods`, icon: CreditCard },
     { name: t('tourMaterials'), href: `/${locale}/admin/tour-materials`, icon: FileText },
     { name: t('tourPhotoBuckets'), href: `/${locale}/admin/tour-photo-buckets`, icon: Camera },
@@ -574,7 +574,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                   className="px-3 py-1.5 text-sm border rounded-md text-blue-600 border-blue-600 hover:bg-blue-600 hover:text-white transition-colors cursor-pointer relative z-10 flex items-center space-x-1"
                 >
                   <Plus size={14} />
-                  <span>새 예약 추가</span>
+                  <span>{tAdmin('addReservation')}</span>
                 </button>
               </div>
               

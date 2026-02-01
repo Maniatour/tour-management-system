@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { useLocale } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { useSearchParams } from 'next/navigation'
 import { Calculator, Settings, Plus, X, Route, Clock, Search, GripVertical, ArrowUp, ArrowDown, Save, RefreshCw, FileText, ExternalLink, Trash2, MapPin } from 'lucide-react'
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'
@@ -52,6 +52,7 @@ const TIP_RATE = 0.15 // 15%
 
 export default function TourCostCalculatorPage() {
   const locale = useLocale()
+  const t = useTranslations('tourCostCalculator')
   const searchParams = useSearchParams()
   
   // 기본 상태
@@ -432,7 +433,7 @@ export default function TourCostCalculatorPage() {
     
     // travelTimes가 없으면 경로부터 계산하도록 유도
     if (travelTimes.length === 0) {
-      alert('먼저 "경로 자동 계산"을 눌러 이동 시간을 불러와야 합니다.')
+      alert(t('alertNeedRouteFirst'))
       return
     }
 
@@ -958,7 +959,7 @@ export default function TourCostCalculatorPage() {
           .eq('id', editingConfigId)
 
         if (error) throw error
-        alert(locale === 'ko' ? '설정이 업데이트되었습니다.' : 'Configuration updated.')
+        alert(t('alertConfigUpdated'))
       } else {
         // 새 설정 추가
         const { error } = await supabase
@@ -977,7 +978,7 @@ export default function TourCostCalculatorPage() {
       await loadSavedConfigs()
     } catch (error) {
       console.error('설정 저장 오류:', error)
-      alert(locale === 'ko' ? '설정 저장 중 오류가 발생했습니다.' : 'Error saving configuration.')
+      alert(t('alertErrorSavingConfig'))
     }
   }
 
@@ -1072,10 +1073,10 @@ export default function TourCostCalculatorPage() {
       setCurrentConfigId(configId)
 
       setShowLoadConfigModal(false)
-      alert(locale === 'ko' ? '설정을 불러왔습니다.' : 'Configuration loaded.')
+      alert(t('alertConfigLoaded'))
     } catch (error) {
       console.error('설정 불러오기 오류:', error)
-      alert(locale === 'ko' ? '설정 불러오기 중 오류가 발생했습니다.' : 'Error loading configuration.')
+      alert(t('alertErrorLoadingConfig'))
     }
   }
 
@@ -1140,7 +1141,7 @@ export default function TourCostCalculatorPage() {
 
   // 인보이스 삭제 함수
   const handleDeleteInvoice = async (invoiceId: string, pdfFilePath: string | null) => {
-    if (!confirm(locale === 'ko' ? '인보이스를 삭제하시겠습니까?' : 'Are you sure you want to delete this invoice?')) {
+    if (!confirm(t('alertConfirmDeleteInvoice'))) {
       return
     }
 
@@ -1169,7 +1170,7 @@ export default function TourCostCalculatorPage() {
 
       if (deleteError) {
         console.error('인보이스 삭제 오류:', deleteError)
-        alert(locale === 'ko' ? '인보이스 삭제 중 오류가 발생했습니다.' : 'Error deleting invoice.')
+        alert(t('alertErrorDeletingInvoice'))
         return
       }
 
@@ -1194,16 +1195,16 @@ export default function TourCostCalculatorPage() {
         estimates: estimatesResult.data || []
       })
 
-      alert(locale === 'ko' ? '인보이스가 삭제되었습니다.' : 'Invoice has been deleted.')
+      alert(t('alertInvoiceDeleted'))
     } catch (error) {
       console.error('인보이스 삭제 중 오류:', error)
-      alert(locale === 'ko' ? '인보이스 삭제 중 오류가 발생했습니다.' : 'Error deleting invoice.')
+      alert(t('alertErrorDeletingInvoice'))
     }
   }
 
   // Estimate 삭제 함수
   const handleDeleteEstimate = async (estimateId: string, pdfFilePath: string | null) => {
-    if (!confirm(locale === 'ko' ? 'Estimate를 삭제하시겠습니까?' : 'Are you sure you want to delete this estimate?')) {
+    if (!confirm(t('alertConfirmDeleteEstimate'))) {
       return
     }
 
@@ -1232,7 +1233,7 @@ export default function TourCostCalculatorPage() {
 
       if (deleteError) {
         console.error('Estimate 삭제 오류:', deleteError)
-        alert(locale === 'ko' ? 'Estimate 삭제 중 오류가 발생했습니다.' : 'Error deleting estimate.')
+        alert(t('alertErrorDeletingEstimate'))
         return
       }
 
@@ -1257,7 +1258,7 @@ export default function TourCostCalculatorPage() {
         estimates: estimatesResult.data || []
       })
 
-      alert(locale === 'ko' ? 'Estimate가 삭제되었습니다.' : 'Estimate has been deleted.')
+      alert(t('alertEstimateDeleted'))
     } catch (error) {
       console.error('Estimate 삭제 중 오류:', error)
       alert(locale === 'ko' ? 'Estimate 삭제 중 오류가 발생했습니다.' : 'Error deleting estimate.')
@@ -1283,7 +1284,7 @@ export default function TourCostCalculatorPage() {
       setEditingVehicleType(null)
     } catch (error) {
       console.error('차량 설정 저장 오류:', error)
-      alert('차량 설정 저장 중 오류가 발생했습니다.')
+      alert(t('alertErrorSavingVehicle'))
     }
   }
 
@@ -1309,7 +1310,7 @@ export default function TourCostCalculatorPage() {
       )
 
       if (coursesWithLocation.length < 2) {
-        alert('경로를 계산하려면 최소 2개 이상의 투어 코스가 필요하며, 각 코스에 위치 정보가 있어야 합니다.')
+        alert(t('alertNeedTwoCourses'))
         setIsCalculatingRoute(false)
         return
       }
@@ -1401,13 +1402,13 @@ export default function TourCostCalculatorPage() {
           } else if (status === 'REQUEST_DENIED') {
             errorMessage = 'Google Maps API 요청이 거부되었습니다. API 키를 확인해주세요.'
           }
-          alert(`${errorMessage}\n마일리지를 수동으로 입력해주세요.`)
+          alert(`${errorMessage}\n${t('alertEnterMileageManually')}`)
         }
       })
     } catch (error) {
       setIsCalculatingRoute(false)
       console.error('경로 계산 오류:', error)
-      alert('경로 계산 중 오류가 발생했습니다. 마일리지를 수동으로 입력해주세요.')
+      alert(t('alertErrorRouteCalc'))
     }
   }
 
@@ -1449,7 +1450,7 @@ export default function TourCostCalculatorPage() {
   // 템플릿 저장 (데이터베이스에)
   const saveTemplate = async () => {
     if (!saveConfigName.trim()) {
-      alert('템플릿 제목을 입력해주세요.')
+      alert(t('alertEnterTemplateTitle'))
       return
     }
 
@@ -1482,7 +1483,7 @@ export default function TourCostCalculatorPage() {
           })
 
         if (error) throw error
-        alert('템플릿이 저장되었습니다.')
+        alert(t('alertTemplateSaved'))
       }
 
       setSaveConfigName('')
@@ -1491,7 +1492,7 @@ export default function TourCostCalculatorPage() {
       await loadTemplates()
     } catch (error: any) {
       console.error('템플릿 저장 실패:', error)
-      alert(`템플릿 저장 중 오류가 발생했습니다: ${error.message}`)
+      alert(t('alertErrorSavingTemplate', { message: error.message }))
     }
   }
 
@@ -1565,7 +1566,7 @@ export default function TourCostCalculatorPage() {
       return
     }
 
-    if (!confirm(`"${template.name}" 템플릿을 삭제하시겠습니까?`)) {
+    if (!confirm(t('alertConfirmDeleteTemplate', { name: template.name }))) {
       return
     }
 
@@ -1581,7 +1582,7 @@ export default function TourCostCalculatorPage() {
       await loadTemplates()
     } catch (error: any) {
       console.error('템플릿 삭제 실패:', error)
-      alert(`템플릿 삭제 중 오류가 발생했습니다: ${error.message}`)
+      alert(t('alertErrorDeletingTemplate', { message: error.message }))
     }
   }
 
@@ -1752,9 +1753,9 @@ export default function TourCostCalculatorPage() {
       <div className="mb-4">
         <div className="flex items-center gap-3 mb-2">
           <Calculator className="w-6 h-6 text-blue-600" />
-          <h1 className="text-xl font-bold text-gray-900">투어 비용 계산기</h1>
+          <h1 className="text-xl font-bold text-gray-900">{t('title')}</h1>
         </div>
-        <p className="text-sm text-gray-600">단독/맞춤 투어의 스케줄 및 비용을 계산합니다.</p>
+        <p className="text-sm text-gray-600">{t('subtitle')}</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1762,7 +1763,7 @@ export default function TourCostCalculatorPage() {
         <div className="lg:col-span-2 space-y-6">
           {/* 투어 타입 선택 */}
           <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h2 className="text-xl font-semibold mb-4">1. 투어 타입 선택</h2>
+            <h2 className="text-xl font-semibold mb-4">{t('section1Title')}</h2>
             <div className="flex gap-4">
               <button
                 onClick={() => {
@@ -1775,7 +1776,7 @@ export default function TourCostCalculatorPage() {
                     : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
                 }`}
               >
-                투어 상품 선택
+                {t('selectProduct')}
               </button>
               <button
                 onClick={() => {
@@ -1796,7 +1797,7 @@ export default function TourCostCalculatorPage() {
             {tourType === 'product' && (
               <div className="mt-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  투어 상품
+                  {t('tourProduct')}
                 </label>
                 <select
                   value={selectedProductId}
@@ -1827,7 +1828,7 @@ export default function TourCostCalculatorPage() {
                   title="저장된 템플릿 불러오기"
                 >
                   <Search className="w-4 h-4" />
-                  템플릿 불러오기
+                  {t('loadTemplate')}
                 </button>
                 <button
                   onClick={() => {
@@ -1841,7 +1842,7 @@ export default function TourCostCalculatorPage() {
                   }}
                   className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
                   disabled={selectedCourses.size === 0}
-                  title="현재 선택된 코스를 템플릿으로 저장"
+                  title={t('saveTemplateTitle')}
                 >
                   <Settings className="w-4 h-4" />
                   템플릿 저장
@@ -1854,7 +1855,7 @@ export default function TourCostCalculatorPage() {
                   className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
                 >
                   <Plus className="w-4 h-4" />
-                  새로 추가
+                  {t('addNew')}
                 </button>
               </div>
             </div>
@@ -1913,10 +1914,10 @@ export default function TourCostCalculatorPage() {
               ) : (
                 <div className="text-center text-gray-500 py-8">
                   {tourType === 'product' && !selectedProductId
-                    ? '상품을 선택해주세요'
+                    ? t('selectProductFirst')
                     : courseSearchTerm
-                    ? '검색 결과가 없습니다'
-                    : '투어 코스가 없습니다'}
+                    ? t('noSearchResults')
+                    : t('noCourses')}
                 </div>
               )}
             </div>
@@ -1924,8 +1925,8 @@ export default function TourCostCalculatorPage() {
           ) : (
             <div className="bg-white rounded-lg shadow-sm border p-6">
               <div className="text-center text-gray-500 py-8">
-                <p className="text-lg font-medium mb-2">투어 타입을 선택해주세요</p>
-                <p className="text-sm">위에서 "투어 상품 선택" 또는 "맞춤 투어"를 선택하면 투어 코스를 선택할 수 있습니다.</p>
+                <p className="text-lg font-medium mb-2">{t('selectTourType')}</p>
+                <p className="text-sm">{t('selectProductOrCustom')}</p>
               </div>
             </div>
           )}
@@ -1941,7 +1942,7 @@ export default function TourCostCalculatorPage() {
                 <button
                   onClick={autoCalculateTimes}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors text-xs font-medium"
-                  title="이전 코스 시간과 이동 시간을 합산하여 다음 코스 시작 시간을 자동 계산합니다"
+                  title={t('autoScheduleTitle')}
                 >
                   <Clock className="w-3.5 h-3.5" />
                   일정 시간 자동 완성
@@ -1952,10 +1953,10 @@ export default function TourCostCalculatorPage() {
               <div className="flex items-center gap-2 px-2 py-1 bg-gray-50 border-x border-t rounded-t-lg text-[10px] font-bold text-gray-500">
                 <div className="w-4 flex-shrink-0" /> {/* 핸들 공간 */}
                 <div className="w-5 flex-shrink-0 text-center">#</div>
-                <div className="w-16 flex-shrink-0 text-center">일차</div>
-                <div className="w-20 flex-shrink-0 text-center">시작 시간</div>
-                <div className="w-16 flex-shrink-0 text-center">소요(분)</div>
-                <div className="flex-1">코스 제목</div>
+                <div className="w-16 flex-shrink-0 text-center">{t('day')}</div>
+                <div className="w-20 flex-shrink-0 text-center">{t('startTime')}</div>
+                <div className="w-16 flex-shrink-0 text-center">{t('durationMin')}</div>
+                <div className="flex-1">{t('courseTitle')}</div>
                 <div className="w-16 flex-shrink-0" /> {/* 버튼 공간 */}
               </div>
 
@@ -2036,7 +2037,7 @@ export default function TourCostCalculatorPage() {
                                     }}
                                     className="w-16 px-1.5 py-0.5 text-[10px] border border-gray-200 rounded focus:border-blue-400 focus:ring-1 focus:ring-blue-100 outline-none text-center bg-white hover:bg-gray-50 transition-colors"
                                   >
-                                    {item.day || '일차'}
+                                    {item.day || t('day')}
                                   </button>
                                   <input
                                     type="time"
@@ -2098,7 +2099,7 @@ export default function TourCostCalculatorPage() {
                                       }}
                                       disabled={index === selectedCoursesOrder.length - 1}
                                       className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                                      title="아래로 이동"
+                                      title={t('moveDown')}
                                     >
                                       <ArrowDown className="w-3 h-3" />
                                     </button>
@@ -2117,7 +2118,7 @@ export default function TourCostCalculatorPage() {
                                       e.preventDefault()
                                     }}
                                     className="p-0.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"
-                                    title="제거"
+                                    title={t('remove')}
                                   >
                                     <X className="w-4 h-4" />
                                   </button>
@@ -2137,7 +2138,7 @@ export default function TourCostCalculatorPage() {
 
           {/* 경로 및 마일리지 */}
           <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h2 className="text-xl font-semibold mb-4">3. 경로 및 마일리지</h2>
+            <h2 className="text-xl font-semibold mb-4">{t('section3Title')}</h2>
             
             {/* 구글맵 표시 섹션 */}
             <div className="mb-6 h-[400px] w-full rounded-lg border border-gray-200 overflow-hidden relative bg-gray-50">
@@ -2161,7 +2162,7 @@ export default function TourCostCalculatorPage() {
                 {isCalculatingRoute ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                    계산 중...
+                    {t('calculating')}
                   </>
                 ) : (
                   <>
@@ -2172,7 +2173,7 @@ export default function TourCostCalculatorPage() {
               </button>
               <div className="flex-1">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  마일리지 (마일)
+                  {t('mileageMiles')}
                 </label>
                 <input
                   type="number"
@@ -2189,13 +2190,13 @@ export default function TourCostCalculatorPage() {
               <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm font-medium text-blue-900">이동 시간 총합:</span>
+                  <span className="text-sm font-medium text-blue-900">{t('travelTimeTotal')}</span>
                   <span className="text-sm font-semibold text-blue-700">
-                    {travelTime.toFixed(1)} 시간
+                    {travelTime.toFixed(1)} {t('hours')}
                   </span>
                   {travelTime >= 1 && (
                     <span className="text-xs text-blue-600">
-                      ({Math.floor(travelTime)}시간 {Math.round((travelTime % 1) * 60)}분)
+                      ({t('hoursMinutes', { h: Math.floor(travelTime), m: Math.round((travelTime % 1) * 60) })})
                     </span>
                   )}
                 </div>
@@ -2207,7 +2208,7 @@ export default function TourCostCalculatorPage() {
           <div className="bg-white rounded-lg shadow-sm border p-6 mt-6">
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
               <MapPin className="w-5 h-5" />
-              투어 코스 설명
+              {t('tourCourseDescription')}
             </h2>
             <div className="border border-gray-200 rounded-lg p-4 space-y-4 bg-gray-50">
               {(() => {
@@ -2248,7 +2249,7 @@ export default function TourCostCalculatorPage() {
                 if (validCourses.length === 0) {
                   return (
                     <p className="text-sm text-gray-500 text-center py-4">
-                      카테고리가 "포인트"인 투어 코스가 없습니다.
+                      {t('noPointCourses')}
                     </p>
                   )
                 }
@@ -2349,7 +2350,7 @@ export default function TourCostCalculatorPage() {
               <h2 className="text-lg font-semibold">4. 기본 정보</h2>
               <div className="flex items-center gap-2">
                 <label className="text-xs font-medium text-gray-700 whitespace-nowrap">
-                  마진율:
+                  {t('marginRate')}
                 </label>
                 <select
                   value={marginType}
@@ -2361,10 +2362,10 @@ export default function TourCostCalculatorPage() {
                   }}
                   className="px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                 >
-                  <option value="default">기본 (30%)</option>
-                  <option value="low_season">비수기 (20%)</option>
-                  <option value="high_season">성수기 (40%)</option>
-                  <option value="failed_recruitment">동행모집 실패 (10-20%)</option>
+                  <option value="default">{t('defaultMargin')}</option>
+                  <option value="low_season">{t('lowSeason')}</option>
+                  <option value="high_season">{t('highSeason')}</option>
+                  <option value="failed_recruitment">{t('failedRecruitment')}</option>
                 </select>
                 {marginType === 'failed_recruitment' && (
                   <input
@@ -2387,7 +2388,7 @@ export default function TourCostCalculatorPage() {
                 <h3 className="text-sm font-medium text-gray-800 mb-2">고객 정보</h3>
                 <div className="relative" ref={customerSearchRef}>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    고객 검색
+                    {t('customerSearch')}
                   </label>
                   <div className="relative">
                     <input
@@ -2403,7 +2404,7 @@ export default function TourCostCalculatorPage() {
                       }}
                       onFocus={() => setShowCustomerDropdown(true)}
                       className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="고객 이름 또는 이메일로 검색..."
+                      placeholder={t('searchByNameOrEmail')}
                     />
                     {customerSearch && (
                       <button
@@ -2450,7 +2451,7 @@ export default function TourCostCalculatorPage() {
                         (customer.email || '').toLowerCase().includes(customerSearch.toLowerCase())
                       ).length === 0 && (
                         <div className="px-3 py-2 text-sm text-gray-500">
-                          검색 결과가 없습니다.
+                          {t('noSearchResultsShort')}
                         </div>
                       )}
                     </div>
@@ -2462,7 +2463,7 @@ export default function TourCostCalculatorPage() {
               <div className="grid grid-cols-4 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    참가 인원
+                    {t('participants')}
                   </label>
                   <input
                     type="number"
@@ -2474,9 +2475,9 @@ export default function TourCostCalculatorPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    차량 타입
+                    {t('vehicleType')}
                     <span className="ml-1 text-[10px] text-gray-500 font-normal">
-                      (자동)
+                      {t('vehicleTypeAuto')}
                     </span>
                   </label>
                   <select
@@ -2491,7 +2492,7 @@ export default function TourCostCalculatorPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    계산된 주유비
+                    {t('calculatedFuel')}
                   </label>
                   <div className="px-2 py-1.5 text-sm bg-gray-50 border border-gray-300 rounded font-medium text-gray-900">
                     ${fuelCost.toFixed(2)}
@@ -2508,14 +2509,12 @@ export default function TourCostCalculatorPage() {
                 </div>
               </div>
               <div className="text-[10px] text-gray-500 -mt-2">
-                차량: {vehicleType === 'minivan' ? '미니밴' : vehicleType === '9seater' ? '9인승' : '13인승'} | 
-                MPG: {vehicleSettings.find(s => s.vehicle_type === vehicleType)?.mpg || 0} | 
-                마일리지: {mileage || 0} 마일
+                {t('vehicleMileage', { type: vehicleType === 'minivan' ? t('minivan') : vehicleType === '9seater' ? t('seater9') : t('seater13'), mpg: vehicleSettings.find(s => s.vehicle_type === vehicleType)?.mpg || 0, miles: mileage || 0 })}
               </div>
 
               {/* 가이드비 */}
               <div className="pt-3 border-t border-gray-200">
-                <h3 className="text-sm font-medium text-gray-800 mb-2">가이드비</h3>
+                <h3 className="text-sm font-medium text-gray-800 mb-2">{t('guideFee')}</h3>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1">
@@ -2532,7 +2531,7 @@ export default function TourCostCalculatorPage() {
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1">
-                      시급 (USD/시간)
+                      {t('hourlyRate')}
                     </label>
                     <input
                       type="number"
@@ -2559,7 +2558,7 @@ export default function TourCostCalculatorPage() {
                   </div>
                 </div>
                 <div className="mt-1.5 text-xs text-gray-500">
-                  계산된 가이드비: ${calculatedGuideFee.toFixed(2)}
+                  {t('calculatedGuideFee', { amount: calculatedGuideFee.toFixed(2) })}
                 </div>
               </div>
 
@@ -2567,7 +2566,7 @@ export default function TourCostCalculatorPage() {
               {/* 기타 금액 */}
               <div className="pt-3 border-t border-gray-200">
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-medium text-gray-800">기타 금액</h3>
+                  <h3 className="text-sm font-medium text-gray-800">{t('otherExpenses')}</h3>
                   <button
                     onClick={() => {
                       setOtherExpenses([...otherExpenses, { id: crypto.randomUUID(), name: '', amount: 0 }])
@@ -2603,7 +2602,7 @@ export default function TourCostCalculatorPage() {
                             updated[index].amount = parseFloat(e.target.value) || 0
                             setOtherExpenses(updated)
                           }}
-                          placeholder="금액"
+                          placeholder={t('amount')}
                           className="w-24 px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                         />
                         <button
@@ -2619,7 +2618,7 @@ export default function TourCostCalculatorPage() {
                     ))}
                     {otherExpensesTotal > 0 && (
                       <div className="mt-2 text-xs font-medium text-gray-700">
-                        기타 금액 합계: ${otherExpensesTotal.toFixed(2)}
+                        {t('otherExpensesTotal', { amount: otherExpensesTotal.toFixed(2) })}
                       </div>
                     )}
                   </div>
@@ -2633,7 +2632,7 @@ export default function TourCostCalculatorPage() {
 
           {/* 비용 계산 결과 */}
           <div className="bg-white rounded-lg shadow-sm border p-6 sticky top-20">
-            <h2 className="text-lg font-semibold mb-3">비용 계산 결과</h2>
+            <h2 className="text-lg font-semibold mb-3">{t('costResultTitle')}</h2>
             
             <div className="space-y-4">
               <div className="border-b pb-4">
@@ -2642,7 +2641,7 @@ export default function TourCostCalculatorPage() {
                     onClick={() => setShowEntranceFeeDetailModal(true)}
                     className="text-gray-600 hover:text-blue-600 hover:underline cursor-pointer text-left"
                   >
-                    입장료 합계
+                    {t('entranceFeesTotal')}
                   </button>
                   <span className="font-medium">${entranceFees.toFixed(2)}</span>
                 </div>
@@ -2653,7 +2652,7 @@ export default function TourCostCalculatorPage() {
                   </div>
                 )}
                 <div className="flex justify-between mb-2">
-                  <span className="text-gray-600">차량 렌트비 {numberOfDays > 1 && `(${numberOfDays}일)`}</span>
+                  <span className="text-gray-600">{t('vehicleRental')} {numberOfDays > 1 && `(${numberOfDays})`}</span>
                   <span className="font-medium">${vehicleRentalCost.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between mb-2">
@@ -2661,7 +2660,7 @@ export default function TourCostCalculatorPage() {
                   <span className="font-medium">${fuelCost.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between mb-2">
-                  <span className="text-gray-600">가이드비</span>
+                  <span className="text-gray-600">{t('guideFee')}</span>
                   <span className="font-medium">${calculatedGuideFee.toFixed(2)}</span>
                 </div>
               </div>
@@ -2675,11 +2674,11 @@ export default function TourCostCalculatorPage() {
 
               <div className="border-b pb-4">
                 <div className="flex justify-between mb-2">
-                  <span className="text-gray-600">마진율</span>
+                  <span className="text-gray-600">{t('marginRateLabel')}</span>
                   <span className="font-medium">{marginRate}%</span>
                 </div>
                 <div className="flex justify-between mb-2">
-                  <span className="text-gray-600">판매가 (팁 제외)</span>
+                  <span className="text-gray-600">{t('sellingPriceExclTip')}</span>
                   <span className="font-medium">${sellingPrice.toFixed(2)}</span>
                 </div>
                 {otherExpenses.length > 0 && (
@@ -2695,7 +2694,7 @@ export default function TourCostCalculatorPage() {
                       )
                     ))}
                     <div className="flex justify-between mb-2 mt-2 pt-2 border-t border-gray-200">
-                      <span className="text-gray-700 font-medium">총합</span>
+                      <span className="text-gray-700 font-medium">{t('totalLabel')}</span>
                       <span className="font-semibold">${totalBeforeTip.toFixed(2)}</span>
                     </div>
                   </>
@@ -2705,7 +2704,7 @@ export default function TourCostCalculatorPage() {
                   <span className="font-medium">${tipAmount.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-lg font-bold">
-                  <span>팁 포함 판매가</span>
+                  <span>{t('sellingPriceWithTip')}</span>
                   <span className="text-green-600">${sellingPriceWithTip.toFixed(2)}</span>
                 </div>
               </div>
@@ -2723,7 +2722,7 @@ export default function TourCostCalculatorPage() {
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-semibold flex items-center gap-2">
                       <FileText className="w-4 h-4" />
-                      {locale === 'ko' ? '고객 문서' : 'Customer Documents'}
+                      {t('customerDocuments')}
                     </h3>
                     <button
                       onClick={fetchCustomerDocuments}
@@ -2736,7 +2735,7 @@ export default function TourCostCalculatorPage() {
                   </div>
                   {loadingDocuments ? (
                     <div className="text-center py-4 text-gray-500 text-xs border border-gray-200 rounded-lg bg-gray-50">
-                      {locale === 'ko' ? '로딩 중...' : 'Loading...'}
+                      {t('loading')}
                     </div>
                   ) : customerDocuments.invoices.length === 0 && customerDocuments.estimates.length === 0 ? (
                     <div className="text-center py-4 text-gray-500 text-xs border border-gray-200 rounded-lg bg-gray-50">
@@ -2748,7 +2747,7 @@ export default function TourCostCalculatorPage() {
                       {customerDocuments.invoices.length > 0 && (
                         <div>
                           <h4 className="text-xs font-semibold text-gray-700 mb-2">
-                            {locale === 'ko' ? '인보이스' : 'Invoices'} ({customerDocuments.invoices.length})
+                            {t('invoices')} ({customerDocuments.invoices.length})
                           </h4>
                           <div className="space-y-1.5">
                             {customerDocuments.invoices.map((invoice) => (
@@ -2783,7 +2782,7 @@ export default function TourCostCalculatorPage() {
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="p-1 text-blue-600 hover:text-blue-700"
-                                      title={locale === 'ko' ? 'PDF 보기' : 'View PDF'}
+                                      title={t('viewPdf')}
                                       onClick={(e) => e.stopPropagation()}
                                     >
                                       <ExternalLink className="h-3 w-3" />
@@ -2810,7 +2809,7 @@ export default function TourCostCalculatorPage() {
                       {customerDocuments.estimates.length > 0 && (
                         <div>
                           <h4 className="text-xs font-semibold text-gray-700 mb-2">
-                            {locale === 'ko' ? 'Estimate' : 'Estimates'} ({customerDocuments.estimates.length})
+                            {t('estimates')} ({customerDocuments.estimates.length})
                           </h4>
                           <div className="space-y-1.5">
                             {customerDocuments.estimates.map((estimate) => (
@@ -2842,7 +2841,7 @@ export default function TourCostCalculatorPage() {
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="p-1 text-blue-600 hover:text-blue-700"
-                                      title={locale === 'ko' ? 'PDF 보기' : 'View PDF'}
+                                      title={t('viewPdf')}
                                       onClick={(e) => e.stopPropagation()}
                                     >
                                       <ExternalLink className="h-3 w-3" />
@@ -2886,7 +2885,7 @@ export default function TourCostCalculatorPage() {
                   <button
                     onClick={() => {
                       if (!selectedCustomer) {
-                        alert(locale === 'ko' ? '고객을 선택해주세요.' : 'Please select a customer.')
+                        alert(t('alertSelectCustomer'))
                         return
                       }
                       setConfigName('')
@@ -2906,7 +2905,7 @@ export default function TourCostCalculatorPage() {
                     className="flex items-center justify-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                   >
                     <Search className="w-4 h-4" />
-                    <span>설정 불러오기</span>
+                    <span>{t('loadConfig')}</span>
                   </button>
                 </div>
               </div>

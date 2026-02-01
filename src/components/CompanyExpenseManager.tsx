@@ -417,8 +417,15 @@ export default function CompanyExpenseManager() {
     { value: 'meals', label: t('categories.meals') },
     { value: 'equipment', label: t('categories.equipment') },
     { value: 'maintenance', label: t('categories.maintenance') },
-    { value: 'other', label: t('categories.other') }
+    { value: 'other', label: t('categories.other') },
+    { value: '인건비', label: t('categories.laborCost') }
   ]
+
+  const categoryKeys = new Set(categories.map((c) => c.value))
+  const getCategoryLabel = (category: string) => {
+    if (category === '인건비') return t('categories.laborCost')
+    return categoryKeys.has(category) ? t(`categories.${category}`) : category
+  }
 
   const expenseTypes = [
     { value: 'operating', label: t('expenseTypes.operating') },
@@ -904,7 +911,7 @@ export default function CompanyExpenseManager() {
                       <TableCell className="w-32 py-2">
                         {expense.category && (
                           <Badge variant="outline">
-                            {t(`categories.${expense.category}`)}
+                            {getCategoryLabel(expense.category)}
                           </Badge>
                         )}
                       </TableCell>

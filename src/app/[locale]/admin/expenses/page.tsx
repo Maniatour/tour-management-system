@@ -13,6 +13,7 @@ import { Receipt, Calendar, Building2, MapPin, Wallet, Settings } from 'lucide-r
 type ExpenseTab = 'reservation' | 'company' | 'tour' | 'cash'
 
 export default function ExpensesManagementPage() {
+  const t = useTranslations('expenses')
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -20,14 +21,12 @@ export default function ExpensesManagementPage() {
   const [activeTab, setActiveTab] = useState<ExpenseTab>(tabFromUrl || 'tour')
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
   
-  // URL 쿼리 파라미터와 동기화
   useEffect(() => {
     if (tabFromUrl && ['reservation', 'company', 'tour', 'cash'].includes(tabFromUrl)) {
       setActiveTab(tabFromUrl)
     }
   }, [tabFromUrl])
   
-  // 탭 변경 시 URL 업데이트
   const handleTabChange = (tab: ExpenseTab) => {
     setActiveTab(tab)
     const params = new URLSearchParams(searchParams.toString())
@@ -38,27 +37,27 @@ export default function ExpensesManagementPage() {
   const tabs = [
     {
       id: 'reservation' as ExpenseTab,
-      label: '예약 지출',
+      label: t('tabReservation'),
       icon: Calendar,
-      description: '예약 관련 지출 관리'
+      description: t('tabReservationDesc')
     },
     {
       id: 'company' as ExpenseTab,
-      label: '회사 지출',
+      label: t('tabCompany'),
       icon: Building2,
-      description: '일반 회사 지출 관리'
+      description: t('tabCompanyDesc')
     },
     {
       id: 'tour' as ExpenseTab,
-      label: '투어 지출',
+      label: t('tabTour'),
       icon: MapPin,
-      description: '투어 관련 지출 관리'
+      description: t('tabTourDesc')
     },
     {
       id: 'cash' as ExpenseTab,
-      label: '현금 관리',
+      label: t('tabCash'),
       icon: Wallet,
-      description: '현금 입출금 및 잔액 관리'
+      description: t('tabCashDesc')
     }
   ]
 
@@ -69,17 +68,17 @@ export default function ExpensesManagementPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 mb-2">
             <Receipt className="w-8 h-8 text-blue-600" />
-            <h1 className="text-3xl font-bold text-gray-900">지출 관리</h1>
+            <h1 className="text-3xl font-bold text-gray-900">{t('title')}</h1>
           </div>
           <button
             onClick={() => setIsCategoryManagerOpen(true)}
             className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-700 text-sm"
           >
             <Settings size={18} />
-            카테고리 매니저
+            {t('categoryManager')}
           </button>
         </div>
-        <p className="text-gray-600">예약, 회사, 투어 지출을 통합 관리합니다.</p>
+        <p className="text-gray-600">{t('subtitle')}</p>
       </div>
 
       {/* 탭 네비게이션 */}
@@ -117,9 +116,9 @@ export default function ExpensesManagementPage() {
         {activeTab === 'reservation' && (
           <div className="p-3">
             <div className="mb-4">
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">예약 지출 관리</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">{t('sectionReservationTitle')}</h2>
               <p className="text-sm text-gray-600">
-                투어 이외의 예약에 대한 지출을 관리합니다. 예약 ID를 지정하여 관련 지출을 추적할 수 있습니다.
+                {t('sectionReservationDesc')}
               </p>
             </div>
             <ReservationExpenseManager />
@@ -129,9 +128,9 @@ export default function ExpensesManagementPage() {
         {activeTab === 'company' && (
           <div className="p-6">
             <div className="mb-4">
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">회사 지출 관리</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">{t('sectionCompanyTitle')}</h2>
               <p className="text-sm text-gray-600">
-                일반적인 회사 운영 지출을 관리합니다. 카테고리별 분류 및 승인 프로세스를 지원합니다.
+                {t('sectionCompanyDesc')}
               </p>
             </div>
             <CompanyExpenseManager />
@@ -141,9 +140,9 @@ export default function ExpensesManagementPage() {
         {activeTab === 'tour' && (
           <div className="p-3">
             <div className="mb-4">
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">투어 지출 관리</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">{t('sectionTourTitle')}</h2>
               <p className="text-sm text-gray-600">
-                모든 투어의 지출을 통합 관리합니다. 투어별, 날짜별, 상태별로 필터링하여 조회할 수 있습니다.
+                {t('sectionTourDesc')}
               </p>
             </div>
             <AllTourExpensesManager />
@@ -153,9 +152,9 @@ export default function ExpensesManagementPage() {
         {activeTab === 'cash' && (
           <div className="p-6">
             <div className="mb-4">
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">현금 관리</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">{t('sectionCashTitle')}</h2>
               <p className="text-sm text-gray-600">
-                현금 입출금 내역을 관리하고 현재 현금 잔액을 확인할 수 있습니다.
+                {t('sectionCashDesc')}
               </p>
             </div>
             <CashManagement />

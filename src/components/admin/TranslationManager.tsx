@@ -234,7 +234,7 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
 
   const handleAddTranslation = async () => {
     if (!newNamespace.trim() || !newKeyPath.trim()) {
-      alert('네임스페이스와 키를 입력해주세요.')
+      alert(t('namespaceKeyRequired'))
       return
     }
 
@@ -253,11 +253,11 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
 
       if (transError) {
         if (transError.code === '23505') {
-          alert('이미 존재하는 번역 키입니다.')
+          alert(t('keyExists'))
           return
         }
         console.error('Error adding translation:', transError)
-        alert('번역 키 추가 중 오류가 발생했습니다.')
+        alert(t('addKeyError'))
         return
       }
 
@@ -278,12 +278,12 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
 
         if (translationError) {
           console.error('Error inserting translations:', translationError)
-          alert('번역 추가 중 오류가 발생했습니다.')
+          alert(t('translationsAddError'))
           return
         }
       }
 
-      alert('번역 키가 추가되었습니다.')
+      alert(t('keyAdded'))
       setShowAddModal(false)
       setNewNamespace('')
       setNewKeyPath('')
@@ -291,7 +291,7 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
       await fetchTranslations()
     } catch (error) {
       console.error('Error adding translation:', error)
-      alert('번역 키 추가 중 오류가 발생했습니다.')
+      alert(t('addKeyError'))
     }
   }
 
@@ -302,13 +302,13 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h3 className="text-xl font-semibold">번역 관리</h3>
+        <h3 className="text-xl font-semibold">{t('translationManageTitle')}</h3>
         <button
           onClick={() => setShowAddModal(true)}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
         >
           <Plus size={20} />
-          <span>새 번역 키 추가</span>
+          <span>{t('addNewKey')}</span>
         </button>
       </div>
 
@@ -317,7 +317,7 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
           <input
             type="text"
-            placeholder="네임스페이스, 키, 내용으로 검색..."
+            placeholder={t('searchPlaceholderKeys')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -329,7 +329,7 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
           className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
         >
           {namespaces.map(ns => (
-            <option key={ns} value={ns}>{ns === 'all' ? '전체' : ns}</option>
+            <option key={ns} value={ns}>{ns === 'all' ? t('all') : ns}</option>
           ))}
         </select>
       </div>
@@ -356,11 +356,11 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
                       return (
                         <div className="space-y-1">
                           <p className="text-sm text-gray-500">
-                            total {stats.total}개 키 한국어 {stats.koCount}, 영어 {stats.enCount}
+                            {t('statsLine', { total: stats.total, ko: stats.koCount, en: stats.enCount })}
                           </p>
                           {(stats.missingKo > 0 || stats.missingEn > 0) && (
                             <p className="text-xs text-orange-600">
-                              ⚠️ 한국어 누락 {stats.missingKo}개, 영어 누락 {stats.missingEn}개
+                              ⚠️ {t('missingLine', { ko: stats.missingKo, en: stats.missingEn })}
                             </p>
                           )}
                         </div>
@@ -374,8 +374,8 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">키</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">시스템</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('key')}</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('system')}</th>
                     {locales.map(loc => (
                       <th key={loc} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{loc.toUpperCase()}</th>
                     ))}
@@ -458,30 +458,30 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
       {showAddModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-bold mb-4">새 번역 키 추가</h3>
+            <h3 className="text-lg font-bold mb-4">{t('addNewKey')}</h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">네임스페이스</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('namespace')}</label>
                 <input
                   type="text"
                   value={newNamespace}
                   onChange={(e) => setNewNamespace(e.target.value)}
-                  placeholder="예: common, options"
+                  placeholder={t('namespacePlaceholder')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">키</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('key')}</label>
                 <input
                   type="text"
                   value={newKeyPath}
                   onChange={(e) => setNewKeyPath(e.target.value)}
-                  placeholder="예: myNewKey, form.title"
+                  placeholder={t('keyPlaceholder')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div className="border-t pt-4">
-                <h4 className="text-sm font-medium text-gray-700 mb-3">번역 추가</h4>
+                <h4 className="text-sm font-medium text-gray-700 mb-3">{t('translationAdd')}</h4>
                 <div className="space-y-3">
                   {locales.map(loc => (
                     <div key={loc} className="flex items-center space-x-2">
@@ -493,14 +493,14 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
                           ...prev,
                           [loc]: e.target.value
                         }))}
-                        placeholder={`${loc.toUpperCase()} 번역 입력`}
+                        placeholder={t('translationPlaceholder', { locale: loc.toUpperCase() })}
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                   ))}
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
-                  번역 키를 먼저 추가한 후, 필요에 따라 각 언어별 번역을 추가할 수 있습니다.
+                  {t('translationHint')}
                 </p>
               </div>
             </div>
@@ -509,7 +509,7 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
                 onClick={handleAddTranslation}
                 className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700"
               >
-                추가
+                {t('add')}
               </button>
               <button
                 onClick={() => {
@@ -520,7 +520,7 @@ export default function TranslationManager({ locale }: TranslationManagerProps) 
                 }}
                 className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400"
               >
-                취소
+                {t('cancel')}
               </button>
             </div>
           </div>

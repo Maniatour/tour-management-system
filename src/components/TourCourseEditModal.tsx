@@ -15,6 +15,7 @@ import {
   Star,
   Search
 } from 'lucide-react'
+import { useTranslations, useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import LocationPickerModal from './LocationPickerModal'
 
@@ -131,6 +132,12 @@ const buildHierarchy = (courses: TourCourse[]): TourCourse[] => {
   return rootCourses
 }
 
+function getCourseDisplayName(course: TourCourse, locale: string): string {
+  const en = course.team_name_en || course.name_en || ''
+  const ko = course.team_name_ko || course.name_ko || ''
+  return locale === 'en' ? (en || ko) : (ko || en)
+}
+
 // 부모 관광지 선택용 트리 아이템 컴포넌트
 const ParentSelectionTreeItem = ({ 
   course, 
@@ -138,6 +145,8 @@ const ParentSelectionTreeItem = ({
   expandedNodes,
   selectedParentId,
   currentCourseId,
+  currentCourseLabel,
+  locale = 'ko',
   onToggle,
   onSelect
 }: { 
@@ -146,6 +155,8 @@ const ParentSelectionTreeItem = ({
   expandedNodes: Set<string>
   selectedParentId?: string | null | undefined
   currentCourseId?: string | null | undefined
+  currentCourseLabel?: string
+  locale?: string
   onToggle: (id: string) => void
   onSelect: (id: string | null) => void
 }) => {
@@ -217,14 +228,18 @@ const ParentSelectionTreeItem = ({
         {/* 이름 */}
         <div className="flex-1 min-w-0">
           <div className={`text-sm font-medium truncate ${isCurrentCourse ? 'text-gray-400' : 'text-gray-900'}`}>
-            {course.team_name_ko || course.name_ko}
-            {isCurrentCourse && ' (현재 관광지)'}
+            {getCourseDisplayName(course, locale || 'ko')}
+            {isCurrentCourse && currentCourseLabel ? ` ${currentCourseLabel}` : ''}
           </div>
-          {course.team_name_en && course.team_name_en !== course.team_name_ko && (
+          {locale === 'en' ? (course.team_name_ko && course.team_name_ko !== course.team_name_en && (
+            <div className={`text-xs truncate ${isCurrentCourse ? 'text-gray-300' : 'text-gray-500'}`}>
+              {course.team_name_ko}
+            </div>
+          )) : (course.team_name_en && course.team_name_en !== course.team_name_ko && (
             <div className={`text-xs truncate ${isCurrentCourse ? 'text-gray-300' : 'text-gray-500'}`}>
               {course.team_name_en}
             </div>
-          )}
+          ))}
         </div>
       </div>
       
@@ -232,16 +247,18 @@ const ParentSelectionTreeItem = ({
       {hasChildren && isExpanded && (
         <div className="ml-4">
           {course.children!.map((child) => (
-            <ParentSelectionTreeItem
-              key={child.id}
-              course={child}
-              level={level + 1}
-              expandedNodes={expandedNodes}
-              selectedParentId={selectedParentId}
-              currentCourseId={currentCourseId}
-              onToggle={onToggle}
-              onSelect={onSelect}
-            />
+                  <ParentSelectionTreeItem
+                    key={child.id}
+                    course={child}
+                    level={level + 1}
+                    expandedNodes={expandedNodes}
+                    selectedParentId={selectedParentId}
+                    currentCourseId={currentCourseId}
+                    currentCourseLabel={currentCourseLabel}
+                    locale={locale}
+                    onToggle={onToggle}
+                    onSelect={onSelect}
+                  />
           ))}
         </div>
       )}
@@ -250,6 +267,9 @@ const ParentSelectionTreeItem = ({
 }
 
 export default function TourCourseEditModal({ isOpen, onClose, course, onSave }: TourCourseEditModalProps) {
+  const t = useTranslations('tourCourses.editModal')
+  const locale = useLocale()
+
   const [formData, setFormData] = useState({
     parent_id: '',
     customer_name_ko: '',
@@ -445,12 +465,12 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
       try {
         // 파일 크기 체크 (10MB 제한)
         if (file.size > 10 * 1024 * 1024) {
-          throw new Error(`파일 ${file.name}이 너무 큽니다. (최대 10MB)`)
+          throw new Error(t('fileTooLarge', { name: file.name }))
         }
 
         // 파일 타입 체크
         if (!file.type.startsWith('image/')) {
-          throw new Error(`파일 ${file.name}은 이미지 파일이 아닙니다.`)
+          throw new Error(t('fileNotImage', { name: file.name }))
         }
 
         // 고유한 파일명 생성
@@ -495,7 +515,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         return data
       } catch (error) {
         console.error('파일 업로드 오류:', file.name, error)
-        alert(`파일 ${file.name} 업로드 중 오류가 발생했습니다: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        alert(t('uploadError', { name: file.name, message: error instanceof Error ? error.message : 'Unknown error' }))
         return null
       }
     })
@@ -511,7 +531,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
 
   // 사진 삭제
   const handleDeletePhoto = async (photoId: string) => {
-    if (!confirm('이 사진을 삭제하시겠습니까?')) return
+    if (!confirm(t('confirmDeletePhoto'))) return
 
     try {
       const photo = photos.find(p => p.id === photoId)
@@ -545,7 +565,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
       setPhotos(prev => prev.filter(p => p.id !== photoId))
     } catch (error) {
       console.error('사진 삭제 오류:', error)
-      alert(`사진 삭제 중 오류가 발생했습니다: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      alert(t('deletePhotoError', { message: error instanceof Error ? error.message : 'Unknown error' }))
     }
   }
 
@@ -612,7 +632,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
 
     // 필수 필드 검증
     if (!formData.team_name_ko.trim()) {
-      alert('팀원용 한국어 이름을 입력해주세요.')
+      alert(t('requiredTeamNameKo'))
       return
     }
 
@@ -634,7 +654,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         name_en: formData.team_name_en,
         description_ko: formData.team_description_ko || null,
         description_en: formData.team_description_en || null,
-        category: formData.category || '기타',
+        category: formData.category || (locale === 'en' ? 'Other' : '기타'),
         category_id: formData.category_id || null,
         point_name: formData.point_name || null,
         location: formData.location || null,
@@ -705,7 +725,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
       onClose()
     } catch (error) {
       console.error('투어 코스 저장 오류:', error)
-      alert('투어 코스 저장 중 오류가 발생했습니다.')
+      alert(t('saveError'))
     } finally {
       setLoading(false)
     }
@@ -723,7 +743,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
       <div className="bg-white rounded-lg p-6 w-full max-w-7xl max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-900">
-            {course?.id && course.id !== '' ? '투어 코스 수정' : '새 투어 코스 추가'}
+            {course?.id && course.id !== '' ? t('titleEdit') : t('titleAdd')}
           </h2>
           <button
             onClick={onClose}
@@ -737,11 +757,11 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* 기본 정보 */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">계층 구조</h3>
+            <h3 className="text-lg font-semibold text-gray-900">{t('hierarchy')}</h3>
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                부모 관광지 선택
+                {t('selectParent')}
               </label>
               
               {/* 최상위 옵션 */}
@@ -756,7 +776,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     className="w-4 h-4 text-blue-600"
                   />
                   <Globe className="w-4 h-4 text-green-500" />
-                  <span className="text-sm font-medium text-gray-900">최상위 관광지</span>
+                  <span className="text-sm font-medium text-gray-900">{t('topLevel')}</span>
                 </label>
               </div>
               
@@ -770,6 +790,8 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     expandedNodes={expandedNodes}
                     selectedParentId={formData.parent_id}
                     currentCourseId={course?.id}
+                    currentCourseLabel={t('currentCourse') as string}
+                    locale={locale}
                     onToggle={toggleNode}
                     onSelect={(id) => updateFormData({ parent_id: id || '' })}
                   />
@@ -780,38 +802,38 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
 
           {/* 가운데: 이름 및 설명 */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">이름 및 설명</h3>
+            <h3 className="text-lg font-semibold text-gray-900">{t('nameAndDescription')}</h3>
             
             {/* 팀원용 박스 */}
             <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-              <h4 className="text-md font-medium text-gray-800 mb-4">팀원용 *</h4>
+              <h4 className="text-md font-medium text-gray-800 mb-4">{t('forTeam')}</h4>
               
               {/* 팀원용 이름 */}
               <div className="mb-4">
-                <h5 className="text-sm font-medium text-gray-700 mb-2">이름</h5>
+                <h5 className="text-sm font-medium text-gray-700 mb-2">{t('name')}</h5>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">
-                      한국어 이름
+                      {t('nameKo')}
                     </label>
                     <input
                       type="text"
                       value={formData.team_name_ko}
                       onChange={(e) => updateFormData({ team_name_ko: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="예: 그랜드캐년, 사우스림, 마더포인트"
+                      placeholder={t('placeholderTeamNameKo')}
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">
-                      영어 이름
+                      {t('nameEn')}
                     </label>
                     <input
                       type="text"
                       value={formData.team_name_en}
                       onChange={(e) => updateFormData({ team_name_en: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="예: Grand Canyon, South Rim, Mather Point"
+                      placeholder={t('placeholderTeamNameEn')}
                     />
                   </div>
                 </div>
@@ -819,30 +841,30 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
 
               {/* 팀원용 설명 */}
               <div>
-                <h5 className="text-sm font-medium text-gray-700 mb-2">설명</h5>
+                <h5 className="text-sm font-medium text-gray-700 mb-2">{t('description')}</h5>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">
-                      한국어 설명
+                      {t('descKo')}
                     </label>
                     <textarea
                       value={formData.team_description_ko}
                       onChange={(e) => updateFormData({ team_description_ko: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       rows={3}
-                      placeholder="팀원용 한국어 설명"
+                      placeholder={t('placeholderTeamDescKo')}
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">
-                      영어 설명
+                      {t('descEn')}
                     </label>
                     <textarea
                       value={formData.team_description_en}
                       onChange={(e) => updateFormData({ team_description_en: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       rows={3}
-                      placeholder="팀원용 영어 설명"
+                      placeholder={t('placeholderTeamDescEn')}
                     />
                   </div>
                 </div>
@@ -851,34 +873,34 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
 
             {/* 고객용 박스 */}
             <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-              <h4 className="text-md font-medium text-gray-800 mb-4">고객용</h4>
+              <h4 className="text-md font-medium text-gray-800 mb-4">{t('forCustomer')}</h4>
               
               {/* 고객용 이름 */}
               <div className="mb-4">
-                <h5 className="text-sm font-medium text-gray-700 mb-2">이름</h5>
+                <h5 className="text-sm font-medium text-gray-700 mb-2">{t('name')}</h5>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">
-                      한국어 이름
+                      {t('nameKo')}
                     </label>
                     <input
                       type="text"
                       value={formData.customer_name_ko}
                       onChange={(e) => updateFormData({ customer_name_ko: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="고객에게 표시될 한국어 이름"
+                      placeholder={t('placeholderCustomerNameKo')}
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">
-                      영어 이름
+                      {t('nameEn')}
                     </label>
                     <input
                       type="text"
                       value={formData.customer_name_en}
                       onChange={(e) => updateFormData({ customer_name_en: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="고객에게 표시될 영어 이름"
+                      placeholder={t('placeholderCustomerNameEn')}
                     />
                   </div>
                 </div>
@@ -886,30 +908,30 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
 
               {/* 고객용 설명 */}
               <div>
-                <h5 className="text-sm font-medium text-gray-700 mb-2">설명</h5>
+                <h5 className="text-sm font-medium text-gray-700 mb-2">{t('description')}</h5>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">
-                      한국어 설명
+                      {t('descKo')}
                     </label>
                     <textarea
                       value={formData.customer_description_ko}
                       onChange={(e) => updateFormData({ customer_description_ko: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       rows={3}
-                      placeholder="고객에게 표시될 한국어 설명"
+                      placeholder={t('placeholderCustomerDescKo')}
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">
-                      영어 설명
+                      {t('descEn')}
                     </label>
                     <textarea
                       value={formData.customer_description_en}
                       onChange={(e) => updateFormData({ customer_description_en: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       rows={3}
-                      placeholder="고객에게 표시될 영어 설명"
+                      placeholder={t('placeholderCustomerDescEn')}
                     />
                   </div>
                 </div>
@@ -919,35 +941,35 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
             {/* 내부 노트 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                내부 노트
+                {t('internalNote')}
               </label>
               <textarea
                 value={formData.internal_note}
                 onChange={(e) => updateFormData({ internal_note: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 rows={3}
-                placeholder="관리자만 볼 수 있는 내부 노트"
+                placeholder={t('placeholderInternalNote')}
               />
             </div>
           </div>
 
           {/* 오른쪽: 위치 및 상세 정보 */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">위치 및 상세 정보</h3>
+            <h3 className="text-lg font-semibold text-gray-900">{t('locationAndDetails')}</h3>
             
             {/* 카테고리 선택 (위치 좌표 위에 배치) */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                카테고리
+                {t('category')}
               </label>
               <div className="flex gap-2 overflow-x-auto pb-2">
                 {categories.map((category) => {
                   const isSelected = formData.category_id === category.id
-                  // 카테고리 이름에서 "투어" 제거하여 텍스트 줄이기
-                  const shortName = category.name_ko
-                    .replace(' 투어', '')
-                    .replace('어드벤처 투어', '어드벤처')
-                    .replace('투어 포인트', '포인트')
+                  const displayName = locale === 'en' ? (category.name_en || category.name_ko) : (category.name_ko || category.name_en)
+                  const shortName = displayName
+                    .replace(/ tour$/i, '')
+                    .replace(/adventure tour/i, locale === 'en' ? 'Adventure' : '어드벤처')
+                    .replace(/tour point/i, locale === 'en' ? 'Point' : '포인트')
                   return (
                     <button
                       key={category.id}
@@ -957,7 +979,6 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                           category_id: category.id,
                           category: category.name_ko || ''
                         })
-                        // 카테고리 변경 시 종료 좌표를 시작 좌표로 동기화 (액티비티가 아닌 경우)
                         if (category.name_ko !== '어드벤처 투어' && category.name_en !== 'Adventure Tour') {
                           if (formData.start_latitude && formData.start_longitude) {
                             updateFormData({
@@ -996,7 +1017,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     <div>
                       <div className="flex items-center gap-2 mb-2">
                         <label className="block text-sm font-medium text-gray-700">
-                          시작 위치
+                          {t('startLocation')}
                         </label>
                         <button
                           type="button"
@@ -1005,7 +1026,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                             setShowLocationPicker(true)
                           }}
                           className="p-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center"
-                          title="지도에서 위치 선택"
+                          title={t('selectOnMap')}
                         >
                           <Search className="w-3 h-3" />
                         </button>
@@ -1023,7 +1044,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                             })
                           }}
                           className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="위도"
+                          placeholder={t('latitude')}
                         />
                         <input
                           type="number"
@@ -1037,7 +1058,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                             })
                           }}
                           className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="경도"
+                          placeholder={t('longitude')}
                         />
                       </div>
                     </div>
@@ -1045,7 +1066,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     <div>
                       <div className="flex items-center gap-2 mb-2">
                         <label className="block text-sm font-medium text-gray-700">
-                          종료 위치
+                          {t('endLocation')}
                         </label>
                         <button
                           type="button"
@@ -1054,7 +1075,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                             setShowLocationPicker(true)
                           }}
                           className="p-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center"
-                          title="지도에서 위치 선택"
+                          title={t('selectOnMap')}
                         >
                           <Search className="w-3 h-3" />
                         </button>
@@ -1072,7 +1093,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                             })
                           }}
                           className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="위도"
+                          placeholder={t('latitude')}
                         />
                         <input
                           type="number"
@@ -1086,19 +1107,18 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                             })
                           }}
                           className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="경도"
+                          placeholder={t('longitude')}
                         />
                       </div>
                     </div>
                   </>
                 )
               } else {
-                // 일반 카테고리: 하나의 위치만 입력
                 return (
                   <div>
                     <div className="flex items-center gap-2 mb-2">
                       <label className="block text-sm font-medium text-gray-700">
-                        위치 좌표
+                        {t('locationCoords')}
                       </label>
                       <button
                         type="button"
@@ -1107,7 +1127,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                           setShowLocationPicker(true)
                         }}
                         className="p-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center"
-                        title="지도에서 위치 선택"
+                        title={t('selectOnMap')}
                       >
                         <Search className="w-3 h-3" />
                       </button>
@@ -1127,7 +1147,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                           })
                         }}
                         className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="위도"
+                        placeholder={t('latitude')}
                       />
                       <input
                         type="number"
@@ -1138,16 +1158,16 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                           const shouldClearLocation = lng === '' && formData.start_latitude === ''
                           updateFormData({ 
                             start_longitude: lng,
-                            end_longitude: lng, // 시작과 종료를 동일하게 설정
+                            end_longitude: lng,
                             ...(shouldClearLocation ? { location: '' } : {})
                           })
                         }}
                         className="w-32 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="경도"
+                        placeholder={t('longitude')}
                       />
                     </div>
                     <p className="text-xs text-gray-500 mt-1">
-                      시작 위치와 종료 위치가 동일하게 설정됩니다
+                      {t('sameStartEnd')}
                     </p>
                   </div>
                 )
@@ -1157,7 +1177,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
             {/* 소요 시간 (항상 표시) */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                소요 시간 (분)
+                {t('durationMinutes')}
               </label>
               <input
                 type="number"
@@ -1180,7 +1200,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                 return (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      거리 (mile)
+                      {t('distanceMile')}
                     </label>
                     <input
                       type="number"
@@ -1208,16 +1228,16 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                 return (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      난이도
+                      {t('difficulty')}
                     </label>
                     <select
                       value={formData.difficulty_level}
                       onChange={(e) => updateFormData({ difficulty_level: e.target.value as 'easy' | 'medium' | 'hard' })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
-                      <option value="easy">쉬움</option>
-                      <option value="medium">보통</option>
-                      <option value="hard">어려움</option>
+                      <option value="easy">{t('difficultyEasy')}</option>
+                      <option value="medium">{t('difficultyMedium')}</option>
+                      <option value="hard">{t('difficultyHard')}</option>
                     </select>
                   </div>
                 )
@@ -1228,7 +1248,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
             {/* 가격 설정 방식 선택 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                가격 설정 방식
+                {t('priceType')}
               </label>
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
@@ -1240,7 +1260,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     onChange={(e) => updateFormData({ price_type: e.target.value as 'per_person' | 'per_vehicle' | 'none' })}
                     className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                   />
-                  <span className="text-sm text-gray-700">가격 없음</span>
+                  <span className="text-sm text-gray-700">{t('noPrice')}</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -1251,7 +1271,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     onChange={(e) => updateFormData({ price_type: e.target.value as 'per_person' | 'per_vehicle' | 'none' })}
                     className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                   />
-                  <span className="text-sm text-gray-700">인원별</span>
+                  <span className="text-sm text-gray-700">{t('perPerson')}</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -1262,7 +1282,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     onChange={(e) => updateFormData({ price_type: e.target.value as 'per_person' | 'per_vehicle' | 'none' })}
                     className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                   />
-                  <span className="text-sm text-gray-700">차량별</span>
+                  <span className="text-sm text-gray-700">{t('perVehicle')}</span>
                 </label>
               </div>
             </div>
@@ -1271,12 +1291,12 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
             {formData.price_type === 'per_person' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  입장료 (인원별)
+                  {t('admissionPerPerson')}
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">
-                      성인 가격
+                      {t('adultPrice')}
                     </label>
                     <input
                       type="number"
@@ -1289,7 +1309,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">
-                      어린이 가격
+                      {t('childPrice')}
                     </label>
                     <input
                       type="number"
@@ -1321,12 +1341,12 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
             {formData.price_type === 'per_vehicle' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  입장료 (차량별)
+                  {t('admissionPerVehicle')}
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">
-                      미니밴
+                      {t('minivan')}
                     </label>
                     <input
                       type="number"
@@ -1352,7 +1372,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">
-                      13인승
+                      {t('seater13')}
                     </label>
                     <input
                       type="number"
@@ -1375,18 +1395,18 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                 className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
               />
               <label className="ml-2 text-sm font-medium text-gray-700">
-                활성화
+                {t('active')}
               </label>
             </div>
 
             {/* 사진 관리 */}
             <div className="mt-6 pt-6 border-t border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">사진 관리</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('photoManagement')}</h3>
               
               {(!course?.id || course.id === '') && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                   <p className="text-yellow-800 text-sm">
-                    투어 코스를 먼저 저장한 후 사진을 업로드할 수 있습니다.
+                    {t('saveFirstToUpload')}
                   </p>
                 </div>
               )}
@@ -1408,10 +1428,10 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                     <Upload className="w-5 h-5 text-gray-400" />
                     <div className="flex-1">
                       <p className="text-sm text-gray-600 mb-1">
-                        사진을 드래그하거나 클릭하여 업로드
+                        {t('dragOrClick')}
                       </p>
                       <p className="text-xs text-gray-500">
-                        JPG, PNG, GIF (최대 10MB)
+                        {t('fileTypes')}
                       </p>
                     </div>
                     <button
@@ -1419,7 +1439,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                       disabled={uploading}
                       className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap"
                     >
-                      {uploading ? '업로드 중...' : '파일 선택'}
+                      {uploading ? t('uploading') : t('selectFile')}
                     </button>
                   </div>
                   <input
@@ -1449,7 +1469,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                       {/* 대표 사진 표시 */}
                       {photo.is_primary && (
                         <div className="absolute top-2 left-2 bg-yellow-500 text-white px-2 py-1 rounded text-xs font-medium">
-                          대표
+                          {t('primary')}
                         </div>
                       )}
                       
@@ -1460,7 +1480,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                             <button
                               onClick={() => handleSetPrimary(photo.id)}
                               className="p-2 bg-yellow-500 text-white rounded-full hover:bg-yellow-600"
-                              title="대표 사진으로 설정"
+                              title={t('setPrimary')}
                             >
                               <Star className="w-4 h-4" />
                             </button>
@@ -1468,7 +1488,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
                           <button
                             onClick={() => handleDeletePhoto(photo.id)}
                             className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600"
-                            title="삭제"
+                            title={t('delete')}
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -1487,7 +1507,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
               {photos.length === 0 && course?.id && course.id !== '' && (
                 <div className="text-center py-8 text-gray-500">
                   <ImageIcon className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                  <p>업로드된 사진이 없습니다</p>
+                  <p>{t('noPhotos')}</p>
                 </div>
               )}
             </div>
@@ -1501,13 +1521,13 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
             disabled={loading}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
-            {loading ? '저장 중...' : (course?.id && course.id !== '' ? '수정' : '추가')}
+            {loading ? t('saving') : (course?.id && course.id !== '' ? t('edit') : t('add'))}
           </button>
           <button
             onClick={onClose}
             className="flex items-center gap-2 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
           >
-            취소
+            {t('cancel')}
           </button>
         </div>
       </div>

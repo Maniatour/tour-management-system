@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { Download, Upload, RefreshCw, Edit2, Save, X, Trash2 } from 'lucide-react'
+import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import koData from '@/i18n/locales/ko.json'
 import enData from '@/i18n/locales/en.json'
@@ -18,10 +19,12 @@ interface JsonSyncManagerProps {
 }
 
 export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
+  const t = useTranslations('tagTranslations')
   const [jsonTranslations, setJsonTranslations] = useState<JsonTranslation[]>([])
   const [dbTranslations, setDbTranslations] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [syncStatus, setSyncStatus] = useState<string>('')
+  const [syncStatusError, setSyncStatusError] = useState(false)
   const [showOnlyMissing, setShowOnlyMissing] = useState(true)
 
   useEffect(() => {
@@ -99,10 +102,12 @@ export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
       }
 
       setJsonTranslations(translations)
-      setSyncStatus(`로컬 JSON 파일에서 ${translations.length}개의 번역 키를 찾았습니다.`)
+      setSyncStatus(t('statusFound', { count: translations.length }))
+      setSyncStatusError(false)
     } catch (error) {
       console.error('Error loading JSON translations:', error)
-      setSyncStatus('JSON 파일 로드 중 오류가 발생했습니다.')
+      setSyncStatus(t('statusLoadError'))
+      setSyncStatusError(true)
     } finally {
       setLoading(false)
     }
@@ -136,7 +141,8 @@ export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
       )
 
       if (missingKeys.length === 0) {
-        setSyncStatus('동기화할 새로운 번역 키가 없습니다.')
+        setSyncStatus(t('statusNoNew'))
+        setSyncStatusError(false)
         return
       }
 
@@ -187,11 +193,13 @@ export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
         }
       }
 
-      setSyncStatus(`${missingKeys.length}개의 번역 키가 DB에 추가되었습니다.`)
+      setSyncStatus(t('statusAdded', { count: missingKeys.length }))
+      setSyncStatusError(false)
       await loadDbTranslations()
     } catch (error) {
       console.error('Error syncing to database:', error)
-      setSyncStatus('동기화 중 오류가 발생했습니다.')
+      setSyncStatus(t('statusSyncError'))
+      setSyncStatusError(true)
     } finally {
       setLoading(false)
     }
@@ -214,9 +222,9 @@ export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h3 className="text-xl font-semibold">JSON 파일 동기화</h3>
+          <h3 className="text-xl font-semibold">{t('jsonSyncTitle')}</h3>
           <p className="text-sm text-gray-500 mt-1">
-            로컬 JSON 파일의 번역 키를 DB와 동기화합니다.
+            {t('jsonSyncDesc')}
           </p>
         </div>
         <div className="flex space-x-2">
@@ -226,7 +234,7 @@ export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
             className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 flex items-center space-x-2 disabled:opacity-50"
           >
             <RefreshCw size={20} />
-            <span>새로고침</span>
+            <span>{t('refresh')}</span>
           </button>
           <button
             onClick={syncToDatabase}
@@ -234,13 +242,13 @@ export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2 disabled:opacity-50"
           >
             <Upload size={20} />
-            <span>동기화 ({missingCount})</span>
+            <span>{t('syncButton', { count: missingCount })}</span>
           </button>
         </div>
       </div>
 
       {syncStatus && (
-        <div className={`p-4 rounded-lg ${syncStatus.includes('오류') ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>
+        <div className={`p-4 rounded-lg ${syncStatusError ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>
           {syncStatus}
         </div>
       )}
@@ -253,10 +261,9 @@ export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
             </div>
           </div>
           <div className="flex-1">
-            <h4 className="text-sm font-medium text-blue-900 mb-1">동기화된 항목 편집하기</h4>
+            <h4 className="text-sm font-medium text-blue-900 mb-1">{t('editSyncedTitle')}</h4>
             <p className="text-sm text-blue-700">
-              동기화가 완료되면 <strong>"번역 관리"</strong> 탭으로 이동하여 DB에 저장된 번역을 편집할 수 있습니다.
-              번역 관리 탭에서는 모든 언어의 번역을 추가하고 편집할 수 있습니다.
+              {t('editSyncedDesc')}
             </p>
           </div>
         </div>
@@ -267,11 +274,11 @@ export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50 sticky top-0">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">네임스페이스</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">키</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('namespace')}</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('key')}</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">KO</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">EN</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">상태</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('status')}</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -293,9 +300,9 @@ export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       {exists ? (
-                        <span className="text-green-600 font-medium">✓ DB에 있음</span>
+                        <span className="text-green-600 font-medium">✓ {t('inDb')}</span>
                       ) : (
-                        <span className="text-orange-600 font-medium">새로 추가 필요</span>
+                        <span className="text-orange-600 font-medium">{t('needAdd')}</span>
                       )}
                     </td>
                   </tr>
@@ -311,7 +318,7 @@ export default function JsonSyncManager({ locale }: JsonSyncManagerProps) {
           <div className="bg-white rounded-lg p-6">
             <div className="flex items-center space-x-3">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <span>처리 중...</span>
+              <span>{t('processing')}</span>
             </div>
           </div>
         </div>

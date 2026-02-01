@@ -223,12 +223,21 @@ export default function AllTourExpensesManager() {
   const getStatusText = (status: string) => {
     switch (status) {
       case 'approved':
-        return '승인'
+        return t('status.approved')
       case 'rejected':
-        return '거부'
+        return t('status.rejected')
       default:
-        return '대기'
+        return t('status.pending')
     }
+  }
+
+  const getProductDisplayName = (product: TourExpense['products']) => {
+    if (!product) return '-'
+    if (locale === 'en') {
+      const en = (product.name_en || '').trim()
+      return en || '-'
+    }
+    return product.name_ko || product.name || product.name_en || '-'
   }
 
   // 통화 포맷
@@ -258,7 +267,7 @@ export default function AllTourExpensesManager() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
             <input
               type="text"
-              placeholder="지출명, 결제처, 투어 ID, 상품명으로 검색..."
+              placeholder={t('searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -269,28 +278,28 @@ export default function AllTourExpensesManager() {
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
           >
             <Folder className="w-4 h-4" />
-            <span className="hidden sm:inline">구글 드라이브 영수증</span>
-            <span className="sm:hidden">영수증</span>
+            <span className="hidden sm:inline">{t('googleDriveReceipts')}</span>
+            <span className="sm:hidden">{t('receiptShort')}</span>
           </button>
         </div>
 
         {/* 필터 */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">상태</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('statusLabel')}</label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
-              <option value="all">전체</option>
-              <option value="pending">대기</option>
-              <option value="approved">승인</option>
-              <option value="rejected">거부</option>
+              <option value="all">{t('filterAll')}</option>
+              <option value="pending">{t('filterPending')}</option>
+              <option value="approved">{t('filterApproved')}</option>
+              <option value="rejected">{t('filterRejected')}</option>
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">시작 날짜</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('startDate')}</label>
             <input
               type="date"
               value={dateFrom}
@@ -299,7 +308,7 @@ export default function AllTourExpensesManager() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">종료 날짜</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('endDate')}</label>
             <input
               type="date"
               value={dateTo}
@@ -308,10 +317,10 @@ export default function AllTourExpensesManager() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">투어 ID</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('tourId')}</label>
             <input
               type="text"
-              placeholder="투어 ID 입력..."
+              placeholder={t('tourIdPlaceholder')}
               value={tourIdFilter}
               onChange={(e) => setTourIdFilter(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -322,15 +331,15 @@ export default function AllTourExpensesManager() {
         {/* 통계 */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t">
           <div className="bg-white rounded-lg p-3">
-            <div className="text-sm text-gray-600">총 지출</div>
+            <div className="text-sm text-gray-600">{t('totalExpenseSum')}</div>
             <div className="text-2xl font-bold text-gray-900">{formatCurrency(totalAmount)}</div>
           </div>
           <div className="bg-yellow-50 rounded-lg p-3">
-            <div className="text-sm text-gray-600">대기 중</div>
+            <div className="text-sm text-gray-600">{t('pendingSum')}</div>
             <div className="text-2xl font-bold text-yellow-600">{formatCurrency(pendingAmount)}</div>
           </div>
           <div className="bg-green-50 rounded-lg p-3">
-            <div className="text-sm text-gray-600">승인됨</div>
+            <div className="text-sm text-gray-600">{t('approvedSum')}</div>
             <div className="text-2xl font-bold text-green-600">{formatCurrency(approvedAmount)}</div>
           </div>
         </div>
@@ -352,22 +361,22 @@ export default function AllTourExpensesManager() {
       {loading ? (
         <div className="text-center py-8">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="text-gray-500 mt-2">로딩 중...</p>
+          <p className="text-gray-500 mt-2">{t('loading')}</p>
         </div>
       ) : filteredExpenses.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">날짜</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">투어/상품</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">결제내용</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">결제처</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">금액</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">제출자</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상태</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">영수증</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">액션</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('date')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('tourProduct')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('paymentDetails')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('paidTo')}</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('amount')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('submitter')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('statusLabel')}</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('receipt')}</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('action')}</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -408,7 +417,7 @@ export default function AllTourExpensesManager() {
                         보기
                       </button>
                     ) : (
-                      <span className="text-xs text-gray-400">없음</span>
+                      <span className="text-xs text-gray-400">{t('none')}</span>
                     )}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-center">
@@ -418,7 +427,7 @@ export default function AllTourExpensesManager() {
                         target="_blank"
                         rel="noopener noreferrer"
                         className="p-1 text-gray-600 hover:text-blue-600"
-                        title="투어 상세"
+                        title={t('tourDetail')}
                       >
                         <Eye className="w-4 h-4" />
                       </a>
@@ -444,7 +453,7 @@ export default function AllTourExpensesManager() {
               <div className="flex items-center gap-2">
                 <Receipt className="w-5 h-5 text-blue-600" />
                 <h3 className="text-lg font-semibold text-gray-900">
-                  영수증: {viewingReceipt.paidFor}
+                  {t('receiptLabel')}: {viewingReceipt.paidFor}
                 </h3>
               </div>
               <button
@@ -458,12 +467,12 @@ export default function AllTourExpensesManager() {
               <div className="flex flex-col items-center">
                 <img
                   src={viewingReceipt.imageUrl}
-                  alt={`${viewingReceipt.paidFor} 영수증`}
+                  alt={`${t('receiptLabel')} ${viewingReceipt.paidFor}`}
                   className="max-w-full h-auto rounded-lg shadow-lg"
                   onError={(e) => {
                     const target = e.target as HTMLImageElement
                     target.src = '/placeholder-receipt.png'
-                    target.alt = '영수증 이미지를 불러올 수 없습니다'
+                    target.alt = t('receiptImageError')
                   }}
                 />
                 <div className="mt-4 flex gap-2">
@@ -474,7 +483,7 @@ export default function AllTourExpensesManager() {
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
                   >
                     <ImageIcon className="w-4 h-4" />
-                    새 창에서 열기
+                    {t('openInNewWindow')}
                   </a>
                 </div>
               </div>
