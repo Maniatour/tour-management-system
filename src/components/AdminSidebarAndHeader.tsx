@@ -60,6 +60,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   const currentLocale = locale
   const t = useTranslations('common')
   const tAdmin = useTranslations('admin')
+  const tSidebar = useTranslations('sidebar')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
@@ -352,7 +353,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
               .select('position')
               .eq('email', authUser.email)
               .eq('is_active', true)
-              .single()
+              .maybeSingle()
           } catch (error) {
             // 네트워크 오류인 경우 재시도
             if (retries > 0 && error instanceof Error && (
@@ -439,36 +440,36 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
 
   const navigation = [
     // removed from sidebar: 대시보드, 고객 관리, 예약 관리, 부킹 관리, 투어 관리, 채팅 관리
-    { name: t('products'), href: `/${locale}/admin/products`, icon: BookOpen },
-    { name: t('options'), href: `/${locale}/admin/options`, icon: Settings },
-    { name: t('courses'), href: `/${locale}/admin/tour-courses`, icon: Globe },
-    { name: tAdmin('tourCostCalculator'), href: `/${locale}/admin/tour-cost-calculator`, icon: TrendingUp },
-    { name: t('channels'), href: `/${locale}/admin/channels`, icon: Settings },
-    { name: t('coupons'), href: `/${locale}/admin/coupons`, icon: Ticket },
-    { name: tAdmin('tagTranslationManagement'), href: `/${locale}/admin/tag-translations`, icon: Tag },
-    { name: t('pickupHotels'), href: `/${locale}/admin/pickup-hotels`, icon: Building },
-    { name: t('vehicles'), href: `/${locale}/admin/vehicles`, icon: Car },
-    { name: tAdmin('vehicleMaintenanceManagement'), href: `/${locale}/admin/vehicle-maintenance`, icon: Wrench },
-    { name: t('team'), href: `/${locale}/admin/team`, icon: Users },
-    { name: t('attendance'), href: `/${locale}/admin/attendance`, icon: Clock },
-    { name: t('teamChat'), href: `/${locale}/admin/team-chat`, icon: MessageCircle },
-    { name: tAdmin('guideFeeManagement'), href: `/${locale}/admin/guide-costs`, icon: Calculator },
-    { name: t('documents'), href: `/${locale}/admin/documents`, icon: FileText },
-    { name: t('suppliers'), href: `/${locale}/admin/suppliers`, icon: Truck },
-    { name: t('supplierSettlement'), href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
+    { name: tSidebar('products'), href: `/${locale}/admin/products`, icon: BookOpen },
+    { name: tSidebar('options'), href: `/${locale}/admin/options`, icon: Settings },
+    { name: tSidebar('courses'), href: `/${locale}/admin/tour-courses`, icon: Globe },
+    { name: tSidebar('tourCostCalculator'), href: `/${locale}/admin/tour-cost-calculator`, icon: TrendingUp },
+    { name: tSidebar('channels'), href: `/${locale}/admin/channels`, icon: Settings },
+    { name: tSidebar('coupons'), href: `/${locale}/admin/coupons`, icon: Ticket },
+    { name: tSidebar('tagTranslationManagement'), href: `/${locale}/admin/tag-translations`, icon: Tag },
+    { name: tSidebar('pickupHotels'), href: `/${locale}/admin/pickup-hotels`, icon: Building },
+    { name: tSidebar('vehicles'), href: `/${locale}/admin/vehicles`, icon: Car },
+    { name: tSidebar('vehicleMaintenanceManagement'), href: `/${locale}/admin/vehicle-maintenance`, icon: Wrench },
+    { name: tSidebar('team'), href: `/${locale}/admin/team`, icon: Users },
+    { name: tSidebar('attendance'), href: `/${locale}/admin/attendance`, icon: Clock },
+    { name: tSidebar('teamChat'), href: `/${locale}/admin/team-chat`, icon: MessageCircle },
+    { name: tSidebar('guideFeeManagement'), href: `/${locale}/admin/guide-costs`, icon: Calculator },
+    { name: tSidebar('documents'), href: `/${locale}/admin/documents`, icon: FileText },
+    { name: tSidebar('suppliers'), href: `/${locale}/admin/suppliers`, icon: Truck },
+    { name: tSidebar('supplierSettlement'), href: `/${locale}/admin/suppliers/settlement`, icon: DollarSign },
     // 예약 통계는 Super 권한만 표시
-    ...(isSuper ? [{ name: t('reservationStats'), href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 }] : []),
-    { name: tAdmin('expenseManagement'), href: `/${locale}/admin/expenses`, icon: DollarSign },
+    ...(isSuper ? [{ name: tSidebar('reservationStats'), href: `/${locale}/admin/reservations/statistics`, icon: BarChart3 }] : []),
+    { name: tSidebar('expenseManagement'), href: `/${locale}/admin/expenses`, icon: DollarSign },
     // 파트너 자금 관리 (info@maniatour.com만 표시)
-    ...(authUser?.email?.toLowerCase() === 'info@maniatour.com' ? [{ name: tAdmin('partnerFundManagement'), href: `/${locale}/admin/partner-funds`, icon: Users }] : []),
-    { name: tAdmin('paymentMethodManagement'), href: `/${locale}/admin/payment-methods`, icon: CreditCard },
-    { name: t('tourMaterials'), href: `/${locale}/admin/tour-materials`, icon: FileText },
-    { name: t('tourPhotoBuckets'), href: `/${locale}/admin/tour-photo-buckets`, icon: Camera },
-    { name: t('dataSync'), href: `/${locale}/admin/data-sync`, icon: FileSpreadsheet },
-    { name: t('dataReview'), href: `/${locale}/admin/data-review`, icon: FileCheck },
-    { name: t('auditLogs'), href: `/${locale}/admin/audit-logs`, icon: History },
+    ...(authUser?.email?.toLowerCase() === 'info@maniatour.com' ? [{ name: tSidebar('partnerFundManagement'), href: `/${locale}/admin/partner-funds`, icon: Users }] : []),
+    { name: tSidebar('paymentMethodManagement'), href: `/${locale}/admin/payment-methods`, icon: CreditCard },
+    { name: tSidebar('tourMaterials'), href: `/${locale}/admin/tour-materials`, icon: FileText },
+    { name: tSidebar('tourPhotoBuckets'), href: `/${locale}/admin/tour-photo-buckets`, icon: Camera },
+    { name: tSidebar('dataSync'), href: `/${locale}/admin/data-sync`, icon: FileSpreadsheet },
+    { name: tSidebar('dataReview'), href: `/${locale}/admin/data-review`, icon: FileCheck },
+    { name: tSidebar('auditLogs'), href: `/${locale}/admin/audit-logs`, icon: History },
     // 개발자 도구 (관리자만 보이도록, 시뮬레이션 중일 때도 표시)
-    ...((userRole === 'admin' || (userRole === 'team_member' && isSimulating)) ? [{ name: tAdmin('developerTools'), href: `/${locale}/admin/dev-tools`, icon: Settings }] : []),
+    ...((userRole === 'admin' || (userRole === 'team_member' && isSimulating)) ? [{ name: tSidebar('developerTools'), href: `/${locale}/admin/dev-tools`, icon: Settings }] : []),
   ]
 
   return (

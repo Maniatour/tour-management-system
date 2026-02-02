@@ -1,4 +1,5 @@
 import React, { memo } from 'react';
+import { useTranslations } from 'next-intl';
 import { Globe, Users, Edit2 } from 'lucide-react';
 
 interface Channel {
@@ -50,7 +51,7 @@ export const ChannelSelector = memo(function ChannelSelector({
   onChannelEdit,
   channelPricingStats = {}
 }: ChannelSelectorProps) {
-  
+  const t = useTranslations('products.dynamicPricingPage');
   // 연도별 날짜 수를 표시 형식으로 변환
   const formatPricingStats = (stats: ChannelPricingStats | undefined) => {
     if (!stats || Object.keys(stats).length === 0) return null;
@@ -107,7 +108,7 @@ export const ChannelSelector = memo(function ChannelSelector({
       
       // 각 채널의 매칭 상태 확인
       const channelMatchingStatus = Array.from(allChannelIds).map(id => {
-        const name = channelIdToName.get(id) || '알 수 없음';
+        const name = channelIdToName.get(id) || t('unknown');
         const matchedById = statsChannelIds.has(id);
         const normalizedName = name.toLowerCase().trim();
         const normalizedNameNoParens = normalizedName.replace(/[()]/g, '').replace(/\s+/g, ' ');
@@ -397,8 +398,8 @@ export const ChannelSelector = memo(function ChannelSelector({
             {selectedChannelType === 'SELF' 
               ? `자체 채널 (${selfGroup?.channels.length || 0}개)`
               : selectedChannel 
-                ? otaGroup?.channels.find(c => c.id === selectedChannel)?.name || '알 수 없음'
-                : '선택되지 않음'
+                ? otaGroup?.channels.find(c => c.id === selectedChannel)?.name || t('unknown')
+                : t('notSelected')
             }
           </div>
         </div>

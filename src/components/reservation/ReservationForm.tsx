@@ -21,6 +21,7 @@ import ReservationOptionsSection from '@/components/reservation/ReservationOptio
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import { getOptionalOptionsForProduct } from '@/utils/reservationUtils'
+import { getFallbackOtaSalePrice } from '@/utils/choicePricingMatcher'
 import type { 
   Customer, 
   Product, 
@@ -1782,7 +1783,11 @@ export default function ReservationForm({
       console.log('가격 정보 조회 시작:', { productId, tourDate, channelId, reservationId, priceType, selectedChoices: currentSelectedChoices })
       
       // 1. 먼저 reservation_pricing에서 기존 가격 정보 확인 (편집 모드인 경우)
-      if (reservationId) {
+      // 단, 폼에서 채널을 변경한 경우에는 기존 가격(이전 채널 기준)을 쓰지 않고 dynamic_pricing에서 새 채널 가격 로드
+      const reservationChannelId = (reservation as any)?.channelId ?? (reservation as any)?.channel_id ?? (rez as any)?.channel_id ?? null
+      const channelChangedInForm = reservationChannelId != null && channelId !== reservationChannelId
+
+      if (reservationId && !channelChangedInForm) {
         const { data: existingPricing, error: existingError } = await (supabase as any)
           .from('reservation_pricing')
           .select('id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, commission_percent, commission_amount, choices, choices_total')
@@ -1820,10 +1825,70 @@ export default function ReservationForm({
           const commissionBasePriceOnly = (selectedChannel as any)?.commission_base_price_only || false
           const shouldLoadBalanceAmount = hasNotIncludedPrice || commissionBasePriceOnly
           
-          // 단일 가격 모드인 경우 adult_product_price를 모든 가격에 적용
-          const adultPrice = existingPricing.adult_product_price || 0
-          const childPrice = isSinglePrice ? adultPrice : (existingPricing.child_product_price || 0)
-          const infantPrice = isSinglePrice ? adultPrice : (existingPricing.infant_product_price || 0)
+          // 상품가(성인 판매가)는 reservation_pricing 말고 dynamic_pricing 기준으로만 결정
+          // 새예약(임시 ID)이어도 reservation_pricing에 236이 들어가므로, choices_pricing 있으면 무시하고 dynamic_pricing 사용
+          let adultPrice = existingPricing.adult_product_price || 0
+          let childPrice = isSinglePrice ? adultPrice : (existingPricing.child_product_price || 0)
+          let infantPrice = isSinglePrice ? adultPrice : (existingPricing.infant_product_price || 0)
+          
+          if (productId && tourDate && channelId) {
+            const variantKey = formData.variantKey || 'default'
+            const { data: dpRows } = await (supabase as any)
+              .from('dynamic_pricing')
+              .select('choices_pricing')
+              .eq('product_id', productId)
+              .eq('date', tourDate)
+              .eq('channel_id', channelId)
+              .eq('variant_key', variantKey)
+              .order('updated_at', { ascending: false })
+              .limit(1)
+            const dpData = Array.isArray(dpRows) ? dpRows[0] : dpRows
+            let choicesPricing: Record<string, any> = {}
+            if (dpData?.choices_pricing) {
+              try {
+                choicesPricing = typeof dpData.choices_pricing === 'string' ? JSON.parse(dpData.choices_pricing) : dpData.choices_pricing
+              } catch { /* ignore */ }
+            }
+            if (choicesPricing && Object.keys(choicesPricing).length > 0) {
+              // 이 상품은 초이스 상품 → reservation_pricing의 236 쓰지 않고 choices_pricing에서만 로드
+              const fallbackKey = currentSelectedChoices && currentSelectedChoices.length > 0
+                ? currentSelectedChoices
+                    .map((c: any) => `${c.choice_id || c.id}+${(c.option_id ?? c.option_key) ?? ''}`)
+                    .filter(Boolean)
+                    .sort()
+                    .join('+')
+                : ''
+              const fallbackOta = getFallbackOtaSalePrice(
+                { id: fallbackKey || 'fallback', combination_key: fallbackKey },
+                choicesPricing
+              )
+              if (fallbackOta !== undefined && fallbackOta > 0) {
+                adultPrice = fallbackOta
+                childPrice = isSinglePrice ? fallbackOta : fallbackOta
+                infantPrice = isSinglePrice ? fallbackOta : fallbackOta
+                console.log('ReservationForm: 초이스 상품 → choices_pricing 기준 가격 적용', { fallbackOta, adultPrice })
+              } else {
+                adultPrice = 0
+                childPrice = 0
+                infantPrice = 0
+              }
+            } else {
+              // dynamic_pricing에 choices_pricing 없음 → 상품이 실제로 초이스 상품이면 기본가(236) 사용 금지
+              try {
+                const { data: productChoicesRows } = await (supabase as any)
+                  .from('product_choices')
+                  .select('id')
+                  .eq('product_id', productId)
+                  .limit(1)
+                if (Array.isArray(productChoicesRows) && productChoicesRows.length > 0) {
+                  adultPrice = 0
+                  childPrice = 0
+                  infantPrice = 0
+                  console.log('ReservationForm: 초이스 상품인데 choices_pricing 없음 → 기본가 미사용', { productId })
+                }
+              } catch { /* ignore */ }
+            }
+          }
           
           // 불포함 있음 채널인 경우 balance_amount를 onSiteBalanceAmount에 설정
           const balanceAmount = Number(existingPricing.balance_amount) || 0
@@ -2107,45 +2172,62 @@ export default function ReservationForm({
             console.log('choices_pricing 데이터:', choicesPricing)
             console.log('선택된 초이스:', currentSelectedChoices)
             
-            // 선택된 초이스의 조합 키 생성 (여러 초이스가 선택된 경우)
-            const selectedOptionIds = currentSelectedChoices
+            // 선택된 초이스의 조합 키 생성 (미정 선택은 가격 조회에서 제외)
+            const UNDECIDED_OPTION_ID = '__undecided__'
+            const choicesForPricing = currentSelectedChoices?.filter(c => c.option_id !== UNDECIDED_OPTION_ID && (c as any).option_key !== UNDECIDED_OPTION_ID) || []
+            const selectedOptionIds = choicesForPricing
               .map(c => c.option_id)
               .filter(Boolean)
               .sort()
-            const selectedOptionKeys = currentSelectedChoices
+            const selectedOptionKeys = choicesForPricing
               .map(c => (c as any).option_key)
               .filter(Boolean)
               .sort()
-            const selectedChoiceIds = currentSelectedChoices
+            const selectedChoiceIds = choicesForPricing
               .map(c => c.choice_id || (c as any).id)
               .filter(Boolean)
               .sort()
             
-            // 조합 키 생성 (option_key 우선, 없으면 option_id, 없으면 choice_id 사용)
+            // choices_pricing 키 형식: "choice_id+option_key" 또는 "choice_id+option_id" (DB 저장 형식)
+            const buildChoicePricingKeys = (c: { choice_id?: string; option_id?: string; option_key?: string; id?: string }) => {
+              const cid = c.choice_id || (c as any).id
+              const oid = c.option_id
+              const okey = (c as any).option_key
+              const keys: string[] = []
+              if (cid && okey) keys.push(`${cid}+${okey}`)
+              if (cid && oid) keys.push(`${cid}+${oid}`)
+              return keys
+            }
+            
+            let foundChoicePricing = false
+            let choiceData = null
+            
+            // 1. DB 형식 우선: choice_id+option_key, choice_id+option_id (초이스 가격은 항상 이 형식 참조)
+            for (const c of choicesForPricing) {
+              for (const key of buildChoicePricingKeys(c)) {
+                if (choicesPricing[key]) {
+                  choiceData = choicesPricing[key]
+                  console.log('choices_pricing 키(choice_id+option)로 초이스 가격 찾음:', { key, choiceData })
+                  foundChoicePricing = true
+                  break
+                }
+              }
+              if (choiceData) break
+            }
+            
+            // 2. 조합 키로 직접 찾기 (레거시: option_key만 이어붙인 경우)
             const combinationKey = selectedOptionKeys.length > 0
               ? selectedOptionKeys.join('+')
               : selectedOptionIds.length > 0 
                 ? selectedOptionIds.join('+')
                 : selectedChoiceIds.join('+')
             
-            console.log('생성된 조합 키:', { 
-              combinationKey, 
-              selectedOptionIds, 
-              selectedOptionKeys,
-              selectedChoiceIds,
-              availableKeys: Object.keys(choicesPricing)
-            })
-            
-            let foundChoicePricing = false
-            let choiceData = null
-            
-            // 1. 조합 키로 직접 찾기 (option_key 조합)
-            if (combinationKey && choicesPricing[combinationKey]) {
+            if (!choiceData && combinationKey && choicesPricing[combinationKey]) {
               choiceData = choicesPricing[combinationKey]
               console.log('조합 키로 초이스 가격 찾음:', { combinationKey, choiceData })
             }
             
-            // 2. 정렬된 조합 키로 찾기 (순서에 상관없이 매칭)
+            // 3. 정렬된 조합 키로 찾기 (순서에 상관없이 매칭)
             if (!choiceData && combinationKey) {
               const sortedKey = combinationKey.split('+').sort().join('+')
               const availableKeys = Object.keys(choicesPricing)
@@ -2153,14 +2235,13 @@ export default function ReservationForm({
                 const sortedAvailableKey = key.split('+').sort().join('+')
                 return sortedAvailableKey === sortedKey
               })
-              
               if (matchingKey) {
                 choiceData = choicesPricing[matchingKey]
                 console.log('정렬된 조합 키로 초이스 가격 찾음:', { matchingKey, sortedKey, choiceData })
               }
             }
             
-            // 3. 개별 초이스로 찾기 (조합 키로 찾지 못한 경우)
+            // 4. 개별 초이스로 찾기 (조합 키로 찾지 못한 경우)
             // 여러 초이스가 선택된 경우, 첫 번째 초이스의 가격을 사용 (일반적으로 조합 키로 찾아야 함)
             if (!choiceData) {
               for (const selectedChoice of currentSelectedChoices) {
@@ -2263,11 +2344,33 @@ export default function ReservationForm({
             if (foundChoicePricing) {
               useChoicePricing = true
               console.log('초이스별 가격 사용 완료:', { adultPrice, childPrice, infantPrice, notIncludedPrice })
-            } else {
-              console.log('선택된 초이스의 가격을 찾지 못함, 기본 가격으로 폴백:', { 
-                choicesPricingKeys: Object.keys(choicesPricing),
-                selectedChoices: currentSelectedChoices
-              })
+            } else if (currentSelectedChoices && currentSelectedChoices.length > 0) {
+              // 매칭 실패 또는 키 형식 불일치 시: choices_pricing 전체에서 최대 ota_sale_price(미국 거주자 쪽)로 폴백
+              const fallbackCombinationKey = currentSelectedChoices
+                .map((c: any) => `${c.choice_id || c.id}+${(c.option_id ?? c.option_key) ?? ''}`)
+                .filter(Boolean)
+                .sort()
+                .join('+')
+              const fallbackOta = fallbackCombinationKey
+                ? getFallbackOtaSalePrice(
+                    { id: fallbackCombinationKey, combination_key: fallbackCombinationKey },
+                    choicesPricing
+                  )
+                : undefined
+              if (fallbackOta !== undefined && fallbackOta > 0) {
+                adultPrice = fallbackOta
+                childPrice = isSinglePrice ? fallbackOta : fallbackOta
+                infantPrice = isSinglePrice ? fallbackOta : fallbackOta
+                useChoicePricing = true
+                foundChoicePricing = true
+                console.log('초이스 가격 폴백 OTA 판매가 사용:', { fallbackCombinationKey, fallbackOta, adultPrice })
+              }
+              if (!foundChoicePricing) {
+                console.log('선택된 초이스의 가격을 찾지 못함, 기본 가격으로 폴백:', { 
+                  choicesPricingKeys: Object.keys(choicesPricing),
+                  selectedChoices: currentSelectedChoices
+                })
+              }
             }
           } catch (e) {
             console.warn('choices_pricing 파싱 오류:', e)
@@ -2275,10 +2378,13 @@ export default function ReservationForm({
         }
         
         // 초이스별 가격을 사용하지 않은 경우
-        // choices_pricing이 있는 상품은 절대로 기본 가격을 로드하지 않음
+        // 초이스가 있는 상품은 무조건 choices_pricing만 참조, 기본 가격(adult_price 등) 사용 금지
+        const productHasChoices = (formData.productChoices?.length ?? 0) > 0
+        const mustUseChoicePricingOnly = hasChoicesPricing || productHasChoices
+
         if (!useChoicePricing) {
-          // choices_pricing이 있는 경우 (초이스가 있는 상품)
-          if (hasChoicesPricing) {
+          // 초이스가 있는 상품(choices_pricing 있음 또는 productChoices 있음)
+          if (mustUseChoicePricingOnly) {
             // 필수 초이스가 모두 선택되지 않은 경우
             if (!allRequiredChoicesSelected) {
               console.log('초이스별 가격 설정이 있지만 모든 필수 초이스가 선택되지 않아 가격을 로드하지 않음:', {
@@ -2308,18 +2414,39 @@ export default function ReservationForm({
               setPriceAutoFillMessage('선택한 초이스에 대한 가격 정보가 없습니다. 수동으로 입력해주세요.')
             }
           } else {
-            // choices_pricing이 없는 경우 (초이스가 없는 상품)에만 기본 가격 사용
-            adultPrice = (pricing?.adult_price as number) || 0
-            childPrice = isSinglePrice ? adultPrice : ((pricing?.child_price as number) || 0)
-            infantPrice = isSinglePrice ? adultPrice : ((pricing?.infant_price as number) || 0)
-            notIncludedPrice = (pricing?.not_included_price as number) || 0
-            
-            console.log('기본 가격 사용 (초이스가 없는 상품):', { 
-              hasChoicesPricing: false,
-              adultPrice, 
-              childPrice, 
-              infantPrice 
-            })
+            // formData.productChoices는 아직 로드 전일 수 있으므로, DB에서 상품 초이스 여부 확인
+            // 초이스 상품이면 기본가(236 등) 사용 금지 → 0으로 두고 초이스 선택 후 로드 유도
+            let productHasChoicesFromDb = false
+            try {
+              const { data: productChoicesRows } = await (supabase as any)
+                .from('product_choices')
+                .select('id')
+                .eq('product_id', productId)
+                .limit(1)
+              productHasChoicesFromDb = Array.isArray(productChoicesRows) && productChoicesRows.length > 0
+            } catch {
+              // 조회 실패 시 기존 로직 유지
+            }
+            if (productHasChoicesFromDb) {
+              console.log('초이스 상품인데 choices_pricing/폼 초이스 없음 → 기본가 미사용, 0으로 설정:', { productId })
+              adultPrice = 0
+              childPrice = 0
+              infantPrice = 0
+              notIncludedPrice = 0
+              setPriceAutoFillMessage('모든 필수 초이스를 선택하면 가격이 자동으로 로드됩니다.')
+            } else {
+              // 실제로 초이스가 없는 상품에만 기본 가격 사용
+              adultPrice = (pricing?.adult_price as number) || 0
+              childPrice = isSinglePrice ? adultPrice : ((pricing?.child_price as number) || 0)
+              infantPrice = isSinglePrice ? adultPrice : ((pricing?.infant_price as number) || 0)
+              notIncludedPrice = (pricing?.not_included_price as number) || 0
+              console.log('기본 가격 사용 (초이스가 없는 상품):', { 
+                hasChoicesPricing: false,
+                adultPrice, 
+                childPrice, 
+                infantPrice 
+              })
+            }
           }
         }
         
@@ -3590,7 +3717,6 @@ export default function ReservationForm({
               </div>
 
               <div id="pricing-section" className="space-y-2">
-                {/* @ts-expect-error - productOptions와 channels의 타입이 데이터베이스 스키마와 인터페이스 간 불일치 */}
                 <PricingSection
                   formData={formData as any}
                   setFormData={setFormData}
@@ -3599,11 +3725,9 @@ export default function ReservationForm({
                   calculateChoiceTotal={calculateRequiredOptionTotal}
                   calculateCouponDiscount={calculateCouponDiscount}
                   coupons={coupons}
-                  getOptionalOptionsForProduct={(productId) => {
-                    const typedProductOptions = productOptions as any as ProductOption[];
-                    // @ts-expect-error - productOptions의 타입이 데이터베이스 스키마와 인터페이스 간 불일치
-                    return getOptionalOptionsForProduct(productId, typedProductOptions) as ProductOption[];
-                  }}
+                  getOptionalOptionsForProduct={(productId) =>
+                    getOptionalOptionsForProduct(productId, productOptions) as any
+                  }
                   options={options}
                   t={t}
                   autoSelectCoupon={autoSelectCoupon}
@@ -3611,7 +3735,7 @@ export default function ReservationForm({
                   isExistingPricingLoaded={isExistingPricingLoaded}
                   {...(reservation?.id ? { reservationId: reservation.id } : {})}
                   expenseUpdateTrigger={expenseUpdateTrigger}
-                  channels={(channels as any) as Channel[]}
+                  channels={channels.map(({ type, ...c }) => ({ ...c, ...(type != null ? { type } : {}) })) as any}
                   products={products}
                 />
               </div>
@@ -3660,14 +3784,17 @@ export default function ReservationForm({
               <ProductSelectionSection
                 formData={formData}
                 setFormData={setFormData}
-                products={products.map(p => ({ ...p, name_ko: p.name }))}
+                products={products.map((p) => ({
+                  ...p,
+                  name_ko: (p as { name?: string | null; name_ko?: string | null }).name ?? (p as { name_ko?: string | null }).name_ko ?? '',
+                }))}
                 loadProductChoices={(productId) => loadProductChoices(productId)}
                 getDynamicPricingForOption={getDynamicPricingForOption}
                 t={t}
                 layout={layout}
                 onAccordionToggle={setProductAccordionExpanded}
                 isEditMode={!!reservation?.id}
-                channels={channels}
+                channels={channels.map(({ type, ...c }) => ({ ...c, ...(type != null ? { type } : {}) }))}
               />
 
               {/* 새로운 간결한 초이스 시스템이 ProductSelectionSection에서 처리됨 */}
@@ -3678,7 +3805,10 @@ export default function ReservationForm({
               <ChannelSection
                 formData={formData}
                 setFormData={setFormData}
-                channels={(channels as any) as Channel[]}
+                channels={channels.map((c) => ({
+                  ...c,
+                  type: (c.type ?? 'self') as 'partner' | 'ota' | 'self',
+                }))}
                 t={t}
                 layout={layout}
                 onAccordionToggle={setChannelAccordionExpanded}

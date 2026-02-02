@@ -78,6 +78,8 @@ export default function BasicInfoTab({
 }: BasicInfoTabProps) {
   const locale = useLocale()
   const t = useTranslations('common')
+  const tBasic = useTranslations('products.basicInfoTab')
+  const tProducts = useTranslations('products')
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
   const [categories, setCategories] = useState<CategoryItem[]>([])
@@ -85,7 +87,7 @@ export default function BasicInfoTab({
   const [allSubCategories, setAllSubCategories] = useState<SubCategoryItem[]>([])
   const [newDepartureTime, setNewDepartureTime] = useState('')
   const [showCategoryModal, setShowCategoryModal] = useState(false)
-  const [defaultChoicesPrice, setDefaultChoicesPrice] = useState(0)
+  const [_defaultChoicesPrice, setDefaultChoicesPrice] = useState(0)
   const [loadingChoices, setLoadingChoices] = useState(false)
   const [choicesGroups, setChoicesGroups] = useState<Array<{
     id: string
@@ -248,23 +250,23 @@ export default function BasicInfoTab({
     try {
       // 필수 필드 검증
       if (!formData.name.trim()) {
-        setSaveMessage('상품명을 입력해주세요.')
+        setSaveMessage(tBasic('msgEnterName'))
         return
       }
       if (!formData.category) {
-        setSaveMessage('카테고리를 선택해주세요.')
+        setSaveMessage(tBasic('msgSelectCategory'))
         return
       }
       if (!formData.subCategory) {
-        setSaveMessage('하위 카테고리를 선택해주세요.')
+        setSaveMessage(tBasic('msgSelectSubCategory'))
         return
       }
       if (formData.duration <= 0) {
-        setSaveMessage('소요시간을 입력해주세요.')
+        setSaveMessage(tBasic('msgEnterDuration'))
         return
       }
       if (formData.maxParticipants <= 0) {
-        setSaveMessage('최대 참가자 수를 입력해주세요.')
+        setSaveMessage(tBasic('msgEnterMaxParticipants'))
         return
       }
 
@@ -308,7 +310,7 @@ export default function BasicInfoTab({
             child_age_max: formData.childAgeMax,
             infant_age: formData.infantAge,
             tour_departure_times: formData.tourDepartureTimes || null,
-            customer_name_ko: formData.customerNameKo?.trim() || formData.name.trim() || '상품',
+            customer_name_ko: formData.customerNameKo?.trim() || formData.name.trim() || tBasic('defaultProductName'),
             customer_name_en: formData.customerNameEn?.trim() || formData.nameEn?.trim() || 'Product',
             transportation_methods: formData.transportationMethods || []
           }] as never[])
@@ -320,19 +322,19 @@ export default function BasicInfoTab({
           const errorMessage = error.message || '알 수 없는 오류'
           const errorDetails = error.details || ''
           const errorHint = error.hint || ''
-          setSaveMessage(`상품 생성에 실패했습니다: ${errorMessage}${errorDetails ? ` (${errorDetails})` : ''}${errorHint ? ` - ${errorHint}` : ''}`)
+          setSaveMessage(tBasic('msgCreateFailed', { message: `${errorMessage}${errorDetails ? ` (${errorDetails})` : ''}${errorHint ? ` - ${errorHint}` : ''}` }))
           setSaving(false)
           return
         }
 
         if (!data || !(data as { id?: string })?.id) {
           console.error('상품 생성 후 데이터를 받지 못했습니다:', data)
-          setSaveMessage('상품이 생성되었지만 데이터를 확인할 수 없습니다.')
+          setSaveMessage(tBasic('msgCreateNoData'))
           setSaving(false)
           return
         }
 
-        setSaveMessage('상품이 성공적으로 생성되었습니다!')
+        setSaveMessage(tBasic('msgCreateSuccess'))
         
         // 상품 편집 페이지로 이동 (새로 생성된 ID로)
         setTimeout(() => {
@@ -378,7 +380,7 @@ export default function BasicInfoTab({
             child_age_max: formData.childAgeMax,
             infant_age: formData.infantAge,
             tour_departure_times: formData.tourDepartureTimes || null,
-            customer_name_ko: formData.customerNameKo?.trim() || formData.name.trim() || '상품',
+            customer_name_ko: formData.customerNameKo?.trim() || formData.name.trim() || tBasic('defaultProductName'),
             customer_name_en: formData.customerNameEn?.trim() || formData.nameEn?.trim() || 'Product',
             transportation_methods: formData.transportationMethods || []
           } as never)
@@ -386,12 +388,12 @@ export default function BasicInfoTab({
 
         if (error) throw error
 
-        setSaveMessage('기본 정보가 성공적으로 저장되었습니다.')
+        setSaveMessage(tBasic('msgSaveSuccess'))
         setTimeout(() => setSaveMessage(''), 3000)
       }
     } catch (error) {
       console.error('기본 정보 저장 오류:', error)
-      setSaveMessage('기본 정보 저장 중 오류가 발생했습니다.')
+      setSaveMessage(tBasic('msgSaveError'))
     } finally {
       setSaving(false)
     }
@@ -414,7 +416,7 @@ export default function BasicInfoTab({
       const categoryCounts: { [key: string]: number } = {}
       const subCategoryCounts: { [key: string]: number } = {}
 
-      productsResult.data?.forEach((product: { category?: string; sub_category?: string }) => {
+      productsResult.data?.forEach((product: { category?: string; sub_category?: string | null }) => {
         if (product.category) {
           categoryCounts[product.category] = (categoryCounts[product.category] || 0) + 1
         }
@@ -501,7 +503,7 @@ export default function BasicInfoTab({
         const categoryCounts: { [key: string]: number } = {}
         const subCategoryCounts: { [key: string]: number } = {}
 
-        products?.forEach((product: { category?: string; sub_category?: string }) => {
+        products?.forEach((product: { category?: string; sub_category?: string | null }) => {
           if (product.category) {
             categoryCounts[product.category] = (categoryCounts[product.category] || 0) + 1
           }
@@ -647,12 +649,6 @@ export default function BasicInfoTab({
     loadDefaultChoicesPrice()
   }, [loadDefaultChoicesPrice])
 
-  // 총 가격 계산 (기본 가격 + 기본 선택 초이스 가격)
-  const baseAdultPrice = typeof formData.basePrice === 'object' && formData.basePrice 
-    ? formData.basePrice.adult 
-    : (formData.basePriceAdult ?? (typeof formData.basePrice === 'number' ? formData.basePrice : 0));
-  const totalPrice = baseAdultPrice + defaultChoicesPrice
-
   // 카테고리 선택 시 서브카테고리 필터링
   const filterSubCategories = useCallback(() => {
     if (formData.category && allSubCategories.length > 0) {
@@ -695,7 +691,7 @@ export default function BasicInfoTab({
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
           <Info className="h-5 w-5 mr-2 text-blue-600" />
-          상품 기본 정보
+          {tBasic('sectionTitle')}
         </h3>
         <div className="space-y-4">
         {/* 상품명 필드들 - 2x2 그리드로 배치 */}
@@ -703,24 +699,24 @@ export default function BasicInfoTab({
           {/* 내부 한국어, 내부 영어 - 한 줄에 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">상품명 (내부 한국어) *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('nameInternalKo')}</label>
               <input
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="내부용 한국어 상품명을 입력하세요"
+                placeholder={tBasic('placeholderInternalKo')}
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">상품명 (내부 영어)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('nameInternalEn')}</label>
               <input
                 type="text"
                 value={formData.nameEn || ''}
                 onChange={(e) => setFormData({ ...formData, nameEn: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Internal English product name"
+                placeholder={tBasic('placeholderInternalEn')}
               />
             </div>
           </div>
@@ -728,23 +724,23 @@ export default function BasicInfoTab({
           {/* 고객용 한국어, 고객용 영어 - 한 줄에 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">상품명 (고객용 한국어)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('nameCustomerKo')}</label>
               <input
                 type="text"
                 value={formData.customerNameKo || ''}
                 onChange={(e) => setFormData({ ...formData, customerNameKo: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="고객용 한국어 상품명을 입력하세요"
+                placeholder={tBasic('placeholderCustomerKo')}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">상품명 (고객용 영어)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('nameCustomerEn')}</label>
               <input
                 type="text"
                 value={formData.customerNameEn || ''}
                 onChange={(e) => setFormData({ ...formData, customerNameEn: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Customer English product name"
+                placeholder={tBasic('placeholderCustomerEn')}
               />
             </div>
           </div>
@@ -753,31 +749,31 @@ export default function BasicInfoTab({
         {/* 상품 코드, 판매 상태, 카테고리, 서브카테고리 - 한 줄에 배치 */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">상품 코드 *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('productCode')}</label>
             <input
               type="text"
               value={formData.productCode || ''}
               onChange={(e) => setFormData({ ...formData, productCode: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="예: ANT-001"
+              placeholder={tBasic('productCodePlaceholder')}
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">판매 상태 *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('salesStatus')}</label>
             <select
               value={formData.status}
               onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' | 'draft' })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
             >
-              <option value="draft">초안</option>
-              <option value="active">활성</option>
-              <option value="inactive">비활성</option>
+              <option value="draft">{tProducts('status.draft')}</option>
+              <option value="active">{tProducts('status.active')}</option>
+              <option value="inactive">{tProducts('status.inactive')}</option>
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">카테고리 *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('category')}</label>
             <div className="flex gap-2">
               <select
                 value={formData.category}
@@ -785,7 +781,7 @@ export default function BasicInfoTab({
                 className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
               >
-                <option value="">카테고리 선택</option>
+                <option value="">{tBasic('categorySelect')}</option>
                 {categories.map((category) => (
                   <option key={category.value} value={category.value}>
                     {category.label} ({category.count})
@@ -796,34 +792,33 @@ export default function BasicInfoTab({
                 type="button"
                 onClick={() => setShowCategoryModal(true)}
                 className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center"
-                title="카테고리 관리"
+                title={tBasic('categoryManage')}
               >
                 <Settings className="h-4 w-4" />
               </button>
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">서브카테고리 *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('subCategory')}</label>
             <div className="flex gap-2">
               <select
                 value={formData.subCategory}
                 onChange={(e) => {
-                  console.log('서브카테고리 변경:', e.target.value)
                   setFormData({ ...formData, subCategory: e.target.value })
                 }}
                 className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
               >
-                <option value="">서브카테고리 선택</option>
+                <option value="">{tBasic('subCategorySelect')}</option>
                 {/* 현재 선택된 서브카테고리가 목록에 없으면 먼저 표시 */}
                 {formData.subCategory && !subCategories.some(sub => sub.value === formData.subCategory) && (
                   <option value={formData.subCategory} style={{ backgroundColor: '#fef3c7' }}>
-                    {formData.subCategory} (현재 선택됨)
+                    {formData.subCategory} {tBasic('currentlySelected')}
                   </option>
                 )}
                 {subCategories.length === 0 ? (
                   <option value="" disabled>
-                    {formData.category ? '해당 카테고리의 서브카테고리가 없습니다' : '카테고리를 먼저 선택하세요'}
+                    {formData.category ? tBasic('noSubCategory') : tBasic('selectCategoryFirst')}
                   </option>
                 ) : (
                   subCategories.map((subCategory) => (
@@ -837,7 +832,7 @@ export default function BasicInfoTab({
                 type="button"
                 onClick={() => setShowCategoryModal(true)}
                 className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center"
-                title="서브카테고리 관리"
+                title={tBasic('subCategoryManage')}
               >
                 <Settings className="h-4 w-4" />
               </button>
@@ -847,12 +842,12 @@ export default function BasicInfoTab({
 
         {/* 상품 설명 */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">상품 설명 (내부)</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('descriptionInternal')}</label>
           <textarea
             value={formData.description || ''}
             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="상품에 대한 간단한 설명을 입력하세요"
+            placeholder={tBasic('descriptionPlaceholder')}
             rows={3}
           />
         </div>
@@ -889,73 +884,73 @@ export default function BasicInfoTab({
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
           <Info className="h-5 w-5 mr-2 text-blue-600" />
-          출발/도착 정보
+          {tBasic('departureArrival')}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">출발 도시 *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('departureCity')}</label>
           <input
             type="text"
             value={formData.departureCity || ''}
             onChange={(e) => setFormData({ ...formData, departureCity: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="예: 라스베가스"
+            placeholder={tBasic('placeholderDepartureCity')}
             required
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">도착 도시 *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('arrivalCity')}</label>
           <input
             type="text"
             value={formData.arrivalCity || ''}
             onChange={(e) => setFormData({ ...formData, arrivalCity: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="예: 앤텔롭 캐년"
+            placeholder={tBasic('placeholderArrivalCity')}
             required
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">출발 국가 *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('departureCountry')}</label>
           <select
             value={formData.departureCountry || ''}
             onChange={(e) => setFormData({ ...formData, departureCountry: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             required
           >
-            <option value="">국가 선택</option>
-            <option value="USA">미국</option>
-            <option value="US">미국 (US)</option>
-            <option value="KR">한국</option>
-            <option value="JP">일본</option>
-            <option value="CN">중국</option>
-            <option value="TH">태국</option>
-            <option value="VN">베트남</option>
-            <option value="SG">싱가포르</option>
-            <option value="MY">말레이시아</option>
-            <option value="ID">인도네시아</option>
-            <option value="PH">필리핀</option>
+            <option value="">{tBasic('countrySelect')}</option>
+            <option value="USA">{tBasic('countryUSA')}</option>
+            <option value="US">{tBasic('countryUS')}</option>
+            <option value="KR">{tBasic('countryKR')}</option>
+            <option value="JP">{tBasic('countryJP')}</option>
+            <option value="CN">{tBasic('countryCN')}</option>
+            <option value="TH">{tBasic('countryTH')}</option>
+            <option value="VN">{tBasic('countryVN')}</option>
+            <option value="SG">{tBasic('countrySG')}</option>
+            <option value="MY">{tBasic('countryMY')}</option>
+            <option value="ID">{tBasic('countryID')}</option>
+            <option value="PH">{tBasic('countryPH')}</option>
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">도착 국가 *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('arrivalCountry')}</label>
           <select
             value={formData.arrivalCountry || ''}
             onChange={(e) => setFormData({ ...formData, arrivalCountry: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             required
           >
-            <option value="">국가 선택</option>
-            <option value="USA">미국</option>
-            <option value="US">미국 (US)</option>
-            <option value="KR">한국</option>
-            <option value="JP">일본</option>
-            <option value="CN">중국</option>
-            <option value="TH">태국</option>
-            <option value="VN">베트남</option>
-            <option value="SG">싱가포르</option>
-            <option value="MY">말레이시아</option>
-            <option value="ID">인도네시아</option>
-            <option value="PH">필리핀</option>
+            <option value="">{tBasic('countrySelect')}</option>
+            <option value="USA">{tBasic('countryUSA')}</option>
+            <option value="US">{tBasic('countryUS')}</option>
+            <option value="KR">{tBasic('countryKR')}</option>
+            <option value="JP">{tBasic('countryJP')}</option>
+            <option value="CN">{tBasic('countryCN')}</option>
+            <option value="TH">{tBasic('countryTH')}</option>
+            <option value="VN">{tBasic('countryVN')}</option>
+            <option value="SG">{tBasic('countrySG')}</option>
+            <option value="MY">{tBasic('countryMY')}</option>
+            <option value="ID">{tBasic('countryID')}</option>
+            <option value="PH">{tBasic('countryPH')}</option>
           </select>
         </div>
         </div>
@@ -965,19 +960,19 @@ export default function BasicInfoTab({
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
           <Info className="h-5 w-5 mr-2 text-blue-600" />
-          투어 정보
+          {tBasic('tourInfo')}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* 운송수단 */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">운송수단</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">{tBasic('transportation')}</label>
           <div className="flex flex-wrap gap-2">
             {[
-              { value: 'van', label: '밴', icon: MdDirectionsCar },
-              { value: 'bus', label: '버스', icon: MdDirectionsBus },
-              { value: 'helicopter', label: '헬리콥터', icon: FaHelicopter },
-              { value: 'light_aircraft', label: '경비행기', icon: MdFlightTakeoff },
-              { value: 'limousine', label: '리무진', icon: MdLocalTaxi }
+              { value: 'van', labelKey: 'transportVan', icon: MdDirectionsCar },
+              { value: 'bus', labelKey: 'transportBus', icon: MdDirectionsBus },
+              { value: 'helicopter', labelKey: 'transportHelicopter', icon: FaHelicopter },
+              { value: 'light_aircraft', labelKey: 'transportLightAircraft', icon: MdFlightTakeoff },
+              { value: 'limousine', labelKey: 'transportLimousine', icon: MdLocalTaxi }
             ].map((method) => {
               const Icon = method.icon
               const isChecked = formData.transportationMethods?.includes(method.value) || false
@@ -1012,7 +1007,7 @@ export default function BasicInfoTab({
                   />
                   <Icon className="w-4 h-4 text-blue-600" />
                   <span className={`text-xs font-medium ${isChecked ? 'text-blue-700' : 'text-gray-700'}`}>
-                    {method.label}
+                    {tBasic(method.labelKey as any)}
                   </span>
                 </label>
               )
@@ -1022,7 +1017,7 @@ export default function BasicInfoTab({
         
         {/* 투어 언어 */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">투어 언어 *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('tourLanguage')}</label>
           <div className="space-y-2">
             <label className="flex items-center">
               <input
@@ -1038,7 +1033,7 @@ export default function BasicInfoTab({
                 }}
                 className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
               />
-              한국어
+              {tBasic('langKo')}
             </label>
             <label className="flex items-center">
               <input
@@ -1054,12 +1049,12 @@ export default function BasicInfoTab({
                 }}
                 className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
               />
-              영어
+              {tBasic('langEn')}
             </label>
           </div>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">그룹 크기 *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('groupSize')}</label>
           <div className="space-y-2">
             <label className="flex items-center">
               <input
@@ -1075,7 +1070,7 @@ export default function BasicInfoTab({
                 }}
                 className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
               />
-              Private (개인/가족)
+              {tBasic('privateGroup')}
             </label>
             <label className="flex items-center">
               <input
@@ -1107,7 +1102,7 @@ export default function BasicInfoTab({
                 }}
                 className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
               />
-              Big Group (대규모 그룹)
+              {tBasic('bigGroup')}
             </label>
           </div>
         </div>
@@ -1118,60 +1113,60 @@ export default function BasicInfoTab({
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
           <Info className="h-5 w-5 mr-2 text-blue-600" />
-          연령 기준
+          {tBasic('ageSection')}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">성인 기준 (이상) *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('adultAgeMin')}</label>
           <input
             type="number"
             min="0"
             value={formData.adultAge || ''}
             onChange={(e) => setFormData({ ...formData, adultAge: parseInt(e.target.value) || 0 })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="예: 13"
+            placeholder={tBasic('placeholderAge')}
             required
           />
-          <p className="text-xs text-gray-500 mt-1">세 이상</p>
+          <p className="text-xs text-gray-500 mt-1">{tBasic('yearsAndOver')}</p>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">아동 기준 (이상) *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('childAgeMin')}</label>
           <input
             type="number"
             min="0"
             value={formData.childAgeMin || ''}
             onChange={(e) => setFormData({ ...formData, childAgeMin: parseInt(e.target.value) || 0 })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="예: 3"
+            placeholder={tBasic('placeholderAge')}
             required
           />
-          <p className="text-xs text-gray-500 mt-1">세 이상</p>
+          <p className="text-xs text-gray-500 mt-1">{tBasic('yearsAndOver')}</p>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">아동 기준 (이하) *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('childAgeMax')}</label>
           <input
             type="number"
             min="0"
             value={formData.childAgeMax || ''}
             onChange={(e) => setFormData({ ...formData, childAgeMax: parseInt(e.target.value) || 0 })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="예: 12"
+            placeholder={tBasic('placeholderAge')}
             required
           />
-          <p className="text-xs text-gray-500 mt-1">세 이하</p>
+          <p className="text-xs text-gray-500 mt-1">{tBasic('yearsAndUnder')}</p>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">유아 기준 (이하) *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('infantAgeMax')}</label>
           <input
             type="number"
             min="0"
             value={formData.infantAge || ''}
             onChange={(e) => setFormData({ ...formData, infantAge: parseInt(e.target.value) || 0 })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="예: 2"
+            placeholder={tBasic('placeholderAge')}
             required
           />
-          <p className="text-xs text-gray-500 mt-1">세 이하</p>
+          <p className="text-xs text-gray-500 mt-1">{tBasic('yearsAndUnder')}</p>
         </div>
         </div>
       </div>
@@ -1180,19 +1175,19 @@ export default function BasicInfoTab({
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
           <Info className="h-5 w-5 mr-2 text-blue-600" />
-          가격 정보
+          {tBasic('priceSection')}
         </h3>
         <div className="space-y-4">
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="block text-sm font-medium text-gray-700">기본 가격 ($) *</label>
-              <span className="text-xs text-gray-500">(모든 채널 공통 기본 가격)</span>
+              <label className="block text-sm font-medium text-gray-700">{tBasic('basePriceLabel')}</label>
+              <span className="text-xs text-gray-500">{tBasic('basePriceHint')}</span>
             </div>
             
             {/* 홈페이지 가격 타입 선택 */}
             <div className="mb-3">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                홈페이지 가격 타입
+                {tBasic('homepagePricingType')}
               </label>
               <div className="flex items-center space-x-4">
                 <label className="flex items-center cursor-pointer">
@@ -1204,7 +1199,7 @@ export default function BasicInfoTab({
                     onChange={(e) => setFormData({ ...formData, homepagePricingType: e.target.value as 'single' | 'separate' })}
                     className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
                   />
-                  <span className="text-sm text-gray-700">성인/아동/유아 분리 가격</span>
+                  <span className="text-sm text-gray-700">{tBasic('separatePricing')}</span>
                 </label>
                 <label className="flex items-center cursor-pointer">
                   <input
@@ -1217,7 +1212,6 @@ export default function BasicInfoTab({
                       const currentAdultPrice = typeof formData.basePrice === 'object' && formData.basePrice 
                         ? formData.basePrice.adult 
                         : (formData.basePriceAdult ?? (typeof formData.basePrice === 'number' ? formData.basePrice : 0));
-                      // 단일 가격으로 변경 시 아동/유아 가격도 성인 가격과 동일하게 설정
                       setFormData({ 
                         ...formData, 
                         homepagePricingType: pricingType,
@@ -1229,20 +1223,19 @@ export default function BasicInfoTab({
                     }}
                     className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
                   />
-                  <span className="text-sm text-gray-700">단일 가격</span>
+                  <span className="text-sm text-gray-700">{tBasic('singlePricing')}</span>
                 </label>
               </div>
               <p className="text-xs text-gray-500 mt-1">
-                자체 채널 홈페이지에서 표시할 가격 타입을 선택하세요. 단일 가격 선택 시 성인 가격이 모든 인원에게 적용됩니다.
+                {tBasic('pricingTypeHint')}
               </p>
             </div>
 
             {/* 가격 입력 필드 - 홈페이지 가격 타입에 따라 변동 */}
             {formData.homepagePricingType === 'single' ? (
-              // 단일 가격 모드
               <div>
                 <label className="block text-xs text-gray-600 mb-1">
-                  가격 <span className="text-blue-600">(단일 가격)</span>
+                  {tBasic('priceSingle')}
                 </label>
                 <input
                   type="number"
@@ -1269,13 +1262,13 @@ export default function BasicInfoTab({
                   placeholder="0"
                   required
                 />
-                <p className="text-xs text-blue-600 mt-1">성인/아동/유아 모두 동일한 가격이 적용됩니다</p>
+                <p className="text-xs text-blue-600 mt-1">{tBasic('samePriceForAll')}</p>
               </div>
             ) : (
               // 분리 가격 모드
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-600 mb-1">성인</label>
+                  <label className="block text-xs text-gray-600 mb-1">{tBasic('adult')}</label>
                   <input
                     type="number"
                     min="0"
@@ -1306,7 +1299,7 @@ export default function BasicInfoTab({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-600 mb-1">아동</label>
+                  <label className="block text-xs text-gray-600 mb-1">{tBasic('child')}</label>
                   <input
                     type="number"
                     min="0"
@@ -1337,7 +1330,7 @@ export default function BasicInfoTab({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-600 mb-1">유아</label>
+                  <label className="block text-xs text-gray-600 mb-1">{tBasic('infant')}</label>
                   <input
                     type="number"
                     min="0"
@@ -1377,7 +1370,7 @@ export default function BasicInfoTab({
                 {/* 기본 가격 */}
                 <div className="grid grid-cols-3 gap-3 font-medium">
                   <div className="flex justify-between">
-                    <span className="text-gray-700">성인:</span>
+                    <span className="text-gray-700">{tBasic('adult')}:</span>
                     <span className="text-gray-900">${(() => {
                       if (typeof formData.basePrice === 'object' && formData.basePrice) {
                         return formData.basePrice.adult || 0;
@@ -1386,7 +1379,7 @@ export default function BasicInfoTab({
                     })().toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-700">아동:</span>
+                    <span className="text-gray-700">{tBasic('child')}:</span>
                     <span className="text-gray-900">${(() => {
                       if (typeof formData.basePrice === 'object' && formData.basePrice) {
                         return formData.basePrice.child || 0;
@@ -1407,7 +1400,7 @@ export default function BasicInfoTab({
                 
                 {/* 각 초이스 그룹별 옵션 가격 표시 */}
                 {loadingChoices ? (
-                  <div className="text-xs text-gray-500">로딩 중...</div>
+                  <div className="text-xs text-gray-500">{tBasic('loading')}</div>
                 ) : choicesGroups.length > 0 ? (
                   <div className="space-y-3">
                     {choicesGroups.map((group) => (
@@ -1431,7 +1424,7 @@ export default function BasicInfoTab({
                                 >
                                   <span className="flex items-center">
                                     {option.option_name_ko || option.option_name}
-                                    {option.is_default && <span className="ml-1 text-xs text-blue-500">(기본)</span>}
+                                    {option.is_default && <span className="ml-1 text-xs text-blue-500">{tBasic('defaultOption')}</span>}
                                   </span>
                                   <span className="text-xs">
                                     ${option.adult_price.toFixed(2)} + ${baseAdultPrice.toFixed(2)} = <span className="font-semibold">${optionTotal.toFixed(2)}</span>
@@ -1440,14 +1433,14 @@ export default function BasicInfoTab({
                               )
                             })
                           ) : (
-                            <div className="text-gray-400 text-xs">옵션이 없습니다</div>
+                            <div className="text-gray-400 text-xs">{tBasic('noOptions')}</div>
                           )}
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-xs text-gray-500">초이스가 없습니다</div>
+                  <div className="text-xs text-gray-500">{tBasic('noChoices')}</div>
                 )}
               </div>
             </div>
@@ -1459,13 +1452,13 @@ export default function BasicInfoTab({
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
           <Info className="h-5 w-5 mr-2 text-blue-600" />
-          상품 태그
+          {tBasic('productTags')}
         </h3>
         <TagSelector
           selectedTags={formData.tags || []}
           onTagsChange={handleTagsChange}
           locale={locale}
-          placeholder="태그를 선택하세요"
+          placeholder={tBasic('tagsPlaceholder')}
         />
       </div>
 
@@ -1473,11 +1466,11 @@ export default function BasicInfoTab({
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
           <Info className="h-5 w-5 mr-2 text-blue-600" />
-          추가 정보
+          {tBasic('additionalInfo')}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">총 투어 시간 (시간) *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('totalTourHours')}</label>
           <input
             type="number"
             min="0.5"
@@ -1491,14 +1484,14 @@ export default function BasicInfoTab({
               }
             }}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="예: 3.5 (숙박 투어의 경우 25, 48 등)"
+            placeholder={tBasic('totalTourHoursPlaceholder')}
             required
           />
-          <p className="text-xs text-gray-500 mt-1">시간 단위로 입력 (0.5시간 = 30분, 최대 168시간 = 7일)</p>
+          <p className="text-xs text-gray-500 mt-1">{tBasic('totalTourHoursHint')}</p>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">최대 참가자 *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{tBasic('maxParticipants')}</label>
           <input
             type="number"
             min="1"
@@ -1519,7 +1512,7 @@ export default function BasicInfoTab({
               value={newDepartureTime}
               onChange={(e) => setNewDepartureTime(e.target.value)}
               className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent flex-1"
-              placeholder="출발 시간 선택"
+              placeholder={tBasic('departureTimeSelect')}
             />
             <button
               type="button"
@@ -1538,7 +1531,7 @@ export default function BasicInfoTab({
           {/* 선택된 시간 목록 */}
           {formData.tourDepartureTimes && formData.tourDepartureTimes.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs text-gray-600">선택된 출발 시간들:</p>
+              <p className="text-xs text-gray-600">{tBasic('selectedDepartureTimes')}</p>
               <div className="flex flex-wrap gap-2">
                 {formData.tourDepartureTimes.map((time, index) => (
                   <div key={index} className="flex items-center bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
@@ -1557,7 +1550,7 @@ export default function BasicInfoTab({
             </div>
           )}
           
-          <p className="text-xs text-gray-500 mt-1">여러 출발 시간을 추가할 수 있습니다</p>
+          <p className="text-xs text-gray-500 mt-1">{tBasic('addDepartureTimeHint')}</p>
         </div>
         </div>
       </div>
@@ -1567,7 +1560,7 @@ export default function BasicInfoTab({
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <Info className="h-5 w-5 text-blue-600" />
-            <h3 className="text-lg font-semibold text-gray-900">기본 정보 저장</h3>
+            <h3 className="text-lg font-semibold text-gray-900">{tBasic('saveSectionTitle')}</h3>
           </div>
           <button
             type="button"
@@ -1582,19 +1575,19 @@ export default function BasicInfoTab({
             {saving ? (
               <>
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-500"></div>
-                <span>저장 중...</span>
+                <span>{tBasic('saving')}</span>
               </>
             ) : (
               <>
                 <Save className="h-4 w-4" />
-                <span>{isNewProduct ? '상품 생성' : '기본 정보 저장'}</span>
+                <span>{isNewProduct ? tBasic('createProduct') : tBasic('saveBasicInfo')}</span>
               </>
             )}
           </button>
         </div>
         {saveMessage && (
           <div className={`mt-3 p-3 rounded-lg text-sm ${
-            saveMessage.includes('성공') 
+            saveMessage.includes(tBasic('successKeyword')) 
               ? 'bg-green-100 text-green-800 border border-green-200' 
               : 'bg-red-100 text-red-800 border border-red-200'
           }`}>
@@ -1603,7 +1596,7 @@ export default function BasicInfoTab({
         )}
         {isNewProduct && (
           <p className="mt-2 text-sm text-gray-500">
-            새 상품은 전체 저장을 사용해주세요.
+            {tBasic('newProductSaveHint')}
           </p>
         )}
       </div>

@@ -120,6 +120,57 @@ export function findChoicePricingData(
 }
 
 /**
+ * 미정(미선택) 조합일 때 미국 거주자 선택의 ota_sale_price로 폴백
+ * 조합 키가 choices_pricing에 없거나 ota_sale_price가 없을 때,
+ * 같은 구조(같은 개수의 segment)를 가진 키들 중 ota_sale_price가 가장 큰 값을 사용.
+ * 같은 구조 키가 없으면 전체 키 중 최대 ota_sale_price 사용 (예: DB 키가 choice별 2-segment, 폼은 4-segment인 경우)
+ */
+export function getFallbackOtaSalePrice(
+  combination: ChoiceCombination,
+  choicesPricing: Record<string, any>
+): number | undefined {
+  if (!choicesPricing || Object.keys(choicesPricing).length === 0) return undefined;
+  const keyToUse = combination.combination_key || combination.id;
+  const partCount = keyToUse ? keyToUse.split('+').length : 0;
+  let maxOtaSameStructure = 0;
+  let foundSameStructure = false;
+  let maxOtaAny = 0;
+  let foundAny = false;
+  for (const key of Object.keys(choicesPricing)) {
+    const entry = choicesPricing[key];
+    if (!entry || typeof entry !== 'object') continue;
+    const ota = entry.ota_sale_price;
+    if (ota === undefined || ota === null) continue;
+    const num = Number(ota);
+    if (Number.isNaN(num)) continue;
+    const sameStructure = partCount > 0 && key.split('+').length === partCount;
+    if (sameStructure && num > maxOtaSameStructure) {
+      maxOtaSameStructure = num;
+      foundSameStructure = true;
+    }
+    if (num > maxOtaAny) {
+      maxOtaAny = num;
+      foundAny = true;
+    }
+  }
+  return foundSameStructure ? maxOtaSameStructure : (foundAny ? maxOtaAny : undefined);
+}
+
+/**
+ * 초이스 조합에 대한 ota_sale_price 조회 (직접 매칭 실패 시 미국 거주자 폴백 적용)
+ */
+export function getOtaSalePriceWithFallback(
+  combination: ChoiceCombination,
+  choicesPricing: Record<string, any>
+): number {
+  const match = findChoicePricingData(combination, choicesPricing);
+  const direct = match?.data?.ota_sale_price;
+  if (direct !== undefined && direct !== null && Number(direct) >= 0) return Number(direct);
+  const fallback = getFallbackOtaSalePrice(combination, choicesPricing);
+  return fallback ?? 0;
+}
+
+/**
  * 초이스 변경 시 기존 가격을 새 키로 마이그레이션
  * @param oldChoicesPricing 기존 choices_pricing 데이터
  * @param newCombinations 새로운 초이스 조합 목록

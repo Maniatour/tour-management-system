@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
@@ -1040,8 +1040,8 @@ export default function TourDetailPage() {
       if (successCount > 0) {
         alert(`픽업 스케줄 알림이 ${successCount}건 발송되었습니다.${failCount > 0 ? ` (${failCount}건 실패)` : ''}`)
         // 데이터 새로고침
-        if (tourData.refetchTourData) {
-          await tourData.refetchTourData()
+        if (tourData.refreshReservations) {
+          await tourData.refreshReservations()
         }
       } else {
         alert('알림 발송에 실패했습니다.')
@@ -1184,6 +1184,25 @@ export default function TourDetailPage() {
   const handleCloseEditModal = async () => {
     setEditingReservation(null)
   }
+
+  // 예약 ID로 수정 모달 열기 (Tips 쉐어 등에서 예약 클릭 시)
+  const handleOpenReservationById = useCallback(async (reservationId: string) => {
+    if (!tourData.isStaff) return
+    const found = tourData.assignedReservations?.find((r: any) => r.id === reservationId)
+    if (found) {
+      await handleEditReservationClick(found)
+      return
+    }
+    try {
+      const { data, error } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('id', reservationId)
+        .maybeSingle()
+      if (error || !data) return
+      await handleEditReservationClick(data)
+    } catch (_) {}
+  }, [tourData.isStaff, tourData.assignedReservations, handleEditReservationClick])
 
   // 부킹 관련 핸들러들
   const handleAddTicketBooking = async () => {
@@ -1543,10 +1562,10 @@ export default function TourDetailPage() {
             {/* 배정 관리 */}
             <div id="assignment-management" className="scroll-mt-20">
               <AssignmentManagement
-              assignedReservations={tourData.assignedReservations}
-              pendingReservations={tourData.pendingReservations}
-              otherToursAssignedReservations={tourData.otherToursAssignedReservations}
-              otherStatusReservations={tourData.otherStatusReservations}
+              assignedReservations={tourData.assignedReservations as any}
+              pendingReservations={tourData.pendingReservations as any}
+              otherToursAssignedReservations={tourData.otherToursAssignedReservations as any}
+              otherStatusReservations={tourData.otherStatusReservations as any}
               expandedSections={tourData.expandedSections}
               loadingStates={tourData.loadingStates}
               isStaff={tourData.isStaff}
@@ -1620,10 +1639,11 @@ export default function TourDetailPage() {
                  tour={tourData.tour}
                  connectionStatus={{ bookings: tourData.connectionStatus.bookings }}
                  userRole="admin"
-               onExpenseUpdated={() => {
-                 console.log('Expenses updated')
-               }}
-             />
+                 onExpenseUpdated={() => {
+                   console.log('Expenses updated')
+                 }}
+                 onReservationClick={handleOpenReservationById}
+               />
             </div>
 
              {/* 투어 리포트 섹션 */}

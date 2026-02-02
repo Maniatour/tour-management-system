@@ -1,4 +1,5 @@
 import React, { memo, useState, useCallback, useEffect } from 'react';
+import { useTranslations } from 'next-intl';
 import { Calendar, ChevronLeft, ChevronRight, Edit3 } from 'lucide-react';
 import { DateRangeSelection, DAY_NAMES } from '@/lib/types/dynamic-pricing';
 
@@ -21,6 +22,7 @@ export const DateRangeSelector = memo(function DateRangeSelector({
   dateStatusMap = {},
   disableDateSelection = false
 }: DateRangeSelectorProps) {
+  const t = useTranslations('products.dynamicPricingPage');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [startDate, setStartDate] = useState<string>(initialSelection?.startDate || '');
   const [endDate, setEndDate] = useState<string>(initialSelection?.endDate || '');
@@ -164,11 +166,8 @@ export const DateRangeSelector = memo(function DateRangeSelector({
 
   return (
     <div className="space-y-4">
-      {/* 헤더 */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-900">날짜 및 요일 선택</h3>
-        
-        {/* 선택 모드 토글 */}
+      {/* 선택 모드 토글 */}
+      <div className="flex items-center justify-end">
         <div className="flex items-center space-x-2">
           <button
             onClick={() => setSelectionMode('calendar')}
@@ -190,14 +189,13 @@ export const DateRangeSelector = memo(function DateRangeSelector({
             }`}
           >
             <Edit3 className="h-4 w-4" />
-            <span>입력</span>
+            <span>{t('input')}</span>
           </button>
         </div>
       </div>
 
-      {/* 요일 선택 */}
       <div className="space-y-2">
-        <h4 className="text-sm font-medium text-gray-700">적용 요일 선택</h4>
+        <h4 className="text-sm font-medium text-gray-700">{t('applyDaySelect')}</h4>
         <div className="flex space-x-2">
           {Object.entries(DAY_NAMES).map(([dayNum, dayName]) => {
             const dayOfWeek = parseInt(dayNum);
@@ -388,7 +386,7 @@ export const DateRangeSelector = memo(function DateRangeSelector({
             {startDate && (
               <span>
                 {formatDate(startDate)}
-                {endDate ? ` ~ ${formatDate(endDate)}` : ' (종료일 선택 중...)'}
+                {endDate ? ` ~ ${formatDate(endDate)}` : ` (${t('selectingEndDate')})`}
               </span>
             )}
           </div>

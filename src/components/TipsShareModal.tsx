@@ -4,11 +4,44 @@ import React, { useState, useEffect } from 'react'
 import { X, DollarSign, Calendar, User, Save, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
+/** 결제 기록에서 수수료 적용·강조 대상 (Square Invoice, Wix Website) */
+const CARD_FEE_PAYMENT_METHOD_IDS = ['PAYM027', 'PAYM030'] as const
+const isCardFeePaymentMethod = (id: string | null) =>
+  id != null && CARD_FEE_PAYMENT_METHOD_IDS.includes(id as any)
+
 interface TipsShareModalProps {
   isOpen: boolean
   onClose: () => void
   locale?: string
   tourId?: string // 단일 투어 모드: 특정 투어 ID가 있으면 해당 투어만 표시
+  /** 결제 기록에서 예약 ID 클릭 시 호출 (예약 수정 모달 열기용) */
+  onReservationClick?: (reservationId: string) => void
+}
+
+/** 투어별 결제 수단 내역 (payment_records 기반, Tips 쉐어 시 카드 수수료 공제 여부 표시용) */
+export interface PaymentBreakdownItem {
+  method_display: string
+  amount: number
+  has_card_fee: boolean
+}
+
+/** prepayment_tip > 0 인 예약별 payment_records 한 건 */
+export interface PaymentRecordItem {
+  id: string
+  reservation_id: string
+  amount: number
+  payment_method: string | null
+  payment_method_display: string
+  payment_status: string | null
+  submit_on: string | null
+  note: string | null
+}
+
+/** prepayment_tip > 0 인 예약 하나와 그 예약의 payment_records 목록 */
+export interface ReservationWithPayments {
+  reservation_id: string
+  prepayment_tip: number
+  records: PaymentRecordItem[]
 }
 
 interface TourWithTip {
@@ -21,6 +54,10 @@ interface TourWithTip {
   assistant_name: string | null
   total_prepaid_tip: number
   reservation_ids: string[]
+  /** 해당 투어 예약들의 결제 내역 (결제 수단별 합계, 카드 수수료 적용 여부) */
+  payment_breakdown: PaymentBreakdownItem[]
+  /** prepayment_tip > 0 인 예약별 payment_records 목록 */
+  payment_records_list: ReservationWithPayments[]
 }
 
 interface TipShare {
@@ -36,9 +73,10 @@ interface TipShare {
   op_amount: number // 총 OP 금액
   op_shares: Array<{op_email: string, op_amount: number, op_percent: number}> // 각 OP별 금액
   total_tip: number
+  deduct_fee?: boolean // 수수료 차감 (5%) 적용 여부
 }
 
-export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId }: TipsShareModalProps) {
+export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId, onReservationClick }: TipsShareModalProps) {
   const [startDate, setStartDate] = useState<string>('')
   const [endDate, setEndDate] = useState<string>('')
   const [toursWithTips, setToursWithTips] = useState<TourWithTip[]>([])
@@ -46,7 +84,17 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [opMembers, setOpMembers] = useState<Array<{email: string, name_ko: string}>>([])
-  
+  /** 투어별 쉐어할 tips (수수료 차감 체크 시 5% 차감, 사용자 입력 가능) */
+  const [shareableTipByTour, setShareableTipByTour] = useState<Record<string, number>>({})
+  /** 투어별 수수료 차감 여부 (체크 시 5% 차감) */
+  const [deductFeeByTour, setDeductFeeByTour] = useState<Record<string, boolean>>({})
+
+  const getShareableTip = (tour: TourWithTip) => {
+    if (shareableTipByTour[tour.id] !== undefined) return shareableTipByTour[tour.id]
+    const deduct = deductFeeByTour[tour.id] !== false
+    return deduct ? Math.round(tour.total_prepaid_tip * 0.95 * 100) / 100 : tour.total_prepaid_tip
+  }
+
   // 단일 투어 모드인지 확인
   const isSingleTourMode = !!tourId
 
@@ -191,10 +239,10 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
           continue
         }
 
-        // reservation_pricing에서 prepayment_tip 조회
+        // reservation_pricing에서 reservation_id, prepayment_tip 조회 (prepayment_tip > 0 인 예약만 사용)
         const { data: pricingData, error: pricingError } = await supabase
           .from('reservation_pricing')
-          .select('prepayment_tip')
+          .select('reservation_id, prepayment_tip')
           .in('reservation_id', tour.reservation_ids)
 
         if (pricingError) {
@@ -202,8 +250,14 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
           continue
         }
 
-        // 총 prepayment_tip 합계
-        const totalTip = pricingData?.reduce((sum, pricing) => sum + (pricing.prepayment_tip || 0), 0) || 0
+        // prepayment_tip > 0 인 예약만 필터
+        const reservationsWithTip = (pricingData || []).filter(
+          (p: { reservation_id: string; prepayment_tip?: number | null }) => (p.prepayment_tip || 0) > 0
+        )
+        const totalTip = reservationsWithTip.reduce(
+          (sum: number, p: { prepayment_tip?: number | null }) => sum + (p.prepayment_tip || 0),
+          0
+        )
 
         if (totalTip > 0) {
           // 가이드와 어시스턴트 이름 조회
@@ -215,7 +269,7 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
               .from('team')
               .select('name_ko')
               .eq('email', tour.tour_guide_id)
-              .single()
+              .maybeSingle()
             guideName = guideData?.name_ko || null
           }
 
@@ -224,8 +278,117 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
               .from('team')
               .select('name_ko')
               .eq('email', tour.assistant_id)
-              .single()
+              .maybeSingle()
             assistantName = assistantData?.name_ko || null
+          }
+
+          // 해당 투어 예약들의 payment_records 조회 → 결제 수단별 합계 및 카드 수수료 여부
+          let payment_breakdown: PaymentBreakdownItem[] = []
+          try {
+            const { data: records } = await supabase
+              .from('payment_records')
+              .select('amount, payment_method')
+              .in('reservation_id', tour.reservation_ids)
+              .in('payment_status', ['confirmed', 'Received', 'received'])
+
+            if (records && records.length > 0) {
+              const byMethod: Record<string, number> = {}
+              for (const r of records) {
+                const key = (r.payment_method || '').trim() || 'Unknown'
+                byMethod[key] = (byMethod[key] || 0) + (Number(r.amount) || 0)
+              }
+              const { data: methods } = await supabase
+                .from('payment_methods')
+                .select('id, method, display_name, deduct_card_fee_for_tips')
+                .eq('status', 'active')
+
+              const methodById = new Map((methods || []).map((m: any) => [m.id, m]))
+              const methodByMethod = new Map((methods || []).map((m: any) => [m.method, m]))
+
+              for (const [methodKey, amount] of Object.entries(byMethod)) {
+                const pm = methodById.get(methodKey) || methodByMethod.get(methodKey)
+                const display = pm
+                  ? (pm.display_name || pm.method || methodKey)
+                  : methodKey
+                const has_card_fee = pm?.deduct_card_fee_for_tips === true
+                payment_breakdown.push({ method_display: display, amount, has_card_fee })
+              }
+              payment_breakdown.sort((a, b) => b.amount - a.amount)
+            }
+          } catch (_) {
+            // deduct_card_fee_for_tips 컬럼이 없을 수 있음 → display_name만 사용
+            try {
+              const { data: records } = await supabase
+                .from('payment_records')
+                .select('amount, payment_method')
+                .in('reservation_id', tour.reservation_ids)
+                .in('payment_status', ['confirmed', 'Received', 'received'])
+              if (records && records.length > 0) {
+                const byMethod: Record<string, number> = {}
+                for (const r of records) {
+                  const key = (r.payment_method || '').trim() || 'Unknown'
+                  byMethod[key] = (byMethod[key] || 0) + (Number(r.amount) || 0)
+                }
+                const { data: methods } = await supabase
+                  .from('payment_methods')
+                  .select('id, method, display_name')
+                  .eq('status', 'active')
+                const methodById = new Map((methods || []).map((m: any) => [m.id, m]))
+                const methodByMethod = new Map((methods || []).map((m: any) => [m.method, m]))
+                for (const [methodKey, amount] of Object.entries(byMethod)) {
+                  const pm = methodById.get(methodKey) || methodByMethod.get(methodKey)
+                  payment_breakdown.push({
+                    method_display: pm ? (pm.display_name || pm.method || methodKey) : methodKey,
+                    amount,
+                    has_card_fee: false
+                  })
+                }
+                payment_breakdown.sort((a, b) => b.amount - a.amount)
+              }
+            } catch (__) {}
+          }
+
+          // prepayment_tip > 0 인 예약별 payment_records 목록 조회
+          const payment_records_list: ReservationWithPayments[] = []
+          const tipReservationIds = reservationsWithTip.map((p: { reservation_id: string }) => p.reservation_id)
+          if (tipReservationIds.length > 0) {
+            try {
+              const { data: allRecords } = await supabase
+                .from('payment_records')
+                .select('id, reservation_id, amount, payment_method, payment_status, submit_on, note')
+                .in('reservation_id', tipReservationIds)
+                .order('submit_on', { ascending: false })
+
+              const { data: methods } = await supabase
+                .from('payment_methods')
+                .select('id, method, display_name')
+                .eq('status', 'active')
+              const methodById = new Map((methods || []).map((m: any) => [m.id, m]))
+              const methodByMethod = new Map((methods || []).map((m: any) => [m.method, m]))
+
+              const getMethodDisplay = (key: string | null) => {
+                if (!key) return '—'
+                const pm = methodById.get(key) || methodByMethod.get(key)
+                return pm ? (pm.display_name || pm.method || key) : key
+              }
+
+              for (const row of reservationsWithTip) {
+                const rid = row.reservation_id
+                const prepayment_tip = row.prepayment_tip || 0
+                const recordsForRes = (allRecords || []).filter((r: any) => r.reservation_id === rid)
+                const records: PaymentRecordItem[] = recordsForRes.map((r: any) => ({
+                  id: r.id,
+                  reservation_id: r.reservation_id,
+                  amount: Number(r.amount) || 0,
+                  payment_method: r.payment_method,
+                  payment_method_display: getMethodDisplay((r.payment_method || '').trim() || null),
+                  payment_status: r.payment_status,
+                  submit_on: r.submit_on,
+                  note: r.note
+                }))
+                payment_records_list.push({ reservation_id: rid, prepayment_tip, records })
+              }
+            } catch (_) {}
           }
 
           toursWithTipData.push({
@@ -237,15 +400,39 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
             guide_name: guideName,
             assistant_name: assistantName,
             total_prepaid_tip: totalTip,
-            reservation_ids: tour.reservation_ids
+            reservation_ids: tour.reservation_ids,
+            payment_breakdown,
+            payment_records_list
           })
         }
       }
 
       setToursWithTips(toursWithTipData)
+      setDeductFeeByTour((prev) => {
+        const next = { ...prev }
+        toursWithTipData.forEach((t) => {
+          const hasCardFeeMethod = t.payment_records_list?.some((res) =>
+            res.records?.some((r) => isCardFeePaymentMethod(r.payment_method))
+          )
+          next[t.id] = !!hasCardFeeMethod
+        })
+        return next
+      })
+      setShareableTipByTour((prev) => {
+        const next = { ...prev }
+        toursWithTipData.forEach((t) => {
+          const hasCardFeeMethod = t.payment_records_list?.some((res) =>
+            res.records?.some((r) => isCardFeePaymentMethod(r.payment_method))
+          )
+          next[t.id] = hasCardFeeMethod
+            ? Math.round(t.total_prepaid_tip * 0.95 * 100) / 100
+            : Math.round(t.total_prepaid_tip * 100) / 100
+        })
+        return next
+      })
 
       // 기존 팁 쉐어 데이터 로드
-      await loadTipShares(toursWithTipData.map(t => t.id))
+      await loadTipShares(toursWithTipData.map((t) => t.id))
     } catch (error) {
       console.error('투어 팁 조회 오류:', error)
       setToursWithTips([])
@@ -304,36 +491,48 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
             op_amount: op.op_amount || 0,
             op_percent: op.op_percent || 0
           })),
-          total_tip: share.total_tip || 0
+          total_tip: share.total_tip || 0,
+          deduct_fee: (share as any).deduct_fee !== false
         }
       }
 
       setTipShares(shares)
+      setShareableTipByTour((prev) => {
+        const next = { ...prev }
+        Object.entries(shares).forEach(([tid, s]) => {
+          next[tid] = s.total_tip ?? 0
+        })
+        return next
+      })
+      setDeductFeeByTour((prev) => {
+        const next = { ...prev }
+        Object.entries(shares).forEach(([tid, s]) => {
+          next[tid] = (s as any).deduct_fee !== false
+        })
+        return next
+      })
     } catch (error) {
       console.error('팁 쉐어 데이터 로드 오류:', error)
     }
   }
 
-  // 팁 쉐어 초기화 (투어별로)
+  // 팁 쉐어 초기화 (투어별로) — 쉐어할 금액(5% 차감 기본) 기준
   const initializeTipShare = (tour: TourWithTip) => {
     if (tipShares[tour.id]) {
       return tipShares[tour.id]
     }
 
+    const totalTip = getShareableTip(tour)
     // 기본값: 가이드+어시스턴트 합쳐서 90%, OP 10%
-    // 어시스턴트가 있으면 가이드 45%, 어시스턴트 45%, OP 10%
-    // 어시스턴트가 없으면 가이드 90%, OP 10%
     const hasAssistant = !!tour.assistant_id
     const defaultGuidePercent = hasAssistant ? 45 : 90
     const defaultAssistantPercent = hasAssistant ? 45 : 0
     const defaultOpPercent = 10
 
-    const totalTip = tour.total_prepaid_tip
     const guideAmount = (totalTip * defaultGuidePercent) / 100
     const assistantAmount = (totalTip * defaultAssistantPercent) / 100
     const opAmount = (totalTip * defaultOpPercent) / 100
 
-    // 기본적으로 OP는 선택하지 않음 (사용자가 선택하도록)
     return {
       tour_id: tour.id,
       guide_email: tour.tour_guide_id,
@@ -346,17 +545,18 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
       assistant_amount: assistantAmount,
       op_amount: opAmount,
       op_shares: [],
-      total_tip: totalTip
+      total_tip: totalTip,
+      deduct_fee: true
     }
   }
 
   // 비율 변경 핸들러 (자동 정규화 제거 - 사용자가 직접 입력한 값 유지)
   const handlePercentChange = (tourId: string, role: 'guide' | 'assistant' | 'op', value: number) => {
-    const tour = toursWithTips.find(t => t.id === tourId)
+    const tour = toursWithTips.find((t) => t.id === tourId)
     if (!tour) return
 
     const currentShare = tipShares[tourId] || initializeTipShare(tour)
-    const totalTip = tour.total_prepaid_tip
+    const totalTip = getShareableTip(tour)
 
     let newGuidePercent = currentShare.guide_percent
     let newAssistantPercent = currentShare.assistant_percent
@@ -385,18 +585,19 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
         guide_amount: guideAmount,
         assistant_amount: assistantAmount,
         op_amount: opAmount,
-        total_tip: totalTip
+        total_tip: totalTip,
+        deduct_fee: currentShare.deduct_fee !== false
       }
     })
   }
 
   // 금액 변경 핸들러
   const handleAmountChange = (tourId: string, role: 'guide' | 'assistant' | 'op', value: number) => {
-    const tour = toursWithTips.find(t => t.id === tourId)
+    const tour = toursWithTips.find((t) => t.id === tourId)
     if (!tour) return
 
     const currentShare = tipShares[tourId] || initializeTipShare(tour)
-    const totalTip = tour.total_prepaid_tip
+    const totalTip = getShareableTip(tour)
 
     let newGuideAmount = currentShare.guide_amount
     let newAssistantAmount = currentShare.assistant_amount
@@ -430,13 +631,99 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
     })
   }
 
+  // 수수료 차감 체크 변경 (체크 시 5% 차감 적용, 미체크 시 전체 금액)
+  const handleDeductFeeChange = (tourId: string, checked: boolean) => {
+    const tour = toursWithTips.find((t) => t.id === tourId)
+    if (!tour) return
+
+    setDeductFeeByTour((prev) => ({ ...prev, [tourId]: checked }))
+    const newShareable = checked
+      ? Math.round(tour.total_prepaid_tip * 0.95 * 100) / 100
+      : tour.total_prepaid_tip
+    setShareableTipByTour((prev) => ({ ...prev, [tourId]: newShareable }))
+
+    const currentShare = tipShares[tourId] || initializeTipShare(tour)
+    const guideAmount = (newShareable * currentShare.guide_percent) / 100
+    const assistantAmount = (newShareable * currentShare.assistant_percent) / 100
+    const opAmount = (newShareable * currentShare.op_percent) / 100
+
+    const updatedOpShares =
+      currentShare.op_shares.length > 0
+        ? currentShare.op_shares.map((op) => ({
+            ...op,
+            op_percent: currentShare.op_percent / currentShare.op_shares.length,
+            op_amount: opAmount / currentShare.op_shares.length
+          }))
+        : []
+
+    setTipShares({
+      ...tipShares,
+      [tourId]: {
+        ...currentShare,
+        total_tip: newShareable,
+        guide_amount: guideAmount,
+        assistant_amount: assistantAmount,
+        op_amount: opAmount,
+        op_shares: updatedOpShares.length > 0 ? updatedOpShares : currentShare.op_shares
+      }
+    })
+  }
+
+  // 쉐어할 tips 입력 변경 (비율 유지, 금액만 재계산)
+  const handleShareableTipChange = (tourId: string, value: number) => {
+    const tour = toursWithTips.find((t) => t.id === tourId)
+    if (!tour) return
+
+    const safeValue = Math.max(0, value)
+    setShareableTipByTour((prev) => ({ ...prev, [tourId]: safeValue }))
+
+    const currentShare = tipShares[tourId] || initializeTipShare(tour)
+    const deduct = deductFeeByTour[tourId] !== false
+    const guideAmount = (safeValue * currentShare.guide_percent) / 100
+    const assistantAmount = (safeValue * currentShare.assistant_percent) / 100
+    const opAmount = (safeValue * currentShare.op_percent) / 100
+
+    const updatedOpShares =
+      currentShare.op_shares.length > 0
+        ? currentShare.op_shares.map((op) => ({
+            ...op,
+            op_percent: currentShare.op_percent / currentShare.op_shares.length,
+            op_amount: opAmount / currentShare.op_shares.length
+          }))
+        : []
+
+    setTipShares({
+      ...tipShares,
+      [tourId]: {
+        ...currentShare,
+        total_tip: safeValue,
+        guide_amount: guideAmount,
+        assistant_amount: assistantAmount,
+        op_amount: opAmount,
+        op_shares: updatedOpShares.length > 0 ? updatedOpShares : currentShare.op_shares,
+        deduct_fee: deduct
+      }
+    })
+  }
+
+  // 쉐어할 tips 리셋 후 자동 계산 (수수료 차감 여부에 따라 5% 차감 또는 전액)
+  const handleResetShareableTip = (tourId: string) => {
+    const tour = toursWithTips.find((t) => t.id === tourId)
+    if (!tour) return
+    const deduct = deductFeeByTour[tourId] !== false
+    const newValue = deduct
+      ? Math.round(tour.total_prepaid_tip * 0.95 * 100) / 100
+      : Math.round(tour.total_prepaid_tip * 100) / 100
+    handleShareableTipChange(tourId, newValue)
+  }
+
   // OP 체크박스 토글 핸들러
   const handleOpToggle = (tourId: string, opEmail: string, checked: boolean) => {
-    const tour = toursWithTips.find(t => t.id === tourId)
+    const tour = toursWithTips.find((t) => t.id === tourId)
     if (!tour) return
 
     const currentShare = tipShares[tourId] || initializeTipShare(tour)
-    const totalTip = tour.total_prepaid_tip
+    const totalTip = getShareableTip(tour)
     const opTotalPercent = currentShare.op_percent // 사용자가 입력한 값 사용
     const opTotalAmount = (totalTip * opTotalPercent) / 100
 
@@ -491,13 +778,13 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
 
   // OP별 퍼센테이지 변경 핸들러
   const handleOpPercentChange = (tourId: string, opEmail: string, percent: number) => {
-    const tour = toursWithTips.find(t => t.id === tourId)
+    const tour = toursWithTips.find((t) => t.id === tourId)
     if (!tour) return
 
     const currentShare = tipShares[tourId]
     if (!currentShare) return
 
-    const totalTip = tour.total_prepaid_tip
+    const totalTip = getShareableTip(tour)
     const opTotalPercent = currentShare.op_percent // 사용자가 입력한 값 사용
     const opTotalAmount = (totalTip * opTotalPercent) / 100
 
@@ -541,13 +828,13 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
 
   // OP별 금액 변경 핸들러
   const handleOpAmountChange = (tourId: string, opEmail: string, amount: number) => {
-    const tour = toursWithTips.find(t => t.id === tourId)
+    const tour = toursWithTips.find((t) => t.id === tourId)
     if (!tour) return
 
     const currentShare = tipShares[tourId]
     if (!currentShare) return
 
-    const totalTip = tour.total_prepaid_tip
+    const totalTip = getShareableTip(tour)
     const opTotalPercent = currentShare.op_percent // 사용자가 입력한 값 사용
     const opTotalAmount = (totalTip * opTotalPercent) / 100
 
@@ -649,7 +936,8 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
           guide_amount: share.guide_amount,
           assistant_amount: share.assistant_amount,
           op_amount: share.op_amount,
-          total_tip: share.total_tip
+          total_tip: share.total_tip,
+          deduct_fee: share.deduct_fee !== false
         })))
         .select('id, tour_id')
 
@@ -842,9 +1130,124 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                       <h3 className="text-sm sm:text-lg font-semibold text-gray-900 mb-1">
                         {tour.tour_name}
                       </h3>
-                      <p className="text-xs sm:text-sm text-gray-600">
-                        {formatDate(tour.tour_date)} | 총 팁: ${formatCurrency(tour.total_prepaid_tip)}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs sm:text-sm text-gray-600">
+                        <span>{formatDate(tour.tour_date)} | 총 팁: ${formatCurrency(tour.total_prepaid_tip)}</span>
+                        <span className="flex items-center gap-2">
+                          <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={deductFeeByTour[tour.id] !== false}
+                              onChange={(e) => handleDeductFeeChange(tour.id, e.target.checked)}
+                              className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                            />
+                            <span className="font-medium text-gray-700">수수료 차감 (5%)</span>
+                          </label>
+                          <span className="flex items-center gap-1.5">
+                            <label className="font-medium text-gray-700">쉐어할 tips</label>
+                            <span className="text-gray-500">$</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={getShareableTip(tour).toFixed(2)}
+                              onChange={(e) => handleShareableTipChange(tour.id, parseFloat(e.target.value) || 0)}
+                              className="w-20 sm:w-24 px-1.5 py-0.5 text-xs sm:text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleResetShareableTip(tour.id)}
+                              title="기존 입력값 리셋 후 자동 계산"
+                              className="p-1 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            >
+                              <RefreshCw className="w-4 h-4" />
+                            </button>
+                          </span>
+                        </span>
+                      </div>
+                      {tour.payment_breakdown && tour.payment_breakdown.length > 0 && (
+                        <div className="mt-2 text-xs text-gray-500 border-t border-gray-100 pt-2">
+                          <span className="font-medium text-gray-600">결제 내역: </span>
+                          {tour.payment_breakdown.map((item, idx) => (
+                            <span key={idx}>
+                              {idx > 0 && ', '}
+                              {item.method_display} ${formatCurrency(item.amount)}
+                              {item.has_card_fee ? (
+                                <span className="text-amber-600" title="쉐어 시 카드 수수료 공제"> (카드 수수료 적용)</span>
+                              ) : (
+                                <span className="text-green-600" title="쉐어 시 수수료 없음"> (수수료 없음)</span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {tour.payment_records_list && tour.payment_records_list.length > 0 && (
+                        <div className="mt-2 border-t border-gray-100 pt-2">
+                          <div className="text-xs font-medium text-gray-600 mb-1.5">결제 기록 (prepayment_tip 있는 예약별)</div>
+                          <div className="space-y-2 max-h-48 overflow-y-auto">
+                            {tour.payment_records_list.map((res) => (
+                              <div key={res.reservation_id} className="text-xs bg-gray-50 rounded p-2">
+                                <div className="font-medium text-gray-700 mb-1">
+                                  {onReservationClick ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => onReservationClick(res.reservation_id)}
+                                      className="text-left text-purple-600 hover:text-purple-800 hover:underline focus:outline-none focus:underline cursor-pointer"
+                                    >
+                                      예약 {res.reservation_id.slice(0, 8)}…
+                                    </button>
+                                  ) : (
+                                    <span>예약 {res.reservation_id.slice(0, 8)}…</span>
+                                  )}
+                                  {' | 팁 $'}{formatCurrency(res.prepayment_tip)}
+                                </div>
+                                {res.records.length === 0 ? (
+                                  <div className="text-gray-500 italic">결제 기록 없음</div>
+                                ) : (
+                                  <table className="w-full text-xs">
+                                    <thead>
+                                      <tr className="text-left text-gray-500 border-b border-gray-200">
+                                        <th className="py-0.5 pr-2">날짜</th>
+                                        <th className="py-0.5 pr-2">결제수단</th>
+                                        <th className="py-0.5 pr-2 text-right">금액</th>
+                                        <th className="py-0.5">상태</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {res.records.map((rec) => {
+                                        const isCardFee = isCardFeePaymentMethod(rec.payment_method)
+                                        return (
+                                          <tr
+                                            key={rec.id}
+                                            className={`border-b border-gray-100 last:border-0 ${isCardFee ? 'bg-amber-50 border-l-4 border-l-amber-400' : ''}`}
+                                          >
+                                            <td className="py-0.5 pr-2">
+                                              {rec.submit_on
+                                                ? new Date(rec.submit_on).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric', year: '2-digit' })
+                                                : '—'}
+                                            </td>
+                                            <td className="py-0.5 pr-2">
+                                              {isCardFee ? (
+                                                <span className="font-semibold text-amber-800">
+                                                  {rec.payment_method_display}
+                                                  <span className="ml-1 text-[10px] font-medium text-amber-600 bg-amber-200/80 px-1 rounded">수수료 적용</span>
+                                                </span>
+                                              ) : (
+                                                rec.payment_method_display
+                                              )}
+                                            </td>
+                                            <td className="py-0.5 pr-2 text-right">${formatCurrency(rec.amount)}</td>
+                                            <td className="py-0.5 text-gray-500">{rec.payment_status || '—'}</td>
+                                          </tr>
+                                        )
+                                      })}
+                                    </tbody>
+                                  </table>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
@@ -853,8 +1256,8 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                         <label className="block text-xs sm:text-sm font-medium text-gray-700">
                           가이드 {tour.guide_name && `(${tour.guide_name})`}
                         </label>
-                        <div className="flex flex-col sm:flex-row sm:space-x-2 space-y-2 sm:space-y-0">
-                          <div className="flex-1">
+                        <div className="flex flex-col space-y-2">
+                          <div>
                             <input
                               type="number"
                               min="0"
@@ -865,20 +1268,18 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                               className="w-full px-2 py-1 text-xs sm:text-sm border border-gray-300 rounded-md"
                               placeholder="%"
                             />
-                            <span className="text-xs text-gray-500">%</span>
+                            <span className="text-xs text-gray-500 ml-1">%</span>
                           </div>
-                          <div className="flex-1">
-                            <div className="relative">
-                              <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={share.guide_amount.toFixed(2)}
-                                onChange={(e) => handleAmountChange(tour.id, 'guide', parseFloat(e.target.value) || 0)}
-                                className="w-full pl-4 pr-1 py-1 text-xs sm:text-sm border border-gray-300 rounded-md"
-                              />
-                            </div>
+                          <div className="relative">
+                            <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={share.guide_amount.toFixed(2)}
+                              onChange={(e) => handleAmountChange(tour.id, 'guide', parseFloat(e.target.value) || 0)}
+                              className="w-full pl-4 pr-1 py-1 text-xs sm:text-sm border border-gray-300 rounded-md"
+                            />
                           </div>
                         </div>
                       </div>
@@ -889,8 +1290,8 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                           어시스턴트 {tour.assistant_name && `(${tour.assistant_name})`}
                         </label>
                         {tour.assistant_id ? (
-                          <div className="flex flex-col sm:flex-row sm:space-x-2 space-y-2 sm:space-y-0">
-                            <div className="flex-1">
+                          <div className="flex flex-col space-y-2">
+                            <div>
                               <input
                                 type="number"
                                 min="0"
@@ -901,20 +1302,18 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                                 className="w-full px-2 py-1 text-xs sm:text-sm border border-gray-300 rounded-md"
                                 placeholder="%"
                               />
-                              <span className="text-xs text-gray-500">%</span>
+                              <span className="text-xs text-gray-500 ml-1">%</span>
                             </div>
-                            <div className="flex-1">
-                              <div className="relative">
-                                <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={share.assistant_amount.toFixed(2)}
-                                  onChange={(e) => handleAmountChange(tour.id, 'assistant', parseFloat(e.target.value) || 0)}
-                                  className="w-full pl-4 pr-1 py-1 text-xs sm:text-sm border border-gray-300 rounded-md"
-                                />
-                              </div>
+                            <div className="relative">
+                              <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={share.assistant_amount.toFixed(2)}
+                                onChange={(e) => handleAmountChange(tour.id, 'assistant', parseFloat(e.target.value) || 0)}
+                                className="w-full pl-4 pr-1 py-1 text-xs sm:text-sm border border-gray-300 rounded-md"
+                              />
                             </div>
                           </div>
                         ) : (
@@ -971,8 +1370,8 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                             )
                           })}
                         </div>
-                        <div className="flex flex-col sm:flex-row sm:space-x-2 space-y-2 sm:space-y-0">
-                          <div className="flex-1">
+                        <div className="flex flex-col space-y-2">
+                          <div>
                             <input
                               type="number"
                               min="0"
@@ -982,19 +1381,16 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                               onChange={(e) => {
                                 const newOpPercent = parseFloat(e.target.value) || 0
                                 handlePercentChange(tour.id, 'op', newOpPercent)
-                                // OP 합계 비율이 변경되면 OP별 비율도 재계산
                                 if (share.op_shares.length > 0) {
-                                  const totalTip = tour.total_prepaid_tip
+                                  const totalTip = getShareableTip(tour)
                                   const newOpTotalAmount = (totalTip * newOpPercent) / 100
                                   const defaultOpPercent = newOpPercent / share.op_shares.length
                                   const defaultOpAmount = newOpTotalAmount / share.op_shares.length
-                                  
-                                  const updatedOpShares = share.op_shares.map(op => ({
+                                  const updatedOpShares = share.op_shares.map((op) => ({
                                     ...op,
                                     op_percent: defaultOpPercent,
                                     op_amount: defaultOpAmount
                                   }))
-                                  
                                   setTipShares({
                                     ...tipShares,
                                     [tour.id]: {
@@ -1009,47 +1405,42 @@ export default function TipsShareModal({ isOpen, onClose, locale = 'ko', tourId 
                               className="w-full px-2 py-1 text-xs sm:text-sm border border-gray-300 rounded-md"
                               placeholder="%"
                             />
-                            <span className="text-xs text-gray-500">% (총합)</span>
+                            <span className="text-xs text-gray-500 ml-1">% (총합)</span>
                           </div>
-                          <div className="flex-1">
-                            <div className="relative">
-                              <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={share.op_amount.toFixed(2)}
-                                onChange={(e) => {
-                                  const newOpAmount = parseFloat(e.target.value) || 0
-                                  const totalTip = tour.total_prepaid_tip
-                                  const newOpPercent = totalTip > 0 ? (newOpAmount / totalTip) * 100 : 0
-                                  handleAmountChange(tour.id, 'op', newOpAmount)
-                                  // OP 합계 금액이 변경되면 OP별 금액도 재계산
-                                  if (share.op_shares.length > 0) {
-                                    const defaultOpAmount = newOpAmount / share.op_shares.length
-                                    const defaultOpPercent = newOpPercent / share.op_shares.length
-                                    
-                                    const updatedOpShares = share.op_shares.map(op => ({
-                                      ...op,
-                                      op_percent: defaultOpPercent,
-                                      op_amount: defaultOpAmount
-                                    }))
-                                    
-                                    setTipShares({
-                                      ...tipShares,
-                                      [tour.id]: {
-                                        ...share,
-                                        op_percent: newOpPercent,
-                                        op_amount: newOpAmount,
-                                        op_shares: updatedOpShares
-                                      }
-                                    })
-                                  }
-                                }}
-                                className="w-full pl-4 pr-1 py-1 text-xs sm:text-sm border border-gray-300 rounded-md"
-                              />
-                            </div>
-                            <span className="text-xs text-gray-500">(총합)</span>
+                          <div className="relative">
+                            <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={share.op_amount.toFixed(2)}
+                              onChange={(e) => {
+                                const newOpAmount = parseFloat(e.target.value) || 0
+                                const totalTip = getShareableTip(tour)
+                                const newOpPercent = totalTip > 0 ? (newOpAmount / totalTip) * 100 : 0
+                                handleAmountChange(tour.id, 'op', newOpAmount)
+                                if (share.op_shares.length > 0) {
+                                  const defaultOpAmount = newOpAmount / share.op_shares.length
+                                  const defaultOpPercent = newOpPercent / share.op_shares.length
+                                  const updatedOpShares = share.op_shares.map((op) => ({
+                                    ...op,
+                                    op_percent: defaultOpPercent,
+                                    op_amount: defaultOpAmount
+                                  }))
+                                  setTipShares({
+                                    ...tipShares,
+                                    [tour.id]: {
+                                      ...share,
+                                      op_percent: newOpPercent,
+                                      op_amount: newOpAmount,
+                                      op_shares: updatedOpShares
+                                    }
+                                  })
+                                }
+                              }}
+                              className="w-full pl-4 pr-1 py-1 text-xs sm:text-sm border border-gray-300 rounded-md"
+                            />
+                            <span className="text-xs text-gray-500 ml-1">(총합)</span>
                           </div>
                         </div>
                       </div>

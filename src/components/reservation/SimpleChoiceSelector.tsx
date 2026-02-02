@@ -47,6 +47,9 @@ interface SimpleChoiceSelectorProps {
   isOTAChannel?: boolean; // OTA 채널 여부
 }
 
+/** 예약 시점에 알 수 없는 경우가 많은 초이스(미국 거주자 구분, 기타 입장료)에서 "미정" 선택 허용 */
+const UNDECIDED_OPTION_ID = '__undecided__';
+
 export default function SimpleChoiceSelector({
   choices,
   adults,
@@ -63,6 +66,15 @@ export default function SimpleChoiceSelector({
   const prevSelectionsRef = useRef<SelectedChoice[]>(initialSelections);
   // 수동으로 가격을 수정한 초이스를 추적 (choice_id:option_id 형식)
   const [manuallyEditedPrices, setManuallyEditedPrices] = useState<Set<string>>(new Set());
+
+  // 미국 거주자 구분 / 기타 입장료: 예약 시점에 미정인 경우가 많아 "미정" 선택 허용
+  const isUndecidedEligibleChoice = useCallback((choice: ProductChoice) => {
+    const groupKo = choice.choice_group_ko ?? '';
+    const group = (choice.choice_group ?? '').toLowerCase();
+    const isResident = groupKo.includes('거주자') || groupKo.includes('거주') || group.includes('resident') || group.includes('거주');
+    const isEntranceFee = groupKo.includes('입장료') || group.includes('fee') || group.includes('entrance');
+    return isResident || isEntranceFee;
+  }, []);
 
   // initialSelections prop이 변경될 때 selections 상태 업데이트
   // 이 변경은 props에서 온 것이므로 onSelectionChange를 호출하지 않음 (무한 루프 방지)
@@ -180,8 +192,8 @@ export default function SimpleChoiceSelector({
           
           return {
             ...s,
-            option_key: s.option_key || '',
-            option_name_ko: s.option_name_ko || ''
+            option_key: s.option_id === UNDECIDED_OPTION_ID ? UNDECIDED_OPTION_ID : (s.option_key || ''),
+            option_name_ko: s.option_id === UNDECIDED_OPTION_ID ? '미정' : (s.option_name_ko || '')
           };
         });
         setSelections(newSelections);
@@ -265,10 +277,17 @@ export default function SimpleChoiceSelector({
     const finalTotalPrice = isOTAChannel ? 0 : totalPrice;
     
     setSelections(prev => {
-      const newSelections = prev.filter(s => !(s.choice_id === choiceId && s.option_id === optionId));
+      let next = prev.filter(s => !(s.choice_id === choiceId && s.option_id === optionId));
+      // 실옵션 선택 시 해당 초이스의 "미정" 선택 제거 (미정과 실옵션 상호 배타)
+      if (quantity > 0 && optionId !== UNDECIDED_OPTION_ID) {
+        const choice = choices.find(c => c.id === choiceId);
+        if (choice && isUndecidedEligibleChoice(choice)) {
+          next = next.filter(s => !(s.choice_id === choiceId && s.option_id === UNDECIDED_OPTION_ID));
+        }
+      }
       
       if (quantity > 0) {
-        newSelections.push({
+        next.push({
           choice_id: choiceId,
           option_id: optionId,
           option_key: optionKey,
@@ -279,16 +298,28 @@ export default function SimpleChoiceSelector({
       }
       
       console.log('SimpleChoiceSelector: handleSelectionChange - 새로운 selections 계산됨 (사용자 액션)', {
-        newSelectionsCount: newSelections.length,
-        newSelections: newSelections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, quantity: s.quantity, total_price: s.total_price })),
+        newSelectionsCount: next.length,
+        newSelections: next.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, quantity: s.quantity, total_price: s.total_price })),
         prevCount: prev.length,
         isOTAChannel,
         finalTotalPrice
       });
       
-      return newSelections;
+      return next;
     });
-  }, [isOTAChannel]);
+  }, [isOTAChannel, choices, isUndecidedEligibleChoice]);
+
+  // "미정" 선택 (미국 거주자 구분·기타 입장료 등)
+  // setState 업데이터 안에서 onSelectionChange 호출 금지 → 부모 setFormData가 렌더 중 호출되어 React 에러 발생
+  // selections 변경 시 아래 useEffect에서 onSelectionChange 호출함
+  const handleSelectUndecided = useCallback((choice: ProductChoice) => {
+    isUserActionRef.current = true;
+    lastUserActionTimeRef.current = Date.now();
+    setSelections(prev => [
+      ...prev.filter(s => s.choice_id !== choice.id),
+      { choice_id: choice.id, option_id: UNDECIDED_OPTION_ID, option_key: UNDECIDED_OPTION_ID, option_name_ko: '미정', quantity: 1, total_price: 0 }
+    ]);
+  }, []);
 
   // 가격 계산 함수
   const calculatePrice = useCallback((
@@ -320,6 +351,7 @@ export default function SimpleChoiceSelector({
     
     choices.forEach(choice => {
       const choiceSelections = selections.filter(s => s.choice_id === choice.id);
+      const hasUndecided = choiceSelections.some(s => s.option_id === UNDECIDED_OPTION_ID);
       
       // "미국 거주자 구분" 관련 초이스인지 확인
       const isResidentStatusChoice = choice.choice_group_ko?.includes('거주자') || 
@@ -331,12 +363,13 @@ export default function SimpleChoiceSelector({
         newErrors.push(`${choice.choice_group_ko} 선택이 필수입니다.`);
       }
       
-      if (choiceSelections.length < choice.min_selections) {
+      // "미정" 선택 시에는 최소/최대·수량 합 검증 건너뛰기
+      if (!hasUndecided && choiceSelections.length < choice.min_selections) {
         newErrors.push(`${choice.choice_group_ko}는 최소 ${choice.min_selections}개 선택해야 합니다.`);
       }
       
-      // 미국 거주자 구분 초이스의 경우, max_selections 검증을 건너뛰고 대신 수량 합계로 검증
-      if (isResidentStatusChoice) {
+      // 미국 거주자 구분 초이스의 경우, max_selections 검증을 건너뛰고 대신 수량 합계로 검증 (미정 선택 시에는 검증 생략)
+      if (isResidentStatusChoice && !hasUndecided) {
         // 거주자 구분 초이스는 여러 옵션을 선택할 수 있고, 각 옵션의 수량 합이 총 인원 수와 일치해야 함
         const totalQuantity = choiceSelections.reduce((sum, selection) => sum + selection.quantity, 0);
         const totalPeople = adults + children + infants;
@@ -357,7 +390,7 @@ export default function SimpleChoiceSelector({
         if (choiceSelections.length > 0 && totalPeople > 0 && totalQuantity !== totalPeople) {
           newErrors.push(`${choice.choice_group_ko} 선택 수량(${totalQuantity}명)이 총 인원 수(${totalPeople}명)와 일치하지 않습니다.`);
         }
-      } else {
+      } else if (!hasUndecided) {
         // 일반 초이스는 기존 max_selections 검증 유지
         if (choiceSelections.length > choice.max_selections) {
           newErrors.push(`${choice.choice_group_ko}는 최대 ${choice.max_selections}개까지만 선택할 수 있습니다.`);
@@ -365,7 +398,8 @@ export default function SimpleChoiceSelector({
       }
       
       // 수용 인원 검사 (quantity 타입인 경우)
-      if (choice.choice_type === 'quantity') {
+      // "미정" 선택 시에는 검증 건너뛰기 (미국 거주자 구분·기타 입장료는 예약 시점에 미정인 경우 허용)
+      if (choice.choice_type === 'quantity' && !(hasUndecided && isUndecidedEligibleChoice(choice))) {
         const totalCapacity = choiceSelections.reduce((total, selection) => {
           const option = (choice.options || []).find(o => o.id === selection.option_id);
           return total + (option ? option.capacity * selection.quantity : 0);
@@ -460,6 +494,37 @@ export default function SimpleChoiceSelector({
           </div>
           
           <div className="space-y-2">
+            {/* 미국 거주자 구분·기타 입장료: 예약 시점에 미정인 경우 "미정" 선택 */}
+            {isUndecidedEligibleChoice(choice) && (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  const undecidedSelected = selections.some(s => s.choice_id === choice.id && s.option_id === UNDECIDED_OPTION_ID);
+                  if (undecidedSelected) {
+                    isUserActionRef.current = true;
+                    lastUserActionTimeRef.current = Date.now();
+                    setSelections(prev => prev.filter(s => s.choice_id !== choice.id));
+                  } else {
+                    handleSelectUndecided(choice);
+                  }
+                }}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } }}
+                className={`border rounded-lg p-3 transition-all duration-200 cursor-pointer ${
+                  selections.some(s => s.choice_id === choice.id && s.option_id === UNDECIDED_OPTION_ID)
+                    ? 'border-amber-500 bg-amber-50'
+                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-gray-900 text-xs">미정</span>
+                  {selections.some(s => s.choice_id === choice.id && s.option_id === UNDECIDED_OPTION_ID) && (
+                    <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 text-xs rounded-full">선택됨</span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">예약 시점에 결정되지 않은 경우 선택</p>
+              </div>
+            )}
             {(choice.options || [])
               .filter(option => option.is_active)
               .sort((a, b) => a.sort_order - b.sort_order)

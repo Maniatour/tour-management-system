@@ -46,7 +46,7 @@ export default function OffSchedulePage() {
         .from('team')
         .select('email')
         .eq('email', user?.email)
-        .single()
+        .maybeSingle()
 
       if (!teamMember) {
         console.error('User not found in team table')
@@ -84,7 +84,7 @@ export default function OffSchedulePage() {
         .from('team')
         .select('email')
         .eq('email', user?.email)
-        .single()
+        .maybeSingle()
 
       if (!teamMember) {
         alert('팀 멤버로 등록되지 않은 사용자입니다.')
@@ -121,7 +121,7 @@ export default function OffSchedulePage() {
         .from('team')
         .select('email')
         .eq('email', user?.email)
-        .single()
+        .maybeSingle()
 
       if (!teamMember) {
         alert('팀 멤버로 등록되지 않은 사용자입니다.')

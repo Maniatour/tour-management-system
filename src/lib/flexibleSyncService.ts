@@ -731,8 +731,11 @@ export const flexibleSync = async (
     }
     let processed = 0
     // 최적화된 배치 크기 설정 (대용량 데이터에 맞게 조정)
-    // 9500개 이상의 rows 처리를 위해 배치 크기 대폭 증가
-    const baseBatchSize = totalRows > 20000 ? 1000 : totalRows > 10000 ? 500 : totalRows > 5000 ? 300 : 150
+    // 예약 테이블은 statement timeout 방지를 위해 작은 배치 사용 (Supabase 기본 8초 제한)
+    const isReservationsTable = targetTable === 'reservations' || targetTable === 'reservation_pricing'
+    const baseBatchSize = isReservationsTable
+      ? 50
+      : totalRows > 20000 ? 1000 : totalRows > 10000 ? 500 : totalRows > 5000 ? 300 : 150
     const batchSize = Math.min(baseBatchSize, totalRows)
     const rowsBuffer: Record<string, unknown>[] = []
 
@@ -1058,6 +1061,15 @@ const executeUpsertWithRLSBypass = async (
         return await fallbackIndividualUpsert(db, targetTable, payload, conflictColumn)
       }
       
+      // statement timeout 발생 시 작은 배치(10행)로 재시도
+      const isTimeout = error.message?.includes('statement timeout') ||
+        error.message?.includes('canceling statement due to statement timeout') ||
+        error.message?.toLowerCase().includes('timeout')
+      if (isTimeout && payload.length > 10) {
+        console.log(`🔄 Statement timeout 감지 - 작은 배치로 재시도: ${targetTable} (${payload.length}행 → 10행 단위)`)
+        return await fallbackIndividualUpsert(db, targetTable, payload, conflictColumn, true)
+      }
+      
       return { error }
     }
     
@@ -1068,17 +1080,17 @@ const executeUpsertWithRLSBypass = async (
   }
 }
 
-// RLS 오류 시 미니 배치 처리 폴백 (개별 처리 대신 작은 배치로 재시도)
+// RLS 오류 또는 statement timeout 시 미니 배치 처리 폴백
 const fallbackIndividualUpsert = async (
   db: any,
   targetTable: string,
   payload: Record<string, unknown>[],
-  conflictColumn: string
+  conflictColumn: string,
+  useTinyBatches = false // timeout 재시도 시 true → 10행 단위
 ): Promise<{ error: any }> => {
   try {
-    // 대용량 데이터의 경우 미니 배치로 처리 (개별 처리 대신)
-    // 재시도 횟수를 대폭 줄이기 위해 작은 배치 단위로 처리
-    const miniBatchSize = payload.length > 100 ? 20 : 10
+    // statement timeout 재시도 시 10행 단위, 그 외에는 20~10행 단위
+    const miniBatchSize = useTinyBatches ? 10 : payload.length > 100 ? 20 : 10
     console.log(`🔄 미니 배치 폴백: ${targetTable} 테이블에 ${payload.length}개 행 (배치 크기: ${miniBatchSize})`)
     
     let successCount = 0

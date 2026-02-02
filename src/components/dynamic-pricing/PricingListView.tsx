@@ -1,4 +1,5 @@
 import React, { memo, useState, useEffect } from 'react';
+import { useTranslations } from 'next-intl';
 import { DollarSign, Calendar, Edit, Trash2, Save, X } from 'lucide-react';
 import { SimplePricingRule, SimplePricingRuleDto } from '@/lib/types/dynamic-pricing';
 import { supabase } from '@/lib/supabase';
@@ -30,6 +31,7 @@ export const PricingListView = memo(function PricingListView({
   choiceCombinations = [],
   channels = []
 }: PricingListViewProps) {
+  const t = useTranslations('products.dynamicPricingPage');
   // 디버깅: choiceCombinations 로드 확인
   useEffect(() => {
     if (choiceCombinations.length > 0) {
@@ -180,7 +182,7 @@ export const PricingListView = memo(function PricingListView({
       <div className="p-4 border-b border-gray-200">
         <div className="flex items-center space-x-2">
           <Calendar className="h-5 w-5 text-gray-600" />
-          <h3 className="text-lg font-semibold text-gray-900">가격 규칙 목록</h3>
+          <h3 className="text-lg font-semibold text-gray-900">{t('priceRuleList')}</h3>
         </div>
       </div>
 
@@ -199,7 +201,7 @@ export const PricingListView = memo(function PricingListView({
                   {formatDate(date)}
                 </h4>
                 <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
-                  {rules.length}개 규칙
+                  {t('rulesCount', { count: rules.length })}
                 </span>
               </div>
 
@@ -301,7 +303,7 @@ export const PricingListView = memo(function PricingListView({
                                   onClick={handleCancelEdit}
                                   disabled={saving}
                                   className="p-2 text-gray-400 hover:bg-gray-50 rounded-md transition-colors disabled:opacity-50"
-                                  title="취소"
+                                  title={t('cancel')}
                                 >
                                   <X className="h-4 w-4" />
                                 </button>
@@ -322,7 +324,7 @@ export const PricingListView = memo(function PricingListView({
                                     }
                                   }}
                                   className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                                  title="삭제"
+                                  title={t('delete')}
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </button>
@@ -347,7 +349,7 @@ export const PricingListView = memo(function PricingListView({
                                     />
                                   </div>
                                   <div className="flex items-center min-w-0">
-                                    <span className="text-gray-600 mr-2 whitespace-nowrap text-xs">불포함 금액</span>
+                                    <span className="text-gray-600 mr-2 whitespace-nowrap text-xs">{t('notIncludedAmount')}</span>
                                     <input
                                       type="number"
                                       value={editValues.notIncludedPrice || ''}
@@ -369,7 +371,7 @@ export const PricingListView = memo(function PricingListView({
                                 <div className="flex items-center space-x-4">
                                   {salePrice > 0 && (
                                     <div className="flex items-center">
-                                      <span className="text-gray-600 mr-2">판매가</span>
+                                      <span className="text-gray-600 mr-2">{t('salePrice')}</span>
                                       <span className="font-semibold text-gray-900">
                                         {formatPrice(salePrice)}
                                       </span>
@@ -419,7 +421,7 @@ export const PricingListView = memo(function PricingListView({
                       <div key={rule.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
                         <div className="flex items-center justify-between mb-2">
                           <div className="text-sm font-medium text-gray-800">
-                            기본 가격
+                            {t('basePrice')}
                           </div>
                           <div className="flex items-center space-x-2">
                             <button
@@ -432,7 +434,7 @@ export const PricingListView = memo(function PricingListView({
                             <button
                               onClick={() => onDeleteRule(rule.id)}
                               className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                              title="삭제"
+                              title={t('delete')}
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
@@ -442,7 +444,7 @@ export const PricingListView = memo(function PricingListView({
                           {!singlePrice && (
                             <div className="grid grid-cols-3 gap-4 text-sm">
                               <div>
-                                <span className="text-gray-500">성인</span>
+                                <span className="text-gray-500">{t('adult')}</span>
                                 <div className="font-semibold text-gray-900">
                                   {formatPrice(rule.adult_price)}
                                 </div>
@@ -454,7 +456,7 @@ export const PricingListView = memo(function PricingListView({
                                 </div>
                               </div>
                               <div>
-                                <span className="text-gray-500">유아</span>
+                                <span className="text-gray-500">{t('infant')}</span>
                                 <div className="font-semibold text-gray-900">
                                   {formatPrice(rule.infant_price)}
                                 </div>
@@ -511,7 +513,7 @@ export const PricingListView = memo(function PricingListView({
                         <div className="space-y-3">
                           <div className="flex items-center space-x-2 mb-3">
                             <div className="px-3 py-1.5 bg-blue-100 text-blue-800 rounded-lg text-sm font-semibold border border-blue-200">
-                              불포함 사항 없음
+                              {t('noNotIncluded')}
                             </div>
                             <span className="text-xs text-gray-500">
                               ({baseRules.length}개 규칙, {baseChoices.length}개 초이스)

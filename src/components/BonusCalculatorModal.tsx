@@ -215,7 +215,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
               .from('team')
               .select('name_ko')
               .eq('email', tour.tour_guide_id)
-              .single()
+              .maybeSingle()
             guideName = guideData?.name_ko || null
           }
 
@@ -224,7 +224,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
               .from('team')
               .select('name_ko')
               .eq('email', tour.assistant_id)
-              .single()
+              .maybeSingle()
             driverName = driverData?.name_ko || null
           }
 

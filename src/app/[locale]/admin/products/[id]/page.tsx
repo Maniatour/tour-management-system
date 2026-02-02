@@ -147,6 +147,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
   const locale = paramsObj.locale as string
   const id = paramsObj.id as string
   const t = useTranslations('common')
+  const tEdit = useTranslations('products.edit')
   const router = useRouter()
   const isNewProduct = id === 'new'
   const supabase = createClientSupabase()
@@ -1141,11 +1142,11 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
   const tabs = [
     { id: 'basic', label: t('basicInfo'), icon: Info },
     { id: 'dynamic-pricing', label: t('dynamicPricing'), icon: TrendingUp },
-    { id: 'choices', label: '초이스 관리', icon: Settings },
+    { id: 'choices', label: t('choicesManagement'), icon: Settings },
     { id: 'options', label: t('optionsManagement'), icon: Settings },
     { id: 'details', label: t('details'), icon: Tag },
     { id: 'schedule', label: t('schedule'), icon: Calendar },
-    { id: 'tour-courses', label: '투어 코스', icon: MapPin },
+    { id: 'tour-courses', label: t('tourCourses'), icon: MapPin },
     { id: 'faq', label: t('faq'), icon: MessageCircle },
     { id: 'media', label: t('media'), icon: Image },
     { id: 'history', label: t('changeHistory'), icon: Clock }
@@ -1168,7 +1169,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
           </Link>
           <div>
             <h1 className="text-xl sm:text-3xl font-bold text-gray-900">
-              {isNewProduct ? '새 상품 추가' : '상품 편집'}
+              {isNewProduct ? tEdit('newProduct') : tEdit('editProduct')}
               {productInfo && !isNewProduct && (
                 <span className="ml-2 sm:ml-3 text-lg sm:text-xl font-normal text-gray-600">
                   - {productInfo.name}
@@ -1199,7 +1200,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
               className="flex items-center justify-center gap-1 px-2 py-1.5 sm:px-3 sm:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-[11px] sm:text-sm font-medium"
             >
               <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              <span>미리보기</span>
+              <span>{tEdit('preview')}</span>
             </button>
             
             {/* 삭제 버튼 */}
@@ -1208,7 +1209,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
               className="flex items-center justify-center gap-1 px-2 py-1.5 sm:px-3 sm:py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors text-[11px] sm:text-sm font-medium"
             >
               <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-              <span>삭제</span>
+              <span>{tEdit('delete')}</span>
             </button>
           </div>
         )
@@ -1283,8 +1284,8 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
             {activeTab === 'pricing' && (
               <div className="text-center py-12">
                 <DollarSign className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">가격 관리</h3>
-                <p className="text-gray-600">가격 관리는 &apos;동적 가격&apos; 탭에서 통합하여 관리합니다.</p>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">{tEdit('priceManagement')}</h3>
+                <p className="text-gray-600">{tEdit('priceManagementNote')}</p>
               </div>
             )}
 
@@ -1402,16 +1403,16 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
             {activeTab === 'history' && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-4">상품 변경 내역</h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">{tEdit('productChangeHistory')}</h3>
                   <p className="text-gray-600 mb-6">
-                    이 상품의 모든 변경 사항을 추적하고 확인할 수 있습니다.
+                    {tEdit('productChangeHistoryDesc')}
                   </p>
                 </div>
                 
                 <ChangeHistory 
                   tableName="products" 
                   recordId={id} 
-                  title="상품 변경 내역"
+                  title={tEdit('productChangeHistory')}
                   maxItems={10}
                 />
               </div>
@@ -1446,18 +1447,18 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
               <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
                 <Trash2 className="h-5 w-5 text-red-600" />
               </div>
-              <h3 className="text-lg font-medium text-gray-900">상품 삭제 확인</h3>
+              <h3 className="text-lg font-medium text-gray-900">{tEdit('deleteConfirmTitle')}</h3>
             </div>
             
             <div className="text-gray-600 mb-6">
               <p className="mb-3 font-medium text-red-700">
-                ⚠️ 상품 삭제 시 주의사항
+                {tEdit('deleteWarning')}
               </p>
               <p className="mb-2">
-                해당 상품을 삭제하면, 해당 상품의 기존 예약, 기존 투어 등의 데이터를 사용하지 못할 수 있습니다.
+                {tEdit('deleteWarningDesc')}
               </p>
               <p className="text-sm text-gray-500">
-                더 이상 필요없는 상품이거나, 기존 예약건이 있다면 삭제하지 말고 <strong>비활성화</strong>를 해주세요.
+                {tEdit.rich('deactivateInstead', { strong: (chunks) => <strong>{chunks}</strong> })}
               </p>
             </div>
             
@@ -1467,14 +1468,14 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                   onClick={handleDeactivateProduct}
                   className="flex-1 bg-yellow-600 text-white py-2 px-4 rounded-lg hover:bg-yellow-700 transition-colors"
                 >
-                  비활성화하기
+                  {tEdit('deactivate')}
                 </button>
                 <button
                   onClick={() => setShowDeleteModal(false)}
                   className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors"
                   disabled={deleting}
                 >
-                  취소
+                  {tEdit('cancel')}
                 </button>
               </div>
               <button
@@ -1482,7 +1483,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                 className="w-full bg-red-600 text-white py-2 px-4 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
                 disabled={deleting}
               >
-                {deleting ? '삭제 중...' : '그래도 삭제하기'}
+                {deleting ? tEdit('deleting') : tEdit('deleteAnyway')}
               </button>
             </div>
           </div>

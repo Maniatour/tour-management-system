@@ -98,7 +98,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
           .select('position')
           .eq('email', authUser.email)
           .eq('is_active', true)
-          .single()
+          .maybeSingle()
         
         if (error || !teamData) {
           setIsSuper(false)

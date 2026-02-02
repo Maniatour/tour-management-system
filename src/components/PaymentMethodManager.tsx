@@ -53,6 +53,7 @@ interface PaymentMethod {
   created_at: string
   updated_at: string
   display_name?: string | null
+  deduct_card_fee_for_tips?: boolean | null
   team?: {
     email: string
     name_ko: string
@@ -118,7 +119,8 @@ export default function PaymentMethodManager({
     expiry_year: '',
     monthly_limit: '',
     daily_limit: '',
-    notes: ''
+    notes: '',
+    deduct_card_fee_for_tips: false
   })
   
   // 만료일을 YYYY-MM-01 형식으로 변환
@@ -284,7 +286,8 @@ export default function PaymentMethodManager({
               monthly_limit: formData.monthly_limit ? parseFloat(formData.monthly_limit) : null,
               daily_limit: formData.daily_limit ? parseFloat(formData.daily_limit) : null,
               notes: formData.notes,
-              created_by: userEmail
+              created_by: userEmail,
+              deduct_card_fee_for_tips: formData.deduct_card_fee_for_tips
             })
           })
           
@@ -319,7 +322,8 @@ export default function PaymentMethodManager({
                   expiry_year: existingMethod.expiry_date ? existingMethod.expiry_date.split('-')[0] : '',
                   monthly_limit: formData.monthly_limit || existingMethod.monthly_limit?.toString() || '',
                   daily_limit: formData.daily_limit || existingMethod.daily_limit?.toString() || '',
-                  notes: formData.notes || existingMethod.notes || ''
+                  notes: formData.notes || existingMethod.notes || '',
+                  deduct_card_fee_for_tips: !!(existingMethod as any).deduct_card_fee_for_tips
                 })
                 alert(`ID "${inputId}"가 이미 존재합니다. 기존 레코드를 수정 모드로 불러왔습니다.`)
                 return // 추가 대신 수정 모드로 전환
@@ -372,7 +376,8 @@ export default function PaymentMethodManager({
             monthly_limit: formData.monthly_limit ? parseFloat(formData.monthly_limit) : null,
             daily_limit: formData.daily_limit ? parseFloat(formData.daily_limit) : null,
             notes: formData.notes,
-            created_by: userEmail || null
+            created_by: userEmail || null,
+            deduct_card_fee_for_tips: formData.deduct_card_fee_for_tips
           })
         })
         
@@ -406,7 +411,8 @@ export default function PaymentMethodManager({
                 expiry_year: existingMethod.expiry_date ? existingMethod.expiry_date.split('-')[0] : '',
                 monthly_limit: formData.monthly_limit || existingMethod.monthly_limit?.toString() || '',
                 daily_limit: formData.daily_limit || existingMethod.daily_limit?.toString() || '',
-                notes: formData.notes || existingMethod.notes || ''
+                notes: formData.notes || existingMethod.notes || '',
+                deduct_card_fee_for_tips: !!(existingMethod as any).deduct_card_fee_for_tips
               })
               alert(`ID "${inputId}"가 이미 존재합니다. 기존 레코드를 수정 모드로 불러왔습니다.`)
               return // 추가 대신 수정 모드로 전환
@@ -464,7 +470,8 @@ export default function PaymentMethodManager({
           card_holder_name: formData.card_holder_name && formData.card_holder_name.trim() !== '' ? formData.card_holder_name : null,
           expiry_date: getExpiryDate(),
           notes: formData.notes && formData.notes.trim() !== '' ? formData.notes : null,
-          updated_by: userEmail || null
+          updated_by: userEmail || null,
+          deduct_card_fee_for_tips: formData.deduct_card_fee_for_tips
         })
       })
 
@@ -571,7 +578,8 @@ export default function PaymentMethodManager({
       expiry_year: year,
       monthly_limit: method.monthly_limit?.toString() || '',
       daily_limit: method.daily_limit?.toString() || '',
-      notes: method.notes || ''
+      notes: method.notes || '',
+      deduct_card_fee_for_tips: !!(method as any).deduct_card_fee_for_tips
     })
     setShowAddForm(true)
     setShowAllUsers(false)
@@ -593,7 +601,8 @@ export default function PaymentMethodManager({
       expiry_year: '',
       monthly_limit: '',
       daily_limit: '',
-      notes: ''
+      notes: '',
+      deduct_card_fee_for_tips: false
     })
     setShowAllUsers(false)
   }
@@ -1105,6 +1114,20 @@ export default function PaymentMethodManager({
                   <option value="suspended">정지</option>
                   <option value="expired">만료</option>
                 </select>
+              </div>
+
+              {/* Tips 쉐어 시 카드 수수료 공제 */}
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="deduct_card_fee_for_tips"
+                  checked={formData.deduct_card_fee_for_tips}
+                  onChange={(e) => setFormData(prev => ({ ...prev, deduct_card_fee_for_tips: e.target.checked }))}
+                  className="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500"
+                />
+                <label htmlFor="deduct_card_fee_for_tips" className="text-sm text-gray-700">
+                  Tips 쉐어 시 카드 수수료 공제 (Wix Website, Square Invoice 등 온라인 결제 시 체크)
+                </label>
               </div>
             </div>
 

@@ -13,13 +13,16 @@ interface TourFinanceProps {
   connectionStatus: { bookings: boolean }
   userRole: string
   onExpenseUpdated: () => void
+  /** 결제 기록에서 예약 클릭 시 예약 수정 모달 열기 (투어 상세 페이지에서 전달) */
+  onReservationClick?: (reservationId: string) => void
 }
 
 export const TourFinance: React.FC<TourFinanceProps> = ({
   tour,
   connectionStatus,
   userRole,
-  onExpenseUpdated
+  onExpenseUpdated,
+  onReservationClick
 }) => {
   const t = useTranslations('tours.tourFinance')
   const [hasPrepaidTip, setHasPrepaidTip] = useState(false)
@@ -100,6 +103,7 @@ export const TourFinance: React.FC<TourFinanceProps> = ({
           isOpen={isTipsShareModalOpen}
           onClose={() => setIsTipsShareModalOpen(false)}
           tourId={tour.id}
+          onReservationClick={onReservationClick}
         />
       )}
     </div>

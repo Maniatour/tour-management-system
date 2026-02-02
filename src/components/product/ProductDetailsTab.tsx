@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import { FileText, Save, AlertCircle, Settings, Languages, Loader2, Sparkles, Users, Copy, ChevronRight, ChevronDown, CheckSquare, Square } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -113,9 +114,28 @@ export default function ProductDetailsTab({
   formData,
   setFormData
 }: ProductDetailsTabProps) {
-  // formData는 props로 받아서 사용
+  const t = useTranslations('products.detailsTab')
+  const tDetails = useTranslations('products.detailsPage')
+
+  const getCopyFieldLabel = (field: string | null) => {
+    if (!field) return ''
+    if (field === 'slogan') return t('slogan')
+    if (field === 'included_not_included') return t('includedNotIncluded')
+    if (field === 'description') return tDetails('description')
+    if (field === 'pickup_drop_info') return t('pickupDropInfo')
+    if (field === 'luggage_info') return t('luggageInfo')
+    if (field === 'tour_operation_info') return t('tourOperationInfo')
+    if (field === 'preparation_info') return t('preparationInfo')
+    if (field === 'small_group_info') return t('smallGroupInfo')
+    if (field === 'notice_info') return t('noticeInfo')
+    if (field === 'private_tour_info') return t('privateTourInfo')
+    if (field === 'cancellation_policy') return t('cancellationPolicy')
+    if (field === 'chat_announcement') return t('chatAnnouncement')
+    return field
+  }
 
   const [saving, setSaving] = useState(false)
+  const [saveMessageType, setSaveMessageType] = useState<'success' | 'error' | null>(null)
   const [saveMessage, setSaveMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [commonPreview, setCommonPreview] = useState<MultilingualProductDetails | null>(null)
@@ -133,7 +153,7 @@ export default function ProductDetailsTab({
   const [selectedChannels, setSelectedChannels] = useState<ChannelSelection>({})
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
   const [loadingChannelData, setLoadingChannelData] = useState(false)
-  const [copyFromChannel, setCopyFromChannel] = useState<string | null>(null)
+  const [_copyFromChannel, _setCopyFromChannel] = useState<string | null>(null)
   const [channelPricingStats, setChannelPricingStats] = useState<Record<string, Record<string, number>>>({})
   
   // 채널별 데이터 완성도 상태
@@ -268,7 +288,7 @@ export default function ProductDetailsTab({
           console.error('채널별 가격 통계 로드 오류:', fallbackError);
           return;
         }
-        data = fallbackData;
+        data = fallbackData?.map((row: { channel_id: string | null; date: string }) => ({ ...row, channels: null })) ?? null;
       }
 
       // 날짜 정규화 함수 (YYYY-MM-DD 형식으로 변환)
@@ -700,17 +720,11 @@ export default function ProductDetailsTab({
     try {
       const selectedChannelIds = Object.keys(selectedChannels).filter(id => selectedChannels[id])
       if (selectedChannelIds.length === 0) {
-        setSaveMessage('복사할 소스 채널을 선택해주세요.')
-        setTimeout(() => setSaveMessage(''), 3000)
+        setSaveMessage(t('msgSelectChannelsToCopy'))
+        setSaveMessageType('error')
+        setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 3000)
         return
       }
-
-      // 현재 선택된 채널 중 첫 번째를 소스로 사용
-      const sourceChannelId = selectedChannelIds[0]
-      const sourceChannel = channels.find(c => c.id === sourceChannelId)
-      const isSourceSelf = sourceChannel?.type === 'self' || sourceChannel?.type === 'SELF'
-      const actualSourceChannelId = isSourceSelf ? 'SELF_GROUP' : sourceChannelId
-      const sourceVariantKey = channelVariants[sourceChannelId] || 'default'
 
       // 현재 언어의 필드 값 가져오기
       const currentLang = formData.currentLanguage || 'ko'
@@ -784,7 +798,6 @@ export default function ProductDetailsTab({
           // 업데이트
           const { error: updateError } = await supabase
             .from('product_details_multilingual')
-            // @ts-expect-error - Supabase 타입 추론 문제
             .update(updateData)
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             .eq('id', (existingData as any).id)
@@ -811,27 +824,16 @@ export default function ProductDetailsTab({
 
       await Promise.all(copyPromises)
       loadSelectedChannelData()
-      const fieldLabel = fieldName === 'slogan' ? '슬로건' 
-        : fieldName === 'included_not_included' ? '포함/불포함 정보'
-        : fieldName === 'description' ? '상품 설명'
-        : fieldName === 'pickup_drop_info' ? '픽업/드롭 정보'
-        : fieldName === 'luggage_info' ? '수하물 정보'
-        : fieldName === 'tour_operation_info' ? '투어 운영 정보'
-        : fieldName === 'preparation_info' ? '준비 사항'
-        : fieldName === 'small_group_info' ? '소그룹 정보'
-        : fieldName === 'notice_info' ? '안내사항'
-        : fieldName === 'private_tour_info' ? '단독투어 정보'
-        : fieldName === 'cancellation_policy' ? '취소 정책'
-        : fieldName === 'chat_announcement' ? '채팅 공지'
-        : fieldName
-      setSaveMessage(`${toChannelIds.length}개 채널에 ${fieldLabel}가 복사되었습니다!`)
-      setTimeout(() => setSaveMessage(''), 3000)
+      setSaveMessage(t('msgCopyToChannelsSuccess', { count: toChannelIds.length }))
+      setSaveMessageType('success')
+      setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 3000)
       setCopyModalOpen(false)
       setCopyTargetChannels({})
     } catch (error) {
       console.error('필드 복사 오류:', error)
-      setSaveMessage(`필드 복사 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
-      setTimeout(() => setSaveMessage(''), 5000)
+      setSaveMessage(`${t('msgCopyError')}: ${error instanceof Error ? error.message : ''}`)
+      setSaveMessageType('error')
+      setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 5000)
     }
   }
 
@@ -852,7 +854,9 @@ export default function ProductDetailsTab({
   }
 
   // 채널 간 복사
-  const copyChannelData = async (fromChannelId: string, toChannelIds: string[]) => {
+  // 미사용 - 추후 채널 간 복사 기능용
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _copyChannelData = async (fromChannelId: string, toChannelIds: string[]) => {
     if (!fromChannelId || toChannelIds.length === 0) return
 
     try {
@@ -972,7 +976,6 @@ export default function ProductDetailsTab({
               // 업데이트
               const { error: updateError } = await supabase
                 .from('product_details_multilingual')
-                // @ts-expect-error - Supabase 타입 추론 문제
                 .update({
                   ...copyData,
                   updated_at: new Date().toISOString()
@@ -988,7 +991,6 @@ export default function ProductDetailsTab({
               // 삽입
               const { error: insertError } = await supabase
                 .from('product_details_multilingual')
-                // @ts-expect-error - Supabase 타입 추론 문제
                 .insert([copyData])
 
               if (insertError) {
@@ -1004,29 +1006,29 @@ export default function ProductDetailsTab({
         // 복사 후 데이터 새로고침
         loadSelectedChannelData()
         
-        setSaveMessage(`${toChannelIds.length}개 채널에 데이터가 복사되었습니다!`)
-        setTimeout(() => setSaveMessage(''), 3000)
+        setSaveMessage(t('msgCopyDataSuccess', { count: toChannelIds.length }))
+        setSaveMessageType('success')
+        setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 3000)
       }
     } catch (error) {
       console.error('채널 데이터 복사 오류:', error)
       
-      // 에러 메시지 생성
-      let errorMessage = '알 수 없는 오류'
+      let errorMessage = ''
       if (error instanceof Error) {
         errorMessage = error.message
       } else if (typeof error === 'string') {
         errorMessage = error
       } else if (error && typeof error === 'object') {
-        // Supabase 에러 객체인 경우
         if ('message' in error) {
-          errorMessage = String(error.message)
+          errorMessage = String((error as { message?: string }).message)
         } else if ('error' in error) {
-          errorMessage = String(error.error)
+          errorMessage = String((error as { error?: unknown }).error)
         }
       }
       
-      setSaveMessage(`채널 데이터 복사 중 오류가 발생했습니다: ${errorMessage}`)
-      setTimeout(() => setSaveMessage(''), 5000)
+      setSaveMessage(`${t('msgChannelCopyError')}: ${errorMessage || ''}`)
+      setSaveMessageType('error')
+      setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 5000)
     }
   }
 
@@ -1034,13 +1036,15 @@ export default function ProductDetailsTab({
   const saveSelectedChannelsDetails = async () => {
     const selectedChannelIds = Object.keys(selectedChannels).filter(id => selectedChannels[id])
     if (selectedChannelIds.length === 0) {
-      setSaveMessage('저장할 채널을 선택해주세요.')
-      setTimeout(() => setSaveMessage(''), 3000)
+      setSaveMessage(t('msgSelectChannelsToSave'))
+      setSaveMessageType('error')
+      setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 3000)
       return
     }
 
     setSaving(true)
     setSaveMessage('')
+    setSaveMessageType(null)
 
     try {
       const currentLang = formData.currentLanguage || 'ko'
@@ -1162,7 +1166,6 @@ export default function ProductDetailsTab({
           // 업데이트
           const { error: updateError } = await supabase
             .from('product_details_multilingual')
-            // @ts-expect-error - Supabase 타입 추론 문제
             .update({
               ...detailsData,
               updated_at: new Date().toISOString()
@@ -1198,7 +1201,6 @@ export default function ProductDetailsTab({
           // 직접 insert를 시도하고, 중복 오류가 발생하면 업데이트
           const { error: insertError } = await supabase
             .from('product_details_multilingual')
-            // @ts-expect-error - Supabase 타입 추론 문제
             .insert([detailsData])
           
           if (insertError) {
@@ -1222,7 +1224,6 @@ export default function ProductDetailsTab({
               if (existingRecord) {
                 const { error: updateError } = await supabase
                   .from('product_details_multilingual')
-                  // @ts-expect-error - Supabase 타입 추론 문제
                   .update({
                     ...detailsData,
                     updated_at: new Date().toISOString()
@@ -1342,7 +1343,7 @@ export default function ProductDetailsTab({
           .select('*')
           .eq('sub_category', productData.sub_category)
           .maybeSingle()
-        detailsData = commonData
+        detailsData = commonData ? { ...commonData, channel_id: null } : null
         detailsError = commonError
       } else {
         // 개별 세부정보 사용 - 모든 데이터를 로드한 후 channel_id가 NULL인 것을 우선 사용
@@ -1970,7 +1971,7 @@ export default function ProductDetailsTab({
     
     // 한국어가 아닌 경우 번역하지 않음
     if (currentLang !== 'ko') {
-      setTranslationError('한국어 내용만 번역할 수 있습니다.')
+      setTranslationError(t('msgKoreanOnlyTranslate'))
       return
     }
 
@@ -2046,14 +2047,15 @@ export default function ProductDetailsTab({
           }
         })
 
-        setSaveMessage('번역이 완료되었습니다! 영어 탭에서 확인하세요.')
-        setTimeout(() => setSaveMessage(''), 3000)
+        setSaveMessage(t('msgTranslateSuccess'))
+        setSaveMessageType('success')
+        setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 3000)
       } else {
-        setTranslationError(result.error || '번역에 실패했습니다.')
+        setTranslationError(result.error || t('msgTranslateFailed'))
       }
     } catch (error) {
       console.error('번역 오류:', error)
-      setTranslationError(`번역 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+      setTranslationError(`${t('msgTranslateError')}: ${error instanceof Error ? error.message : ''}`)
     } finally {
       setTranslating(false)
     }
@@ -2094,11 +2096,12 @@ export default function ProductDetailsTab({
         }))
       }
 
-      setSaveMessage('ChatGPT 추천 설명이 적용되었습니다!')
-      setTimeout(() => setSaveMessage(''), 3000)
+      setSaveMessage(t('msgSuggestSuccess'))
+      setSaveMessageType('success')
+      setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 3000)
     } catch (error) {
       console.error('ChatGPT 추천 오류:', error)
-      setSuggestionError(error instanceof Error ? error.message : 'ChatGPT 추천 중 오류가 발생했습니다.')
+      setSuggestionError(error instanceof Error ? error.message : t('msgTranslateError'))
     } finally {
       setSuggesting(false)
     }
@@ -2112,26 +2115,30 @@ export default function ProductDetailsTab({
     }
     
     if (isNewProduct) {
-      setSaveMessage('새 상품은 전체 저장을 사용해주세요.')
+      setSaveMessage(t('msgNewProductUseFullSave'))
+      setSaveMessageType('error')
       return
     }
 
     // 공통 세부정보 사용 시 개별 저장 차단
     if (formData.useCommonDetails) {
-      setSaveMessage('공통 세부정보 사용 중입니다. 개별 저장은 비활성화됩니다.')
-      setTimeout(() => setSaveMessage(''), 3000)
+      setSaveMessage(t('msgCommonDetailsNoIndividualSave'))
+      setSaveMessageType('error')
+      setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 3000)
       return
     }
 
     // AuthContext를 통한 인증 확인
     if (authLoading) {
-      setSaveMessage('인증 상태를 확인하는 중입니다...')
+      setSaveMessage(t('msgAuthChecking'))
+      setSaveMessageType(null)
       return
     }
 
     if (!user) {
-      setSaveMessage('로그인이 필요합니다. 페이지를 새로고침 후 다시 시도해주세요.')
-      setTimeout(() => setSaveMessage(''), 5000)
+      setSaveMessage(t('msgLoginRequired'))
+      setSaveMessageType('error')
+      setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 5000)
       return
     }
 
@@ -2214,7 +2221,6 @@ export default function ProductDetailsTab({
         // 업데이트
         const { error: detailsError } = await supabase
           .from('product_details_multilingual')
-          // @ts-expect-error - Supabase 타입 추론 문제
           .update({
             ...detailsData,
             updated_at: new Date().toISOString()
@@ -2252,7 +2258,6 @@ export default function ProductDetailsTab({
         // 새로 생성
         const { error: detailsError } = await supabase
           .from('product_details_multilingual')
-          // @ts-expect-error - Supabase 타입 추론 문제
           .insert([detailsData])
 
         if (detailsError) {
@@ -2281,15 +2286,17 @@ export default function ProductDetailsTab({
         }
       }
 
-      setSaveMessage('상품 세부정보가 성공적으로 저장되었습니다!')
-      setTimeout(() => setSaveMessage(''), 3000)
+      setSaveMessage(t('msgDetailsSaveSuccess'))
+      setSaveMessageType('success')
+      setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 3000)
     } catch (error: unknown) {
       const e = error as { message?: string; status?: string | number; code?: string }
-      const errorMessage = e?.message || '알 수 없는 오류가 발생했습니다.'
-      const status = e?.status || e?.code || 'unknown'
+      const errorMessage = e?.message || ''
+      const status = e?.status ?? e?.code ?? 'unknown'
       console.error('상품 세부정보 저장 오류:', { status, error: e })
-      setSaveMessage(`저장에 실패했습니다: [${String(status)}] ${errorMessage}`)
-      setTimeout(() => setSaveMessage(''), 5000)
+      setSaveMessage(`${t('msgDetailsSaveError')} [${String(status)}] ${errorMessage}`)
+      setSaveMessageType('error')
+      setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 5000)
     } finally {
       setSaving(false)
     }
@@ -2314,7 +2321,7 @@ export default function ProductDetailsTab({
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4 w-full lg:w-auto">
               <h3 className="text-sm font-medium text-gray-900 flex items-center">
                 <Users className="h-3.5 w-3.5 mr-2" />
-                채널별 세부정보 관리
+                {t('channelDetailsTitle')}
               </h3>
               {/* 언어 선택 스위치 */}
               <div className="flex items-center space-x-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
@@ -2331,10 +2338,10 @@ export default function ProductDetailsTab({
                           : 'text-gray-600 hover:text-gray-900'
                       }`}
                     >
-                      {lang === 'ko' ? '한국어' : 
-                       lang === 'en' ? 'English' : 
-                       lang === 'ja' ? '日本語' : 
-                       lang === 'zh' ? '中文' : lang}
+                      {lang === 'ko' ? t('langKorean') :
+                       lang === 'en' ? t('langEnglish') :
+                       lang === 'ja' ? t('langJapanese') :
+                       lang === 'zh' ? t('langChinese') : lang}
                     </button>
                   ))}
                 </div>
@@ -2347,14 +2354,14 @@ export default function ProductDetailsTab({
                 onClick={translateCurrentLanguageDetails}
                 disabled={translating || (formData.currentLanguage || 'ko') !== 'ko'}
                 className="flex-1 sm:flex-none flex items-center justify-center px-2 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-[11px]"
-                title="한국어 내용을 영어로 번역"
+                title={t('translateTitle')}
               >
                 {translating ? (
                   <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                 ) : (
                   <Languages className="h-3 w-3 mr-1" />
                 )}
-                {translating ? '번역 중...' : '번역'}
+                {translating ? t('translateLoading') : t('translate')}
               </button>
               {/* AI 추천 버튼 */}
               <button
@@ -2362,14 +2369,14 @@ export default function ProductDetailsTab({
                 onClick={suggestDescription}
                 disabled={suggesting}
                 className="flex-1 sm:flex-none flex items-center justify-center px-2 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-[11px]"
-                title="ChatGPT로 설명 추천받기"
+                title={t('aiSuggestTitle')}
               >
                 {suggesting ? (
                   <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                 ) : (
                   <Sparkles className="h-3 w-3 mr-1" />
                 )}
-                {suggesting ? '추천 중...' : 'AI 추천'}
+                {suggesting ? t('aiSuggestLoading') : t('aiSuggest')}
               </button>
               {/* 새로고침 버튼 */}
               <button
@@ -2382,7 +2389,7 @@ export default function ProductDetailsTab({
                 ) : (
                   <FileText className="h-3 w-3 mr-1" />
                 )}
-                새로고침
+                {t('refresh')}
               </button>
             </div>
           </div>
@@ -2397,12 +2404,12 @@ export default function ProductDetailsTab({
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                 <h4 className="font-medium text-gray-900 mb-3 flex items-center">
                   <Settings className="h-4 w-4 mr-2" />
-                  공통 세부정보 관리
+                  {t('commonDetailsTitle')}
                 </h4>
                 
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-700">공통 세부정보 사용</span>
+                    <span className="text-sm text-gray-700">{t('useCommonDetails')}</span>
                     <label className="flex items-center">
                       <input
                         type="checkbox"
@@ -2430,7 +2437,7 @@ export default function ProductDetailsTab({
               {/* 채널 선택 섹션 */}
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <h4 className="font-medium text-gray-900">채널 선택</h4>
+                  <h4 className="font-medium text-gray-900">{t('channelSelect')}</h4>
                   <span className="text-sm text-gray-500">
                     {(() => {
                       const selectedChannelIds = Object.keys(selectedChannels).filter(id => selectedChannels[id])
@@ -2443,13 +2450,13 @@ export default function ProductDetailsTab({
                       
                       const parts: string[] = []
                       if (selfChannels.length > 0) {
-                        parts.push('self 그룹')
+                        parts.push(t('selfGroupSelected'))
                       }
                       if (otaChannels.length > 0) {
-                        parts.push(`OTA ${otaChannels.length}개`)
+                        parts.push(t('otaCountSelected', { count: otaChannels.length }))
                       }
-                      return parts.length > 0 ? parts.join(', ') : '0개'
-                    })()} 선택됨
+                      return parts.length > 0 ? parts.join(', ') + t('selectedSuffix') : t('selectedCount', { count: 0 })
+                    })()}
                   </span>
                 </div>
 
@@ -2463,7 +2470,7 @@ export default function ProductDetailsTab({
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
-                    전체
+                    {t('filterAll')}
                   </button>
                   <button
                     onClick={() => setCompletionFilter('incomplete')}
@@ -2473,7 +2480,7 @@ export default function ProductDetailsTab({
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
-                    미완성
+                    {t('filterIncomplete')}
                   </button>
                   <button
                     onClick={() => setCompletionFilter('empty')}
@@ -2483,7 +2490,7 @@ export default function ProductDetailsTab({
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
-                    데이터 없음
+                    {t('filterEmpty')}
                   </button>
                 </div>
 
@@ -2508,12 +2515,12 @@ export default function ProductDetailsTab({
                           <ChevronRight className="h-4 w-4 text-gray-500" />
                         )}
                         <span className="font-medium text-gray-900">
-                          {isSelfGroup ? 'self (그룹)' : group.type}
+                          {isSelfGroup ? t('selfGroupLabel') : group.type}
                         </span>
                         <span className="text-sm text-gray-500">({group.channels.length})</span>
                         {isSelfGroup && (
                           <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
-                            단일 세부정보 공유
+                            {t('singleDetailsShare')}
                           </span>
                         )}
                       </div>
@@ -2523,7 +2530,7 @@ export default function ProductDetailsTab({
                           toggleGroupSelection(group.type)
                         }}
                         className="p-1 hover:bg-gray-200 rounded"
-                        title={isSelfGroup ? 'self 채널 그룹 전체 선택/해제 (모든 self 채널이 동일한 세부정보를 공유합니다)' : '그룹 전체 선택/해제'}
+                        title={isSelfGroup ? t('selfGroupSelectAllTitle') : t('groupSelectAllTitle')}
                       >
                         {allSelected ? (
                           <CheckSquare className="h-4 w-4 text-blue-600" />
@@ -2540,7 +2547,7 @@ export default function ProductDetailsTab({
                         {isSelfGroup && (
                           <div className="bg-blue-50 border border-blue-200 rounded p-2 mb-2">
                             <p className="text-xs text-blue-700">
-                              ℹ️ self 채널들은 모두 동일한 세부정보를 공유합니다. 개별 채널을 선택해도 저장 시 하나의 그룹으로 저장됩니다.
+                              ℹ️ {t('selfGroupHint')}
                             </p>
                           </div>
                         )}
@@ -2612,13 +2619,13 @@ export default function ProductDetailsTab({
                                 )}
                                 {completion && completion.missingFields.length > 0 && (
                                   <span className="text-xs text-gray-400 mt-0.5">
-                                    누락: {completion.missingFields.slice(0, 3).join(', ')}
-                                    {completion.missingFields.length > 3 && ` 외 ${completion.missingFields.length - 3}개`}
+                                    {t('missingLabel')} {completion.missingFields.slice(0, 3).join(', ')}
+                                    {completion.missingFields.length > 3 && ` ${t('missingMore', { count: completion.missingFields.length - 3 })}`}
                                   </span>
                                 )}
                               </div>
                               {isSelfGroup && selectedChannels[channel.id] && (
-                                <span className="text-xs text-blue-600">(그룹)</span>
+                                <span className="text-xs text-blue-600">({t('groupLabel')})</span>
                               )}
                             </label>
                             
@@ -2674,16 +2681,15 @@ export default function ProductDetailsTab({
               <div className="flex items-center justify-center h-full text-gray-500">
                 <div className="text-center">
                   <Users className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p className="text-lg font-medium">채널을 선택해주세요</p>
-                  <p className="text-sm mt-1">왼쪽에서 편집할 채널을 선택하면 여기에 입력 폼이 표시됩니다.</p>
+                  <p className="text-lg font-medium">{t('selectChannelPrompt')}</p>
+                  <p className="text-sm mt-1">{t('selectChannelHint')}</p>
                 </div>
               </div>
             ) : (
               <div className="space-y-4">
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                   <p className="text-sm text-blue-700">
-                    <strong>{Object.keys(selectedChannels).filter(id => selectedChannels[id]).length}개 채널</strong>에 동일한 내용을 저장합니다.
-                    각 채널별로 다른 내용이 필요한 경우 개별적으로 편집하세요.
+                    {t('saveToChannelsHint', { count: Object.keys(selectedChannels).filter(id => selectedChannels[id]).length })}
                   </p>
                 </div>
 
@@ -2691,51 +2697,51 @@ export default function ProductDetailsTab({
                 {/* 슬로건 섹션 */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-md font-medium text-gray-900">슬로건</h4>
+                    <h4 className="text-md font-medium text-gray-900">{t('slogan')}</h4>
                     <button
                       onClick={() => openCopyModal('slogan')}
                       className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
-                      title="슬로건을 다른 채널에 복사"
+                      title={t('copyToChannels')}
                     >
                       <Copy className="h-3 w-3" />
-                      <span>복사</span>
+                      <span>{t('copy')}</span>
                     </button>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        슬로건 1
+                        {tDetails('slogan1')}
                       </label>
                       <input
                         type="text"
                         value={getValue('slogan1', true)}
                         onChange={(e) => handleInputChange('slogan1', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="예: 최고의 투어 경험"
+                        placeholder={tDetails('placeholderSlogan1')}
                       />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        슬로건 2
+                        {tDetails('slogan2')}
                       </label>
                       <input
                         type="text"
                         value={getValue('slogan2', true)}
                         onChange={(e) => handleInputChange('slogan2', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="예: 전문 가이드와 함께"
+                        placeholder={tDetails('placeholderSlogan2')}
                       />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        슬로건 3
+                        {tDetails('slogan3')}
                       </label>
                       <input
                         type="text"
                         value={getValue('slogan3', true)}
                         onChange={(e) => handleInputChange('slogan3', e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="예: 잊지 못할 추억"
+                        placeholder={tDetails('placeholderSlogan3')}
                       />
                     </div>
                   </div>
@@ -2743,16 +2749,16 @@ export default function ProductDetailsTab({
 
                 {/* 상품 설명 */}
                 <div className="space-y-4">
-                  <h4 className="text-md font-medium text-gray-900">상품 설명</h4>
+                  <h4 className="text-md font-medium text-gray-900">{tDetails('description')}</h4>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      상세 설명
+                      {t('detailDescription')}
                     </label>
                     <LightRichEditor
                       value={getValue('description', true) as string}
                       onChange={(value) => handleInputChange('description', value || '')}
                       height={150}
-                      placeholder="상품에 대한 자세한 설명을 입력해주세요"
+                      placeholder={tDetails('placeholderDescription')}
                       enableResize={true}
                     />
                   </div>
@@ -2786,13 +2792,13 @@ export default function ProductDetailsTab({
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        불포함 사항
+                        {tDetails('notIncluded')}
                       </label>
                       <LightRichEditor
                         value={getValue('not_included', true) as string}
                         onChange={(value) => handleInputChange('not_included', value || '')}
                         height={150}
-                        placeholder="불포함되는 사항들을 입력해주세요"
+                        placeholder={tDetails('placeholderNotIncluded')}
                         enableResize={true}
                       />
                     </div>
@@ -2802,25 +2808,25 @@ export default function ProductDetailsTab({
                 {/* 픽업/드롭 정보 */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-md font-medium text-gray-900">픽업/드롭 정보</h4>
+                    <h4 className="text-md font-medium text-gray-900">{t('pickupDropInfo')}</h4>
                     <button
                       onClick={() => openCopyModal('pickup_drop_info')}
                       className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
-                      title="픽업/드롭 정보를 다른 채널에 복사"
+                      title={t('copyToChannels')}
                     >
                       <Copy className="h-3 w-3" />
-                      <span>복사</span>
+                      <span>{t('copy')}</span>
                     </button>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      픽업 및 드롭 정보
+                      {tDetails('pickupDropInfo')}
                     </label>
                     <LightRichEditor
                       value={getValue('pickup_drop_info', true) as string}
                       onChange={(value) => handleInputChange('pickup_drop_info', value || '')}
                       height={120}
-                      placeholder="픽업 및 드롭에 대한 정보를 입력해주세요"
+                      placeholder={tDetails('placeholderPickupDrop')}
                       enableResize={true}
                     />
                   </div>
@@ -2828,16 +2834,16 @@ export default function ProductDetailsTab({
 
                 {/* 수하물 정보 */}
                 <div className="space-y-4">
-                  <h4 className="text-md font-medium text-gray-900">수하물 정보</h4>
+                  <h4 className="text-md font-medium text-gray-900">{t('luggageInfo')}</h4>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      수하물 관련 정보
+                      {tDetails('luggageInfo')}
                     </label>
                     <LightRichEditor
                       value={getValue('luggage_info', true) as string}
                       onChange={(value) => handleInputChange('luggage_info', value || '')}
                       height={120}
-                      placeholder="수하물에 대한 정보를 입력해주세요"
+                      placeholder={tDetails('placeholderLuggage')}
                       enableResize={true}
                     />
                   </div>
@@ -2872,16 +2878,16 @@ export default function ProductDetailsTab({
 
                 {/* 준비 사항 */}
                 <div className="space-y-4">
-                  <h4 className="text-md font-medium text-gray-900">준비 사항</h4>
+                  <h4 className="text-md font-medium text-gray-900">{t('preparationInfo')}</h4>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      준비해야 할 사항들
+                      {tDetails('preparationInfo')}
                     </label>
                     <LightRichEditor
                       value={getValue('preparation_info', true) as string}
                       onChange={(value) => handleInputChange('preparation_info', value || '')}
                       height={120}
-                      placeholder="준비해야 할 사항들을 입력해주세요"
+                      placeholder={tDetails('placeholderPreparation')}
                       enableResize={true}
                     />
                   </div>
@@ -2890,25 +2896,25 @@ export default function ProductDetailsTab({
                 {/* 소그룹 정보 */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-md font-medium text-gray-900">소그룹 정보</h4>
+                    <h4 className="text-md font-medium text-gray-900">{t('smallGroupInfo')}</h4>
                     <button
                       onClick={() => openCopyModal('small_group_info')}
                       className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
-                      title="소그룹 정보를 다른 채널에 복사"
+                      title={t('copyToChannels')}
                     >
                       <Copy className="h-3 w-3" />
-                      <span>복사</span>
+                      <span>{t('copy')}</span>
                     </button>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      소그룹 투어 관련 정보
+                      {tDetails('smallGroupInfo')}
                     </label>
                     <LightRichEditor
                       value={getValue('small_group_info', true) as string}
                       onChange={(value) => handleInputChange('small_group_info', value || '')}
                       height={120}
-                      placeholder="소그룹 투어에 대한 정보를 입력해주세요"
+                      placeholder={tDetails('placeholderSmallGroup')}
                       enableResize={true}
                     />
                   </div>
@@ -2916,16 +2922,16 @@ export default function ProductDetailsTab({
 
                 {/* 안내사항 */}
                 <div className="space-y-4">
-                  <h4 className="text-md font-medium text-gray-900">안내사항</h4>
+                  <h4 className="text-md font-medium text-gray-900">{tDetails('noticeInfo')}</h4>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      중요한 안내사항들
+                      {tDetails('noticeInfo')}
                     </label>
                     <LightRichEditor
                       value={getValue('notice_info', true) as string}
                       onChange={(value) => handleInputChange('notice_info', value || '')}
                       height={120}
-                      placeholder="중요한 안내사항들을 입력해주세요"
+                      placeholder={tDetails('placeholderNotice')}
                       enableResize={true}
                     />
                   </div>
@@ -2934,39 +2940,28 @@ export default function ProductDetailsTab({
                 {/* 단독투어 정보 */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-md font-medium text-gray-900">단독투어 정보</h4>
+                    <h4 className="text-md font-medium text-gray-900">{tDetails('privateTourInfo')}</h4>
                     <button
                       onClick={() => openCopyModal('private_tour_info')}
                       className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
-                      title="단독투어 정보를 다른 채널에 복사"
+                      title={t('copyToChannels')}
                     >
                       <Copy className="h-3 w-3" />
-                      <span>복사</span>
+                      <span>{t('copy')}</span>
                     </button>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      단독투어 관련 정보
+                      {tDetails('privateTourInfo')}
                     </label>
                     <LightRichEditor
                       value={getValue('private_tour_info', true) as string}
                       onChange={(value) => {
-                        console.log('단독투어 정보 onChange 호출됨:', {
-                          value: value,
-                          valueType: typeof value,
-                          valueLength: value?.length,
-                          isNull: value === null,
-                          isUndefined: value === undefined,
-                          isEmptyString: value === '',
-                          trimmed: typeof value === 'string' ? value.replace(/<[^>]*>/g, '').trim() : null
-                        })
-                        // null이나 undefined를 빈 문자열로 변환
                         const processedValue = value == null ? '' : (typeof value === 'string' ? value : String(value))
-                        console.log('processedValue:', processedValue, 'length:', processedValue.length)
                         handleInputChange('private_tour_info', processedValue)
                       }}
                       height={120}
-                      placeholder="단독투어에 대한 정보를 입력해주세요"
+                      placeholder={tDetails('placeholderPrivateTour')}
                       enableResize={true}
                     />
                   </div>
@@ -2974,16 +2969,16 @@ export default function ProductDetailsTab({
 
                 {/* 취소 정책 */}
                 <div className="space-y-4">
-                  <h4 className="text-md font-medium text-gray-900">취소 정책</h4>
+                  <h4 className="text-md font-medium text-gray-900">{tDetails('cancellationPolicy')}</h4>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      취소 및 환불 정책
+                      {tDetails('cancellationPolicy')}
                     </label>
                     <LightRichEditor
                       value={getValue('cancellation_policy', true) as string}
                       onChange={(value) => handleInputChange('cancellation_policy', value || '')}
                       height={150}
-                      placeholder="취소 및 환불 정책을 입력해주세요"
+                      placeholder={tDetails('placeholderCancellation')}
                       enableResize={true}
                     />
                   </div>
@@ -2992,39 +2987,28 @@ export default function ProductDetailsTab({
                 {/* 채팅 공지 */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-md font-medium text-gray-900">채팅 공지</h4>
+                    <h4 className="text-md font-medium text-gray-900">{tDetails('sectionChatAnnouncement')}</h4>
                     <button
                       onClick={() => openCopyModal('chat_announcement')}
                       className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
-                      title="채팅 공지를 다른 채널에 복사"
+                      title={t('copyToChannels')}
                     >
                       <Copy className="h-3 w-3" />
-                      <span>복사</span>
+                      <span>{t('copy')}</span>
                     </button>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      채팅방 공지사항
+                      {tDetails('chatAnnouncementLabel')}
                     </label>
                     <LightRichEditor
                       value={getValue('chat_announcement', true) as string}
                       onChange={(value) => {
-                        console.log('채팅 공지 onChange 호출됨:', {
-                          value: value,
-                          valueType: typeof value,
-                          valueLength: value?.length,
-                          isNull: value === null,
-                          isUndefined: value === undefined,
-                          isEmptyString: value === '',
-                          trimmed: typeof value === 'string' ? value.replace(/<[^>]*>/g, '').trim() : null
-                        })
-                        // null이나 undefined를 빈 문자열로 변환
                         const processedValue = value == null ? '' : (typeof value === 'string' ? value : String(value))
-                        console.log('processedValue:', processedValue, 'length:', processedValue.length)
                         handleInputChange('chat_announcement', processedValue)
                       }}
                       height={120}
-                      placeholder="채팅방에 표시될 공지사항을 입력해주세요"
+                      placeholder={tDetails('placeholderChatAnnouncement')}
                       enableResize={true}
                     />
                   </div>
@@ -3038,7 +3022,7 @@ export default function ProductDetailsTab({
                     className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Save className="h-4 w-4 mr-2" />
-                    {saving ? '저장 중...' : '선택된 채널 저장'}
+                    {saving ? t('saveLoading') : t('saveSelectedChannels')}
                   </button>
                 </div>
 
@@ -3101,7 +3085,7 @@ export default function ProductDetailsTab({
           <div className="flex items-center space-x-4">
             {saveMessage && (
               <div className={`flex items-center text-sm ${
-                saveMessage.includes('성공') || saveMessage.includes('번역') ? 'text-green-600' : 'text-red-600'
+                saveMessageType === 'success' ? 'text-green-600' : 'text-red-600'
               }`}>
                 <AlertCircle className="h-4 w-4 mr-1" />
                 {saveMessage}
@@ -3114,7 +3098,7 @@ export default function ProductDetailsTab({
               className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save className="h-4 w-4 mr-2" />
-              {saving ? '저장 중...' : '저장'}
+              {saving ? t('saveLoading') : t('save')}
             </button>
           </div>
         </div>
@@ -3127,7 +3111,7 @@ export default function ProductDetailsTab({
           <div className="flex items-center space-x-4">
             {saveMessage && (
               <div className={`flex items-center text-sm ${
-                saveMessage.includes('성공') || saveMessage.includes('번역') ? 'text-green-600' : 'text-red-600'
+                saveMessageType === 'success' ? 'text-green-600' : 'text-red-600'
               }`}>
                 <AlertCircle className="h-4 w-4 mr-1" />
                 {saveMessage}
@@ -3153,19 +3137,7 @@ export default function ProductDetailsTab({
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
-                {copyFieldName === 'slogan' ? '슬로건' 
-                  : copyFieldName === 'included_not_included' ? '포함/불포함 정보'
-                  : copyFieldName === 'description' ? '상품 설명'
-                  : copyFieldName === 'pickup_drop_info' ? '픽업/드롭 정보'
-                  : copyFieldName === 'luggage_info' ? '수하물 정보'
-                  : copyFieldName === 'tour_operation_info' ? '투어 운영 정보'
-                  : copyFieldName === 'preparation_info' ? '준비 사항'
-                  : copyFieldName === 'small_group_info' ? '소그룹 정보'
-                  : copyFieldName === 'notice_info' ? '안내사항'
-                  : copyFieldName === 'private_tour_info' ? '단독투어 정보'
-                  : copyFieldName === 'cancellation_policy' ? '취소 정책'
-                  : copyFieldName === 'chat_announcement' ? '채팅 공지'
-                  : copyFieldName} 복사
+                {getCopyFieldLabel(copyFieldName)} - {t('copyToChannels')}
               </h3>
               <button
                 onClick={() => {
@@ -3180,14 +3152,14 @@ export default function ProductDetailsTab({
             </div>
             
             <p className="text-sm text-gray-600 mb-4">
-              현재 선택된 채널의 내용을 다른 채널에 복사할 수 있습니다. 복사할 채널을 선택해주세요.
+              {t('copyModalIntro')}
             </p>
 
             <div className="space-y-2 mb-4 max-h-96 overflow-y-auto">
               {channelGroups.map((group) => (
                 <div key={group.type} className="border border-gray-200 rounded-lg p-3">
                   <div className="font-medium text-gray-900 mb-2">
-                    {group.type === 'self' || group.type === 'SELF' ? 'self (그룹)' : group.type}
+                    {group.type === 'self' || group.type === 'SELF' ? t('selfGroupLabel') : group.type}
                   </div>
                   <div className="space-y-2">
                     {group.channels.map((channel) => {
@@ -3225,21 +3197,22 @@ export default function ProductDetailsTab({
                 }}
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
               >
-                취소
+                {t('cancel')}
               </button>
               <button
                 onClick={() => {
                   const selectedTargetIds = Object.keys(copyTargetChannels).filter(id => copyTargetChannels[id])
                   if (selectedTargetIds.length === 0) {
-                    setSaveMessage('복사할 채널을 선택해주세요.')
-                    setTimeout(() => setSaveMessage(''), 3000)
+                    setSaveMessage(t('msgSelectChannelsToCopy'))
+                    setSaveMessageType('error')
+                    setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 3000)
                     return
                   }
                   copyFieldToChannels(copyFieldName, selectedTargetIds)
                 }}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
               >
-                복사하기
+                {t('copyExecute')}
               </button>
             </div>
           </div>

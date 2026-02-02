@@ -172,6 +172,9 @@ export async function PUT(
     if (body.updated_by !== undefined) {
       updateData.updated_by = body.updated_by === '' ? null : body.updated_by
     }
+    if (body.deduct_card_fee_for_tips !== undefined) {
+      updateData.deduct_card_fee_for_tips = !!body.deduct_card_fee_for_tips
+    }
 
     // updateData에 실제로 업데이트할 필드가 있는지 확인
     if (Object.keys(updateData).length <= 1) { // updated_at만 있으면

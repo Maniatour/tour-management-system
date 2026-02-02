@@ -1,5 +1,6 @@
-import React, { memo } from 'react';
-import { Calculator, DollarSign, TrendingUp, TrendingDown } from 'lucide-react';
+import { memo } from 'react';
+import { useTranslations } from 'next-intl';
+import { Calculator } from 'lucide-react';
 import { RealTimePriceCalculation, PricingConfig } from '@/lib/types/dynamic-pricing';
 import { findHomepageChoiceData } from '@/utils/homepagePriceCalculator';
 
@@ -44,6 +45,7 @@ export const PriceCalculator = memo(function PriceCalculator({
   productBasePrice = { adult: 0, child: 0, infant: 0 },
   homepagePricingConfig = { markup_amount: 0, markup_percent: 0, choices_pricing: {} }
 }: PriceCalculatorProps) {
+  const t = useTranslations('products.dynamicPricingPage');
   const formatPrice = (price: number | undefined | null) => {
     if (price === undefined || price === null || isNaN(price)) {
       return '$0.00';
@@ -57,11 +59,11 @@ export const PriceCalculator = memo(function PriceCalculator({
       <div className="space-y-4">
         <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
           <Calculator className="h-5 w-5" />
-          <span>실시간 가격 계산</span>
+          <span>{t('realtimePriceCalc')}</span>
         </h3>
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <div className="text-center text-gray-500 py-8">
-            가격 설정을 입력하면 실시간 계산 결과가 표시됩니다.
+            {t('realtimeCalcHint')}
           </div>
         </div>
       </div>
@@ -96,39 +98,35 @@ export const PriceCalculator = memo(function PriceCalculator({
          return (
            <div className="bg-white border border-gray-200 rounded-lg p-4">
              <h4 className="text-md font-semibold text-gray-900 mb-4">
-               초이스별 가격 계산
+               {t('choicePriceCalc')}
              </h4>
              
              {/* 홈페이지 Net Price - 초이스별 표시 */}
              {homepageChannel && calculation && pricingConfig && (() => {
-               const homepageCommissionPercent = homepageChannel.commission_percent || 0;
-               const homepageCommissionRate = homepageCommissionPercent / 100;
-               const pricingType = (selectedChannel as any)?.pricing_type || 'separate';
-               const isSinglePrice = pricingType === 'single';
 
                return (
                  <div className="mb-3">
                    <div className="flex items-center justify-between mb-1">
                      <h5 className="text-xs font-semibold text-purple-700">
-                       홈페이지 가격 정보 (20%할인)
+                       {t('homepagePriceInfo')}
                      </h5>
                      <div className="text-xs text-purple-600">
-                       * 참고용
+                       * {t('forReference')}
                      </div>
                    </div>
                    <div className="overflow-x-auto">
                      <table className="w-full text-xs bg-gradient-to-br from-purple-100 to-pink-100 border-2 border-purple-400 shadow-md">
                        <thead>
                          <tr className="border-b border-purple-500 bg-purple-600">
-                           <th className="text-left py-1 px-2 font-bold text-white text-xs">초이스</th>
-                           <th className="text-right py-1 px-2 font-bold text-white text-xs">기본</th>
-                           <th className="text-right py-1 px-2 font-bold text-white text-xs">초이스</th>
-                           <th className="text-right py-1 px-2 font-bold text-white text-xs">판매가</th>
-                           <th className="text-right py-1 px-2 font-bold text-white text-xs">Net</th>
+                           <th className="text-left py-1 px-2 font-bold text-white text-xs">{t('choice')}</th>
+                           <th className="text-right py-1 px-2 font-bold text-white text-xs">{t('base')}</th>
+                           <th className="text-right py-1 px-2 font-bold text-white text-xs">{t('choice')}</th>
+                           <th className="text-right py-1 px-2 font-bold text-white text-xs">{t('salePrice')}</th>
+                           <th className="text-right py-1 px-2 font-bold text-white text-xs">{t('net')}</th>
                          </tr>
                        </thead>
                        <tbody>
-                        {Object.entries(choiceCalculations).map(([choiceId, choiceCalc]) => {
+                        {Object.entries(choiceCalculations).map(([choiceId]) => {
                           const combination = choiceCombinations.find(c => c.id === choiceId);
                           const combinationName = combination?.combination_name_ko || combination?.combination_name || choiceId;
                           
@@ -267,14 +265,13 @@ export const PriceCalculator = memo(function PriceCalculator({
                {!isOTAChannel && (() => {
                  // 동적 가격의 불포함 금액 사용
                  const notIncludedPrice = (pricingConfig as any)?.not_included_price || 0;
+                 const notIncludedType = (selectedChannel as any)?.not_included_type || 'none';
                  const pricingType = (selectedChannel as any)?.pricing_type || 'separate';
                  const isSinglePrice = pricingType === 'single';
                  const commissionBasePriceOnly = selectedChannel?.commission_base_price_only || false;
                  
                  // 불포함 금액이 있으면 항상 표시
                  const showNotIncludedColumn = notIncludedPrice > 0;
-                 // 불포함 금액이 설정되어 있으면 항상 계산 과정 표시
-                 const showCalculationProcess = showNotIncludedColumn;
                  
                  // 테이블 형식 결정: 조건에 맞으면 할인 가격처럼 가로 형식 (성인/아동/유아 별도 컬럼)
                  // 조건: pricing_type === 'separate' && commission_base_price_only === false && not_included_price === 0
@@ -283,26 +280,26 @@ export const PriceCalculator = memo(function PriceCalculator({
                  return (
                    <div>
                      <h5 className="text-sm font-semibold text-green-600 mb-3">
-                       최대 판매가 (기본가격 + 초이스 가격 + 업차지)
+                       {t('maxSalePriceFormula')}
                      </h5>
                      <div className="overflow-x-auto">
                        <table className="w-full text-xs bg-green-50">
                          <thead>
                            <tr className="border-b border-gray-200">
-                             <th className="text-left py-1 px-2 font-medium text-gray-700">초이스</th>
+                             <th className="text-left py-1 px-2 font-medium text-gray-700">{t('choice')}</th>
                              {useColumnFormat ? (
                                <>
-                                 <th className="text-right py-1 px-2 font-medium text-gray-700">성인</th>
-                                 <th className="text-right py-1 px-2 font-medium text-gray-700">아동</th>
-                                 <th className="text-right py-1 px-2 font-medium text-gray-700">유아</th>
+                                 <th className="text-right py-1 px-2 font-medium text-gray-700">{t('adult')}</th>
+                                 <th className="text-right py-1 px-2 font-medium text-gray-700">{t('child')}</th>
+                                 <th className="text-right py-1 px-2 font-medium text-gray-700">{t('infant')}</th>
                                </>
                              ) : (
                                <>
-                                 <th className="text-right py-1 px-2 font-medium text-gray-700">기본 가격</th>
+                                 <th className="text-right py-1 px-2 font-medium text-gray-700">{t('basePriceColumn')}</th>
                                  {showNotIncludedColumn && (
-                                   <th className="text-right py-1 px-2 font-medium text-gray-700">불포함 금액 / 초이스</th>
+                                   <th className="text-right py-1 px-2 font-medium text-gray-700">{t('notIncludedOrChoice')}</th>
                                  )}
-                                 <th className="text-right py-1 px-2 font-medium text-gray-700">최종 가격</th>
+                                 <th className="text-right py-1 px-2 font-medium text-gray-700">{t('finalPrice')}</th>
                                </>
                              )}
                            </tr>
@@ -331,13 +328,13 @@ export const PriceCalculator = memo(function PriceCalculator({
                                      {combinationName}
                                    </td>
                                    <td className="py-1 px-2 text-right font-bold text-green-600">
-                                     {formatPrice(totalAdultPrice)}
+                                     {formatPrice(totalAdultPrice ?? 0)}
                                    </td>
                                    <td className="py-1 px-2 text-right font-bold text-green-600">
-                                     {formatPrice(totalChildPrice)}
+                                     {formatPrice(totalChildPrice ?? 0)}
                                    </td>
                                    <td className="py-1 px-2 text-right font-bold text-green-600">
-                                     {formatPrice(totalInfantPrice)}
+                                     {formatPrice(totalInfantPrice ?? 0)}
                                    </td>
                                  </tr>
                                );
@@ -390,9 +387,9 @@ export const PriceCalculator = memo(function PriceCalculator({
                                        <div>{formatPrice(basePrice)}</div>
                                      ) : (
                                        <>
-                                         <div>성인: {formatPrice(baseAdultPrice)}</div>
-                                         <div>아동: {formatPrice(baseChildPrice)}</div>
-                                         <div>유아: {formatPrice(baseInfantPrice)}</div>
+                                         <div>{t('adultLabel')}: {formatPrice(baseAdultPrice)}</div>
+                                         <div>{t('childLabel')}: {formatPrice(baseChildPrice)}</div>
+                                         <div>{t('infantLabel')}: {formatPrice(baseInfantPrice)}</div>
                                        </>
                                      )}
                                    </td>
@@ -402,9 +399,9 @@ export const PriceCalculator = memo(function PriceCalculator({
                                          <div>{formatPrice(notIncludedAmount)}</div>
                                        ) : (
                                          <>
-                                           <div>성인: {formatPrice(notIncludedAdult)}</div>
-                                           <div>아동: {formatPrice(notIncludedChild)}</div>
-                                           <div>유아: {formatPrice(notIncludedInfant)}</div>
+                                           <div>{t('adultLabel')}: {formatPrice(notIncludedAdult)}</div>
+                                           <div>{t('childLabel')}: {formatPrice(notIncludedChild)}</div>
+                                           <div>{t('infantLabel')}: {formatPrice(notIncludedInfant)}</div>
                                          </>
                                        )}
                                      </td>
@@ -414,9 +411,9 @@ export const PriceCalculator = memo(function PriceCalculator({
                                        <div>{formatPrice((totalPrice || 0) + (showNotIncludedColumn ? notIncludedAmount : 0))}</div>
                                      ) : (
                                        <>
-                                         <div>성인: {formatPrice(totalAdultPrice + (showNotIncludedColumn ? notIncludedAdult : 0))}</div>
-                                         <div>아동: {formatPrice(totalChildPrice + (showNotIncludedColumn ? notIncludedChild : 0))}</div>
-                                         <div>유아: {formatPrice(totalInfantPrice + (showNotIncludedColumn ? notIncludedInfant : 0))}</div>
+                                         <div>{t('adultLabel')}: {formatPrice((totalAdultPrice ?? 0) + (showNotIncludedColumn ? notIncludedAdult : 0))}</div>
+                                         <div>{t('childLabel')}: {formatPrice((totalChildPrice ?? 0) + (showNotIncludedColumn ? notIncludedChild : 0))}</div>
+                                         <div>{t('infantLabel')}: {formatPrice((totalInfantPrice ?? 0) + (showNotIncludedColumn ? notIncludedInfant : 0))}</div>
                                        </>
                                      )}
                                    </td>
@@ -439,20 +436,20 @@ export const PriceCalculator = memo(function PriceCalculator({
                return (
                  <div>
                  <h5 className="text-sm font-semibold text-orange-600 mb-3">
-                   할인 가격 (최대 판매가 × 쿠폰%)
+                   {t('discountPriceFormula')}
                  </h5>
                  <div className="overflow-x-auto">
                    <table className="w-full text-xs bg-orange-50">
                      <thead>
                        <tr className="border-b border-gray-200">
-                         <th className="text-left py-1 px-2 font-medium text-gray-700">초이스</th>
+                         <th className="text-left py-1 px-2 font-medium text-gray-700">{t('choice')}</th>
                          {isSinglePrice ? (
-                           <th className="text-right py-1 px-2 font-medium text-gray-700">단일 가격</th>
+                           <th className="text-right py-1 px-2 font-medium text-gray-700">{t('singlePrice')}</th>
                          ) : (
                            <>
-                             <th className="text-right py-1 px-2 font-medium text-gray-700">성인</th>
-                             <th className="text-right py-1 px-2 font-medium text-gray-700">아동</th>
-                             <th className="text-right py-1 px-2 font-medium text-gray-700">유아</th>
+                             <th className="text-right py-1 px-2 font-medium text-gray-700">{t('adult')}</th>
+                             <th className="text-right py-1 px-2 font-medium text-gray-700">{t('child')}</th>
+                             <th className="text-right py-1 px-2 font-medium text-gray-700">{t('infant')}</th>
                            </>
                          )}
                        </tr>
@@ -510,7 +507,7 @@ export const PriceCalculator = memo(function PriceCalculator({
              {/* Net Price (할인가격 - 커미션) - 항상 표시 */}
              <div>
                <h5 className="text-sm font-semibold text-blue-600 mb-3">
-                 Net Price (할인가격 - 커미션)
+                 {t('netPriceFormula')}
                </h5>
                <div className="overflow-x-auto">
                  {(() => {
@@ -520,14 +517,11 @@ export const PriceCalculator = memo(function PriceCalculator({
                    const notIncludedPrice = dynamicNotIncludedPrice > 0 ? dynamicNotIncludedPrice : channelNotIncludedPrice;
                    
                    const notIncludedType = (selectedChannel as any)?.not_included_type || 'none';
-                   const hasNotIncludedPrice = (selectedChannel as any)?.has_not_included_price || false;
                    const pricingType = (selectedChannel as any)?.pricing_type || 'separate';
                    const isSinglePrice = pricingType === 'single';
                    const commissionBasePriceOnly = selectedChannel?.commission_base_price_only || false;
                    // 불포함 금액이 설정되어 있으면 항상 표시
                    const showNotIncludedColumn = dynamicNotIncludedPrice > 0 || (notIncludedType === 'amount_only' || notIncludedType === 'amount_and_choice');
-                   // 불포함 금액이 설정되어 있으면 항상 계산 과정 표시
-                   const showCalculationProcess = showNotIncludedColumn;
                    
                    // 테이블 형식 결정: 조건에 맞으면 할인 가격처럼 가로 형식 (성인/아동/유아 별도 컬럼)
                    // 조건: pricing_type === 'separate' && commission_base_price_only === false && not_included_type === 'none'
@@ -537,20 +531,20 @@ export const PriceCalculator = memo(function PriceCalculator({
                      <table className="w-full text-xs bg-blue-50">
                        <thead>
                          <tr className="border-b border-gray-200">
-                           <th className="text-left py-1 px-2 font-medium text-gray-700">초이스</th>
+                           <th className="text-left py-1 px-2 font-medium text-gray-700">{t('choice')}</th>
                            {useColumnFormat ? (
                              <>
-                               <th className="text-right py-1 px-2 font-medium text-gray-700">성인</th>
-                               <th className="text-right py-1 px-2 font-medium text-gray-700">아동</th>
-                               <th className="text-right py-1 px-2 font-medium text-gray-700">유아</th>
+                               <th className="text-right py-1 px-2 font-medium text-gray-700">{t('adult')}</th>
+                               <th className="text-right py-1 px-2 font-medium text-gray-700">{t('child')}</th>
+                               <th className="text-right py-1 px-2 font-medium text-gray-700">{t('infant')}</th>
                              </>
                            ) : (
                              <>
-                               <th className="text-right py-1 px-2 font-medium text-gray-700">Net Price</th>
+                               <th className="text-right py-1 px-2 font-medium text-gray-700">{t('netPriceColumn')}</th>
                                {showNotIncludedColumn && (
-                                 <th className="text-right py-1 px-2 font-medium text-gray-700">불포함 금액</th>
+                                 <th className="text-right py-1 px-2 font-medium text-gray-700">{t('notIncludedColumn')}</th>
                                )}
-                               <th className="text-right py-1 px-2 font-medium text-gray-700">최종 가격</th>
+                               <th className="text-right py-1 px-2 font-medium text-gray-700">{t('finalPrice')}</th>
                              </>
                            )}
                          </tr>
@@ -571,18 +565,18 @@ export const PriceCalculator = memo(function PriceCalculator({
                              const basePrice = isSinglePrice 
                                ? (calculation?.basePrice?.adult || 0)
                                : null;
-                             const baseAdultPrice = isSinglePrice ? basePrice : (calculation?.basePrice?.adult || 0);
-                             const baseChildPrice = isSinglePrice ? basePrice : (calculation?.basePrice?.child || 0);
-                             const baseInfantPrice = isSinglePrice ? basePrice : (calculation?.basePrice?.infant || 0);
+                             const baseAdultPrice = isSinglePrice ? (basePrice ?? 0) : (calculation?.basePrice?.adult || 0);
+                             const baseChildPrice = isSinglePrice ? (basePrice ?? 0) : (calculation?.basePrice?.child || 0);
+                             const baseInfantPrice = isSinglePrice ? (basePrice ?? 0) : (calculation?.basePrice?.infant || 0);
                              
                              // 초이스 가격 - 단일 가격 모드면 성인 가격만 사용
                              const choicePricing = pricingConfig?.choicePricing[choiceId];
                              choicePrice = isSinglePrice 
                                ? (choicePricing?.adult_price || 0)
                                : null;
-                             choiceAdultPrice = isSinglePrice ? (choicePrice || 0) : (choicePricing?.adult_price || 0);
-                             choiceChildPrice = isSinglePrice ? (choicePrice || 0) : (choicePricing?.child_price || 0);
-                             choiceInfantPrice = isSinglePrice ? (choicePrice || 0) : (choicePricing?.infant_price || 0);
+                             choiceAdultPrice = isSinglePrice ? (choicePrice ?? 0) : (choicePricing?.adult_price || 0);
+                             choiceChildPrice = isSinglePrice ? (choicePrice ?? 0) : (choicePricing?.child_price || 0);
+                             choiceInfantPrice = isSinglePrice ? (choicePrice ?? 0) : (choicePricing?.infant_price || 0);
                              
                              // 불포함 금액 계산
                              if (showNotIncludedColumn) {
@@ -592,7 +586,7 @@ export const PriceCalculator = memo(function PriceCalculator({
                                  notIncludedChild = notIncludedPrice;
                                  notIncludedInfant = notIncludedPrice;
                                } else if (notIncludedType === 'amount_and_choice') {
-                                 notIncludedAmount = notIncludedPrice + (choicePrice || 0);
+                                 notIncludedAmount = notIncludedPrice + (choicePrice ?? 0);
                                  notIncludedAdult = notIncludedPrice + choiceAdultPrice;
                                  notIncludedChild = notIncludedPrice + choiceChildPrice;
                                  notIncludedInfant = notIncludedPrice + choiceInfantPrice;
@@ -605,19 +599,19 @@ export const PriceCalculator = memo(function PriceCalculator({
                              if (notIncludedType === 'amount_and_choice') {
                                // Net Price = 기본 가격 * (1 - 수수료%) (초이스 가격 제외)
                                netPrice = isSinglePrice 
-                                 ? (basePrice * (1 - commissionRate))
+                                 ? ((basePrice ?? 0) * (1 - commissionRate))
                                  : null;
-                               netAdultPrice = isSinglePrice ? netPrice : (baseAdultPrice * (1 - commissionRate));
-                               netChildPrice = isSinglePrice ? netPrice : (baseChildPrice * (1 - commissionRate));
-                               netInfantPrice = isSinglePrice ? netPrice : (baseInfantPrice * (1 - commissionRate));
+                               netAdultPrice = isSinglePrice ? (netPrice ?? 0) : (baseAdultPrice * (1 - commissionRate));
+                               netChildPrice = isSinglePrice ? (netPrice ?? 0) : (baseChildPrice * (1 - commissionRate));
+                               netInfantPrice = isSinglePrice ? (netPrice ?? 0) : (baseInfantPrice * (1 - commissionRate));
                              } else {
                                // Net Price = 기본 가격 * (1 - 수수료%) + 초이스 가격
                                netPrice = isSinglePrice 
-                                 ? (basePrice * (1 - commissionRate) + (choicePrice || 0))
+                                 ? ((basePrice ?? 0) * (1 - commissionRate) + (choicePrice ?? 0))
                                  : null;
-                               netAdultPrice = isSinglePrice ? netPrice : (baseAdultPrice * (1 - commissionRate) + choiceAdultPrice);
-                               netChildPrice = isSinglePrice ? netPrice : (baseChildPrice * (1 - commissionRate) + choiceChildPrice);
-                               netInfantPrice = isSinglePrice ? netPrice : (baseInfantPrice * (1 - commissionRate) + choiceInfantPrice);
+                               netAdultPrice = isSinglePrice ? (netPrice ?? 0) : (baseAdultPrice * (1 - commissionRate) + choiceAdultPrice);
+                               netChildPrice = isSinglePrice ? (netPrice ?? 0) : (baseChildPrice * (1 - commissionRate) + choiceChildPrice);
+                               netInfantPrice = isSinglePrice ? (netPrice ?? 0) : (baseInfantPrice * (1 - commissionRate) + choiceInfantPrice);
                              }
                            } else {
                              // choiceCalc.netPrice는 이미 (상품 기본 가격 + 초이스 가격 + 마크업)에 할인과 커미션이 적용된 값
@@ -658,9 +652,9 @@ export const PriceCalculator = memo(function PriceCalculator({
                            const finalPrice = isSinglePrice 
                              ? ((netPrice || 0) + notIncludedAmount)
                              : null;
-                           const finalAdultPrice = isSinglePrice ? finalPrice : (netAdultPrice + notIncludedAdult);
-                           const finalChildPrice = isSinglePrice ? finalPrice : (netChildPrice + notIncludedChild);
-                           const finalInfantPrice = isSinglePrice ? finalPrice : (netInfantPrice + notIncludedInfant);
+                           const finalAdultPrice = isSinglePrice ? finalPrice : ((netAdultPrice ?? 0) + notIncludedAdult);
+                           const finalChildPrice = isSinglePrice ? finalPrice : ((netChildPrice ?? 0) + notIncludedChild);
+                           const finalInfantPrice = isSinglePrice ? finalPrice : ((netInfantPrice ?? 0) + notIncludedInfant);
                            
                            // 로어 앤텔롭 캐년과 엑스 앤텔롭 캐년 구분
                            const combinationName = combination?.combination_name_ko || combination?.combination_name || choiceId;
@@ -676,13 +670,13 @@ export const PriceCalculator = memo(function PriceCalculator({
                                    {combinationName}
                                  </td>
                                  <td className="py-1 px-2 text-right font-bold text-blue-600">
-                                   {formatPrice(netAdultPrice)}
+                                   {formatPrice(netAdultPrice ?? 0)}
                                  </td>
                                  <td className="py-1 px-2 text-right font-bold text-blue-600">
-                                   {formatPrice(netChildPrice)}
+                                   {formatPrice(netChildPrice ?? 0)}
                                  </td>
                                  <td className="py-1 px-2 text-right font-bold text-blue-600">
-                                   {formatPrice(netInfantPrice)}
+                                   {formatPrice(netInfantPrice ?? 0)}
                                  </td>
                                </tr>
                              );
@@ -695,12 +689,12 @@ export const PriceCalculator = memo(function PriceCalculator({
                                  </td>
                                  <td className="py-1 px-2 text-right">
                                    {isSinglePrice ? (
-                                     <div className="font-medium text-gray-900">{formatPrice(netPrice)}</div>
+                                     <div className="font-medium text-gray-900">{formatPrice(netPrice ?? 0)}</div>
                                    ) : (
                                      <>
-                                       <div className="font-medium text-gray-900">성인: {formatPrice(netAdultPrice)}</div>
-                                       <div className="font-medium text-gray-900">아동: {formatPrice(netChildPrice)}</div>
-                                       <div className="font-medium text-gray-900">유아: {formatPrice(netInfantPrice)}</div>
+                                       <div className="font-medium text-gray-900">성인: {formatPrice(netAdultPrice ?? 0)}</div>
+                                       <div className="font-medium text-gray-900">아동: {formatPrice(netChildPrice ?? 0)}</div>
+                                       <div className="font-medium text-gray-900">유아: {formatPrice(netInfantPrice ?? 0)}</div>
                                      </>
                                    )}
                                  </td>
@@ -758,25 +752,22 @@ export const PriceCalculator = memo(function PriceCalculator({
                    const notIncludedPrice = dynamicNotIncludedPrice > 0 ? dynamicNotIncludedPrice : channelNotIncludedPrice;
                    
                    const notIncludedType = (selectedChannel as any)?.not_included_type || 'none';
-                   const hasNotIncludedPrice = (selectedChannel as any)?.has_not_included_price || false;
                    const pricingType = (selectedChannel as any)?.pricing_type || 'separate';
                    const isSinglePrice = pricingType === 'single';
                    // 불포함 금액이 설정되어 있으면 항상 표시
                    const showNotIncludedColumn = dynamicNotIncludedPrice > 0 || (notIncludedType === 'amount_only' || notIncludedType === 'amount_and_choice');
-                   // 불포함 금액이 설정되어 있으면 항상 계산 과정 표시
-                   const showCalculationProcess = showNotIncludedColumn;
                    
                    return (
                      <>
                        <table className="w-full text-xs bg-purple-50">
                          <thead>
                            <tr className="border-b border-gray-200">
-                             <th className="text-left py-1 px-2 font-medium text-gray-700">초이스</th>
-                             <th className="text-right py-1 px-2 font-medium text-gray-700">OTA 판매가</th>
+                             <th className="text-left py-1 px-2 font-medium text-gray-700">{t('choice')}</th>
+                             <th className="text-right py-1 px-2 font-medium text-gray-700">{t('otaSalePriceColumn')}</th>
                              {showNotIncludedColumn && (
-                               <th className="text-right py-1 px-2 font-medium text-gray-700">불포함 금액</th>
+                               <th className="text-right py-1 px-2 font-medium text-gray-700">{t('notIncludedColumn')}</th>
                              )}
-                             <th className="text-right py-1 px-2 font-medium text-gray-700">최종 가격</th>
+                             <th className="text-right py-1 px-2 font-medium text-gray-700">{t('finalPrice')}</th>
                            </tr>
                          </thead>
                          <tbody>
@@ -793,13 +784,13 @@ export const PriceCalculator = memo(function PriceCalculator({
                                    ? (calculation?.basePrice?.adult || 0)
                                    : (choiceCalc.markupPrice.adult || 0))
                                : null;
-                             const maxAdultPrice = isSinglePrice ? maxPrice : (commissionBasePriceOnly 
+                             const maxAdultPrice = isSinglePrice ? (maxPrice ?? 0) : (commissionBasePriceOnly 
                                ? (calculation?.basePrice?.adult || 0)
                                : (choiceCalc.markupPrice.adult || 0));
-                             const maxChildPrice = isSinglePrice ? maxPrice : (commissionBasePriceOnly
+                             const maxChildPrice = isSinglePrice ? (maxPrice ?? 0) : (commissionBasePriceOnly
                                ? (calculation?.basePrice?.child || 0)
                                : (choiceCalc.markupPrice.child || 0));
-                             const maxInfantPrice = isSinglePrice ? maxPrice : (commissionBasePriceOnly
+                             const maxInfantPrice = isSinglePrice ? (maxPrice ?? 0) : (commissionBasePriceOnly
                                ? (calculation?.basePrice?.infant || 0)
                                : (choiceCalc.markupPrice.infant || 0));
                              
@@ -808,40 +799,40 @@ export const PriceCalculator = memo(function PriceCalculator({
                              const couponPercent = pricingConfig?.coupon_percent || 0;
                              const couponRate = couponPercent / 100;
                              const couponDenominator = 1 - couponRate;
-                             let otaPrice, otaAdultPrice, otaChildPrice, otaInfantPrice;
+                             let otaPrice: number | null, otaAdultPrice: number, otaChildPrice: number, otaInfantPrice: number;
                              
                              if (commissionBasePriceOnly) {
                                // 기본 가격에서 직접 수수료 역산 (20% 할인 없음, 쿠폰 할인 없음)
                                otaPrice = isSinglePrice 
-                                 ? (commissionDenominator > 0 && commissionDenominator !== 0 ? maxPrice / commissionDenominator : maxPrice)
+                                 ? (commissionDenominator > 0 && commissionDenominator !== 0 ? (maxPrice ?? 0) / commissionDenominator : (maxPrice ?? 0))
                                  : null;
-                               otaAdultPrice = isSinglePrice ? otaPrice : (commissionDenominator > 0 && commissionDenominator !== 0 ? maxAdultPrice / commissionDenominator : maxAdultPrice);
-                               otaChildPrice = isSinglePrice ? otaPrice : (commissionDenominator > 0 && commissionDenominator !== 0 ? maxChildPrice / commissionDenominator : maxChildPrice);
-                               otaInfantPrice = isSinglePrice ? otaPrice : (commissionDenominator > 0 && commissionDenominator !== 0 ? maxInfantPrice / commissionDenominator : maxInfantPrice);
+                               otaAdultPrice = isSinglePrice ? (otaPrice ?? 0) : (commissionDenominator > 0 && commissionDenominator !== 0 ? maxAdultPrice / commissionDenominator : maxAdultPrice);
+                               otaChildPrice = isSinglePrice ? (otaPrice ?? 0) : (commissionDenominator > 0 && commissionDenominator !== 0 ? maxChildPrice / commissionDenominator : maxChildPrice);
+                               otaInfantPrice = isSinglePrice ? (otaPrice ?? 0) : (commissionDenominator > 0 && commissionDenominator !== 0 ? maxInfantPrice / commissionDenominator : maxInfantPrice);
                              } else {
                                // 최대 판매가 × 0.8 (20% 할인 고정값)
                                const priceAfter20PercentDiscount = isSinglePrice 
-                                 ? (maxPrice * 0.8)
+                                 ? ((maxPrice ?? 0) * 0.8)
                                  : null;
-                               const priceAfter20PercentDiscountAdult = isSinglePrice ? priceAfter20PercentDiscount : (maxAdultPrice * 0.8);
-                               const priceAfter20PercentDiscountChild = isSinglePrice ? priceAfter20PercentDiscount : (maxChildPrice * 0.8);
-                               const priceAfter20PercentDiscountInfant = isSinglePrice ? priceAfter20PercentDiscount : (maxInfantPrice * 0.8);
+                               const priceAfter20PercentDiscountAdult = isSinglePrice ? (priceAfter20PercentDiscount ?? 0) : (maxAdultPrice * 0.8);
+                               const priceAfter20PercentDiscountChild = isSinglePrice ? (priceAfter20PercentDiscount ?? 0) : (maxChildPrice * 0.8);
+                               const priceAfter20PercentDiscountInfant = isSinglePrice ? (priceAfter20PercentDiscount ?? 0) : (maxInfantPrice * 0.8);
                                
                                // 쿠폰 할인 역산: 할인된 가격을 원래 가격으로 복원
                                const priceAfterCouponReverse = isSinglePrice 
-                                 ? (couponDenominator > 0 && couponDenominator !== 0 ? (priceAfter20PercentDiscount || 0) / couponDenominator : (priceAfter20PercentDiscount || 0))
+                                 ? (couponDenominator > 0 && couponDenominator !== 0 ? (priceAfter20PercentDiscount ?? 0) / couponDenominator : (priceAfter20PercentDiscount ?? 0))
                                  : null;
-                               const priceAfterCouponReverseAdult = isSinglePrice ? priceAfterCouponReverse : (couponDenominator > 0 && couponDenominator !== 0 ? priceAfter20PercentDiscountAdult / couponDenominator : priceAfter20PercentDiscountAdult);
-                               const priceAfterCouponReverseChild = isSinglePrice ? priceAfterCouponReverse : (couponDenominator > 0 && couponDenominator !== 0 ? priceAfter20PercentDiscountChild / couponDenominator : priceAfter20PercentDiscountChild);
-                               const priceAfterCouponReverseInfant = isSinglePrice ? priceAfterCouponReverse : (couponDenominator > 0 && couponDenominator !== 0 ? priceAfter20PercentDiscountInfant / couponDenominator : priceAfter20PercentDiscountInfant);
+                               const priceAfterCouponReverseAdult = isSinglePrice ? (priceAfterCouponReverse ?? 0) : (couponDenominator > 0 && couponDenominator !== 0 ? priceAfter20PercentDiscountAdult / couponDenominator : priceAfter20PercentDiscountAdult);
+                               const priceAfterCouponReverseChild = isSinglePrice ? (priceAfterCouponReverse ?? 0) : (couponDenominator > 0 && couponDenominator !== 0 ? priceAfter20PercentDiscountChild / couponDenominator : priceAfter20PercentDiscountChild);
+                               const priceAfterCouponReverseInfant = isSinglePrice ? (priceAfterCouponReverse ?? 0) : (couponDenominator > 0 && couponDenominator !== 0 ? priceAfter20PercentDiscountInfant / couponDenominator : priceAfter20PercentDiscountInfant);
                                
                                // OTA 판매가 = (최대 판매가 × 0.8) / (1 - 쿠폰 할인%) / (1 - 수수료율)
                                otaPrice = isSinglePrice 
-                                 ? (commissionDenominator > 0 && commissionDenominator !== 0 ? (priceAfterCouponReverse || 0) / commissionDenominator : (priceAfterCouponReverse || 0))
+                                 ? (commissionDenominator > 0 && commissionDenominator !== 0 ? (priceAfterCouponReverse ?? 0) / commissionDenominator : (priceAfterCouponReverse ?? 0))
                                  : null;
-                               otaAdultPrice = isSinglePrice ? otaPrice : (commissionDenominator > 0 && commissionDenominator !== 0 ? priceAfterCouponReverseAdult / commissionDenominator : priceAfterCouponReverseAdult);
-                               otaChildPrice = isSinglePrice ? otaPrice : (commissionDenominator > 0 && commissionDenominator !== 0 ? priceAfterCouponReverseChild / commissionDenominator : priceAfterCouponReverseChild);
-                               otaInfantPrice = isSinglePrice ? otaPrice : (commissionDenominator > 0 && commissionDenominator !== 0 ? priceAfterCouponReverseInfant / commissionDenominator : priceAfterCouponReverseInfant);
+                               otaAdultPrice = isSinglePrice ? (otaPrice ?? 0) : (commissionDenominator > 0 && commissionDenominator !== 0 ? priceAfterCouponReverseAdult / commissionDenominator : priceAfterCouponReverseAdult);
+                               otaChildPrice = isSinglePrice ? (otaPrice ?? 0) : (commissionDenominator > 0 && commissionDenominator !== 0 ? priceAfterCouponReverseChild / commissionDenominator : priceAfterCouponReverseChild);
+                               otaInfantPrice = isSinglePrice ? (otaPrice ?? 0) : (commissionDenominator > 0 && commissionDenominator !== 0 ? priceAfterCouponReverseInfant / commissionDenominator : priceAfterCouponReverseInfant);
                              }
                              
                              // 불포함 금액 계산
@@ -890,12 +881,12 @@ export const PriceCalculator = memo(function PriceCalculator({
                                  </td>
                                  <td className="py-1 px-2 text-right">
                                    {isSinglePrice ? (
-                                     <div className="font-medium text-gray-900">{formatPrice(otaPrice)}</div>
+                                     <div className="font-medium text-gray-900">{formatPrice(otaPrice ?? 0)}</div>
                                    ) : (
                                      <>
-                                       <div className="font-medium text-gray-900">성인: {formatPrice(otaAdultPrice)}</div>
-                                       <div className="font-medium text-gray-900">아동: {formatPrice(otaChildPrice)}</div>
-                                       <div className="font-medium text-gray-900">유아: {formatPrice(otaInfantPrice)}</div>
+                                       <div className="font-medium text-gray-900">{t('adultLabel')}: {formatPrice(otaAdultPrice)}</div>
+                                       <div className="font-medium text-gray-900">{t('childLabel')}: {formatPrice(otaChildPrice)}</div>
+                                       <div className="font-medium text-gray-900">{t('infantLabel')}: {formatPrice(otaInfantPrice)}</div>
                                      </>
                                    )}
                                  </td>
@@ -917,9 +908,9 @@ export const PriceCalculator = memo(function PriceCalculator({
                                      <div>{formatPrice(finalPrice || 0)}</div>
                                    ) : (
                                      <>
-                                       <div>성인: {formatPrice(finalAdultPrice)}</div>
-                                       <div>아동: {formatPrice(finalChildPrice)}</div>
-                                       <div>유아: {formatPrice(finalInfantPrice)}</div>
+                                       <div>{t('adultLabel')}: {formatPrice(finalAdultPrice)}</div>
+                                       <div>{t('childLabel')}: {formatPrice(finalChildPrice)}</div>
+                                       <div>{t('infantLabel')}: {formatPrice(finalInfantPrice)}</div>
                                      </>
                                    )}
                                  </td>
@@ -931,11 +922,11 @@ export const PriceCalculator = memo(function PriceCalculator({
                        <div className="mt-2 text-xs text-gray-600 px-2">
                          {selectedChannel?.commission_base_price_only ? (
                            <>
-                             기본 가격만 사용 (초이스 가격 제외, 20% 할인 제외, 쿠폰 할인 제외) / (1 - {commissionPercent}%) = OTA 판매가<br/>
-                             <span className="text-orange-600 font-medium">※ 초이스 가격과 불포함 금액은 OTA 판매가 계산에서 제외되며 밸런스로 처리됩니다</span>
+                             {t('otaFormulaBaseOnly', { percent: commissionPercent })}<br/>
+                             <span className="text-orange-600 font-medium">{t('otaChoiceExcludedNote')}</span>
                            </>
                          ) : (
-                           <>최대 판매가 × 0.8 (20% 할인 고정) / (1 - {couponPercent}% 쿠폰 할인) / (1 - {commissionPercent}% 수수료) = OTA 판매가</>
+                           <>{t('otaFormulaFull', { coupon: couponPercent, commission: commissionPercent })}</>
                          )}
                        </div>
                      </>
@@ -951,12 +942,12 @@ export const PriceCalculator = memo(function PriceCalculator({
 
       {/* 설정 요약 */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-        <h4 className="text-sm font-medium text-gray-700 mb-2">현재 설정</h4>
+        <h4 className="text-sm font-medium text-gray-700 mb-2">{t('currentSettings')}</h4>
         <div className="text-xs text-gray-600 space-y-1">
-          <div>불포함 금액: {formatPrice(pricingConfig?.not_included_price)}</div>
-          <div>마크업: {pricingConfig?.markup_amount || 0}$ + {pricingConfig?.markup_percent || 0}%</div>
-          <div>쿠폰 할인: {pricingConfig?.coupon_percent || 0}%</div>
-          <div>수수료: {pricingConfig?.commission_percent || 0}%</div>
+          <div>{t('notIncludedAmountLabel')} {formatPrice(pricingConfig?.not_included_price)}</div>
+          <div>{t('markupLabel')} {pricingConfig?.markup_amount || 0}$ + {pricingConfig?.markup_percent || 0}%</div>
+          <div>{t('couponLabel')} {pricingConfig?.coupon_percent || 0}%</div>
+          <div>{t('commissionLabel')} {pricingConfig?.commission_percent || 0}%</div>
         </div>
         
         {/* 채널 설정 상세 설명 */}
@@ -973,23 +964,23 @@ export const PriceCalculator = memo(function PriceCalculator({
               <div className="bg-green-50 border border-green-200 rounded-md p-3">
                 <h5 className="text-xs font-semibold text-green-900 mb-2 flex items-center">
                   <span className="mr-1">💰</span>
-                  가격 판매 방식
+                  {t('pricingMode')}
                 </h5>
                 <div className="text-xs text-green-800 space-y-1">
                   {pricingType === 'single' ? (
                     <>
-                      <div className="font-medium text-green-900">✓ 단일 가격 모드</div>
+                      <div className="font-medium text-green-900">✓ {t('singlePriceModeBullet')}</div>
                       <div className="pl-2 border-l-2 border-green-300">
-                        <div>• 성인, 아동, 유아 구분 없이 하나의 통일된 가격으로 판매합니다</div>
-                        <div>• 모든 연령대에 동일한 가격이 적용됩니다</div>
+                        <div>• {t('singlePriceModeDesc')}</div>
+                        <div>• {t('allAgesSamePrice')}</div>
                       </div>
                     </>
                   ) : (
                     <>
-                      <div className="font-medium text-green-900">✓ 분리 가격 모드</div>
+                      <div className="font-medium text-green-900">✓ {t('separatePriceModeBullet')}</div>
                       <div className="pl-2 border-l-2 border-green-300">
-                        <div>• 성인, 아동, 유아 가격을 각각 별도로 관리합니다</div>
-                        <div>• 각 연령대별로 다른 가격을 설정할 수 있습니다</div>
+                        <div>• {t('separatePriceModeDesc')}</div>
+                        <div>• {t('eachAgeSeparate')}</div>
                       </div>
                     </>
                   )}
@@ -1000,30 +991,26 @@ export const PriceCalculator = memo(function PriceCalculator({
               <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
                 <h5 className="text-xs font-semibold text-blue-900 mb-2 flex items-center">
                   <span className="mr-1">📋</span>
-                  {selectedChannel.name} 채널 커미션 계산 방식
+                  {t('channelCommissionTitle', { name: selectedChannel.name })}
                 </h5>
                 <div className="text-xs text-blue-800 space-y-1.5">
                   {selectedChannel.commission_base_price_only ? (
                     <>
-                      <div className="font-medium text-blue-900">✓ 판매가격에만 커미션 & 쿠폰 적용</div>
+                      <div className="font-medium text-blue-900">✓ {t('commissionOnSaleOnly')}</div>
                       <div className="pl-2 border-l-2 border-blue-300">
-                        <div>• 커미션 및 쿠폰 할인은 동적 가격의 기본 가격(판매가격)에만 적용됩니다</div>
-                        <div>• 초이스 가격과 불포함 금액은 커미션 및 쿠폰 할인에서 제외됩니다</div>
-                        <div>• 초이스 가격 + 불포함 금액은 밸런스로 처리되어 현금 수금됩니다</div>
+                        <div>• {t('commissionOnSaleOnlyDesc')}</div>
+                        <div>• {t('commissionOnSaleOnlyNote')}</div>
                         <div className="mt-1 text-blue-700">
-                          예: 판매가격($140) + 초이스($75) + 불포함($15) = 총 $230<br/>
-                          커미션 10% = $14 (판매가격 $140에만 적용)<br/>
-                          Net = ($140 - $14) + $75 + $15 = $216<br/>
-                          Balance = $75 + $15 = $90
+                          {t('commissionExample')}
                         </div>
                       </div>
                     </>
                   ) : (
                     <>
-                      <div className="font-medium text-blue-900">✓ 전체 가격에 커미션 & 쿠폰 적용</div>
+                      <div className="font-medium text-blue-900">✓ {t('commissionOnTotalDesc')}</div>
                       <div className="pl-2 border-l-2 border-blue-300">
-                        <div>• 커미션 및 쿠폰 할인은 전체 가격(판매가격 + 초이스 + 불포함 금액)에 적용됩니다</div>
-                        <div>• 모든 가격 구성 요소에 동일한 비율이 적용됩니다</div>
+                        <div>• {t('commissionOnTotalDesc')}</div>
+                        <div>• {t('commissionOnTotalDesc2')}</div>
                       </div>
                     </>
                   )}
@@ -1035,36 +1022,33 @@ export const PriceCalculator = memo(function PriceCalculator({
                 <div className="bg-orange-50 border border-orange-200 rounded-md p-3">
                   <h5 className="text-xs font-semibold text-orange-900 mb-2 flex items-center">
                     <span className="mr-1">💵</span>
-                    불포함 금액 타입
+                    {t('notIncludedType')}
                   </h5>
                   <div className="text-xs text-orange-800 space-y-1">
                     {notIncludedType === 'amount_only' ? (
                       <>
-                        <div className="font-medium text-orange-900">✓ 불포함 금액 입력값</div>
+                        <div className="font-medium text-orange-900">✓ {t('notIncludedAmountOnly')}</div>
                         <div className="pl-2 border-l-2 border-orange-300">
-                          <div>• 설정된 불포함 금액({formatPrice(finalNotIncludedPrice)})만 별도로 처리됩니다</div>
-                          <div>• 불포함 금액은 커미션 계산에서 제외되며 밸런스로 처리됩니다</div>
-                          <div>• 투어 종료 후 현금으로 수금됩니다</div>
+                          <div>• {t('notIncludedAmountOnlyDesc')} ({formatPrice(finalNotIncludedPrice)})</div>
+                          <div>• {t('notIncludedAmountOnlyDesc2')}</div>
                         </div>
                       </>
                     ) : notIncludedType === 'amount_and_choice' ? (
                       <>
-                        <div className="font-medium text-orange-900">✓ 불포함 금액 입력값 + 초이스 값</div>
+                        <div className="font-medium text-orange-900">✓ {t('notIncludedAndChoice')}</div>
                         <div className="pl-2 border-l-2 border-orange-300">
-                          <div>• 불포함 금액({formatPrice(finalNotIncludedPrice)})과 초이스 가격이 합산되어 처리됩니다</div>
-                          <div>• 불포함 금액 + 초이스 가격은 모두 커미션 계산에서 제외됩니다</div>
-                          <div>• 합산된 금액이 밸런스로 처리되어 투어 종료 후 현금으로 수금됩니다</div>
+                          <div>• {t('notIncludedAmountOnlyDesc')} ({formatPrice(finalNotIncludedPrice)})</div>
+                          <div>• {t('notIncludedAndChoiceDesc2')}</div>
                           <div className="mt-1 text-orange-700">
-                            예: 불포함 금액($15) + 초이스($75) = $90 (밸런스)
+                            {t('notIncludedAndChoiceExample')}
                           </div>
                         </div>
                       </>
                     ) : (
                       <>
-                        <div className="font-medium text-orange-900">✓ 불포함 금액 없음</div>
+                        <div className="font-medium text-orange-900">✓ {t('notIncludedNone')}</div>
                         <div className="pl-2 border-l-2 border-orange-300">
-                          <div>• 불포함 금액이 설정되지 않았습니다</div>
-                          <div>• 모든 가격이 온라인 결제로 처리됩니다</div>
+                          <div>• {t('notIncludedNoneDesc')}</div>
                         </div>
                       </>
                     )}

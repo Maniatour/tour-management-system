@@ -98,7 +98,8 @@ export async function POST(request: NextRequest) {
       monthly_limit,
       daily_limit,
       notes,
-      created_by
+      created_by,
+      deduct_card_fee_for_tips = false
     } = body
 
     // 필수 필드 검증
@@ -145,7 +146,8 @@ export async function POST(request: NextRequest) {
         daily_limit: daily_limit ? parseFloat(daily_limit) : null,
         notes: notes || null,
         created_by: created_by || null,
-        display_name: displayName
+        display_name: displayName,
+        deduct_card_fee_for_tips: !!deduct_card_fee_for_tips
       })
       .select()
       .maybeSingle()

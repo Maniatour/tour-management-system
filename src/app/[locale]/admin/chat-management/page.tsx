@@ -10,6 +10,20 @@ import { useFloatingChat } from '@/contexts/FloatingChatContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { PickupSchedule } from '@/components/tour/PickupSchedule'
 
+/** DB에서 조회한 chat_rooms 행 (unread_count 등은 이후 매핑으로 추가) */
+type ChatRoomRow = {
+  id: string
+  tour_id: string
+  room_name: string
+  room_code: string
+  description?: string | null
+  is_active: boolean | null
+  created_by: string
+  created_at: string | null
+  updated_at?: string | null
+  [key: string]: unknown
+}
+
 interface ChatRoom {
   id: string
   tour_id: string
@@ -29,6 +43,7 @@ interface ChatRoom {
     assistant_id?: string
     tour_car_id?: string
     status: string
+    total_people?: number
     product?: {
       name_ko?: string
       name_en?: string
@@ -171,7 +186,7 @@ export default function ChatManagementPage() {
       }
 
       // 투어 정보 가져오기 (활성화된 채팅방과 동일한 로직, 간소화 버전)
-      const tourIds = (inactiveRooms as ChatRoom[]).map(room => room.tour_id).filter(Boolean) as string[]
+      const tourIds = inactiveRooms.map((room: { tour_id: string }) => room.tour_id).filter(Boolean) as string[]
       const tourMap = new Map<string, any>()
       
       if (tourIds.length > 0) {
@@ -286,7 +301,7 @@ export default function ChatManagementPage() {
       }
 
       // 안읽은 메시지 수 계산
-      const roomIds = (inactiveRooms as ChatRoom[]).map(room => room.id)
+      const roomIds = inactiveRooms.map((room: { id: string }) => room.id)
       const unreadCountMap = new Map<string, number>()
       if (roomIds.length > 0) {
         const BATCH_SIZE = 50
@@ -309,18 +324,24 @@ export default function ChatManagementPage() {
       }
 
       // 채팅방에 투어 정보 매핑
-      const roomsWithTour = inactiveRooms.map((room: ChatRoom) => {
+      const roomsWithTour = inactiveRooms.map((room: ChatRoomRow): ChatRoom => {
         const tourData = tourMap.get(room.tour_id)
         if (!tourData) {
           return {
             ...room,
+            ...(room.description != null && room.description !== '' ? { description: room.description } : {}),
+            is_active: room.is_active ?? false,
+            created_at: room.created_at ?? '',
             tour: {
               id: room.tour_id,
-              status: null,
+              product_id: '',
+              tour_date: '',
+              tour_guide_id: '',
+              status: 'pending',
               reservations: []
             },
             unread_count: unreadCountMap.get(room.id) || 0
-          }
+          } as ChatRoom
         }
 
         const assignedReservationIds = tourData.reservation_ids || []
@@ -378,12 +399,15 @@ export default function ChatManagementPage() {
             } : undefined
             }
           })
-          .filter(Boolean)
+          .filter((r): r is NonNullable<typeof r> => r != null)
 
         const totalPeople = reservations.reduce((sum, r) => sum + (r?.total_people || 0), 0)
 
         return {
           ...room,
+          ...(room.description != null && room.description !== '' ? { description: room.description } : {}),
+          is_active: room.is_active ?? false,
+          created_at: room.created_at ?? '',
           tour: {
             id: tourData.id,
             product_id: tourData.product_id,
@@ -397,10 +421,10 @@ export default function ChatManagementPage() {
             reservations: reservations
           },
           unread_count: unreadCountMap.get(room.id) || 0
-        }
+        } as ChatRoom
       })
 
-      setInactiveRoomsData(roomsWithTour as ChatRoom[])
+      setInactiveRoomsData(roomsWithTour)
     } catch (error) {
       console.error('[ChatManagement] 비활성화 채팅방 로딩 오류:', error)
       setInactiveRoomsData([])
@@ -435,7 +459,7 @@ export default function ChatManagementPage() {
       }
 
       // 모든 투어 ID 수집
-      const tourIds = (chatRoomsData as ChatRoom[]).map(room => room.tour_id).filter(Boolean) as string[]
+      const tourIds = chatRoomsData.map((room: { tour_id: string }) => room.tour_id).filter(Boolean) as string[]
       
       // 단일 쿼리로 모든 투어 정보 가져오기 (배치 처리)
       const tourMap = new Map<string, any>()
@@ -669,19 +693,25 @@ export default function ChatManagementPage() {
       }
 
       // 채팅방에 투어 정보 매핑 (투어 상세 페이지와 동일한 방식)
-      const roomsWithTour = chatRoomsData.map((room: ChatRoom) => {
+      const roomsWithTour = chatRoomsData.map((room: ChatRoomRow): ChatRoom => {
         const tourData = tourMap.get(room.tour_id)
 
         if (!tourData) {
           return {
             ...room,
+            ...(room.description != null && room.description !== '' ? { description: room.description } : {}),
+            is_active: room.is_active ?? false,
+            created_at: room.created_at ?? '',
             tour: {
               id: room.tour_id,
-              status: null,
+              product_id: '',
+              tour_date: '',
+              tour_guide_id: '',
+              status: 'pending',
               reservations: []
             },
             unread_count: 0
-          }
+          } as ChatRoom
         }
 
         // 투어의 reservation_ids를 사용하여 배정된 예약만 가져오기 (투어 상세 페이지와 동일한 방식)
@@ -786,21 +816,30 @@ export default function ChatManagementPage() {
             } : undefined
             }
           })
-          .filter((r: any) => r !== null)
+          .filter((r): r is NonNullable<typeof r> => r != null)
 
         // 총 인원 계산 (배정된 예약의 total_people 합계)
-        const totalPeople = reservations.reduce((sum: number, r: any) => sum + (r.total_people || 0), 0)
+        const totalPeople = reservations.reduce((sum: number, r: { total_people?: number }) => sum + (r.total_people || 0), 0)
 
         return {
           ...room,
+          ...(room.description != null && room.description !== '' ? { description: room.description } : {}),
+          is_active: room.is_active ?? false,
+          created_at: room.created_at ?? '',
           tour: {
-            ...(tourData as Record<string, unknown>),
+            id: (tourData as { id: string }).id,
+            product_id: (tourData as { product_id: string }).product_id,
+            tour_date: (tourData as { tour_date: string }).tour_date,
+            tour_guide_id: (tourData as { tour_guide_id: string }).tour_guide_id,
+            assistant_id: (tourData as { assistant_id?: string }).assistant_id,
+            tour_car_id: (tourData as { tour_car_id?: string }).tour_car_id,
             status: (tourData as { tour_status: string }).tour_status,
-            reservations: reservations,
-            total_people: totalPeople // 총 인원 추가
+            total_people: totalPeople,
+            product: (tourData as { product?: unknown }).product,
+            reservations: reservations
           },
           unread_count: 0
-        }
+        } as ChatRoom
       })
 
       // 이제 읽지 않은 메시지 수 계산 - 배치 처리로 최적화
@@ -866,7 +905,7 @@ export default function ChatManagementPage() {
         unread_count: unreadCountMap.get(room.id) || 0
       }))
 
-      return roomsWithUnreadCount
+      return roomsWithUnreadCount as unknown as ChatRoom[]
     },
     cacheKey: 'chat-rooms',
     cacheTime: 30 * 1000 // 30초 캐시 (투어 정보가 자주 변경되므로 짧은 캐시)
@@ -1037,7 +1076,7 @@ export default function ChatManagementPage() {
         .order('created_at', { ascending: true })
 
       if (error) throw error
-      setMessages(data || [])
+      setMessages((data || []) as ChatMessage[])
     } catch (error) {
       console.error('Error fetching messages:', error)
     } finally {
@@ -1083,7 +1122,7 @@ export default function ChatManagementPage() {
             .from('team')
             .select('email, name_ko')
             .eq('email', (tourData as { tour_guide_id: string }).tour_guide_id)
-            .single()
+            .maybeSingle()
 
           if (!directError && directGuide) {
             tourGuideData = {
@@ -1098,7 +1137,7 @@ export default function ChatManagementPage() {
               .from('team')
               .select('email, name_ko')
               .eq('email', (tourData as { tour_guide_id: string }).tour_guide_id)
-              .single()
+              .maybeSingle()
 
             if (!guideError && guideData) {
               tourGuideData = {
@@ -1131,7 +1170,7 @@ export default function ChatManagementPage() {
             .from('team')
             .select('email, name_ko')
             .eq('email', (tourData as { assistant_id: string }).assistant_id)
-            .single()
+            .maybeSingle()
 
           if (!directError && directAssistant) {
             assistantData = {
@@ -1146,7 +1185,7 @@ export default function ChatManagementPage() {
               .from('team')
               .select('email, name_ko')
               .eq('email', (tourData as { assistant_id: string }).assistant_id)
-              .single()
+              .maybeSingle()
 
             if (!assistantError && assistantRpcData) {
               assistantData = {
@@ -1214,7 +1253,12 @@ export default function ChatManagementPage() {
             .in('id', customerIds)
 
           if (!customersError) {
-            customersData = customers || []
+            customersData = (customers || []).map((c: { id: string; name: string; email: string | null; phone?: string | null }) => ({
+              id: c.id,
+              name: c.name,
+              email: c.email ?? '',
+              ...(c.phone != null && c.phone !== '' ? { phone: c.phone } : {})
+            }))
           }
         }
       }

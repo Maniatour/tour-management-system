@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, memo, useEffect } from 'react';
+import { useTranslations } from 'next-intl';
 import { X, Calendar, ToggleLeft, ToggleRight, ChevronRight } from 'lucide-react';
 import { DateRangeSelection } from '@/lib/types/dynamic-pricing';
 import { DateRangeSelector } from './DateRangeSelector';
@@ -36,6 +37,7 @@ export const SaleStatusModal = memo(function SaleStatusModal({
   channelId,
   channelType
 }: SaleStatusModalProps) {
+  const t = useTranslations('products.dynamicPricingPage');
   const [selectedDates, setSelectedDates] = useState<Date[]>(initialDates);
   const [saleStatus, setSaleStatus] = useState<'sale' | 'closed'>(initialStatus);
   const [dateStatusMap, setDateStatusMap] = useState<Record<string, 'sale' | 'closed'>>({});
@@ -269,7 +271,7 @@ export const SaleStatusModal = memo(function SaleStatusModal({
           {/* 판매 상태 토글 */}
           <div className="space-y-3">
             <label className="block text-sm font-medium text-gray-700">
-              판매 상태
+              {t('saleStatus')}
             </label>
             <div className="flex items-center space-x-4">
               <button
@@ -300,15 +302,14 @@ export const SaleStatusModal = memo(function SaleStatusModal({
                 ) : (
                   <ToggleLeft className="h-5 w-5 text-gray-400" />
                 )}
-                <span>마감</span>
+                <span>{t('closed')}</span>
               </button>
             </div>
           </div>
 
-          {/* 날짜 선택 */}
           <div className="space-y-3">
             <label className="block text-sm font-medium text-gray-700">
-              적용할 날짜
+              {t('applyDates')}
             </label>
             <DateRangeSelector
               initialSelection={dateRangeSelection}
@@ -342,7 +343,7 @@ export const SaleStatusModal = memo(function SaleStatusModal({
           {choiceCombinations.length > 0 && (
             <div className="space-y-3">
               <label className="block text-sm font-medium text-gray-700">
-                초이스별 판매 상태 설정
+                {t('choiceSaleStatusSetting')}
               </label>
               
               {/* 초이스 목록 */}
@@ -370,7 +371,7 @@ export const SaleStatusModal = memo(function SaleStatusModal({
                       </div>
                       <div className="flex items-center space-x-2">
                         {selectedChoiceId === choice.id && (
-                          <span className="text-xs text-blue-600 font-medium">선택됨</span>
+                          <span className="text-xs text-blue-600 font-medium">{t('selectedLegend')}</span>
                         )}
                         <ChevronRight className={`h-4 w-4 transition-transform ${
                           selectedChoiceId === choice.id ? 'text-blue-600 rotate-90' : 'text-gray-400'
@@ -405,11 +406,11 @@ export const SaleStatusModal = memo(function SaleStatusModal({
                     <div className="mt-3 flex items-center space-x-4 text-xs text-gray-600">
                       <div className="flex items-center space-x-1">
                         <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                        <span>판매중</span>
+                        <span>{t('onSale')}</span>
                       </div>
                       <div className="flex items-center space-x-1">
                         <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                        <span>마감</span>
+                        <span>{t('closed')}</span>
                       </div>
                     </div>
                   </div>
@@ -417,7 +418,7 @@ export const SaleStatusModal = memo(function SaleStatusModal({
                 
                 {!selectedChoiceId && (
                   <div className="text-xs text-gray-500 text-center py-4">
-                    💡 초이스를 선택하면 해당 초이스의 달력이 표시됩니다. 달력에서 날짜를 더블클릭하여 판매/마감 상태를 설정할 수 있습니다.
+                    💡 {t('choiceCalendarHint')}
                   </div>
                 )}
               </div>
@@ -452,7 +453,7 @@ export const SaleStatusModal = memo(function SaleStatusModal({
             onClick={onClose}
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 transition-colors"
           >
-            닫기
+            {t('close')}
           </button>
         </div>
       </div>

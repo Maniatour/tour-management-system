@@ -45,6 +45,7 @@ export default function ProductDetailsPage() {
   const params = useParams()
   const router = useRouter()
   const t = useTranslations('common')
+  const tD = useTranslations('products.detailsPage')
   const productId = params.id as string
   const supabase = createClientSupabase()
 
@@ -162,7 +163,7 @@ export default function ProductDetailsPage() {
       }
     } catch (error) {
       console.error('Error loading product:', error)
-      setError('상품 정보를 불러오는데 실패했습니다.')
+      setError(tD('loadError'))
     } finally {
       setLoading(false)
     }
@@ -205,7 +206,7 @@ export default function ProductDetailsPage() {
       router.push(`/admin/products`)
     } catch (error) {
       console.error('Error saving product:', error)
-      setError('상품 정보 저장에 실패했습니다.')
+      setError(tD('saveError'))
     } finally {
       setSaving(false)
     }
@@ -223,7 +224,7 @@ export default function ProductDetailsPage() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">상품 정보를 불러오는 중...</p>
+          <p className="mt-4 text-gray-600">{tD('loading')}</p>
         </div>
       </div>
     )
@@ -236,7 +237,7 @@ export default function ProductDetailsPage() {
           <AlertCircle className="h-12 w-12 text-red-500 mx-auto" />
           <p className="mt-4 text-red-600">{error}</p>
           <Link href="/admin/products" className="mt-4 inline-block text-blue-600 hover:underline">
-            상품 목록으로 돌아가기
+            {tD('backToList')}
           </Link>
         </div>
       </div>
@@ -254,21 +255,21 @@ export default function ProductDetailsPage() {
               className="flex items-center text-gray-600 hover:text-gray-900"
             >
               <ArrowLeft className="h-5 w-5 mr-2" />
-              상품 목록
+              {tD('productList')}
             </Link>
           </div>
           <h1 className="text-3xl font-bold text-gray-900">
-            상품 세부정보 관리
+            {tD('pageTitle')}
           </h1>
           <p className="mt-2 text-gray-600">
-            {product?.name_ko || '상품 정보'}
+            {product?.name_ko || product?.name_en || tD('productInfo')}
           </p>
         </div>
 
         {/* Form */}
         <div className="bg-white shadow rounded-lg">
           <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-medium text-gray-900">상품 상세 정보</h2>
+            <h2 className="text-lg font-medium text-gray-900">{tD('sectionDetailInfo')}</h2>
           </div>
 
           <div className="p-6 space-y-8">
@@ -276,43 +277,43 @@ export default function ProductDetailsPage() {
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
                 <FileText className="h-5 w-5 mr-2" />
-                기본 정보
+                {tD('sectionBasicInfo')}
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    슬로건 1
+                    {tD('slogan1')}
                   </label>
                   <input
                     type="text"
                     value={formData.slogan1}
                     onChange={(e) => handleInputChange('slogan1', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="예: 최고의 투어 경험"
+                    placeholder={tD('placeholderSlogan1')}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    슬로건 2
+                    {tD('slogan2')}
                   </label>
                   <input
                     type="text"
                     value={formData.slogan2}
                     onChange={(e) => handleInputChange('slogan2', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="예: 전문 가이드와 함께"
+                    placeholder={tD('placeholderSlogan2')}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    슬로건 3
+                    {tD('slogan3')}
                   </label>
                   <input
                     type="text"
                     value={formData.slogan3}
                     onChange={(e) => handleInputChange('slogan3', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="예: 잊지 못할 추억"
+                    placeholder={tD('placeholderSlogan3')}
                   />
                 </div>
               </div>
@@ -321,14 +322,14 @@ export default function ProductDetailsPage() {
             {/* Description */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                상품 설명
+                {tD('description')}
               </label>
               <textarea
                 value={formData.description}
                 onChange={(e) => handleInputChange('description', e.target.value)}
                 rows={4}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="상품에 대한 자세한 설명을 입력하세요..."
+                placeholder={tD('placeholderDescription')}
               />
             </div>
 
@@ -336,25 +337,25 @@ export default function ProductDetailsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  포함 사항
+                  {tD('included')}
                 </label>
                 <LightRichEditor
                   value={formData.included}
                   onChange={(value) => handleInputChange('included', value || '')}
                   height={150}
-                  placeholder="포함된 서비스나 항목들을 입력하세요..."
+                  placeholder={tD('placeholderIncluded')}
                   enableResize={false}
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  불포함 사항
+                  {tD('notIncluded')}
                 </label>
                 <LightRichEditor
                   value={formData.not_included}
                   onChange={(value) => handleInputChange('not_included', value || '')}
                   height={150}
-                  placeholder="포함되지 않은 서비스나 항목들을 입력하세요..."
+                  placeholder={tD('placeholderNotIncluded')}
                   enableResize={false}
                 />
               </div>
@@ -364,58 +365,58 @@ export default function ProductDetailsPage() {
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
                 <Info className="h-5 w-5 mr-2" />
-                투어 정보
+                {tD('sectionTourInfo')}
               </h3>
               <div className="space-y-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    픽업/드롭 정보
+                    {tD('pickupDropInfo')}
                   </label>
                   <textarea
                     value={formData.pickup_drop_info}
                     onChange={(e) => handleInputChange('pickup_drop_info', e.target.value)}
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="픽업 및 드롭 오프 관련 정보를 입력하세요..."
+                    placeholder={tD('placeholderPickupDrop')}
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    수하물 정보
+                    {tD('luggageInfo')}
                   </label>
                   <textarea
                     value={formData.luggage_info}
                     onChange={(e) => handleInputChange('luggage_info', e.target.value)}
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="수하물 관련 안내사항을 입력하세요..."
+                    placeholder={tD('placeholderLuggage')}
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    투어 운영 정보
+                    {tD('tourOperationInfo')}
                   </label>
                   <textarea
                     value={formData.tour_operation_info}
                     onChange={(e) => handleInputChange('tour_operation_info', e.target.value)}
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="투어 운영 관련 정보를 입력하세요..."
+                    placeholder={tD('placeholderTourOperation')}
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    준비 사항
+                    {tD('preparationInfo')}
                   </label>
                   <textarea
                     value={formData.preparation_info}
                     onChange={(e) => handleInputChange('preparation_info', e.target.value)}
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="투어 준비 사항을 입력하세요..."
+                    placeholder={tD('placeholderPreparation')}
                   />
                 </div>
               </div>
@@ -425,32 +426,32 @@ export default function ProductDetailsPage() {
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
                 <Users className="h-5 w-5 mr-2" />
-                그룹 정보
+                {tD('sectionGroupInfo')}
               </h3>
               <div className="space-y-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    소그룹 정보
+                    {tD('smallGroupInfo')}
                   </label>
                   <textarea
                     value={formData.small_group_info}
                     onChange={(e) => handleInputChange('small_group_info', e.target.value)}
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="소그룹 투어 관련 정보를 입력하세요..."
+                    placeholder={tD('placeholderSmallGroup')}
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    동반자 정보
+                    {tD('companionInfo')}
                   </label>
                   <textarea
                     value={formData.companion_info}
                     onChange={(e) => handleInputChange('companion_info', e.target.value)}
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="동반자 관련 안내사항을 입력하세요..."
+                    placeholder={tD('placeholderCompanion')}
                   />
                 </div>
               </div>
@@ -460,32 +461,32 @@ export default function ProductDetailsPage() {
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
                 <Globe className="h-5 w-5 mr-2" />
-                예약 및 정책 정보
+                {tD('sectionBookingPolicy')}
               </h3>
               <div className="space-y-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    독점 예약 정보
+                    {tD('exclusiveBookingInfo')}
                   </label>
                   <textarea
                     value={formData.exclusive_booking_info}
                     onChange={(e) => handleInputChange('exclusive_booking_info', e.target.value)}
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="독점 예약 관련 정보를 입력하세요..."
+                    placeholder={tD('placeholderExclusiveBooking')}
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    취소 정책
+                    {tD('cancellationPolicy')}
                   </label>
                   <textarea
                     value={formData.cancellation_policy}
                     onChange={(e) => handleInputChange('cancellation_policy', e.target.value)}
                     rows={4}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="취소 정책을 입력하세요..."
+                    placeholder={tD('placeholderCancellation')}
                   />
                 </div>
               </div>
@@ -495,21 +496,21 @@ export default function ProductDetailsPage() {
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
                 <AlertCircle className="h-5 w-5 mr-2" />
-                채팅 공지사항
+                {tD('sectionChatAnnouncement')}
               </h3>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  채팅방 공지사항
+                  {tD('chatAnnouncementLabel')}
                 </label>
                 <textarea
                   value={formData.chat_announcement}
                   onChange={(e) => handleInputChange('chat_announcement', e.target.value)}
                   rows={4}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="채팅방에 표시될 공지사항을 입력하세요..."
+                  placeholder={tD('placeholderChatAnnouncement')}
                 />
                 <p className="mt-2 text-sm text-gray-500">
-                  이 공지사항은 해당 상품의 채팅방 상단에 표시됩니다.
+                  {tD('chatAnnouncementHint')}
                 </p>
               </div>
             </div>

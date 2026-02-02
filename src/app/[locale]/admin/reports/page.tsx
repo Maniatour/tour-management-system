@@ -53,7 +53,7 @@ export default function AdminReports({ }: AdminReportsProps) {
           .select('position')
           .eq('email', authUser.email)
           .eq('is_active', true)
-          .single()
+          .maybeSingle()
         
         if (error || !teamData) {
           setIsSuper(false)

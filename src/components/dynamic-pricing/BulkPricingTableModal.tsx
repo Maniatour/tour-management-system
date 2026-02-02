@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { useTranslations } from 'next-intl';
 import { X, Plus, Trash2, Save, Calculator } from 'lucide-react';
 import { SimplePricingRuleDto } from '@/lib/types/dynamic-pricing';
 import { useDynamicPricing } from '@/hooks/useDynamicPricing';
@@ -71,6 +72,7 @@ export default function BulkPricingTableModal({
   choiceCombinations,
   onSave
 }: BulkPricingTableModalProps) {
+  const t = useTranslations('products.dynamicPricingPage');
   const [rows, setRows] = useState<BulkPricingRow[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
@@ -284,7 +286,7 @@ export default function BulkPricingTableModal({
   // 저장
   const handleSave = useCallback(async () => {
     if (rows.length === 0) {
-      setSaveMessage('저장할 데이터가 없습니다.');
+      setSaveMessage(t('noDataToSave'));
       return;
     }
 
@@ -421,7 +423,7 @@ export default function BulkPricingTableModal({
       }
 
       await savePricingRulesBatch(rulesData);
-      setSaveMessage(`${rulesData.length}개 가격 규칙이 성공적으로 저장되었습니다.`);
+      setSaveMessage(t('rulesSavedSuccess'));
       
       setTimeout(() => {
         onClose();
@@ -459,7 +461,7 @@ export default function BulkPricingTableModal({
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center space-x-2">
                 <Calculator className="h-4 w-4 text-purple-600" />
-                <h3 className="text-lg font-semibold text-gray-900">가격 일괄 추가 테이블 뷰</h3>
+                <h3 className="text-lg font-semibold text-gray-900">{t('bulkTableTitle')}</h3>
               </div>
               <button
                 onClick={onClose}
@@ -476,16 +478,16 @@ export default function BulkPricingTableModal({
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 sticky left-0 bg-gray-50 z-10" rowSpan={2} style={{ minWidth: '150px', width: '150px' }}>
-                        채널명
+                        {t('channelName')}
                       </th>
                       <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300" rowSpan={2} style={{ minWidth: '120px', width: '120px' }}>
-                        Variant
+                        {t('variantSelect')}
                       </th>
                       <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300" rowSpan={2} style={{ minWidth: '100px', width: '100px' }}>
-                        시작일
+                        {t('startDate')}
                       </th>
                       <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300" rowSpan={2} style={{ minWidth: '100px', width: '100px' }}>
-                        종료일
+                        {t('endDate')}
                       </th>
                       {/* OTA 채널은 단일가격/증차감 컬럼 제거 */}
                       <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-yellow-50" rowSpan={2}>
@@ -497,23 +499,22 @@ export default function BulkPricingTableModal({
                           <>
                             {/* OTA 판매가 컬럼 */}
                             <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-pink-50" rowSpan={2}>
-                              OTA 판매가
+                              {t('otaSalePrice')}
                             </th>
-                            {/* 불포함 금액 컬럼 (초이스별) */}
                             <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-orange-50" rowSpan={2}>
-                              불포함 금액 ($)
+                              {t('notIncludedAmount')}
                             </th>
                             <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-cyan-50" rowSpan={2}>
-                              수수료 (%)
+                              {t('commissionPercent')}
                             </th>
                             <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-cyan-50" rowSpan={2}>
-                              수수료 ($)
+                              {t('commissionAmount')}
                             </th>
                             <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-cyan-50" rowSpan={2}>
-                              쿠폰 할인 (%)
+                              {t('couponDiscount')}
                             </th>
                             <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-cyan-50" rowSpan={2}>
-                              불포함 금액 ($)
+                              {t('notIncludedAmount')}
                             </th>
                             <th 
                               className="px-2 py-1.5 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-r border-gray-300 bg-indigo-50 cursor-help" 
@@ -539,7 +540,7 @@ export default function BulkPricingTableModal({
                         );
                       })()}
                       <th className="px-2 py-1.5 text-center text-xs font-medium text-gray-700 uppercase tracking-wider" rowSpan={2}>
-                        작업
+                        {t('work')}
                       </th>
                     </tr>
                     {/* 서브 헤더 */}
@@ -562,7 +563,7 @@ export default function BulkPricingTableModal({
                       <tr>
                         <td colSpan={20} className="px-4 py-8 text-center text-gray-500">
                           <div className="space-y-2">
-                            <p>행이 없습니다. &quot;행 추가&quot; 버튼을 클릭하여 행을 추가하세요.</p>
+                            <p>{t('noRowsHint')}</p>
                             {(() => {
                               const homepageChannel = channels.find(ch => {
                                 const id = ch.id?.toLowerCase() || '';
@@ -1396,7 +1397,7 @@ export default function BulkPricingTableModal({
                 className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors"
               >
                 <Plus className="h-4 w-4" />
-                <span>행 추가</span>
+                <span>{t('addRow')}</span>
               </button>
 
               <div className="flex items-center space-x-2">

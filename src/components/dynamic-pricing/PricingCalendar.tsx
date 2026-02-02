@@ -1,4 +1,5 @@
 import React, { memo, useState, useMemo, useEffect, useCallback } from 'react';
+import { useTranslations, useLocale } from 'next-intl';
 import { ChevronLeft, ChevronRight, Calendar, DollarSign, ChevronDown } from 'lucide-react';
 import { SimplePricingRule } from '@/lib/types/dynamic-pricing';
 
@@ -130,6 +131,8 @@ export const PricingCalendar = memo(function PricingCalendar({
   onDateClick,
   channelCoupons = []
 }: PricingCalendarProps) {
+  const t = useTranslations('products.dynamicPricingPage');
+  const locale = useLocale();
   const [selectedChoice, setSelectedChoice] = useState<string>('');
   const [selectedPriceTypes, setSelectedPriceTypes] = useState<Set<string>>(
     new Set(['maxSalePrice', 'discountPrice', 'netPrice']) // 기본값: 모두 선택
@@ -539,7 +542,7 @@ export const PricingCalendar = memo(function PricingCalendar({
         onMouseDown={() => handleDateMouseDown(day, 0)}
         onMouseEnter={() => setHoveredDate(dateString)}
         onMouseLeave={() => setHoveredDate(null)}
-        title={hasDataForDate ? '클릭: 가격 히스토리 보기' : '날짜 선택'}
+        title={hasDataForDate ? t('clickPriceHistory') : t('selectDate')}
         className={`relative p-2 h-20 border border-gray-200 hover:bg-gray-50 transition-colors ${
           isSelected ? 'bg-blue-100 border-blue-300' : ''
         } ${isToday ? 'ring-2 ring-blue-500' : ''} ${hasDataForDate ? 'cursor-pointer' : ''}`}
@@ -584,7 +587,7 @@ export const PricingCalendar = memo(function PricingCalendar({
         ) : (
           /* 데이터가 없을 때만 표시 */
           <div className="absolute bottom-1 left-1 text-xs text-gray-400">
-            데이터 없음
+            {t('noPrice')}
           </div>
         )}
         
@@ -620,13 +623,13 @@ export const PricingCalendar = memo(function PricingCalendar({
     <div className="bg-white rounded-lg shadow-sm border border-gray-200">
       {/* 초이스 선택 드롭다운 및 불포함 사항 필터 */}
       {choiceCombinations.length > 0 && (selectedChannelId || selectedChannelType) && (
-        <div className="p-4 border-b border-gray-200">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative">
+        <div className="p-4 border-b border-gray-200 overflow-hidden">
+          <div className="flex flex-wrap items-center gap-3 min-w-0">
+            <div className="relative min-w-0 max-w-[220px] shrink-0">
               <select
                 value={selectedChoice}
                 onChange={(e) => setSelectedChoice(e.target.value)}
-                className="appearance-none bg-white border border-gray-300 rounded-md px-2 py-1 pr-6 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full min-w-0 max-w-full appearance-none bg-white border border-gray-300 rounded-md pl-2 pr-6 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">초이스를 선택하세요</option>
                 {choiceCombinations.map((choice) => (
@@ -640,7 +643,7 @@ export const PricingCalendar = memo(function PricingCalendar({
             {/* 해당 채널 쿠폰 선택 (선택 시 손님 지불가 / Net Price에 반영) */}
             {selectedChannelId && (
               <div className="flex items-center gap-2">
-                <label className="text-xs text-gray-600 whitespace-nowrap">쿠폰</label>
+                <label className="text-xs text-gray-600 whitespace-nowrap">{t('coupon')}</label>
                 <div className="relative">
                   <select
                     value={selectedCouponId}
@@ -648,7 +651,7 @@ export const PricingCalendar = memo(function PricingCalendar({
                     className="appearance-none bg-white border border-gray-300 rounded-md px-2 py-1 pr-6 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                     title="쿠폰 선택 시 손님 지불가·Net Price가 해당 할인률로 재계산됩니다"
                   >
-                    <option value="">쿠폰 없음</option>
+                    <option value="">{t('noCoupon')}</option>
                     {(channelCoupons || []).map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.coupon_code}
@@ -689,7 +692,7 @@ export const PricingCalendar = memo(function PricingCalendar({
               }`}
             >
               <div className={`w-3 h-3 rounded ${selectedPriceTypes.has('discountPrice') ? 'bg-blue-600' : 'bg-gray-400'}`}></div>
-              <span className="text-gray-600">할인 가격</span>
+              <span className="text-gray-600">{t('discountPrice')}</span>
             </button>
             <button
               type="button"
@@ -720,7 +723,7 @@ export const PricingCalendar = memo(function PricingCalendar({
         <div className="flex items-center space-x-2">
           <Calendar className="h-5 w-5 text-gray-600" />
           <h3 className="text-lg font-semibold text-gray-900">
-            {currentMonth.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' })}
+            {currentMonth.toLocaleDateString(locale === 'en' ? 'en-US' : 'ko-KR', { year: 'numeric', month: 'long' })}
           </h3>
         </div>
         
@@ -752,17 +755,17 @@ export const PricingCalendar = memo(function PricingCalendar({
         <div className="flex items-center space-x-4 text-sm text-gray-600">
           <div className="flex items-center space-x-1">
             <DollarSign className="h-3 w-3 text-green-600" />
-            <span>가격 설정됨</span>
+            <span>{t('priceSet')}</span>
           </div>
           <div className="flex items-center space-x-1">
             <div className="w-3 h-3 bg-blue-500 text-white text-xs rounded-full flex items-center justify-center">
               2
             </div>
-            <span>다중 규칙</span>
+            <span>{t('multipleRules')}</span>
           </div>
           <div className="flex items-center space-x-1">
             <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-            <span>선택된 날짜</span>
+            <span>{t('selectedDates')}</span>
           </div>
         </div>
       </div>

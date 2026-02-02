@@ -130,11 +130,11 @@ export const checkSupabaseConnection = async (): Promise<boolean> => {
   try {
     const { error } = await supabase
       .from('team')
-      .select('count')
+      .select('id')
       .limit(1)
-      .single()
+      .maybeSingle()
     
-    if (error && error.code !== 'PGRST116') {
+    if (error) {
       console.error('Supabase connection check failed:', error)
       return false
     }

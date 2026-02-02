@@ -88,7 +88,7 @@ export default function GuideCostManagementPage() {
         .select('position')
         .eq('email', authUser.email)
         .eq('is_active', true)
-        .single()
+        .maybeSingle()
       
       if (error || !teamData) {
         setIsAdmin(false)

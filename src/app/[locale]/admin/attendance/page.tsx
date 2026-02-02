@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Clock, CheckCircle, XCircle, Calendar, User, BarChart3, RefreshCw, Edit, Users, Plus, Calculator, DollarSign } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -11,7 +11,10 @@ import BiweeklyCalculatorModal from '@/components/BiweeklyCalculatorModal'
 import TotalEmployeesModal from '@/components/TotalEmployeesModal'
 import TipsShareModal from '@/components/TipsShareModal'
 import BonusCalculatorModal from '@/components/BonusCalculatorModal'
+import ReservationForm from '@/components/reservation/ReservationForm'
 import { useParams } from 'next/navigation'
+
+const ReservationFormAny = ReservationForm as React.ComponentType<any>
 
 interface AttendanceRecord {
   id: string
@@ -52,6 +55,8 @@ export default function AttendancePage() {
   const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null)
   const [canEditAttendance, setCanEditAttendance] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
+  /** Tips 쉐어 버튼 표시 (super + manager / office manager) */
+  const [canViewTipsShare, setCanViewTipsShare] = useState(false)
   const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string}>>([])
   const [selectedEmployee, setSelectedEmployee] = useState<string>('')
   const [currentSessionForSelectedEmployee, setCurrentSessionForSelectedEmployee] = useState<AttendanceRecord | null>(null)
@@ -61,6 +66,19 @@ export default function AttendancePage() {
   const [isTotalEmployeesModalOpen, setIsTotalEmployeesModalOpen] = useState(false)
   const [isTipsShareModalOpen, setIsTipsShareModalOpen] = useState(false)
   const [isBonusCalculatorOpen, setIsBonusCalculatorOpen] = useState(false)
+  /** Tips 쉐어 모달에서 예약 클릭 시 예약 수정 모달용 */
+  const [reservationIdForEdit, setReservationIdForEdit] = useState<string | null>(null)
+  const [editingReservation, setEditingReservation] = useState<any>(null)
+  const [reservationFormData, setReservationFormData] = useState<{
+    customers: any[]
+    products: any[]
+    channels: any[]
+    productOptions: any[]
+    options: any[]
+    pickupHotels: any[]
+    coupons: any[]
+  } | null>(null)
+  const [loadingReservationForEdit, setLoadingReservationForEdit] = useState(false)
   
   // 어드민 권한 체크
   const checkAdminPermission = async () => {
@@ -72,23 +90,27 @@ export default function AttendancePage() {
         .select('position')
         .eq('email', authUser.email)
         .eq('is_active', true)
-        .single()
+        .maybeSingle()
       
       if (error || !teamData) {
         setIsAdmin(false)
         setCanEditAttendance(false)
+        setCanViewTipsShare(false)
         return
       }
       
       const position = (teamData as any).position?.toLowerCase()
       const isAdminUser = position === 'super'
+      const isManager = position === 'manager' || position === 'office manager'
       
       setIsAdmin(isAdminUser)
       setCanEditAttendance(position === 'super')
+      setCanViewTipsShare(isAdminUser || isManager)
     } catch (error) {
       console.error('권한 체크 오류:', error)
       setIsAdmin(false)
       setCanEditAttendance(false)
+      setCanViewTipsShare(false)
     }
   }
 
@@ -131,6 +153,93 @@ export default function AttendancePage() {
     handleCheckOut
   } = useAttendanceSync()
 
+  // DB 예약 → 폼 타입 변환 (attendance 페이지용, tour 컨텍스트 없음)
+  const convertReservationToFormType = useCallback((reservation: any): any => {
+    return {
+      id: reservation.id,
+      customerId: reservation.customer_id || '',
+      productId: reservation.product_id || '',
+      tourDate: reservation.tour_date || '',
+      tourTime: reservation.tour_time || '',
+      eventNote: reservation.event_note || '',
+      pickUpHotel: reservation.pickup_hotel || '',
+      pickUpTime: reservation.pickup_time || '',
+      adults: reservation.adults || 0,
+      child: reservation.child || 0,
+      infant: reservation.infant || 0,
+      totalPeople: reservation.total_people || 0,
+      channelId: reservation.channel_id || '',
+      channelRN: reservation.channel_rn || '',
+      addedBy: reservation.added_by || '',
+      addedTime: reservation.created_at || '',
+      tourId: reservation.tour_id || '',
+      status: (reservation.status as 'pending' | 'confirmed' | 'completed' | 'cancelled') || 'pending',
+      selectedOptions: (typeof reservation.selected_options === 'string'
+        ? (() => { try { return JSON.parse(reservation.selected_options) } catch { return {} } })()
+        : (reservation.selected_options as { [optionId: string]: string[] }) || {}),
+      selectedOptionPrices: (typeof reservation.selected_option_prices === 'string'
+        ? (() => { try { return JSON.parse(reservation.selected_option_prices) } catch { return {} } })()
+        : (reservation.selected_option_prices as { [key: string]: number }) || {}),
+      isPrivateTour: reservation.is_private_tour || false
+    }
+  }, [])
+
+  // Tips 쉐어 모달에서 예약 클릭 시 → 예약 + 폼 데이터 로드 후 수정 모달 표시
+  useEffect(() => {
+    if (!reservationIdForEdit) return
+    let cancelled = false
+    setLoadingReservationForEdit(true)
+    ;(async () => {
+      try {
+        const { data: reservation, error: resError } = await supabase
+          .from('reservations')
+          .select('*')
+          .eq('id', reservationIdForEdit)
+          .maybeSingle()
+        if (resError || !reservation || cancelled) {
+          setLoadingReservationForEdit(false)
+          setReservationIdForEdit(null)
+          return
+        }
+        const [customersRes, productsRes, channelsRes, productOptionsRes, optionsRes, pickupHotelsRes, couponsRes] = await Promise.all([
+          supabase.from('customers').select('*').order('created_at', { ascending: false }).limit(2000),
+          supabase.from('products').select('*').order('name', { ascending: true }).limit(2000),
+          supabase.from('channels').select('id, name, type, favicon_url, pricing_type, commission_base_price_only, category, has_not_included_price, not_included_type, not_included_price, commission_percent, commission').order('name', { ascending: true }),
+          supabase.from('product_options').select('*').order('name', { ascending: true }),
+          supabase.from('options').select('*').order('name', { ascending: true }),
+          supabase.from('pickup_hotels').select('*').eq('is_active', true).order('hotel', { ascending: true }),
+          supabase.from('coupons').select('*').eq('status', 'active').order('coupon_code', { ascending: true })
+        ])
+        if (cancelled) return
+        setReservationFormData({
+          customers: customersRes.data || [],
+          products: productsRes.data || [],
+          channels: channelsRes.data || [],
+          productOptions: productOptionsRes.data || [],
+          options: optionsRes.data || [],
+          pickupHotels: pickupHotelsRes.data || [],
+          coupons: couponsRes.data || []
+        })
+        setEditingReservation(convertReservationToFormType(reservation))
+      } catch (e) {
+        console.error('예약/폼 데이터 로드 오류:', e)
+      } finally {
+        if (!cancelled) setLoadingReservationForEdit(false)
+        setReservationIdForEdit(null)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [reservationIdForEdit, convertReservationToFormType])
+
+  const handleOpenReservationFromTips = useCallback((reservationId: string) => {
+    setReservationIdForEdit(reservationId)
+  }, [])
+
+  const handleCloseReservationEditModal = useCallback(() => {
+    setEditingReservation(null)
+    setReservationFormData(null)
+  }, [])
+
   // 오늘의 출퇴근 기록 조회 (선택된 직원 기준)
   const fetchTodayRecords = async () => {
     if (!selectedEmployee) return
@@ -142,7 +251,7 @@ export default function AttendancePage() {
         .select('name_ko, email')
         .eq('email', selectedEmployee)
         .eq('is_active', true)
-        .single()
+        .maybeSingle()
 
       if (employeeError || !employeeData) {
         setTodayRecords([])
@@ -227,7 +336,7 @@ export default function AttendancePage() {
         .select('name_ko, email')
         .eq('email', selectedEmployee)
         .eq('is_active', true)
-        .single()
+        .maybeSingle()
 
       console.log('직원 정보 조회 결과:', { employeeData, employeeError })
 
@@ -309,7 +418,7 @@ export default function AttendancePage() {
         .select('name_ko, email')
         .eq('email', selectedEmployee)
         .eq('is_active', true)
-        .single()
+        .maybeSingle()
 
       if (employeeError) {
         console.error('직원 정보 조회 오류:', employeeError)
@@ -331,7 +440,7 @@ export default function AttendancePage() {
         .select('*')
         .eq('employee_email', (employeeData as any).email)
         .eq('month', selectedMonth + '-01')
-        .single()
+        .maybeSingle()
 
       console.log('월별 통계 조회 결과:', { data, error })
 
@@ -598,13 +707,6 @@ export default function AttendancePage() {
                   2주급 계산기
                 </button>
                 <button
-                  onClick={() => setIsTipsShareModalOpen(true)}
-                  className="flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 border border-purple-600 rounded-lg hover:bg-purple-700 transition-colors"
-                >
-                  <DollarSign className="w-4 h-4 mr-2" />
-                  Tips 쉐어
-                </button>
-                <button
                   onClick={() => setIsBonusCalculatorOpen(true)}
                   className="flex items-center px-4 py-2 text-sm font-medium text-white bg-orange-600 border border-orange-600 rounded-lg hover:bg-orange-700 transition-colors"
                 >
@@ -619,6 +721,15 @@ export default function AttendancePage() {
                   전체 직원 총합
                 </button>
               </>
+            )}
+            {(isAdmin || canViewTipsShare) && (
+              <button
+                onClick={() => setIsTipsShareModalOpen(true)}
+                className="flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 border border-purple-600 rounded-lg hover:bg-purple-700 transition-colors"
+              >
+                <DollarSign className="w-4 h-4 mr-2" />
+                Tips 쉐어
+              </button>
             )}
             <button
               onClick={refreshData}
@@ -947,7 +1058,100 @@ export default function AttendancePage() {
         isOpen={isTipsShareModalOpen}
         onClose={() => setIsTipsShareModalOpen(false)}
         locale={locale}
+        onReservationClick={handleOpenReservationFromTips}
       />
+
+      {/* Tips 쉐어에서 예약 클릭 시 예약 수정 모달 (Tips 모달 위에 표시) */}
+      {loadingReservationForEdit && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[60]" aria-hidden>
+          <div className="text-white font-medium">예약 데이터 로딩 중…</div>
+        </div>
+      )}
+      {editingReservation && reservationFormData && (
+        <div className="fixed inset-0 z-[60]">
+          <ReservationFormAny
+            reservation={editingReservation}
+            customers={reservationFormData.customers}
+            products={reservationFormData.products}
+            channels={reservationFormData.channels}
+            productOptions={reservationFormData.productOptions}
+            options={reservationFormData.options}
+            pickupHotels={reservationFormData.pickupHotels}
+            coupons={reservationFormData.coupons}
+            layout="modal"
+            onSubmit={async (reservationData: any) => {
+              try {
+                const dbReservationData = {
+                  customer_id: reservationData.customerId,
+                  product_id: reservationData.productId,
+                  tour_date: reservationData.tourDate,
+                  tour_time: reservationData.tourTime || null,
+                  event_note: reservationData.eventNote,
+                  pickup_hotel: reservationData.pickUpHotel,
+                  pickup_time: reservationData.pickUpTime || null,
+                  adults: reservationData.adults,
+                  child: reservationData.child,
+                  infant: reservationData.infant,
+                  total_people: reservationData.totalPeople,
+                  channel_id: reservationData.channelId,
+                  channel_rn: reservationData.channelRN,
+                  added_by: reservationData.addedBy,
+                  tour_id: reservationData.tourId || editingReservation.tourId || null,
+                  status: reservationData.status,
+                  selected_options: reservationData.selectedOptions,
+                  selected_option_prices: reservationData.selectedOptionPrices,
+                  is_private_tour: reservationData.isPrivateTour || false,
+                  choices: reservationData.choices
+                }
+                const { error } = await supabase
+                  .from('reservations')
+                  .update(dbReservationData)
+                  .eq('id', editingReservation.id)
+                if (error) {
+                  alert('예약 수정 중 오류가 발생했습니다: ' + error.message)
+                  return
+                }
+                if (reservationData.choices?.required && Array.isArray(reservationData.choices.required)) {
+                  await supabase.from('reservation_choices').delete().eq('reservation_id', editingReservation.id)
+                  const validChoices = reservationData.choices.required
+                    .filter((c: any) => c.option_id)
+                    .map((c: any) => ({
+                      reservation_id: editingReservation.id,
+                      choice_id: c.choice_id,
+                      option_id: c.option_id,
+                      quantity: c.quantity || 1,
+                      total_price: c.total_price || 0
+                    }))
+                  if (validChoices.length > 0) {
+                    await (supabase as any).from('reservation_choices').insert(validChoices)
+                  }
+                }
+                handleCloseReservationEditModal()
+                alert('예약이 수정되었습니다.')
+              } catch (e) {
+                console.error('예약 수정 오류:', e)
+                alert('예약 수정 중 오류가 발생했습니다.')
+              }
+            }}
+            onCancel={handleCloseReservationEditModal}
+            onRefreshCustomers={async () => {}}
+            onDelete={async () => {
+              if (!confirm('정말 이 예약을 삭제하시겠습니까?')) return
+              try {
+                const { error } = await supabase.from('reservations').delete().eq('id', editingReservation.id)
+                if (error) {
+                  alert('예약 삭제 중 오류가 발생했습니다: ' + error.message)
+                  return
+                }
+                handleCloseReservationEditModal()
+                alert('예약이 삭제되었습니다.')
+              } catch (e) {
+                console.error('예약 삭제 오류:', e)
+              }
+            }}
+          />
+        </div>
+      )}
 
       {/* 보너스 계산기 모달 */}
       <BonusCalculatorModal

@@ -1,4 +1,5 @@
 import React, { memo } from 'react';
+import { useTranslations } from 'next-intl';
 import { Save, Loader2, AlertCircle, CheckCircle, Trash2 } from 'lucide-react';
 
 interface PricingControlsProps {
@@ -22,21 +23,23 @@ export const PricingControls = memo(function PricingControls({
   onDelete,
   canDelete = false
 }: PricingControlsProps) {
+  const t = useTranslations('products.dynamicPricingPage');
+
   const getMessageIcon = () => {
-    if (saveMessage.includes('성공')) {
+    if (saveMessage.toLowerCase().includes(t('successKeyword').toLowerCase())) {
       return <CheckCircle className="h-4 w-4 text-green-600" />;
     }
-    if (saveMessage.includes('실패')) {
+    if (saveMessage.toLowerCase().includes(t('failKeyword').toLowerCase())) {
       return <AlertCircle className="h-4 w-4 text-red-600" />;
     }
     return null;
   };
 
   const getMessageColor = () => {
-    if (saveMessage.includes('성공')) {
+    if (saveMessage.toLowerCase().includes(t('successKeyword').toLowerCase())) {
       return 'text-green-700 bg-green-50 border-green-200';
     }
-    if (saveMessage.includes('실패')) {
+    if (saveMessage.toLowerCase().includes(t('failKeyword').toLowerCase())) {
       return 'text-red-700 bg-red-50 border-red-200';
     }
     return 'text-blue-700 bg-blue-50 border-blue-200';
@@ -44,7 +47,6 @@ export const PricingControls = memo(function PricingControls({
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-      {/* 저장 메시지 */}
       {saveMessage && (
         <div className={`mb-4 p-3 rounded-md border ${getMessageColor()}`}>
           <div className="flex items-center space-x-2">
@@ -54,12 +56,11 @@ export const PricingControls = memo(function PricingControls({
         </div>
       )}
 
-      {/* 배치 저장 진행률 */}
       {batchProgress && (
         <div className="mb-4 p-3 rounded-md border border-blue-200 bg-blue-50">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-blue-700">
-              배치 저장 진행 중...
+              {t('batchSaving')}
             </span>
             <span className="text-sm text-blue-600">
               {batchProgress.completed}/{batchProgress.total}
@@ -74,12 +75,11 @@ export const PricingControls = memo(function PricingControls({
             />
           </div>
           <div className="mt-1 text-xs text-blue-600">
-            {Math.round((batchProgress.completed / batchProgress.total) * 100)}% 완료
+            {Math.round((batchProgress.completed / batchProgress.total) * 100)}% {t('percentComplete')}
           </div>
         </div>
       )}
 
-      {/* 컨트롤 버튼들 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <button
@@ -94,12 +94,12 @@ export const PricingControls = memo(function PricingControls({
             {saving ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span>저장 중...</span>
+                <span>{t('saveInProgress')}</span>
               </>
             ) : (
               <>
                 <Save className="h-4 w-4" />
-                <span>가격 규칙 저장</span>
+                <span>{t('savePriceRules')}</span>
               </>
             )}
           </button>
@@ -110,7 +110,7 @@ export const PricingControls = memo(function PricingControls({
               disabled={saving}
               className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              취소
+              {t('cancel')}
             </button>
           )}
 
@@ -125,14 +125,13 @@ export const PricingControls = memo(function PricingControls({
               }`}
             >
               <Trash2 className="h-4 w-4" />
-              <span>선택한 날짜 삭제</span>
+              <span>{t('deleteSelectedDates')}</span>
             </button>
           )}
         </div>
 
-        {/* 추가 정보 */}
         <div className="text-sm text-gray-500">
-          {saving ? '데이터를 저장하고 있습니다...' : '변경사항을 저장하세요'}
+          {saving ? t('savingData') : t('saveHint')}
         </div>
       </div>
     </div>

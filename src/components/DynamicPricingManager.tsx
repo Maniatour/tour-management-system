@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useTranslations } from 'next-intl';
 import { 
   Calendar,
   List,
@@ -17,6 +18,7 @@ import { useChoiceManagement } from '@/hooks/useChoiceManagement';
 import { usePricingData } from '@/hooks/usePricingData';
 import { usePriceCalculation } from '@/hooks/usePriceCalculation';
 import { findHomepageChoiceData } from '@/utils/homepagePriceCalculator';
+import { getOtaSalePriceWithFallback } from '@/utils/choicePricingMatcher';
 
 // UI 컴포넌트들
 import { ChannelSelector } from './dynamic-pricing/ChannelSelector';
@@ -82,6 +84,7 @@ export default function DynamicPricingManager({
   productId, 
   onSave
 }: DynamicPricingManagerProps) {
+  const t = useTranslations('products.dynamicPricingPage');
   // 뷰 모드 상태
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -508,10 +511,10 @@ export default function DynamicPricingManager({
       ];
 
       await Promise.all(savePromises);
-      setMessage('포함/불포함 내역이 저장되었습니다.');
+      setMessage(t('includedExcludedSaved'));
     } catch (error) {
       console.error('포함/불포함 내역 저장 오류:', error);
-      setMessage('포함/불포함 내역 저장 중 오류가 발생했습니다.');
+      setMessage(t('includedExcludedSaveError'));
     }
   };
 
@@ -1338,13 +1341,13 @@ export default function DynamicPricingManager({
       const choiceStatusMsg = choiceStatusMap && Object.keys(choiceStatusMap).length > 0 
         ? ` (초이스별 설정 포함)`
         : '';
-      setMessage(`${dates.length}개 날짜의 판매 상태가 ${status === 'sale' ? '판매중' : '마감'}으로 저장되었습니다.${choiceStatusMsg}`);
+      setMessage(t('msgSaleStatusSaved', { count: dates.length, status: status === 'sale' ? t('onSale') : t('saleStopped') }) + choiceStatusMsg);
       
       // 데이터 새로고침
       await loadDynamicPricingData();
     } catch (error) {
       console.error('판매 상태 저장 실패:', error);
-      setMessage('판매 상태 저장에 실패했습니다.');
+      setMessage(t('saveFailed'));
     }
   }, [selectedChannelType, selectedChannel, channelGroups, productId, choiceCombinations, savePricingRule, setMessage, loadDynamicPricingData]);
 
@@ -1356,7 +1359,7 @@ export default function DynamicPricingManager({
     }
 
     // 저장 시작 메시지
-    setMessage('가격 규칙을 저장하는 중입니다...');
+    setMessage(t('savingRules'));
 
     let channelIds: string[] = [];
     
@@ -1614,7 +1617,7 @@ export default function DynamicPricingManager({
 
     // 저장할 규칙이 없으면 메시지 표시
     if (rulesData.length === 0) {
-      setMessage('저장할 가격 규칙이 없습니다. 가격 정보를 입력해주세요.');
+      setMessage(t('noRulesToSave'));
       return;
     }
 
@@ -1630,7 +1633,7 @@ export default function DynamicPricingManager({
           });
           
           setBatchProgress(null); // 진행률 초기화
-          setMessage(`✅ 전체 ${rulesData.length}개 가격 규칙이 성공적으로 저장되었습니다.`);
+          setMessage(`✅ ${t('allRulesSaved', { count: rulesData.length })}`);
           
           // 저장 완료 후 저장된 데이터 확인
           console.log('저장 완료 - 저장된 레코드 요약:', {
@@ -1655,7 +1658,7 @@ export default function DynamicPricingManager({
         } catch (error) {
           console.error('배치 저장 실패:', error);
           setBatchProgress(null);
-          setMessage('⚠️ 배치 저장에 실패했습니다. 개별 저장을 시도합니다...');
+          setMessage(`⚠️ ${t('batchSaveFailed')}`);
           
           // 배치 저장 실패 시 개별 저장으로 폴백
           let savedCount = 0;
@@ -1671,7 +1674,7 @@ export default function DynamicPricingManager({
           }
           
           if (savedCount === rulesData.length) {
-            setMessage(`✅ 전체 ${rulesData.length}개 가격 규칙이 성공적으로 저장되었습니다.`);
+            setMessage(`✅ ${t('allRulesSaved', { count: rulesData.length })}`);
             // 저장 완료 후 데이터 새로고침 (데이터베이스 반영 시간 고려)
             await new Promise(resolve => setTimeout(resolve, 300)); // 300ms 대기
             await loadDynamicPricingData();
@@ -1680,7 +1683,7 @@ export default function DynamicPricingManager({
               await loadDynamicPricingData();
             }, 500);
           } else {
-            setMessage(`⚠️ ${savedCount}/${rulesData.length}개 가격 규칙이 저장되었습니다. (${failedCount}개 실패)`);
+            setMessage(`⚠️ ${t('someRulesSaved', { saved: savedCount, total: rulesData.length, failed: failedCount })}`);
             // 일부 저장 완료 후에도 데이터 새로고침
             await new Promise(resolve => setTimeout(resolve, 300));
             await loadDynamicPricingData();
@@ -1704,7 +1707,7 @@ export default function DynamicPricingManager({
         }
         
         if (savedCount === rulesData.length) {
-          setMessage(`✅ 전체 ${rulesData.length}개 가격 규칙이 성공적으로 저장되었습니다.`);
+          setMessage(`✅ ${t('allRulesSaved', { count: rulesData.length })}`);
           // 저장 완료 후 데이터 새로고침 (데이터베이스 반영 시간 고려)
           await new Promise(resolve => setTimeout(resolve, 300)); // 300ms 대기
           await loadDynamicPricingData();
@@ -1714,18 +1717,18 @@ export default function DynamicPricingManager({
             await loadDynamicPricingData();
           }, 500);
         } else if (savedCount > 0) {
-          setMessage(`⚠️ ${savedCount}/${rulesData.length}개 가격 규칙이 저장되었습니다. (${failedCount}개 실패)`);
+          setMessage(`⚠️ ${t('someRulesSaved', { saved: savedCount, total: rulesData.length, failed: failedCount })}`);
           // 일부 저장 완료 후에도 데이터 새로고침
           await new Promise(resolve => setTimeout(resolve, 300));
           await loadDynamicPricingData();
           await loadChannelPricingStats();
         } else {
-          setMessage(`❌ 가격 규칙 저장에 실패했습니다. (${failedCount}개 실패)`);
+          setMessage(`❌ ${t('saveFailed')} (${failedCount})`);
         }
       }
     } catch (error) {
       console.error('가격 규칙 저장 중 오류 발생:', error);
-      setMessage(`❌ 가격 규칙 저장 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+      setMessage(`❌ ${t('saveFailed')}: ${error instanceof Error ? error.message : ''}`);
     }
   }, [selectedDates, selectedChannelType, selectedChannel, channelGroups, pricingConfig, calculationConfig, productId, savePricingRule, savePricingRulesBatch, setMessage, loadChannelPricingStats, loadDynamicPricingData]);
 
@@ -1784,7 +1787,7 @@ export default function DynamicPricingManager({
   // 선택한 날짜들의 가격 규칙 삭제 핸들러
   const handleDeleteSelectedDates = useCallback(async () => {
     if (selectedDates.length === 0) {
-      setMessage('삭제할 날짜를 선택해주세요.');
+      setMessage(t('selectDatesToDelete'));
       return;
     }
 
@@ -1859,7 +1862,7 @@ export default function DynamicPricingManager({
 
       if (error) {
         console.error('채널 조회 실패:', error);
-        alert('채널 정보를 불러오는 중 오류가 발생했습니다.');
+        alert(t('channelLoadError'));
         return;
       }
 
@@ -1877,7 +1880,7 @@ export default function DynamicPricingManager({
       }
     } catch (error) {
       console.error('채널 조회 중 오류:', error);
-      alert('채널 정보를 불러오는 중 오류가 발생했습니다.');
+      alert(t('channelLoadError'));
     }
   }, []);
 
@@ -1921,7 +1924,7 @@ export default function DynamicPricingManager({
       // 채널 목록 새로고침
       await loadChannels();
       setEditingChannel(null);
-      alert('채널이 성공적으로 수정되었습니다!');
+      alert(t('channelUpdated'));
     } catch (error) {
       console.error('채널 수정 중 오류:', error);
       alert('채널 수정 중 오류가 발생했습니다.');
@@ -1947,7 +1950,7 @@ export default function DynamicPricingManager({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* 1열: 채널 선택 (1.5/12 → 2/12) */}
         <div className="lg:col-span-2 space-y-4">
-          <h3 className="text-lg font-semibold text-gray-900">채널 선택</h3>
+          <h3 className="text-lg font-semibold text-gray-900">{t('channelSelect')}</h3>
           <ChannelSelector
             channelGroups={channelGroups}
             isLoadingChannels={isLoadingChannels}
@@ -1993,7 +1996,7 @@ export default function DynamicPricingManager({
         {/* 2열: 캘린더 (10/12 ÷ 3 = 3.33/12 → 3/12) */}
         <div className="lg:col-span-3 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">가격 기록</h3>
+            <h3 className="text-lg font-semibold text-gray-900">{t('priceHistory')}</h3>
             {/* 뷰 모드 토글 및 판매 상태 설정 버튼 */}
             <div className="flex items-center space-x-1.5">
           <button
@@ -2008,7 +2011,7 @@ export default function DynamicPricingManager({
                 className="flex items-center space-x-1 px-2 py-1 rounded text-xs bg-green-100 text-green-700 border border-green-200 hover:bg-green-200 transition-colors"
           >
                 <Calendar className="h-3 w-3" />
-                <span className="text-xs">판매 상태</span>
+                <span className="text-xs">{t('saleStatus')}</span>
           </button>
           <button
                  onClick={() => setViewMode('calendar')}
@@ -2030,7 +2033,7 @@ export default function DynamicPricingManager({
                  }`}
                >
                 <List className="h-3 w-3" />
-                <span className="text-xs">목록</span>
+                <span className="text-xs">{t('list')}</span>
                </button>
             </div>
           </div>
@@ -2073,23 +2076,23 @@ export default function DynamicPricingManager({
           {/* 포함/불포함 내역 */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
             <div className="flex items-center justify-between mb-4">
-              <h4 className="text-md font-semibold text-gray-900">포함/불포함 내역</h4>
+              <h4 className="text-md font-semibold text-gray-900">{t('includedExcluded')}</h4>
               <button
                 onClick={saveChannelIncludedNotIncluded}
                 className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
               >
-                저장
+                {t('save')}
               </button>
             </div>
             <p className="text-xs text-gray-500 mb-4">
-              채널별 상세 설정의 포함/불포함 내역을 가져와 수정할 수 있습니다.
+              {t('includedExcludedHint')}
             </p>
             
             <div className="space-y-4">
                 {/* 포함 내역 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    포함 내역 (한국어)
+                    {t('includedKo')}
                   </label>
                   <textarea
                     value={channelIncludedNotIncluded.included_ko}
@@ -2099,13 +2102,13 @@ export default function DynamicPricingManager({
                     }))}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                     rows={3}
-                    placeholder="포함된 내용을 입력하세요"
+                    placeholder={t('placeholderIncluded')}
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    포함 내역 (영어)
+                    {t('includedEn')}
                   </label>
                   <textarea
                     value={channelIncludedNotIncluded.included_en}
@@ -2115,14 +2118,14 @@ export default function DynamicPricingManager({
                     }))}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                     rows={3}
-                    placeholder="Enter included items"
+                    placeholder={t('placeholderIncluded')}
                   />
                 </div>
 
                 {/* 불포함 내역 */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    불포함 내역 (한국어)
+                    {t('notIncludedKo')}
                   </label>
                   <textarea
                     value={channelIncludedNotIncluded.not_included_ko}
@@ -2132,13 +2135,13 @@ export default function DynamicPricingManager({
                     }))}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                     rows={3}
-                    placeholder="불포함된 내용을 입력하세요"
+                    placeholder={t('placeholderNotIncluded')}
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    불포함 내역 (영어)
+                    {t('notIncludedEn')}
                   </label>
                   <textarea
                     value={channelIncludedNotIncluded.not_included_en}
@@ -2148,7 +2151,7 @@ export default function DynamicPricingManager({
                     }))}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                     rows={3}
-                    placeholder="Enter excluded items"
+                    placeholder={t('placeholderNotIncluded')}
                   />
                 </div>
               </div>
@@ -2160,10 +2163,10 @@ export default function DynamicPricingManager({
           {/* 날짜 및 요일 선택기 */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
             <div className="flex items-center justify-between mb-4">
-              <h4 className="text-md font-semibold text-gray-900">날짜 및 요일 선택</h4>
+              <h4 className="text-md font-semibold text-gray-900">{t('dateAndDaySelect')}</h4>
               <div className="flex items-center space-x-3">
                 <span className="text-sm font-medium text-gray-700">
-                  {pricingConfig.is_sale_available ? '판매중' : '판매중지'}
+                  {pricingConfig.is_sale_available ? t('onSale') : t('saleStopped')}
                 </span>
                 <button
                   type="button"
@@ -2209,7 +2212,7 @@ export default function DynamicPricingManager({
         <div className="lg:col-span-4 space-y-4">
           {/* 기본 가격 설정 */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-            <h4 className="text-md font-semibold text-gray-900 mb-4">기본 가격</h4>
+            <h4 className="text-md font-semibold text-gray-900 mb-4">{t('basePriceSection')}</h4>
             
             <div className="space-y-4">
               {/* 상품 기본 가격 (읽기 전용) */}
@@ -2226,23 +2229,23 @@ export default function DynamicPricingManager({
                 return (
                   <div className="relative group">
                     <label className="block text-xs font-medium text-gray-700 mb-2">
-                      상품 기본 가격 (모든 채널 공통)
+                      {t('productBasePriceCommon')}
                     </label>
                     <div className="bg-gray-50 p-3 rounded border border-gray-200">
                       {isSinglePrice ? (
                         <div className="text-sm font-medium text-gray-900">
-                          단일 가격: ${productBasePrice.adult.toFixed(2)}
+                          {t('singlePriceWithAmount')} ${productBasePrice.adult.toFixed(2)}
                         </div>
                       ) : (
                         <div className="text-sm font-medium text-gray-900 flex items-center gap-4">
                           <span>
-                            <span className="text-xs text-gray-600">성인</span> ${productBasePrice.adult.toFixed(2)}
+                            <span className="text-xs text-gray-600">{t('adult')}</span> ${productBasePrice.adult.toFixed(2)}
                           </span>
                           <span>
-                            <span className="text-xs text-gray-600">아동</span> ${productBasePrice.child.toFixed(2)}
+                            <span className="text-xs text-gray-600">{t('child')}</span> ${productBasePrice.child.toFixed(2)}
                           </span>
                           <span>
-                            <span className="text-xs text-gray-600">유아</span> ${productBasePrice.infant.toFixed(2)}
+                            <span className="text-xs text-gray-600">{t('infant')}</span> ${productBasePrice.infant.toFixed(2)}
                           </span>
                         </div>
                       )}
@@ -2250,7 +2253,7 @@ export default function DynamicPricingManager({
                     {/* 마우스 오버 시 표시되는 안내 텍스트 */}
                     <div className="absolute left-0 top-full mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
                       <div className="bg-gray-800 text-white text-xs rounded px-2 py-1 whitespace-nowrap shadow-lg">
-                        * 상품 편집 페이지에서 기본 가격을 변경할 수 있습니다
+                        {t('basePriceEditHint')}
                       </div>
                     </div>
                   </div>
@@ -2295,14 +2298,14 @@ export default function DynamicPricingManager({
                             <ChevronDown className="h-4 w-4 text-purple-600" />
                           )}
                           <h5 className="text-sm font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-                            홈페이지 가격 정보 (20%할인)
+                            {t('homepagePriceInfo')}
                           </h5>
                         </button>
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 border border-purple-300">
-                          {isSinglePrice ? '단일 가격' : '분리 가격'}
+                          {isSinglePrice ? t('singlePrice') : t('separatePrice')}
                         </span>
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-300">
-                          참고용
+                          {t('forReference')}
                         </span>
                       </div>
                     </div>
@@ -2312,16 +2315,16 @@ export default function DynamicPricingManager({
                         <thead>
                           <tr className="bg-gradient-to-r from-purple-600 via-purple-500 to-pink-500">
                             <th className="text-center py-2 px-3 font-bold text-white text-[10px] uppercase tracking-wider border-r border-purple-400/30 w-1/3">
-                              초이스
+                              {t('choice')}
                             </th>
                             <th className="text-center py-2 px-2 font-bold text-white text-[10px] uppercase tracking-wider border-r border-purple-400/30">
-                              기본
+                              {t('base')}
                             </th>
                             <th className="text-center py-2 px-2 font-bold text-white text-[10px] uppercase tracking-wider border-r border-purple-400/30">
-                              초이스
+                              {t('choice')}
                             </th>
                             <th className="text-center py-2 px-2 font-bold text-white text-[10px] uppercase tracking-wider border-r border-purple-400/30">
-                              판매가
+                              {t('salePrice')}
                             </th>
                             <th className="text-center py-2 px-2 font-bold text-white text-[10px] uppercase tracking-wider border-r border-purple-400/30">
                               Gross
@@ -2424,9 +2427,9 @@ export default function DynamicPricingManager({
                                   {!isSinglePrice && (
                                     <>
                                       <br />
-                                      <span className="text-gray-500 text-[10px]">아동: {formatPrice(basePrice.child)}</span>
+                                      <span className="text-gray-500 text-[10px]">{t('child')}: {formatPrice(basePrice.child)}</span>
                                       <br />
-                                      <span className="text-gray-500 text-[10px]">유아: {formatPrice(basePrice.infant)}</span>
+                                      <span className="text-gray-500 text-[10px]">{t('infant')}: {formatPrice(basePrice.infant)}</span>
                                     </>
                                   )}
                                 </td>
@@ -2446,9 +2449,9 @@ export default function DynamicPricingManager({
                                   {!isSinglePrice && (
                                     <>
                                       <br />
-                                      <span className="text-blue-500 text-[10px]">아동: {formatPrice(salePrice.child)}</span>
+                                      <span className="text-blue-500 text-[10px]">{t('child')}: {formatPrice(salePrice.child)}</span>
                                       <br />
-                                      <span className="text-blue-500 text-[10px]">유아: {formatPrice(salePrice.infant)}</span>
+                                      <span className="text-blue-500 text-[10px]">{t('infant')}: {formatPrice(salePrice.infant)}</span>
                                     </>
                                   )}
                                 </td>
@@ -2457,9 +2460,9 @@ export default function DynamicPricingManager({
                                   {!isSinglePrice && (
                                     <>
                                       <br />
-                                      <span className="text-indigo-500 text-[10px]">아동: {formatPrice(grossPrice.child)}</span>
+                                      <span className="text-indigo-500 text-[10px]">{t('child')}: {formatPrice(grossPrice.child)}</span>
                                       <br />
-                                      <span className="text-indigo-500 text-[10px]">유아: {formatPrice(grossPrice.infant)}</span>
+                                      <span className="text-indigo-500 text-[10px]">{t('infant')}: {formatPrice(grossPrice.infant)}</span>
                                     </>
                                   )}
                                 </td>
@@ -2468,9 +2471,9 @@ export default function DynamicPricingManager({
                                   {!isSinglePrice && (
                                     <>
                                       <br />
-                                      <span className="text-emerald-500 text-[10px]">아동: {formatPrice(netPrice.child)}</span>
+                                      <span className="text-emerald-500 text-[10px]">{t('child')}: {formatPrice(netPrice.child)}</span>
                                       <br />
-                                      <span className="text-emerald-500 text-[10px]">유아: {formatPrice(netPrice.infant)}</span>
+                                      <span className="text-emerald-500 text-[10px]">{t('infant')}: {formatPrice(netPrice.infant)}</span>
                                     </>
                                   )}
                                 </td>
@@ -2491,7 +2494,7 @@ export default function DynamicPricingManager({
               <div className="grid grid-cols-2 gap-3">
                  <div>
                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                    수수료 (%)
+                    {t('commissionPercent')}
                    </label>
                      <input
                        type="number"
@@ -2519,7 +2522,7 @@ export default function DynamicPricingManager({
                  </div>
                  <div>
                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                    수수료 ($)
+                    {t('commissionAmount')}
                    </label>
                      <input
                        type="number"
@@ -2551,7 +2554,7 @@ export default function DynamicPricingManager({
               <div className="grid grid-cols-2 gap-3">
                  <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    쿠폰 할인 (%)
+                    {t('couponDiscount')}
                   </label>
                        <input
                          type="number"
@@ -2579,7 +2582,7 @@ export default function DynamicPricingManager({
                    </div>
                    <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">
-                    불포함 금액 ($)
+                    {t('notIncludedAmount')}
                   </label>
                        <input
                          type="number"
@@ -2640,12 +2643,12 @@ export default function DynamicPricingManager({
             
             return (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-              <h4 className="text-md font-semibold text-gray-900 mb-4">초이스별 가격 설정</h4>
+              <h4 className="text-md font-semibold text-gray-900 mb-4">{t('choicePricingSection')}</h4>
               
               <div className="space-y-3">
                 {choiceCombinations.map((combination) => {
-                  // OTA 판매가 가져오기
-                  const otaSalePrice = (pricingConfig.choices_pricing as any)?.[combination.id]?.ota_sale_price || 0;
+                  // OTA 판매가 가져오기 (미정 조합일 때 미국 거주자 선택의 ota_sale_price로 폴백)
+                  const otaSalePrice = getOtaSalePriceWithFallback(combination, (pricingConfig.choices_pricing as any) || {});
                   const commissionPercent = pricingConfig.commission_percent || 0;
                   const couponPercent = pricingConfig.coupon_percent || 0;
                   
@@ -2794,7 +2797,7 @@ export default function DynamicPricingManager({
                                     'bg-orange-100 text-orange-800'
                                   }`}
                                 >
-                                  {detail.optionNameKo || detail.optionName || '옵션'}: ${detail.adult_price || 0}
+                                  {detail.optionNameKo || detail.optionName || t('option')}: ${detail.adult_price || 0}
                                 </span>
                               );
                             })}
@@ -2813,7 +2816,7 @@ export default function DynamicPricingManager({
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="block text-xs font-medium text-gray-700 mb-1">
-                              OTA 판매가 ($)
+                              {t('otaSalePrice')}
                             </label>
                             <input
                               type="number"
@@ -2927,7 +2930,7 @@ export default function DynamicPricingManager({
                           {/* 불포함 금액 입력 필드 */}
                           <div>
                             <label className="block text-xs font-medium text-gray-700 mb-1">
-                              불포함 금액 ($)
+                              {t('notIncludedAmount')}
                             </label>
                             <input
                               type="text"
@@ -3061,7 +3064,7 @@ export default function DynamicPricingManager({
                                 }
                               }}
                               className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                              placeholder="0 (0으로 변경 시 불포함 사항 없음으로 이동)"
+                              placeholder={t('notIncludedPlaceholder')}
                               step="0.01"
                               min="0"
                             />
@@ -3073,8 +3076,8 @@ export default function DynamicPricingManager({
                         {otaSalePrice > 0 && (
                           <div className="bg-blue-50 border border-blue-200 rounded p-2">
                             <div className="text-xs text-gray-600 mb-1">
-                              <div>수수료: {commissionPercent}%</div>
-                              <div>쿠폰 할인: {couponPercent}%</div>
+                              <div>{t('commissionLabel')} {commissionPercent}%</div>
+                              <div>{t('couponLabel')} {couponPercent}%</div>
                             </div>
                             {/* 불포함 금액 표시 (Net Price 위로 이동) */}
                             {notIncludedPrice > 0 && (
@@ -3084,21 +3087,21 @@ export default function DynamicPricingManager({
                               </div>
                             )}
                             <div className="text-sm font-semibold text-blue-900 mb-1">
-                              Net Price: ${netPrice.toFixed(2)}
+                              {t('netPriceLabel')} ${netPrice.toFixed(2)}
                               {homepageNetPrice > 0 && (
                                 <span className={`ml-2 text-xs ${priceDifference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                  (홈페이지: ${homepageNetPrice.toFixed(2)}, 차액: {priceDifference >= 0 ? '+' : ''}${priceDifference.toFixed(2)})
+                                  ({t('homepageLabel')} ${homepageNetPrice.toFixed(2)}, {t('differenceLabel')} {priceDifference >= 0 ? '+' : ''}${priceDifference.toFixed(2)})
                                 </span>
                               )}
                             </div>
                             <div className="text-xs text-gray-500 mt-1">
                               {notIncludedPrice > 0 ? (
                                 <>
-                                  계산식: ${otaSalePrice.toFixed(2)} × (1 - {couponPercent}%) × (1 - {commissionPercent}%) + ${notIncludedPrice.toFixed(2)} (불포함) = ${netPrice.toFixed(2)}
+                                  {t('formulaWithNotIncluded', { ota: otaSalePrice.toFixed(2), coupon: couponPercent, commission: commissionPercent, notIncluded: notIncludedPrice.toFixed(2), net: netPrice.toFixed(2) })}
                                 </>
                               ) : (
                                 <>
-                                  계산식: ${otaSalePrice.toFixed(2)} × (1 - {couponPercent}%) × (1 - {commissionPercent}%) = ${netPrice.toFixed(2)}
+                                  {t('formulaWithoutNotIncluded', { ota: otaSalePrice.toFixed(2), coupon: couponPercent, commission: commissionPercent, net: netPrice.toFixed(2) })}
                                 </>
                               )}
                             </div>
@@ -3111,7 +3114,7 @@ export default function DynamicPricingManager({
                         // 홈페이지 단일 가격 모드
                         <div>
                           <label className="block text-xs font-medium text-gray-700 mb-1">
-                            판매가 ($) <span className="text-blue-600">(단일 가격)</span>
+                            {t('salePriceLabel')} <span className="text-blue-600">({t('singlePrice')})</span>
                           </label>
                           <input
                             type="number"
@@ -3148,9 +3151,9 @@ export default function DynamicPricingManager({
                             className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                             placeholder="0"
                           />
-                          <p className="text-xs text-blue-600 mt-1">성인/아동/유아 모두 동일한 가격이 적용됩니다</p>
+                          <p className="text-xs text-blue-600 mt-1">{t('singlePriceNote')}</p>
                           <div className="text-xs text-gray-500 mt-1">
-                            원래 합산: ${combination.combination_details ? 
+                            {t('originalSum')} ${combination.combination_details ? 
                               combination.combination_details.reduce((sum, detail) => sum + (detail.adult_price || 0), 0) : 
                               combination.adult_price || 0}
                           </div>
@@ -3160,7 +3163,7 @@ export default function DynamicPricingManager({
                         <div className="grid grid-cols-3 gap-2">
                           <div>
                             <label className="block text-xs font-medium text-gray-700 mb-1">
-                              성인 판매가 ($)
+                              {t('adultSalePriceLabel')}
                             </label>
                             <input
                               type="number"
@@ -3190,14 +3193,14 @@ export default function DynamicPricingManager({
                               placeholder="0"
                             />
                             <div className="text-xs text-gray-500 mt-1">
-                              원래 합산: ${combination.combination_details ? 
+                              {t('originalSum')} ${combination.combination_details ? 
                                 combination.combination_details.reduce((sum, detail) => sum + (detail.adult_price || 0), 0) : 
                                 combination.adult_price || 0}
                             </div>
                           </div>
                           <div>
                             <label className="block text-xs font-medium text-gray-700 mb-1">
-                              아동 판매가 ($)
+                              {t('childSalePriceLabel')}
                             </label>
                             <input
                               type="number"
@@ -3223,14 +3226,14 @@ export default function DynamicPricingManager({
                               placeholder="0"
                             />
                             <div className="text-xs text-gray-500 mt-1">
-                              원래 합산: ${combination.combination_details ? 
+                              {t('originalSum')} ${combination.combination_details ? 
                                 combination.combination_details.reduce((sum, detail) => sum + (detail.child_price || 0), 0) : 
                                 combination.child_price || 0}
                             </div>
                           </div>
                           <div>
                             <label className="block text-xs font-medium text-gray-700 mb-1">
-                              유아 판매가 ($)
+                              {t('infantSalePriceLabel')}
                             </label>
                             <input
                               type="number"
@@ -3268,16 +3271,16 @@ export default function DynamicPricingManager({
                     {productSubCategory !== 'Mania Tour' && (
                       <div className="mt-3 pt-3 border-t border-gray-200">
                         <div className="text-xs font-medium text-gray-700 mb-2">
-                          실 구매가 (운영 이익 계산용)
+                          {t('actualCostPriceLabel')}
                         {isHomepageSinglePrice && (
-                          <span className="ml-2 text-blue-600">(단일 가격)</span>
+                          <span className="ml-2 text-blue-600">({t('singlePrice')})</span>
                         )}
                       </div>
                       {isHomepageSinglePrice ? (
                         // 단일 가격 모드: 구매가 하나만 입력
                         <div>
                           <label className="block text-xs font-medium text-gray-600 mb-1">
-                            구매가 ($)
+                            {t('costPriceLabel')}
                           </label>
                           <input
                             type="number"
@@ -3331,7 +3334,7 @@ export default function DynamicPricingManager({
                         <div className="grid grid-cols-3 gap-2">
                           <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">
-                              성인 구매가 ($)
+                              {t('adultCostPriceLabel')}
                             </label>
                             <input
                               type="number"
@@ -3376,7 +3379,7 @@ export default function DynamicPricingManager({
                           </div>
                           <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">
-                              아동 구매가 ($)
+                              {t('childCostPriceLabel')}
                             </label>
                             <input
                               type="number"
@@ -3421,7 +3424,7 @@ export default function DynamicPricingManager({
                           </div>
                           <div>
                             <label className="block text-xs font-medium text-gray-600 mb-1">
-                              유아 구매가 ($)
+                              {t('infantCostPriceLabel')}
                             </label>
                             <input
                               type="number"
@@ -3483,12 +3486,12 @@ export default function DynamicPricingManager({
                         if (adultCostPrice > 0 || childCostPrice > 0 || infantCostPrice > 0) {
                           return (
                             <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs">
-                              <div className="font-medium text-green-900 mb-1">예상 운영 이익 (판매가 - 구매가):</div>
+                              <div className="font-medium text-green-900 mb-1">{t('expectedProfit')}</div>
                               {adultCostPrice > 0 && (
-                                <div className="text-green-700">성인: ${adultSalePrice.toFixed(2)} - ${adultCostPrice.toFixed(2)} = <span className="font-semibold">${adultProfit.toFixed(2)}</span></div>
+                                <div className="text-green-700">{t('adult')}: ${adultSalePrice.toFixed(2)} - ${adultCostPrice.toFixed(2)} = <span className="font-semibold">${adultProfit.toFixed(2)}</span></div>
                               )}
                               {!isHomepageSinglePrice && childCostPrice > 0 && (
-                                <div className="text-green-700">아동: ${childSalePrice.toFixed(2)} - ${childCostPrice.toFixed(2)} = <span className="font-semibold">${childProfit.toFixed(2)}</span></div>
+                                <div className="text-green-700">{t('child')}: ${childSalePrice.toFixed(2)} - ${childCostPrice.toFixed(2)} = <span className="font-semibold">${childProfit.toFixed(2)}</span></div>
                               )}
                               {!isHomepageSinglePrice && infantCostPrice > 0 && (
                                 <div className="text-green-700">유아: ${infantSalePrice.toFixed(2)} - ${infantCostPrice.toFixed(2)} = <span className="font-semibold">${infantProfit.toFixed(2)}</span></div>
@@ -3548,14 +3551,14 @@ export default function DynamicPricingManager({
 
             return (
               <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                <h4 className="text-md font-semibold text-gray-900 mb-4">가격 설정 (초이스 없음)</h4>
+                <h4 className="text-md font-semibold text-gray-900 mb-4">{t('noChoicePricing')}</h4>
                 
                 <div className="space-y-3">
                   {/* OTA 판매가와 불포함 금액을 같은 줄에 배치 */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">
-                        {isHomepageChannel ? '판매가 ($)' : 'OTA 판매가 ($)'}
+                        {isHomepageChannel ? t('salePriceLabelShort') : t('otaSalePrice')}
                       </label>
                       <input
                         type="number"
@@ -3626,7 +3629,7 @@ export default function DynamicPricingManager({
                     {/* 불포함 금액 입력 필드 */}
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">
-                        불포함 금액 ($)
+                        {t('notIncludedAmount')}
                       </label>
                       <input
                         type="text"
@@ -3762,27 +3765,27 @@ export default function DynamicPricingManager({
                   {otaSalePrice > 0 && (
                     <div className="bg-blue-50 border border-blue-200 rounded p-2">
                       <div className="text-xs text-gray-600 mb-1">
-                        <div>수수료: {commissionPercent}%</div>
-                        <div>쿠폰 할인: {couponPercent}%</div>
+                        <div>{t('commissionLabel')} {commissionPercent}%</div>
+                        <div>{t('couponLabel')} {couponPercent}%</div>
                       </div>
                       {/* 불포함 금액 표시 */}
                       {notIncludedPrice > 0 && (
                         <div className="text-sm font-semibold text-orange-600 mb-1">
-                          불포함 금액: 
+                          {t('notIncludedAmountShort')}
                           <span className="ml-2">${notIncludedPrice.toFixed(2)}</span>
                         </div>
                       )}
                       <div className="text-sm font-semibold text-blue-900 mb-1">
-                        Net Price: ${netPrice.toFixed(2)}
+                        {t('netPriceLabel')} ${netPrice.toFixed(2)}
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
                         {notIncludedPrice > 0 ? (
                           <>
-                            계산식: ${otaSalePrice.toFixed(2)} × (1 - {couponPercent}%) × (1 - {commissionPercent}%) + ${notIncludedPrice.toFixed(2)} (불포함) = ${netPrice.toFixed(2)}
+                            {t('formulaWithNotIncluded', { ota: otaSalePrice.toFixed(2), coupon: couponPercent, commission: commissionPercent, notIncluded: notIncludedPrice.toFixed(2), net: netPrice.toFixed(2) })}
                           </>
                         ) : (
                           <>
-                            계산식: ${otaSalePrice.toFixed(2)} × (1 - {couponPercent}%) × (1 - {commissionPercent}%) = ${netPrice.toFixed(2)}
+                            {t('formulaWithoutNotIncluded', { ota: otaSalePrice.toFixed(2), coupon: couponPercent, commission: commissionPercent, net: netPrice.toFixed(2) })}
                           </>
                         )}
                       </div>

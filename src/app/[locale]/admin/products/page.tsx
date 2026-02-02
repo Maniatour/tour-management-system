@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2, ChevronDown, ChevronRight, ChevronUp, Star } from 'lucide-react'
 import Link from 'next/link'
@@ -16,7 +16,7 @@ interface AdminProductsProps {
   params: Promise<{ locale: string }>
 }
 
-export default function AdminProducts({ params }: AdminProductsProps) {
+export default function AdminProducts({ params: _params }: AdminProductsProps) {
   const paramsObj = useParams()
   const locale = paramsObj.locale as string
   const t = useTranslations('products')
@@ -31,7 +31,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
   const [categories, setCategories] = useState<{ value: string; label: string; count: number }[]>([])
   const [subCategories, setSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
   const [allSubCategories, setAllSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
-  const [statusCounts, setStatusCounts] = useState<{ value: string; label: string; count: number }[]>([])
+  const [statusCounts, setStatusCounts] = useState<{ value: string; labelKey: string; count: number }[]>([])
   const [viewMode, setViewMode] = useState<'card' | 'table'>('card')
   const [updatingProducts, setUpdatingProducts] = useState<Set<string>>(new Set())
   const [copyingProducts, setCopyingProducts] = useState<Set<string>>(new Set())
@@ -200,38 +200,47 @@ export default function AdminProducts({ params }: AdminProductsProps) {
           
           // 각 그룹에서 기본 옵션 찾기
           const defaultOptions = groups.map(group => {
-            return group.options.find(opt => opt.is_default === true) || group.options[0]
+            return group.options.find((opt: { is_default?: boolean }) => opt.is_default === true) || group.options[0]
           })
           
           // 조합을 표시용 데이터로 변환
-          combinationsMap[productId] = allCombinations.map((combo, index) => {
-            const combinationNameKo = combo.map((option, idx) => {
-              const groupName = groups[idx]?.groupName || ''
-              return `${option.name_ko || option.name}`
-            }).join(' - ')
-            
-            const combinationName = combo.map(option => option.name || option.name_ko).join(' - ')
-            
-            const totalPrice = combo.reduce((sum, option) => sum + option.adult_price, 0)
-            
-            // 기본 조합인지 확인 (각 그룹의 기본 옵션과 일치하는지)
-            const isDefault = combo.every((option, idx) => {
+          type ChoiceItem = {
+            id: string
+            name: string
+            name_ko: string
+            adult_price: number
+            child_price: number
+            infant_price: number
+            is_default: boolean
+          }
+          type ComboItem = {
+            id: string
+            combinationName: string
+            combinationNameKo: string
+            totalPrice: number
+            isDefault: boolean
+            choices: ChoiceItem[]
+          }
+          combinationsMap[productId] = allCombinations.map((combo, index): ComboItem => {
+            const combinationNameKo = combo.map((option: ChoiceItem) => `${option.name_ko || option.name}`).join(' - ')
+            const combinationName = combo.map((option: ChoiceItem) => option.name || option.name_ko).join(' - ')
+            const totalPrice = combo.reduce((sum: number, option: ChoiceItem) => sum + option.adult_price, 0)
+            const isDefault = combo.every((option: ChoiceItem, idx: number) => {
               const defaultOpt = defaultOptions[idx]
               return defaultOpt && option.id === defaultOpt.id
             })
-            
             return {
               id: `combo-${productId}-${index}`,
               combinationName,
               combinationNameKo,
               totalPrice,
               isDefault,
-              choices: combo
+              choices: combo as ChoiceItem[]
             }
           })
         })
         
-        setChoiceCombinations(combinationsMap)
+        setChoiceCombinations(combinationsMap as typeof choiceCombinations)
       }
     } catch (error) {
       console.error('초이스 가격 조회 중 예상치 못한 오류:', error)
@@ -360,18 +369,15 @@ export default function AdminProducts({ params }: AdminProductsProps) {
           })
         
         // 상태 목록 생성 (전체 + 실제 존재하는 상태들)
-        const statusList = [
-          { value: 'all', label: '전체', count: data.length }
+        const statusList: { value: string; labelKey: string; count: number }[] = [
+          { value: 'all', labelKey: 'all', count: data.length }
         ]
         
         // 실제 존재하는 상태들을 상품 수 순으로 정렬하여 추가
         Object.entries(statusCounts)
           .sort(([,a], [,b]) => b - a) // 상품 수 내림차순 정렬
           .forEach(([status, count]) => {
-            const statusLabel = status === 'active' ? '활성' : 
-                              status === 'inactive' ? '비활성' : 
-                              status === 'draft' ? '초안' : status
-            statusList.push({ value: status, label: statusLabel, count })
+            statusList.push({ value: status, labelKey: status, count })
           })
         
         setCategories(categoryList)
@@ -449,25 +455,6 @@ export default function AdminProducts({ params }: AdminProductsProps) {
     setSelectedSubCategory('all')
     setSelectedStatus('active')
     setSubCategories(allSubCategories) // 서브카테고리를 전체 목록으로 복원
-  }
-
-  // 상태 레이블 및 색상 헬퍼 함수
-  const getStatusLabel = (status: string) => {
-    const statusLabels: { [key: string]: string } = {
-      active: '활성',
-      inactive: '비활성',
-      draft: '초안'
-    }
-    return statusLabels[status] || status
-  }
-
-  const getStatusColor = (status: string) => {
-    const statusColors: { [key: string]: string } = {
-      active: 'bg-green-100 text-green-800',
-      inactive: 'bg-gray-100 text-gray-800',
-      draft: 'bg-yellow-100 text-yellow-800'
-    }
-    return statusColors[status] || 'bg-gray-100 text-gray-800'
   }
 
   const getCategoryLabel = (category: string) => {
@@ -827,19 +814,19 @@ export default function AdminProducts({ params }: AdminProductsProps) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
             </svg>
           </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">상품이 없습니다</h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">{t('noProducts')}</h3>
           <p className="text-gray-600 mb-4">
-            아직 등록된 상품이 없거나 데이터베이스 연결에 문제가 있을 수 있습니다.
+            {t('noProductsDescription')}
           </p>
           <div className="space-y-2">
             <button
               onClick={fetchProducts}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
             >
-              다시 시도
+              {t('retry')}
             </button>
             <div className="text-xs text-gray-500">
-              또는 새 상품을 추가해보세요
+              {t('orAddNewProduct')}
             </div>
           </div>
         </div>
@@ -852,9 +839,9 @@ export default function AdminProducts({ params }: AdminProductsProps) {
       {/* 페이지 헤더 */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">상품 관리</h1>
+          <h1 className="text-3xl font-bold text-gray-900">{t('pageTitle')}</h1>
           <p className="mt-2 text-gray-600">
-            투어 상품을 추가, 편집, 삭제할 수 있습니다
+            {t('pageDescription')}
           </p>
         </div>
         <div className="flex items-center space-x-3">
@@ -863,14 +850,14 @@ export default function AdminProducts({ params }: AdminProductsProps) {
             className="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600 flex items-center space-x-2"
           >
             <Star size={20} />
-            <span>즐겨찾기 순서 조정</span>
+            <span>{t('favoriteOrder')}</span>
           </button>
           <Link
             href={`/${locale}/admin/products/new`}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
           >
             <Plus size={20} />
-            <span>새 상품 추가</span>
+            <span>{t('addProduct')}</span>
           </Link>
         </div>
       </div>
@@ -911,7 +898,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                   <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
         <input
           type="text"
-                    placeholder="상품명, 카테고리, 서브카테고리, 설명으로 검색..."
+                    placeholder={t('searchPlaceholder')}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-56 pl-7 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
@@ -963,7 +950,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                     }`}
                   >
-                    <span>{status.label}</span>
+                    <span>{status.labelKey === 'all' ? t('all') : t(`status.${status.labelKey}`)}</span>
                     <span className={`px-1.5 py-0.5 rounded-full text-xs ${
                       selectedStatus === status.value
                         ? 'bg-green-100 text-green-600'
@@ -982,21 +969,24 @@ export default function AdminProducts({ params }: AdminProductsProps) {
       {/* 결과 요약 및 뷰 전환 */}
       <div className="flex items-center justify-between text-sm text-gray-600">
         <span>
-          총 {filteredProducts.length}개의 상품
+          {t('totalProducts', { count: filteredProducts.length })}
           {selectedCategory !== 'all' && ` (${categories.find(c => c.value === selectedCategory)?.label})`}
           {selectedSubCategory !== 'all' && ` (${subCategories.find(c => c.value === selectedSubCategory)?.label})`}
-          {selectedStatus !== 'all' && ` (${statusCounts.find(s => s.value === selectedStatus)?.label})`}
+          {selectedStatus !== 'all' && (() => {
+            const s = statusCounts.find(s => s.value === selectedStatus)
+            return s ? ` (${s.labelKey === 'all' ? t('all') : t(`status.${s.labelKey}`)})` : ''
+          })()}
         </span>
         <div className="flex items-center space-x-4">
           {searchTerm && (
-            <span>&ldquo;<strong>{searchTerm}</strong>&rdquo; 검색 결과</span>
+            <span>&ldquo;<strong>{searchTerm}</strong>&rdquo; {t('searchResults')}</span>
           )}
           {(searchTerm || selectedCategory !== 'all' || selectedSubCategory !== 'all' || selectedStatus !== 'all') && (
             <button
               onClick={clearFilters}
               className="text-blue-600 hover:text-blue-800 underline"
             >
-              필터 초기화
+              {t('clearFilters')}
             </button>
           )}
           {/* 뷰 전환 버튼 */}
@@ -1009,12 +999,12 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                 {allCardsCollapsed ? (
                   <>
                     <ChevronDown size={16} />
-                    <span>상세보기</span>
+                    <span>{t('expandAll')}</span>
                   </>
                 ) : (
                   <>
                     <ChevronUp size={16} />
-                    <span>접어보기</span>
+                    <span>{t('collapseAll')}</span>
                   </>
                 )}
               </button>
@@ -1027,7 +1017,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                     ? 'bg-blue-600 text-white'
                     : 'text-gray-600 hover:bg-gray-100'
                 }`}
-                title="카드뷰"
+                title={t('cardView')}
               >
                 <Grid3x3 size={18} />
               </button>
@@ -1038,7 +1028,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                     ? 'bg-blue-600 text-white'
                     : 'text-gray-600 hover:bg-gray-100'
                 }`}
-                title="테이블뷰"
+                title={t('tableView')}
               >
                 <List size={18} />
               </button>
@@ -1053,15 +1043,15 @@ export default function AdminProducts({ params }: AdminProductsProps) {
           <div className="text-gray-400 mb-4">
             <Search className="mx-auto h-12 w-12" />
           </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">검색 결과가 없습니다</h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">{t('noSearchResults')}</h3>
           <p className="text-gray-600 mb-4">
-            검색어나 카테고리를 변경해보세요.
+            {t('noSearchResultsHint')}
           </p>
           <button
             onClick={clearFilters}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
           >
-            필터 초기화
+            {t('clearFilters')}
           </button>
         </div>
       ) : viewMode === 'card' ? (
@@ -1103,31 +1093,31 @@ export default function AdminProducts({ params }: AdminProductsProps) {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10" style={{ width: '200px', maxWidth: '200px' }}>
-                    상품명
+                    {t('columns.name')}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    카테고리
+                    {t('columns.category')}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '250px', width: '250px' }}>
-                    초이스
+                    {t('choice')}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    기본 가격
+                    {t('basePrice')}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '120px', width: '120px' }}>
-                    초이스 가격
+                    {t('choicePrice')}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ minWidth: '120px', width: '120px' }}>
                     Net Price
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    기간
+                    {t('duration')}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    최대 참가자
+                    {t('maxParticipants')}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    액션
+                    {t('action')}
                   </th>
                 </tr>
               </thead>
@@ -1210,14 +1200,14 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                                 onClick={() => saveEdit(product.id, 'name')}
                                 disabled={isSaving}
                                 className="p-1 text-green-600 hover:text-green-900 disabled:opacity-50"
-                                title="저장"
+                                title={t('save')}
                               >
                                 <Save size={14} />
                               </button>
                               <button
                                 onClick={cancelEdit}
                                 className="p-1 text-gray-600 hover:text-gray-900"
-                                title="취소"
+                                title={t('cancel')}
                               >
                                 <X size={14} />
                               </button>
@@ -1230,7 +1220,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                                 href={`/${locale}/admin/products/${product.id}`}
                                 className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline block truncate"
                               >
-                                {product.name}
+                                {locale === 'en' ? (product.name_en || product.name) : product.name}
                               </Link>
                               {product.description && (
                                 <p className="text-xs text-gray-500 mt-1 line-clamp-1">
@@ -1239,9 +1229,9 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                               )}
                             </div>
                             <button
-                              onClick={() => startEdit(product.id, 'name', product.name)}
+                              onClick={() => startEdit(product.id, 'name', locale === 'en' ? (product.name_en || product.name) : product.name)}
                               className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
-                              title="상품명 수정"
+                              title={t('editProductName')}
                             >
                               <Edit2 size={14} />
                             </button>
@@ -1255,7 +1245,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                         {isEditing && (editingField?.fieldName === 'category' || editingField?.fieldName === 'sub_category') ? (
                           <div className="space-y-2">
                             <div>
-                              <label className="block text-xs text-gray-600 mb-1">카테고리</label>
+                              <label className="block text-xs text-gray-600 mb-1">{t('columns.category')}</label>
                               <select
                                 value={editingField?.fieldName === 'category' ? (editingValue as string) : (product.category || '')}
                                 onChange={(e) => {
@@ -1268,7 +1258,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                                 className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                 autoFocus={editingField?.fieldName === 'category'}
                               >
-                                <option value="">선택 안함</option>
+                                <option value="">{t('selectNone')}</option>
                                 {getCategoryOptions().map(opt => (
                                   <option key={opt.value} value={opt.value}>
                                     {opt.label}
@@ -1277,7 +1267,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                               </select>
                             </div>
                             <div>
-                              <label className="block text-xs text-gray-600 mb-1">서브카테고리</label>
+                              <label className="block text-xs text-gray-600 mb-1">{t('subCategory')}</label>
                               <select
                                 value={editingField?.fieldName === 'sub_category' ? (editingValue as string) : (product.sub_category || '')}
                                 onChange={(e) => {
@@ -1291,7 +1281,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                                 autoFocus={editingField?.fieldName === 'sub_category'}
                                 disabled={!product.category && editingField?.fieldName !== 'sub_category'}
                               >
-                                <option value="">선택 안함</option>
+                                <option value="">{t('selectNone')}</option>
                                 {getSubCategoryOptions(product.category || editingValue as string).map(opt => (
                                   <option key={opt.value} value={opt.value}>
                                     {opt.label}
@@ -1310,14 +1300,14 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                                 }}
                                 disabled={isSaving}
                                 className="p-1 text-green-600 hover:text-green-900 disabled:opacity-50"
-                                title="저장"
+                                title={t('save')}
                               >
                                 <Save size={14} />
                               </button>
                               <button
                                 onClick={cancelEdit}
                                 className="p-1 text-gray-600 hover:text-gray-900"
-                                title="취소"
+                                title={t('cancel')}
                               >
                                 <X size={14} />
                               </button>
@@ -1335,7 +1325,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                             <button
                               onClick={() => startEdit(product.id, 'category', product.category || '')}
                               className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
-                              title="카테고리/서브카테고리 수정"
+                              title={t('editCategory')}
                             >
                               <Edit2 size={14} />
                             </button>
@@ -1381,7 +1371,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                                     <ChevronDown size={12} className="text-gray-400 flex-shrink-0" />
                                   )}
                                   <span className="text-gray-600 font-medium">
-                                    {combo.combinationNameKo}
+                                    {locale === 'en' ? combo.combinationName : combo.combinationNameKo}
                                   </span>
                                 </div>
                               ))}
@@ -1419,14 +1409,14 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                                 onClick={() => saveEdit(product.id, 'base_price')}
                                 disabled={isSaving}
                                 className="p-1 text-green-600 hover:text-green-900 disabled:opacity-50"
-                                title="저장"
+                                title={t('save')}
                               >
                                 <Save size={14} />
                               </button>
                               <button
                                 onClick={cancelEdit}
                                 className="p-1 text-gray-600 hover:text-gray-900"
-                                title="취소"
+                                title={t('cancel')}
                               >
                                 <X size={14} />
                               </button>
@@ -1440,7 +1430,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                             <button
                               onClick={() => startEdit(product.id, 'base_price', product.base_price || 0)}
                               className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
-                              title="가격 수정"
+                              title={t('editPrice')}
                             >
                               <Edit2 size={14} />
                             </button>
@@ -1559,14 +1549,14 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                                 onClick={() => saveEdit(product.id, 'duration')}
                                 disabled={isSaving}
                                 className="p-1 text-green-600 hover:text-green-900 disabled:opacity-50"
-                                title="저장"
+                                title={t('save')}
                               >
                                 <Save size={14} />
                               </button>
                               <button
                                 onClick={cancelEdit}
                                 className="p-1 text-gray-600 hover:text-gray-900"
-                                title="취소"
+                                title={t('cancel')}
                               >
                                 <X size={14} />
                               </button>
@@ -1580,7 +1570,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                             <button
                               onClick={() => startEdit(product.id, 'duration', product.duration || '')}
                               className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
-                              title="기간 수정"
+                              title={t('editDuration')}
                             >
                               <Edit2 size={14} />
                             </button>
@@ -1608,21 +1598,21 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                                   }
                                 }}
                               />
-                              <span className="text-xs text-gray-500 ml-1">명</span>
+                              <span className="text-xs text-gray-500 ml-1">{t('peopleUnit')}</span>
                             </div>
                             <div className="flex space-x-1">
                               <button
                                 onClick={() => saveEdit(product.id, 'max_participants')}
                                 disabled={isSaving}
                                 className="p-1 text-green-600 hover:text-green-900 disabled:opacity-50"
-                                title="저장"
+                                title={t('save')}
                               >
                                 <Save size={14} />
                               </button>
                               <button
                                 onClick={cancelEdit}
                                 className="p-1 text-gray-600 hover:text-gray-900"
-                                title="취소"
+                                title={t('cancel')}
                               >
                                 <X size={14} />
                               </button>
@@ -1631,12 +1621,12 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                         ) : (
                           <div className="flex items-center justify-between group">
                             <span className="text-sm text-gray-600">
-                              {product.max_participants || '-'}명
+                              {product.max_participants ?? '-'}{product.max_participants != null ? t('peopleUnit') : ''}
                             </span>
                             <button
                               onClick={() => startEdit(product.id, 'max_participants', product.max_participants || 0)}
                               className="ml-2 p-1 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
-                              title="최대 참가자 수정"
+                              title={t('editMaxParticipants')}
                             >
                               <Edit2 size={14} />
                             </button>
@@ -1661,7 +1651,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                                 ? 'text-gray-400 cursor-not-allowed' 
                                 : 'text-green-600 hover:text-green-800 hover:bg-green-50'
                             }`}
-                            title="상품 복사"
+                            title={t('copyProduct')}
                           >
                             <Copy className="h-4 w-4" />
                           </button>
@@ -1677,7 +1667,7 @@ export default function AdminProducts({ params }: AdminProductsProps) {
                             className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
                               productStatus === 'active' ? 'bg-blue-600' : 'bg-gray-200'
                             } ${isUpdating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                            title={productStatus === 'active' ? '비활성화' : '활성화'}
+                            title={productStatus === 'active' ? t('deactivate') : t('activate')}
                           >
                             <span
                               className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${

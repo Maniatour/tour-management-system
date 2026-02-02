@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useTranslations } from 'next-intl'
 import { Package, Users, DollarSign, Clock, Copy, Star } from 'lucide-react'
 import { 
   MdDirectionsCar,      // 밴
@@ -24,6 +25,8 @@ interface ProductCardProps {
 }
 
 export default function ProductCard({ product, locale, collapsed = false, onStatusChange, onProductCopied, onFavoriteToggle }: ProductCardProps) {
+  const t = useTranslations('products')
+  const productDisplayName = locale === 'en' ? ((product as any).name_en || product.name) : product.name
   const [isUpdating, setIsUpdating] = useState(false)
   const [localStatus, setLocalStatus] = useState(product.status || 'inactive')
   const [isCopying, setIsCopying] = useState(false)
@@ -144,8 +147,8 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
       
       // 간단한 복사 데이터 준비 (기본 필드만)
       const copyData = {
-        name: `${product.name} (복사본)`,
-        name_en: product.name_en ? `${product.name_en} (Copy)` : null,
+        name: locale === 'en' ? `${(product as any).name_en || product.name} (Copy)` : `${product.name} (복사본)`,
+        name_en: (product as any).name_en ? `${(product as any).name_en} (Copy)` : null,
         product_code: product.product_code ? `${product.product_code}_COPY` : null,
         category: product.category,
         sub_category: product.sub_category,
@@ -356,7 +359,7 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
     return subCategoryLabels[subCategory] || subCategory
   }
 
-  const getStatusLabel = (status: string) => {
+  const _getStatusLabel = (status: string) => {
     const statusLabels: { [key: string]: string } = {
       active: '활성',
       inactive: '비활성',
@@ -365,7 +368,7 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
     return statusLabels[status] || status
   }
 
-  const getStatusColor = (status: string) => {
+  const _getStatusColor = (status: string) => {
     switch (status) {
       case 'active': return 'bg-green-100 text-green-800'
       case 'inactive': return 'bg-red-100 text-red-800'
@@ -481,8 +484,8 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
     return options
   }
 
-  // choices 옵션들을 뱃지로 렌더링하는 함수 (그룹별 색상 적용)
-  const renderChoicesBadges = (product: Product) => {
+  // choices 옵션들을 뱃지로 렌더링하는 함수 (그룹별 색상 적용) - 추후 사용 가능
+  const _renderChoicesBadges = (product: Product) => {
     const options = getChoicesOptions(product)
     
     if (options.length === 0) {
@@ -499,13 +502,15 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
             price: string;
           }
           
+          const optionLabel = locale === 'en' ? (option.name || option.name_ko) : (option.name_ko || option.name)
+          const groupLabel = locale === 'en' ? (option.groupName || option.groupNameKo) : (option.groupNameKo || option.groupName)
           return (
             <span
               key={`${option.id}-${index}`}
               className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${colorClasses.bg} ${colorClasses.text} border ${colorClasses.border}`}
-              title={`${option.groupNameKo || option.groupName || ''} - ${option.name_ko || option.name}`}
+              title={`${groupLabel || ''} - ${optionLabel || ''}`}
             >
-              {option.name_ko || option.name}
+              {optionLabel}
               {(option.price || 0) > 0 && (
                 <span className={`ml-1 ${colorClasses.price}`}>
                   (+${option.price})
@@ -516,7 +521,7 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
         })}
         {options.length > 4 && (
           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-50 text-gray-600 border border-gray-200">
-            +{options.length - 4}개
+            +{options.length - 4}{locale === 'en' ? ` ${t('moreItems')}` : t('moreItems')}
           </span>
         )}
       </div>
@@ -593,8 +598,8 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
                 <Package className="h-5 w-5 text-blue-600" />
               </div>
               <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-semibold text-gray-900 line-clamp-2" title={product.name}>
-                  {product.name}
+                <h3 className="text-sm font-semibold text-gray-900 line-clamp-2" title={productDisplayName}>
+                  {productDisplayName}
                 </h3>
               </div>
             </div>
@@ -610,7 +615,7 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
                     ? 'text-yellow-500 hover:text-yellow-600 hover:bg-yellow-50'
                     : 'text-gray-400 hover:text-yellow-500 hover:bg-yellow-50'
                 }`}
-                title={isFavorite ? "즐겨찾기 해제" : "즐겨찾기 추가"}
+                title={isFavorite ? t('removeFavorite') : t('addFavorite')}
               >
                 <Star className={`h-4 w-4 ${isFavorite ? 'fill-current' : ''}`} />
               </button>
@@ -624,7 +629,7 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
                     ? 'text-gray-400 cursor-not-allowed' 
                     : 'text-green-600 hover:text-green-900 hover:bg-green-50'
                 }`}
-                title="상품 복사"
+                title={t('copyProduct')}
               >
                 <Copy className="h-4 w-4" />
               </button>
@@ -660,11 +665,11 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
         {!collapsed && (
           <div className="p-4 space-y-3">
             {/* 이미지 */}
-            {(product.primary_image || (product as any).thumbnail_url) && (
+            {Boolean((product as Record<string, unknown>).primary_image || (product as Record<string, unknown>).thumbnail_url) && (
               <div className="relative w-full bg-gray-100 rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
                 <img
-                  src={(product as any).thumbnail_url || product.primary_image}
-                  alt={(product as any).name_ko || product.name}
+                  src={((product as Record<string, unknown>).thumbnail_url || (product as Record<string, unknown>).primary_image) as string}
+                  alt={productDisplayName}
                   className="w-full h-full object-cover"
                   onError={(e) => {
                     e.currentTarget.style.display = 'none'
@@ -673,35 +678,48 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
               </div>
             )}
 
-            {/* 상품명(고객 한글), 상품명(고객 영어) */}
+            {/* 상품명(고객 한글/영어 - locale에 따라 하나만 표시) */}
             <div className="space-y-1">
-              {(product as any).name_ko && (
-                <p className="text-sm text-gray-900 font-medium">{(product as any).name_ko}</p>
-              )}
-              {(product as any).name_en && (
-                <p className="text-xs text-gray-600">{(product as any).name_en}</p>
+              {locale === 'en' ? (
+                productDisplayName && (
+                  <p className="text-sm text-gray-900 font-medium">{productDisplayName}</p>
+                )
+              ) : (
+                <>
+                  {(product as any).name_ko && (
+                    <p className="text-sm text-gray-900 font-medium">{(product as any).name_ko}</p>
+                  )}
+                  {(product as any).name_en && (
+                    <p className="text-xs text-gray-600">{(product as any).name_en}</p>
+                  )}
+                </>
               )}
             </div>
 
-            {/* 설명 */}
-            {product.description && (
-              <p className="text-sm text-gray-600 line-clamp-2">
-                {product.description}
-              </p>
-            )}
+            {/* 설명 - locale이 en이면 summary_en 우선 */}
+            {(() => {
+              const descriptionText = locale === 'en'
+                ? ((product as any).summary_en || product.description)
+                : product.description
+              return descriptionText ? (
+                <p className="text-sm text-gray-600 line-clamp-2">
+                  {descriptionText}
+                </p>
+              ) : null
+            })()}
 
             {/* 상품 정보 */}
             <div className="grid grid-cols-2 gap-3">
               <div className="flex items-center space-x-1.5">
                 <Clock className="h-3.5 w-3.5 text-gray-400" />
                 <span className="text-xs text-gray-600">
-                  {product.duration || '시간 미정'}
+                  {product.duration || t('durationTbd')}
                 </span>
               </div>
               <div className="flex items-center space-x-1.5">
                 <Users className="h-3.5 w-3.5 text-gray-400" />
                 <span className="text-xs text-gray-600">
-                  최대 {product.max_participants || 'N/A'}명
+                  {t('maxPeople', { count: String(product.max_participants ?? 'N/A') })}
                 </span>
               </div>
             </div>
@@ -733,13 +751,13 @@ export default function ProductCard({ product, locale, collapsed = false, onStat
                    <div className="flex flex-col">
                      {choicePriceRange ? (
                        <div className="text-lg font-bold text-green-600">
-                         <span className="text-xs font-medium text-gray-600 mr-1">자체 채널 판매 가격: </span>
+                         <span className="text-xs font-medium text-gray-600 mr-1">{t('ownChannelPrice')}</span>
                          ${(product.base_price || 0) + choicePriceRange.min}
                          {choicePriceRange.min !== choicePriceRange.max && ` ~ $${(product.base_price || 0) + choicePriceRange.max}`}
                        </div>
                      ) : (
                        <div className="text-lg font-bold text-green-600">
-                         <span className="text-xs font-medium text-gray-600 mr-1">자체 채널 판매 가격: </span>
+                         <span className="text-xs font-medium text-gray-600 mr-1">{t('ownChannelPrice')}</span>
                          ${product.base_price || 0}
                        </div>
                      )}

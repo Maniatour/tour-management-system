@@ -300,7 +300,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         .from('team')
         .select('name_ko')
         .eq('email', selectedEmployee)
-        .single()
+        .maybeSingle()
 
       const employeeName = teamData?.name_ko || ''
 
@@ -2191,21 +2191,22 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   </div>
                 </div>
               </div>
-              
-              {/* 지불 버튼 */}
-              <div className="mt-4 flex justify-end">
-                <button
-                  onClick={handlePayment}
-                  disabled={isGeneratingPDF || totalPay === 0}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 text-sm font-medium"
-                >
-                  <CreditCard className="w-4 h-4" />
-                  {isGeneratingPDF ? 'PDF 생성 중...' : '지불'}
-                </button>
-              </div>
             </div>
           )}
 
+          {/* 지불 버튼: 직원 선택 시 모든 직군(가이드/드라이버/OP/매니저)에 표시 */}
+          {selectedEmployee && (
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={handlePayment}
+                disabled={isGeneratingPDF || totalPay === 0}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 text-sm font-medium"
+              >
+                <CreditCard className="w-4 h-4" />
+                {isGeneratingPDF ? 'PDF 생성 중...' : '지불'}
+              </button>
+            </div>
+          )}
 
         </div>
 

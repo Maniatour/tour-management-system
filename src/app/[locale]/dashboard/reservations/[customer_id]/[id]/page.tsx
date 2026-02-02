@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
@@ -485,7 +485,10 @@ export default function CustomerReservations() {
         return
       }
 
-      setChannels(channelsData || [])
+      setChannels((channelsData || []).map((c: { id: string; name: string; favicon_url: string | null }) => {
+        const { favicon_url, ...rest } = c
+        return { ...rest, ...(favicon_url != null ? { favicon_url } : {}) }
+      }))
     } catch (error) {
       console.error('Channels 로딩 중 예외:', error)
     }
@@ -669,7 +672,7 @@ export default function CustomerReservations() {
       }
 
       if (customerData) {
-        setCustomer(customerData)
+        setCustomer({ ...customerData, email: customerData.email ?? '', created_at: customerData.created_at ?? '' })
         
         // 고객의 예약 정보 조회 (JOIN 없이 먼저 예약만 조회)
         const { data: reservationsData, error: reservationsError } = await supabase
@@ -690,12 +693,12 @@ export default function CustomerReservations() {
         } else if (reservationsData && reservationsData.length > 0) {
           // 각 예약에 대해 상품 정보를 별도로 조회
           const reservationsWithProducts = await Promise.all(
-            reservationsData.map(async (reservation: SupabaseReservation) => {
+            reservationsData.map(async (reservation) => {
               try {
                 const { data: productData, error: productError } = await supabase
                   .from('products')
                   .select('name, customer_name_ko, customer_name_en, duration, base_price, choices')
-                  .eq('id', reservation.product_id)
+                  .eq('id', reservation.product_id ?? '')
                   .single()
 
                 if (productError) {
@@ -724,9 +727,9 @@ export default function CustomerReservations() {
                     const result = await supabase
                       .from('product_details_multilingual')
                       .select('*')
-                      .eq('product_id', reservation.product_id)
+                      .eq('product_id', reservation.product_id ?? '')
                       .eq('language_code', locale)
-                      .eq('channel_id', reservation.channel_id)
+                      .eq('channel_id', reservation.channel_id ?? '')
                       .maybeSingle() // single() 대신 maybeSingle() 사용
                     
                     console.log('채널별 정보 조회 결과:', result)
@@ -739,7 +742,7 @@ export default function CustomerReservations() {
                     const result = await supabase
                       .from('product_details_multilingual')
                       .select('*')
-                      .eq('product_id', reservation.product_id)
+                      .eq('product_id', reservation.product_id ?? '')
                       .eq('language_code', locale)
                       .is('channel_id', null)
                       .maybeSingle() // single() 대신 maybeSingle() 사용
@@ -942,8 +945,8 @@ export default function CustomerReservations() {
                    if (reservationChoicesInfo && reservationChoicesInfo.length > 0) {
                      try {
                        // reservation_choices에서 choice_id와 option_id를 가져와서 새로운 테이블에서 정보 조회
-                       const choiceIds = [...new Set(reservationChoicesInfo.map((c: { choice_id: string }) => c.choice_id))]
-                       const optionIds = [...new Set(reservationChoicesInfo.map((c: { option_id: string }) => c.option_id))]
+                       const choiceIds = [...new Set(reservationChoicesInfo.map((c: { choice_id: string | null }) => c.choice_id ?? '').filter(Boolean))]
+                       const optionIds = [...new Set(reservationChoicesInfo.map((c: { option_id: string | null }) => c.option_id ?? '').filter(Boolean))]
                        
                        // product_choices 테이블에서 choice 정보 조회
                        const { data: choicesData, error: choicesError } = await supabase
@@ -961,13 +964,13 @@ export default function CustomerReservations() {
                          // choice와 option 정보를 매핑
                          reservationChoicesInfo = reservationChoicesInfo.map((choice: {
                            id: string
-                           choice_id: string
-                           option_id: string
-                           quantity: number
-                           total_price: number
+                           choice_id: string | null
+                           option_id: string | null
+                           quantity: number | null
+                           total_price: number | null
                          }) => {
-                           const choiceInfo = choicesData.find((c: { id: string; choice_group: string; choice_group_ko: string }) => c.id === choice.choice_id) as { id: string; choice_group: string; choice_group_ko: string } | undefined
-                           const optionInfo = optionsData.find((o: { id: string; option_name: string; option_name_ko: string }) => o.id === choice.option_id) as { id: string; option_name: string; option_name_ko: string } | undefined
+                           const choiceInfo = choicesData.find((c: { id: string; choice_group: string; choice_group_ko: string }) => c.id === (choice.choice_id ?? '')) as { id: string; choice_group: string; choice_group_ko: string } | undefined
+                           const optionInfo = optionsData.find((o: { id: string; option_name: string; option_name_ko: string }) => o.id === (choice.option_id ?? '')) as { id: string; option_name: string; option_name_ko: string } | undefined
                            
                           return {
                             ...choice,
@@ -1096,12 +1099,12 @@ export default function CustomerReservations() {
       if (reservationsData && reservationsData.length > 0) {
         // 각 예약에 대해 상품 정보를 별도로 조회 (loadReservations와 동일한 로직)
         const reservationsWithProducts = await Promise.all(
-          reservationsData.map(async (reservation: SupabaseReservation) => {
+          reservationsData.map(async (reservation) => {
             try {
               const { data: productData, error: productError } = await supabase
                 .from('products')
                 .select('name, customer_name_ko, customer_name_en, duration, base_price, choices')
-                .eq('id', reservation.product_id)
+                .eq('id', reservation.product_id ?? '')
                 .single()
 
               if (productError) {
@@ -1116,9 +1119,9 @@ export default function CustomerReservations() {
                   const result = await supabase
                     .from('product_details_multilingual')
                     .select('*')
-                    .eq('product_id', reservation.product_id)
+                    .eq('product_id', reservation.product_id ?? '')
                     .eq('language_code', locale)
-                    .eq('channel_id', reservation.channel_id)
+                    .eq('channel_id', reservation.channel_id ?? '')
                     .maybeSingle()
                   detailsData = result.data
                 }
@@ -1127,7 +1130,7 @@ export default function CustomerReservations() {
                   const result = await supabase
                     .from('product_details_multilingual')
                     .select('*')
-                    .eq('product_id', reservation.product_id)
+                    .eq('product_id', reservation.product_id ?? '')
                     .eq('language_code', locale)
                     .is('channel_id', null)
                     .maybeSingle()
@@ -1214,8 +1217,8 @@ export default function CustomerReservations() {
                 // choice와 option 정보 매핑
                 if (reservationChoicesInfo && reservationChoicesInfo.length > 0) {
                   try {
-                    const choiceIds = [...new Set(reservationChoicesInfo.map((c: { choice_id: string }) => c.choice_id))]
-                    const optionIds = [...new Set(reservationChoicesInfo.map((c: { option_id: string }) => c.option_id))]
+                    const choiceIds = [...new Set(reservationChoicesInfo.map((c: { choice_id: string | null }) => c.choice_id ?? '').filter(Boolean))]
+                    const optionIds = [...new Set(reservationChoicesInfo.map((c: { option_id: string | null }) => c.option_id ?? '').filter(Boolean))]
                     
                     const { data: choicesData2 } = await supabase
                       .from('product_choices')
@@ -1230,13 +1233,13 @@ export default function CustomerReservations() {
                     if (choicesData2 && optionsData2) {
                       reservationChoicesInfo = reservationChoicesInfo.map((choice: {
                         id: string
-                        choice_id: string
-                        option_id: string
-                        quantity: number
-                        total_price: number
+                        choice_id: string | null
+                        option_id: string | null
+                        quantity: number | null
+                        total_price: number | null
                       }) => {
-                        const choiceInfo = choicesData2.find((c: { id: string; choice_group: string; choice_group_ko: string }) => c.id === choice.choice_id) as { id: string; choice_group: string; choice_group_ko: string } | undefined
-                        const optionInfo = optionsData2.find((o: { id: string; option_name: string; option_name_ko: string }) => o.id === choice.option_id) as { id: string; option_name: string; option_name_ko: string } | undefined
+                        const choiceInfo = choicesData2.find((c: { id: string; choice_group: string; choice_group_ko: string }) => c.id === (choice.choice_id ?? '')) as { id: string; choice_group: string; choice_group_ko: string } | undefined
+                        const optionInfo = optionsData2.find((o: { id: string; option_name: string; option_name_ko: string }) => o.id === (choice.option_id ?? '')) as { id: string; option_name: string; option_name_ko: string } | undefined
                         
                         return {
                           ...choice,
@@ -1352,7 +1355,7 @@ export default function CustomerReservations() {
 
       // 실제 고객 정보가 있으면 사용, 없으면 시뮬레이션 데이터 사용
       if (customerData) {
-        setCustomer(customerData)
+        setCustomer({ ...customerData, email: customerData.email ?? '' })
       } else {
         // 실제 데이터베이스에 고객 정보가 없는 경우 시뮬레이션 데이터 사용
         setCustomer({
@@ -1413,7 +1416,7 @@ export default function CustomerReservations() {
       
       // 각 예약에 대해 상품 정보를 별도로 조회
       const reservationsWithProducts = await Promise.all(
-          reservationsData.map(async (reservation: SupabaseReservation) => {
+          reservationsData.map(async (reservation) => {
             console.log('시뮬레이션 모드: 예약 처리 중:', reservation.id)
             try {
               console.log('시뮬레이션 모드: 상품 정보 조회 시작, product_id:', reservation.product_id)
@@ -1590,8 +1593,8 @@ export default function CustomerReservations() {
                   if (reservationChoicesInfo && reservationChoicesInfo.length > 0) {
                     try {
                       // reservation_choices에서 choice_id와 option_id를 가져와서 새로운 테이블에서 정보 조회
-                      const choiceIds = [...new Set(reservationChoicesInfo.map((c: { choice_id: string }) => c.choice_id))]
-                      const optionIds = [...new Set(reservationChoicesInfo.map((c: { option_id: string }) => c.option_id))]
+                      const choiceIds = [...new Set(reservationChoicesInfo.map((c: { choice_id: string | null }) => c.choice_id ?? '').filter(Boolean))]
+                      const optionIds = [...new Set(reservationChoicesInfo.map((c: { option_id: string | null }) => c.option_id ?? '').filter(Boolean))]
                       
                       // product_choices 테이블에서 choice 정보 조회
                       const { data: choicesData, error: choicesError } = await supabase
@@ -1609,13 +1612,13 @@ export default function CustomerReservations() {
                         // choice와 option 정보를 매핑
                         reservationChoicesInfo = reservationChoicesInfo.map((choice: {
                           id: string
-                          choice_id: string
-                          option_id: string
-                          quantity: number
-                          total_price: number
+                          choice_id: string | null
+                          option_id: string | null
+                          quantity: number | null
+                          total_price: number | null
                         }) => {
-                          const choiceInfo = choicesData.find((c: { id: string; choice_group: string; choice_group_ko: string }) => c.id === choice.choice_id) as { id: string; choice_group: string; choice_group_ko: string } | undefined
-                          const optionInfo = optionsData.find((o: { id: string; option_name: string; option_name_ko: string }) => o.id === choice.option_id) as { id: string; option_name: string; option_name_ko: string } | undefined
+                          const choiceInfo = choicesData.find((c: { id: string; choice_group: string; choice_group_ko: string }) => c.id === (choice.choice_id ?? '')) as { id: string; choice_group: string; choice_group_ko: string } | undefined
+                          const optionInfo = optionsData.find((o: { id: string; option_name: string; option_name_ko: string }) => o.id === (choice.option_id ?? '')) as { id: string; option_name: string; option_name_ko: string } | undefined
                           
                           return {
                             ...choice,
@@ -1815,7 +1818,7 @@ export default function CustomerReservations() {
             .single()
 
           if (!hotelError && hotelInfo) {
-            result.pickup_hotels = hotelInfo
+            result.pickup_hotels = hotelInfo as unknown as { hotel?: string; pick_up_location?: string; address?: string; description_ko?: string; link?: string; media?: string; youtube_link?: string }
           } else {
             console.warn('픽업 호텔 정보 조회 실패:', hotelError)
           }
@@ -1843,12 +1846,12 @@ export default function CustomerReservations() {
         if (!allReservationsError && allReservations) {
           // 각 예약에 대해 고객 정보와 호텔 정보 조회
           const pickupInfos = await Promise.all(
-            allReservations.map(async (res: SupabaseReservation) => {
+            allReservations.map(async (res: { id: string; pickup_hotel: string | null; pickup_time: string | null; customer_id: string | null; total_people: number | null; tour_date: string }) => {
               // 고객 정보 조회
               const { data: customerInfo } = await supabase
                 .from('customers')
                 .select('name')
-                .eq('id', res.customer_id)
+                .eq('id', res.customer_id ?? '')
                 .single()
 
               // 호텔 정보 조회
@@ -1936,7 +1939,7 @@ export default function CustomerReservations() {
           .from('team')
           .select('name_ko, name_en, phone, email, languages')
           .eq('email', tourDetailsTyped.tour_guide_id)
-          .single()
+          .maybeSingle()
         tourGuideInfo = guideData
       }
 
@@ -1945,7 +1948,7 @@ export default function CustomerReservations() {
           .from('team')
           .select('name_ko, name_en, phone, email')
           .eq('email', tourDetailsTyped.assistant_id)
-          .single()
+          .maybeSingle()
         assistantInfo = assistantData
       }
 
