@@ -1770,8 +1770,8 @@ export default function ReservationForm({
     }
   }, [reservation?.id]);
 
-  // 가격 정보 조회 함수 (reservation_pricing 우선, 없으면 priceType에 따라 base_price 또는 dynamic_pricing)
-  const loadPricingInfo = useCallback(async (productId: string, tourDate: string, channelId: string, reservationId?: string, priceType: 'base' | 'dynamic' = 'dynamic', selectedChoices?: Array<{ choice_id?: string; option_id?: string; id?: string }>) => {
+  // 가격 정보 조회 함수 (reservation_pricing 우선, 없으면 dynamic_pricing에서 조회)
+  const loadPricingInfo = useCallback(async (productId: string, tourDate: string, channelId: string, reservationId?: string, selectedChoices?: Array<{ choice_id?: string; option_id?: string; id?: string }>) => {
     if (!productId || !tourDate || !channelId) {
       console.log('필수 정보가 부족합니다:', { productId, tourDate, channelId })
       return
@@ -1780,7 +1780,7 @@ export default function ReservationForm({
     try {
       // 선택된 초이스 정보 가져오기 (파라미터로 전달되지 않으면 formData에서 가져오기)
       const currentSelectedChoices = selectedChoices || (Array.isArray(formData.selectedChoices) ? formData.selectedChoices : [])
-      console.log('가격 정보 조회 시작:', { productId, tourDate, channelId, reservationId, priceType, selectedChoices: currentSelectedChoices })
+      console.log('가격 정보 조회 시작:', { productId, tourDate, channelId, reservationId, selectedChoices: currentSelectedChoices })
       
       // 1. 먼저 reservation_pricing에서 기존 가격 정보 확인 (편집 모드인 경우)
       // 단, 폼에서 채널을 변경한 경우에는 기존 가격(이전 채널 기준)을 쓰지 않고 dynamic_pricing에서 새 채널 가격 로드
@@ -1833,7 +1833,8 @@ export default function ReservationForm({
           
           if (productId && tourDate && channelId) {
             const variantKey = formData.variantKey || 'default'
-            const { data: dpRows } = await (supabase as any)
+            let dpRows: any[] | null = null
+            const { data: dpRows1 } = await (supabase as any)
               .from('dynamic_pricing')
               .select('choices_pricing')
               .eq('product_id', productId)
@@ -1842,6 +1843,32 @@ export default function ReservationForm({
               .eq('variant_key', variantKey)
               .order('updated_at', { ascending: false })
               .limit(1)
+            dpRows = dpRows1
+            if (!dpRows || dpRows.length === 0) {
+              if (variantKey !== 'default') {
+                const { data: dpRowsDefault } = await (supabase as any)
+                  .from('dynamic_pricing')
+                  .select('choices_pricing')
+                  .eq('product_id', productId)
+                  .eq('date', tourDate)
+                  .eq('channel_id', channelId)
+                  .eq('variant_key', 'default')
+                  .order('updated_at', { ascending: false })
+                  .limit(1)
+                dpRows = dpRowsDefault
+              }
+              if ((!dpRows || dpRows.length === 0)) {
+                const { data: dpRowsAny } = await (supabase as any)
+                  .from('dynamic_pricing')
+                  .select('choices_pricing')
+                  .eq('product_id', productId)
+                  .eq('date', tourDate)
+                  .eq('channel_id', channelId)
+                  .order('updated_at', { ascending: false })
+                  .limit(1)
+                dpRows = dpRowsAny
+              }
+            }
             const dpData = Array.isArray(dpRows) ? dpRows[0] : dpRows
             let choicesPricing: Record<string, any> = {}
             if (dpData?.choices_pricing) {
@@ -1968,10 +1995,7 @@ export default function ReservationForm({
               }
             })
             
-            // Dynamic Price 타입일 때만 초이스별 불포함 금액 포함
-            const notIncludedTotal = updated.priceType === 'dynamic' 
-              ? (updated.choiceNotIncludedTotal || 0)
-              : 0
+            const notIncludedTotal = updated.choiceNotIncludedTotal || 0
             
             const newSubtotal = newProductPriceTotal + optionTotal + optionalOptionTotal + notIncludedTotal
             const totalDiscount = updated.couponDiscount + updated.additionalDiscount
@@ -2018,83 +2042,19 @@ export default function ReservationForm({
         }
       }
 
-      // 2. reservation_pricing에 가격 정보가 없으면 priceType에 따라 base_price 또는 dynamic_pricing에서 조회
+      // 2. reservation_pricing에 가격 정보가 없으면 dynamic_pricing에서 조회 (항상 동일 경로)
       let adultPrice = 0
       let childPrice = 0
       let infantPrice = 0
       let commissionPercent = 0
       let notIncludedPrice = 0
 
-      if (priceType === 'base') {
-        // Base Price 타입: products 테이블에서 base_price 조회
-        console.log('Base price 조회 시작:', { productId })
-        
-        type ProductData = {
-          adult_base_price?: number | null
-          child_base_price?: number | null
-          infant_base_price?: number | null
-          base_price?: string | { adult?: number; adult_price?: number; child?: number; child_price?: number; infant?: number; infant_price?: number } | null
-        }
-
-        const { data: productData, error: productError } = await supabase
-          .from('products')
-          .select('adult_base_price, child_base_price, infant_base_price, base_price')
-          .eq('id', productId)
-          .single()
-
-        if (productError) {
-          console.log('Base price 조회 오류:', productError.message)
-          setFormData(prev => ({
-            ...prev,
-            adultProductPrice: 0,
-            childProductPrice: 0,
-            infantProductPrice: 0
-          }))
-          setPriceAutoFillMessage('기본 가격 조회 중 오류가 발생했습니다. 수동으로 입력해주세요.')
-          return
-        }
-
-        const product = productData as ProductData | null
-
-        // base_price가 JSON 형태인 경우 파싱
-        if (product?.base_price) {
-          try {
-            const basePrice = typeof product.base_price === 'string' 
-              ? JSON.parse(product.base_price) 
-              : product.base_price
-            
-            if (basePrice && typeof basePrice === 'object') {
-              adultPrice = (basePrice as { adult?: number; adult_price?: number }).adult || (basePrice as { adult?: number; adult_price?: number }).adult_price || 0
-              childPrice = (basePrice as { child?: number; child_price?: number }).child || (basePrice as { child?: number; child_price?: number }).child_price || 0
-              infantPrice = (basePrice as { infant?: number; infant_price?: number }).infant || (basePrice as { infant?: number; infant_price?: number }).infant_price || 0
-            }
-          } catch (e) {
-            console.warn('base_price 파싱 오류:', e)
-          }
-        }
-
-        // adult_base_price, child_base_price, infant_base_price 컬럼이 있는 경우 사용
-        if (product?.adult_base_price !== undefined && product?.adult_base_price !== null) {
-          adultPrice = product.adult_base_price
-        }
-        if (product?.child_base_price !== undefined && product?.child_base_price !== null) {
-          childPrice = product.child_base_price
-        }
-        if (product?.infant_base_price !== undefined && product?.infant_base_price !== null) {
-          infantPrice = product.infant_base_price
-        }
-
-        console.log('Base price 데이터 조회 성공:', { adultPrice, childPrice, infantPrice })
-        // Base price 타입일 때는 불포함 금액을 0으로 설정
-        notIncludedPrice = 0
-        setPriceAutoFillMessage('기본 가격이 자동으로 입력되었습니다!')
-      } else {
-        // Dynamic Price 타입: dynamic_pricing 테이블에서 조회
-        console.log('Dynamic pricing 조회 시작:', { productId, tourDate, channelId })
+      console.log('Dynamic pricing 조회 시작:', { productId, tourDate, channelId })
         
         const variantKey = formData.variantKey || 'default'
-        
-        const { data: pricingData, error } = await (supabase as any)
+        let pricingData: any[] | null = null
+        let pricingError: any = null
+        const { data: pricingData1, error: err1 } = await (supabase as any)
           .from('dynamic_pricing')
           .select('adult_price, child_price, infant_price, commission_percent, options_pricing, not_included_price, choices_pricing, updated_at')
           .eq('product_id', productId)
@@ -2103,9 +2063,40 @@ export default function ReservationForm({
           .eq('variant_key', variantKey)
           .order('updated_at', { ascending: false })
           .limit(1)
+        pricingData = pricingData1
+        pricingError = err1
+        if (!pricingData || pricingData.length === 0) {
+          if (variantKey !== 'default') {
+            const { data: pricingDataDefault } = await (supabase as any)
+              .from('dynamic_pricing')
+              .select('adult_price, child_price, infant_price, commission_percent, options_pricing, not_included_price, choices_pricing, updated_at')
+              .eq('product_id', productId)
+              .eq('date', tourDate)
+              .eq('channel_id', channelId)
+              .eq('variant_key', 'default')
+              .order('updated_at', { ascending: false })
+              .limit(1)
+            if (!pricingError && (pricingDataDefault?.length ?? 0) > 0) {
+              pricingData = pricingDataDefault
+            }
+          }
+          if ((!pricingData || pricingData.length === 0) && !pricingError) {
+            const { data: pricingDataAny } = await (supabase as any)
+              .from('dynamic_pricing')
+              .select('adult_price, child_price, infant_price, commission_percent, options_pricing, not_included_price, choices_pricing, updated_at')
+              .eq('product_id', productId)
+              .eq('date', tourDate)
+              .eq('channel_id', channelId)
+              .order('updated_at', { ascending: false })
+              .limit(1)
+            if ((pricingDataAny?.length ?? 0) > 0) {
+              pricingData = pricingDataAny
+            }
+          }
+        }
 
-        if (error) {
-          console.log('Dynamic pricing 조회 오류:', error.message)
+        if (pricingError) {
+          console.log('Dynamic pricing 조회 오류:', pricingError.message)
           setFormData(prev => ({
             ...prev,
             adultProductPrice: 0,
@@ -2451,8 +2442,6 @@ export default function ReservationForm({
         }
         
         setPriceAutoFillMessage('Dynamic pricing에서 가격 정보가 자동으로 입력되었습니다!')
-      }
-
 
       setFormData(prev => {
         const updated = {
@@ -2462,8 +2451,7 @@ export default function ReservationForm({
           infantProductPrice: infantPrice,
           commission_percent: commissionPercent,
           not_included_price: notIncludedPrice,
-          // Derive OTA per-adult amount when not_included_price is provided
-          onlinePaymentAmount: notIncludedPrice != null && priceType === 'dynamic'
+          onlinePaymentAmount: notIncludedPrice != null
             ? Math.max(0, (adultPrice - (notIncludedPrice || 0)) * (prev.adults || 0))
             : prev.onlinePaymentAmount || 0
         }
@@ -2503,10 +2491,7 @@ export default function ReservationForm({
           optionalOptionTotal += option.price * option.quantity
         })
         
-        // Dynamic Price 타입일 때만 초이스별 불포함 금액 포함
-        const notIncludedTotal = priceType === 'dynamic' 
-          ? (updated.choiceNotIncludedTotal || 0)
-          : 0
+        const notIncludedTotal = updated.choiceNotIncludedTotal || 0
         
         // OTA 채널일 때는 초이스 가격을 포함하지 않음
         const newSubtotal = isOTAChannel 
@@ -2612,13 +2597,9 @@ export default function ReservationForm({
     // 선택 옵션(optional options)도 포함
     const optionalOptionTotal = calculateOptionTotal();
     
-    // Dynamic Price 타입일 때만 초이스별 불포함 금액 포함
-    const notIncludedTotal = formData.priceType === 'dynamic' 
-      ? (formData.choiceNotIncludedTotal || 0)
-      : 0
-    
+    const notIncludedTotal = formData.choiceNotIncludedTotal || 0
     return calculateProductPriceTotal() + optionTotal + optionalOptionTotal + notIncludedTotal;
-  }, [formData.choicesTotal, formData.priceType, formData.choiceNotIncludedTotal, calculateRequiredOptionTotal, calculateProductPriceTotal, calculateOptionTotal]);
+  }, [formData.choicesTotal, formData.choiceNotIncludedTotal, calculateRequiredOptionTotal, calculateProductPriceTotal, calculateOptionTotal]);
 
   const calculateTotalPrice = useCallback(() => {
     const subtotal = calculateSubtotal()
@@ -2825,10 +2806,10 @@ export default function ReservationForm({
         
         console.log('가격 자동 조회 트리거:', currentParams)
         prevPricingParams.current = currentParams
-        loadPricingInfo(formData.productId, formData.tourDate, formData.channelId, reservation?.id, formData.priceType || 'dynamic', selectedChoicesArray)
+        loadPricingInfo(formData.productId, formData.tourDate, formData.channelId, reservation?.id, selectedChoicesArray)
       }
     }
-  }, [formData.productId, formData.tourDate, formData.channelId, formData.priceType, formData.variantKey, formData.selectedChoices, formData.productChoices, reservation?.id, loadPricingInfo])
+  }, [formData.productId, formData.tourDate, formData.channelId, formData.variantKey, formData.selectedChoices, formData.productChoices, reservation?.id, loadPricingInfo])
 
   // 상품, 날짜, 채널이 변경될 때 쿠폰 자동 선택 (기존 가격 정보가 로드되지 않은 경우에만)
   useEffect(() => {
@@ -2885,10 +2866,7 @@ export default function ReservationForm({
         optionalOptionTotal += option.price * option.quantity
       })
       
-      // Dynamic Price 타입일 때만 초이스별 불포함 금액 포함
-      const notIncludedTotal = prev.priceType === 'dynamic' 
-        ? (prev.choiceNotIncludedTotal || 0)
-        : 0
+      const notIncludedTotal = prev.choiceNotIncludedTotal || 0
       
       const newSubtotal = newProductPriceTotal + optionTotal + optionalOptionTotal + notIncludedTotal
       const totalDiscount = prev.couponDiscount + prev.additionalDiscount
@@ -2931,11 +2909,7 @@ export default function ReservationForm({
       // 선택 옵션(optional options)도 포함
       const optionalOptionTotal = calculateOptionTotal();
       
-      // Dynamic Price 타입일 때만 초이스별 불포함 금액 포함
-      const notIncludedTotal = formData.priceType === 'dynamic' 
-        ? (formData.choiceNotIncludedTotal || 0)
-        : 0
-      
+      const notIncludedTotal = formData.choiceNotIncludedTotal || 0
       const newSubtotal = newProductPriceTotal + optionTotal + optionalOptionTotal + notIncludedTotal
       
       setFormData(prev => ({
@@ -2944,7 +2918,7 @@ export default function ReservationForm({
         subtotal: newSubtotal
       }))
     }
-  }, [formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.adults, formData.child, formData.infant, formData.choicesTotal, formData.priceType, formData.choiceNotIncludedTotal, calculateRequiredOptionTotal, calculateOptionTotal])
+  }, [formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.adults, formData.child, formData.infant, formData.choicesTotal, formData.choiceNotIncludedTotal, calculateRequiredOptionTotal, calculateOptionTotal])
 
   // 예약 옵션 총 가격이 변경될 때 가격 재계산 (편집 모드에서는 자동 저장 방지)
   useEffect(() => {
@@ -2970,9 +2944,10 @@ export default function ReservationForm({
     }
 
     try {
-      // dynamic_pricing 테이블에서 choices_pricing 조회 (가장 최근 업데이트된 값 사용)
       const variantKey = formData.variantKey || 'default'
-      const { data: pricingData, error } = await (supabase as any)
+      let pricingData: any[] | null = null
+      let err: any = null
+      const res = await (supabase as any)
         .from('dynamic_pricing')
         .select('choices_pricing, updated_at')
         .eq('product_id', formData.productId)
@@ -2981,8 +2956,39 @@ export default function ReservationForm({
         .eq('variant_key', variantKey)
         .order('updated_at', { ascending: false })
         .limit(1)
+      pricingData = res.data
+      err = res.error
+      if (!pricingData || pricingData.length === 0) {
+        if (variantKey !== 'default') {
+          const resDefault = await (supabase as any)
+            .from('dynamic_pricing')
+            .select('choices_pricing, updated_at')
+            .eq('product_id', formData.productId)
+            .eq('date', formData.tourDate)
+            .eq('channel_id', formData.channelId)
+            .eq('variant_key', 'default')
+            .order('updated_at', { ascending: false })
+            .limit(1)
+          if (!err && (resDefault.data?.length ?? 0) > 0) {
+            pricingData = resDefault.data
+          }
+        }
+        if ((!pricingData || pricingData.length === 0) && !err) {
+          const resAny = await (supabase as any)
+            .from('dynamic_pricing')
+            .select('choices_pricing, updated_at')
+            .eq('product_id', formData.productId)
+            .eq('date', formData.tourDate)
+            .eq('channel_id', formData.channelId)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+          if ((resAny.data?.length ?? 0) > 0) {
+            pricingData = resAny.data
+          }
+        }
+      }
 
-      if (error || !pricingData || pricingData.length === 0) {
+      if (err || !pricingData || pricingData.length === 0) {
         return null
       }
 

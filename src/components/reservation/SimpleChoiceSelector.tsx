@@ -226,33 +226,13 @@ export default function SimpleChoiceSelector({
     const prevIds = prevSelectionsRef.current.map(s => `${s.choice_id}:${s.option_id}:${s.quantity}:${s.total_price}`).sort().join(',');
     const currentIds = selections.map(s => `${s.choice_id}:${s.option_id}:${s.quantity}:${s.total_price}`).sort().join(',');
     
-    console.log('SimpleChoiceSelector: selections 상태 변경됨', {
-      selections,
-      selectionsCount: selections.length,
-      prevIds,
-      currentIds,
-      isUserAction: isUserActionRef.current
-    });
-    
-    // 이전 값과 다르면 변경 감지 (total_price 포함)
     if (prevIds !== currentIds) {
-      // 사용자 액션이면 onSelectionChange 호출
       if (isUserActionRef.current) {
-        console.log('SimpleChoiceSelector: 사용자 액션으로 인한 변경, onSelectionChange 호출', {
-          selectionsCount: selections.length,
-          selections: selections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id, total_price: s.total_price }))
-        });
         onSelectionChange(selections);
-        // prevSelectionsRef 업데이트
         prevSelectionsRef.current = selections;
-        // 플래그는 유지 (lastUserActionTimeRef로 관리)
       } else {
-        console.log('SimpleChoiceSelector: props에서 온 변경이므로 onSelectionChange 호출 안 함');
-        // prevSelectionsRef 업데이트
         prevSelectionsRef.current = selections;
       }
-    } else {
-      console.log('SimpleChoiceSelector: 변경 없음, onSelectionChange 호출 안 함');
     }
   }, [selections, onSelectionChange]);
 
@@ -546,20 +526,6 @@ export default function SimpleChoiceSelector({
                     // multiple/quantity 타입 또는 거주자 구분 초이스: 기존 로직 사용
                     totalPrice = calculatePrice(option, currentQuantity, adults, children, infants, isResidentStatusChoice);
                   }
-                }
-                
-                // 디버깅: 첫 번째 옵션만 로그 출력
-                if (option === (choice.options || []).filter(o => o.is_active).sort((a, b) => a.sort_order - b.sort_order)[0]) {
-                  console.log(`SimpleChoiceSelector: 옵션 렌더링 체크 (${choice.choice_group_ko})`, {
-                    choiceId: choice.id,
-                    optionId: option.id,
-                    optionName: option.option_name_ko,
-                    selectionsCount: selections.length,
-                    selections: selections.map(s => ({ choice_id: s.choice_id, option_id: s.option_id })),
-                    currentSelection,
-                    currentQuantity,
-                    isSelected: currentQuantity > 0
-                  });
                 }
                 
                 return (

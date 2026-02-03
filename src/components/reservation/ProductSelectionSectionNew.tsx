@@ -426,12 +426,6 @@ const ProductSelectionSection = memo(function ProductSelectionSection({
             </div>
           ) : formData.productChoices.length > 0 ? (
             <>
-              {console.log('ProductSelectionSectionNew: SimpleChoiceSelector 렌더링', {
-                productChoicesCount: formData.productChoices.length,
-                selectedChoicesCount: formData.selectedChoices?.length || 0,
-                selectedChoices: formData.selectedChoices,
-                isEditMode
-              })}
               <SimpleChoiceSelector
                 choices={formData.productChoices}
                 adults={formData.adults || 0}

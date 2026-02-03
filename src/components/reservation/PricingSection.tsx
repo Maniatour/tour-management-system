@@ -162,6 +162,13 @@ export default function PricingSection({
   const [onSiteBalanceAmountInput, setOnSiteBalanceAmountInput] = useState<string>('')
   const [isOnSiteBalanceAmountFocused, setIsOnSiteBalanceAmountFocused] = useState(false)
 
+  // fetchPaymentRecords 등에서 formData/channels 의존 루프 방지용 (항상 최신 참조)
+  const formDataRef = useRef(formData)
+  formDataRef.current = formData
+  const channelsRef = useRef(channels)
+  channelsRef.current = channels
+  const calculateTotalCustomerPaymentRef = useRef<() => number>(() => 0)
+
   // 예약 지출 총합 조회 함수
   const fetchReservationExpenses = useCallback(async () => {
     if (!reservationId) {
@@ -468,8 +475,9 @@ export default function PricingSection({
     formData.prepaymentCost,
     reservationOptionsTotalPrice
   ])
+  calculateTotalCustomerPaymentRef.current = calculateTotalCustomerPayment
 
-  // 입금 내역 조회 및 자동 계산
+  // 입금 내역 조회 및 자동 계산 (formData는 formDataRef로만 참조해 의존성 루프 방지)
   const fetchPaymentRecords = useCallback(async () => {
     if (!reservationId) {
       console.log('PricingSection: reservationId가 없어서 입금 내역 조회를 건너뜁니다.')
@@ -533,16 +541,15 @@ export default function PricingSection({
         }
       })
 
-      console.log('PricingSection: 입금 내역 계산 결과', {
-        depositTotal,
-        balanceReceivedTotal,
-        refundedTotal,
-        returnedTotal,
-        paymentRecords: paymentRecords.map((r: { payment_status: string; amount: number }) => ({
-          status: r.payment_status,
-          amount: r.amount
-        }))
-      })
+      if (process.env.NODE_ENV === 'development') {
+        console.log('PricingSection: 입금 내역 계산 결과', {
+          depositTotal,
+          balanceReceivedTotal,
+          refundedTotal,
+          returnedTotal,
+          paymentRecordsCount: paymentRecords.length
+        })
+      }
 
       // 계산 결과를 state에 저장
       setCalculatedBalanceReceivedTotal(balanceReceivedTotal)
@@ -550,12 +557,14 @@ export default function PricingSection({
       setReturnedAmount(returnedTotal)
 
       // depositAmount와 balanceReceivedTotal을 기반으로 잔액 계산
-      const totalCustomerPayment = calculateTotalCustomerPayment()
+      const totalCustomerPayment = calculateTotalCustomerPaymentRef.current()
       const totalPaid = depositTotal + balanceReceivedTotal
       const remainingBalance = Math.max(0, totalCustomerPayment - totalPaid)
 
-      // OTA 채널 여부 확인
-      const selectedChannel = channels.find((c: { id: string }) => c.id === formData.channelId)
+      // OTA 채널 여부 확인 (최신 formData/channels는 ref에서 참조)
+      const fd = formDataRef.current
+      const chs = channelsRef.current
+      const selectedChannel = (Array.isArray(chs) ? chs : []).find((c: { id: string }) => c.id === fd.channelId)
       const isOTAChannel = selectedChannel && (
         (selectedChannel as any).type?.toLowerCase() === 'ota' || 
         (selectedChannel as any).category === 'OTA' ||
@@ -568,9 +577,9 @@ export default function PricingSection({
 
       // 입금 내역이 있으면 항상 자동으로 업데이트 (입금 내역이 실제 데이터이므로 우선)
       // 입금 내역이 없으면 할인 후 상품가를 기본값으로 설정 (새 예약 추가 시)
-      const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
+      const discountedPrice = fd.productPriceTotal - fd.couponDiscount - fd.additionalDiscount
       // 불포함 가격 제외한 할인 후 상품가
-      const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+      const notIncludedPrice = (fd.not_included_price || 0) * (fd.adults + fd.child + fd.infant)
       const discountedPriceWithoutNotIncluded = discountedPrice - notIncludedPrice
       
       // OTA 채널일 경우 depositAmount를 먼저 설정하고, 잔액은 기존 useEffect에서 자동 계산
@@ -600,7 +609,7 @@ export default function PricingSection({
     } catch (error) {
       console.error('PricingSection: 입금 내역 조회 중 오류', error)
     }
-  }, [reservationId, calculateTotalCustomerPayment, formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.not_included_price, formData.adults, formData.child, formData.infant, formData.channelId, channels, setFormData])
+  }, [reservationId, setFormData])
 
   // 입금 내역 조회 (reservationId가 변경될 때)
   useEffect(() => {
@@ -793,173 +802,123 @@ export default function PricingSection({
   
   // 채널의 commission_percent 가져오기 (여러 필드명 지원)
   // channels 테이블에는 commission 컬럼이 있음 (commission_percent는 없을 수 있음)
-  const channelCommissionPercent = selectedChannel 
+  const channelCommissionPercent = selectedChannel
     ? (() => {
-        // commission_percent, commission_rate, commission 순서로 확인
         const percent = selectedChannel.commission_percent ?? selectedChannel.commission_rate ?? selectedChannel.commission
-        const result = percent ? Number(percent) : 0
-        console.log('PricingSection: 채널 수수료율 계산', {
-          channelId: selectedChannel.id,
-          channelName: selectedChannel.name,
-          commission_percent: selectedChannel.commission_percent,
-          commission_rate: selectedChannel.commission_rate,
-          commission: selectedChannel.commission,
-          calculatedPercent: result
-        })
-        return result
+        return percent ? Number(percent) : 0
       })()
     : 0
   
-  // commission_amount가 0일 때 채널 수수료 자동 계산 (페이지 로딩 시 및 채널 결제 금액 변경 시)
+  // commission_amount가 0일 때 채널 수수료 자동 계산 (값이 실제로 다를 때만 set, 무한 루프 방지)
   useEffect(() => {
-    if (isOTAChannel && !isCardFeeManuallyEdited.current) {
-      // commission_amount가 0이거나 없을 때만 자동 계산
-      const currentCommissionAmount = formData.commission_amount || 0
-      if (currentCommissionAmount === 0) {
-        // 채널 결제 금액 계산 (Returned 차감 포함)
-        const basePrice = formData.commission_base_price !== undefined 
-          ? formData.commission_base_price 
-          : (formData.onlinePaymentAmount || (() => {
-              const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
-              return discountedPrice > 0 ? discountedPrice : formData.subtotal
-            })())
-        const adjustedBasePrice = Math.max(0, basePrice - returnedAmount)
-        
-        // commission_percent: formData의 값이 0이거나 없으면 채널의 commission_percent 사용
-        const commissionPercent = (formData.commission_percent && formData.commission_percent > 0) 
-          ? formData.commission_percent 
-          : (channelCommissionPercent || 0)
-        
-        // 수수료 계산: (채널 결제 금액 - Returned) × 수수료%
-        if (commissionPercent > 0 && adjustedBasePrice > 0) {
-          const calculatedCommission = adjustedBasePrice * (commissionPercent / 100)
-          if (calculatedCommission > 0) {
-            setFormData((prev: typeof formData) => ({ 
-              ...prev, 
-              commission_amount: calculatedCommission
-            }))
-          }
-        }
-      }
-    }
+    if (!isOTAChannel || isCardFeeManuallyEdited.current) return
+    const currentCommissionAmount = formData.commission_amount || 0
+    if (currentCommissionAmount !== 0) return
+
+    const basePrice = formData.commission_base_price !== undefined
+      ? formData.commission_base_price
+      : (formData.onlinePaymentAmount || (() => {
+          const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
+          return discountedPrice > 0 ? discountedPrice : formData.subtotal
+        })())
+    const adjustedBasePrice = Math.max(0, basePrice - returnedAmount)
+    const commissionPercent = (formData.commission_percent && formData.commission_percent > 0)
+      ? formData.commission_percent
+      : (channelCommissionPercent || 0)
+    if (commissionPercent <= 0 || adjustedBasePrice <= 0) return
+
+    const calculatedCommission = adjustedBasePrice * (commissionPercent / 100)
+    if (calculatedCommission <= 0) return
+
+    setFormData((prev: typeof formData) => {
+      const prevAmount = prev.commission_amount ?? 0
+      if (Math.abs(prevAmount - calculatedCommission) < 0.01) return prev
+      return { ...prev, commission_amount: calculatedCommission }
+    })
   }, [returnedAmount, isOTAChannel, formData.commission_base_price, formData.onlinePaymentAmount, formData.commission_percent, formData.commission_amount, formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.subtotal, channelCommissionPercent, setFormData])
-  
-  // 채널 결제 금액이 변경될 때 commission_amount 자동 재계산 (commission_amount가 0일 때만)
+
+  // 채널 결제 금액이 변경될 때 commission_amount 자동 재계산 (commission_amount가 0일 때만, 동일 값이면 set 안 함)
   useEffect(() => {
-    if (isOTAChannel && !isCardFeeManuallyEdited.current) {
-      const currentCommissionAmount = formData.commission_amount || 0
-      // commission_amount가 0일 때만 자동 재계산
-      if (currentCommissionAmount === 0) {
-        const basePrice = formData.commission_base_price !== undefined 
-          ? formData.commission_base_price 
-          : (formData.onlinePaymentAmount || (() => {
-              const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
-              return discountedPrice > 0 ? discountedPrice : formData.subtotal
-            })())
-        const adjustedBasePrice = Math.max(0, basePrice - returnedAmount)
-        const commissionPercent = (formData.commission_percent && formData.commission_percent > 0) 
-          ? formData.commission_percent 
-          : (channelCommissionPercent || 0)
-        
-        if (commissionPercent > 0 && adjustedBasePrice > 0) {
-          const calculatedCommission = adjustedBasePrice * (commissionPercent / 100)
-          if (calculatedCommission > 0) {
-            setFormData((prev: typeof formData) => ({ 
-              ...prev, 
-              commission_amount: calculatedCommission
-            }))
-          }
-        }
-      }
-    }
+    if (!isOTAChannel || isCardFeeManuallyEdited.current) return
+    const currentCommissionAmount = formData.commission_amount || 0
+    if (currentCommissionAmount !== 0) return
+
+    const basePrice = formData.commission_base_price !== undefined
+      ? formData.commission_base_price
+      : (formData.onlinePaymentAmount || (() => {
+          const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
+          return discountedPrice > 0 ? discountedPrice : formData.subtotal
+        })())
+    const adjustedBasePrice = Math.max(0, basePrice - returnedAmount)
+    const commissionPercent = (formData.commission_percent && formData.commission_percent > 0)
+      ? formData.commission_percent
+      : (channelCommissionPercent || 0)
+    if (commissionPercent <= 0 || adjustedBasePrice <= 0) return
+
+    const calculatedCommission = adjustedBasePrice * (commissionPercent / 100)
+    if (calculatedCommission <= 0) return
+
+    setFormData((prev: typeof formData) => {
+      const prevAmount = prev.commission_amount ?? 0
+      if (Math.abs(prevAmount - calculatedCommission) < 0.01) return prev
+      return { ...prev, commission_amount: calculatedCommission }
+    })
   }, [formData.commission_base_price, formData.onlinePaymentAmount, isOTAChannel, returnedAmount, formData.commission_percent, formData.commission_amount, formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.subtotal, channelCommissionPercent, setFormData])
   
   // 채널 변경 시 commission_percent 초기화 (채널이 변경되면 새로운 채널의 commission_percent를 사용)
   const prevChannelIdRef = useRef<string | undefined>(undefined)
   
-  // 디버깅: 채널 정보 확인
-  // channels 배열 대신 formData.channelId와 selectedChannel의 특정 값들을 의존성으로 사용
-  useEffect(() => {
-    console.log('PricingSection: 채널 정보 확인', {
-      channelsCount: channels?.length || 0,
-      channelId: formData.channelId,
-      selectedChannel: selectedChannel ? {
-        id: selectedChannel.id,
-        name: selectedChannel.name,
-        type: selectedChannel.type,
-        category: selectedChannel.category,
-        commission_percent: selectedChannel.commission_percent,
-        commission_rate: selectedChannel.commission_rate,
-        commission: selectedChannel.commission,
-        allKeys: Object.keys(selectedChannel)
-      } : null,
-      channelCommissionPercent,
-      formDataCommissionPercent: formData.commission_percent,
-      isOTAChannel
-    })
-  }, [formData.channelId, selectedChannel?.id, selectedChannel?.commission_percent, selectedChannel?.commission, isOTAChannel, channelCommissionPercent, formData.commission_percent])
   // 채널의 pricing_type 확인 (단일 가격 모드 체크)
   const pricingType = selectedChannel?.pricing_type || 'separate'
   const isSinglePrice = pricingType === 'single'
   
-  // 채널의 불포함 가격 정보 확인 (가격 타입 자동 결정)
-  const hasNotIncludedPrice = selectedChannel?.has_not_included_price || false
-  const notIncludedType = selectedChannel?.not_included_type || 'none'
-  // 채널 정보에 따라 가격 타입 자동 결정
-  // has_not_included_price가 true이거나 not_included_type이 'none'이 아니면 'dynamic' (불포함 있음)
-  // 그렇지 않으면 'base' (불포함 없음)
-  const autoPriceType: 'base' | 'dynamic' = (hasNotIncludedPrice || notIncludedType !== 'none') ? 'dynamic' : 'base'
-  
-  // 채널이 변경되면 가격 타입 자동 업데이트
-  useEffect(() => {
-    if (formData.channelId && autoPriceType && formData.priceType !== autoPriceType) {
-      setFormData((prev: typeof formData) => ({ ...prev, priceType: autoPriceType }))
-    }
-  }, [formData.channelId, autoPriceType, formData.priceType, setFormData])
-  
-  // 디버깅용 로그 (개발 환경에서만)
-  useEffect(() => {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('PricingSection - 채널 정보:', {
-        channelId: formData.channelId,
-        selectedChannel: selectedChannel ? { 
-          id: selectedChannel.id, 
-          name: selectedChannel.name, 
-          pricing_type: pricingType,
-          has_not_included_price: hasNotIncludedPrice,
-          not_included_type: notIncludedType
-        } : null,
-        isSinglePrice,
-        autoPriceType,
-        currentPriceType: formData.priceType,
-        channelsCount: channels?.length || 0
-      })
-    }
-  }, [formData.channelId, selectedChannel, pricingType, isSinglePrice, autoPriceType, formData.priceType, hasNotIncludedPrice, notIncludedType, channels])
-
-  // 초이스별 불포함 금액 계산 (Dynamic Price 타입일 때만)
+  // 초이스별 불포함 금액 계산 (항상 dynamic_pricing에서 조회)
   const calculateChoiceNotIncludedTotal = useCallback(async () => {
-    // Base price 타입일 때는 불포함 금액이 없음
-    if (formData.priceType === 'base') {
-      return 0
-    }
-    
     if (!formData.productId || !formData.tourDate || !formData.channelId) {
       return 0
     }
 
     try {
-      // dynamic_pricing에서 choices_pricing 조회 (가장 최근 업데이트된 값 사용)
-      const { data: pricingData, error } = await supabase
+      const variantKey = (formData as any).variantKey || 'default'
+      let pricingData: any[] | null = null
+      let queryError: any = null
+      const { data: data1, error: err1 } = await supabase
         .from('dynamic_pricing')
         .select('choices_pricing, not_included_price, updated_at')
         .eq('product_id', formData.productId)
         .eq('date', formData.tourDate)
         .eq('channel_id', formData.channelId)
+        .eq('variant_key', variantKey)
         .order('updated_at', { ascending: false })
         .limit(1)
-
-      if (error || !pricingData || pricingData.length === 0) {
+      pricingData = data1
+      queryError = err1
+      if ((!pricingData || pricingData.length === 0) && !queryError) {
+        if (variantKey !== 'default') {
+          const { data: dataDefault } = await supabase
+            .from('dynamic_pricing')
+            .select('choices_pricing, not_included_price, updated_at')
+            .eq('product_id', formData.productId)
+            .eq('date', formData.tourDate)
+            .eq('channel_id', formData.channelId)
+            .eq('variant_key', 'default')
+            .order('updated_at', { ascending: false })
+            .limit(1)
+          if ((dataDefault?.length ?? 0) > 0) pricingData = dataDefault
+        }
+        if (!pricingData || pricingData.length === 0) {
+          const { data: dataAny } = await supabase
+            .from('dynamic_pricing')
+            .select('choices_pricing, not_included_price, updated_at')
+            .eq('product_id', formData.productId)
+            .eq('date', formData.tourDate)
+            .eq('channel_id', formData.channelId)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+          if ((dataAny?.length ?? 0) > 0) pricingData = dataAny
+        }
+      }
+      if (queryError || !pricingData || pricingData.length === 0) {
         return 0
       }
 
@@ -1035,24 +994,28 @@ export default function PricingSection({
       console.error('초이스별 불포함 금액 계산 오류:', error)
       return (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
     }
-  }, [formData.productId, formData.tourDate, formData.channelId, formData.selectedChoices, formData.adults, formData.child, formData.infant, formData.not_included_price, formData.priceType])
+  }, [formData.productId, formData.tourDate, formData.channelId, (formData as any).variantKey, formData.selectedChoices, formData.adults, formData.child, formData.infant, formData.not_included_price])
 
   const [choiceNotIncludedTotal, setChoiceNotIncludedTotal] = useState(0)
 
-  // 초이스별 불포함 금액 업데이트 (Dynamic Price 타입일 때만)
+  // 초이스별 불포함 금액 업데이트 (productId, tourDate, channelId 있을 때 항상 조회)
   useEffect(() => {
-    if (formData.priceType === 'dynamic') {
+    if (formData.productId && formData.tourDate && formData.channelId) {
       calculateChoiceNotIncludedTotal().then(total => {
         setChoiceNotIncludedTotal(total)
-        // formData에도 업데이트
-        setFormData((prev: typeof formData) => ({ ...prev, choiceNotIncludedTotal: total }))
+        setFormData((prev: typeof formData) => {
+          const prevTotal = (prev as any).choiceNotIncludedTotal
+          return prevTotal === total ? prev : { ...prev, choiceNotIncludedTotal: total }
+        })
       })
     } else {
-      // Base price 타입일 때는 불포함 금액을 0으로 설정
       setChoiceNotIncludedTotal(0)
-      setFormData((prev: typeof formData) => ({ ...prev, choiceNotIncludedTotal: 0 }))
+      setFormData((prev: typeof formData) => {
+        const prevTotal = (prev as any).choiceNotIncludedTotal
+        return prevTotal === 0 ? prev : { ...prev, choiceNotIncludedTotal: 0 }
+      })
     }
-  }, [calculateChoiceNotIncludedTotal, formData.priceType, setFormData])
+  }, [calculateChoiceNotIncludedTotal, formData.productId, formData.tourDate, formData.channelId, setFormData])
 
   // Net 가격 계산
   const calculateNetPrice = () => {
@@ -1111,17 +1074,46 @@ export default function PricingSection({
     }
 
     try {
-      // dynamic_pricing에서 choices_pricing 조회 (가장 최근 업데이트된 값 사용)
-      const { data: pricingData, error } = await supabase
+      const variantKey = (formData as any).variantKey || 'default'
+      let pricingData: any[] | null = null
+      let queryError: any = null
+      const { data: data1, error: err1 } = await supabase
         .from('dynamic_pricing')
         .select('choices_pricing, updated_at')
         .eq('product_id', formData.productId)
         .eq('date', formData.tourDate)
         .eq('channel_id', formData.channelId)
+        .eq('variant_key', variantKey)
         .order('updated_at', { ascending: false })
         .limit(1)
-
-      if (error || !pricingData || pricingData.length === 0) {
+      pricingData = data1
+      queryError = err1
+      if ((!pricingData || pricingData.length === 0) && !queryError) {
+        if (variantKey !== 'default') {
+          const { data: dataDefault } = await supabase
+            .from('dynamic_pricing')
+            .select('choices_pricing, updated_at')
+            .eq('product_id', formData.productId)
+            .eq('date', formData.tourDate)
+            .eq('channel_id', formData.channelId)
+            .eq('variant_key', 'default')
+            .order('updated_at', { ascending: false })
+            .limit(1)
+          if ((dataDefault?.length ?? 0) > 0) pricingData = dataDefault
+        }
+        if (!pricingData || pricingData.length === 0) {
+          const { data: dataAny } = await supabase
+            .from('dynamic_pricing')
+            .select('choices_pricing, updated_at')
+            .eq('product_id', formData.productId)
+            .eq('date', formData.tourDate)
+            .eq('channel_id', formData.channelId)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+          if ((dataAny?.length ?? 0) > 0) pricingData = dataAny
+        }
+      }
+      if (queryError || !pricingData || pricingData.length === 0) {
         return 0
       }
 
@@ -1175,23 +1167,23 @@ export default function PricingSection({
       console.error('초이스 구매가 계산 오류:', error)
       return 0
     }
-  }, [formData.productId, formData.tourDate, formData.channelId, formData.selectedChoices, formData.adults, formData.child, formData.infant])
+  }, [formData.productId, formData.tourDate, formData.channelId, (formData as any).variantKey, formData.selectedChoices, formData.adults, formData.child, formData.infant])
 
   // 초이스 구매가 총합 상태
   const [choiceCostTotal, setChoiceCostTotal] = useState(0)
 
-  // 초이스 구매가 총합 업데이트
+  // 초이스 구매가 총합 업데이트 (formData.choicesTotal은 의존성에서 제외 - 우리가 설정하는 값이라 루프 방지)
   useEffect(() => {
     const updateChoiceCostTotal = async () => {
       const cost = await calculateChoiceCostTotal()
       setChoiceCostTotal(cost)
-      // formData에 자동으로 저장 (수동 수정 전까지)
-      if (!(formData as any).choicesTotal || (formData as any).choicesTotal === 0) {
-        setFormData((prev: any) => ({ ...prev, choicesTotal: cost }))
-      }
+      // 값이 실제로 바뀔 때만 setFormData (무한 루프 방지)
+      setFormData((prev: any) =>
+        prev.choicesTotal === cost ? prev : { ...prev, choicesTotal: cost }
+      )
     }
     updateChoiceCostTotal()
-  }, [calculateChoiceCostTotal, formData.choicesTotal, setFormData])
+  }, [calculateChoiceCostTotal, setFormData])
 
   // 수익 계산 (Net 가격 - 예약 지출 총합 - 투어 지출 총합 - 초이스 구매가 총합)
   const calculateProfit = useCallback(() => {
@@ -1344,32 +1336,18 @@ export default function PricingSection({
 
   // 채널 수수료율 로드 확인 및 설정
   useEffect(() => {
-    console.log('PricingSection: 채널 수수료율 설정 useEffect 실행', {
-      selectedChannel: selectedChannel ? { id: selectedChannel.id, name: selectedChannel.name } : null,
-      isOTAChannel,
-      channelCommissionPercent,
-      formDataCommissionPercent: formData.commission_percent,
-      shouldSet: selectedChannel && isOTAChannel && channelCommissionPercent > 0 && (!formData.commission_percent || formData.commission_percent === 0)
-    })
-    
-    if (selectedChannel && isOTAChannel) {
-      // channelCommissionPercent가 0보다 크면 설정 (0이어도 설정 가능하도록 조건 변경)
-      if (channelCommissionPercent !== undefined && channelCommissionPercent !== null) {
-        // commission_percent가 0이거나 없을 때 채널의 수수료율로 설정
-        if (!formData.commission_percent || formData.commission_percent === 0) {
-          console.log('채널 수수료율 자동 설정:', {
-            channelId: selectedChannel.id,
-            channelName: selectedChannel.name,
-            channelCommissionPercent,
-            currentCommissionPercent: formData.commission_percent
-          })
-          setFormData((prev: typeof formData) => ({
-            ...prev,
-            commission_percent: channelCommissionPercent
-          }))
-        }
-      }
-    }
+    if (!selectedChannel || !isOTAChannel) return
+    if (channelCommissionPercent === undefined || channelCommissionPercent === null) return
+    // 이미 같은 값이면 setState 하지 않음 → 무한 루프 방지 (0일 때도 formData.commission_percent === 0 이면 재실행 시 동일하므로 한 번만 설정)
+    if (formData.commission_percent === channelCommissionPercent) return
+    // commission_percent가 없거나 0일 때만 채널 수수료율로 설정 (초기화 목적)
+    const isUnset = formData.commission_percent === undefined || formData.commission_percent === null || formData.commission_percent === 0
+    if (!isUnset) return
+
+    setFormData((prev: typeof formData) => ({
+      ...prev,
+      commission_percent: channelCommissionPercent
+    }))
   }, [
     selectedChannel,
     isOTAChannel,
@@ -1378,148 +1356,81 @@ export default function PricingSection({
     setFormData
   ])
 
-  // 채널 변경 감지
+  // 채널 변경 감지: 채널을 바꾸면 이전 채널의 commission 보호 해제 후 새 채널 기준으로 재계산
   useEffect(() => {
     if (formData.channelId !== prevChannelIdRef.current) {
       prevChannelIdRef.current = formData.channelId
-      // 채널이 변경되면 commission_percent를 초기화하여 새 채널의 값을 사용하도록 함
+      loadedCommissionAmountRef.current = null
       if (isOTAChannel && channelCommissionPercent > 0) {
-        // 데이터베이스에서 불러온 commission_amount가 있으면 절대 덮어쓰지 않음
-        if (loadedCommissionAmountRef.current !== null && loadedCommissionAmountRef.current > 0) {
-          console.log('PricingSection: 데이터베이스에서 불러온 commission_amount 보호, 채널 변경 시 덮어쓰기 건너뜀:', loadedCommissionAmountRef.current)
-          return
-        }
-        
-        // commission_amount가 0보다 크면 데이터베이스에서 불러온 값이므로 건너뜀
-        if (formData.commission_amount > 0) {
-          console.log('PricingSection: commission_amount가 이미 설정되어 있음, 채널 변경 시 덮어쓰기 건너뜀:', formData.commission_amount)
-          return
-        }
-        
-        const basePrice = formData.commission_base_price !== undefined 
-          ? formData.commission_base_price 
+        const basePrice = formData.commission_base_price !== undefined
+          ? formData.commission_base_price
           : (discountedProductPrice > 0 ? discountedProductPrice : (otaSalePrice > 0 ? otaSalePrice : formData.subtotal))
         const calculatedAmount = basePrice * (channelCommissionPercent / 100)
-        console.log('Channel changed - Setting commission_percent from new channel:', {
-          channelId: formData.channelId,
-          channelCommissionPercent,
-          basePrice,
-          calculatedAmount,
-          currentCommissionAmount: formData.commission_amount,
-          loadedCommissionAmount: loadedCommissionAmountRef.current
-        })
-        
-        // 데이터베이스에서 불러온 commission_amount가 있으면 절대 덮어쓰지 않음
-        if (loadedCommissionAmountRef.current !== null && loadedCommissionAmountRef.current > 0) {
-          console.log('PricingSection: 데이터베이스에서 불러온 commission_amount 보호, 채널 변경 시 덮어쓰기 건너뜀:', loadedCommissionAmountRef.current)
-          setFormData((prev: typeof formData) => ({
-            ...prev,
-            commission_percent: channelCommissionPercent,
-            // commission_amount는 데이터베이스 값 유지
-            commission_amount: prev.commission_amount > 0 ? prev.commission_amount : calculatedAmount
-          }))
-        } else if (formData.commission_amount > 0) {
-          console.log('PricingSection: commission_amount가 이미 설정되어 있음, 채널 변경 시 덮어쓰기 건너뜀:', formData.commission_amount)
-          setFormData((prev: typeof formData) => ({
-            ...prev,
-            commission_percent: channelCommissionPercent
-            // commission_amount는 유지
-          }))
-        } else {
-          setFormData((prev: typeof formData) => ({
-            ...prev,
-            commission_percent: channelCommissionPercent,
-            commission_amount: calculatedAmount
-          }))
-        }
+        setFormData((prev: typeof formData) => ({
+          ...prev,
+          commission_percent: channelCommissionPercent,
+          commission_amount: calculatedAmount
+        }))
       }
     }
   }, [formData.channelId, isOTAChannel, channelCommissionPercent, formData.commission_base_price, discountedProductPrice, otaSalePrice, formData.subtotal, setFormData])
 
   // 채널의 commission_percent를 기본값으로 설정 (초기 로딩 시 또는 commission_percent가 0일 때)
   useEffect(() => {
-    if (isOTAChannel && channelCommissionPercent > 0) {
-      // 데이터베이스에서 불러온 commission_amount가 있으면 절대 덮어쓰지 않음
-      if (loadedCommissionAmountRef.current !== null && loadedCommissionAmountRef.current > 0) {
-        console.log('PricingSection: 데이터베이스에서 불러온 commission_amount 보호, 채널 기본값 설정 건너뜀:', loadedCommissionAmountRef.current)
-        return
-      }
-      
-      // commission_percent가 0이거나 없을 때만 설정
-      // commission_amount가 0보다 크면 데이터베이스에서 불러온 값이므로 건너뜀
-      if ((!formData.commission_percent || formData.commission_percent === 0) && formData.commission_amount === 0) {
-        const basePrice = formData.commission_base_price !== undefined 
-          ? formData.commission_base_price 
-          : (discountedProductPrice > 0 ? discountedProductPrice : (otaSalePrice > 0 ? otaSalePrice : formData.subtotal))
-        const calculatedAmount = basePrice * (channelCommissionPercent / 100)
-        console.log('Setting commission_percent from channel (initial load):', {
-          channelCommissionPercent,
-          basePrice,
-          calculatedAmount,
-          currentCommissionAmount: formData.commission_amount,
-          loadedCommissionAmount: loadedCommissionAmountRef.current
-        })
-        
-        // 데이터베이스에서 불러온 commission_amount가 있으면 절대 덮어쓰지 않음
-        if (loadedCommissionAmountRef.current !== null && loadedCommissionAmountRef.current > 0) {
-          console.log('PricingSection: 데이터베이스에서 불러온 commission_amount 보호, 채널 기본값 설정 건너뜀:', loadedCommissionAmountRef.current)
-          setFormData((prev: typeof formData) => ({
-            ...prev,
-            commission_percent: channelCommissionPercent,
-            // commission_amount는 데이터베이스 값 유지
-            commission_amount: prev.commission_amount > 0 ? prev.commission_amount : calculatedAmount
-          }))
-        } else if (formData.commission_amount > 0) {
-          console.log('PricingSection: commission_amount가 이미 설정되어 있음, 채널 기본값 설정 건너뜀:', formData.commission_amount)
-          setFormData((prev: typeof formData) => ({
-            ...prev,
-            commission_percent: channelCommissionPercent
-            // commission_amount는 유지
-          }))
-        } else {
-          setFormData((prev: typeof formData) => ({
-            ...prev,
-            commission_percent: channelCommissionPercent,
-            commission_amount: calculatedAmount
-          }))
-        }
-      }
-    }
+    if (!isOTAChannel) return
+    // 이미 채널 수수료율과 동일하면 set 하지 않음 (무한 루프 방지, channelCommissionPercent 0 포함)
+    if (formData.commission_percent === channelCommissionPercent) return
+    if (channelCommissionPercent === undefined || channelCommissionPercent === null) return
+    // 데이터베이스에서 불러온 commission_amount가 있으면 절대 덮어쓰지 않음
+    if (loadedCommissionAmountRef.current !== null && loadedCommissionAmountRef.current > 0) return
+
+    // commission_percent가 없거나 0일 때만, commission_amount도 0일 때만 설정
+    const isUnset = (!formData.commission_percent && formData.commission_percent !== 0) || formData.commission_percent === 0
+    if (!isUnset || formData.commission_amount !== 0) return
+
+    const basePrice = formData.commission_base_price !== undefined
+      ? formData.commission_base_price
+      : (discountedProductPrice > 0 ? discountedProductPrice : (otaSalePrice > 0 ? otaSalePrice : formData.subtotal))
+    const calculatedAmount = basePrice * (channelCommissionPercent / 100)
+
+    setFormData((prev: typeof formData) => ({
+      ...prev,
+      commission_percent: channelCommissionPercent,
+      commission_amount: prev.commission_amount > 0 ? prev.commission_amount : calculatedAmount
+    }))
   }, [isOTAChannel, channelCommissionPercent, formData.commission_percent, formData.commission_amount, formData.commission_base_price, discountedProductPrice, otaSalePrice, formData.subtotal, setFormData])
   
+  // commission_base_price / commission_amount 자동 업데이트 (값이 실제로 다를 때만 set, 무한 루프 방지)
   useEffect(() => {
     const basePrice = discountedProductPrice > 0 ? discountedProductPrice : (otaSalePrice > 0 ? otaSalePrice : formData.subtotal)
-    
-    if (basePrice > 0) {
-      // commission_base_price가 설정되지 않았거나, basePrice와 같으면 자동 업데이트
-      if (formData.commission_base_price === undefined || 
-          Math.abs(currentCommissionBase - basePrice) < 0.01) {
-        if (formData.commission_percent > 0) {
-          const calculatedAmount = basePrice * (formData.commission_percent / 100)
-          setFormData((prev: typeof formData) => ({ 
-            ...prev, 
-            commission_base_price: basePrice,
-            commission_amount: calculatedAmount
-          }))
-        } else {
-          // commission_percent가 0이면 commission_base_price만 업데이트
-          setFormData((prev: typeof formData) => ({ 
-            ...prev, 
-            commission_base_price: basePrice
-          }))
-        }
-      }
-    }
+    if (basePrice <= 0) return
+    if (formData.commission_base_price !== undefined && Math.abs(currentCommissionBase - basePrice) >= 0.01) return
+
+    const calculatedAmount = formData.commission_percent > 0 ? basePrice * (formData.commission_percent / 100) : 0
+    const needBase = formData.commission_base_price === undefined || Math.abs(currentCommissionBase - basePrice) >= 0.01
+    const needAmount = formData.commission_percent > 0 && (formData.commission_amount === undefined || Math.abs((formData.commission_amount ?? 0) - calculatedAmount) >= 0.01)
+    if (!needBase && !needAmount) return
+
+    setFormData((prev: typeof formData) => {
+      const newBase = basePrice
+      const newAmount = (prev.commission_percent ?? 0) > 0 ? newBase * ((prev.commission_percent ?? 0) / 100) : (prev.commission_amount ?? 0)
+      if (Math.abs((prev.commission_base_price ?? 0) - newBase) < 0.01 && Math.abs((prev.commission_amount ?? 0) - newAmount) < 0.01) return prev
+      return prev.commission_percent > 0
+        ? { ...prev, commission_base_price: newBase, commission_amount: newAmount }
+        : { ...prev, commission_base_price: newBase }
+    })
   }, [
     discountedProductPrice,
-    otaSalePrice, 
-    formData.subtotal, 
-    currentCommissionBase, 
+    otaSalePrice,
+    formData.subtotal,
+    currentCommissionBase,
     formData.commission_percent,
     formData.commission_base_price,
+    formData.commission_amount,
     formData.productPriceTotal,
     formData.couponDiscount,
-    formData.additionalDiscount
+    formData.additionalDiscount,
+    setFormData
   ])
 
   // 데이터베이스에서 불러온 commission_amount 추적 (자동 계산에 의해 덮어쓰이지 않도록)
@@ -1527,15 +1438,8 @@ export default function PricingSection({
   
   // isExistingPricingLoaded가 true이고 commission_amount가 0보다 크면 데이터베이스에서 불러온 값
   useEffect(() => {
-    console.log('PricingSection: commission_amount 추적 useEffect', {
-      isExistingPricingLoaded,
-      commission_amount: formData.commission_amount,
-      type: typeof formData.commission_amount
-    })
-    
     if (isExistingPricingLoaded && formData.commission_amount > 0) {
       loadedCommissionAmountRef.current = formData.commission_amount
-      console.log('PricingSection: 데이터베이스에서 불러온 commission_amount 추적:', formData.commission_amount)
     }
   }, [isExistingPricingLoaded, formData.commission_amount])
 
@@ -1546,16 +1450,8 @@ export default function PricingSection({
     if (isExistingPricingLoaded) return // 기존 가격 정보가 로드된 경우 자동 업데이트 안 함 (저장된 값 유지)
     
     // 데이터베이스에서 불러온 commission_amount가 있으면 절대 덮어쓰지 않음
-    if (loadedCommissionAmountRef.current !== null && loadedCommissionAmountRef.current > 0) {
-      console.log('PricingSection: 데이터베이스에서 불러온 commission_amount 보호, 자동 업데이트 건너뜀:', loadedCommissionAmountRef.current)
-      return
-    }
-    
-    // commission_amount가 이미 설정되어 있고 0이 아니면 저장된 값이므로 절대 덮어쓰지 않음
-    if (formData.commission_amount > 0) {
-      console.log('PricingSection: commission_amount가 이미 설정되어 있음, 자동 업데이트 건너뜀:', formData.commission_amount)
-      return
-    }
+    if (loadedCommissionAmountRef.current !== null && loadedCommissionAmountRef.current > 0) return
+    if (formData.commission_amount > 0) return
     
     // 채널 결제 금액 계산 (잔금 제외)
     const channelPaymentAmount = (
@@ -1619,33 +1515,6 @@ export default function PricingSection({
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div className="flex items-center space-x-3">
             <h3 className="text-sm font-medium text-gray-900">가격 정보</h3>
-            {/* 가격 타입 표시 (채널 정보에 따라 자동 결정) */}
-            <div className="flex items-center space-x-2">
-              <label className="text-xs text-gray-600">가격 타입:</label>
-              <select
-                value={formData.priceType || autoPriceType || 'dynamic'}
-                onChange={async (e) => {
-                  const newPriceType = e.target.value as 'base' | 'dynamic'
-                  setFormData({ ...formData, priceType: newPriceType })
-                  // 가격 타입이 변경되면 가격을 다시 로드
-                  if (formData.productId && formData.tourDate && formData.channelId) {
-                    // 부모 컴포넌트에 가격 타입 변경 알림 (ReservationForm에서 처리)
-                    // 실제 가격 로드는 ReservationForm의 useEffect에서 처리됨
-                  }
-                }}
-                disabled={!!formData.channelId} // 채널이 선택되면 자동 결정되므로 비활성화
-                className={`px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 ${
-                  formData.channelId ? 'bg-gray-100 cursor-not-allowed' : ''
-                }`}
-                title={formData.channelId ? '채널 정보에 따라 자동으로 결정됩니다' : '가격 타입을 선택하세요'}
-              >
-                <option value="dynamic">불포함 있음</option>
-                <option value="base">불포함 없음</option>
-              </select>
-              {formData.channelId && (
-                <span className="text-xs text-gray-500">(자동)</span>
-              )}
-            </div>
           </div>
           {/* 저장, 초기화 버튼 */}
           <div className="flex items-center gap-2">
