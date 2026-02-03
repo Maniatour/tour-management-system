@@ -6,7 +6,9 @@ import {
   Calendar,
   List,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  LayoutGrid,
+  Table2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { SimplePricingRuleDto, SimplePricingRule, DateRangeSelection } from '@/lib/types/dynamic-pricing';
@@ -105,6 +107,9 @@ export default function DynamicPricingManager({
   
   // 배치 저장 진행률 상태
   const [batchProgress, setBatchProgress] = useState<{ completed: number; total: number } | null>(null);
+  
+  // 초이스별 가격 설정 뷰 모드 (카드 / 테이블)
+  const [choicePricingViewMode, setChoicePricingViewMode] = useState<'card' | 'table'>('table');
   
   // 채널 수정 모달 상태
   const [editingChannel, setEditingChannel] = useState<{
@@ -2643,8 +2648,184 @@ export default function DynamicPricingManager({
             
             return (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-              <h4 className="text-md font-semibold text-gray-900 mb-4">{t('choicePricingSection')}</h4>
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-md font-semibold text-gray-900">{t('choicePricingSection')}</h4>
+                <div className="flex rounded-lg border border-gray-300 p-0.5 bg-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => setChoicePricingViewMode('table')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors ${choicePricingViewMode === 'table' ? 'bg-white text-blue-600 shadow font-medium' : 'text-gray-600 hover:text-gray-900'}`}
+                  >
+                    <Table2 className="h-4 w-4" />
+                    {t('tableView')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setChoicePricingViewMode('card')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors ${choicePricingViewMode === 'card' ? 'bg-white text-blue-600 shadow font-medium' : 'text-gray-600 hover:text-gray-900'}`}
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                    {t('cardView')}
+                  </button>
+                </div>
+              </div>
               
+              {choicePricingViewMode === 'table' ? (
+                <div className="overflow-x-auto rounded-lg border border-gray-200 text-xs">
+                  <table className="w-full min-w-[800px] text-xs">
+                    <thead>
+                      <tr className="bg-gray-100 border-b border-gray-200">
+                        <th className="text-left py-1.5 px-2 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('choice')}</th>
+                        <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('otaSalePrice')}</th>
+                        <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('notIncludedAmount')}</th>
+                        <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('commissionLabel')} / {t('couponLabel')}</th>
+                        <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('netPriceLabel')}</th>
+                        {homepageChannel && (
+                          <>
+                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('homepageLabel')}</th>
+                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('differenceLabel')}</th>
+                          </>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {choiceCombinations.map((combination) => {
+                        const otaSalePrice = getOtaSalePriceWithFallback(combination, (pricingConfig.choices_pricing as any) || {});
+                        const commissionPercent = pricingConfig.commission_percent || 0;
+                        const couponPercent = pricingConfig.coupon_percent || 0;
+                        const currentChoiceData = (pricingConfig.choices_pricing as any)?.[combination.id] || {};
+                        const choiceNotIncludedPrice = currentChoiceData.not_included_price;
+                        const notIncludedPrice = choiceNotIncludedPrice !== undefined && choiceNotIncludedPrice !== null 
+                          ? choiceNotIncludedPrice 
+                          : ((pricingConfig as any)?.not_included_price || 0);
+                        let netPrice = 0;
+                        if (otaSalePrice > 0) {
+                          const baseNetPrice = otaSalePrice * (1 - couponPercent / 100) * (1 - commissionPercent / 100);
+                          netPrice = notIncludedPrice > 0 ? baseNetPrice + notIncludedPrice : baseNetPrice;
+                        }
+                        let homepageNetPrice = 0;
+                        let priceDifference = 0;
+                        if (homepageChannel && otaSalePrice > 0) {
+                          const basePrice = productBasePrice.adult || 0;
+                          let foundChoiceData = homepagePricingConfig ? findHomepageChoiceData(combination, homepagePricingConfig) : {};
+                          if ((!foundChoiceData || Object.keys(foundChoiceData).length === 0 || (foundChoiceData.adult_price === 0 && foundChoiceData.adult === 0)) && combination) {
+                            foundChoiceData = { adult_price: combination.adult_price || 0, child_price: combination.child_price || 0, infant_price: combination.infant_price || 0 };
+                          }
+                          const choicePrice = foundChoiceData?.adult_price || foundChoiceData?.adult || 0;
+                          homepageNetPrice = (basePrice + choicePrice) * 0.8;
+                          priceDifference = netPrice - homepageNetPrice;
+                        }
+                        return (
+                          <tr key={combination.id} className="hover:bg-gray-50">
+                            <td className="py-1.5 px-2 align-top">
+                              <div className="font-medium text-gray-900 text-xs">{combination.combination_name_ko || combination.combination_name}</div>
+                              <div className="text-[10px] text-gray-500 mt-0.5">{combination.combination_name}</div>
+                            </td>
+                            <td className="py-1.5 px-1.5 align-top text-center">
+                              <input
+                                type="number"
+                                value={otaSalePrice === 0 ? '' : otaSalePrice}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  const currentPricing = pricingConfig.choices_pricing || {};
+                                  const currentChoiceDataRow = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                                  const preservedData = { ...currentChoiceDataRow, not_included_price: currentChoiceDataRow.not_included_price !== undefined ? currentChoiceDataRow.not_included_price : notIncludedPrice };
+                                  if (value === '' || value === '-') {
+                                    updatePricingConfig({ choices_pricing: { ...currentPricing, [combination.id]: { ...preservedData, ota_sale_price: 0 } } });
+                                    return;
+                                  }
+                                  const numValue = parseFloat(value);
+                                  if (!isNaN(numValue)) {
+                                    const adultPrice = (currentChoiceDataRow.adult_price as number) ?? (currentChoiceDataRow.adult as number) ?? combination.adult_price ?? 0;
+                                    const childPrice = (currentChoiceDataRow.child_price as number) ?? (currentChoiceDataRow.child as number) ?? combination.child_price ?? 0;
+                                    const infantPrice = (currentChoiceDataRow.infant_price as number) ?? (currentChoiceDataRow.infant as number) ?? combination.infant_price ?? 0;
+                                    updatePricingConfig({
+                                      choices_pricing: {
+                                        ...currentPricing,
+                                        [combination.id]: { ...preservedData, adult_price: adultPrice, child_price: childPrice, infant_price: infantPrice, adult: adultPrice, child: childPrice, infant: infantPrice, ota_sale_price: numValue }
+                                      }
+                                    });
+                                    updateChoicePricing(combination.id, { choiceId: combination.id, choiceName: combination.combination_name, adult_price: adultPrice, child_price: childPrice, infant_price: infantPrice });
+                                  }
+                                }}
+                                onBlur={(e) => {
+                                  const value = e.target.value;
+                                  if (value === '' || value === '-') {
+                                    const currentPricing = pricingConfig.choices_pricing || {};
+                                    const currentChoiceDataRow = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                                    updatePricingConfig({ choices_pricing: { ...currentPricing, [combination.id]: { ...currentChoiceDataRow, not_included_price: currentChoiceDataRow.not_included_price !== undefined ? currentChoiceDataRow.not_included_price : notIncludedPrice, ota_sale_price: 0 } } });
+                                  }
+                                }}
+                                className="w-16 px-1.5 py-0.5 text-xs border border-gray-300 rounded text-center focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className="py-1.5 px-1.5 align-top text-center">
+                              <input
+                                type="text"
+                                value={notIncludedPrice === undefined || notIncludedPrice === null ? '' : notIncludedPrice === 0 ? '' : String(notIncludedPrice)}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  const currentPricing = pricingConfig.choices_pricing || {};
+                                  const currentChoiceDataRow = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                                  const preservedData = {
+                                    ...currentChoiceDataRow,
+                                    ota_sale_price: currentChoiceDataRow.ota_sale_price !== undefined ? currentChoiceDataRow.ota_sale_price : otaSalePrice,
+                                    adult_price: currentChoiceDataRow.adult_price ?? currentChoiceDataRow.adult ?? combination.adult_price ?? 0,
+                                    child_price: currentChoiceDataRow.child_price ?? currentChoiceDataRow.child ?? combination.child_price ?? 0,
+                                    infant_price: currentChoiceDataRow.infant_price ?? currentChoiceDataRow.infant ?? combination.infant_price ?? 0,
+                                    adult: currentChoiceDataRow.adult ?? currentChoiceDataRow.adult_price ?? combination.adult_price ?? 0,
+                                    child: currentChoiceDataRow.child ?? currentChoiceDataRow.child_price ?? combination.child_price ?? 0,
+                                    infant: currentChoiceDataRow.infant ?? currentChoiceDataRow.infant_price ?? combination.infant_price ?? 0
+                                  };
+                                  if (value === '' || value === '-') {
+                                    updatePricingConfig({ choices_pricing: { ...currentPricing, [combination.id]: { ...preservedData, not_included_price: 0 } } });
+                                    return;
+                                  }
+                                  const numValue = parseFloat(value.replace(/[^\d.-]/g, ''));
+                                  if (!isNaN(numValue) && numValue >= 0) {
+                                    updatePricingConfig({ choices_pricing: { ...currentPricing, [combination.id]: { ...preservedData, not_included_price: numValue } } });
+                                  }
+                                }}
+                                onBlur={(e) => {
+                                  const value = e.target.value;
+                                  const currentPricing = pricingConfig.choices_pricing || {};
+                                  const currentChoiceDataRow = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                                  const preservedData = { ...currentChoiceDataRow, ota_sale_price: currentChoiceDataRow.ota_sale_price !== undefined ? currentChoiceDataRow.ota_sale_price : otaSalePrice, adult_price: currentChoiceDataRow.adult_price ?? combination.adult_price ?? 0, child_price: currentChoiceDataRow.child_price ?? combination.child_price ?? 0, infant_price: currentChoiceDataRow.infant_price ?? combination.infant_price ?? 0, adult: currentChoiceDataRow.adult ?? combination.adult_price ?? 0, child: currentChoiceDataRow.child ?? combination.child_price ?? 0, infant: currentChoiceDataRow.infant ?? combination.infant_price ?? 0 };
+                                  if (value === '' || value === '-') {
+                                    updatePricingConfig({ choices_pricing: { ...currentPricing, [combination.id]: { ...preservedData, not_included_price: 0 } } });
+                                  } else {
+                                    const numValue = parseFloat(value);
+                                    if (!isNaN(numValue) && numValue >= 0) updatePricingConfig({ choices_pricing: { ...currentPricing, [combination.id]: { ...preservedData, not_included_price: numValue } } });
+                                  }
+                                }}
+                                className="w-16 px-1.5 py-0.5 text-xs border border-gray-300 rounded text-center focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="0"
+                              />
+                            </td>
+                            <td className="py-1.5 px-1.5 align-top text-center text-gray-600 text-[11px]">
+                              {commissionPercent}% / {couponPercent}%
+                            </td>
+                            <td className="py-1.5 px-1.5 align-top text-center font-medium text-xs">
+                              {netPrice > 0 ? `$${netPrice.toFixed(2)}` : '-'}
+                            </td>
+                            {homepageChannel && (
+                              <>
+                                <td className="py-1.5 px-1.5 align-top text-center text-gray-600 text-xs">
+                                  {homepageNetPrice > 0 ? `$${homepageNetPrice.toFixed(2)}` : '-'}
+                                </td>
+                                <td className={`py-1.5 px-1.5 align-top text-center font-medium text-xs ${priceDifference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  {homepageNetPrice > 0 ? `${priceDifference >= 0 ? '+' : ''}$${priceDifference.toFixed(2)}` : '-'}
+                                </td>
+                              </>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
               <div className="space-y-3">
                 {choiceCombinations.map((combination) => {
                   // OTA 판매가 가져오기 (미정 조합일 때 미국 거주자 선택의 ota_sale_price로 폴백)
@@ -3507,6 +3688,7 @@ export default function DynamicPricingManager({
                   );
                     })}
               </div>
+              )}
             </div>
             );
           })()}

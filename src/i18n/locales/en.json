@@ -897,6 +897,8 @@
       "eachAgeSeparate": "Adult/Child/Infant managed separately.",
       "basePriceSection": "Base Price",
       "choicePricingSection": "Choice Pricing",
+      "tableView": "Table view",
+      "cardView": "Card view",
       "singlePriceWithAmount": "Single price:",
       "adultSalePriceLabel": "Adult Sale Price ($)",
       "childSalePriceLabel": "Child Sale Price ($)",
