@@ -69,6 +69,14 @@ function formatDate(dateString: string): string {
   })
 }
 
+// 차트 X축용 짧은 라벨 (모바일)
+function shortChartLabel(productName: string, dateString: string): string {
+  const date = new Date(dateString + 'T00:00:00')
+  const d = `${date.getMonth() + 1}/${date.getDate()}`
+  const p = productName.length > 6 ? productName.slice(0, 6) + '…' : productName
+  return `${p} ${d}`
+}
+
 // 예약별 정산 통계를 가져오는 함수
 async function getReservationFinancialStats(reservationId: string) {
   try {
@@ -186,6 +194,14 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
     subCategoryStats: []
   })
   const [isCalculating, setIsCalculating] = useState(false)
+  const [isChartCompact, setIsChartCompact] = useState(false)
+
+  useEffect(() => {
+    const check = () => setIsChartCompact(typeof window !== 'undefined' && window.innerWidth < 640)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
 
   // 지출 상세 내역 토글
   const toggleExpenseDetails = async (reservationId: string) => {
@@ -429,53 +445,53 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
   }
 
   return (
-    <div className="space-y-6">
-      {/* 요약 통계 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Calendar className="h-6 w-6 text-blue-600" />
+    <div className="space-y-4 sm:space-y-6">
+      {/* 요약 통계 카드 - 2열 2행 */}
+      <div className="grid grid-cols-2 gap-2 sm:gap-4">
+        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center gap-2 sm:gap-0">
+            <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg flex-shrink-0">
+              <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">총 예약 수</p>
-              <p className="text-2xl font-bold text-gray-900">{settlementData.totalReservations}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <DollarSign className="h-6 w-6 text-green-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">총 수익</p>
-              <p className="text-2xl font-bold text-gray-900">${settlementData.totalRevenue.toLocaleString()}</p>
+            <div className="min-w-0 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 예약 수</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{settlementData.totalReservations}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-red-100 rounded-lg">
-              <TrendingUp className="h-6 w-6 text-red-600" />
+        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center gap-2 sm:gap-0">
+            <div className="p-1.5 sm:p-2 bg-green-100 rounded-lg flex-shrink-0">
+              <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">총 지출</p>
-              <p className="text-2xl font-bold text-gray-900">${settlementData.totalExpenses.toLocaleString()}</p>
+            <div className="min-w-0 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 수익</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">${settlementData.totalRevenue.toLocaleString()}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <BarChart3 className="h-6 w-6 text-purple-600" />
+        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center gap-2 sm:gap-0">
+            <div className="p-1.5 sm:p-2 bg-red-100 rounded-lg flex-shrink-0">
+              <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6 text-red-600" />
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">순수익</p>
-              <p className={`text-2xl font-bold ${settlementData.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            <div className="min-w-0 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 지출</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">${settlementData.totalExpenses.toLocaleString()}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center gap-2 sm:gap-0">
+            <div className="p-1.5 sm:p-2 bg-purple-100 rounded-lg flex-shrink-0">
+              <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
+            </div>
+            <div className="min-w-0 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">순수익</p>
+              <p className={`text-lg sm:text-2xl font-bold truncate ${settlementData.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 ${settlementData.netProfit.toLocaleString()}
               </p>
             </div>
@@ -484,23 +500,23 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
       </div>
 
       {/* 차트 선택 탭 */}
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-        <div className="flex space-x-4 mb-6">
+      <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+        <div className="flex flex-wrap gap-2 sm:gap-4 mb-4 sm:mb-6">
           {[
             { key: 'profit', label: '예약별 손익', icon: BarChart3 },
             { key: 'expenses', label: '지출 상세', icon: PieChart },
-            { key: 'subcategories', label: '서브카테고리별 분석', icon: Receipt }
+            { key: 'subcategories', label: '서브카테고리별', icon: Receipt }
           ].map(({ key, label, icon: Icon }) => (
             <button
               key={key}
               onClick={() => setSelectedChart(key as any)}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-md sm:rounded-lg transition-colors text-sm ${
                 selectedChart === key
                   ? 'bg-blue-500 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              <Icon size={20} />
+              <Icon size={16} className="sm:w-5 sm:h-5" />
               <span>{label}</span>
             </button>
           ))}
@@ -508,25 +524,23 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
 
         {/* 예약별 손익 차트 */}
         {selectedChart === 'profit' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-900">예약별 손익 분석</h3>
-              <div className="flex space-x-2">
-                <button 
-                  onClick={() => generateChartPDF('profit-chart', '예약별손익차트.pdf')}
-                  className="flex items-center space-x-2 px-3 py-1 bg-green-600 text-white rounded-md hover:bg-green-700"
-                >
-                  <Download size={16} />
-                  <span>차트 다운로드</span>
-                </button>
-              </div>
+          <div className="space-y-4 sm:space-y-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900">예약별 손익 분석</h3>
+              <button 
+                onClick={() => generateChartPDF('profit-chart', '예약별손익차트.pdf')}
+                className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1 bg-green-600 text-white rounded-md hover:bg-green-700 text-xs sm:text-sm w-fit"
+              >
+                <Download size={14} />
+                <span>차트 다운로드</span>
+              </button>
             </div>
             
             {/* 고급 차트 */}
             <div id="profit-chart">
               <AdvancedCharts
                 data={settlementData.reservationStats.map(reservation => ({
-                  name: `${reservation.productName} (${formatDate(reservation.reservationDate)})`,
+                  name: shortChartLabel(reservation.productName, reservation.reservationDate),
                   revenue: reservation.revenue,
                   expenses: reservation.expenses,
                   profit: reservation.netProfit,
@@ -534,7 +548,8 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
                 }))}
                 type="bar"
                 title="예약별 손익 비교"
-                height={400}
+                height={isChartCompact ? 280 : 400}
+                compact={isChartCompact}
               />
             </div>
           </div>
@@ -570,33 +585,33 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
             </div>
 
             {/* 지출 상세 테이블 */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h4 className="font-semibold text-gray-700">지출 상세 내역</h4>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+              <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-200">
+                <h4 className="font-semibold text-gray-700 text-sm sm:text-base">지출 상세 내역</h4>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full divide-y divide-gray-200">
+                <table className="w-full divide-y divide-gray-200 min-w-[280px]">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">항목</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">금액</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">비율</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">예약당 평균</th>
+                      <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">항목</th>
+                      <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">금액</th>
+                      <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">비율</th>
+                      <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">예약당 평균</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {settlementData.expenseBreakdown.map((item, index) => (
                       <tr key={index} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                           {item.category}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-600">
                           ${item.amount.toLocaleString()}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-600">
                           {item.percentage.toFixed(1)}%
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-600">
                           ${settlementData.totalReservations > 0 ? (item.amount / settlementData.totalReservations).toFixed(0) : 0}
                         </td>
                       </tr>
@@ -641,9 +656,9 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
             </div>
 
             {/* 서브카테고리별 상세 정보 */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
               {settlementData.subCategoryStats.map((subCategory, index) => (
-                <div key={index} className="bg-white p-4 rounded-lg border border-gray-200">
+                <div key={index} className="bg-white p-3 sm:p-4 rounded-lg border border-gray-200">
                   <div className="flex justify-between items-center mb-3">
                     <div className="flex items-center space-x-3">
                       <Receipt className="h-5 w-5 text-blue-600" />
@@ -698,78 +713,124 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
         )}
       </div>
 
-      {/* 예약 정산 상세 테이블 */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">예약 정산 상세 통계</h3>
+      {/* 예약 정산 상세 통계 - 모바일 카드 / 데스크톱 테이블 */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="px-2 sm:px-4 py-2 sm:py-3 border-b border-gray-200">
+          <h3 className="text-sm sm:text-base font-semibold text-gray-900">예약 정산 상세 통계</h3>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full divide-y divide-gray-200">
+
+        {/* 모바일: 카드 리스트 (컴팩트) */}
+        <div className="md:hidden divide-y divide-gray-100">
+          {settlementData.reservationStats.map((reservation, index) => (
+            <div key={index} className="p-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs text-gray-500">{formatDate(reservation.reservationDate)} · {reservation.subCategory}</div>
+                  <Link
+                    href={`/ko/admin/reservations/${reservation.reservationId}`}
+                    className="text-xs font-medium text-blue-600 hover:underline truncate block"
+                  >
+                    {reservation.productName}
+                  </Link>
+                  <div className="text-[11px] text-gray-500 mt-0.5">
+                    {reservation.customerName || '-'} {reservation.channelName ? `· ${reservation.channelName}` : ''} · {reservation.totalPeople}명
+                  </div>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className="text-[11px] text-green-600">${reservation.revenue.toLocaleString()}</div>
+                  <div className="text-[11px] text-red-600">${reservation.expenses.toLocaleString()}</div>
+                  <div className={`text-xs font-semibold ${reservation.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    ${reservation.netProfit.toLocaleString()}
+                  </div>
+                  <div className="text-[10px] text-gray-500">{reservation.revenue > 0 ? ((reservation.netProfit / reservation.revenue) * 100).toFixed(1) : 0}%</div>
+                </div>
+                <button
+                  onClick={() => toggleExpenseDetails(reservation.reservationId)}
+                  className="p-1 text-blue-600 flex-shrink-0"
+                  title="상세"
+                >
+                  {expandedExpenses[reservation.reservationId] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </button>
+              </div>
+              {expandedExpenses[reservation.reservationId] && (
+                <div className="mt-2 pt-2 border-t border-gray-100">
+                  {expenseDetails[reservation.reservationId] ? (
+                    <div className="space-y-2 text-[11px]">
+                      <div className="flex justify-between"><span className="text-gray-500">고객</span><span>{expenseDetails[reservation.reservationId].customer?.name || '-'}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">채널</span><span>{expenseDetails[reservation.reservationId].channel?.name || '-'}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-500">총가격</span><span className="text-green-600">${expenseDetails[reservation.reservationId].pricing?.total_price?.toLocaleString() || 0}</span></div>
+                      {expenseDetails[reservation.reservationId].expenses?.length > 0 && (
+                        <div className="pt-1">
+                          <span className="text-gray-500">지출 </span>
+                          {expenseDetails[reservation.reservationId].expenses.map((e: any, i: number) => (
+                            <span key={i} className="text-red-600">${e.amount?.toLocaleString() || 0}{i < (expenseDetails[reservation.reservationId].expenses.length - 1) ? ', ' : ''}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-gray-400">로딩 중...</div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* 데스크톱: 컴팩트 테이블 */}
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full divide-y divide-gray-200 min-w-[640px] text-xs">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">예약 날짜</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase" style={{ width: '150px', minWidth: '150px', maxWidth: '150px' }}>상품명</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">서브카테고리</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">고객명</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">채널</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">인원</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">수익</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">지출</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">순수익</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">수익률</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">상세</th>
+                <th className="px-2 py-1.5 text-left text-[10px] font-medium text-gray-500 uppercase tracking-tight">날짜</th>
+                <th className="px-2 py-1.5 text-left text-[10px] font-medium text-gray-500 uppercase tracking-tight w-28">상품명</th>
+                <th className="px-2 py-1.5 text-left text-[10px] font-medium text-gray-500 uppercase tracking-tight">서브</th>
+                <th className="px-2 py-1.5 text-left text-[10px] font-medium text-gray-500 uppercase tracking-tight">고객</th>
+                <th className="px-2 py-1.5 text-left text-[10px] font-medium text-gray-500 uppercase tracking-tight">채널</th>
+                <th className="px-2 py-1.5 text-left text-[10px] font-medium text-gray-500 uppercase tracking-tight w-10">인원</th>
+                <th className="px-2 py-1.5 text-left text-[10px] font-medium text-gray-500 uppercase tracking-tight">수익</th>
+                <th className="px-2 py-1.5 text-left text-[10px] font-medium text-gray-500 uppercase tracking-tight">지출</th>
+                <th className="px-2 py-1.5 text-left text-[10px] font-medium text-gray-500 uppercase tracking-tight">순수익</th>
+                <th className="px-2 py-1.5 text-left text-[10px] font-medium text-gray-500 uppercase tracking-tight w-10">%</th>
+                <th className="px-2 py-1.5 text-left text-[10px] font-medium text-gray-500 uppercase tracking-tight w-10">상세</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white divide-y divide-gray-100">
               {settlementData.reservationStats.map((reservation, index) => (
                 <React.Fragment key={index}>
                   <tr className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-2 py-1.5 whitespace-nowrap text-gray-900">
                       {formatDate(reservation.reservationDate)}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-900 truncate" style={{ width: '150px', minWidth: '150px', maxWidth: '150px' }} title={reservation.productName}>
+                    <td className="px-2 py-1.5 text-gray-900 truncate max-w-[112px]" title={reservation.productName}>
                       <Link 
                         href={`/ko/admin/reservations/${reservation.reservationId}`}
-                        className="flex items-center space-x-1 text-blue-600 hover:text-blue-800 hover:underline transition-colors truncate"
+                        className="text-blue-600 hover:underline truncate inline-flex items-center gap-0.5"
                       >
                         <span className="truncate">{reservation.productName}</span>
-                        <ExternalLink size={14} className="flex-shrink-0" />
+                        <ExternalLink size={10} className="flex-shrink-0" />
                       </Link>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {reservation.subCategory}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {reservation.customerName || '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {reservation.channelName || '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {reservation.totalPeople}명
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600">
-                      ${reservation.revenue.toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">
-                      ${reservation.expenses.toLocaleString()}
-                    </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-semibold ${
-                      reservation.netProfit >= 0 ? 'text-green-600' : 'text-red-600'
-                    }`}>
+                    <td className="px-2 py-1.5 whitespace-nowrap text-gray-500 truncate max-w-[60px]">{reservation.subCategory}</td>
+                    <td className="px-2 py-1.5 whitespace-nowrap text-gray-500 truncate max-w-[70px]">{reservation.customerName || '-'}</td>
+                    <td className="px-2 py-1.5 whitespace-nowrap text-gray-500 truncate max-w-[60px]">{reservation.channelName || '-'}</td>
+                    <td className="px-2 py-1.5 whitespace-nowrap text-gray-500">{reservation.totalPeople}명</td>
+                    <td className="px-2 py-1.5 whitespace-nowrap text-green-600">${reservation.revenue.toLocaleString()}</td>
+                    <td className="px-2 py-1.5 whitespace-nowrap text-red-600">${reservation.expenses.toLocaleString()}</td>
+                    <td className={`px-2 py-1.5 whitespace-nowrap font-semibold ${reservation.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       ${reservation.netProfit.toLocaleString()}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-2 py-1.5 whitespace-nowrap text-gray-500">
                       {reservation.revenue > 0 ? ((reservation.netProfit / reservation.revenue) * 100).toFixed(1) : 0}%
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
+                    <td className="px-2 py-1.5 whitespace-nowrap text-center">
                       <button
                         onClick={() => toggleExpenseDetails(reservation.reservationId)}
-                        className="flex items-center justify-center space-x-1 hover:text-blue-700 transition-colors text-blue-600"
-                        title="상세 내역 보기"
+                        className="p-0.5 hover:text-blue-700 text-blue-600 inline-flex"
+                        title="상세"
                       >
-                        <Eye size={16} />
-                        {expandedExpenses[reservation.reservationId] ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                        <Eye size={12} />
+                        {expandedExpenses[reservation.reservationId] ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                       </button>
                     </td>
                   </tr>
@@ -777,16 +838,16 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
                   {/* 지출 상세 내역 */}
                   {expandedExpenses[reservation.reservationId] && (
                     <tr>
-                      <td colSpan={11} className="px-6 py-4 bg-gray-50">
-                        <div className="space-y-4">
-                          <h4 className="font-semibold text-gray-900">상세 내역</h4>
+                      <td colSpan={11} className="px-2 sm:px-4 py-2 sm:py-3 bg-gray-50">
+                        <div className="space-y-3">
+                          <h4 className="text-sm font-semibold text-gray-900">상세 내역</h4>
                           
                           {expenseDetails[reservation.reservationId] ? (
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 sm:gap-3">
                               {/* 예약 정보 */}
-                              <div className="bg-white p-3 rounded border">
-                                <h5 className="font-medium text-gray-900 mb-2">예약 정보</h5>
-                                <div className="space-y-2 text-sm">
+                              <div className="bg-white p-2 sm:p-3 rounded border">
+                                <h5 className="text-xs font-medium text-gray-900 mb-1">예약 정보</h5>
+                                <div className="space-y-1 text-xs">
                                   <div className="flex justify-between">
                                     <span className="text-gray-600">고객명</span>
                                     <span className="font-medium">{expenseDetails[reservation.reservationId].customer?.name || '-'}</span>
@@ -807,9 +868,9 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
                               </div>
 
                               {/* 수익 정보 */}
-                              <div className="bg-white p-3 rounded border">
-                                <h5 className="font-medium text-gray-900 mb-2">수익 정보</h5>
-                                <div className="space-y-2 text-sm">
+                              <div className="bg-white p-2 sm:p-3 rounded border">
+                                <h5 className="text-xs font-medium text-gray-900 mb-1">수익 정보</h5>
+                                <div className="space-y-1 text-xs">
                                   <div className="flex justify-between">
                                     <span className="text-gray-600">총 가격</span>
                                     <span className="font-medium text-green-600">
@@ -820,19 +881,19 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
                               </div>
 
                               {/* 지출 정보 */}
-                              <div className="bg-white p-3 rounded border">
-                                <h5 className="font-medium text-gray-900 mb-2">지출 정보</h5>
+                              <div className="bg-white p-2 sm:p-3 rounded border">
+                                <h5 className="text-xs font-medium text-gray-900 mb-1">지출 정보</h5>
                                 <div className="space-y-1">
                                   {expenseDetails[reservation.reservationId].expenses.length > 0 ? (
                                     expenseDetails[reservation.reservationId].expenses.map((expense: any, idx: number) => (
-                                      <div key={idx} className="flex justify-between text-sm">
+                                      <div key={idx} className="flex justify-between text-xs">
                                         <div className="flex flex-col">
                                           <span className="text-gray-600">{expense.paid_for || '지출 항목'}</span>
-                                          <span className="text-xs text-gray-500">{expense.paid_to || '결제처'}</span>
+                                          <span className="text-[10px] text-gray-500">{expense.paid_to || '결제처'}</span>
                                         </div>
                                         <div className="flex flex-col text-right">
                                           <span className="font-medium text-red-600">${expense.amount?.toLocaleString() || 0}</span>
-                                          <span className={`px-2 py-1 text-xs rounded ${
+                                          <span className={`px-1.5 py-0.5 text-[10px] rounded ${
                                             expense.status === 'approved' ? 'bg-green-100 text-green-800' :
                                             expense.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                                             expense.status === 'rejected' ? 'bg-red-100 text-red-800' :
@@ -846,15 +907,15 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
                                       </div>
                                     ))
                                   ) : (
-                                    <div className="text-sm text-gray-500">지출 내역이 없습니다.</div>
+                                    <div className="text-xs text-gray-500">지출 내역이 없습니다.</div>
                                   )}
                                 </div>
                               </div>
                             </div>
                           ) : (
-                            <div className="text-center py-4">
-                              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
-                              <p className="text-sm text-gray-500 mt-2">상세 내역을 불러오는 중...</p>
+                            <div className="text-center py-2">
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mx-auto"></div>
+                              <p className="text-xs text-gray-500 mt-1">로딩 중...</p>
                             </div>
                           )}
                         </div>

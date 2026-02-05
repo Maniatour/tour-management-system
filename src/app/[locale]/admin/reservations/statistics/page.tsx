@@ -482,35 +482,35 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   // 권한이 없는 경우 접근 거부
   if (!isSuper) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <XCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">접근 권한이 없습니다</h2>
-          <p className="text-gray-600">예약 통계 페이지는 Super 권한이 있는 사용자만 접근할 수 있습니다.</p>
+      <div className="flex items-center justify-center min-h-screen px-4">
+        <div className="text-center max-w-md">
+          <XCircle className="h-12 w-12 sm:h-16 sm:w-16 text-red-500 mx-auto mb-3 sm:mb-4" />
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">접근 권한이 없습니다</h2>
+          <p className="text-sm sm:text-base text-gray-600">예약 통계 페이지는 Super 권한이 있는 사용자만 접근할 수 있습니다.</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6 max-w-[1920px] mx-auto px-4 overflow-x-hidden">
+    <div className="space-y-4 sm:space-y-6 max-w-[1920px] mx-auto px-2 sm:px-4 overflow-x-hidden pb-6">
       {/* 헤더 */}
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-gray-900">통계 리포트</h1>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">통계 리포트</h1>
         <button
           onClick={refreshReservations}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium w-fit"
         >
-          <BarChart3 size={20} />
+          <BarChart3 size={16} />
           <span>데이터 새로고침</span>
         </button>
       </div>
 
-      {/* 탭 네비게이션 + 검색 (탭 메뉴줄 오른쪽 끝에 검색) */}
+      {/* 탭 네비게이션 + 검색 */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="border-b border-gray-200">
-          <div className="flex items-center justify-between px-6">
-            <nav className="-mb-px flex space-x-8">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 sm:px-6">
+            <nav className="-mb-px flex gap-1 overflow-x-auto scrollbar-thin sm:space-x-2 sm:overflow-visible pb-px">
               {[
                 { key: 'reservations', label: '예약 통계', icon: BarChart3 },
                 { key: 'tours', label: '투어 통계', icon: TrendingUp },
@@ -520,33 +520,33 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                 <button
                   key={key}
                   onClick={() => setActiveTab(key as TabType)}
-                  className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm ${
+                  className={`flex items-center gap-1 sm:gap-2 py-3 px-2 sm:px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap flex-shrink-0 ${
                     activeTab === key
                       ? 'border-blue-500 text-blue-600'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
-                  <Icon size={20} />
+                  <Icon size={16} className="sm:w-5 sm:h-5" />
                   <span>{label}</span>
                 </button>
               ))}
             </nav>
-            <div className="flex items-center gap-2 py-2 flex-shrink-0">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <div className="flex items-center gap-2 py-2 flex-shrink-0 min-w-0">
+              <div className="relative flex-1 sm:flex-none sm:min-w-[200px]">
+                <Search className="absolute left-2.5 sm:left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="고객명, 채널RN, 상품명, 날짜 검색..."
-                  className="pl-9 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[240px] text-sm"
+                  className="w-full pl-8 sm:pl-9 pr-3 py-1.5 sm:py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 />
               </div>
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="px-2 py-2 text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap"
+                  className="px-2 py-1.5 text-xs sm:text-sm text-gray-600 hover:text-gray-900 whitespace-nowrap"
                 >
                   초기화
                 </button>
@@ -557,16 +557,16 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
       </div>
 
       {/* 필터 컨트롤 */}
-      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-        <div className="flex items-center gap-4 flex-wrap">
-          {/* 1. 채널 선택 - 채널별 정산 탭에서는 숨김 */}
+      <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200">
+        <div className="flex flex-col gap-3 sm:gap-4">
+          {/* 1. 채널 선택 */}
           {activeTab !== 'channelSettlement' && (
-            <div className="flex items-center space-x-2 flex-shrink-0">
-              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">채널 선택:</label>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+              <label className="text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap">채널 선택:</label>
               <select
                 value={selectedChannelId}
                 onChange={(e) => setSelectedChannelId(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-[180px] flex-shrink-0"
+                className="w-full sm:min-w-[180px] px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
               >
                 <option value="">모든 채널</option>
                 {channels?.map(channel => (
@@ -578,10 +578,10 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
             </div>
           )}
 
-          {/* 2. 상태 다중 선택 - 버튼식, 채널 선택 오른쪽 */}
-          <div className="flex items-center space-x-2 flex-shrink-0">
-            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">상태 선택:</label>
-            <div className="flex space-x-1">
+          {/* 2. 상태 다중 선택 */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
+            <label className="text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap">상태 선택:</label>
+            <div className="flex flex-wrap gap-1">
               {(['pending', 'confirmed', 'completed', 'cancelled', 'recruiting'] as const).map((status) => {
                 const isSelected = selectedStatuses.some(s => s.toLowerCase() === status.toLowerCase())
                 return (
@@ -595,7 +595,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                         setSelectedStatuses([...selectedStatuses, status])
                       }
                     }}
-                    className={`px-3 py-1 text-sm rounded-md transition-colors whitespace-nowrap ${
+                    className={`px-2.5 py-1 text-xs sm:text-sm rounded-md transition-colors whitespace-nowrap ${
                       isSelected
                         ? 'bg-blue-500 text-white'
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -612,82 +612,77 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
             </div>
           </div>
 
-          {/* 시간 범위 프리셋: 일별 / 월별 / 연간별 버튼 */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 flex-shrink-0">
-            <div className="flex items-center gap-1">
-              <span className="text-sm font-medium text-gray-700 whitespace-nowrap mr-1">일별</span>
-              <button
-                onClick={() => applyPreset('daily_yesterday')}
-                className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
-                  isPresetActive('daily_yesterday') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                어제
-              </button>
-              <button
-                onClick={() => applyPreset('daily_today')}
-                className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
-                  isPresetActive('daily_today') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                오늘
-              </button>
+          {/* 3. 시간 범위 프리셋 + 기간 직접 선택 */}
+          <div className="flex flex-col gap-2 border-t border-gray-100 pt-2 sm:border-t-0 sm:pt-0">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <span className="text-xs sm:text-sm font-medium text-gray-700 w-full sm:w-auto">기간:</span>
+              <div className="flex flex-wrap gap-1">
+                <button
+                  onClick={() => applyPreset('daily_yesterday')}
+                  className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                    isPresetActive('daily_yesterday') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  어제
+                </button>
+                <button
+                  onClick={() => applyPreset('daily_today')}
+                  className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                    isPresetActive('daily_today') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  오늘
+                </button>
+                <button
+                  onClick={() => applyPreset('monthly_this')}
+                  className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                    isPresetActive('monthly_this') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  이번 달
+                </button>
+                <button
+                  onClick={() => applyPreset('monthly_last')}
+                  className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                    isPresetActive('monthly_last') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  지난 달
+                </button>
+                <button
+                  onClick={() => applyPreset('yearly_2025')}
+                  className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                    isPresetActive('yearly_2025') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  2025
+                </button>
+                <button
+                  onClick={() => applyPreset('yearly_2024')}
+                  className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                    isPresetActive('yearly_2024') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  2024
+                </button>
+                <button
+                  onClick={() => applyPreset('yearly_2023')}
+                  className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                    isPresetActive('yearly_2023') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  2023
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-1">
-              <span className="text-sm font-medium text-gray-700 whitespace-nowrap mr-1">월별</span>
-              <button
-                onClick={() => applyPreset('monthly_this')}
-                className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
-                  isPresetActive('monthly_this') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                이번 달
-              </button>
-              <button
-                onClick={() => applyPreset('monthly_last')}
-                className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
-                  isPresetActive('monthly_last') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                지난 달
-              </button>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="text-sm font-medium text-gray-700 whitespace-nowrap mr-1">연간별</span>
-              <button
-                onClick={() => applyPreset('yearly_2025')}
-                className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
-                  isPresetActive('yearly_2025') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                2025
-              </button>
-              <button
-                onClick={() => applyPreset('yearly_2024')}
-                className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
-                  isPresetActive('yearly_2024') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                2024
-              </button>
-              <button
-                onClick={() => applyPreset('yearly_2023')}
-                className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
-                  isPresetActive('yearly_2023') ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                2023
-              </button>
-            </div>
-            <div className="flex items-center gap-1 border-l border-gray-200 pl-3">
-              <span className="text-sm font-medium text-gray-500 whitespace-nowrap">기간 직접 선택:</span>
+            <div className="flex flex-wrap items-center gap-1.5 sm:border-l sm:border-gray-200 sm:pl-3">
+              <span className="text-xs sm:text-sm font-medium text-gray-500 whitespace-nowrap">직접 선택:</span>
               <input
                 type="date"
                 value={dateRange.start}
                 onChange={(e) => {
                   const start = e.target.value
                   setDateRange(prev => ({ ...prev, start }))
-                  // 시작일 선택 후 종료일 달력 자동 오픈
                   setTimeout(() => {
                     endDateInputRef.current?.focus()
                     if (typeof endDateInputRef.current?.showPicker === 'function') {
@@ -695,7 +690,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                     }
                   }, 100)
                 }}
-                className="px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent flex-shrink-0"
+                className="px-2 py-1.5 text-xs sm:text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 flex-1 min-w-0 max-w-[140px]"
               />
               <span className="text-gray-400">~</span>
               <input
@@ -703,7 +698,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                 type="date"
                 value={dateRange.end}
                 onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-                className="px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent flex-shrink-0"
+                className="px-2 py-1.5 text-xs sm:text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 flex-1 min-w-0 max-w-[140px]"
               />
             </div>
           </div>
@@ -715,51 +710,51 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
         <>
 
       {/* 요약 통계 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <BarChart3 className="h-6 w-6 text-blue-600" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center gap-2 sm:gap-0">
+            <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg flex-shrink-0">
+              <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">총 예약</p>
-              <p className="text-2xl font-bold text-gray-900">{statisticsData.totalReservations.toLocaleString()}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <Users className="h-6 w-6 text-green-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">총 인원</p>
-              <p className="text-2xl font-bold text-gray-900">{statisticsData.totalPeople.toLocaleString()}</p>
+            <div className="min-w-0 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 예약</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{statisticsData.totalReservations.toLocaleString()}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <TrendingUp className="h-6 w-6 text-yellow-600" />
+        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center gap-2 sm:gap-0">
+            <div className="p-1.5 sm:p-2 bg-green-100 rounded-lg flex-shrink-0">
+              <Users className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">예상 수익</p>
-              <p className="text-2xl font-bold text-gray-900">${statisticsData.totalRevenue.toLocaleString()}</p>
+            <div className="min-w-0 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 인원</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{statisticsData.totalPeople.toLocaleString()}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <CheckCircle className="h-6 w-6 text-purple-600" />
+        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center gap-2 sm:gap-0">
+            <div className="p-1.5 sm:p-2 bg-yellow-100 rounded-lg flex-shrink-0">
+              <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6 text-yellow-600" />
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">확정 예약</p>
-              <p className="text-2xl font-bold text-gray-900">
+            <div className="min-w-0 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">예상 수익</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">${statisticsData.totalRevenue.toLocaleString()}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center gap-2 sm:gap-0">
+            <div className="p-1.5 sm:p-2 bg-purple-100 rounded-lg flex-shrink-0">
+              <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
+            </div>
+            <div className="min-w-0 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">확정 예약</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">
                 {statisticsData.statusStats.find(s => s.status?.toLowerCase() === 'confirmed')?.count || 0}
               </p>
             </div>
@@ -768,58 +763,58 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
       </div>
 
       {/* 차트 선택 */}
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-        <div className="flex space-x-4 mb-6">
+      <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+        <div className="flex flex-wrap gap-2 sm:gap-4 mb-4 sm:mb-6">
           {[
-            { key: 'channel', label: '채널별 통계', icon: Link },
-            { key: 'product', label: '상품별 통계', icon: Package },
+            { key: 'channel', label: '채널별', icon: Link },
+            { key: 'product', label: '상품별', icon: Package },
             { key: 'trend', label: '예약 추이', icon: TrendingUp }
           ].map(({ key, label, icon: Icon }) => (
             <button
               key={key}
               onClick={() => setSelectedChart(key as ChartType)}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-md sm:rounded-lg transition-colors text-sm ${
                 selectedChart === key
                   ? 'bg-blue-500 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              <Icon size={20} />
+              <Icon size={16} className="sm:w-5 sm:h-5" />
               <span>{label}</span>
             </button>
           ))}
         </div>
 
         {/* 차트 영역 */}
-        <div className="h-96 bg-gray-50 rounded-lg p-6">
+        <div className="h-64 sm:h-96 bg-gray-50 rounded-lg p-3 sm:p-6 overflow-auto">
           {chartData.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-gray-500">
-              <div className="text-center">
-                <BarChart3 className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+            <div className="flex items-center justify-center h-full text-gray-500 text-sm sm:text-base">
+              <div className="text-center px-2">
+                <BarChart3 className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 sm:mb-4 text-gray-400" />
                 <p>선택한 기간에 데이터가 없습니다.</p>
               </div>
             </div>
           ) : (
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">
+            <div className="space-y-3 sm:space-y-4">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900">
                 {selectedChart === 'channel' ? '채널별 예약 통계' : 
                  selectedChart === 'product' ? '상품별 예약 통계' : '예약 추이'}
               </h3>
               
               {/* 간단한 막대 차트 */}
-              <div className="space-y-2">
+              <div className="space-y-1.5 sm:space-y-2">
                 {chartData.slice(0, 10).map((item, index) => (
-                  <div key={index} className="flex items-center space-x-4">
-                    <div className="w-32 text-sm text-gray-600 truncate">{item.name}</div>
-                    <div className="flex-1 bg-gray-200 rounded-full h-6 relative">
+                  <div key={index} className="flex items-center gap-2 sm:gap-4 min-w-0">
+                    <div className="w-20 sm:w-32 text-xs sm:text-sm text-gray-600 truncate flex-shrink-0">{item.name}</div>
+                    <div className="flex-1 min-w-0 bg-gray-200 rounded-full h-5 sm:h-6 relative">
                       <div 
-                        className="bg-blue-500 h-6 rounded-full flex items-center justify-end pr-2"
+                        className="bg-blue-500 h-5 sm:h-6 rounded-full flex items-center justify-end pr-1 sm:pr-2 min-w-[2rem]"
                         style={{ width: `${Math.min((item.value / Math.max(...chartData.map(d => d.value))) * 100, 100)}%` }}
                       >
-                        <span className="text-white text-xs font-medium">{item.value}</span>
+                        <span className="text-white text-[10px] sm:text-xs font-medium">{item.value}</span>
                       </div>
                     </div>
-                    <div className="w-16 text-sm text-gray-600 text-right">
+                    <div className="w-10 sm:w-16 text-xs sm:text-sm text-gray-600 text-right flex-shrink-0">
                       {selectedChart === 'trend' ? `${item.people}명` : `${('percentage' in item ? (item as { percentage: number }).percentage : 0).toFixed(1)}%`}
                     </div>
                   </div>
@@ -830,29 +825,52 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
         </div>
       </div>
 
-      {/* 상세 통계 테이블 */}
+      {/* 상세 통계 - 모바일 카드 / 데스크톱 테이블 */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">상세 통계</h3>
+        <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-200">
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900">상세 통계</h3>
         </div>
-        <div className="overflow-x-auto">
+        {/* 모바일: 카드 리스트 */}
+        <div className="md:hidden divide-y divide-gray-100">
+          {chartData.length === 0 ? (
+            <div className="p-4 text-sm text-gray-500 text-center">데이터가 없습니다.</div>
+          ) : (
+            chartData.map((item, index) => (
+              <div key={index} className="p-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <div className="w-full sm:w-auto font-medium text-gray-900 text-sm truncate">{item.name}</div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0 text-xs sm:text-sm text-gray-600">
+                  <span>예약 {item.value.toLocaleString()}</span>
+                  <span>인원 {item.people.toLocaleString()}명</span>
+                  <span>
+                    {selectedChart === 'trend' ? '-' : `${('percentage' in item ? (item as { percentage: number }).percentage : 0).toFixed(1)}%`}
+                  </span>
+                  {selectedChart !== 'trend' && (
+                    <span>${item.revenue.toLocaleString()}</span>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        {/* 데스크톱: 테이블 */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   {selectedChart === 'channel' ? '채널' : selectedChart === 'product' ? '상품' : '기간'}
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   예약 수
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   인원
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   비율
                 </th>
                 {selectedChart !== 'trend' && (
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     예상 수익
                   </th>
                 )}
@@ -861,20 +879,20 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
             <tbody className="bg-white divide-y divide-gray-200">
               {chartData.map((item, index) => (
                 <tr key={index} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     {item.name}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-500">
                     {item.value.toLocaleString()}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-500">
                     {item.people.toLocaleString()}명
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-500">
                     {selectedChart === 'trend' ? '-' : `${('percentage' in item ? (item as { percentage: number }).percentage : 0).toFixed(1)}%`}
                   </td>
                   {selectedChart !== 'trend' && (
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-500">
                       ${item.revenue.toLocaleString()}
                     </td>
                   )}

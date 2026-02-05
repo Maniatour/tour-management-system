@@ -42,7 +42,7 @@ export default function PartnerFundsPage() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <Lock className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">접근 권한이 없습니다</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4">접근 권한이 없습니다</h1>
           <p className="text-gray-600 mb-6">이 페이지는 info@maniatour.com만 접근할 수 있습니다.</p>
           <button
             onClick={() => router.back()}
@@ -61,7 +61,7 @@ export default function PartnerFundsPage() {
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-2">
           <Users className="w-8 h-8 text-blue-600" />
-          <h1 className="text-3xl font-bold text-gray-900">파트너 자금 관리</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">파트너 자금 관리</h1>
         </div>
         <p className="text-gray-600">파트너 간 자금 입출금 및 대출 관리를 합니다.</p>
       </div>

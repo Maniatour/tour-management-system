@@ -114,7 +114,7 @@ export default function AdminTourReports({ params }: AdminTourReportsProps) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">투어 리포트 작성</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">투어 리포트 작성</h1>
           <Button onClick={handleFormCancel} variant="outline">
             목록으로 돌아가기
           </Button>
@@ -132,7 +132,7 @@ export default function AdminTourReports({ params }: AdminTourReportsProps) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
           <FileText className="w-6 h-6" />
           투어 리포트 관리
         </h1>

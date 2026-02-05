@@ -817,25 +817,24 @@ export default function GuideCostManagementPage() {
   }
 
   return (
-    <div className="max-w-none mx-auto p-2">
-      <div className="mb-8">
-        <div className="flex justify-between items-center mb-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">가이드비 관리</h1>
-            <p className="text-gray-600">Mania Tour/Mania Service 상품의 가이드비를 설정하고 관리합니다.</p>
+    <div className="max-w-none mx-auto px-2 py-4 sm:p-4">
+      <div className="mb-4 sm:mb-6">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-4">
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">가이드비 관리</h1>
+            <p className="text-sm text-gray-600">Mania Tour/Mania Service 상품의 가이드비를 설정하고 관리합니다.</p>
           </div>
-          <div className="flex space-x-3">
+          <div className="flex flex-wrap gap-2 flex-shrink-0">
             {/* 변경 이력 버튼 (모든 사용자에게 표시) */}
             <button
               onClick={() => {
-                // 첫 번째 상품의 변경 이력을 보여줌 (전체 이력)
                 if (products.length > 0) {
                   openHistoryModal(products[0].id, '전체 상품')
                 }
               }}
-              className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm font-medium"
             >
-              <History size={16} />
+              <History size={14} />
               <span>변경 이력</span>
             </button>
 
@@ -846,25 +845,25 @@ export default function GuideCostManagementPage() {
                     <button
                       onClick={saveGlobalEdit}
                       disabled={saving}
-                      className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 text-sm font-medium"
                     >
-                      <Save size={16} />
+                      <Save size={14} />
                       <span>전체 저장</span>
                     </button>
                     <button
                       onClick={cancelGlobalEdit}
-                      className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm font-medium"
                     >
-                      <X size={16} />
+                      <X size={14} />
                       <span>취소</span>
                     </button>
                   </>
                 ) : (
                   <button
                     onClick={startGlobalEdit}
-                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
                   >
-                    <Edit size={16} />
+                    <Edit size={14} />
                     <span>전체 편집</span>
                   </button>
                 )}
@@ -873,67 +872,312 @@ export default function GuideCostManagementPage() {
           </div>
         </div>
         {!isAdmin && (
-          <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <p className="text-yellow-800">관리자 권한이 필요합니다. 수정 및 삭제 기능이 제한됩니다.</p>
+          <div className="mt-3 p-3 sm:p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <p className="text-sm text-yellow-800">관리자 권한이 필요합니다. 수정 및 삭제 기능이 제한됩니다.</p>
           </div>
         )}
         {isGlobalEditMode && (
-          <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-blue-800">전체 편집 모드입니다. 모든 상품의 가이드비를 한 번에 수정할 수 있습니다.</p>
+          <div className="mt-3 p-3 sm:p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-800">전체 편집 모드입니다. 모든 상품의 가이드비를 한 번에 수정할 수 있습니다.</p>
           </div>
         )}
       </div>
 
       {/* 노트 섹션 */}
-      <div className="mb-6 bg-white rounded-lg shadow-sm border p-4">
-        <div className="flex items-center space-x-2 mb-3">
-          <FileText size={20} className="text-gray-600" />
-          <h2 className="text-lg font-semibold text-gray-900">가이드비 관리 노트</h2>
+      <div className="mb-4 sm:mb-6 bg-white rounded-lg shadow-sm border p-3 sm:p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <FileText size={18} className="text-gray-600 flex-shrink-0" />
+          <h2 className="text-base sm:text-lg font-semibold text-gray-900">가이드비 관리 노트</h2>
         </div>
-        <p className="text-sm text-gray-600 mb-3">
+        <p className="text-xs sm:text-sm text-gray-600 mb-2">
           가이드비 변경 사항이나 특이사항을 기록해두세요.
         </p>
         <textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="가이드비 변경 사항이나 특이사항을 입력하세요..."
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y min-h-[100px]"
-          rows={4}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y min-h-[80px] sm:min-h-[100px] text-sm"
+          rows={3}
         />
-        <div className="mt-3 flex justify-end">
+        <div className="mt-2 flex justify-end">
           <button
             onClick={saveNote}
             disabled={noteSaving}
-            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
           >
-            <Save size={16} />
+            <Save size={14} />
             <span>{noteSaving ? '저장 중...' : '노트 저장'}</span>
           </button>
         </div>
       </div>
 
-      {/* 테이블 뷰 */}
-      <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+      {/* 모바일 카드 뷰 */}
+      <div className="md:hidden space-y-3">
+        {products.map((product) => {
+          const costsByType = {
+            '1_guide': product.product_guide_costs?.find(c => c.team_type === '1_guide'),
+            '2_guides': product.product_guide_costs?.find(c => c.team_type === '2_guides'),
+            'guide_driver': product.product_guide_costs?.find(c => c.team_type === 'guide_driver')
+          }
+          const isEditing = editingProductId === product.id || isGlobalEditMode
+          return (
+            <div key={product.id} className="bg-white rounded-lg shadow-sm border overflow-hidden">
+              <div className="p-3 border-b border-gray-100 flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-gray-900 truncate">{product.name}</div>
+                  <div className="text-xs text-gray-500">{product.sub_category}</div>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => openHistoryModal(product.id, product.name)}
+                    className="p-1.5 text-gray-400 hover:text-blue-600 rounded"
+                    title="변경 이력"
+                  >
+                    <History size={14} />
+                  </button>
+                  {isAdmin && !isGlobalEditMode && !isEditing && (
+                    <button
+                      onClick={() => startRowEdit(product.id, costsByType)}
+                      className="p-1.5 text-gray-400 hover:text-blue-600 rounded"
+                      title="편집"
+                    >
+                      <Edit size={14} />
+                    </button>
+                  )}
+                  {isEditing && editingProductId === product.id && (
+                    <>
+                      <button onClick={saveRowEdit} disabled={saving} className="p-1.5 text-green-600 rounded" title="저장">
+                        <Save size={14} />
+                      </button>
+                      <button onClick={cancelRowEdit} className="p-1.5 text-gray-500 rounded" title="취소">
+                        <X size={14} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="p-3 space-y-3 text-sm">
+                {/* 1가이드 */}
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600 font-medium">1가이드</span>
+                  {isEditing ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-gray-500">$</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={isGlobalEditMode ? (globalEditData[product.id]?.['1_guide']?.guide_fee ?? 0) : (rowEditData['1_guide'].guide_fee ?? 0)}
+                        onChange={(e) => isGlobalEditMode
+                          ? setGlobalEditData(prev => ({ ...prev, [product.id]: { ...prev[product.id], '1_guide': { ...prev[product.id]?.['1_guide'], guide_fee: Number(e.target.value) } } }))
+                          : setRowEditData(prev => ({ ...prev, '1_guide': { ...prev['1_guide'], guide_fee: Number(e.target.value) } }))}
+                        className="w-20 px-2 py-1 text-sm border border-gray-300 rounded"
+                      />
+                    </div>
+                  ) : costsByType['1_guide'] ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-gray-900">${costsByType['1_guide'].guide_fee}</span>
+                      {isAdmin && (
+                        <button onClick={() => handleDelete(costsByType['1_guide']!.id)} className="p-0.5 text-red-500">
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-gray-400">미설정</span>
+                  )}
+                </div>
+                {/* 2가이드 */}
+                <div>
+                  <div className="text-gray-600 font-medium mb-0.5">2가이드</div>
+                  {isEditing ? (
+                    <div className="space-y-1 pl-0">
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-gray-500">가이드 $</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={isGlobalEditMode ? (globalEditData[product.id]?.['2_guides']?.guide_fee ?? 0) : (rowEditData['2_guides'].guide_fee ?? 0)}
+                          onChange={(e) => isGlobalEditMode
+                            ? setGlobalEditData(prev => ({ ...prev, [product.id]: { ...prev[product.id], '2_guides': { ...prev[product.id]?.['2_guides'], guide_fee: Number(e.target.value) } } }))
+                            : setRowEditData(prev => ({ ...prev, '2_guides': { ...prev['2_guides'], guide_fee: Number(e.target.value) } }))}
+                          className="w-16 px-2 py-1 text-sm border rounded"
+                        />
+                        <span className="text-xs text-gray-500">어시 $</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={isGlobalEditMode ? (globalEditData[product.id]?.['2_guides']?.assistant_fee ?? 0) : (rowEditData['2_guides'].assistant_fee ?? 0)}
+                          onChange={(e) => isGlobalEditMode
+                            ? setGlobalEditData(prev => ({ ...prev, [product.id]: { ...prev[product.id], '2_guides': { ...prev[product.id]?.['2_guides'], assistant_fee: Number(e.target.value) } } }))
+                            : setRowEditData(prev => ({ ...prev, '2_guides': { ...prev['2_guides'], assistant_fee: Number(e.target.value) } }))}
+                          className="w-16 px-2 py-1 text-sm border rounded"
+                        />
+                      </div>
+                      <div className="text-xs text-green-600 font-medium">
+                        총합: ${(isGlobalEditMode ? (globalEditData[product.id]?.['2_guides']?.guide_fee ?? 0) + (globalEditData[product.id]?.['2_guides']?.assistant_fee ?? 0) : (rowEditData['2_guides'].guide_fee ?? 0) + (rowEditData['2_guides'].assistant_fee ?? 0))}
+                      </div>
+                    </div>
+                  ) : costsByType['2_guides'] ? (
+                    <div className="text-gray-900">
+                      <div>가이드 ${costsByType['2_guides'].guide_fee} · 어시 ${costsByType['2_guides'].assistant_fee}</div>
+                      <div className="text-green-600 font-medium">총합 ${costsByType['2_guides'].guide_fee + costsByType['2_guides'].assistant_fee}</div>
+                      {isAdmin && (
+                        <button onClick={() => handleDelete(costsByType['2_guides']!.id)} className="text-red-500 text-xs mt-0.5">
+                          삭제
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-gray-400">미설정</span>
+                  )}
+                </div>
+                {/* 가이드+드라이버 */}
+                <div>
+                  <div className="text-gray-600 font-medium mb-0.5">가이드+드라이버</div>
+                  {isEditing ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-gray-500">가이드 $</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={isGlobalEditMode ? (globalEditData[product.id]?.['guide_driver']?.guide_fee ?? 0) : (rowEditData['guide_driver'].guide_fee ?? 0)}
+                          onChange={(e) => isGlobalEditMode
+                            ? setGlobalEditData(prev => ({ ...prev, [product.id]: { ...prev[product.id], 'guide_driver': { ...prev[product.id]?.['guide_driver'], guide_fee: Number(e.target.value) } } }))
+                            : setRowEditData(prev => ({ ...prev, 'guide_driver': { ...prev['guide_driver'], guide_fee: Number(e.target.value) } }))}
+                          className="w-16 px-2 py-1 text-sm border rounded"
+                        />
+                        <span className="text-xs text-gray-500">드라이버 $</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={isGlobalEditMode ? (globalEditData[product.id]?.['guide_driver']?.driver_fee ?? 0) : (rowEditData['guide_driver'].driver_fee ?? 0)}
+                          onChange={(e) => isGlobalEditMode
+                            ? setGlobalEditData(prev => ({ ...prev, [product.id]: { ...prev[product.id], 'guide_driver': { ...prev[product.id]?.['guide_driver'], driver_fee: Number(e.target.value) } } }))
+                            : setRowEditData(prev => ({ ...prev, 'guide_driver': { ...prev['guide_driver'], driver_fee: Number(e.target.value) } }))}
+                          className="w-16 px-2 py-1 text-sm border rounded"
+                        />
+                      </div>
+                      <div className="text-xs text-green-600 font-medium">
+                        총합: ${(isGlobalEditMode ? (globalEditData[product.id]?.['guide_driver']?.guide_fee ?? 0) + (globalEditData[product.id]?.['guide_driver']?.driver_fee ?? 0) : (rowEditData['guide_driver'].guide_fee ?? 0) + (rowEditData['guide_driver'].driver_fee ?? 0))}
+                      </div>
+                    </div>
+                  ) : costsByType['guide_driver'] ? (
+                    <div className="text-gray-900">
+                      <div>가이드 ${costsByType['guide_driver'].guide_fee} · 드라이버 ${costsByType['guide_driver'].driver_fee}</div>
+                      <div className="text-green-600 font-medium">총합 ${costsByType['guide_driver'].guide_fee + costsByType['guide_driver'].driver_fee}</div>
+                      {isAdmin && (
+                        <button onClick={() => handleDelete(costsByType['guide_driver']!.id)} className="text-red-500 text-xs mt-0.5">
+                          삭제
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-gray-400">미설정</span>
+                  )}
+                </div>
+                {/* 시작일/종료일 - 편집 모드에서만 카드에 표시 */}
+                <div className="flex gap-4 pt-1 border-t border-gray-100">
+                  <div>
+                    <div className="text-xs text-gray-500">시작일</div>
+                    {isEditing ? (
+                      <input
+                        type="date"
+                        value={isGlobalEditMode ? (globalEditData[product.id]?.['1_guide']?.effective_from ?? '') : (rowEditData['1_guide'].effective_from ?? '')}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          if (isGlobalEditMode) {
+                            setGlobalEditData(prev => ({
+                              ...prev,
+                              [product.id]: {
+                                ...prev[product.id],
+                                '1_guide': { ...prev[product.id]?.['1_guide'], effective_from: v },
+                                '2_guides': { ...prev[product.id]?.['2_guides'], effective_from: v },
+                                'guide_driver': { ...prev[product.id]?.['guide_driver'], effective_from: v }
+                              }
+                            }))
+                          } else {
+                            setRowEditData(prev => ({
+                              ...prev,
+                              '1_guide': { ...prev['1_guide'], effective_from: v },
+                              '2_guides': { ...prev['2_guides'], effective_from: v },
+                              'guide_driver': { ...prev['guide_driver'], effective_from: v }
+                            }))
+                          }
+                        }}
+                        className="mt-0.5 px-2 py-1 text-sm border rounded w-full"
+                      />
+                    ) : (
+                      <div className="text-gray-900 mt-0.5">{costsByType['1_guide']?.effective_from || '-'}</div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500">종료일</div>
+                    {isEditing ? (
+                      <input
+                        type="date"
+                        value={isGlobalEditMode ? (globalEditData[product.id]?.['1_guide']?.effective_to ?? '') : (rowEditData['1_guide'].effective_to ?? '')}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          if (isGlobalEditMode) {
+                            setGlobalEditData(prev => ({
+                              ...prev,
+                              [product.id]: {
+                                ...prev[product.id],
+                                '1_guide': { ...prev[product.id]?.['1_guide'], effective_to: v },
+                                '2_guides': { ...prev[product.id]?.['2_guides'], effective_to: v },
+                                'guide_driver': { ...prev[product.id]?.['guide_driver'], effective_to: v }
+                              }
+                            }))
+                          } else {
+                            setRowEditData(prev => ({
+                              ...prev,
+                              '1_guide': { ...prev['1_guide'], effective_to: v },
+                              '2_guides': { ...prev['2_guides'], effective_to: v },
+                              'guide_driver': { ...prev['guide_driver'], effective_to: v }
+                            }))
+                          }
+                        }}
+                        className="mt-0.5 px-2 py-1 text-sm border rounded w-full"
+                      />
+                    ) : (
+                      <div className="text-gray-900 mt-0.5">{costsByType['1_guide']?.effective_to || '-'}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* 데스크톱 테이블 뷰 */}
+      <div className="hidden md:block bg-white rounded-lg shadow-sm border overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-[1300px] w-full divide-y divide-gray-200">
+          <table className="min-w-[900px] w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[200px]">
+                <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[200px]">
                   상품명
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[120px]">
+                <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[120px]">
                   1가이드
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[200px]">
+                <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[200px]">
                   2가이드
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[200px]">
+                <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[200px]">
                   가이드+드라이버
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[120px]">
+                <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[120px]">
                   시작일
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[120px]">
+                <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[120px]">
                   종료일
                 </th>
               </tr>
@@ -949,15 +1193,15 @@ export default function GuideCostManagementPage() {
 
                 return (
                   <tr key={product.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap w-[200px]">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">{product.name}</div>
-                          <div className="text-sm text-gray-500">{product.sub_category}</div>
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap w-[200px]">
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-gray-900 truncate">{product.name}</div>
+                          <div className="text-xs sm:text-sm text-gray-500">{product.sub_category}</div>
                         </div>
                         <button
                           onClick={() => openHistoryModal(product.id, product.name)}
-                          className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                          className="p-1 text-gray-400 hover:text-blue-600 transition-colors flex-shrink-0"
                           title="변경 이력 보기"
                         >
                           <History size={14} />
@@ -966,7 +1210,7 @@ export default function GuideCostManagementPage() {
                     </td>
                     
                     {/* 1가이드 */}
-                    <td className="px-6 py-4 whitespace-nowrap w-[120px]">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap w-[120px]">
                       {isGlobalEditMode ? (
                         <div className="flex items-center space-x-2">
                           <span className="text-sm text-gray-600">$</span>
@@ -1026,7 +1270,7 @@ export default function GuideCostManagementPage() {
                     </td>
 
                     {/* 2가이드 */}
-                    <td className="px-6 py-4 whitespace-nowrap w-[200px]">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap w-[200px]">
                       {isGlobalEditMode ? (
                         <div className="flex items-center space-x-3">
                           <div className="flex items-center space-x-1">
@@ -1138,7 +1382,7 @@ export default function GuideCostManagementPage() {
                     </td>
 
                     {/* 가이드+드라이버 */}
-                    <td className="px-6 py-4 whitespace-nowrap w-[200px]">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap w-[200px]">
                       {isGlobalEditMode ? (
                         <div className="flex items-center space-x-3">
                           <div className="flex items-center space-x-1">
@@ -1250,7 +1494,7 @@ export default function GuideCostManagementPage() {
                     </td>
 
                     {/* 시작일 */}
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 w-[120px]">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-900 w-[120px]">
                       {isGlobalEditMode ? (
                         <input
                           type="date"
@@ -1290,7 +1534,7 @@ export default function GuideCostManagementPage() {
                     </td>
 
                     {/* 종료일 */}
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 w-[120px]">
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-900 w-[120px]">
                       {isGlobalEditMode ? (
                         <input
                           type="date"
@@ -1339,8 +1583,8 @@ export default function GuideCostManagementPage() {
 
       {/* 가이드비 설정/수정 모달 */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <div className="bg-white rounded-t-xl sm:rounded-lg p-4 sm:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
               {editingCost ? '가이드비 수정' : '가이드비 설정'}
             </h3>
@@ -1425,21 +1669,21 @@ export default function GuideCostManagementPage() {
               </div>
             </div>
 
-            <div className="flex space-x-3 mt-6">
+            <div className="flex gap-2 sm:gap-3 mt-4 sm:mt-6">
               <button
                 onClick={() => {
                   setShowModal(false)
                   setEditingCost(null)
                   resetForm()
                 }}
-                className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                className="flex-1 px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
               >
                 취소
               </button>
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                className="flex-1 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
                 {saving ? '저장 중...' : (editingCost ? '수정' : '설정')}
               </button>

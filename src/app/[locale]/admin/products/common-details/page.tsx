@@ -297,7 +297,7 @@ export default function CommonDetailsAdminPage() {
             <ArrowLeft className="inline h-5 w-5 mr-1" />
             뒤로가기
           </Link>
-          <h1 className="text-2xl font-bold">공통 세부정보 관리</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">공통 세부정보 관리</h1>
         </div>
         <div className="flex items-center space-x-2">
           {message && <span className="text-sm text-gray-600">{message}</span>}

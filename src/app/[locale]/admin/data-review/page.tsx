@@ -1012,33 +1012,33 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">데이터를 검수하는 중...</p>
+      <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
+        <div className="text-center py-8 sm:py-12">
+          <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-3 sm:mt-4 text-sm sm:text-base text-gray-600">데이터를 검수하는 중...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
       <div className="max-w-7xl mx-auto">
         {/* 헤더 */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">데이터 검수</h1>
-          <p className="text-gray-600">각 테이블의 데이터 품질을 검수하고 수정할 수 있습니다.</p>
+        <div className="mb-4 sm:mb-8">
+          <h1 className="text-base sm:text-2xl font-bold text-gray-900 mb-1 sm:mb-2">데이터 검수</h1>
+          <p className="text-xs sm:text-base text-gray-600">각 테이블의 데이터 품질을 검수하고 수정할 수 있습니다.</p>
         </div>
 
-        {/* 탭 메뉴 */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-          <div className="border-b border-gray-200">
-            <nav className="flex space-x-8 px-6" aria-label="Tabs">
+        {/* 탭 메뉴 - 모바일 가로 스크롤 */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-4 sm:mb-6 -mx-3 sm:mx-0">
+          <div className="border-b border-gray-200 overflow-x-auto">
+            <nav className="flex space-x-4 sm:space-x-8 px-3 sm:px-6 min-w-0" aria-label="Tabs">
               {tabs.map((tab) => (
                 <button
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+                  className={`py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap flex-shrink-0 ${
                     activeTab === tab.key
                       ? 'border-blue-500 text-blue-600'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -1046,7 +1046,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                 >
                   {tab.label}
                   {tab.count > 0 && (
-                    <span className={`ml-2 py-0.5 px-2 rounded-full text-xs font-medium ${
+                    <span className={`ml-1 sm:ml-2 py-0.5 px-1.5 sm:px-2 rounded-full text-[10px] sm:text-xs font-medium ${
                       activeTab === tab.key ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'
                     }`}>
                       {tab.count}
@@ -1059,22 +1059,22 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
         </div>
 
         {/* 검수 결과 목록 */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-medium text-gray-900">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 -mx-3 sm:mx-0">
+          <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-200">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="text-sm sm:text-lg font-medium text-gray-900 shrink-0">
                 {tabs.find(tab => tab.key === activeTab)?.label} 검수 결과
-                <span className="ml-2 text-sm text-gray-500">
-                  ({filteredIssues.length}개 항목)
+                <span className="ml-1 sm:ml-2 text-xs sm:text-sm text-gray-500">
+                  ({filteredIssues.length}개)
                 </span>
               </h2>
               
               {/* 고객 탭 필터 버튼 */}
               {activeTab === 'customers' && (
-                <div className="flex space-x-2">
+                <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap">
                   <button
                     onClick={() => setActiveFilter('all')}
-                    className={`px-3 py-1 text-sm rounded-md ${
+                    className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       activeFilter === 'all'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
@@ -1084,7 +1084,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                   </button>
                   <button
                     onClick={() => setActiveFilter('language')}
-                    className={`px-3 py-1 text-sm rounded-md ${
+                    className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       activeFilter === 'language'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
@@ -1094,7 +1094,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                   </button>
                   <button
                     onClick={() => setActiveFilter('email')}
-                    className={`px-3 py-1 text-sm rounded-md ${
+                    className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       activeFilter === 'email'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
@@ -1104,7 +1104,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                   </button>
                   <button
                     onClick={() => setActiveFilter('phone')}
-                    className={`px-3 py-1 text-sm rounded-md ${
+                    className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       activeFilter === 'phone'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
@@ -1114,7 +1114,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                   </button>
                   <button
                     onClick={() => setActiveFilter('channel')}
-                    className={`px-3 py-1 text-sm rounded-md ${
+                    className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       activeFilter === 'channel'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
@@ -1127,10 +1127,10 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
               
               {/* 예약 가격 탭 하위 탭 */}
               {activeTab === 'reservationPricing' && (
-                <div className="flex space-x-2 flex-wrap">
+                <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0 flex-wrap">
                   <button
                     onClick={() => setPricingSubTab('all')}
-                    className={`px-3 py-1 text-sm rounded-md ${
+                    className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'all'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
@@ -1140,7 +1140,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                   </button>
                   <button
                     onClick={() => setPricingSubTab('reservationPricing1')}
-                    className={`px-3 py-1 text-sm rounded-md ${
+                    className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'reservationPricing1'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
@@ -1150,7 +1150,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                   </button>
                   <button
                     onClick={() => setPricingSubTab('reservationPricing2')}
-                    className={`px-3 py-1 text-sm rounded-md ${
+                    className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'reservationPricing2'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
@@ -1160,7 +1160,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                   </button>
                   <button
                     onClick={() => setPricingSubTab('reservationPricing3')}
-                    className={`px-3 py-1 text-sm rounded-md ${
+                    className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'reservationPricing3'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
@@ -1170,7 +1170,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                   </button>
                   <button
                     onClick={() => setPricingSubTab('reservationPricing4')}
-                    className={`px-3 py-1 text-sm rounded-md ${
+                    className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'reservationPricing4'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
@@ -1180,7 +1180,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                   </button>
                   <button
                     onClick={() => setPricingSubTab('reservationPricing5')}
-                    className={`px-3 py-1 text-sm rounded-md ${
+                    className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'reservationPricing5'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
@@ -1190,7 +1190,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                   </button>
                   <button
                     onClick={() => setPricingSubTab('reservationPricing6')}
-                    className={`px-3 py-1 text-sm rounded-md ${
+                    className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'reservationPricing6'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
                         : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
@@ -1203,12 +1203,12 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
               
               {/* 예약 탭 필터 버튼 */}
               {activeTab === 'reservations' && (
-                <div className="space-y-3">
+                <div className="space-y-2 sm:space-y-3">
                   {/* 기본 필터 버튼들 */}
-                  <div className="flex space-x-2 flex-wrap">
+                  <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0 flex-wrap">
                     <button
                       onClick={() => setActiveFilter('all')}
-                      className={`px-3 py-1 text-sm rounded-md ${
+                      className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                         activeFilter === 'all'
                           ? 'bg-blue-100 text-blue-700 border border-blue-200'
                           : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
@@ -1218,7 +1218,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     </button>
                     <button
                       onClick={() => setActiveFilter('pickup')}
-                      className={`px-3 py-1 text-sm rounded-md ${
+                      className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                         activeFilter === 'pickup'
                           ? 'bg-blue-100 text-blue-700 border border-blue-200'
                           : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
@@ -1228,7 +1228,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     </button>
                     <button
                       onClick={() => setActiveFilter('channel_rn')}
-                      className={`px-3 py-1 text-sm rounded-md ${
+                      className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                         activeFilter === 'channel_rn'
                           ? 'bg-blue-100 text-blue-700 border border-blue-200'
                           : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
@@ -1238,7 +1238,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     </button>
                     <button
                       onClick={() => setActiveFilter('status')}
-                      className={`px-3 py-1 text-sm rounded-md ${
+                      className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                         activeFilter === 'status'
                           ? 'bg-blue-100 text-blue-700 border border-blue-200'
                           : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
@@ -1248,7 +1248,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     </button>
                     <button
                       onClick={() => setActiveFilter('tour_id')}
-                      className={`px-3 py-1 text-sm rounded-md ${
+                      className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                         activeFilter === 'tour_id'
                           ? 'bg-blue-100 text-blue-700 border border-blue-200'
                           : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
@@ -1258,7 +1258,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     </button>
                     <button
                       onClick={() => setActiveFilter('choices')}
-                      className={`px-3 py-1 text-sm rounded-md ${
+                      className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                         activeFilter === 'choices'
                           ? 'bg-blue-100 text-blue-700 border border-blue-200'
                           : 'bg-gray-100 text-gray-600 border border-gray-200 hover:bg-gray-200'
@@ -1269,12 +1269,12 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                   </div>
                   
                   {/* 상태 드롭다운 */}
-                  <div className="flex items-center space-x-2">
-                    <label className="text-sm font-medium text-gray-700">상태별 필터:</label>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs sm:text-sm font-medium text-gray-700 shrink-0">상태:</label>
                     <select
                       value={statusFilter}
                       onChange={(e) => setStatusFilter(e.target.value)}
-                      className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="px-2 py-1 text-xs sm:text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-0"
                     >
                       <option value="all">전체 상태</option>
                       <option value="Canceled">Canceled</option>
@@ -1290,30 +1290,30 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
 
           <div className="divide-y divide-gray-200">
             {filteredIssues.length === 0 ? (
-              <div className="px-6 py-12 text-center">
+              <div className="px-3 sm:px-6 py-8 sm:py-12 text-center">
                 <div className="text-gray-400 mb-2">
-                  <svg className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="mx-auto h-10 w-10 sm:h-12 sm:w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-1">검수할 항목이 없습니다</h3>
-                <p className="text-gray-500">이 테이블의 모든 데이터가 정상입니다.</p>
+                <h3 className="text-sm sm:text-lg font-medium text-gray-900 mb-1">검수할 항목이 없습니다</h3>
+                <p className="text-xs sm:text-base text-gray-500">이 테이블의 모든 데이터가 정상입니다.</p>
               </div>
             ) : (
               filteredIssues.map((issue, index) => (
-                <div key={`${issue.type}-${issue.id}-${index}`} className="px-6 py-4 hover:bg-gray-50">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getSeverityColor(issue.severity)}`}>
+                <div key={`${issue.type}-${issue.id}-${index}`} className="px-3 sm:px-6 py-3 sm:py-4 hover:bg-gray-50">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium shrink-0 ${getSeverityColor(issue.severity)}`}>
                           {issue.severity === 'high' ? '높음' : issue.severity === 'medium' ? '보통' : '낮음'}
                         </span>
-                        <h3 className="text-sm font-medium text-gray-900">{issue.description}</h3>
+                        <h3 className="text-xs sm:text-sm font-medium text-gray-900 break-words">{issue.description}</h3>
                       </div>
                       
                       {/* 고객 정보 상세 표시 */}
                       {activeTab === 'customers' && (
-                        <div className="mt-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 text-sm">
+                        <div className="mt-2 sm:mt-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 sm:gap-4 text-xs sm:text-sm">
                           <div>
                             <span className="font-medium text-gray-700">이름:</span>
                             <div className="text-gray-900">{issue.data.name || '-'}</div>
@@ -1345,7 +1345,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                       
                       {/* 예약 정보 상세 표시 */}
                       {activeTab === 'reservations' && (
-                        <div className="mt-3 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 text-sm">
+                        <div className="mt-2 sm:mt-3 grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2 sm:gap-4 text-xs sm:text-sm">
                           <div>
                             <span className="font-medium text-gray-700">투어날짜:</span>
                             <div className="text-gray-900">
@@ -1383,14 +1383,14 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                         </div>
                       )}
                       
-                      <div className="mt-2 text-sm text-gray-500">
+                      <div className="mt-1 sm:mt-2 text-[10px] sm:text-sm text-gray-500 truncate max-w-full">
                         ID: {issue.id}
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center shrink-0">
                       <button
                         onClick={() => handleEditItem(issue.data)}
-                        className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        className="inline-flex items-center px-2.5 sm:px-3 py-1 sm:py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                       >
                         수정
                       </button>
@@ -1585,25 +1585,25 @@ function EditModal({ item, tableType, onSave, onClose }: EditModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-        <div className="mt-3">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">데이터 수정</h3>
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 p-3 sm:p-4">
+      <div className="relative top-4 sm:top-20 mx-auto p-4 sm:p-5 border w-full max-w-md sm:w-96 shadow-lg rounded-md bg-white">
+        <div className="mt-0 sm:mt-3">
+          <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-3 sm:mb-4">데이터 수정</h3>
           <form onSubmit={handleSubmit}>
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {renderFormFields()}
             </div>
-            <div className="flex justify-end space-x-3 mt-6">
+            <div className="flex justify-end gap-2 sm:space-x-3 mt-4 sm:mt-6">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500"
               >
                 취소
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 저장
               </button>

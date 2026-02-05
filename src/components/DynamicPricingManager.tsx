@@ -107,6 +107,8 @@ export default function DynamicPricingManager({
   
   // 배치 저장 진행률 상태
   const [batchProgress, setBatchProgress] = useState<{ completed: number; total: number } | null>(null);
+  // 저장 단계: 'preparing' = 데이터 준비(초이스 통합 등), 'saving' = 배치/개별 저장 중
+  const [savePhase, setSavePhase] = useState<null | 'preparing' | 'saving'>(null);
   
   // 초이스별 가격 설정 뷰 모드 (카드 / 테이블)
   const [choicePricingViewMode, setChoicePricingViewMode] = useState<'card' | 'table'>('table');
@@ -1363,8 +1365,10 @@ export default function DynamicPricingManager({
       return;
     }
 
-    // 저장 시작 메시지
-    setMessage(t('savingRules'));
+    // 즉시 진행 상태 표시 (데이터 준비 단계)
+    setSavePhase('preparing');
+    setBatchProgress(null);
+    setMessage(t('dataPreparing'));
 
     let channelIds: string[] = [];
     
@@ -1397,7 +1401,7 @@ export default function DynamicPricingManager({
           ((pricingConfig.infant_price ?? 0) - productBasePrice.infant);
 
         // 초이스별 가격 데이터 수집 (나중에 기존 레코드와 병합)
-        const allChoicesPricing: Record<string, { adult_price?: number; child_price?: number; infant_price?: number; ota_sale_price?: number; not_included_price?: number; }> = {};
+        const allChoicesPricing: Record<string, { adult_price?: number; child_price?: number; infant_price?: number; ota_sale_price?: number; not_included_price?: number; not_included_price_adult?: number; not_included_price_child?: number; not_included_price_infant?: number; }> = {};
         
         // calculationConfig.choicePricing에서 기본 가격 정보 가져오기 (나중에 병합할 때 사용)
         // 실제로는 아래에서 기존 레코드와 현재 입력값을 병합할 때 사용됨
@@ -1436,16 +1440,17 @@ export default function DynamicPricingManager({
                 }
               }
               
-              // 모든 초이스를 통합하여 저장 (price_type 구분 없음)
-              // 모든 채널에서 ota_sale_price와 not_included_price만 저장 (adult_price, child_price, infant_price는 제거)
+              // 초이스별 필드 유지 (판매가·불포함 단일/성인·아동·유아)
               Object.entries(existingChoicesPricing).forEach(([choiceId, choiceData]: [string, any]) => {
-                const cleanedData: { ota_sale_price?: number; not_included_price?: number } = {};
-                if (choiceData.ota_sale_price !== undefined && choiceData.ota_sale_price !== null) {
-                  cleanedData.ota_sale_price = choiceData.ota_sale_price;
-                }
-                if (choiceData.not_included_price !== undefined && choiceData.not_included_price !== null) {
-                  cleanedData.not_included_price = choiceData.not_included_price;
-                }
+                const cleanedData: Record<string, number> = {};
+                if (choiceData.ota_sale_price !== undefined && choiceData.ota_sale_price !== null) cleanedData.ota_sale_price = choiceData.ota_sale_price;
+                if (choiceData.not_included_price !== undefined && choiceData.not_included_price !== null) cleanedData.not_included_price = choiceData.not_included_price;
+                if (choiceData.adult_price !== undefined && choiceData.adult_price !== null) cleanedData.adult_price = choiceData.adult_price;
+                if (choiceData.child_price !== undefined && choiceData.child_price !== null) cleanedData.child_price = choiceData.child_price;
+                if (choiceData.infant_price !== undefined && choiceData.infant_price !== null) cleanedData.infant_price = choiceData.infant_price;
+                if (choiceData.not_included_price_adult !== undefined && choiceData.not_included_price_adult !== null) cleanedData.not_included_price_adult = choiceData.not_included_price_adult;
+                if (choiceData.not_included_price_child !== undefined && choiceData.not_included_price_child !== null) cleanedData.not_included_price_child = choiceData.not_included_price_child;
+                if (choiceData.not_included_price_infant !== undefined && choiceData.not_included_price_infant !== null) cleanedData.not_included_price_infant = choiceData.not_included_price_infant;
                 if (Object.keys(cleanedData).length > 0) {
                   existingChoices[choiceId] = cleanedData;
                 }
@@ -1462,61 +1467,45 @@ export default function DynamicPricingManager({
           Object.assign(currentInputChoices, pricingConfig.choices_pricing);
         }
         
-        // 3. 모든 초이스를 하나로 합치기 (기존 + 현재 입력)
-        // 기존 초이스를 먼저 추가하고, adult_price, child_price, infant_price는 제거하고 ota_sale_price와 not_included_price만 유지
+        // 3. 기존 초이스 데이터를 allChoicesPricing에 반영 (저장된 모든 필드 유지)
         Object.entries(existingChoices).forEach(([choiceId, choiceData]) => {
-          const cleanedData: { ota_sale_price?: number; not_included_price?: number } = {};
-          if (choiceData.ota_sale_price !== undefined && choiceData.ota_sale_price !== null) {
-            cleanedData.ota_sale_price = choiceData.ota_sale_price;
-          }
-          if (choiceData.not_included_price !== undefined && choiceData.not_included_price !== null) {
-            cleanedData.not_included_price = choiceData.not_included_price;
-          }
-          if (Object.keys(cleanedData).length > 0) {
-            allChoicesPricing[choiceId] = cleanedData as any;
-          }
+          allChoicesPricing[choiceId] = { ...(choiceData as any) };
         });
         
         // 현재 입력값으로 덮어쓰기 (현재 입력값이 우선)
-        // 모든 채널에서 OTA 판매가와 불포함 금액만 저장 (adult_price, child_price, infant_price는 저장하지 않음)
+        // 단일: ota_sale_price, not_included_price / 분리: adult_price, child_price, infant_price, not_included_price_adult, not_included_price_child, not_included_price_infant
         Object.entries(currentInputChoices).forEach(([choiceId, choiceData]) => {
           const cleanedChoiceData: any = {};
           
-          // OTA 판매가가 있으면 포함
           if (choiceData.ota_sale_price !== undefined && choiceData.ota_sale_price !== null && choiceData.ota_sale_price > 0) {
             cleanedChoiceData.ota_sale_price = choiceData.ota_sale_price;
           }
-          
-          // 불포함 가격이 있으면 포함 (0이어도 명시적으로 입력한 경우 포함)
           if (choiceData.not_included_price !== undefined && choiceData.not_included_price !== null) {
             cleanedChoiceData.not_included_price = choiceData.not_included_price;
           }
+          if (choiceData.adult_price !== undefined && choiceData.adult_price !== null) cleanedChoiceData.adult_price = choiceData.adult_price;
+          if (choiceData.child_price !== undefined && choiceData.child_price !== null) cleanedChoiceData.child_price = choiceData.child_price;
+          if (choiceData.infant_price !== undefined && choiceData.infant_price !== null) cleanedChoiceData.infant_price = choiceData.infant_price;
+          if (choiceData.not_included_price_adult !== undefined && choiceData.not_included_price_adult !== null) cleanedChoiceData.not_included_price_adult = choiceData.not_included_price_adult;
+          if (choiceData.not_included_price_child !== undefined && choiceData.not_included_price_child !== null) cleanedChoiceData.not_included_price_child = choiceData.not_included_price_child;
+          if (choiceData.not_included_price_infant !== undefined && choiceData.not_included_price_infant !== null) cleanedChoiceData.not_included_price_infant = choiceData.not_included_price_infant;
           
-          // 기존 데이터와 병합 (기존 데이터의 OTA 판매가와 불포함 가격만 유지)
           if (Object.keys(cleanedChoiceData).length > 0) {
-            const mergedData: any = { ...cleanedChoiceData };
-            // 기존 데이터에서 OTA 판매가와 불포함 가격만 가져오기
-            if (allChoicesPricing[choiceId]) {
-              if (allChoicesPricing[choiceId].ota_sale_price && !cleanedChoiceData.ota_sale_price) {
-                mergedData.ota_sale_price = allChoicesPricing[choiceId].ota_sale_price;
-              }
-              if (allChoicesPricing[choiceId].not_included_price !== undefined && cleanedChoiceData.not_included_price === undefined) {
-                mergedData.not_included_price = allChoicesPricing[choiceId].not_included_price;
-              }
-            }
+            const mergedData: any = { ...(allChoicesPricing[choiceId] || {}), ...cleanedChoiceData };
             allChoicesPricing[choiceId] = mergedData;
           } else if (allChoicesPricing[choiceId]) {
-            // 입력값이 없어도 기존 데이터는 유지 (OTA 판매가와 불포함 가격만)
             const existingData = allChoicesPricing[choiceId];
-            const cleanedData: { ota_sale_price?: number; not_included_price?: number } = {};
-            if (existingData.ota_sale_price !== undefined && existingData.ota_sale_price !== null) {
-              cleanedData.ota_sale_price = existingData.ota_sale_price;
-            }
-            if (existingData.not_included_price !== undefined && existingData.not_included_price !== null) {
-              cleanedData.not_included_price = existingData.not_included_price;
-            }
+            const cleanedData: any = {};
+            if (existingData.ota_sale_price !== undefined && existingData.ota_sale_price !== null) cleanedData.ota_sale_price = existingData.ota_sale_price;
+            if (existingData.not_included_price !== undefined && existingData.not_included_price !== null) cleanedData.not_included_price = existingData.not_included_price;
+            if (existingData.adult_price !== undefined && existingData.adult_price !== null) cleanedData.adult_price = existingData.adult_price;
+            if (existingData.child_price !== undefined && existingData.child_price !== null) cleanedData.child_price = existingData.child_price;
+            if (existingData.infant_price !== undefined && existingData.infant_price !== null) cleanedData.infant_price = existingData.infant_price;
+            if (existingData.not_included_price_adult !== undefined && existingData.not_included_price_adult !== null) cleanedData.not_included_price_adult = existingData.not_included_price_adult;
+            if (existingData.not_included_price_child !== undefined && existingData.not_included_price_child !== null) cleanedData.not_included_price_child = existingData.not_included_price_child;
+            if (existingData.not_included_price_infant !== undefined && existingData.not_included_price_infant !== null) cleanedData.not_included_price_infant = existingData.not_included_price_infant;
             if (Object.keys(cleanedData).length > 0) {
-              allChoicesPricing[choiceId] = cleanedData as any;
+              allChoicesPricing[choiceId] = cleanedData;
             } else {
               delete allChoicesPricing[choiceId];
             }
@@ -1622,9 +1611,14 @@ export default function DynamicPricingManager({
 
     // 저장할 규칙이 없으면 메시지 표시
     if (rulesData.length === 0) {
+      setSavePhase(null);
       setMessage(t('noRulesToSave'));
       return;
     }
+
+    // 데이터 준비 완료 → 배치/개별 저장 단계로 전환 (진행 게이지가 보이도록)
+    setSavePhase('saving');
+    setMessage(t('batchSaveInProgress'));
 
     try {
       // 규칙이 5개 이상이면 배치 저장 사용 (자체 채널이든 OTA 채널이든 상관없이)
@@ -1637,7 +1631,8 @@ export default function DynamicPricingManager({
             setBatchProgress({ completed, total });
           });
           
-          setBatchProgress(null); // 진행률 초기화
+          setBatchProgress(null);
+          setSavePhase(null);
           setMessage(`✅ ${t('allRulesSaved', { count: rulesData.length })}`);
           
           // 저장 완료 후 저장된 데이터 확인
@@ -1663,6 +1658,7 @@ export default function DynamicPricingManager({
         } catch (error) {
           console.error('배치 저장 실패:', error);
           setBatchProgress(null);
+          setSavePhase(null);
           setMessage(`⚠️ ${t('batchSaveFailed')}`);
           
           // 배치 저장 실패 시 개별 저장으로 폴백
@@ -1679,6 +1675,7 @@ export default function DynamicPricingManager({
           }
           
           if (savedCount === rulesData.length) {
+            setSavePhase(null);
             setMessage(`✅ ${t('allRulesSaved', { count: rulesData.length })}`);
             // 저장 완료 후 데이터 새로고침 (데이터베이스 반영 시간 고려)
             await new Promise(resolve => setTimeout(resolve, 300)); // 300ms 대기
@@ -1688,6 +1685,7 @@ export default function DynamicPricingManager({
               await loadDynamicPricingData();
             }, 500);
           } else {
+            setSavePhase(null);
             setMessage(`⚠️ ${t('someRulesSaved', { saved: savedCount, total: rulesData.length, failed: failedCount })}`);
             // 일부 저장 완료 후에도 데이터 새로고침
             await new Promise(resolve => setTimeout(resolve, 300));
@@ -1712,6 +1710,7 @@ export default function DynamicPricingManager({
         }
         
         if (savedCount === rulesData.length) {
+          setSavePhase(null);
           setMessage(`✅ ${t('allRulesSaved', { count: rulesData.length })}`);
           // 저장 완료 후 데이터 새로고침 (데이터베이스 반영 시간 고려)
           await new Promise(resolve => setTimeout(resolve, 300)); // 300ms 대기
@@ -1722,17 +1721,21 @@ export default function DynamicPricingManager({
             await loadDynamicPricingData();
           }, 500);
         } else if (savedCount > 0) {
+          setSavePhase(null);
           setMessage(`⚠️ ${t('someRulesSaved', { saved: savedCount, total: rulesData.length, failed: failedCount })}`);
           // 일부 저장 완료 후에도 데이터 새로고침
           await new Promise(resolve => setTimeout(resolve, 300));
           await loadDynamicPricingData();
           await loadChannelPricingStats();
         } else {
+          setSavePhase(null);
           setMessage(`❌ ${t('saveFailed')} (${failedCount})`);
         }
       }
     } catch (error) {
       console.error('가격 규칙 저장 중 오류 발생:', error);
+      setSavePhase(null);
+      setBatchProgress(null);
       setMessage(`❌ ${t('saveFailed')}: ${error instanceof Error ? error.message : ''}`);
     }
   }, [selectedDates, selectedChannelType, selectedChannel, channelGroups, pricingConfig, calculationConfig, productId, savePricingRule, savePricingRulesBatch, setMessage, loadChannelPricingStats, loadDynamicPricingData]);
@@ -2628,6 +2631,10 @@ export default function DynamicPricingManager({
               (foundChannel as any).category === 'OTA'
             );
             
+            // 선택된 채널이 단일 판매가(성인/아동/유아 구분 없음)인지
+            const selectedChannelPricingType = (foundChannel as any)?.pricing_type || 'separate';
+            const isTableChannelSinglePrice = selectedChannelPricingType === 'single';
+            
             // 홈페이지 채널 찾기
             const homepageChannel = channelGroups
               .flatMap(group => group.channels)
@@ -2676,8 +2683,21 @@ export default function DynamicPricingManager({
                     <thead>
                       <tr className="bg-gray-100 border-b border-gray-200">
                         <th className="text-left py-1.5 px-2 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('choice')}</th>
-                        <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('otaSalePrice')}</th>
-                        <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('notIncludedAmount')}</th>
+                        {isTableChannelSinglePrice ? (
+                          <>
+                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('salePrice')}</th>
+                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('notIncludedAmount')}</th>
+                          </>
+                        ) : (
+                          <>
+                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('salePriceAdult')}</th>
+                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('salePriceChild')}</th>
+                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('salePriceInfant')}</th>
+                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('notIncludedAdult')}</th>
+                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('notIncludedChild')}</th>
+                            <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('notIncludedInfant')}</th>
+                          </>
+                        )}
                         <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('commissionLabel')} / {t('couponLabel')}</th>
                         <th className="text-center py-1.5 px-1.5 font-semibold text-gray-700 whitespace-nowrap text-[11px]">{t('netPriceLabel')}</th>
                         {homepageChannel && (
@@ -2698,111 +2718,168 @@ export default function DynamicPricingManager({
                         const notIncludedPrice = choiceNotIncludedPrice !== undefined && choiceNotIncludedPrice !== null 
                           ? choiceNotIncludedPrice 
                           : ((pricingConfig as any)?.not_included_price || 0);
+                        const adultPrice = (currentChoiceData.adult_price as number) ?? (currentChoiceData.adult as number) ?? combination.adult_price ?? 0;
+                        const childPrice = (currentChoiceData.child_price as number) ?? (currentChoiceData.child as number) ?? combination.child_price ?? 0;
+                        const infantPrice = (currentChoiceData.infant_price as number) ?? (currentChoiceData.infant as number) ?? combination.infant_price ?? 0;
+                        const notIncludedAdult = (currentChoiceData.not_included_price_adult as number) ?? (currentChoiceData.not_included_price as number) ?? 0;
+                        const notIncludedChild = (currentChoiceData.not_included_price_child as number) ?? 0;
+                        const notIncludedInfant = (currentChoiceData.not_included_price_infant as number) ?? 0;
                         let netPrice = 0;
-                        if (otaSalePrice > 0) {
-                          const baseNetPrice = otaSalePrice * (1 - couponPercent / 100) * (1 - commissionPercent / 100);
-                          netPrice = notIncludedPrice > 0 ? baseNetPrice + notIncludedPrice : baseNetPrice;
+                        if (isTableChannelSinglePrice) {
+                          if (otaSalePrice > 0) {
+                            const baseNetPrice = otaSalePrice * (1 - couponPercent / 100) * (1 - commissionPercent / 100);
+                            netPrice = notIncludedPrice > 0 ? baseNetPrice + notIncludedPrice : baseNetPrice;
+                          }
+                        } else {
+                          const totalSale = adultPrice + childPrice + infantPrice;
+                          const totalNotIncluded = notIncludedAdult + notIncludedChild + notIncludedInfant;
+                          if (totalSale > 0 || totalNotIncluded > 0) {
+                            const baseNetPrice = totalSale * (1 - couponPercent / 100) * (1 - commissionPercent / 100);
+                            netPrice = baseNetPrice + totalNotIncluded;
+                          }
                         }
                         let homepageNetPrice = 0;
                         let priceDifference = 0;
-                        if (homepageChannel && otaSalePrice > 0) {
-                          const basePrice = productBasePrice.adult || 0;
-                          let foundChoiceData = homepagePricingConfig ? findHomepageChoiceData(combination, homepagePricingConfig) : {};
-                          if ((!foundChoiceData || Object.keys(foundChoiceData).length === 0 || (foundChoiceData.adult_price === 0 && foundChoiceData.adult === 0)) && combination) {
-                            foundChoiceData = { adult_price: combination.adult_price || 0, child_price: combination.child_price || 0, infant_price: combination.infant_price || 0 };
+                        if (homepageChannel) {
+                          const saleForHomepage = isTableChannelSinglePrice ? otaSalePrice : (adultPrice + childPrice + infantPrice);
+                          if (saleForHomepage > 0) {
+                            const basePrice = productBasePrice.adult || 0;
+                            let foundChoiceData = homepagePricingConfig ? findHomepageChoiceData(combination, homepagePricingConfig) : {};
+                            if ((!foundChoiceData || Object.keys(foundChoiceData).length === 0 || (foundChoiceData.adult_price === 0 && foundChoiceData.adult === 0)) && combination) {
+                              foundChoiceData = { adult_price: combination.adult_price || 0, child_price: combination.child_price || 0, infant_price: combination.infant_price || 0 };
+                            }
+                            const choicePrice = foundChoiceData?.adult_price || foundChoiceData?.adult || 0;
+                            homepageNetPrice = (basePrice + choicePrice) * 0.8;
+                            priceDifference = netPrice - homepageNetPrice;
                           }
-                          const choicePrice = foundChoiceData?.adult_price || foundChoiceData?.adult || 0;
-                          homepageNetPrice = (basePrice + choicePrice) * 0.8;
-                          priceDifference = netPrice - homepageNetPrice;
                         }
+                        const updateChoicePriceField = (field: 'adult_price' | 'child_price' | 'infant_price', numValue: number) => {
+                          const currentPricing = pricingConfig.choices_pricing || {};
+                          const currentChoiceDataRow = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                          const preservedData = {
+                            ...currentChoiceDataRow,
+                            not_included_price: currentChoiceDataRow.not_included_price !== undefined ? currentChoiceDataRow.not_included_price : notIncludedPrice,
+                            ota_sale_price: currentChoiceDataRow.ota_sale_price !== undefined ? currentChoiceDataRow.ota_sale_price : otaSalePrice
+                          };
+                          const nextAdult = field === 'adult_price' ? numValue : (currentChoiceDataRow.adult_price as number) ?? (currentChoiceDataRow.adult as number) ?? combination.adult_price ?? 0;
+                          const nextChild = field === 'child_price' ? numValue : (currentChoiceDataRow.child_price as number) ?? (currentChoiceDataRow.child as number) ?? combination.child_price ?? 0;
+                          const nextInfant = field === 'infant_price' ? numValue : (currentChoiceDataRow.infant_price as number) ?? (currentChoiceDataRow.infant as number) ?? combination.infant_price ?? 0;
+                          updatePricingConfig({
+                            choices_pricing: {
+                              ...currentPricing,
+                              [combination.id]: { ...preservedData, adult_price: nextAdult, child_price: nextChild, infant_price: nextInfant, adult: nextAdult, child: nextChild, infant: nextInfant }
+                            }
+                          });
+                          updateChoicePricing(combination.id, { choiceId: combination.id, choiceName: combination.combination_name, adult_price: nextAdult, child_price: nextChild, infant_price: nextInfant });
+                        };
+
+                        const updateChoiceNotIncludedField = (field: 'not_included_price_adult' | 'not_included_price_child' | 'not_included_price_infant', numValue: number) => {
+                          const currentPricing = pricingConfig.choices_pricing || {};
+                          const currentChoiceDataRow = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                          const nextAdult = field === 'not_included_price_adult' ? numValue : (currentChoiceDataRow.not_included_price_adult as number) ?? (currentChoiceDataRow.not_included_price as number) ?? 0;
+                          const nextChild = field === 'not_included_price_child' ? numValue : (currentChoiceDataRow.not_included_price_child as number) ?? 0;
+                          const nextInfant = field === 'not_included_price_infant' ? numValue : (currentChoiceDataRow.not_included_price_infant as number) ?? 0;
+                          const sumNotIncluded = nextAdult + nextChild + nextInfant;
+                          updatePricingConfig({
+                            choices_pricing: {
+                              ...currentPricing,
+                              [combination.id]: {
+                                ...currentChoiceDataRow,
+                                not_included_price_adult: nextAdult,
+                                not_included_price_child: nextChild,
+                                not_included_price_infant: nextInfant,
+                                not_included_price: sumNotIncluded
+                              }
+                            }
+                          });
+                        };
+
+                        const inputCls = 'w-14 px-1.5 py-0.5 text-xs border border-gray-300 rounded text-center focus:ring-1 focus:ring-blue-500 focus:border-blue-500';
+
                         return (
                           <tr key={combination.id} className="hover:bg-gray-50">
                             <td className="py-1.5 px-2 align-top">
                               <div className="font-medium text-gray-900 text-xs">{combination.combination_name_ko || combination.combination_name}</div>
                               <div className="text-[10px] text-gray-500 mt-0.5">{combination.combination_name}</div>
                             </td>
-                            <td className="py-1.5 px-1.5 align-top text-center">
-                              <input
-                                type="number"
-                                value={otaSalePrice === 0 ? '' : otaSalePrice}
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  const currentPricing = pricingConfig.choices_pricing || {};
-                                  const currentChoiceDataRow = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
-                                  const preservedData = { ...currentChoiceDataRow, not_included_price: currentChoiceDataRow.not_included_price !== undefined ? currentChoiceDataRow.not_included_price : notIncludedPrice };
-                                  if (value === '' || value === '-') {
-                                    updatePricingConfig({ choices_pricing: { ...currentPricing, [combination.id]: { ...preservedData, ota_sale_price: 0 } } });
-                                    return;
-                                  }
-                                  const numValue = parseFloat(value);
-                                  if (!isNaN(numValue)) {
-                                    const adultPrice = (currentChoiceDataRow.adult_price as number) ?? (currentChoiceDataRow.adult as number) ?? combination.adult_price ?? 0;
-                                    const childPrice = (currentChoiceDataRow.child_price as number) ?? (currentChoiceDataRow.child as number) ?? combination.child_price ?? 0;
-                                    const infantPrice = (currentChoiceDataRow.infant_price as number) ?? (currentChoiceDataRow.infant as number) ?? combination.infant_price ?? 0;
-                                    updatePricingConfig({
-                                      choices_pricing: {
-                                        ...currentPricing,
-                                        [combination.id]: { ...preservedData, adult_price: adultPrice, child_price: childPrice, infant_price: infantPrice, adult: adultPrice, child: childPrice, infant: infantPrice, ota_sale_price: numValue }
+                            {isTableChannelSinglePrice ? (
+                              <>
+                                <td className="py-1.5 px-1.5 align-top text-center">
+                                  <input
+                                    type="number"
+                                    value={otaSalePrice === 0 ? '' : otaSalePrice}
+                                    onChange={(e) => {
+                                      const value = e.target.value;
+                                      const currentPricing = pricingConfig.choices_pricing || {};
+                                      const currentChoiceDataRow = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                                      const preservedData = { ...currentChoiceDataRow, not_included_price: currentChoiceDataRow.not_included_price !== undefined ? currentChoiceDataRow.not_included_price : notIncludedPrice };
+                                      if (value === '' || value === '-') {
+                                        updatePricingConfig({ choices_pricing: { ...currentPricing, [combination.id]: { ...preservedData, ota_sale_price: 0 } } });
+                                        return;
                                       }
-                                    });
-                                    updateChoicePricing(combination.id, { choiceId: combination.id, choiceName: combination.combination_name, adult_price: adultPrice, child_price: childPrice, infant_price: infantPrice });
-                                  }
-                                }}
-                                onBlur={(e) => {
-                                  const value = e.target.value;
-                                  if (value === '' || value === '-') {
-                                    const currentPricing = pricingConfig.choices_pricing || {};
-                                    const currentChoiceDataRow = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
-                                    updatePricingConfig({ choices_pricing: { ...currentPricing, [combination.id]: { ...currentChoiceDataRow, not_included_price: currentChoiceDataRow.not_included_price !== undefined ? currentChoiceDataRow.not_included_price : notIncludedPrice, ota_sale_price: 0 } } });
-                                  }
-                                }}
-                                className="w-16 px-1.5 py-0.5 text-xs border border-gray-300 rounded text-center focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="0"
-                              />
-                            </td>
-                            <td className="py-1.5 px-1.5 align-top text-center">
-                              <input
-                                type="text"
-                                value={notIncludedPrice === undefined || notIncludedPrice === null ? '' : notIncludedPrice === 0 ? '' : String(notIncludedPrice)}
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  const currentPricing = pricingConfig.choices_pricing || {};
-                                  const currentChoiceDataRow = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
-                                  const preservedData = {
-                                    ...currentChoiceDataRow,
-                                    ota_sale_price: currentChoiceDataRow.ota_sale_price !== undefined ? currentChoiceDataRow.ota_sale_price : otaSalePrice,
-                                    adult_price: currentChoiceDataRow.adult_price ?? currentChoiceDataRow.adult ?? combination.adult_price ?? 0,
-                                    child_price: currentChoiceDataRow.child_price ?? currentChoiceDataRow.child ?? combination.child_price ?? 0,
-                                    infant_price: currentChoiceDataRow.infant_price ?? currentChoiceDataRow.infant ?? combination.infant_price ?? 0,
-                                    adult: currentChoiceDataRow.adult ?? currentChoiceDataRow.adult_price ?? combination.adult_price ?? 0,
-                                    child: currentChoiceDataRow.child ?? currentChoiceDataRow.child_price ?? combination.child_price ?? 0,
-                                    infant: currentChoiceDataRow.infant ?? currentChoiceDataRow.infant_price ?? combination.infant_price ?? 0
-                                  };
-                                  if (value === '' || value === '-') {
-                                    updatePricingConfig({ choices_pricing: { ...currentPricing, [combination.id]: { ...preservedData, not_included_price: 0 } } });
-                                    return;
-                                  }
-                                  const numValue = parseFloat(value.replace(/[^\d.-]/g, ''));
-                                  if (!isNaN(numValue) && numValue >= 0) {
-                                    updatePricingConfig({ choices_pricing: { ...currentPricing, [combination.id]: { ...preservedData, not_included_price: numValue } } });
-                                  }
-                                }}
-                                onBlur={(e) => {
-                                  const value = e.target.value;
-                                  const currentPricing = pricingConfig.choices_pricing || {};
-                                  const currentChoiceDataRow = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
-                                  const preservedData = { ...currentChoiceDataRow, ota_sale_price: currentChoiceDataRow.ota_sale_price !== undefined ? currentChoiceDataRow.ota_sale_price : otaSalePrice, adult_price: currentChoiceDataRow.adult_price ?? combination.adult_price ?? 0, child_price: currentChoiceDataRow.child_price ?? combination.child_price ?? 0, infant_price: currentChoiceDataRow.infant_price ?? combination.infant_price ?? 0, adult: currentChoiceDataRow.adult ?? combination.adult_price ?? 0, child: currentChoiceDataRow.child ?? combination.child_price ?? 0, infant: currentChoiceDataRow.infant ?? combination.infant_price ?? 0 };
-                                  if (value === '' || value === '-') {
-                                    updatePricingConfig({ choices_pricing: { ...currentPricing, [combination.id]: { ...preservedData, not_included_price: 0 } } });
-                                  } else {
-                                    const numValue = parseFloat(value);
-                                    if (!isNaN(numValue) && numValue >= 0) updatePricingConfig({ choices_pricing: { ...currentPricing, [combination.id]: { ...preservedData, not_included_price: numValue } } });
-                                  }
-                                }}
-                                className="w-16 px-1.5 py-0.5 text-xs border border-gray-300 rounded text-center focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="0"
-                              />
-                            </td>
+                                      const numValue = parseFloat(value);
+                                      if (!isNaN(numValue)) {
+                                        updatePricingConfig({ choices_pricing: { ...currentPricing, [combination.id]: { ...preservedData, ota_sale_price: numValue } } });
+                                        updateChoicePricing(combination.id, { choiceId: combination.id, choiceName: combination.combination_name, adult_price: numValue, child_price: numValue, infant_price: numValue });
+                                      }
+                                    }}
+                                    onBlur={(e) => {
+                                      const value = e.target.value;
+                                      if (value === '' || value === '-') {
+                                        const currentPricing = pricingConfig.choices_pricing || {};
+                                        const currentChoiceDataRow = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                                        updatePricingConfig({ choices_pricing: { ...currentPricing, [combination.id]: { ...currentChoiceDataRow, not_included_price: currentChoiceDataRow.not_included_price !== undefined ? currentChoiceDataRow.not_included_price : notIncludedPrice, ota_sale_price: 0 } } });
+                                      }
+                                    }}
+                                    className={inputCls}
+                                    placeholder="0"
+                                  />
+                                </td>
+                                <td className="py-1.5 px-1.5 align-top text-center">
+                                  <input
+                                    type="number"
+                                    value={notIncludedPrice === undefined || notIncludedPrice === null || notIncludedPrice === 0 ? '' : notIncludedPrice}
+                                    onChange={(e) => {
+                                      const value = e.target.value;
+                                      const currentPricing = pricingConfig.choices_pricing || {};
+                                      const currentChoiceDataRow = (currentPricing as unknown as Record<string, Record<string, unknown>>)[combination.id] || {};
+                                      const preservedData = { ...currentChoiceDataRow, ota_sale_price: currentChoiceDataRow.ota_sale_price !== undefined ? currentChoiceDataRow.ota_sale_price : otaSalePrice };
+                                      if (value === '' || value === '-') {
+                                        updatePricingConfig({ choices_pricing: { ...currentPricing, [combination.id]: { ...preservedData, not_included_price: 0 } } });
+                                        return;
+                                      }
+                                      const numValue = parseFloat(value.replace(/[^\d.-]/g, ''));
+                                      if (!isNaN(numValue) && numValue >= 0) {
+                                        updatePricingConfig({ choices_pricing: { ...currentPricing, [combination.id]: { ...preservedData, not_included_price: numValue } } });
+                                      }
+                                    }}
+                                    className={inputCls}
+                                    placeholder="0"
+                                  />
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="py-1.5 px-1.5 align-top text-center">
+                                  <input type="number" value={adultPrice === 0 ? '' : adultPrice} onChange={(e) => { const v = e.target.value; if (v === '' || v === '-') { updateChoicePriceField('adult_price', 0); return; } const n = parseFloat(v); if (!isNaN(n)) updateChoicePriceField('adult_price', n); }} className={inputCls} placeholder="0" />
+                                </td>
+                                <td className="py-1.5 px-1.5 align-top text-center">
+                                  <input type="number" value={childPrice === 0 ? '' : childPrice} onChange={(e) => { const v = e.target.value; if (v === '' || v === '-') { updateChoicePriceField('child_price', 0); return; } const n = parseFloat(v); if (!isNaN(n)) updateChoicePriceField('child_price', n); }} className={inputCls} placeholder="0" />
+                                </td>
+                                <td className="py-1.5 px-1.5 align-top text-center">
+                                  <input type="number" value={infantPrice === 0 ? '' : infantPrice} onChange={(e) => { const v = e.target.value; if (v === '' || v === '-') { updateChoicePriceField('infant_price', 0); return; } const n = parseFloat(v); if (!isNaN(n)) updateChoicePriceField('infant_price', n); }} className={inputCls} placeholder="0" />
+                                </td>
+                                <td className="py-1.5 px-1.5 align-top text-center">
+                                  <input type="number" value={notIncludedAdult === 0 ? '' : notIncludedAdult} onChange={(e) => { const v = e.target.value; if (v === '' || v === '-') { updateChoiceNotIncludedField('not_included_price_adult', 0); return; } const n = parseFloat(v); if (!isNaN(n) && n >= 0) updateChoiceNotIncludedField('not_included_price_adult', n); }} className={inputCls} placeholder="0" />
+                                </td>
+                                <td className="py-1.5 px-1.5 align-top text-center">
+                                  <input type="number" value={notIncludedChild === 0 ? '' : notIncludedChild} onChange={(e) => { const v = e.target.value; if (v === '' || v === '-') { updateChoiceNotIncludedField('not_included_price_child', 0); return; } const n = parseFloat(v); if (!isNaN(n) && n >= 0) updateChoiceNotIncludedField('not_included_price_child', n); }} className={inputCls} placeholder="0" />
+                                </td>
+                                <td className="py-1.5 px-1.5 align-top text-center">
+                                  <input type="number" value={notIncludedInfant === 0 ? '' : notIncludedInfant} onChange={(e) => { const v = e.target.value; if (v === '' || v === '-') { updateChoiceNotIncludedField('not_included_price_infant', 0); return; } const n = parseFloat(v); if (!isNaN(n) && n >= 0) updateChoiceNotIncludedField('not_included_price_infant', n); }} className={inputCls} placeholder="0" />
+                                </td>
+                              </>
+                            )}
                             <td className="py-1.5 px-1.5 align-top text-center text-gray-600 text-[11px]">
                               {commissionPercent}% / {couponPercent}%
                             </td>
@@ -2876,34 +2953,29 @@ export default function DynamicPricingManager({
                     notIncludedPrice
                   });
                   
-                  // Net Price 계산
+                  // Net Price 계산 (단일: ota_sale_price+not_included / 분리: 성인·아동·유아 판매가+불포함 합)
+                  const cardAdultPrice = (currentChoiceData.adult_price ?? currentChoiceData.adult ?? combination.adult_price) ?? 0;
+                  const cardChildPrice = (currentChoiceData.child_price ?? currentChoiceData.child ?? combination.child_price) ?? 0;
+                  const cardInfantPrice = (currentChoiceData.infant_price ?? currentChoiceData.infant ?? combination.infant_price) ?? 0;
+                  const cardNotIncludedAdult = (currentChoiceData.not_included_price_adult ?? currentChoiceData.not_included_price) ?? 0;
+                  const cardNotIncludedChild = (currentChoiceData.not_included_price_child) ?? 0;
+                  const cardNotIncludedInfant = (currentChoiceData.not_included_price_infant) ?? 0;
                   let netPrice = 0;
-                  if (otaSalePrice > 0) {
-                    // 기본 계산: OTA 판매가 × (1 - 쿠폰 할인%) × (1 - 수수료%)
+                  if (isTableChannelSinglePrice && otaSalePrice > 0) {
                     const baseNetPrice = otaSalePrice * (1 - couponPercent / 100) * (1 - commissionPercent / 100);
-                    
-                    // 불포함 금액이 있으면 항상 Net Price에 추가
-                    if (notIncludedPrice > 0) {
-                      netPrice = baseNetPrice + notIncludedPrice;
-                    } else {
-                      netPrice = baseNetPrice;
-                    }
-                    
-                    console.log('Net Price 계산:', {
-                      otaSalePrice,
-                      couponPercent,
-                      commissionPercent,
-                      baseNetPrice,
-                      notIncludedPrice,
-                      netPrice
-                    });
+                    netPrice = notIncludedPrice > 0 ? baseNetPrice + notIncludedPrice : baseNetPrice;
+                  } else if (!isTableChannelSinglePrice && (cardAdultPrice + cardChildPrice + cardInfantPrice > 0 || cardNotIncludedAdult + cardNotIncludedChild + cardNotIncludedInfant > 0)) {
+                    const totalSale = cardAdultPrice + cardChildPrice + cardInfantPrice;
+                    const totalNotIncluded = cardNotIncludedAdult + cardNotIncludedChild + cardNotIncludedInfant;
+                    netPrice = totalSale * (1 - couponPercent / 100) * (1 - commissionPercent / 100) + totalNotIncluded;
                   }
+                  const totalNotIncludedForDisplay = isTableChannelSinglePrice ? notIncludedPrice : (cardNotIncludedAdult + cardNotIncludedChild + cardNotIncludedInfant);
                   
                   // 홈페이지 Net Price 계산 (고정값 사용)
-                  // 공통 함수 사용: 판매가 = 기본가격 + 초이스가격, Net = 판매가 * 0.8
                   let homepageNetPrice = 0;
                   let priceDifference = 0;
-                  if (homepageChannel && otaSalePrice > 0) {
+                  const saleForCardHomepage = isTableChannelSinglePrice ? otaSalePrice : (cardAdultPrice + cardChildPrice + cardInfantPrice);
+                  if (homepageChannel && saleForCardHomepage > 0) {
                     // 홈페이지 가격 정보는 M00001 채널의 고정값을 사용
                     // 직접 계산하여 디버깅 가능하도록
                     const basePrice = productBasePrice.adult || 0;
@@ -2991,13 +3063,15 @@ export default function DynamicPricingManager({
                     </div>
                     
                     {isOTAChannel ? (
-                      // OTA 채널: OTA 판매가 입력 및 Net Price 표시
+                      // 채널: 판매가 입력 및 Net Price 표시 (가격 판매 방식에 따라 단일 또는 성인/아동/유아)
                       <div className="space-y-3">
-                        {/* OTA 판매가와 불포함 금액을 같은 줄에 배치 */}
-                        <div className="grid grid-cols-2 gap-3">
+                        {/* 단일: 판매가 + 불포함 1칸 each / 분리: 성인·아동·유아 각각 판매가+불포함 */}
+                        <div className={isTableChannelSinglePrice ? 'grid grid-cols-2 gap-3' : 'grid grid-cols-2 sm:grid-cols-3 gap-3'}>
+                          {isTableChannelSinglePrice ? (
+                            <>
                           <div>
                             <label className="block text-xs font-medium text-gray-700 mb-1">
-                              {t('otaSalePrice')}
+                              {t('salePrice')}
                             </label>
                             <input
                               type="number"
@@ -3253,18 +3327,29 @@ export default function DynamicPricingManager({
                               값을 0으로 변경하면 불포함 금액이 0으로 설정됩니다
                             </p>
                           </div>
+                            </>
+                          ) : (
+                            <>
+                              <div><label className="block text-xs font-medium text-gray-700 mb-1">{t('salePriceAdult')}</label><input type="number" value={((ca) => ca === 0 ? '' : ca)((currentChoiceData.adult_price ?? currentChoiceData.adult ?? combination.adult_price) ?? 0)} onChange={(e) => { const v = e.target.value; const cur = (pricingConfig.choices_pricing as any)?.[combination.id] || {}; const n = v === '' || v === '-' ? 0 : parseFloat(v); if (!isNaN(n)) { updatePricingConfig({ choices_pricing: { ...(pricingConfig.choices_pricing || {}), [combination.id]: { ...cur, adult_price: n, adult: n } } }); updateChoicePricing(combination.id, { choiceId: combination.id, choiceName: combination.combination_name, adult_price: n, child_price: cur.child_price ?? cur.child ?? combination.child_price ?? 0, infant_price: cur.infant_price ?? cur.infant ?? combination.infant_price ?? 0 }); } }} className="w-full px-2 py-1 text-sm border border-gray-300 rounded" placeholder="0" /></div>
+                              <div><label className="block text-xs font-medium text-gray-700 mb-1">{t('salePriceChild')}</label><input type="number" value={((ca) => ca === 0 ? '' : ca)((currentChoiceData.child_price ?? currentChoiceData.child ?? combination.child_price) ?? 0)} onChange={(e) => { const v = e.target.value; const cur = (pricingConfig.choices_pricing as any)?.[combination.id] || {}; const n = v === '' || v === '-' ? 0 : parseFloat(v); if (!isNaN(n)) { updatePricingConfig({ choices_pricing: { ...(pricingConfig.choices_pricing || {}), [combination.id]: { ...cur, child_price: n, child: n } } }); updateChoicePricing(combination.id, { choiceId: combination.id, choiceName: combination.combination_name, adult_price: cur.adult_price ?? cur.adult ?? combination.adult_price ?? 0, child_price: n, infant_price: cur.infant_price ?? cur.infant ?? combination.infant_price ?? 0 }); } }} className="w-full px-2 py-1 text-sm border border-gray-300 rounded" placeholder="0" /></div>
+                              <div><label className="block text-xs font-medium text-gray-700 mb-1">{t('salePriceInfant')}</label><input type="number" value={((ca) => ca === 0 ? '' : ca)((currentChoiceData.infant_price ?? currentChoiceData.infant ?? combination.infant_price) ?? 0)} onChange={(e) => { const v = e.target.value; const cur = (pricingConfig.choices_pricing as any)?.[combination.id] || {}; const n = v === '' || v === '-' ? 0 : parseFloat(v); if (!isNaN(n)) { updatePricingConfig({ choices_pricing: { ...(pricingConfig.choices_pricing || {}), [combination.id]: { ...cur, infant_price: n, infant: n } } }); updateChoicePricing(combination.id, { choiceId: combination.id, choiceName: combination.combination_name, adult_price: cur.adult_price ?? cur.adult ?? combination.adult_price ?? 0, child_price: cur.child_price ?? cur.child ?? combination.child_price ?? 0, infant_price: n }); } }} className="w-full px-2 py-1 text-sm border border-gray-300 rounded" placeholder="0" /></div>
+                              <div><label className="block text-xs font-medium text-gray-700 mb-1">{t('notIncludedAdult')}</label><input type="number" value={((x) => x === 0 ? '' : x)((currentChoiceData.not_included_price_adult ?? currentChoiceData.not_included_price) ?? 0)} onChange={(e) => { const v = e.target.value; const cur = (pricingConfig.choices_pricing as any)?.[combination.id] || {}; const n = v === '' || v === '-' ? 0 : parseFloat(v); if (!isNaN(n) && n >= 0) { const sum = n + (cur.not_included_price_child ?? 0) + (cur.not_included_price_infant ?? 0); updatePricingConfig({ choices_pricing: { ...(pricingConfig.choices_pricing || {}), [combination.id]: { ...cur, not_included_price_adult: n, not_included_price: sum } } }); } }} className="w-full px-2 py-1 text-sm border border-gray-300 rounded" placeholder="0" /></div>
+                              <div><label className="block text-xs font-medium text-gray-700 mb-1">{t('notIncludedChild')}</label><input type="number" value={((x) => x === 0 ? '' : x)((currentChoiceData.not_included_price_child) ?? 0)} onChange={(e) => { const v = e.target.value; const cur = (pricingConfig.choices_pricing as any)?.[combination.id] || {}; const n = v === '' || v === '-' ? 0 : parseFloat(v); if (!isNaN(n) && n >= 0) { const sum = (cur.not_included_price_adult ?? cur.not_included_price ?? 0) + n + (cur.not_included_price_infant ?? 0); updatePricingConfig({ choices_pricing: { ...(pricingConfig.choices_pricing || {}), [combination.id]: { ...cur, not_included_price_child: n, not_included_price: sum } } }); } }} className="w-full px-2 py-1 text-sm border border-gray-300 rounded" placeholder="0" /></div>
+                              <div><label className="block text-xs font-medium text-gray-700 mb-1">{t('notIncludedInfant')}</label><input type="number" value={((x) => x === 0 ? '' : x)((currentChoiceData.not_included_price_infant) ?? 0)} onChange={(e) => { const v = e.target.value; const cur = (pricingConfig.choices_pricing as any)?.[combination.id] || {}; const n = v === '' || v === '-' ? 0 : parseFloat(v); if (!isNaN(n) && n >= 0) { const sum = (cur.not_included_price_adult ?? cur.not_included_price ?? 0) + (cur.not_included_price_child ?? 0) + n; updatePricingConfig({ choices_pricing: { ...(pricingConfig.choices_pricing || {}), [combination.id]: { ...cur, not_included_price_infant: n, not_included_price: sum } } }); } }} className="w-full px-2 py-1 text-sm border border-gray-300 rounded" placeholder="0" /></div>
+                            </>
+                          )}
                         </div>
-                        {otaSalePrice > 0 && (
+                        {(otaSalePrice > 0 || ((currentChoiceData.adult_price ?? currentChoiceData.adult ?? 0) + (currentChoiceData.child_price ?? currentChoiceData.child ?? 0) + (currentChoiceData.infant_price ?? currentChoiceData.infant ?? 0)) > 0) && (
                           <div className="bg-blue-50 border border-blue-200 rounded p-2">
                             <div className="text-xs text-gray-600 mb-1">
                               <div>{t('commissionLabel')} {commissionPercent}%</div>
                               <div>{t('couponLabel')} {couponPercent}%</div>
                             </div>
                             {/* 불포함 금액 표시 (Net Price 위로 이동) */}
-                            {notIncludedPrice > 0 && (
+                            {totalNotIncludedForDisplay > 0 && (
                               <div className="text-sm font-semibold text-orange-600 mb-1">
                                 불포함 금액: 
-                                <span className="ml-2">${notIncludedPrice.toFixed(2)}</span>
+                                <span className="ml-2">${totalNotIncludedForDisplay.toFixed(2)}</span>
                               </div>
                             )}
                             <div className="text-sm font-semibold text-blue-900 mb-1">
@@ -3276,13 +3361,13 @@ export default function DynamicPricingManager({
                               )}
                             </div>
                             <div className="text-xs text-gray-500 mt-1">
-                              {notIncludedPrice > 0 ? (
+                              {totalNotIncludedForDisplay > 0 ? (
                                 <>
-                                  {t('formulaWithNotIncluded', { ota: otaSalePrice.toFixed(2), coupon: couponPercent, commission: commissionPercent, notIncluded: notIncludedPrice.toFixed(2), net: netPrice.toFixed(2) })}
+                                  {t('formulaWithNotIncluded', { ota: (isTableChannelSinglePrice ? otaSalePrice : (cardAdultPrice + cardChildPrice + cardInfantPrice)).toFixed(2), coupon: couponPercent, commission: commissionPercent, notIncluded: totalNotIncludedForDisplay.toFixed(2), net: netPrice.toFixed(2) })}
                                 </>
                               ) : (
                                 <>
-                                  {t('formulaWithoutNotIncluded', { ota: otaSalePrice.toFixed(2), coupon: couponPercent, commission: commissionPercent, net: netPrice.toFixed(2) })}
+                                  {t('formulaWithoutNotIncluded', { ota: (isTableChannelSinglePrice ? otaSalePrice : (cardAdultPrice + cardChildPrice + cardInfantPrice)).toFixed(2), coupon: couponPercent, commission: commissionPercent, net: netPrice.toFixed(2) })}
                                 </>
                               )}
                             </div>
@@ -3985,6 +4070,7 @@ export default function DynamicPricingManager({
             onSave={handleSavePricingRule}
             canSave={canSave}
             batchProgress={batchProgress}
+            savePhase={savePhase}
             onDelete={handleDeleteSelectedDates}
             canDelete={selectedDates.length > 0}
           />

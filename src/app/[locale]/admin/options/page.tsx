@@ -286,7 +286,7 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-gray-900">통합 옵션</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">통합 옵션</h1>
         {activeTab === 'options' && (
           <button
             onClick={() => setShowAddForm(true)}

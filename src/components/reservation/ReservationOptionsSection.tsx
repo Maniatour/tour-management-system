@@ -117,14 +117,14 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between gap-2 mb-4">
         <h3 className="text-base font-semibold text-gray-900">{t('title')}</h3>
         <button
           type="button"
           onClick={() => setShowAddForm(true)}
-          className="flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+          className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors flex-shrink-0 ml-auto"
         >
-          <Plus size={16} className="mr-1" />
+          <Plus size={14} />
           {t('addOption')}
         </button>
       </div>

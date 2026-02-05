@@ -736,27 +736,29 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-t-xl sm:rounded-lg shadow-xl max-w-6xl w-full sm:mx-4 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto flex flex-col">
         {/* 헤더 */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <div className="flex items-center">
-            <Calculator className="w-6 h-6 text-blue-600 mr-2" />
-            <h2 className="text-xl font-bold text-gray-900">Total Employees Summary</h2>
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10 shrink-0">
+          <div className="flex items-center min-w-0">
+            <Calculator className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 mr-2 shrink-0" />
+            <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">Total Employees Summary</h2>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="p-2 text-gray-400 hover:text-gray-600 transition-colors touch-manipulation shrink-0"
+            type="button"
+            aria-label="닫기"
           >
-            <X className="w-6 h-6" />
+            <X className="w-5 h-5 sm:w-6 sm:h-6" />
           </button>
         </div>
 
         {/* 내용 */}
-        <div className="p-6">
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1 min-h-0">
           {/* 날짜 선택 */}
-          <div className="mb-6">
-            <div className="grid grid-cols-4 gap-4">
+          <div className="mb-4 sm:mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   시작일
@@ -765,7 +767,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
                   type="date"
                   value={startDate}
                   onChange={(e) => handleDateChange('start', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                 />
               </div>
               <div>
@@ -776,23 +778,25 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
                   type="date"
                   value={endDate}
                   onChange={(e) => handleDateChange('end', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                 />
               </div>
-              <div>
+              <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   기간 선택
                 </label>
                 <div className="flex gap-2">
                   <button
                     onClick={setPreviousPeriod}
-                    className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors"
+                    type="button"
+                    className="flex-1 px-3 py-2.5 sm:py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors touch-manipulation"
                   >
                     지난 2주
                   </button>
                   <button
                     onClick={setCurrentPeriod}
-                    className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors"
+                    type="button"
+                    className="flex-1 px-3 py-2.5 sm:py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors touch-manipulation"
                   >
                     이번 2주
                   </button>
@@ -802,34 +806,34 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
           </div>
 
           {/* 통계 요약 */}
-          <div className="grid grid-cols-5 gap-4 mb-6">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="text-sm font-medium text-gray-700 mb-1">출퇴근 소계</div>
-              <div className="text-2xl font-bold text-blue-600">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 mb-4 sm:mb-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
+              <div className="text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">출퇴근 소계</div>
+              <div className="text-lg sm:text-2xl font-bold text-blue-600">
                 ${formatCurrency(totalAttendancePay)}
               </div>
             </div>
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-              <div className="text-sm font-medium text-gray-700 mb-1">Guide Fee</div>
-              <div className="text-2xl font-bold text-purple-600">
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 sm:p-4">
+              <div className="text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">Guide Fee</div>
+              <div className="text-lg sm:text-2xl font-bold text-purple-600">
                 ${formatCurrency(totalGuideFee)}
               </div>
             </div>
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <div className="text-sm font-medium text-gray-700 mb-1">Assistant Fee</div>
-              <div className="text-2xl font-bold text-green-600">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 sm:p-4">
+              <div className="text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">Assistant Fee</div>
+              <div className="text-lg sm:text-2xl font-bold text-green-600">
                 ${formatCurrency(totalAssistantFee)}
               </div>
             </div>
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <div className="text-sm font-medium text-gray-700 mb-1">Prepaid 팁</div>
-              <div className="text-2xl font-bold text-yellow-600">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 sm:p-4">
+              <div className="text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">Prepaid 팁</div>
+              <div className="text-lg sm:text-2xl font-bold text-yellow-600">
                 ${formatCurrency(totalPrepaidTip)}
               </div>
             </div>
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-              <div className="text-sm font-medium text-gray-700 mb-1">Total Pay</div>
-              <div className="text-2xl font-bold text-orange-600">
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 sm:p-4 col-span-2 sm:col-span-1">
+              <div className="text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">Total Pay</div>
+              <div className="text-lg sm:text-2xl font-bold text-orange-600">
                 ${formatCurrency(totalPay)}
               </div>
             </div>
@@ -837,254 +841,369 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
 
           {/* 직원별 테이블 */}
           {loading ? (
-            <div className="text-center py-8">
+            <div className="text-center py-6 sm:py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-              <p className="mt-2 text-gray-600">데이터를 불러오는 중...</p>
+              <p className="mt-2 text-sm sm:text-base text-gray-600">데이터를 불러오는 중...</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full bg-white border border-gray-200 rounded-lg">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Employee Name
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Attendance Subtotal
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Guide Fee
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Assistant Fee
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Prepaid Tip
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Tour Count
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Subtotal
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Details
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {employeeData.map((employee) => (
-                    <React.Fragment key={employee.email}>
-                      <tr 
-                        className="hover:bg-gray-50 cursor-pointer"
-                        onClick={() => toggleEmployeeExpansion(employee.email)}
-                      >
-                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                          <div className="flex items-center">
-                            {employee.hasWarning && (
-                              <span className="text-red-500 mr-2" title="Fee가 $0으로 설정된 투어가 있습니다">
-                                ⚠️
-                              </span>
-                            )}
-                            {employee.name}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                          {formatCurrencyWithStyle(employee.attendancePay)}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                          {formatCurrencyWithStyle(employee.guideFee)}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                          {formatCurrencyWithStyle(employee.assistantFee)}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                          {formatCurrencyWithStyle(employee.prepaidTip)}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                          {employee.tourFees.length}회
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-green-600">
-                          {formatCurrencyWithStyle(employee.totalPay)}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+            <>
+              {/* 모바일: 직원 카드 리스트 */}
+              <div className="md:hidden space-y-2">
+                {employeeData.map((employee) => (
+                  <div
+                    key={employee.email}
+                    className="bg-white border border-gray-200 rounded-lg overflow-hidden"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleEmployeeExpansion(employee.email)}
+                      className="w-full text-left p-3 flex items-center justify-between gap-2 hover:bg-gray-50 active:bg-gray-100 touch-manipulation"
+                    >
+                      <div className="flex items-center min-w-0">
+                        {employee.hasWarning && (
+                          <span className="text-red-500 mr-1.5 shrink-0" title="Fee가 $0으로 설정된 투어가 있습니다">⚠️</span>
+                        )}
+                        <span className="font-medium text-gray-900 truncate">{employee.name}</span>
+                      </div>
+                      <span className="text-sm font-medium text-green-600 shrink-0">{formatCurrencyWithStyle(employee.totalPay)}</span>
+                      {expandedEmployees.has(employee.email) ? (
+                        <ChevronDown className="w-4 h-4 text-gray-500 shrink-0" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4 text-gray-500 shrink-0" />
+                      )}
+                    </button>
+                    <div className="px-3 pb-3 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs text-gray-600">
+                      <span>출퇴근</span>
+                      <span>{formatCurrencyWithStyle(employee.attendancePay)}</span>
+                      <span>Guide</span>
+                      <span>{formatCurrencyWithStyle(employee.guideFee)}</span>
+                      <span>Assistant</span>
+                      <span>{formatCurrencyWithStyle(employee.assistantFee)}</span>
+                      <span>Prepaid</span>
+                      <span>{formatCurrencyWithStyle(employee.prepaidTip)}</span>
+                      <span>투어</span>
+                      <span>{employee.tourFees.length}회</span>
+                    </div>
+                    {expandedEmployees.has(employee.email) && (
+                      <div className="border-t border-gray-100 bg-gray-50 p-3 space-y-4">
+                        <div className="flex justify-between items-center">
+                          <h4 className="text-sm font-semibold text-gray-900">{employee.name} 상세</h4>
                           <button
+                            type="button"
                             onClick={(e) => {
                               e.stopPropagation()
-                              toggleEmployeeExpansion(employee.email)
+                              handlePrintEmployee(employee)
                             }}
-                            className="text-blue-600 hover:text-blue-800 transition-colors"
+                            className="flex items-center px-2 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-md touch-manipulation"
                           >
-                            {expandedEmployees.has(employee.email) ? (
-                              <ChevronDown className="w-4 h-4" />
-                            ) : (
-                              <ChevronRight className="w-4 h-4" />
-                            )}
+                            <Printer className="w-3.5 h-3.5 mr-1" />
+                            Print
                           </button>
-                        </td>
-                      </tr>
-                      
-                      {/* 확장된 상세 정보 */}
-                      {expandedEmployees.has(employee.email) && (
-                        <tr>
-                          <td colSpan={7} className="px-4 py-4 bg-gray-50">
-                            <div className="flex justify-between items-start mb-4">
-                              <h4 className="text-sm font-semibold text-gray-900">{employee.name} 상세 내역</h4>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handlePrintEmployee(employee)
-                                }}
-                                className="flex items-center px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
-                              >
-                                <Printer className="w-4 h-4 mr-1" />
-                                Print
-                              </button>
+                        </div>
+                        {employee.attendanceRecords.length > 0 && (
+                          <div>
+                            <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center">
+                              <Clock className="w-3.5 h-3.5 mr-1" />
+                              Attendance
+                            </h4>
+                            <div className="space-y-1.5">
+                              {employee.attendanceRecords.map((record, index) => (
+                                <div key={index} className="flex flex-wrap items-center justify-between gap-2 text-xs bg-white rounded p-2">
+                                  <span>{getDateFromCheckInTime(record.check_in_time)}</span>
+                                  <span>{formatTime(record.check_in_time)} ~ {formatTime(record.check_out_time)}</span>
+                                  <span>{formatWorkHours(record.work_hours)}</span>
+                                  <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded-full ${
+                                    record.status === 'present' ? 'bg-green-100 text-green-800' :
+                                    record.status === 'late' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
+                                  }`}>
+                                    {record.status === 'present' ? 'Normal' : record.status === 'late' ? 'Late' : 'Absent'}
+                                  </span>
+                                </div>
+                              ))}
                             </div>
-                            <div className="space-y-4">
-                              {/* 출퇴근 기록 */}
-                              {employee.attendanceRecords.length > 0 && (
-                                <div>
-                                  <h4 className="text-sm font-semibold text-gray-900 mb-2 flex items-center">
-                                    <Clock className="w-4 h-4 mr-1" />
-                                    Attendance Records
-                                  </h4>
-                                  <div className="overflow-x-auto">
-                                    <table className="min-w-full text-sm">
-                                      <thead className="bg-gray-100">
-                                        <tr>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Check In</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Check Out</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Work Hours</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-gray-200">
-                                        {employee.attendanceRecords.map((record, index) => (
-                                          <tr key={index}>
-                                            <td className="px-2 py-1 text-gray-900">
-                                              {getDateFromCheckInTime(record.check_in_time)}
-                                            </td>
-                                            <td className="px-2 py-1 text-gray-900">
-                                              {formatTime(record.check_in_time)}
-                                            </td>
-                                            <td className="px-2 py-1 text-gray-900">
-                                              {formatTime(record.check_out_time)}
-                                            </td>
-                                            <td className="px-2 py-1 text-gray-900">
-                                              {formatWorkHours(record.work_hours)}
-                                            </td>
-                                            <td className="px-2 py-1">
-                                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                                                record.status === 'present' 
-                                                  ? 'bg-green-100 text-green-800'
-                                                  : record.status === 'late'
-                                                  ? 'bg-yellow-100 text-yellow-800'
-                                                  : 'bg-red-100 text-red-800'
-                                              }`}>
-                                                {record.status === 'present' ? 'Normal' : 
-                                                 record.status === 'late' ? 'Late' : 'Absent'}
-                                              </span>
-                                            </td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
+                          </div>
+                        )}
+                        {employee.tourFees.length > 0 && (
+                          <div>
+                            <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center">
+                              <DollarSign className="w-3.5 h-3.5 mr-1" />
+                              Tour Fee
+                            </h4>
+                            <div className="space-y-1.5">
+                              {employee.tourFees.map((tour) => (
+                                <div key={tour.id} className="text-xs bg-white rounded p-2">
+                                  <div className="flex justify-between items-start gap-2">
+                                    <Link
+                                      href={`/${locale}/admin/tours/${tour.tour_id}`}
+                                      className="text-blue-600 hover:underline truncate"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      {tour.tour_name}
+                                    </Link>
+                                    <span className="font-medium text-gray-900 shrink-0">{formatCurrencyWithStyle(tour.total_fee)}</span>
+                                  </div>
+                                  <div className="mt-1 text-[10px] text-gray-500">
+                                    {formatTourDate(tour.date)} · {formatTeamType(tour.team_type)} · G: {formatCurrencyWithStyle(tour.guide_fee)} A: {formatCurrencyWithStyle(tour.assistant_fee)} Tip: {formatCurrencyWithStyle(tour.prepaid_tip)}
                                   </div>
                                 </div>
-                              )}
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <div className="text-right text-sm font-bold text-orange-600 pt-2">
+                  Total: ${formatCurrency(totalPay)}
+                </div>
+              </div>
 
-                              {/* 투어 Fee */}
-                              {employee.tourFees.length > 0 && (
-                                <div>
-                                  <h4 className="text-sm font-semibold text-gray-900 mb-2 flex items-center">
-                                    <DollarSign className="w-4 h-4 mr-1" />
-                                    Tour Fee
-                                  </h4>
-                                  <div className="overflow-x-auto">
-                                    <table className="min-w-full text-sm">
-                                      <thead className="bg-gray-100">
-                                        <tr>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Tour Date</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Tour Name</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Team Type</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Guide Fee</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Assistant Fee</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Prepaid Tip</th>
-                                          <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Total Fee</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-gray-200">
-                                        {employee.tourFees.map((tour) => (
-                                          <tr key={tour.id}>
-                                            <td className="px-2 py-1 text-gray-900">
-                                              {formatTourDate(tour.date)}
-                                            </td>
-                                            <td className="px-2 py-1 text-gray-900">
-                                              <Link 
-                                                href={`/${locale}/admin/tours/${tour.tour_id}`}
-                                                className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
-                                                onClick={(e) => e.stopPropagation()}
-                                              >
-                                                {tour.tour_name}
-                                              </Link>
-                                            </td>
-                                            <td className="px-2 py-1 text-gray-900">
-                                              {formatTeamType(tour.team_type)}
-                                            </td>
-                                            <td className="px-2 py-1 text-gray-900">
-                                              {formatCurrencyWithStyle(tour.guide_fee)}
-                                            </td>
-                                            <td className="px-2 py-1 text-gray-900">
-                                              {formatCurrencyWithStyle(tour.assistant_fee)}
-                                            </td>
-                                            <td className="px-2 py-1 text-gray-900">
-                                              {formatCurrencyWithStyle(tour.prepaid_tip)}
-                                            </td>
-                                            <td className="px-2 py-1 text-gray-900 font-medium">
-                                              {formatCurrencyWithStyle(tour.total_fee)}
-                                            </td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
+              {/* 데스크톱: 테이블 */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="min-w-full bg-white border border-gray-200 rounded-lg">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Employee Name
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Attendance Subtotal
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Guide Fee
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Assistant Fee
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Prepaid Tip
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Tour Count
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Subtotal
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Details
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {employeeData.map((employee) => (
+                      <React.Fragment key={employee.email}>
+                        <tr 
+                          className="hover:bg-gray-50 cursor-pointer"
+                          onClick={() => toggleEmployeeExpansion(employee.email)}
+                        >
+                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                            <div className="flex items-center">
+                              {employee.hasWarning && (
+                                <span className="text-red-500 mr-2" title="Fee가 $0으로 설정된 투어가 있습니다">
+                                  ⚠️
+                                </span>
                               )}
+                              {employee.name}
                             </div>
                           </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                            {formatCurrencyWithStyle(employee.attendancePay)}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                            {formatCurrencyWithStyle(employee.guideFee)}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                            {formatCurrencyWithStyle(employee.assistantFee)}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                            {formatCurrencyWithStyle(employee.prepaidTip)}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                            {employee.tourFees.length}회
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-green-600">
+                            {formatCurrencyWithStyle(employee.totalPay)}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                toggleEmployeeExpansion(employee.email)
+                              }}
+                              className="text-blue-600 hover:text-blue-800 transition-colors"
+                            >
+                              {expandedEmployees.has(employee.email) ? (
+                                <ChevronDown className="w-4 h-4" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4" />
+                              )}
+                            </button>
+                          </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </tbody>
-                <tfoot className="bg-gray-50">
-                  <tr>
-                    <td className="px-4 py-3 text-sm font-bold text-gray-900">Total</td>
-                    <td className="px-4 py-3 text-sm font-bold text-blue-600">
-                      ${formatCurrency(totalAttendancePay)}
-                    </td>
-                    <td className="px-4 py-3 text-sm font-bold text-purple-600">
-                      ${formatCurrency(totalGuideFee)}
-                    </td>
-                    <td className="px-4 py-3 text-sm font-bold text-green-600">
-                      ${formatCurrency(totalAssistantFee)}
-                    </td>
-                    <td className="px-4 py-3 text-sm font-bold text-yellow-600">
-                      ${formatCurrency(totalPrepaidTip)}
-                    </td>
-                    <td className="px-4 py-3 text-sm font-bold text-gray-600">
-                      {employeeData.reduce((sum, emp) => sum + emp.tourFees.length, 0)}회
-                    </td>
-                    <td className="px-4 py-3 text-sm font-bold text-orange-600">
-                      ${formatCurrency(totalPay)}
-                    </td>
-                    <td className="px-4 py-3"></td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+                        
+                        {/* 확장된 상세 정보 (데스크톱) */}
+                        {expandedEmployees.has(employee.email) && (
+                          <tr>
+                            <td colSpan={8} className="px-4 py-4 bg-gray-50">
+                              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-3 mb-4">
+                                <h4 className="text-sm font-semibold text-gray-900">{employee.name} 상세 내역</h4>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handlePrintEmployee(employee)
+                                  }}
+                                  className="flex items-center px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors w-fit"
+                                >
+                                  <Printer className="w-4 h-4 mr-1" />
+                                  Print
+                                </button>
+                              </div>
+                              <div className="space-y-4">
+                                {/* 출퇴근 기록 */}
+                                {employee.attendanceRecords.length > 0 && (
+                                  <div>
+                                    <h4 className="text-sm font-semibold text-gray-900 mb-2 flex items-center">
+                                      <Clock className="w-4 h-4 mr-1" />
+                                      Attendance Records
+                                    </h4>
+                                    <div className="overflow-x-auto">
+                                      <table className="min-w-full text-sm">
+                                        <thead className="bg-gray-100">
+                                          <tr>
+                                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Check In</th>
+                                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Check Out</th>
+                                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Work Hours</th>
+                                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-200">
+                                          {employee.attendanceRecords.map((record, index) => (
+                                            <tr key={index}>
+                                              <td className="px-2 py-1 text-gray-900">
+                                                {getDateFromCheckInTime(record.check_in_time)}
+                                              </td>
+                                              <td className="px-2 py-1 text-gray-900">
+                                                {formatTime(record.check_in_time)}
+                                              </td>
+                                              <td className="px-2 py-1 text-gray-900">
+                                                {formatTime(record.check_out_time)}
+                                              </td>
+                                              <td className="px-2 py-1 text-gray-900">
+                                                {formatWorkHours(record.work_hours)}
+                                              </td>
+                                              <td className="px-2 py-1">
+                                                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                                  record.status === 'present' 
+                                                    ? 'bg-green-100 text-green-800'
+                                                    : record.status === 'late'
+                                                    ? 'bg-yellow-100 text-yellow-800'
+                                                    : 'bg-red-100 text-red-800'
+                                                }`}>
+                                                  {record.status === 'present' ? 'Normal' : 
+                                                   record.status === 'late' ? 'Late' : 'Absent'}
+                                                </span>
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* 투어 Fee */}
+                                {employee.tourFees.length > 0 && (
+                                  <div>
+                                    <h4 className="text-sm font-semibold text-gray-900 mb-2 flex items-center">
+                                      <DollarSign className="w-4 h-4 mr-1" />
+                                      Tour Fee
+                                    </h4>
+                                    <div className="overflow-x-auto">
+                                      <table className="min-w-full text-sm">
+                                        <thead className="bg-gray-100">
+                                          <tr>
+                                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Tour Date</th>
+                                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Tour Name</th>
+                                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Team Type</th>
+                                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Guide Fee</th>
+                                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Assistant Fee</th>
+                                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Prepaid Tip</th>
+                                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Total Fee</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-200">
+                                          {employee.tourFees.map((tour) => (
+                                            <tr key={tour.id}>
+                                              <td className="px-2 py-1 text-gray-900">
+                                                {formatTourDate(tour.date)}
+                                              </td>
+                                              <td className="px-2 py-1 text-gray-900">
+                                                <Link 
+                                                  href={`/${locale}/admin/tours/${tour.tour_id}`}
+                                                  className="text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                                                  onClick={(e) => e.stopPropagation()}
+                                                >
+                                                  {tour.tour_name}
+                                                </Link>
+                                              </td>
+                                              <td className="px-2 py-1 text-gray-900">
+                                                {formatTeamType(tour.team_type)}
+                                              </td>
+                                              <td className="px-2 py-1 text-gray-900">
+                                                {formatCurrencyWithStyle(tour.guide_fee)}
+                                              </td>
+                                              <td className="px-2 py-1 text-gray-900">
+                                                {formatCurrencyWithStyle(tour.assistant_fee)}
+                                              </td>
+                                              <td className="px-2 py-1 text-gray-900">
+                                                {formatCurrencyWithStyle(tour.prepaid_tip)}
+                                              </td>
+                                              <td className="px-2 py-1 text-gray-900 font-medium">
+                                                {formatCurrencyWithStyle(tour.total_fee)}
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-gray-50">
+                    <tr>
+                      <td className="px-4 py-3 text-sm font-bold text-gray-900">Total</td>
+                      <td className="px-4 py-3 text-sm font-bold text-blue-600">
+                        ${formatCurrency(totalAttendancePay)}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-bold text-purple-600">
+                        ${formatCurrency(totalGuideFee)}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-bold text-green-600">
+                        ${formatCurrency(totalAssistantFee)}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-bold text-yellow-600">
+                        ${formatCurrency(totalPrepaidTip)}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-bold text-gray-600">
+                        {employeeData.reduce((sum, emp) => sum + emp.tourFees.length, 0)}회
+                      </td>
+                      <td className="px-4 py-3 text-sm font-bold text-orange-600">
+                        ${formatCurrency(totalPay)}
+                      </td>
+                      <td className="px-4 py-3"></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </>
           )}
         </div>
       </div>

@@ -46,6 +46,8 @@ interface AdvancedChartsProps {
   xAxisInterval?: number | 'preserveStart' | 'preserveEnd' | 'preserveStartEnd'
   bottomLabelKey?: string
   bottomLabelFormatter?: (value: any) => string
+  /** 모바일 등에서 x/y 라벨 축소 */
+  compact?: boolean
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D']
@@ -66,8 +68,13 @@ export default function AdvancedCharts({
   xAxisBottomMargin,
   xAxisInterval,
   bottomLabelKey,
-  bottomLabelFormatter
+  bottomLabelFormatter,
+  compact = false
 }: AdvancedChartsProps) {
+  const tickFontSize = compact ? 9 : 12
+  const yAxisWidth = compact ? 32 : 44
+  const barMargin = compact ? { top: 10, right: 4, left: 4, bottom: xAxisBottomMargin ?? (xAxisSubLabelKey ? 50 : 16) } : { top: 20, right: 12, left: 12, bottom: xAxisBottomMargin || (xAxisSubLabelKey ? 60 : 20) }
+
   const CustomizedTick = (props: any) => {
     const { x, y, payload } = props
     const main = payload?.value
@@ -77,14 +84,32 @@ export default function AdvancedCharts({
       : undefined
     return (
       <g transform={`translate(${x},${y})`}>
-        <text textAnchor="middle" fontSize={12}>
+        <text textAnchor="middle" fontSize={tickFontSize}>
           {xAxisShowMainLabel && (
             <tspan x={0} dy={0} fill="#374151">{main}</tspan>
           )}
           {sub !== undefined && (
-            <tspan x={0} dy={xAxisShowMainLabel ? 16 : 12} fill="#374151" fontWeight={600}>{sub}</tspan>
+            <tspan x={0} dy={xAxisShowMainLabel ? (compact ? 12 : 16) : 12} fill="#374151" fontWeight={600}>{sub}</tspan>
           )}
         </text>
+      </g>
+    )
+  }
+
+  const formatYAxisTick = (value: number) => {
+    if (!compact) return value >= 1000 ? value.toLocaleString() : String(value)
+    if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`
+    if (value >= 1000) return `${(value / 1000).toFixed(0)}K`
+    return String(value)
+  }
+
+  const XAxisShortTick = (props: any) => {
+    const { x, y, payload } = props
+    const raw = payload?.value ?? ''
+    const short = compact && raw.length > 8 ? `${raw.slice(0, 7)}…` : raw
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <text textAnchor="middle" fontSize={tickFontSize} fill="#374151">{short}</text>
       </g>
     )
   }
@@ -93,17 +118,17 @@ export default function AdvancedCharts({
     switch (type) {
       case 'bar':
         return (
-          <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: xAxisBottomMargin || (xAxisSubLabelKey ? 60 : 20) }}>
+          <BarChart data={data} margin={barMargin}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis 
               dataKey="name" 
-              height={xAxisHeight || (xAxisSubLabelKey ? 60 : 30)} 
-              tick={xAxisSubLabelKey ? <CustomizedTick /> : { fontSize: 12, fill: '#374151' }} 
+              height={compact ? 24 : (xAxisHeight || (xAxisSubLabelKey ? 60 : 30))} 
+              tick={xAxisSubLabelKey ? <CustomizedTick /> : (compact ? <XAxisShortTick /> : { fontSize: tickFontSize, fill: '#374151' })} 
               interval={xAxisInterval !== undefined ? (xAxisInterval as any) : (xAxisSubLabelKey ? 0 : undefined)}
-              tickMargin={12}
-              minTickGap={0}
+              tickMargin={compact ? 6 : 12}
+              minTickGap={compact ? 2 : 0}
             />
-            <YAxis />
+            <YAxis width={yAxisWidth} tick={{ fontSize: tickFontSize }} tickFormatter={formatYAxisTick} axisLine={false} />
             <Tooltip 
               formatter={(value, name) => [
                 typeof value === 'number' ? `$${value.toLocaleString()}` : value,
@@ -225,8 +250,8 @@ export default function AdvancedCharts({
   }
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">{title}</h3>
+    <div className={`bg-white rounded-lg shadow-sm border border-gray-200 ${compact ? 'px-2 py-3' : 'p-6'}`}>
+      <h3 className={`font-semibold text-gray-900 mb-2 ${compact ? 'text-sm' : 'text-lg mb-4'}`}>{title}</h3>
       <ResponsiveContainer width="100%" height={height}>
         {renderChart()}
       </ResponsiveContainer>

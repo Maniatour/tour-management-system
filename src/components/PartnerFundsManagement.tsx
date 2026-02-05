@@ -515,14 +515,14 @@ export default function PartnerFundsManagement() {
 
       {/* 입출금 기록 */}
       <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>입출금 기록</CardTitle>
-                  <CardDescription>파트너 간 자금 입출금 내역을 관리합니다.</CardDescription>
+          <Card className="border rounded-lg">
+            <CardHeader className="p-3 sm:p-4 lg:p-6 pb-0">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="min-w-0">
+                  <CardTitle className="text-base sm:text-lg">입출금 기록</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm hidden sm:block">파트너 간 자금 입출금 내역을 관리합니다.</CardDescription>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Dialog open={isBulkAddDialogOpen} onOpenChange={setIsBulkAddDialogOpen}>
                     <DialogTrigger asChild>
                       <Button 
@@ -711,16 +711,19 @@ export default function PartnerFundsManagement() {
                   </Dialog>
                   <Dialog open={isTransactionDialogOpen} onOpenChange={setIsTransactionDialogOpen}>
                   <DialogTrigger asChild>
-                    <Button onClick={() => {
-                      setEditingTransaction(null)
-                      setTransactionForm({
-                        transaction_date: new Date().toISOString().split('T')[0],
-                        partner: '',
-                        transaction_type: '',
-                        amount: '',
-                        description: ''
-                      })
-                    }}>
+                    <Button
+                      onClick={() => {
+                        setEditingTransaction(null)
+                        setTransactionForm({
+                          transaction_date: new Date().toISOString().split('T')[0],
+                          partner: '',
+                          transaction_type: '',
+                          amount: '',
+                          description: ''
+                        })
+                      }}
+                      className="bg-blue-600 hover:bg-blue-700 text-white border-0"
+                    >
                       <Plus className="w-4 h-4 mr-2" />
                       거래 추가
                     </Button>
@@ -829,18 +832,18 @@ export default function PartnerFundsManagement() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              {/* 필터 */}
-              <div className="mb-4 space-y-2">
+            <CardContent className="p-3 sm:p-4 lg:p-6">
+              {/* 필터 - 모바일 컴팩트 */}
+              <div className="mb-3 sm:mb-4 space-y-2">
                 <div className="flex flex-wrap gap-2">
                   <Input
                     placeholder="검색..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="max-w-xs"
+                    className="flex-1 min-w-0 sm:max-w-xs h-9 sm:h-10 text-sm"
                   />
                   <Select value={partnerFilter} onValueChange={(v) => setPartnerFilter(v as any)}>
-                    <SelectTrigger className="w-32">
+                    <SelectTrigger className="w-full sm:w-32 h-9 sm:h-10 text-sm">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -851,7 +854,7 @@ export default function PartnerFundsManagement() {
                     </SelectContent>
                   </Select>
                   <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as any)}>
-                    <SelectTrigger className="w-32">
+                    <SelectTrigger className="w-full sm:w-32 h-9 sm:h-10 text-sm">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -865,25 +868,111 @@ export default function PartnerFundsManagement() {
                     placeholder="시작일"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-40"
+                    className="w-full sm:w-40 h-9 sm:h-10 text-sm"
                   />
                   <Input
                     type="date"
                     placeholder="종료일"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="w-40"
+                    className="w-full sm:w-40 h-9 sm:h-10 text-sm"
                   />
                 </div>
               </div>
 
               {/* 거래 목록 */}
               {loading ? (
-                <div className="text-center py-8">로딩 중...</div>
+                <div className="text-center py-6 sm:py-8 text-sm text-gray-500">로딩 중...</div>
               ) : filteredTransactions.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">거래 내역이 없습니다.</div>
+                <div className="text-center py-6 sm:py-8 text-gray-500 text-sm">거래 내역이 없습니다.</div>
               ) : (
-                <div className="overflow-x-auto">
+                <>
+                  {/* 모바일: 카드 리스트 */}
+                  <div className="md:hidden space-y-3">
+                    {filteredTransactions.map((transaction) => {
+                      const displayDate = transaction.transaction_date
+                        ? new Date(transaction.transaction_date).toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' })
+                        : '-'
+                      const balanceAtDate = calculateBalanceAtDate(transaction.transaction_date, transaction.partner)
+                      return (
+                        <div
+                          key={transaction.id}
+                          className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:bg-gray-50/80 active:bg-gray-100 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-3 mb-3">
+                            <div>
+                              <p className="text-xs text-gray-500">{displayDate}</p>
+                              <Badge variant="outline" className="text-xs mt-1">{PARTNER_NAMES[transaction.partner]}</Badge>
+                            </div>
+                            <div className="text-right">
+                              {transaction.transaction_type === 'deposit' ? (
+                                <Badge className="bg-green-100 text-green-800 text-xs">
+                                  <ArrowUpCircle className="w-3 h-3 mr-1 inline" />
+                                  입금
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-red-100 text-red-800 text-xs">
+                                  <ArrowDownCircle className="w-3 h-3 mr-1 inline" />
+                                  출금
+                                </Badge>
+                              )}
+                              <p className={`text-lg font-bold mt-1 ${transaction.transaction_type === 'deposit' ? 'text-green-600' : 'text-red-600'}`}>
+                                {transaction.transaction_type === 'deposit' ? '+' : '-'}
+                                ${transaction.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs text-gray-600 border-t border-gray-100 pt-3">
+                            <span className="text-gray-400">설명</span>
+                            <span className="truncate">{transaction.description || '-'}</span>
+                            <span className="text-gray-400">밸런스</span>
+                            <span className="font-medium text-gray-900">
+                              ${balanceAtDate.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-end gap-1 mt-3 pt-3 border-t border-gray-100">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-10 w-10 p-0 min-h-[44px]"
+                              onClick={() => handleOpenHistoryDialog(transaction.id)}
+                              title="수정 히스토리"
+                            >
+                              <History className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-10 w-10 p-0 min-h-[44px]"
+                              onClick={() => handleEditTransaction(transaction)}
+                              title="수정"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="ghost" size="sm" className="h-10 w-10 p-0 text-red-600 min-h-[44px]" title="삭제">
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>거래 삭제</AlertDialogTitle>
+                                  <AlertDialogDescription>이 거래 내역을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.</AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>취소</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => handleDeleteTransaction(transaction.id)}>삭제</AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {/* 데스크톱: 테이블 */}
+                  <div className="hidden md:block overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow className="h-10">
@@ -979,7 +1068,8 @@ export default function PartnerFundsManagement() {
                       )})}
                     </TableBody>
                   </Table>
-                </div>
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>

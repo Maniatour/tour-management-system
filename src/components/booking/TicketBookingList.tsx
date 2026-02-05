@@ -844,58 +844,61 @@ export default function TicketBookingList() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* 헤더 - 모바일 최적화 */}
-      <div className="flex items-center justify-between px-1 sm:px-6 py-4">
-        <h2 className="text-lg sm:text-2xl font-bold">{t('ticketBookingManagement')}</h2>
-        <div className="flex items-center space-x-2">
+    <div className="space-y-4 sm:space-y-6">
+      {/* 헤더 - 모바일: 세로 배치, 데스크톱: 가로 */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-3 sm:px-6 py-3 sm:py-4">
+        <h2 className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{t('ticketBookingManagement')}</h2>
+        <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0">
           {/* 뷰 전환 버튼 */}
-          <div className="flex bg-gray-100 rounded-lg p-1">
+          <div className="flex bg-gray-100 rounded-lg p-0.5 sm:p-1">
             <button
               onClick={() => setViewMode('card')}
-              className={`p-1.5 rounded-md transition-colors ${
+              className={`p-2 sm:p-1.5 rounded-md transition-colors ${
                 viewMode === 'card'
                   ? 'bg-white text-blue-600 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
+              title="카드 뷰"
             >
-              <Grid size={14} />
+              <Grid size={16} className="sm:w-3.5 sm:h-3.5" />
             </button>
             <button
               onClick={() => setViewMode('calendar')}
-              className={`p-1.5 rounded-md transition-colors ${
+              className={`p-2 sm:p-1.5 rounded-md transition-colors ${
                 viewMode === 'calendar'
                   ? 'bg-white text-blue-600 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
+              title="달력 뷰"
             >
-              <CalendarIcon size={14} />
+              <CalendarIcon size={16} className="sm:w-3.5 sm:h-3.5" />
             </button>
             <button
               onClick={() => setViewMode('table')}
-              className={`p-1.5 rounded-md transition-colors ${
+              className={`p-2 sm:p-1.5 rounded-md transition-colors ${
                 viewMode === 'table'
                   ? 'bg-white text-blue-600 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
+              title="테이블 뷰"
             >
-              <Table size={14} />
+              <Table size={16} className="sm:w-3.5 sm:h-3.5" />
             </button>
           </div>
           <button
             onClick={() => setShowForm(true)}
-            className="px-2 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-xs sm:text-base flex items-center space-x-1"
+            className="inline-flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors flex-shrink-0"
           >
-            <Plus size={14} />
+            <Plus size={16} />
             <span className="hidden sm:inline">{t('addNewBooking')}</span>
             <span className="sm:hidden">{t('add')}</span>
           </button>
         </div>
       </div>
 
-      {/* 필터 - 모바일 최적화 */}
-      <div className="px-1 sm:px-6 py-4">
-        <div className="flex flex-row sm:grid sm:grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-4">
+      {/* 필터 - 모바일: 2열/스택, 데스크톱: 그리드 */}
+      <div className="px-3 sm:px-6 py-3 sm:py-4 border-t border-gray-100">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
           <div className="flex-1 min-w-0">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
               {t('search')}
@@ -960,11 +963,11 @@ export default function TicketBookingList() {
             </div>
           </div>
 
-          <div className="flex-1 min-w-0">
+          <div className="min-w-0 sm:col-span-2 lg:col-span-1">
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
               필터
             </label>
-            <div className="flex space-x-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => {
                   const newValue = !futureEventFilter;
@@ -1007,10 +1010,10 @@ export default function TicketBookingList() {
       </div>
 
       {/* 데이터 표시 영역 */}
-      <div className="px-1 sm:px-6">
+      <div className="px-3 sm:px-6 pb-4">
         {viewMode === 'table' ? (
           <>
-            {/* 상태 설명 */}
+            {/* 상태 설명 - 모바일에서 접기 가능 */}
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3">
               <div className="text-xs font-semibold text-gray-700 mb-2">상태 설명:</div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
@@ -1070,9 +1073,70 @@ export default function TicketBookingList() {
                 </div>
               </div>
             </div>
-            {/* 테이블 뷰 - 모바일 최적화 */}
+            {/* 테이블 뷰 - 모바일: 카드형 리스트, 데스크톱: 테이블 */}
             <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-              <div className="overflow-x-auto">
+              {/* 모바일 카드형 리스트 */}
+              <div className="block sm:hidden space-y-3">
+                {sortedBookings.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500 text-sm">
+                    {searchTerm || statusFilter !== 'all' || dateFilter
+                      ? '검색 조건에 맞는 부킹이 없습니다.'
+                      : '등록된 입장권 부킹이 없습니다.'}
+                  </div>
+                ) : sortedBookings.map((booking) => {
+                  const cancelDueDate = getCancelDueDate(booking);
+                  const isOverdue = cancelDueDate ? new Date(cancelDueDate) < new Date() : false;
+                  return (
+                    <div
+                      key={booking.id}
+                      className="border border-gray-200 rounded-xl p-3 bg-white shadow-sm space-y-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full flex-shrink-0 ${getStatusColor(booking.status)}`}>
+                          {getStatusText(booking.status)}
+                        </span>
+                        <span className="text-xs font-medium text-gray-700 truncate">{booking.company}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                        <span className="text-gray-500">날짜</span>
+                        <span className="font-medium">{booking.check_in_date ? new Date(booking.check_in_date).toISOString().split('T')[0] : '-'}</span>
+                        <span className="text-gray-500">시간</span>
+                        <span className="font-medium">{booking.time?.replace(/:\d{2}$/, '') || '-'}</span>
+                        <span className="text-gray-500">수량</span>
+                        <span className="font-medium">{booking.ea}개</span>
+                        {cancelDueDate && (
+                          <>
+                            <span className="text-gray-500">Cancel Due</span>
+                            <span className={isOverdue ? 'text-red-600 font-semibold' : 'font-medium'}>{cancelDueDate}</span>
+                          </>
+                        )}
+                        <span className="text-gray-500">비용</span>
+                        <span className="font-medium">${booking.expense ?? '-'}</span>
+                        <span className="text-gray-500">제출일</span>
+                        <span className="font-medium">{booking.submit_on ? new Date(booking.submit_on).toISOString().split('T')[0] : '-'}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 pt-2 border-t border-gray-100">
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleEdit(booking); }}
+                          className="px-2 py-1 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700"
+                        >
+                          편집
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleViewHistory(booking.id); }}
+                          className="px-2 py-1 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700"
+                        >
+                          히스토리
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* 데스크톱 테이블 */}
+              <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
@@ -1447,26 +1511,26 @@ export default function TicketBookingList() {
                 const dayNames = t.raw('dayNames');
 
                 return (
-                  <div className="space-y-4">
-                    {/* 달력 헤더 */}
-                    <div className="flex items-center justify-between">
+                  <div className="space-y-3 sm:space-y-4">
+                    {/* 달력 헤더 - 모바일 터치 영역 확대 */}
+                    <div className="flex items-center justify-between gap-2">
                       <button
                         onClick={goToPreviousMonth}
-                        className="p-2 hover:bg-gray-100 rounded-md transition-colors"
+                        className="p-2.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors touch-manipulation"
                         title={t('previousMonth')}
                       >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                         </svg>
                       </button>
                       
-                      <div className="text-center">
-                        <h4 className="text-xl font-semibold text-gray-900">
+                      <div className="text-center min-w-0 flex-1">
+                        <h4 className="text-base sm:text-xl font-semibold text-gray-900 truncate">
                           {currentYear} {monthNames[currentMonth]}
                         </h4>
                         <button
                           onClick={goToToday}
-                          className="text-sm text-blue-600 hover:text-blue-800 mt-1"
+                          className="text-xs sm:text-sm text-blue-600 hover:text-blue-800 mt-0.5 sm:mt-1"
                         >
                           {t('goToToday')}
                         </button>
@@ -1474,26 +1538,26 @@ export default function TicketBookingList() {
                       
                       <button
                         onClick={goToNextMonth}
-                        className="p-2 hover:bg-gray-100 rounded-md transition-colors"
+                        className="p-2.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-colors touch-manipulation"
                         title={t('nextMonth')}
                       >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
                       </button>
                     </div>
 
-                    {/* 요일 헤더 */}
-                    <div className="grid grid-cols-7 gap-1">
+                    {/* 요일 헤더 - 모바일 컴팩트 */}
+                    <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
                       {dayNames.map((day: string) => (
-                        <div key={day} className="p-2 text-center text-sm font-medium text-gray-500 bg-gray-50">
+                        <div key={day} className="py-1 sm:p-2 text-center text-xs sm:text-sm font-medium text-gray-500 bg-gray-50">
                           {day}
                         </div>
                       ))}
                     </div>
 
-                    {/* 달력 그리드 */}
-                    <div className="grid gap-1 grid-cols-7">
+                    {/* 달력 그리드 - 모바일 작은 셀 */}
+                    <div className="grid gap-0.5 sm:gap-1 grid-cols-7">
                       {calendarDays.map((date, index) => {
                         const dateString = date.toISOString().split('T')[0];
                         const isCurrentMonth = date.getMonth() === currentMonth;
@@ -1517,11 +1581,11 @@ export default function TicketBookingList() {
                         return (
                           <div
                             key={index}
-                            className={`min-h-[160px] p-2 border border-gray-200 ${
+                            className={`min-h-[72px] sm:min-h-[100px] lg:min-h-[160px] p-1 sm:p-2 border border-gray-200 ${
                               isCurrentMonth ? 'bg-white' : 'bg-gray-50'
                             } ${isToday ? 'ring-2 ring-blue-500' : ''}`}
                           >
-                            <div className={`text-sm font-medium mb-1 ${
+                            <div className={`text-xs sm:text-sm font-medium mb-0.5 sm:mb-1 ${
                               isCurrentMonth ? 'text-gray-900' : 'text-gray-400'
                             } ${isToday ? 'text-blue-600' : ''}`}>
                               {date.getDate()}
@@ -1533,7 +1597,7 @@ export default function TicketBookingList() {
                                 {dayTours.map((tour, tourIndex) => (
                   <div
                     key={tourIndex}
-                    className="px-1 py-0.5 bg-purple-100 text-purple-800 rounded text-[8px] sm:text-[10px] font-medium cursor-pointer hover:bg-purple-200 transition-colors"
+                    className="px-0.5 sm:px-1 py-0.5 bg-purple-100 text-purple-800 rounded text-[8px] sm:text-[10px] font-medium cursor-pointer hover:bg-purple-200 transition-colors truncate"
                     title={`${getProductName(tour.products)} - ${t('adults')}:${tour.adults}${t('people')}, ${t('children')}:${tour.child}${t('people')}, ${t('infants')}:${tour.infant}${t('people')} (${t('total')} ${tour.total_people}${t('people')}) (Click for details)`}
                     onClick={() => handleTourClick(tour.id)}
                   >
@@ -1610,7 +1674,7 @@ export default function TicketBookingList() {
                                     return (
                                       <div
                                         key={company}
-                                        className={`px-0.5 py-0 rounded truncate ${companyBgColor} text-[8px] sm:text-[12px] cursor-pointer hover:opacity-80`}
+                                        className={`px-0.5 py-0 rounded truncate ${companyBgColor} text-[7px] sm:text-[10px] lg:text-[12px] cursor-pointer hover:opacity-80`}
                                         title={`${company} - ${companyBookings.map(b => `${b.category} (${b.ea}${t('items')})`).join(', ')}`}
                                         onClick={() => handleBookingClick(companyBookings)}
                                       >
@@ -1632,10 +1696,10 @@ export default function TicketBookingList() {
                       })}
                     </div>
 
-                    {/* 범례 */}
-                    <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                      <div className="text-sm font-medium text-gray-700 mb-2">{t('statusLegend')}</div>
-                      <div className="flex flex-wrap gap-2">
+                    {/* 범례 - 모바일 컴팩트 */}
+                    <div className="mt-3 sm:mt-4 p-3 bg-gray-50 rounded-lg">
+                      <div className="text-xs sm:text-sm font-medium text-gray-700 mb-2">{t('statusLegend')}</div>
+                      <div className="flex flex-wrap gap-1.5 sm:gap-2">
                         <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
                           {t('pending')}
                         </span>
@@ -1684,83 +1748,85 @@ export default function TicketBookingList() {
             </div>
           </div>
         ) : (
-          /* 카드뷰 - 모바일 최적화 */
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+          /* 카드뷰 - 모바일 컴팩트 */
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
             {filteredBookings.map((booking) => (
-              <div key={booking.id} className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow">
-                <div className="p-4 sm:p-6">
-                  {/* 카드 헤더 */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-1">
+              <div key={booking.id} className="bg-white rounded-xl sm:rounded-lg shadow-sm sm:shadow-md border border-gray-200 hover:shadow-md sm:hover:shadow-lg transition-shadow">
+                <div className="p-3 sm:p-4 lg:p-6">
+                  {/* 카드 헤더 - 모바일 컴팩트 */}
+                  <div className="flex items-start justify-between gap-2 mb-3 sm:mb-4">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-0.5 sm:mb-1 truncate">
                         {booking.category}
                       </h3>
-                      <p className="text-sm text-gray-600">{booking.company}</p>
-                      <p className="text-xs text-gray-500 mt-1">{booking.reservation_name}</p>
+                      <p className="text-xs sm:text-sm text-gray-600 truncate">{booking.company}</p>
+                      <p className="text-xs text-gray-500 mt-0.5 sm:mt-1 truncate">{booking.reservation_name}</p>
                     </div>
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(booking.status)}`}>
+                    <span className={`inline-flex px-2 py-0.5 sm:py-1 text-xs font-semibold rounded-full flex-shrink-0 ${getStatusColor(booking.status)}`}>
                       {getStatusText(booking.status)}
                     </span>
                   </div>
 
-                  {/* 카드 내용 */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500">제출일</span>
-                      <span className="font-medium">{booking.submit_on}</span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500">시간</span>
-                      <span className="font-medium">{booking.time}</span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500">수량</span>
-                      <span className="font-medium">{booking.ea}개</span>
-                    </div>
-                    
-                    <div className="border-t pt-3">
-                      <div className="flex items-center justify-between text-sm mb-1">
-                        <span className="text-gray-500">단가</span>
-                        <span className="font-medium">${booking.unit_price}</span>
+                  {/* 카드 내용 - 모바일 2열 그리드 */}
+                  <div className="space-y-2 sm:space-y-3">
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:contents text-xs sm:text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-500">제출일</span>
+                        <span className="font-medium truncate">{booking.submit_on}</span>
                       </div>
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-gray-500">총액</span>
-                        <span className="font-medium text-blue-600">${booking.total_price}</span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-500">시간</span>
+                        <span className="font-medium">{booking.time}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-500">수량</span>
+                        <span className="font-medium">{booking.ea}개</span>
+                      </div>
+                    </div>
+                    
+                    <div className="border-t border-gray-100 pt-2 sm:pt-3">
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:flex sm:flex-col sm:gap-1 text-xs sm:text-sm">
+                        <div className="flex justify-between sm:mb-0">
+                          <span className="text-gray-500">단가</span>
+                          <span className="font-medium">${booking.unit_price}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">총액</span>
+                          <span className="font-medium text-blue-600">${booking.total_price}</span>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="border-t pt-3">
-                      <div className="text-sm">
-                        <span className="text-gray-500">결제 방법</span>
-                        <div className="mt-1 font-medium">{getPaymentMethodText(booking.payment_method) || '-'}</div>
+                    <div className="border-t border-gray-100 pt-2 sm:pt-3">
+                      <div className="text-xs sm:text-sm">
+                        <span className="text-gray-500">결제</span>
+                        <div className="mt-0.5 sm:mt-1 font-medium truncate">{getPaymentMethodText(booking.payment_method) || '-'}</div>
                       </div>
-                      <div className="mt-2">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc)}`}>
+                      <div className="mt-1.5 sm:mt-2">
+                        <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc)}`}>
                           {getCCStatusText(booking.cc)}
                         </span>
                       </div>
                     </div>
 
-                    <div className="border-t pt-3">
-                      <div className="text-sm">
+                    <div className="border-t border-gray-100 pt-2 sm:pt-3">
+                      <div className="text-xs sm:text-sm">
                         <span className="text-gray-500">투어 연결</span>
-                        <div className="mt-1">
+                        <div className="mt-0.5 sm:mt-1">
                           {booking.tours ? (
                             <div>
-                              <div className="font-medium">{booking.tours.tour_date}</div>
-                              <div className="text-xs text-gray-500">
+                              <div className="font-medium text-xs sm:text-sm truncate">{booking.tours.tour_date}</div>
+                              <div className="text-xs text-gray-500 truncate">
                                 {getProductName(booking.tours.products)}
                               </div>
-                              <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 mt-1">
+                              <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800 mt-1">
                                 연결됨
                               </span>
                             </div>
                           ) : (
                             <div>
-                              <span className="text-gray-400">투어 미연결</span>
-                              <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800 mt-1">
+                              <span className="text-gray-400 text-xs">투어 미연결</span>
+                              <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-800 mt-1">
                                 미연결
                               </span>
                             </div>
@@ -1770,24 +1836,24 @@ export default function TicketBookingList() {
                     </div>
                   </div>
 
-                  {/* 액션 버튼들 */}
-                  <div className="mt-4 pt-4 border-t">
-                    <div className="flex space-x-2">
+                  {/* 액션 버튼들 - 모바일 터치 친화 */}
+                  <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-gray-200">
+                    <div className="flex gap-2">
                       <button
                         onClick={() => handleEdit(booking)}
-                        className="flex-1 bg-blue-600 text-white py-2 px-3 rounded-md hover:bg-blue-700 text-sm font-medium transition-colors"
+                        className="flex-1 bg-blue-600 text-white py-2 px-2 sm:px-3 rounded-lg hover:bg-blue-700 text-xs sm:text-sm font-medium transition-colors"
                       >
                         편집
                       </button>
                       <button
                         onClick={() => handleViewHistory(booking.id)}
-                        className="flex-1 bg-green-600 text-white py-2 px-3 rounded-md hover:bg-green-700 text-sm font-medium transition-colors"
+                        className="flex-1 bg-green-600 text-white py-2 px-2 sm:px-3 rounded-lg hover:bg-green-700 text-xs sm:text-sm font-medium transition-colors"
                       >
                         히스토리
                       </button>
                       <button
                         onClick={() => handleDelete(booking.id)}
-                        className="flex-1 bg-red-600 text-white py-2 px-3 rounded-md hover:bg-red-700 text-sm font-medium transition-colors"
+                        className="flex-1 bg-red-600 text-white py-2 px-2 sm:px-3 rounded-lg hover:bg-red-700 text-xs sm:text-sm font-medium transition-colors"
                       >
                         삭제
                       </button>

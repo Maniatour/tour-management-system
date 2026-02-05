@@ -556,18 +556,18 @@ export default function VehiclesPage() {
 
   return (
     <div className="space-y-6">
-      {/* 헤더 */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">차량 관리</h1>
-          <p className="mt-1 text-sm text-gray-500">차량 정보와 예약 일정을 관리하세요</p>
+      {/* 헤더 - 모바일에서도 제목과 버튼 한 줄 */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">차량 관리</h1>
+          <p className="mt-1 text-sm text-gray-500 hidden sm:block">차량 정보와 예약 일정을 관리하세요</p>
         </div>
-        <div className="mt-4 sm:mt-0">
+        <div className="flex-shrink-0">
           <button
             onClick={handleAddVehicle}
-            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
           >
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus size={16} />
             차량 추가
           </button>
         </div>
@@ -575,12 +575,12 @@ export default function VehiclesPage() {
 
       {/* 탭과 검색 */}
       <div className="bg-white rounded-lg shadow-sm border">
-        <div className="p-4">
-          {/* 탭 */}
-          <div className="flex space-x-1 mb-4">
+        <div className="p-3 sm:p-4">
+          {/* 탭 - 모바일 가로 스크롤 */}
+          <div className="flex overflow-x-auto gap-1.5 sm:gap-1 mb-3 sm:mb-4 -mx-1 px-1 scrollbar-hide sm:mx-0 sm:px-0">
             <button
               onClick={() => setActiveTab('company')}
-              className={`px-4 py-2 text-sm font-medium rounded-md ${
+              className={`flex-shrink-0 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium rounded-md whitespace-nowrap ${
                 activeTab === 'company'
                   ? 'bg-blue-100 text-blue-700 border border-blue-200'
                   : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
@@ -590,7 +590,7 @@ export default function VehiclesPage() {
             </button>
             <button
               onClick={() => setActiveTab('rental_active')}
-              className={`px-4 py-2 text-sm font-medium rounded-md ${
+              className={`flex-shrink-0 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium rounded-md whitespace-nowrap ${
                 activeTab === 'rental_active'
                   ? 'bg-blue-100 text-blue-700 border border-blue-200'
                   : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
@@ -600,26 +600,26 @@ export default function VehiclesPage() {
             </button>
             <button
               onClick={() => setActiveTab('rental_returned')}
-              className={`px-4 py-2 text-sm font-medium rounded-md ${
+              className={`flex-shrink-0 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium rounded-md whitespace-nowrap ${
                 activeTab === 'rental_returned'
                   ? 'bg-blue-100 text-blue-700 border border-blue-200'
                   : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
               }`}
             >
-              렌터카 (종료) ({vehicles.filter(v => v.vehicle_category === 'rental' && v.rental_status === 'returned').length})
+              렌터카(종료) ({vehicles.filter(v => v.vehicle_category === 'rental' && v.rental_status === 'returned').length})
             </button>
             <button
               onClick={() => {
                 setActiveTab('vehicle_types')
                 setIsVehicleTypeModalOpen(true)
               }}
-              className={`px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 ${
+              className={`flex-shrink-0 px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium rounded-md flex items-center gap-1.5 sm:gap-2 ${
                 activeTab === 'vehicle_types'
                   ? 'bg-blue-100 text-blue-700 border border-blue-200'
                   : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
               }`}
             >
-              <Settings className="w-4 h-4" />
+              <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
               차종 관리
             </button>
           </div>
@@ -632,7 +632,7 @@ export default function VehiclesPage() {
               placeholder="차량 번호, 차종, 렌터카 회사로 검색..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-10 pr-3 sm:pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
             />
           </div>
         </div>

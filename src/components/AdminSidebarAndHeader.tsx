@@ -475,9 +475,9 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
   return (
     <>
       {/* 어드민 헤더 - 페이지 가장 상단에 여백 없이 */}
-      <header className="bg-white shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-[9999]">
-        <div className="w-full px-2 sm:px-4">
-          <div className="flex items-center justify-between h-16">
+      <header className="bg-white shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-[9999]" style={{ height: 'var(--header-height)' }}>
+        <div className="w-full h-full px-2 sm:px-4 flex items-center">
+          <div className="flex items-center justify-between w-full">
             <div className="flex items-center space-x-2 sm:space-x-6">
               <button
                 onClick={() => setSidebarOpen(true)}
@@ -998,11 +998,11 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
         </div>
       </div>
 
-      {/* 메인 콘텐츠 - 헤더 높이만큼 상단 여백 추가, 모바일 푸터를 위한 하단 여백 추가 */}
-      <div className="pt-16 lg:pl-64">
+      {/* 메인 콘텐츠 - 헤더 높이만큼 상단 여백, 모바일 푸터 높이만큼 하단 여백 */}
+      <div className="pt-[var(--header-height)] lg:pl-64">
         {/* 페이지 콘텐츠 */}
-        <main className="py-2 sm:py-4 lg:py-6 pb-20 lg:pb-6">
-          <div className="max-w-none mx-auto px-1 sm:px-2 lg:px-3">
+        <main className="py-2 sm:py-4 lg:py-6 main-safe-area">
+          <div className="max-w-none mx-auto px-2 sm:px-2 lg:px-4">
             {children}
           </div>
         </main>

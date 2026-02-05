@@ -441,129 +441,129 @@ export default function TourCoursesPage() {
   const TreeItem = ({ course, level = 0 }: { course: TourCourse, level?: number }) => {
     const hasChildren = course.children && course.children.length > 0
     const isExpanded = expandedNodes.has(course.id)
-    const indent = level * 20
+    // 모바일 컴팩트: 레벨당 6px + 기본 2px, sm 이상 12px + 4px
+    const indentPx = level * 6 + 2
+    const indentSmPx = level * 12 + 4
 
     return (
       <div className="select-none">
         <div 
-          className={`flex items-center justify-between p-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 ${
+          className={`flex flex-col min-w-0 pr-1 py-1 sm:px-2 sm:py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 tour-course-item-indent ${
             selectedCourse?.id === course.id ? 'bg-blue-50 border-blue-200' : ''
           }`}
-          style={{ paddingLeft: `${indent + 8}px` }}
+          style={{ '--indent-px': indentPx, '--indent-sm-px': indentSmPx } as React.CSSProperties}
           onClick={() => setSelectedCourse(course)}
         >
-          <div className="flex items-center gap-2 flex-1">
+          {/* 제목 줄: 화살표/아이콘 최소 폭, 제목 공간 최대화 */}
+          <div className="flex items-center gap-0.5 sm:gap-1 min-h-[1.5rem] sm:min-h-[1.75rem] flex-shrink-0 flex-nowrap min-w-0">
             {hasChildren ? (
               <button
                 onClick={(e) => {
                   e.stopPropagation()
                   toggleNode(course.id)
                 }}
-                className="p-1 hover:bg-gray-200 rounded"
+                className="p-0.5 -m-0.5 hover:bg-gray-200 rounded flex-shrink-0 touch-manipulation"
               >
                 {isExpanded ? (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 ) : (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 )}
               </button>
             ) : (
-              <div className="w-6" />
+              <div className="w-3 sm:w-4 flex-shrink-0" aria-hidden />
             )}
-            
-            <MapPin className="w-4 h-4 text-gray-400" />
-            <div className="flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="font-medium text-gray-900">
-                  {getCourseDisplayName(course, locale)}
-                </div>
-                {/* 카테고리 뱃지 */}
-                {course.category && (
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getCategoryBadgeColor(course.category)}`}>
-                    {getCategoryDisplayName(course.category, categories ?? undefined, locale)}
-                  </span>
-                )}
-                {/* 가격 설정 방식 뱃지 */}
-                {course.price_type && course.price_type !== 'none' && (
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                    course.price_type === 'per_person' 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-purple-100 text-purple-800'
-                  }`}>
-                    {course.price_type === 'per_person' ? t('pricePerPerson') : t('pricePerVehicle')}
-                  </span>
-                )}
-                {(!course.price_type || course.price_type === 'none') && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
-                    {t('noPrice')}
-                  </span>
-                )}
-                {/* 소요 시간 뱃지 */}
-                {course.duration_hours !== null && course.duration_hours !== undefined && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                    {t('minutes', { count: course.duration_hours })}
-                  </span>
-                )}
-              </div>
-              {getCourseSecondaryName(course, locale) && (
-                <div className="text-sm text-gray-500">
-                  {getCourseSecondaryName(course, locale)}
-                </div>
-              )}
-              {course.location && (
-                <div className="text-xs text-gray-400">
-                  📍 {course.location}
-                </div>
-              )}
+            <MapPin className="w-3 h-3 sm:w-4 sm:h-4 text-gray-400 flex-shrink-0" />
+            <div className="font-medium text-gray-900 text-sm sm:text-base flex-1 min-w-0 truncate" title={getCourseDisplayName(course, locale)}>
+              {getCourseDisplayName(course, locale)}
+            </div>
+            <div className="flex items-center gap-0 flex-shrink-0 ml-0.5" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={(e) => toggleFavorite(course, e)}
+                className={`p-0.5 rounded touch-manipulation ${
+                  course.is_favorite
+                    ? 'text-yellow-500 hover:bg-yellow-50'
+                    : 'text-gray-400 hover:text-yellow-500 hover:bg-yellow-50'
+                }`}
+                title={course.is_favorite ? t('favoriteRemove') : t('favoriteAdd')}
+              >
+                <Star className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${course.is_favorite ? 'fill-current' : ''}`} />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  startEdit(course)
+                }}
+                className="p-0.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded touch-manipulation"
+                title={t('edit')}
+              >
+                <Edit className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  copyCourse(course)
+                }}
+                className="p-0.5 text-gray-400 hover:text-green-500 hover:bg-green-50 rounded touch-manipulation"
+                title={t('copy')}
+              >
+                <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  deleteCourse(course)
+                }}
+                className="p-0.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded touch-manipulation"
+                title={t('delete')}
+              >
+                <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </button>
             </div>
           </div>
-          
-          <div className="flex items-center gap-1">
-            <button
-              onClick={(e) => toggleFavorite(course, e)}
-              className={`p-1 rounded ${
-                course.is_favorite
-                  ? 'text-yellow-500 hover:bg-yellow-50'
-                  : 'text-gray-400 hover:text-yellow-500 hover:bg-yellow-50'
-              }`}
-              title={course.is_favorite ? t('favoriteRemove') : t('favoriteAdd')}
-            >
-              <Star className={`w-4 h-4 ${course.is_favorite ? 'fill-current' : ''}`} />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                startEdit(course)
-              }}
-              className="p-1 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded"
-              title={t('edit')}
-            >
-              <Edit className="w-4 h-4" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                copyCourse(course)
-              }}
-              className="p-1 text-gray-400 hover:text-green-500 hover:bg-green-50 rounded"
-              title={t('copy')}
-            >
-              <Copy className="w-4 h-4" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                deleteCourse(course)
-              }}
-              className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
-              title={t('delete')}
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+
+          {/* 뱃지 · 설명 · 좌표 — 카드 끝까지 이어지게 (전체 너비) */}
+          <div className="flex flex-col gap-0.5 mt-0.5 min-w-0 w-full flex-1 overflow-hidden">
+            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+              {course.category && (
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getCategoryBadgeColor(course.category)}`}>
+                  {getCategoryDisplayName(course.category, categories ?? undefined, locale)}
+                </span>
+              )}
+              {course.price_type && course.price_type !== 'none' && (
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                  course.price_type === 'per_person' 
+                    ? 'bg-green-100 text-green-800' 
+                    : 'bg-purple-100 text-purple-800'
+                }`}>
+                  {course.price_type === 'per_person' ? t('pricePerPerson') : t('pricePerVehicle')}
+                </span>
+              )}
+              {(!course.price_type || course.price_type === 'none') && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                  {t('noPrice')}
+                </span>
+              )}
+              {course.duration_hours !== null && course.duration_hours !== undefined && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                  {t('minutes', { count: course.duration_hours })}
+                </span>
+              )}
+            </div>
+            {getCourseSecondaryName(course, locale) && (
+              <div className="text-xs sm:text-sm text-gray-500 break-words min-w-0 leading-tight">
+                {getCourseSecondaryName(course, locale)}
+              </div>
+            )}
+            {course.location && (
+              <div className="text-[11px] sm:text-xs text-gray-400 break-words min-w-0 leading-tight">
+                📍 {course.location}
+              </div>
+            )}
           </div>
         </div>
         
@@ -595,38 +595,38 @@ export default function TourCoursesPage() {
   }
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
-        <div className="flex gap-2">
+    <div className="py-4 sm:py-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4 sm:mb-6">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
+        <div className="flex flex-wrap gap-2 flex-shrink-0">
           <button
             onClick={createNewCourse}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm font-medium"
           >
-            <Plus className="w-4 h-4" />
+            <Plus size={16} />
             {t('addCourse')}
           </button>
           <button
             onClick={() => setShowHelpModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-500 text-white rounded-md hover:bg-gray-600 text-sm font-medium"
           >
-            <HelpCircle className="w-4 h-4" />
+            <HelpCircle size={16} />
             {t('help')}
           </button>
           <button
             onClick={() => setShowCategoryModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
           >
-            <Settings className="w-4 h-4" />
+            <Settings size={16} />
             {t('categoryManagement')}
           </button>
         </div>
       </div>
 
       {/* 검색 및 필터 */}
-      <div className="mb-6 space-y-4">
-        <div className="flex gap-4">
-          <div className="flex-1">
+      <div className="mb-4 sm:mb-6 space-y-3 sm:space-y-4">
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
+          <div className="flex-1 min-w-0">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <input
@@ -634,43 +634,45 @@ export default function TourCoursesPage() {
                 placeholder={t('searchPlaceholder')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
               />
             </div>
           </div>
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="all">{t('allCategories')}</option>
-            {Array.isArray(categories) && categories.map((category: TourCourseCategory) => (
-              <option key={category.id} value={category.name_ko}>
-                {locale === 'en' ? (category.name_en || category.name_ko) : (category.name_ko || category.name_en)}
-              </option>
-            ))}
-          </select>
-          <select
-            value={difficultyFilter}
-            onChange={(e) => setDifficultyFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="all">{t('allDifficulties')}</option>
-            <option value="easy">{t('difficulty.easy')}</option>
-            <option value="medium">{t('difficulty.medium')}</option>
-            <option value="hard">{t('difficulty.hard')}</option>
-          </select>
+          <div className="flex gap-2 sm:gap-4 flex-shrink-0">
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="flex-1 sm:flex-none min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            >
+              <option value="all">{t('allCategories')}</option>
+              {Array.isArray(categories) && categories.map((category: TourCourseCategory) => (
+                <option key={category.id} value={category.name_ko}>
+                  {locale === 'en' ? (category.name_en || category.name_ko) : (category.name_ko || category.name_en)}
+                </option>
+              ))}
+            </select>
+            <select
+              value={difficultyFilter}
+              onChange={(e) => setDifficultyFilter(e.target.value)}
+              className="flex-1 sm:flex-none min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+            >
+              <option value="all">{t('allDifficulties')}</option>
+              <option value="easy">{t('difficulty.easy')}</option>
+              <option value="medium">{t('difficulty.medium')}</option>
+              <option value="hard">{t('difficulty.hard')}</option>
+            </select>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* 좌측 트리 패널 */}
         <div className="lg:col-span-2">
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-            <div className="p-4 border-b border-gray-200">
+            <div className="p-3 sm:p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">{t('courseList')}</h2>
             </div>
-            <div ref={scrollContainerRef} className="p-4 max-h-[800px] overflow-y-auto">
+            <div ref={scrollContainerRef} className="p-3 sm:p-4 max-h-[800px] overflow-y-auto">
               {hierarchicalCourses.length > 0 ? (
                 <div className="space-y-0">
                   {hierarchicalCourses.map((course) => (
@@ -690,10 +692,10 @@ export default function TourCoursesPage() {
         {/* 우측 상세 패널 */}
         <div className="lg:col-span-1">
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-            <div className="p-4 border-b border-gray-200">
+            <div className="p-3 sm:p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">{t('detailInfo')}</h2>
             </div>
-            <div className="p-4 max-h-[800px] overflow-y-auto">
+            <div className="p-3 sm:p-4 max-h-[800px] overflow-y-auto">
               {selectedCourse ? (
                 <div className="space-y-4">
                   {/* 기본 정보 */}

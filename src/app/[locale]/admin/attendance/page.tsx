@@ -607,10 +607,10 @@ export default function AttendancePage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-[50vh] sm:min-h-screen px-4">
         <div className="text-center">
           <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
-          <p className="text-gray-600">데이터를 불러오는 중...</p>
+          <p className="text-sm sm:text-base text-gray-600">데이터를 불러오는 중...</p>
         </div>
       </div>
     )
@@ -619,11 +619,11 @@ export default function AttendancePage() {
   // 직원 정보가 없는 경우
   if (!authUser?.email) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <User className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">로그인이 필요합니다</h2>
-          <p className="text-gray-600">출퇴근 관리를 위해 먼저 로그인해주세요.</p>
+      <div className="flex items-center justify-center min-h-[50vh] sm:min-h-screen px-4">
+        <div className="text-center max-w-sm">
+          <User className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-4 text-gray-400" />
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">로그인이 필요합니다</h2>
+          <p className="text-sm sm:text-base text-gray-600">출퇴근 관리를 위해 먼저 로그인해주세요.</p>
         </div>
       </div>
     )
@@ -632,14 +632,14 @@ export default function AttendancePage() {
   // 직원 정보를 찾을 수 없는 경우
   if (employeeNotFound) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <User className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">직원 정보를 찾을 수 없습니다</h2>
-          <p className="text-gray-600 mb-4">
+      <div className="flex items-center justify-center min-h-[50vh] sm:min-h-screen px-4">
+        <div className="text-center max-w-sm">
+          <User className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-4 text-gray-400" />
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">직원 정보를 찾을 수 없습니다</h2>
+          <p className="text-sm sm:text-base text-gray-600 mb-4 break-words">
             현재 로그인한 이메일({authUser.email})로 등록된 직원 정보가 없습니다.
           </p>
-          <p className="text-sm text-gray-500">
+          <p className="text-xs sm:text-sm text-gray-500">
             관리자에게 문의하여 직원 등록을 요청해주세요.
           </p>
         </div>
@@ -648,16 +648,16 @@ export default function AttendancePage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 px-2 sm:px-0">
       {/* 페이지 헤더 */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-              <Clock className="w-7 h-7 mr-3 text-blue-600" />
-              출퇴근 관리
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
+              <Clock className="w-6 h-6 sm:w-7 sm:h-7 text-blue-600 shrink-0" />
+              <span className="truncate">출퇴근 관리</span>
             </h1>
-            <p className="text-gray-600 mt-1">
+            <p className="text-gray-600 mt-1 text-sm sm:text-base">
               {isAdmin ? '직원 출퇴근 기록을 관리합니다.' : `${authUser?.name || authUser?.email?.split('@')[0]}님의 출퇴근 기록을 관리합니다.`}
             </p>
             
@@ -671,7 +671,7 @@ export default function AttendancePage() {
                 <select
                   value={selectedEmployee}
                   onChange={(e) => setSelectedEmployee(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full sm:w-auto min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                 >
                   {teamMembers.map((member) => (
                     <option key={member.email} value={member.email}>
@@ -681,96 +681,96 @@ export default function AttendancePage() {
                 </select>
               </div>
             )}
-            <div className="text-sm text-gray-500 mt-1">
+            <div className="text-xs sm:text-sm text-gray-500 mt-1 break-words">
               현재 시간: {new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} (한국) | 
               {new Date().toLocaleString('ko-KR', { timeZone: 'America/Los_Angeles' })} (라스베가스)
             </div>
-            <div className="text-xs text-blue-600 mt-1">
+            <div className="text-xs text-blue-600 mt-1 hidden sm:block">
               💡 하루를 넘나드는 근무 (오후 12시~다음날 오전 1시)를 고려하여 최근 2일간의 미체크아웃 기록을 조회합니다.
             </div>
           </div>
-          <div className="flex space-x-3">
+          <div className="flex flex-wrap gap-2 sm:gap-3 shrink-0">
             {isAdmin && (
               <>
                 <button
                   onClick={() => setIsAddFormOpen(true)}
-                  className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                  className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors min-w-[3rem]"
                 >
-                  <Plus className="w-4 h-4 mr-2" />
-                  기록 추가
+                  <Plus className="w-4 h-4 shrink-0" />
+                  <span className="text-[8px] leading-tight font-medium whitespace-nowrap">기록 추가</span>
                 </button>
                 <button
                   onClick={() => setIsBiweeklyCalculatorOpen(true)}
-                  className="flex items-center px-4 py-2 text-sm font-medium text-white bg-green-600 border border-green-600 rounded-lg hover:bg-green-700 transition-colors"
+                  className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-green-600 border border-green-600 rounded-lg hover:bg-green-700 transition-colors min-w-[3rem]"
                 >
-                  <Calculator className="w-4 h-4 mr-2" />
-                  2주급 계산기
+                  <Calculator className="w-4 h-4 shrink-0" />
+                  <span className="text-[8px] leading-tight font-medium whitespace-nowrap">2주급</span>
                 </button>
                 <button
                   onClick={() => setIsBonusCalculatorOpen(true)}
-                  className="flex items-center px-4 py-2 text-sm font-medium text-white bg-orange-600 border border-orange-600 rounded-lg hover:bg-orange-700 transition-colors"
+                  className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-orange-600 border border-orange-600 rounded-lg hover:bg-orange-700 transition-colors min-w-[3rem]"
                 >
-                  <Calculator className="w-4 h-4 mr-2" />
-                  보너스 계산기
+                  <Calculator className="w-4 h-4 shrink-0" />
+                  <span className="text-[8px] leading-tight font-medium whitespace-nowrap">보너스</span>
                 </button>
                 <button
                   onClick={() => setIsTotalEmployeesModalOpen(true)}
-                  className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                  className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors min-w-[3rem]"
                 >
-                  <Users className="w-4 h-4 mr-2" />
-                  전체 직원 총합
+                  <Users className="w-4 h-4 shrink-0" />
+                  <span className="text-[8px] leading-tight font-medium whitespace-nowrap">전체 총합</span>
                 </button>
               </>
             )}
             {(isAdmin || canViewTipsShare) && (
               <button
                 onClick={() => setIsTipsShareModalOpen(true)}
-                className="flex items-center px-4 py-2 text-sm font-medium text-white bg-purple-600 border border-purple-600 rounded-lg hover:bg-purple-700 transition-colors"
+                className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-purple-600 border border-purple-600 rounded-lg hover:bg-purple-700 transition-colors min-w-[3rem]"
               >
-                <DollarSign className="w-4 h-4 mr-2" />
-                Tips 쉐어
+                <DollarSign className="w-4 h-4 shrink-0" />
+                <span className="text-[8px] leading-tight font-medium whitespace-nowrap">Tips 쉐어</span>
               </button>
             )}
             <button
               onClick={refreshData}
-              className="flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors min-w-[3rem]"
             >
-              <RefreshCw className="w-4 h-4 mr-2" />
-              새로고침
+              <RefreshCw className="w-4 h-4 shrink-0" />
+              <span className="text-[8px] leading-tight font-medium whitespace-nowrap">새로고침</span>
             </button>
           </div>
         </div>
       </div>
 
       {/* 오늘의 출퇴근 상태 */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <Calendar className="w-5 h-5 mr-2 text-green-600" />
-          {isAdmin ? `${teamMembers.find(m => m.email === selectedEmployee)?.name_ko || '선택된 직원'}의 출퇴근 상태` : '오늘의 출퇴근 상태'}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+        <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-4 flex items-center">
+          <Calendar className="w-5 h-5 mr-2 text-green-600 shrink-0" />
+          <span className="truncate">{isAdmin ? `${teamMembers.find(m => m.email === selectedEmployee)?.name_ko || '선택된 직원'}의 출퇴근 상태` : '오늘의 출퇴근 상태'}</span>
         </h2>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="text-center p-4 bg-gray-50 rounded-lg">
-            <div className="text-sm text-gray-600 mb-1">현재 세션</div>
-            <div className="text-lg font-semibold text-gray-900">
+        <div className="grid grid-cols-3 gap-2 sm:gap-4">
+          <div className="text-center p-3 sm:p-4 bg-gray-50 rounded-lg min-w-0">
+            <div className="text-xs sm:text-sm text-gray-600 mb-1">현재 세션</div>
+            <div className="text-sm sm:text-lg font-semibold text-gray-900 truncate">
               {isAdmin ? 
                 (currentSessionForSelectedEmployee ? `${currentSessionForSelectedEmployee.session_number}번째` : '없음') :
                 (currentSession ? `${currentSession.session_number}번째` : '없음')
               }
             </div>
           </div>
-          <div className="text-center p-4 bg-gray-50 rounded-lg">
-            <div className="text-sm text-gray-600 mb-1">출근 시간</div>
-            <div className="text-lg font-semibold text-gray-900">
+          <div className="text-center p-3 sm:p-4 bg-gray-50 rounded-lg min-w-0">
+            <div className="text-xs sm:text-sm text-gray-600 mb-1">출근 시간</div>
+            <div className="text-sm sm:text-lg font-semibold text-gray-900">
               {isAdmin ? 
                 (currentSessionForSelectedEmployee?.check_in_time ? formatTime(currentSessionForSelectedEmployee.check_in_time) : '-') :
                 (currentSession?.check_in_time ? formatTime(currentSession.check_in_time) : '-')
               }
             </div>
           </div>
-          <div className="text-center p-4 bg-gray-50 rounded-lg">
-            <div className="text-sm text-gray-600 mb-1">총 근무 시간</div>
-            <div className="text-lg font-semibold text-gray-900">
+          <div className="text-center p-3 sm:p-4 bg-gray-50 rounded-lg min-w-0">
+            <div className="text-xs sm:text-sm text-gray-600 mb-1">총 근무 시간</div>
+            <div className="text-sm sm:text-lg font-semibold text-gray-900">
               {formatWorkHours(todayRecords.reduce((total, record) => total + (record.work_hours || 0), 0))}
             </div>
           </div>
@@ -778,22 +778,22 @@ export default function AttendancePage() {
 
         {/* 현재 진행 중인 세션 */}
         {(isAdmin ? currentSessionForSelectedEmployee : currentSession) && (
-          <div className="mt-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">현재 진행 중인 세션</h3>
-            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
+          <div className="mt-4 sm:mt-6">
+            <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3">현재 진행 중인 세션</h3>
+            <div className="p-3 sm:p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-4 min-w-0">
                   <div className="text-sm font-medium text-gray-600">
                     {(isAdmin ? currentSessionForSelectedEmployee : currentSession)?.session_number}번째 세션
                   </div>
-                  <div className="text-sm text-gray-900">
-                    출근: {formatTime((isAdmin ? currentSessionForSelectedEmployee?.check_in_time : currentSession?.check_in_time) || null)} (라스베가스 현지시간)
+                  <div className="text-sm text-gray-900 break-words">
+                    출근: {formatTime((isAdmin ? currentSessionForSelectedEmployee?.check_in_time : currentSession?.check_in_time) || null)} (라스베가스)
                   </div>
                   <div className="text-sm text-gray-900">
                     날짜: {(isAdmin ? currentSessionForSelectedEmployee : currentSession)?.date || ''}
                   </div>
                 </div>
-                <div className="px-3 py-1 text-sm bg-yellow-100 text-yellow-800 rounded-full">
+                <div className="px-3 py-1 text-sm bg-yellow-100 text-yellow-800 rounded-full w-fit shrink-0">
                   진행중
                 </div>
               </div>
@@ -803,26 +803,18 @@ export default function AttendancePage() {
 
         {/* 오늘의 출퇴근 기록 목록 */}
         {todayRecords.length > 0 && (
-          <div className="mt-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">오늘의 출퇴근 기록</h3>
+          <div className="mt-4 sm:mt-6">
+            <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3">오늘의 출퇴근 기록</h3>
             <div className="space-y-2">
               {todayRecords.map((record) => (
-                <div key={record.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center space-x-4">
-                    <div className="text-sm font-medium text-gray-600">
-                      {record.session_number}번째
-                    </div>
-                    <div className="text-sm text-gray-900">
-                      출근: {formatTime(record.check_in_time)} (라스베가스)
-                    </div>
-                    <div className="text-sm text-gray-900">
-                      퇴근: {formatTime(record.check_out_time)} (라스베가스)
-                    </div>
-                    <div className="text-sm text-gray-900">
-                      근무: {formatWorkHours(record.work_hours)}
-                    </div>
+                <div key={record.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 sm:items-center sm:gap-4 min-w-0">
+                    <span className="text-sm font-medium text-gray-600">{record.session_number}번째</span>
+                    <span className="text-sm text-gray-900">출근: {formatTime(record.check_in_time)}</span>
+                    <span className="text-sm text-gray-900">퇴근: {formatTime(record.check_out_time)}</span>
+                    <span className="text-sm text-gray-900">근무: {formatWorkHours(record.work_hours)}</span>
                   </div>
-                  <div className={`px-2 py-1 text-xs rounded-full ${
+                  <div className={`px-2 py-1 text-xs rounded-full w-fit ${
                     record.check_out_time 
                       ? 'bg-green-100 text-green-800' 
                       : 'bg-yellow-100 text-yellow-800'
@@ -835,24 +827,22 @@ export default function AttendancePage() {
           </div>
         )}
 
-        <div className="mt-6 flex justify-center space-x-4">
+        <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row justify-center gap-3 sm:gap-4">
           {!currentSession ? (
-            /* 출근 체크인 버튼 (현재 세션이 없을 때만 표시) */
             <button
               onClick={handleCheckInExecute}
               disabled={isCheckingIn}
-              className="flex items-center px-6 py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center justify-center px-5 py-3 sm:px-6 bg-green-600 text-white text-sm sm:text-base font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto"
             >
-              <CheckCircle className="w-5 h-5 mr-2" />
+              <CheckCircle className="w-5 h-5 mr-2 shrink-0" />
               {isCheckingIn ? '체크인 중...' : '출근 체크인'}
             </button>
           ) : (
-            /* 퇴근 체크아웃 버튼 (현재 세션이 있을 때만 표시) */
             <button
               onClick={handleCheckOutExecute}
-              className="flex items-center px-6 py-3 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors"
+              className="flex items-center justify-center px-5 py-3 sm:px-6 bg-red-600 text-white text-sm sm:text-base font-medium rounded-lg hover:bg-red-700 transition-colors w-full sm:w-auto"
             >
-              <XCircle className="w-5 h-5 mr-2" />
+              <XCircle className="w-5 h-5 mr-2 shrink-0" />
               퇴근 체크아웃
             </button>
           )}
@@ -860,37 +850,37 @@ export default function AttendancePage() {
       </div>
 
       {/* 월별 통계 */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <BarChart3 className="w-5 h-5 mr-2 text-blue-600" />
-          {isAdmin ? `${teamMembers.find(m => m.email === selectedEmployee)?.name_ko || '선택된 직원'}의 ${selectedMonth} 월별 근무 통계` : `${selectedMonth} 월별 근무 통계`}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+        <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-4 flex items-center min-w-0">
+          <BarChart3 className="w-5 h-5 mr-2 text-blue-600 shrink-0" />
+          <span className="truncate">{isAdmin ? `${teamMembers.find(m => m.email === selectedEmployee)?.name_ko || '선택된 직원'}의 ${selectedMonth} 월별 근무 통계` : `${selectedMonth} 월별 근무 통계`}</span>
         </h2>
         
         {monthlyStats.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="text-center p-4 bg-blue-50 rounded-lg">
-              <div className="text-2xl font-bold text-blue-600">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+            <div className="text-center p-3 sm:p-4 bg-blue-50 rounded-lg min-w-0">
+              <div className="text-lg sm:text-2xl font-bold text-blue-600">
                 {monthlyStats[0]?.total_work_hours?.toFixed(1) || 0}시간
               </div>
-              <div className="text-sm text-blue-800">총 근무시간</div>
+              <div className="text-xs sm:text-sm text-blue-800">총 근무시간</div>
             </div>
-            <div className="text-center p-4 bg-green-50 rounded-lg">
-              <div className="text-2xl font-bold text-green-600">
+            <div className="text-center p-3 sm:p-4 bg-green-50 rounded-lg min-w-0">
+              <div className="text-lg sm:text-2xl font-bold text-green-600">
                 {monthlyStats[0]?.present_days || 0}일
               </div>
-              <div className="text-sm text-green-800">출근일수</div>
+              <div className="text-xs sm:text-sm text-green-800">출근일수</div>
             </div>
-            <div className="text-center p-4 bg-purple-50 rounded-lg">
-              <div className="text-2xl font-bold text-purple-600">
+            <div className="text-center p-3 sm:p-4 bg-purple-50 rounded-lg min-w-0">
+              <div className="text-lg sm:text-2xl font-bold text-purple-600">
                 {monthlyStats[0]?.first_half_hours?.toFixed(1) || 0}시간
               </div>
-              <div className="text-sm text-purple-800">상반기 (1~15일)</div>
+              <div className="text-xs sm:text-sm text-purple-800">상반기 (1~15일)</div>
             </div>
-            <div className="text-center p-4 bg-orange-50 rounded-lg">
-              <div className="text-2xl font-bold text-orange-600">
+            <div className="text-center p-3 sm:p-4 bg-orange-50 rounded-lg min-w-0">
+              <div className="text-lg sm:text-2xl font-bold text-orange-600">
                 {monthlyStats[0]?.second_half_hours?.toFixed(1) || 0}시간
               </div>
-              <div className="text-sm text-orange-800">하반기 (16일~말일)</div>
+              <div className="text-xs sm:text-sm text-orange-800">하반기 (16일~말일)</div>
             </div>
           </div>
         ) : (
@@ -907,25 +897,25 @@ export default function AttendancePage() {
         )}
       </div>
 
-      {/* 월 선택 */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-            <User className="w-5 h-5 mr-2 text-gray-600" />
+      {/* 월 선택 및 출퇴근 기록 */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+          <h2 className="text-base sm:text-lg font-semibold text-gray-900 flex items-center">
+            <User className="w-5 h-5 mr-2 text-gray-600 shrink-0" />
             출퇴근 기록
           </h2>
           <input
             type="month"
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full sm:w-auto px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
           />
         </div>
 
         {attendanceRecords.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
-            <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-            <p className="text-lg font-medium mb-2">출퇴근 기록이 없습니다</p>
+          <div className="text-center py-6 sm:py-8 text-gray-500">
+            <Calendar className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-4 text-gray-300" />
+            <p className="text-base sm:text-lg font-medium mb-2">출퇴근 기록이 없습니다</p>
             <p className="text-sm mb-2">
               {selectedMonth}월의 출퇴근 기록이 없습니다.
             </p>
@@ -934,91 +924,138 @@ export default function AttendancePage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  {isAdmin && (
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      ID
-                    </th>
-                  )}
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    출근 날짜
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    출근 시간 (라스베가스)
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    퇴근 날짜
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    퇴근 시간 (라스베가스)
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    근무 시간
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    상태
-                  </th>
-                  {canEditAttendance && (
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      작업
-                    </th>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {attendanceRecords.map((record) => (
-                  <tr key={record.id} className={`${getDateBackgroundColor(record.date)} transition-colors`}>
-                    {isAdmin && (
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
-                        {record.id}
-                      </td>
-                    )}
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+          <>
+            {/* 모바일: 카드 리스트 */}
+            <div className="md:hidden space-y-3">
+              {attendanceRecords.map((record) => (
+                <div
+                  key={record.id}
+                  className={`rounded-lg border p-3 sm:p-4 ${getDateBackgroundColor(record.date)} transition-colors`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <span className="text-sm font-medium text-gray-900">
                       {record.check_in_time ? formatDateFromUTC(record.check_in_time) : formatDateWithWeekday(record.date)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatTime(record.check_in_time)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {record.check_out_time ? formatDateFromUTC(record.check_out_time) : '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatTime(record.check_out_time)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatWorkHours(record.work_hours)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        record.status === 'present' 
-                          ? 'bg-green-100 text-green-800'
-                          : record.status === 'late'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {record.status === 'present' ? '정상' : 
-                         record.status === 'late' ? '지각' : '결근'}
-                      </span>
-                    </td>
+                    </span>
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                      record.status === 'present' ? 'bg-green-100 text-green-800' :
+                      record.status === 'late' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
+                    }`}>
+                      {record.status === 'present' ? '정상' : record.status === 'late' ? '지각' : '결근'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-gray-700">
+                    <span>출근</span>
+                    <span>{formatTime(record.check_in_time)}</span>
+                    <span>퇴근</span>
+                    <span>{formatTime(record.check_out_time)}</span>
+                    <span>근무</span>
+                    <span>{formatWorkHours(record.work_hours)}</span>
+                  </div>
+                  {isAdmin && (
+                    <div className="text-xs text-gray-500 font-mono mt-2 truncate" title={record.id}>
+                      ID: {record.id}
+                    </div>
+                  )}
+                  {canEditAttendance && (
+                    <button
+                      onClick={() => handleEditRecord(record)}
+                      className="mt-3 flex items-center text-sm font-medium text-blue-600 hover:text-blue-800"
+                    >
+                      <Edit className="w-4 h-4 mr-1 shrink-0" />
+                      수정
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* 데스크톱: 테이블 */}
+            <div className="hidden md:block overflow-x-auto -mx-4 sm:mx-0">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    {isAdmin && (
+                      <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        ID
+                      </th>
+                    )}
+                    <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      출근 날짜
+                    </th>
+                    <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      출근 시간 (라스베가스)
+                    </th>
+                    <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      퇴근 날짜
+                    </th>
+                    <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      퇴근 시간 (라스베가스)
+                    </th>
+                    <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      근무 시간
+                    </th>
+                    <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      상태
+                    </th>
                     {canEditAttendance && (
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <button
-                          onClick={() => handleEditRecord(record)}
-                          className="text-blue-600 hover:text-blue-900 flex items-center"
-                        >
-                          <Edit className="w-4 h-4 mr-1" />
-                          수정
-                        </button>
-                      </td>
+                      <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        작업
+                      </th>
                     )}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {attendanceRecords.map((record) => (
+                    <tr key={record.id} className={`${getDateBackgroundColor(record.date)} transition-colors`}>
+                      {isAdmin && (
+                        <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                          {record.id}
+                        </td>
+                      )}
+                      <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {record.check_in_time ? formatDateFromUTC(record.check_in_time) : formatDateWithWeekday(record.date)}
+                      </td>
+                      <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {formatTime(record.check_in_time)}
+                      </td>
+                      <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {record.check_out_time ? formatDateFromUTC(record.check_out_time) : '-'}
+                      </td>
+                      <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {formatTime(record.check_out_time)}
+                      </td>
+                      <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {formatWorkHours(record.work_hours)}
+                      </td>
+                      <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          record.status === 'present' 
+                            ? 'bg-green-100 text-green-800'
+                            : record.status === 'late'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {record.status === 'present' ? '정상' : 
+                           record.status === 'late' ? '지각' : '결근'}
+                        </span>
+                      </td>
+                      {canEditAttendance && (
+                        <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <button
+                            onClick={() => handleEditRecord(record)}
+                            className="text-blue-600 hover:text-blue-900 flex items-center"
+                          >
+                            <Edit className="w-4 h-4 mr-1" />
+                            수정
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 

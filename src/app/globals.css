@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 레이아웃 높이·여백 (헤더/푸터 계산용) */
+:root {
+  --header-height: 4rem;   /* 64px, h-16 */
+  --footer-height: 4rem;   /* 64px, 모바일 하단 네비 */
+  --mobile-page-x: 0.5rem; /* 8px, 모바일 좌우 여백 */
+}
+
 /* 모바일 최적화 */
 @layer base {
   html {
@@ -60,6 +67,16 @@
     scroll-behavior: smooth;
   }
   
+  /* 투어 코스 목록: 모바일에서 들여쓰기 최소화, sm 이상에서만 넉넉히 */
+  .tour-course-item-indent {
+    padding-left: calc(var(--indent-px, 2) * 1px);
+  }
+  @media (min-width: 640px) {
+    .tour-course-item-indent {
+      padding-left: calc(var(--indent-sm-px, 4) * 1px);
+    }
+  }
+
   /* 모바일 폼 최적화 */
   .mobile-form {
     display: flex;
@@ -96,6 +113,16 @@
     border-radius: 0.5rem;
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
     border: 1px solid #e5e7eb;
+  }
+
+  /* 메인 콘텐츠: 모바일에서 푸터 높이만큼 하단 여백 */
+  .main-safe-area {
+    padding-bottom: var(--footer-height);
+  }
+  @media (min-width: 1024px) {
+    .main-safe-area {
+      padding-bottom: 1.5rem;
+    }
   }
 }
 

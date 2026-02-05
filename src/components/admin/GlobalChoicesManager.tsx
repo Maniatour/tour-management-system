@@ -736,22 +736,22 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
 
   return (
     <div className="space-y-6">
-      {/* 검색 및 필터 */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+      {/* 검색 및 필터 - 모바일: 2열 그리드, 데스크톱: 한 줄 */}
+      <div className="grid grid-cols-2 sm:flex sm:flex-row gap-2 sm:gap-4 items-stretch">
+        <div className="relative col-span-1 sm:flex-1 min-w-0">
+          <Search className="absolute left-2.5 sm:left-3 top-1/2 transform -translate-y-1/2 text-gray-400 sm:w-5 sm:h-5 w-4 h-4" />
           <input
             type="text"
             placeholder="초이스 템플릿 검색..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full pl-8 sm:pl-10 pr-3 sm:pr-4 py-1.5 sm:py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
         <select
           value={selectedCategory}
           onChange={(e) => setSelectedCategory(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="col-span-1 px-3 sm:px-4 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-0 sm:min-w-[140px]"
         >
           <option value="all">모든 카테고리</option>
           {categories.map(category => (
@@ -762,40 +762,40 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
         </select>
         <button
           onClick={() => setShowWorkflowGuide(true)}
-          className="px-3 py-2 text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 flex items-center space-x-2"
+          className="px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 flex items-center justify-center gap-1 sm:space-x-2 min-w-0"
         >
-          <BookOpen size={16} />
-          <span>워크플로우 가이드</span>
+          <BookOpen className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+          <span className="truncate">워크플로우 가이드</span>
         </button>
         <button
           onClick={() => setAllCardsCollapsed(!allCardsCollapsed)}
-          className="px-3 py-2 text-sm text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2"
+          className="px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-1 sm:space-x-2 min-w-0"
         >
           {allCardsCollapsed ? (
             <>
-              <ChevronDown size={16} />
-              <span>상세보기</span>
+              <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+              <span className="truncate">상세보기</span>
             </>
           ) : (
             <>
-              <ChevronUp size={16} />
-              <span>접어보기</span>
+              <ChevronUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+              <span className="truncate">접어보기</span>
             </>
           )}
         </button>
         <button
           onClick={() => setShowImportChoicesModal(true)}
-          className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
+          className="col-span-1 px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center justify-center gap-1 sm:space-x-2 min-w-0"
         >
-          <Upload size={20} />
-          <span>기존 초이스 가져오기</span>
+          <Upload className="w-3.5 h-3.5 sm:w-5 sm:h-5 flex-shrink-0" />
+          <span className="truncate">기존 초이스 가져오기</span>
         </button>
         <button
           onClick={() => setShowAddGroupModal(true)}
-          className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center space-x-2"
+          className="col-span-1 px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center justify-center gap-1 sm:space-x-2 min-w-0"
         >
-          <Plus size={20} />
-          <span>그룹 추가</span>
+          <Plus className="w-3.5 h-3.5 sm:w-5 sm:h-5 flex-shrink-0" />
+          <span className="truncate">그룹 추가</span>
         </button>
       </div>
 
@@ -811,7 +811,8 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
         }
         
         return (
-        <div key={groupName} className="space-y-4">
+        <div key={groupName} className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+          <div className="p-4 sm:p-5 space-y-4">
           <div className="border-b border-gray-200 pb-3">
             <div className="flex items-start justify-between">
               <div className="flex-1">
@@ -892,23 +893,23 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
                 return (
                   <div 
                     key={template.id} 
-                    className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer max-w-full"
+                    className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer max-w-full min-w-0 overflow-hidden"
                     onClick={() => setEditingTemplate(template)}
                   >
                     {/* 카드 헤더 */}
-                    <div className="p-4 border-b border-gray-100">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                            <span className="text-sm font-semibold text-blue-600">{index + 1}</span>
+                    <div className="p-4 border-b border-gray-100 min-w-0">
+                      <div className="flex items-start justify-between gap-2 min-w-0">
+                        <div className="flex items-center space-x-3 min-w-0 flex-1 overflow-hidden">
+                          <div className="h-6 w-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                            <span className="text-xs font-medium text-blue-600">{index + 1}</span>
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <h4 className="text-sm font-semibold text-gray-900 truncate">
+                          <div className="min-w-0 flex-1 overflow-hidden">
+                            <h4 className="text-sm font-semibold text-gray-900 truncate" title={template.name}>
                               {template.name}
                             </h4>
                           </div>
                         </div>
-                        <div className="flex space-x-1" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex flex-shrink-0 items-center space-x-1" onClick={(e) => e.stopPropagation()}>
                           <div className="flex flex-col space-y-0.5 mr-1">
                             <button
                               onClick={() => handleChangeSortOrder(template.id, 'up')}
@@ -1055,15 +1056,16 @@ export default function GlobalChoicesManager({ }: GlobalChoicesManagerProps) {
                           </span>
                         </div>
 
-                        {/* 정렬순서 표시 */}
-                        <div className="text-xs text-gray-400 text-center pt-1">
-                          순서: {index + 1}
+                        {/* 정렬순서 표시 (최소화) */}
+                        <div className="text-[10px] text-gray-400 text-center pt-0.5">
+                          #{index + 1}
                         </div>
                       </div>
                     )}
                   </div>
                 )
               })}
+          </div>
           </div>
         </div>
         )

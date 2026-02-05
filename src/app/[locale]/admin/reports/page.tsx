@@ -263,7 +263,7 @@ export default function AdminReports({ }: AdminReportsProps) {
       {/* 헤더 */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">종합 통계 리포트</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">종합 통계 리포트</h1>
           <p className="text-sm text-gray-600 mt-1">
             {reportPeriod === 'daily' ? '일별' : 
              reportPeriod === 'yesterday' ? '어제' :

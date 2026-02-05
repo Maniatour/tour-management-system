@@ -9,6 +9,8 @@ interface PricingControlsProps {
   onCancel?: () => void;
   canSave?: boolean;
   batchProgress?: { completed: number; total: number } | null;
+  /** 'preparing' = 데이터 준비 중(초이스 통합 등), 'saving' = 배치/개별 저장 중 */
+  savePhase?: null | 'preparing' | 'saving';
   onDelete?: () => void;
   canDelete?: boolean;
 }
@@ -20,10 +22,12 @@ export const PricingControls = memo(function PricingControls({
   onCancel,
   canSave = true,
   batchProgress,
+  savePhase = null,
   onDelete,
   canDelete = false
 }: PricingControlsProps) {
   const t = useTranslations('products.dynamicPricingPage');
+  const isBusy = saving || savePhase !== null;
 
   const getMessageIcon = () => {
     if (saveMessage.toLowerCase().includes(t('successKeyword').toLowerCase())) {
@@ -47,6 +51,17 @@ export const PricingControls = memo(function PricingControls({
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+      {/* 데이터 준비 중: 저장 버튼 클릭 직후 ~ 규칙 데이터 생성 완료까지 */}
+      {savePhase === 'preparing' && (
+        <div className="mb-4 p-3 rounded-md border border-blue-200 bg-blue-50">
+          <div className="flex items-center space-x-2">
+            <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+            <span className="text-sm font-medium text-blue-700">{t('dataPreparing')}</span>
+          </div>
+          <p className="mt-1 text-xs text-blue-600">{t('preparingChoiceMerge')}</p>
+        </div>
+      )}
+
       {saveMessage && (
         <div className={`mb-4 p-3 rounded-md border ${getMessageColor()}`}>
           <div className="flex items-center space-x-2">
@@ -56,27 +71,36 @@ export const PricingControls = memo(function PricingControls({
         </div>
       )}
 
-      {batchProgress && (
+      {/* 배치 저장 중: 진행 게이지 (데이터 준비 완료 후 바로 표시) */}
+      {(savePhase === 'saving' || batchProgress) && (
         <div className="mb-4 p-3 rounded-md border border-blue-200 bg-blue-50">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-blue-700">
-              {t('batchSaving')}
+              {batchProgress ? t('batchSaving') : t('batchSaveInProgress')}
             </span>
-            <span className="text-sm text-blue-600">
-              {batchProgress.completed}/{batchProgress.total}
-            </span>
+            {batchProgress ? (
+              <span className="text-sm text-blue-600">
+                {batchProgress.completed}/{batchProgress.total}
+              </span>
+            ) : (
+              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+            )}
           </div>
-          <div className="w-full bg-blue-200 rounded-full h-2">
-            <div 
-              className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
-              style={{ 
-                width: `${(batchProgress.completed / batchProgress.total) * 100}%` 
-              }}
-            />
-          </div>
-          <div className="mt-1 text-xs text-blue-600">
-            {Math.round((batchProgress.completed / batchProgress.total) * 100)}% {t('percentComplete')}
-          </div>
+          {batchProgress && (
+            <>
+              <div className="w-full bg-blue-200 rounded-full h-2">
+                <div 
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
+                  style={{ 
+                    width: `${(batchProgress.completed / batchProgress.total) * 100}%` 
+                  }}
+                />
+              </div>
+              <div className="mt-1 text-xs text-blue-600">
+                {Math.round((batchProgress.completed / batchProgress.total) * 100)}% {t('percentComplete')}
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -84,17 +108,17 @@ export const PricingControls = memo(function PricingControls({
         <div className="flex items-center space-x-3">
           <button
             onClick={onSave}
-            disabled={saving || !canSave}
+            disabled={isBusy || !canSave}
             className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
-              saving || !canSave
+              isBusy || !canSave
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                 : 'bg-blue-600 text-white hover:bg-blue-700'
             }`}
           >
-            {saving ? (
+            {isBusy ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span>{t('saveInProgress')}</span>
+                <span>{savePhase === 'preparing' ? t('dataPreparing') : t('saveInProgress')}</span>
               </>
             ) : (
               <>
@@ -107,7 +131,7 @@ export const PricingControls = memo(function PricingControls({
           {onCancel && (
             <button
               onClick={onCancel}
-              disabled={saving}
+              disabled={isBusy}
               className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {t('cancel')}
@@ -117,7 +141,7 @@ export const PricingControls = memo(function PricingControls({
           {onDelete && (
             <button
               onClick={onDelete}
-              disabled={saving || !canDelete}
+              disabled={isBusy || !canDelete}
               className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
                 saving || !canDelete
                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -131,7 +155,7 @@ export const PricingControls = memo(function PricingControls({
         </div>
 
         <div className="text-sm text-gray-500">
-          {saving ? t('savingData') : t('saveHint')}
+          {isBusy ? t('savingData') : t('saveHint')}
         </div>
       </div>
     </div>

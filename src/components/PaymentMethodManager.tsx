@@ -833,14 +833,14 @@ export default function PaymentMethodManager({
   }, [filters.status, filters.method_type, filters.search])
 
   return (
-    <div className="space-y-4">
-      {/* 헤더 */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <CreditCard className="h-6 w-6 text-blue-600" />
-          <h3 className="text-lg font-semibold text-gray-900">결제 방법 관리</h3>
+    <div className="space-y-3 sm:space-y-4">
+      {/* 헤더 - 모바일 컴팩트 */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+          <CreditCard className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600 flex-shrink-0" />
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900 truncate">결제 방법 관리</h3>
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex gap-2 flex-shrink-0">
             <button
               onClick={() => {
                 setShowAddForm(true)
@@ -848,10 +848,10 @@ export default function PaymentMethodManager({
                 resetForm()
                 setShowAllUsers(false)
               }}
-              className="flex items-center space-x-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-1 px-2.5 py-2 sm:px-3 sm:py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
-              <Plus size={16} />
-              <span>결제 방법 추가</span>
+              <Plus size={14} className="sm:w-4 sm:h-4" />
+              <span>추가</span>
             </button>
             <button
               onClick={() => {
@@ -873,23 +873,23 @@ export default function PaymentMethodManager({
                   notes: ''
                 }])
               }}
-              className="flex items-center space-x-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-1 px-2.5 py-2 sm:px-3 sm:py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
             >
-              <Upload size={16} />
-              <span>벌크 업로드</span>
+              <Upload size={14} className="sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">벌크 업로드</span>
             </button>
         </div>
       </div>
 
-      {/* 필터 */}
-      <div className="bg-white border rounded-lg p-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {/* 필터 - 모바일 컴팩트 */}
+      <div className="bg-white border rounded-lg p-3 sm:p-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">상태</label>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">상태</label>
             <select
               value={filters.status}
               onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">전체</option>
               <option value="active">활성</option>
@@ -899,11 +899,11 @@ export default function PaymentMethodManager({
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">유형</label>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">유형</label>
             <select
               value={filters.method_type}
               onChange={(e) => setFilters(prev => ({ ...prev, method_type: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">전체</option>
               <option value="card">카드</option>
@@ -913,23 +913,23 @@ export default function PaymentMethodManager({
               <option value="other">기타</option>
             </select>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">검색</label>
+          <div className="col-span-2">
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">검색</label>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+              <Search className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
               <input
                 type="text"
                 value={filters.search}
                 onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-                placeholder="방법명, ID, 사용자명 검색"
-                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="방법명, ID, 사용자 검색"
+                className="w-full pl-8 sm:pl-10 pr-2 sm:pr-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
           </div>
-          <div className="flex items-end">
+          <div className="col-span-2 md:col-span-1 flex md:items-end">
             <button
               onClick={() => setFilters({ status: '', method_type: '', search: '' })}
-              className="w-full px-3 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
             >
               필터 초기화
             </button>
@@ -1583,35 +1583,34 @@ export default function PaymentMethodManager({
         </DialogContent>
       </Dialog>
 
-      {/* 결제 방법 목록 */}
+      {/* 결제 방법 목록 - 모바일 컴팩트 */}
       {loading ? (
-        <div className="text-center py-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="text-gray-500 mt-2">로딩중...</p>
+        <div className="text-center py-6 sm:py-8">
+          <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="text-gray-500 mt-2 text-sm">로딩중...</p>
         </div>
       ) : methods.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
           {methods.map((method) => (
-            <div key={method.id} className="bg-white border rounded-lg p-3 hover:shadow-md transition-shadow relative">
+            <div key={method.id} className="bg-white border border-gray-200 rounded-xl p-3 sm:p-3 hover:shadow-md transition-shadow relative shadow-sm">
               {/* 상단: 방법명, 상태, 수정/삭제 버튼 */}
-              <div className="flex items-start justify-between mb-2">
+              <div className="flex items-start justify-between gap-2 mb-1.5 sm:mb-2">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center space-x-2 mb-1">
-                    <CreditCard className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                    <span className="font-semibold text-sm text-gray-900 truncate">{method.method}</span>
+                  <div className="flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1">
+                    <CreditCard className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-blue-600 flex-shrink-0" />
+                    <span className="font-semibold text-xs sm:text-sm text-gray-900 truncate">{method.method}</span>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <span className={`inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-xs ${getStatusColor(method.status)}`}>
+                  <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                    <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs ${getStatusColor(method.status)}`}>
                       {getStatusIcon(method.status)}
                       <span>{getStatusText(method.status)}</span>
                     </span>
-                    {/* 상태 토글 스위치 */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
                         handleToggleStatus(method)
                       }}
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 flex-shrink-0 ${
                         method.status === 'active' ? 'bg-green-500' : 'bg-gray-300'
                       }`}
                       title={method.status === 'active' ? '비활성화' : '활성화'}
@@ -1624,99 +1623,85 @@ export default function PaymentMethodManager({
                     </button>
                   </div>
                 </div>
-                <div className="flex items-center space-x-1 ml-2 flex-shrink-0">
-                  {/* 수정 버튼 */}
+                <div className="flex items-center gap-0.5 flex-shrink-0">
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
                       handleEditMethod(method)
                     }}
-                    className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                    className="p-2 sm:p-1 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 flex items-center justify-center text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                     title="수정"
                   >
-                    <Edit size={12} />
+                    <Edit size={16} className="sm:w-3 sm:h-3" />
                   </button>
-                  
-                  {/* 삭제 버튼 */}
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
                       handleDeleteMethod(method.id)
                     }}
-                    className="p-1 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                    className="p-2 sm:p-1 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 flex items-center justify-center text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                     title="삭제"
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={16} className="sm:w-3 sm:h-3" />
                   </button>
                 </div>
               </div>
               
-              {/* ID */}
-              <div className="text-xs text-gray-500 mb-2 truncate" title={method.id}>
+              {/* ID / 사용자 / 유형·한도 - 모바일에서 라벨 없이 한 줄씩 */}
+              <div className="text-xs text-gray-500 mb-1 sm:mb-2 truncate" title={method.id}>
                 {method.id}
               </div>
-              
-              {/* 사용자 정보 */}
-              <div className="flex items-center space-x-1 text-xs text-gray-600 mb-2">
-                <User size={12} />
+              <div className="flex items-center gap-1 text-xs text-gray-600 mb-1 sm:mb-2">
+                <User size={12} className="flex-shrink-0" />
                 <span className="truncate">{teamMembers[method.user_email] || method.user_email || '미할당'}</span>
               </div>
-
-              {/* 유형 및 한도 */}
-              <div className="flex items-center justify-between text-xs text-gray-600 mb-2">
+              <div className="flex items-center justify-between text-xs text-gray-600 mb-1.5 sm:mb-2">
                 <span className="capitalize">{method.method_type}</span>
-                <span className="font-medium">{method.limit_amount ? formatCurrency(method.limit_amount) : '제한없음'}</span>
+                <span className="font-medium truncate ml-1">{method.limit_amount ? formatCurrency(method.limit_amount) : '제한없음'}</span>
               </div>
 
-              {/* 사용량 */}
+              {/* 사용량 바 - 컴팩트 */}
               {method.monthly_limit && (
-                <div className="mb-2">
+                <div className="mb-1.5 sm:mb-2">
                   <div className="flex justify-between text-xs text-gray-600 mb-0.5">
                     <span>월</span>
-                    <span className="text-xs">{Math.round((method.current_month_usage / method.monthly_limit) * 100)}%</span>
+                    <span>{Math.round((method.current_month_usage / method.monthly_limit) * 100)}%</span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-1.5">
+                  <div className="w-full bg-gray-200 rounded-full h-1 sm:h-1.5">
                     <div 
-                      className={`h-1.5 rounded-full ${getUsageColor(getUsagePercentage(method.current_month_usage, method.monthly_limit))}`}
+                      className={`h-1 sm:h-1.5 rounded-full ${getUsageColor(getUsagePercentage(method.current_month_usage, method.monthly_limit))}`}
                       style={{ width: `${getUsagePercentage(method.current_month_usage, method.monthly_limit)}%` }}
                     ></div>
                   </div>
                 </div>
               )}
-              
               {method.daily_limit && (
-                <div className="mb-2">
+                <div className="mb-1.5 sm:mb-2">
                   <div className="flex justify-between text-xs text-gray-600 mb-0.5">
                     <span>일</span>
-                    <span className="text-xs">{Math.round((method.current_day_usage / method.daily_limit) * 100)}%</span>
+                    <span>{Math.round((method.current_day_usage / method.daily_limit) * 100)}%</span>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-1.5">
+                  <div className="w-full bg-gray-200 rounded-full h-1 sm:h-1.5">
                     <div 
-                      className={`h-1.5 rounded-full ${getUsageColor(getUsagePercentage(method.current_day_usage, method.daily_limit))}`}
+                      className={`h-1 sm:h-1.5 rounded-full ${getUsageColor(getUsagePercentage(method.current_day_usage, method.daily_limit))}`}
                       style={{ width: `${getUsagePercentage(method.current_day_usage, method.daily_limit)}%` }}
                     ></div>
                   </div>
                 </div>
               )}
 
-              {/* 카드 정보 (컴팩트) */}
-              {(method.card_number_last4 || method.card_type || method.expiry_date) && (
-                <div className="text-xs text-gray-500 space-y-0.5 pt-2 border-t border-gray-100">
-                  {method.card_number_last4 && (
-                    <div className="truncate">****{method.card_number_last4}</div>
-                  )}
+              {/* 카드 정보 */}
+              {(method.card_number_last4 || method.expiry_date) && (
+                <div className="text-xs text-gray-500 space-y-0.5 pt-1.5 sm:pt-2 border-t border-gray-100">
+                  {method.card_number_last4 && <div className="truncate">****{method.card_number_last4}</div>}
                   {method.expiry_date && (() => {
                     const { month, year } = parseExpiryDate(method.expiry_date)
-                    return month && year ? (
-                      <div>{year}/{month}</div>
-                    ) : null
+                    return month && year ? <div>{year}/{month}</div> : null
                   })()}
                 </div>
               )}
-
-              {/* 메모 (있는 경우만 작게 표시) */}
               {method.notes && (
-                <div className="mt-2 text-xs text-gray-500 truncate" title={method.notes}>
+                <div className="mt-1.5 sm:mt-2 text-xs text-gray-500 truncate" title={method.notes}>
                   💬 {method.notes}
                 </div>
               )}
@@ -1724,8 +1709,8 @@ export default function PaymentMethodManager({
           ))}
         </div>
       ) : (
-        <div className="text-center py-8 text-gray-500">
-          <CreditCard className="h-12 w-12 text-gray-300 mx-auto mb-2" />
+        <div className="text-center py-6 sm:py-8 text-gray-500 text-sm">
+          <CreditCard className="h-10 w-10 sm:h-12 sm:w-12 text-gray-300 mx-auto mb-2" />
           <p>등록된 결제 방법이 없습니다.</p>
         </div>
       )}

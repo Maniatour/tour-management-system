@@ -1168,7 +1168,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
             <ArrowLeft size={24} />
           </Link>
           <div>
-            <h1 className="text-xl sm:text-3xl font-bold text-gray-900">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
               {isNewProduct ? tEdit('newProduct') : tEdit('editProduct')}
               {productInfo && !isNewProduct && (
                 <span className="ml-2 sm:ml-3 text-lg sm:text-xl font-normal text-gray-600">

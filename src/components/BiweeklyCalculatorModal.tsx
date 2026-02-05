@@ -1789,47 +1789,50 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
 
   return (
     <>
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg shadow-xl max-w-7xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+      <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 overflow-y-auto">
+        <div className="bg-white rounded-t-xl sm:rounded-lg shadow-xl max-w-7xl w-full sm:mx-4 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto flex flex-col">
         {/* 헤더 */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <div className="flex items-center">
-            <Calculator className="w-6 h-6 text-blue-600 mr-2" />
-            <h2 className="text-xl font-bold text-gray-900">2주급 계산기</h2>
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10 shrink-0">
+          <div className="flex items-center min-w-0">
+            <Calculator className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 mr-2 shrink-0" />
+            <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">2주급 계산기</h2>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <button
               onClick={handlePrint}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="p-2 text-gray-400 hover:text-gray-600 transition-colors touch-manipulation"
               title="프린트"
+              type="button"
             >
-              <Printer className="w-6 h-6" />
+              <Printer className="w-5 h-5 sm:w-6 sm:h-6" />
             </button>
             <button
               onClick={handleClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="p-2 text-gray-400 hover:text-gray-600 transition-colors touch-manipulation"
+              type="button"
+              aria-label="닫기"
             >
-              <X className="w-6 h-6" />
+              <X className="w-5 h-5 sm:w-6 sm:h-6" />
             </button>
           </div>
         </div>
 
         {/* 내용 */}
-        <div className="p-6">
-          <div className="grid grid-cols-2 gap-8">
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1 min-h-0">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8">
             {/* 왼쪽: 입력 필드들 */}
             <div className="space-y-4">
               {/* 직원 선택 */}
               <div className="space-y-1">
                 <label className="text-sm font-medium text-gray-700 flex items-center">
-                  <User className="w-4 h-4 mr-1" />
+                  <User className="w-4 h-4 mr-1 shrink-0" />
                   직원 선택
                 </label>
-                <div className="flex space-x-2">
+                <div className="flex flex-col sm:flex-row gap-2 sm:space-x-2 sm:gap-0">
                   <select
                     value={selectedEmployee}
                     onChange={handleEmployeeChange}
-                    className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="flex-1 min-w-0 px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="">직원을 선택하세요</option>
                     {teamMembers.map((member) => (
@@ -1838,23 +1841,27 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                       </option>
                     ))}
                   </select>
-                  <button
-                    onClick={setCurrentPeriod}
-                    className="px-2 py-1.5 text-xs font-medium text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700 transition-colors"
-                  >
-                    이번
-                  </button>
-                  <button
-                    onClick={setPreviousPeriod}
-                    className="px-2 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-                  >
-                    지난
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={setCurrentPeriod}
+                      type="button"
+                      className="flex-1 sm:flex-none px-3 py-2 sm:px-2 sm:py-1.5 text-xs font-medium text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700 transition-colors touch-manipulation"
+                    >
+                      이번
+                    </button>
+                    <button
+                      onClick={setPreviousPeriod}
+                      type="button"
+                      className="flex-1 sm:flex-none px-3 py-2 sm:px-2 sm:py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors touch-manipulation"
+                    >
+                      지난
+                    </button>
+                  </div>
                 </div>
               </div>
 
               {/* 날짜 및 시급 입력 */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     <Calendar className="w-4 h-4 inline mr-1" />
@@ -1864,7 +1871,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                     type="date"
                     value={startDate}
                     onChange={(e) => handleDateChange('start', e.target.value)}
-                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
                 <div>
@@ -1876,7 +1883,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                     type="date"
                     value={endDate}
                     onChange={(e) => handleDateChange('end', e.target.value)}
-                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
                 <div>
@@ -1889,7 +1896,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                     value={hourlyRate}
                     onChange={handleHourlyRateChange}
                     placeholder="예: 15.00"
-                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
               </div>
@@ -1897,7 +1904,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
 
             {/* 오른쪽: 계산 결과 */}
             <div className="space-y-2">
-              <div className="bg-gray-50 rounded-md p-3 space-y-2">
+              <div className="bg-gray-50 rounded-md p-3 sm:p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-gray-600">
                     <Clock className="w-3 h-3 inline mr-1" />
@@ -1963,8 +1970,8 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
 
           {/* 출퇴근 기록 테이블 */}
           {attendanceRecords.length > 0 && (
-            <div className="mt-8">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            <div className="mt-6 sm:mt-8">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">
                 출퇴근 기록 ({new Set(attendanceRecords.map(record => {
                   if (!record.check_in_time) return record.date
                   const utcDate = new Date(record.check_in_time)
@@ -1972,7 +1979,36 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   return lasVegasTime.toISOString().split('T')[0]
                 })).size}일, 총 {attendanceRecords.length}회)
               </h3>
-              <div className="overflow-x-auto">
+              {/* 모바일: 카드 리스트 */}
+              <div className="md:hidden space-y-2">
+                {attendanceRecords.map((record) => (
+                  <div key={record.id} className="bg-white border border-gray-200 rounded-lg p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                      <span className="text-sm font-medium text-gray-900">
+                        {getDateFromCheckInTime(record.check_in_time)}
+                      </span>
+                      <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${
+                        record.status === 'present' ? 'bg-green-100 text-green-800' :
+                        record.status === 'late' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
+                      }`}>
+                        {record.status === 'present' ? '정상' : record.status === 'late' ? '지각' : '결근'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600">
+                      <span>출근</span>
+                      <span>{formatTime(record.check_in_time)}</span>
+                      <span>퇴근</span>
+                      <span>{formatTime(record.check_out_time)}</span>
+                      <span>근무</span>
+                      <span>{record.work_hours ? formatWorkHours(record.work_hours) : '-'}</span>
+                      <span>차감 후</span>
+                      <span>{record.work_hours ? formatWorkHours(record.work_hours > 8 ? record.work_hours - 0.5 : record.work_hours) : '-'}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* 데스크톱: 테이블 */}
+              <div className="hidden md:block overflow-x-auto">
                 <table className="min-w-full bg-white border border-gray-200 rounded-lg">
                   <thead className="bg-gray-50">
                     <tr>
@@ -2036,11 +2072,92 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
 
           {/* 투어 Fee 테이블 */}
           {tourFees.length > 0 && (
-            <div className="mt-8">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            <div className="mt-6 sm:mt-8">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4">
                 투어 Fee ({tourFees.length}개 투어)
               </h3>
-              <div className="overflow-x-auto">
+              {/* 모바일: 카드 리스트 */}
+              <div className="md:hidden space-y-3">
+                {tourFees.map((tour) => (
+                  <div key={tour.id} className="bg-white border border-gray-200 rounded-lg p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                      <span className="text-xs text-gray-500">{formatDate(tour.date)}</span>
+                      <span className="text-xs font-medium text-green-600">${formatCurrency(tour.total_fee)}</span>
+                    </div>
+                    <Link
+                      href={`/${locale}/admin/tours/${tour.tour_id}`}
+                      className="text-sm font-medium text-blue-600 hover:underline block mb-3 truncate"
+                    >
+                      {tour.tour_name}
+                    </Link>
+                    <div className="space-y-2">
+                      <div>
+                        <label className="text-[10px] text-gray-500 block mb-0.5">팀 타입</label>
+                        <select
+                          value={tour.team_type || ''}
+                          onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'team_type', e.target.value)}
+                          className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="1guide">1guide</option>
+                          <option value="2guide">2guide</option>
+                          <option value="guide+driver">guide+driver</option>
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-gray-500 block mb-0.5">가이드 Fee</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={tour.guide_fee || 0}
+                            onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'guide_fee', parseFloat(e.target.value) || 0)}
+                            className={`w-full px-2 py-1.5 text-xs border rounded focus:ring-2 focus:ring-blue-500 ${
+                              tour.tour_guide_id === selectedEmployee ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
+                            }`}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-500 block mb-0.5">드라이버 Fee</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={tour.driver_fee || 0}
+                            onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'driver_fee', parseFloat(e.target.value) || 0)}
+                            className={`w-full px-2 py-1.5 text-xs border rounded focus:ring-2 focus:ring-blue-500 ${
+                              tour.assistant_id === selectedEmployee ? 'border-green-500 bg-green-50' : 'border-gray-300'
+                            }`}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-500 block mb-0.5">Prepaid Tips</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={tour.prepaid_tips || 0}
+                            onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'prepaid_tips', parseFloat(e.target.value) || 0)}
+                            className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-500 block mb-0.5">Personal Car</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={tour.personal_car || 0}
+                            onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'personal_car', parseFloat(e.target.value) || 0)}
+                            className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <div className="text-right text-sm font-bold text-green-600 pt-2">
+                  총합: ${formatCurrency(tourFees.reduce((sum, tour) => sum + tour.total_fee, 0))}
+                </div>
+              </div>
+              {/* 데스크톱: 테이블 */}
+              <div className="hidden md:block overflow-x-auto">
                 <table className="min-w-full bg-white border border-gray-200 rounded-lg">
                   <thead className="bg-gray-50">
                     <tr>
@@ -2159,9 +2276,9 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               </div>
               
               {/* 소계 표시 */}
-              <div className="mt-4 bg-gray-50 rounded-lg p-4">
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="text-center">
+              <div className="mt-4 bg-gray-50 rounded-lg p-3 sm:p-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                  <div className="text-center p-2">
                     <div className="text-xs font-medium text-gray-600 mb-1">가이드 Fee 소계</div>
                     <div className="text-sm font-bold text-purple-600">
                       ${formatCurrency(tourFees.reduce((sum, tour) => {
@@ -2177,13 +2294,13 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                       }, 0))}
                     </div>
                   </div>
-                  <div className="text-center">
+                  <div className="text-center p-2">
                     <div className="text-xs font-medium text-gray-600 mb-1">Prepaid Tips 소계</div>
                     <div className="text-sm font-bold text-pink-600">
                       ${formatCurrency(tourFees.reduce((sum, tour) => sum + (tour.prepaid_tips || 0), 0))}
                     </div>
                   </div>
-                  <div className="text-center">
+                  <div className="text-center p-2">
                     <div className="text-xs font-medium text-gray-600 mb-1">Personal Car 소계</div>
                     <div className="text-sm font-bold text-orange-600">
                       ${formatCurrency(tourFees.reduce((sum, tour) => sum + (tour.personal_car || 0), 0))}
@@ -2200,9 +2317,9 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               <button
                 onClick={handlePayment}
                 disabled={isGeneratingPDF || totalPay === 0}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 text-sm font-medium"
+                className="w-full sm:w-auto px-4 py-3 sm:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm font-medium touch-manipulation"
               >
-                <CreditCard className="w-4 h-4" />
+                <CreditCard className="w-4 h-4 shrink-0" />
                 {isGeneratingPDF ? 'PDF 생성 중...' : '지불'}
               </button>
             </div>
@@ -2215,23 +2332,25 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
 
     {/* 회사 지출 추가 모달 */}
     {showPaymentModal && paymentData && (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
-        <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-          <div className="flex items-center justify-between p-6 border-b border-gray-200">
-            <h2 className="text-xl font-bold text-gray-900">회사 지출 추가</h2>
+      <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-[60] p-0 sm:p-4 overflow-y-auto">
+        <div className="bg-white rounded-t-xl sm:rounded-lg shadow-xl max-w-2xl w-full sm:mx-4 max-h-[90vh] overflow-y-auto flex flex-col">
+          <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
+            <h2 className="text-lg sm:text-xl font-bold text-gray-900">회사 지출 추가</h2>
             <button
               onClick={() => {
                 setShowPaymentModal(false)
                 setPaymentData(null)
               }}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="p-2 text-gray-400 hover:text-gray-600 transition-colors touch-manipulation"
+              type="button"
+              aria-label="닫기"
             >
-              <X className="w-6 h-6" />
+              <X className="w-5 h-5 sm:w-6 sm:h-6" />
             </button>
           </div>
 
-          <div className="p-6 space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+          <div className="p-4 sm:p-6 space-y-4 overflow-y-auto">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Paid To *
@@ -2271,7 +2390,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Amount *
@@ -2329,19 +2448,21 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               )}
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t">
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 pt-4 border-t">
               <button
                 onClick={() => {
                   setShowPaymentModal(false)
                   setPaymentData(null)
                 }}
-                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+                type="button"
+                className="px-4 py-3 sm:py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors touch-manipulation"
               >
                 취소
               </button>
               <button
                 onClick={handleSaveCompanyExpense}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                type="button"
+                className="px-4 py-3 sm:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors touch-manipulation"
               >
                 저장
               </button>

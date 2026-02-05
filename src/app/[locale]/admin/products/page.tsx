@@ -798,11 +798,11 @@ export default function AdminProducts({ params: _params }: AdminProductsProps) {
   if (products.length === 0 && !loading) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="text-xl font-bold text-gray-900">{t('title')}</h1>
           <Link
             href={`/${locale}/admin/products/new`}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            className="bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-blue-700"
           >
             {t('addProduct')}
           </Link>
@@ -821,7 +821,7 @@ export default function AdminProducts({ params: _params }: AdminProductsProps) {
           <div className="space-y-2">
             <button
               onClick={fetchProducts}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+              className="bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-blue-700"
             >
               {t('retry')}
             </button>
@@ -837,26 +837,26 @@ export default function AdminProducts({ params: _params }: AdminProductsProps) {
   return (
     <div className="space-y-6">
       {/* 페이지 헤더 */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">{t('pageTitle')}</h1>
-          <p className="mt-2 text-gray-600">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('pageTitle')}</h1>
+          <p className="mt-1 text-sm text-gray-600">
             {t('pageDescription')}
           </p>
         </div>
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <button
             onClick={() => setIsFavoriteOrderModalOpen(true)}
-            className="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600 flex items-center space-x-2"
+            className="bg-yellow-500 text-white px-3 py-1.5 rounded-md hover:bg-yellow-600 flex items-center gap-1.5 text-sm font-medium"
           >
-            <Star size={20} />
+            <Star size={16} />
             <span>{t('favoriteOrder')}</span>
           </button>
           <Link
             href={`/${locale}/admin/products/new`}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+            className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium"
           >
-            <Plus size={20} />
+            <Plus size={16} />
             <span>{t('addProduct')}</span>
           </Link>
         </div>
@@ -966,73 +966,76 @@ export default function AdminProducts({ params: _params }: AdminProductsProps) {
                       </div>
                     </div>
 
-      {/* 결과 요약 및 뷰 전환 */}
-      <div className="flex items-center justify-between text-sm text-gray-600">
-        <span>
-          {t('totalProducts', { count: filteredProducts.length })}
-          {selectedCategory !== 'all' && ` (${categories.find(c => c.value === selectedCategory)?.label})`}
-          {selectedSubCategory !== 'all' && ` (${subCategories.find(c => c.value === selectedSubCategory)?.label})`}
-          {selectedStatus !== 'all' && (() => {
-            const s = statusCounts.find(s => s.value === selectedStatus)
-            return s ? ` (${s.labelKey === 'all' ? t('all') : t(`status.${s.labelKey}`)})` : ''
-          })()}
-        </span>
-        <div className="flex items-center space-x-4">
-          {searchTerm && (
-            <span>&ldquo;<strong>{searchTerm}</strong>&rdquo; {t('searchResults')}</span>
-          )}
-          {(searchTerm || selectedCategory !== 'all' || selectedSubCategory !== 'all' || selectedStatus !== 'all') && (
-            <button
-              onClick={clearFilters}
-              className="text-blue-600 hover:text-blue-800 underline"
-            >
-              {t('clearFilters')}
-            </button>
-          )}
-          {/* 뷰 전환 버튼 */}
-          <div className="flex items-center space-x-2">
-            {viewMode === 'card' && (
+      {/* 결과 요약 및 뷰 전환 - 모바일 2줄 정리 */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-sm text-gray-600">
+        {/* 1줄: 총 N개 상품 + 필터 초기화 */}
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <span className="min-w-0 truncate">
+            {t('totalProducts', { count: filteredProducts.length })}
+            {selectedCategory !== 'all' && ` (${categories.find(c => c.value === selectedCategory)?.label})`}
+            {selectedSubCategory !== 'all' && ` (${subCategories.find(c => c.value === selectedSubCategory)?.label})`}
+            {selectedStatus !== 'all' && (() => {
+              const s = statusCounts.find(s => s.value === selectedStatus)
+              return s ? ` (${s.labelKey === 'all' ? t('all') : t(`status.${s.labelKey}`)})` : ''
+            })()}
+          </span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {searchTerm && (
+              <span className="hidden sm:inline">&ldquo;<strong>{searchTerm}</strong>&rdquo; {t('searchResults')}</span>
+            )}
+            {(searchTerm || selectedCategory !== 'all' || selectedSubCategory !== 'all' || selectedStatus !== 'all') && (
               <button
-                onClick={() => setAllCardsCollapsed(!allCardsCollapsed)}
-                className="px-3 py-1.5 text-sm text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2"
+                onClick={clearFilters}
+                className="text-blue-600 hover:text-blue-800 underline whitespace-nowrap"
               >
-                {allCardsCollapsed ? (
-                  <>
-                    <ChevronDown size={16} />
-                    <span>{t('expandAll')}</span>
-                  </>
-                ) : (
-                  <>
-                    <ChevronUp size={16} />
-                    <span>{t('collapseAll')}</span>
-                  </>
-                )}
+                {t('clearFilters')}
               </button>
             )}
-            <div className="flex items-center space-x-2 border border-gray-300 rounded-lg p-1">
-              <button
-                onClick={() => setViewMode('card')}
-                className={`p-1.5 rounded transition-colors ${
-                  viewMode === 'card'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-600 hover:bg-gray-100'
-                }`}
-                title={t('cardView')}
-              >
-                <Grid3x3 size={18} />
-              </button>
-              <button
-                onClick={() => setViewMode('table')}
-                className={`p-1.5 rounded transition-colors ${
-                  viewMode === 'table'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-600 hover:bg-gray-100'
-                }`}
-                title={t('tableView')}
-              >
-                <List size={18} />
-              </button>
-            </div>
+          </div>
+        </div>
+        {/* 2줄: 접어보기/펼쳐보기 + 카드/테이블 뷰 전환 */}
+        <div className="flex items-center justify-between gap-2 sm:justify-end">
+          {viewMode === 'card' && (
+            <button
+              onClick={() => setAllCardsCollapsed(!allCardsCollapsed)}
+              className="px-3 py-1.5 text-sm text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2"
+            >
+              {allCardsCollapsed ? (
+                <>
+                  <ChevronDown size={16} />
+                  <span>{t('expandAll')}</span>
+                </>
+              ) : (
+                <>
+                  <ChevronUp size={16} />
+                  <span>{t('collapseAll')}</span>
+                </>
+              )}
+            </button>
+          )}
+          <div className="flex items-center space-x-2 border border-gray-300 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('card')}
+              className={`p-1.5 rounded transition-colors ${
+                viewMode === 'card'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+              title={t('cardView')}
+            >
+              <Grid3x3 size={18} />
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={`p-1.5 rounded transition-colors ${
+                viewMode === 'table'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+              title={t('tableView')}
+            >
+              <List size={18} />
+            </button>
           </div>
         </div>
       </div>

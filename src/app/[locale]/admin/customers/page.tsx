@@ -1314,15 +1314,13 @@ export default function AdminCustomers() {
   return (
     <div className="space-y-6">
       {/* 페이지 헤더 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl md:text-3xl font-bold text-gray-900">{t('title')}</h1>
-        </div>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
         <button
           onClick={openForm}
-          className="bg-blue-600 text-white px-2 py-1.5 md:px-4 md:py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-1 md:space-x-2 text-sm md:text-base"
+          className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium flex-shrink-0"
         >
-          <Plus size={16} className="md:w-5 md:h-5" />
+          <Plus size={16} />
           <span className="hidden sm:inline">{t('addCustomer')}</span>
           <span className="sm:hidden">추가</span>
         </button>

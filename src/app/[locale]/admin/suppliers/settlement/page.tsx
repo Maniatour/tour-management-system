@@ -205,8 +205,8 @@ export default function SettlementPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-lg">Loading...</div>
+      <div className="flex items-center justify-center min-h-[200px] sm:h-64 p-4">
+        <div className="text-sm sm:text-lg text-gray-500">불러오는 중...</div>
       </div>
     );
   }
@@ -216,63 +216,59 @@ export default function SettlementPage() {
   const totalPaidAmount = settlementSummary.reduce((sum, s) => sum + s.paid_amount, 0);
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">공급업체 정산 관리</h1>
+    <div className="p-3 sm:p-4 lg:p-6">
+      <div className="mb-4 sm:mb-6">
+        <h1 className="text-lg sm:text-2xl font-bold text-gray-900">공급업체 정산 관리</h1>
       </div>
 
-      {/* 전체 요약 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-blue-100 rounded-full">
-              <DollarSign className="w-6 h-6 text-blue-600" />
+      {/* 전체 요약 - 모바일 컴팩트 */}
+      <div className="grid grid-cols-3 gap-2 sm:gap-4 md:gap-6 mb-4 sm:mb-6 lg:mb-8">
+        <div className="bg-white rounded-lg shadow-md p-3 sm:p-4 lg:p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+            <div className="p-1.5 sm:p-2 lg:p-3 bg-blue-100 rounded-full w-8 h-8 sm:w-auto sm:h-auto flex items-center justify-center">
+              <DollarSign className="w-4 h-4 sm:w-6 sm:h-6 text-blue-600" />
             </div>
-            <div>
-              <p className="text-sm text-gray-600">총 지급액</p>
-              <p className="text-2xl font-bold text-gray-900">${totalPaidAmount.toLocaleString()}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-yellow-100 rounded-full">
-              <Clock className="w-6 h-6 text-yellow-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">미지급액</p>
-              <p className="text-2xl font-bold text-gray-900">${totalPendingAmount.toLocaleString()}</p>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-600 truncate">총 지급액</p>
+              <p className="text-base sm:text-2xl font-bold text-gray-900 truncate">${totalPaidAmount.toLocaleString()}</p>
             </div>
           </div>
         </div>
-
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-green-100 rounded-full">
-              <Calendar className="w-6 h-6 text-green-600" />
+        <div className="bg-white rounded-lg shadow-md p-3 sm:p-4 lg:p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+            <div className="p-1.5 sm:p-2 lg:p-3 bg-yellow-100 rounded-full w-8 h-8 sm:w-auto sm:h-auto flex items-center justify-center">
+              <Clock className="w-4 h-4 sm:w-6 sm:h-6 text-yellow-600" />
             </div>
-            <div>
-              <p className="text-sm text-gray-600">총 구매 건수</p>
-              <p className="text-2xl font-bold text-gray-900">{purchases.length}건</p>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-600 truncate">미지급액</p>
+              <p className="text-base sm:text-2xl font-bold text-gray-900 truncate">${totalPendingAmount.toLocaleString()}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-md p-3 sm:p-4 lg:p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+            <div className="p-1.5 sm:p-2 lg:p-3 bg-green-100 rounded-full w-8 h-8 sm:w-auto sm:h-auto flex items-center justify-center">
+              <Calendar className="w-4 h-4 sm:w-6 sm:h-6 text-green-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs sm:text-sm text-gray-600 truncate">구매 건수</p>
+              <p className="text-base sm:text-2xl font-bold text-gray-900">{purchases.length}건</p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* 필터 */}
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* 필터 - 모바일 컴팩트 */}
+      <div className="bg-white rounded-lg shadow-md p-3 sm:p-4 lg:p-6 mb-4 sm:mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              공급업체 선택
-            </label>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1 sm:mb-2">공급업체</label>
             <select
               value={selectedSupplier || ''}
               onChange={(e) => setSelectedSupplier(e.target.value || null)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">전체 공급업체</option>
+              <option value="">전체</option>
               {suppliers.map(supplier => (
                 <option key={supplier.id} value={supplier.id}>
                   {supplier.name}
@@ -280,37 +276,55 @@ export default function SettlementPage() {
               ))}
             </select>
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              시작 날짜
-            </label>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1 sm:mb-2">시작일</label>
             <input
               type="date"
               value={dateRange.start}
               onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              종료 날짜
-            </label>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1 sm:mb-2">종료일</label>
             <input
               type="date"
               value={dateRange.end}
               onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
         </div>
       </div>
 
       {/* 공급업체별 요약 */}
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">공급업체별 정산 요약</h2>
-        <div className="overflow-x-auto">
+      <div className="bg-white rounded-lg shadow-md p-3 sm:p-4 lg:p-6 mb-4 sm:mb-6">
+        <h2 className="text-base sm:text-xl font-bold text-gray-900 mb-3 sm:mb-4">공급업체별 정산 요약</h2>
+
+        {/* 모바일: 카드 리스트 */}
+        <div className="md:hidden space-y-2">
+          {settlementSummary.map((summary) => (
+            <div
+              key={summary.supplier_id}
+              className="border border-gray-200 rounded-lg p-3 space-y-2"
+            >
+              <p className="font-medium text-gray-900 truncate text-sm">{summary.supplier_name}</p>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs sm:text-sm">
+                <span className="text-gray-500">총 구매액</span>
+                <span className="text-right font-medium">${summary.total_amount.toLocaleString()}</span>
+                <span className="text-gray-500">지급완료</span>
+                <span className="text-right text-green-600">${summary.paid_amount.toLocaleString()}</span>
+                <span className="text-gray-500">미지급</span>
+                <span className="text-right text-yellow-600">${summary.pending_amount.toLocaleString()}</span>
+                <span className="text-gray-500">건수</span>
+                <span className="text-right text-gray-600">{summary.purchase_count}건</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* 데스크톱: 테이블 */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-200">
@@ -347,9 +361,68 @@ export default function SettlementPage() {
       </div>
 
       {/* 구매 기록 상세 */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">구매 기록 상세</h2>
-        <div className="overflow-x-auto">
+      <div className="bg-white rounded-lg shadow-md p-3 sm:p-4 lg:p-6">
+        <h2 className="text-base sm:text-xl font-bold text-gray-900 mb-3 sm:mb-4">구매 기록 상세</h2>
+
+        {/* 모바일: 카드 리스트 */}
+        <div className="md:hidden space-y-3">
+          {filteredPurchases.map((purchase) => {
+            const supplier = suppliers.find(s => s.id === purchase.supplier_id);
+            return (
+              <div
+                key={purchase.id}
+                className="border border-gray-200 rounded-lg p-3 space-y-2"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-gray-900 text-sm truncate">
+                      {purchase.supplier_products?.ticket_name || '알 수 없음'}
+                      {purchase.is_season_price && (
+                        <span className="ml-1 text-xs bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded">시즌</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">{supplier?.name || '알 수 없음'}</p>
+                  </div>
+                  <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${getStatusColor(purchase.payment_status)}`}>
+                    {getStatusIcon(purchase.payment_status)}
+                    {getStatusText(purchase.payment_status)}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs text-gray-600">
+                  <span>구매일</span>
+                  <span className="text-right">{new Date(purchase.purchase_date).toLocaleDateString()}</span>
+                  <span>수량 / 단가</span>
+                  <span className="text-right">{purchase.quantity}개 × ${purchase.unit_price.toLocaleString()}</span>
+                  <span>총액</span>
+                  <span className="text-right font-medium text-gray-900">${purchase.total_amount.toLocaleString()}</span>
+                </div>
+                {(purchase.payment_status === 'pending' || purchase.payment_status === 'paid') && (
+                  <div className="pt-1 border-t border-gray-100">
+                    {purchase.payment_status === 'pending' && (
+                      <button
+                        onClick={() => handlePaymentStatusUpdate(purchase.id, 'paid')}
+                        className="w-full py-1.5 text-green-600 hover:text-green-800 text-xs font-medium"
+                      >
+                        지급완료
+                      </button>
+                    )}
+                    {purchase.payment_status === 'paid' && (
+                      <button
+                        onClick={() => handlePaymentStatusUpdate(purchase.id, 'pending')}
+                        className="w-full py-1.5 text-yellow-600 hover:text-yellow-800 text-xs font-medium"
+                      >
+                        미지급으로 변경
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 데스크톱: 테이블 */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-200">
@@ -423,7 +496,7 @@ export default function SettlementPage() {
         </div>
 
         {filteredPurchases.length === 0 && (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-6 sm:py-8 text-gray-500 text-sm">
             선택한 조건에 맞는 구매 기록이 없습니다.
           </div>
         )}

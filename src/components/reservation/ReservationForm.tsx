@@ -3505,21 +3505,46 @@ export default function ReservationForm({
   const isModal = layout !== 'page'
 
   return (
-    <div className={isModal ? "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4" : "w-full"}>
+    <div className={isModal ? "fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4 max-lg:items-stretch max-lg:p-0" : "w-full"}>
       <div className={isModal 
-        ? "bg-white rounded-lg p-2 sm:p-4 w-[90vw] max-h-[95vh] sm:max-h-[90vh] overflow-y-auto"
+        ? "bg-white rounded-none sm:rounded-lg p-0 sm:p-4 w-full max-w-full h-full max-h-full max-lg:min-h-[100dvh] max-lg:flex max-lg:flex-col max-lg:overflow-hidden sm:w-[90vw] sm:max-h-[90vh] lg:block lg:overflow-y-auto"
         : "bg-white rounded-lg p-2 sm:p-4 w-full"}
       >
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-2 space-y-3 sm:space-y-0">
-          <h2 className="text-sm sm:text-base font-semibold">
-            {reservation ? t('form.editTitle') : t('form.title')}
-            {reservation && (
-              <span className="ml-2 text-xs font-normal text-gray-500">
-                (ID: {reservation.id})
-              </span>
-            )}
-          </h2>
-          <div className="w-full sm:w-auto flex items-end space-x-2">
+        {/* 헤더: 모바일에서 스티키, 데스크톱 기존 */}
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center flex-shrink-0 p-3 sm:p-0 sm:mb-2 sm:space-y-0 space-y-3 border-b border-gray-200 max-lg:bg-white max-lg:sticky max-lg:top-0 max-lg:z-10 max-lg:shadow-sm">
+          <div className="flex items-center justify-between gap-2 min-w-0">
+            <h2 className="text-base sm:text-base font-semibold text-gray-900 truncate">
+              {reservation ? t('form.editTitle') : t('form.title')}
+              {reservation && (
+                <span className="ml-2 text-xs font-normal text-gray-500 hidden sm:inline">
+                  (ID: {reservation.id})
+                </span>
+              )}
+            </h2>
+            <div className="flex items-center gap-2 flex-shrink-0 sm:hidden">
+              <label className="sr-only" htmlFor="reservation-status-mobile">{t('form.status')}</label>
+              <select
+                id="reservation-status-mobile"
+                value={formData.status}
+                onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as 'pending' | 'confirmed' | 'completed' | 'cancelled' }))}
+                className="px-2 py-1.5 border border-gray-300 rounded-lg text-xs"
+              >
+                <option value="pending">{t('status.pending')}</option>
+                <option value="confirmed">{t('status.confirmed')}</option>
+                <option value="completed">{t('status.completed')}</option>
+                <option value="cancelled">{t('status.cancelled')}</option>
+              </select>
+              <button
+                type="button"
+                onClick={onCancel}
+                className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+                aria-label="닫기"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+          <div className="hidden sm:flex w-full sm:w-auto items-end space-x-2">
             <div className="flex-1 sm:flex-none">
               <label className="block text-xs font-medium text-gray-700 mb-1">{t('form.status')}</label>
               <select
@@ -3553,15 +3578,18 @@ export default function ReservationForm({
             </button>
           </div>
         </div>
-        
-        
-        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
-          {/* 메인 레이아웃 - 모바일 최적화 */}
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 lg:h-[940px]">
-            {/* 1열: 고객 정보 수정 - 모바일에서는 전체 너비 */}
-            <div id="customer-section" className="col-span-1 lg:col-span-1 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 lg:h-[940px]">
+
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 max-lg:flex-1 lg:block">
+          {/* 모바일: 단일 열 순서 - 고객 → 예약 정보 → 상품 → 채널 → 가격 / 데스크톱: 기존 스크롤 */}
+          <div className="flex-1 overflow-y-auto p-3 sm:p-0 sm:space-y-6 min-h-0 max-lg:flex-1 max-lg:min-h-0 lg:flex-none lg:min-h-0">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4 lg:gap-4 lg:h-[940px] lg:grid-rows-[1fr_auto_auto]">
+            {/* 1. 고객 정보 */}
+            <div id="customer-section" className="space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 lg:col-span-1 lg:row-span-1 lg:h-[940px] bg-gray-50/50 max-lg:order-1">
               <div>
-                <h3 className="text-sm font-medium text-gray-900 mb-2">고객 정보</h3>
+                <h3 className="text-sm font-medium text-gray-900 mb-2 max-lg:flex max-lg:items-center max-lg:gap-2">
+                  <span className="max-lg:flex max-lg:items-center max-lg:justify-center max-lg:w-6 max-lg:h-6 max-lg:rounded-full max-lg:bg-blue-100 max-lg:text-blue-600 max-lg:text-xs">1</span>
+                  고객 정보
+                </h3>
                 {/* 고객 검색 */}
                 <CustomerSection
                   formData={formData}
@@ -3699,10 +3727,13 @@ export default function ReservationForm({
               </div>
             </div>
 
-            {/* 2열: 예약 정보 (투어 정보, 참가자, 가격) - 모바일에서는 전체 너비 */}
-            <div className="col-span-1 lg:col-span-2 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 lg:h-[940px]">
+            {/* 2. 예약 정보 (투어 정보, 참가자) - 모바일 순서 2, 데스크톱 2열 */}
+            <div className="col-span-1 lg:col-span-2 lg:row-span-1 space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 lg:h-[940px] bg-gray-50/50 max-lg:order-2">
               <div>
-                <h3 className="text-sm font-medium text-gray-900 mb-2">예약 정보</h3>
+                <h3 className="text-sm font-medium text-gray-900 mb-2 max-lg:flex max-lg:items-center max-lg:gap-2">
+                  <span className="max-lg:flex max-lg:items-center max-lg:justify-center max-lg:w-6 max-lg:h-6 max-lg:rounded-full max-lg:bg-blue-100 max-lg:text-blue-600 max-lg:text-xs">2</span>
+                  예약 정보
+                </h3>
               </div>
               <div id="tour-info-section">
                 <TourInfoSection
@@ -3721,45 +3752,52 @@ export default function ReservationForm({
                   t={t}
                 />
               </div>
+            </div>
 
-              <div id="pricing-section" className="space-y-2">
-                <PricingSection
-                  formData={formData as any}
-                  setFormData={setFormData}
-                  savePricingInfo={savePricingInfo}
-                  calculateProductPriceTotal={calculateProductPriceTotal}
-                  calculateChoiceTotal={calculateRequiredOptionTotal}
-                  calculateCouponDiscount={calculateCouponDiscount}
-                  coupons={coupons}
-                  getOptionalOptionsForProduct={(productId) =>
-                    getOptionalOptionsForProduct(productId, productOptions) as any
-                  }
-                  options={options}
-                  t={t}
-                  autoSelectCoupon={autoSelectCoupon}
-                  reservationOptionsTotalPrice={reservationOptionsTotalPrice}
-                  isExistingPricingLoaded={isExistingPricingLoaded}
-                  {...(reservation?.id ? { reservationId: reservation.id } : {})}
-                  expenseUpdateTrigger={expenseUpdateTrigger}
-                  channels={channels.map(({ type, ...c }) => ({ ...c, ...(type != null ? { type } : {}) })) as any}
-                  products={products}
-                />
-              </div>
+            {/* 5. 가격 정보 - 모바일에서는 채널 선택 후 마지막에 표시 (가격 로드 순서 반영) */}
+            <div id="pricing-section" className="col-span-1 lg:col-span-2 lg:col-start-2 lg:row-start-2 space-y-2 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-5">
+              <h3 className="text-sm font-medium text-gray-900 mb-2 max-lg:flex max-lg:items-center max-lg:gap-2">
+                <span className="max-lg:flex max-lg:items-center max-lg:justify-center max-lg:w-6 max-lg:h-6 max-lg:rounded-full max-lg:bg-emerald-100 max-lg:text-emerald-600 max-lg:text-xs">5</span>
+                가격 정보
+              </h3>
+              <PricingSection
+                formData={formData as any}
+                setFormData={setFormData}
+                savePricingInfo={savePricingInfo}
+                calculateProductPriceTotal={calculateProductPriceTotal}
+                calculateChoiceTotal={calculateRequiredOptionTotal}
+                calculateCouponDiscount={calculateCouponDiscount}
+                coupons={coupons}
+                getOptionalOptionsForProduct={(productId) =>
+                  getOptionalOptionsForProduct(productId, productOptions) as any
+                }
+                options={options}
+                t={t}
+                autoSelectCoupon={autoSelectCoupon}
+                reservationOptionsTotalPrice={reservationOptionsTotalPrice}
+                isExistingPricingLoaded={isExistingPricingLoaded}
+                {...(reservation?.id ? { reservationId: reservation.id } : {})}
+                expenseUpdateTrigger={expenseUpdateTrigger}
+                channels={channels.map(({ type, ...c }) => ({ ...c, ...(type != null ? { type } : {}) })) as any}
+                products={products}
+              />
+            </div>
 
-              {/* 입금 내역, 지출 내역과 예약 옵션을 3열 그리드로 배치 - 예약이 있을 때만 표시 */}
-              {reservation && (
+            {/* 6. 예약 옵션 / 입금 내역 / 예약 지출 관리 - 5. 가격 정보(정산) 이후, 예약이 있을 때만 */}
+            {reservation && (
+              <div className="col-span-1 lg:col-span-2 lg:col-start-2 lg:row-start-3 space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6">
+                <h3 className="text-sm font-medium text-gray-900 mb-2 max-lg:flex max-lg:items-center max-lg:gap-2">
+                  <span className="max-lg:flex max-lg:items-center max-lg:justify-center max-lg:w-6 max-lg:h-6 max-lg:rounded-full max-lg:bg-slate-100 max-lg:text-slate-600 max-lg:text-xs">6</span>
+                  예약 옵션 · 입금 · 지출
+                </h3>
                 <div className="space-y-4">
-                  {/* 상단: 예약 옵션 */}
                   <div id="options-section">
                     <ReservationOptionsSection 
                       reservationId={reservation.id} 
                       onTotalPriceChange={setReservationOptionsTotalPrice}
                     />
                   </div>
-                  
-                  {/* 하단: 입금 내역과 지출 내역을 2열 그리드로 배치 */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {/* 왼쪽: 입금 내역 */}
                     <div id="payment-section">
                       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
                         <PaymentRecordsList
@@ -3768,8 +3806,6 @@ export default function ReservationForm({
                         />
                       </div>
                     </div>
-                    
-                    {/* 오른쪽: 지출 내역 */}
                     <div id="expense-section">
                       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
                         <ReservationExpenseManager
@@ -3782,11 +3818,11 @@ export default function ReservationForm({
                     </div>
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
-            {/* 3열: 상품 선택 - 모바일에서는 전체 너비, 데스크톱에서는 1/5 */}
-            <div id="product-section" className="col-span-1 lg:col-span-1 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 lg:h-[940px]">
+            {/* 3. 상품 선택 */}
+            <div id="product-section" className="col-span-1 lg:col-span-1 space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 lg:h-[940px] bg-gray-50/50 max-lg:order-3">
               <ProductSelectionSection
                 formData={formData}
                 setFormData={setFormData}
@@ -3806,8 +3842,8 @@ export default function ReservationForm({
               {/* 새로운 간결한 초이스 시스템이 ProductSelectionSection에서 처리됨 */}
             </div>
 
-            {/* 4열: 채널 선택 - 모바일에서는 전체 너비, 데스크톱에서는 1/5 */}
-            <div className="col-span-1 lg:col-span-1 space-y-4 overflow-y-auto border border-gray-200 rounded-lg p-3 sm:p-4 lg:h-[940px]">
+            {/* 4. 채널 선택 - 선택 시 가격 정보 로드 */}
+            <div className="col-span-1 lg:col-span-1 space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 lg:h-[940px] bg-gray-50/50 max-lg:order-4">
               <ChannelSection
                 formData={formData}
                 setFormData={setFormData}
@@ -3840,10 +3876,9 @@ export default function ReservationForm({
               )}
             </div>
           </div>
+          </div>
 
-
-
-          <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3 pt-4">
+          <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3 pt-4 flex-shrink-0 p-3 sm:p-0 sm:pt-4 border-t border-gray-200 max-lg:bg-white max-lg:sticky max-lg:bottom-0">
             <button
               type="submit"
               disabled={isSubmitting}

@@ -717,37 +717,39 @@ export default function CashManagement() {
   }, [searchTerm, typeFilter, categoryFilter, startDate, endDate])
 
   return (
-    <div className="space-y-6">
-      {/* 기간 필터 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>기간 필터</CardTitle>
-          <CardDescription>조회할 기간을 선택하세요</CardDescription>
+    <div className="space-y-4 sm:space-y-6">
+      {/* 기간 필터 - 모바일 컴팩트 */}
+      <Card className="border rounded-lg">
+        <CardHeader className="p-3 sm:p-4 lg:p-6 pb-0">
+          <CardTitle className="text-sm sm:text-base">기간 필터</CardTitle>
+          <CardDescription className="text-xs hidden sm:block">조회할 기간을 선택하세요</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-4 items-end">
-            <div className="space-y-2">
-              <Label htmlFor="start_date">시작일</Label>
+        <CardContent className="p-3 sm:p-4 lg:p-6 pt-3">
+          <div className="flex flex-wrap gap-2 sm:gap-4 items-end">
+            <div className="space-y-1 sm:space-y-2">
+              <Label htmlFor="start_date" className="text-xs sm:text-sm">시작일</Label>
               <Input
                 id="start_date"
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="w-[200px]"
+                className="w-full min-w-0 sm:w-[200px] h-8 sm:h-10 text-sm"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="end_date">종료일</Label>
+            <div className="space-y-1 sm:space-y-2">
+              <Label htmlFor="end_date" className="text-xs sm:text-sm">종료일</Label>
               <Input
                 id="end_date"
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="w-[200px]"
+                className="w-full min-w-0 sm:w-[200px] h-8 sm:h-10 text-sm"
               />
             </div>
             <Button
               variant="outline"
+              size="sm"
+              className="text-xs sm:text-sm h-8 sm:h-10"
               onClick={() => {
                 setStartDate('')
                 setEndDate('')
@@ -759,11 +761,11 @@ export default function CashManagement() {
         </CardContent>
       </Card>
 
-      {/* 현금 잔액 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600">
+      {/* 현금 잔액 카드 - 모바일 컴팩트 */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4">
+        <Card className="border rounded-lg">
+          <CardHeader className="p-3 sm:pb-3 lg:p-6">
+            <CardTitle className="text-xs sm:text-sm font-medium text-gray-600">
               {startDate || endDate ? '기간 잔액' : '현재 현금 잔액'}
             </CardTitle>
             {startDate || endDate ? (
@@ -776,11 +778,11 @@ export default function CashManagement() {
               </CardDescription>
             ) : null}
           </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <DollarSign className="w-8 h-8 text-green-600" />
-              <div>
-                <div className="text-3xl font-bold text-gray-900">
+          <CardContent className="p-3 sm:p-4 lg:p-6">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <DollarSign className="w-6 h-6 sm:w-8 sm:h-8 text-green-600 flex-shrink-0" />
+              <div className="min-w-0">
+                <div className="text-xl sm:text-3xl font-bold text-gray-900 truncate">
                   ${(startDate || endDate ? periodBalance : balance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
                 {startDate || endDate ? (
@@ -793,9 +795,9 @@ export default function CashManagement() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600">
+        <Card className="border rounded-lg">
+          <CardHeader className="p-3 sm:pb-3 lg:p-6">
+            <CardTitle className="text-xs sm:text-sm font-medium text-gray-600">
               {startDate || endDate ? '기간 입금' : '총 입금'}
             </CardTitle>
             {startDate || endDate ? (
@@ -808,11 +810,11 @@ export default function CashManagement() {
               </CardDescription>
             ) : null}
           </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-8 h-8 text-blue-600" />
-              <div>
-                <div className="text-3xl font-bold text-blue-600">
+          <CardContent className="p-3 sm:p-4 lg:p-6">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <TrendingUp className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 flex-shrink-0" />
+              <div className="min-w-0">
+                <div className="text-xl sm:text-3xl font-bold text-blue-600 truncate">
                   ${(startDate || endDate ? periodDeposits : totalDeposits).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
                 {startDate || endDate ? (
@@ -825,9 +827,9 @@ export default function CashManagement() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600">
+        <Card className="border rounded-lg">
+          <CardHeader className="p-3 sm:pb-3 lg:p-6">
+            <CardTitle className="text-xs sm:text-sm font-medium text-gray-600">
               {startDate || endDate ? '기간 출금' : '총 출금'}
             </CardTitle>
             {startDate || endDate ? (
@@ -840,11 +842,11 @@ export default function CashManagement() {
               </CardDescription>
             ) : null}
           </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <TrendingDown className="w-8 h-8 text-red-600" />
-              <div>
-                <div className="text-3xl font-bold text-red-600">
+          <CardContent className="p-3 sm:p-4 lg:p-6">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <TrendingDown className="w-6 h-6 sm:w-8 sm:h-8 text-red-600 flex-shrink-0" />
+              <div className="min-w-0">
+                <div className="text-xl sm:text-3xl font-bold text-red-600 truncate">
                   ${(startDate || endDate ? periodWithdrawals : totalWithdrawals).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
                 {startDate || endDate ? (
@@ -858,15 +860,15 @@ export default function CashManagement() {
         </Card>
       </div>
 
-      {/* 필터 및 검색 */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>현금 거래 내역</CardTitle>
+      {/* 필터 및 거래 내역 - 모바일 컴팩트 */}
+      <Card className="border rounded-lg">
+        <CardHeader className="p-3 sm:p-4 lg:p-6 pb-0">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <CardTitle className="text-base sm:text-lg">현금 거래 내역</CardTitle>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
-                <Button onClick={handleNewTransaction}>
-                  <Plus className="w-4 h-4 mr-2" />
+                <Button onClick={handleNewTransaction} size="sm" className="w-full sm:w-auto text-sm bg-blue-600 hover:bg-blue-700 text-white border-0">
+                  <Plus className="w-4 h-4 mr-1.5 sm:mr-2" />
                   거래 추가
                 </Button>
               </DialogTrigger>
@@ -1006,23 +1008,23 @@ export default function CashManagement() {
             </Dialog>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {/* 필터 */}
-            <div className="flex flex-wrap gap-4">
-              <div className="flex-1 min-w-[200px]">
+        <CardContent className="p-3 sm:p-4 lg:p-6">
+          <div className="space-y-3 sm:space-y-4">
+            {/* 필터 - 모바일 컴팩트 */}
+            <div className="flex flex-wrap gap-2 sm:gap-4">
+              <div className="flex-1 min-w-0 sm:min-w-[200px]">
                 <div className="relative">
-                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <Input
                     placeholder="검색..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-8"
+                    className="pl-8 h-8 sm:h-10 text-sm"
                   />
                 </div>
               </div>
               <Select value={typeFilter} onValueChange={(value: 'all' | 'deposit' | 'withdrawal' | 'bank_deposit') => setTypeFilter(value)}>
-                <SelectTrigger className="w-[150px]">
+                <SelectTrigger className="w-full sm:w-[150px] h-8 sm:h-10 text-sm">
                   <SelectValue placeholder="거래 유형" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1033,7 +1035,7 @@ export default function CashManagement() {
                 </SelectContent>
               </Select>
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-[150px]">
+                <SelectTrigger className="w-full sm:w-[150px] h-8 sm:h-10 text-sm">
                   <SelectValue placeholder="카테고리" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1047,13 +1049,74 @@ export default function CashManagement() {
               </Select>
             </div>
 
-            {/* 거래 내역 테이블 */}
+            {/* 거래 내역 */}
             {loading ? (
-              <div className="text-center py-8 text-gray-500">로딩 중...</div>
+              <div className="text-center py-6 sm:py-8 text-gray-500 text-sm">로딩 중...</div>
             ) : transactions.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">거래 내역이 없습니다.</div>
+              <div className="text-center py-6 sm:py-8 text-gray-500 text-sm">거래 내역이 없습니다.</div>
             ) : (
-              <div className="border rounded-lg overflow-hidden">
+              <>
+                {/* 모바일: 카드 리스트 - 라벨/값 구조 */}
+                <div className="md:hidden space-y-3">
+                  {paginatedTransactions.map((transaction) => {
+                    const isBankDeposit = transaction.description?.includes('은행 Deposit') || transaction.description === '은행 Deposit'
+                    const displayType = isBankDeposit ? '은행' : (transaction.transaction_type === 'deposit' ? '입금' : '출금')
+                    const date = new Date(transaction.transaction_date)
+                    const dateStr = `${date.getFullYear()}. ${String(date.getMonth() + 1).padStart(2, '0')}. ${String(date.getDate()).padStart(2, '0')}.`
+                    const sourceLabel = transaction.source === 'payment_records' ? '예약 결제' : transaction.source === 'company_expenses' ? '회사 지출' : '현금 관리'
+                    return (
+                      <div key={transaction.id} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:bg-gray-50/80 active:bg-gray-100 transition-colors">
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div>
+                            <p className="text-xs text-gray-500">{dateStr}</p>
+                            <Badge variant={transaction.transaction_type === 'deposit' ? 'default' : 'destructive'} className="text-xs mt-1">
+                              {displayType}
+                            </Badge>
+                          </div>
+                          <p className={`text-lg font-bold ${transaction.transaction_type === 'deposit' ? 'text-blue-600' : 'text-red-600'}`}>
+                            {transaction.transaction_type === 'deposit' ? '+' : '-'}
+                            ${transaction.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs text-gray-600 border-t border-gray-100 pt-3">
+                          <span className="text-gray-400">설명</span>
+                          <span className="truncate">{transaction.description || '-'}</span>
+                          <span className="text-gray-400">카테고리</span>
+                          <span>{transaction.category || '-'}</span>
+                          <span className="text-gray-400">출처</span>
+                          <span>{sourceLabel}</span>
+                        </div>
+                        <div className="flex items-center justify-end gap-1 mt-3 pt-3 border-t border-gray-100">
+                          <Button variant="ghost" size="sm" className="h-10 w-10 p-0 min-h-[44px]" onClick={() => handleViewHistory(transaction)} title="히스토리">
+                            <History className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-10 w-10 p-0 min-h-[44px]" onClick={() => handleEdit(transaction)} title="수정">
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-10 w-10 p-0 text-red-600 min-h-[44px]" title="삭제">
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>거래 삭제 확인</AlertDialogTitle>
+                                <AlertDialogDescription>이 거래를 삭제하시겠습니까?</AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>취소</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => handleDelete(transaction.id)}>삭제</AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                {/* 데스크톱: 테이블 */}
+                <div className="hidden md:block border rounded-lg overflow-hidden">
                 <Table>
                   <TableHeader>
                     <TableRow className="h-10">
@@ -1192,14 +1255,15 @@ export default function CashManagement() {
                     })}
                   </TableBody>
                 </Table>
-              </div>
+                </div>
+              </>
             )}
 
-            {/* 페이지네이션 */}
+            {/* 페이지네이션 - 모바일 컴팩트 */}
             {transactions.length > 0 && (
-              <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">페이지당 항목 수:</span>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-3 sm:mt-4 pt-3 sm:pt-4 border-t">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs sm:text-sm text-gray-600">페이지당:</span>
                   <Select
                     value={itemsPerPage.toString()}
                     onValueChange={(value) => {

@@ -212,16 +212,16 @@ export default function VehicleTypesPage() {
   return (
     <div className="space-y-6">
       {/* 헤더 */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">차종 관리</h1>
-          <p className="text-gray-600">렌터카 차종을 추가, 수정, 삭제할 수 있습니다.</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">차종 관리</h1>
+          <p className="mt-1 text-sm text-gray-600">렌터카 차종을 추가, 수정, 삭제할 수 있습니다.</p>
         </div>
         <button
           onClick={() => openModal()}
-          className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 flex-shrink-0"
         >
-          <Plus className="w-4 h-4 mr-2" />
+          <Plus size={16} />
           차종 추가
         </button>
       </div>

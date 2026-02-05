@@ -8,12 +8,12 @@ export default function TourPhotoBucketsPage() {
   const t = useTranslations('admin')
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow p-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="bg-white rounded-lg shadow p-3 sm:p-4 lg:p-6">
+        <h1 className="text-lg sm:text-2xl font-bold text-gray-900 mb-1 sm:mb-2">
           투어 포토 버켓 관리
         </h1>
-        <p className="text-gray-600">
+        <p className="text-gray-600 text-xs sm:text-sm hidden sm:block">
           기존 투어 데이터에 대해 tour-photos 버켓을 일괄 생성하고 관리합니다.
         </p>
       </div>

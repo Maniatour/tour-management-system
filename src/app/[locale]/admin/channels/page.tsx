@@ -468,14 +468,13 @@ export default function AdminChannels() {
   return (
     <ProtectedRoute requiredPermission="canManageChannels">
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{t('title')}</h1>
-        <div className="flex items-center space-x-3">
-          {/* 뷰 전환 버튼 */}
-          <div className="flex bg-gray-100 rounded-lg p-1">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
+        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+          <div className="flex bg-gray-100 rounded-md p-1">
             <button
               onClick={() => setViewMode('card')}
-              className={`p-2 rounded-md transition-colors ${
+              className={`p-1.5 rounded transition-colors ${
                 viewMode === 'card'
                   ? 'bg-white text-blue-600 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
@@ -485,7 +484,7 @@ export default function AdminChannels() {
             </button>
             <button
               onClick={() => setViewMode('table')}
-              className={`p-2 rounded-md transition-colors ${
+              className={`p-1.5 rounded transition-colors ${
                 viewMode === 'table'
                   ? 'bg-white text-blue-600 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
@@ -506,13 +505,13 @@ export default function AdminChannels() {
                     handleBulkSave()
                   }
                 }}
-                className={`px-3 sm:px-4 py-2 rounded-lg flex items-center space-x-2 text-sm sm:text-base ${
+                className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 text-sm font-medium ${
                   bulkEditMode
                     ? 'bg-green-600 text-white hover:bg-green-700'
                     : 'bg-purple-600 text-white hover:bg-purple-700'
                 }`}
               >
-                <Edit size={16} className="sm:w-5 sm:h-5" />
+                <Edit size={16} />
                 <span>{bulkEditMode ? '저장' : '일괄 편집'}</span>
               </button>
               {bulkEditMode && (
@@ -521,9 +520,9 @@ export default function AdminChannels() {
                     setBulkEditMode(false)
                     setBulkEditData({})
                   }}
-                  className="px-3 sm:px-4 py-2 rounded-lg bg-gray-600 text-white hover:bg-gray-700 flex items-center space-x-2 text-sm sm:text-base"
+                  className="px-3 py-1.5 rounded-md bg-gray-600 text-white hover:bg-gray-700 flex items-center gap-1.5 text-sm font-medium"
                 >
-                  <X size={16} className="sm:w-5 sm:h-5" />
+                  <X size={16} />
                   <span>취소</span>
                 </button>
               )}
@@ -531,9 +530,9 @@ export default function AdminChannels() {
           )}
           <button
             onClick={() => setShowAddForm(true)}
-            className="bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2 text-sm sm:text-base"
+            className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium"
           >
-            <Plus size={16} className="sm:w-5 sm:h-5" />
+            <Plus size={16} />
             <span>{t('addChannel')}</span>
           </button>
         </div>

@@ -437,20 +437,23 @@ export default function CompanyExpenseManager() {
   ]
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">{t('title')}</h1>
-          <p className="text-muted-foreground">{t('expenseList')}</p>
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold truncate">{t('title')}</h1>
+          <p className="text-muted-foreground text-xs sm:text-sm">{t('expenseList')}</p>
         </div>
         
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={() => {
-              resetForm()
-              setEditingExpense(null)
-            }}>
-              <Plus className="w-4 h-4 mr-2" />
+            <Button
+              onClick={() => {
+                resetForm()
+                setEditingExpense(null)
+              }}
+              className="w-full sm:w-auto text-sm py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white border-0"
+            >
+              <Plus className="w-4 h-4 mr-1.5 sm:mr-2" />
               {t('addExpense')}
             </Button>
           </DialogTrigger>
@@ -772,16 +775,16 @@ export default function CompanyExpenseManager() {
         </Dialog>
       </div>
 
-      {/* 필터 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Filter className="w-4 h-4 mr-2" />
+      {/* 필터 - 모바일 컴팩트 */}
+      <Card className="border rounded-lg">
+        <CardHeader className="p-3 sm:p-4 lg:p-6 pb-0">
+          <CardTitle className="flex items-center text-base sm:text-lg">
+            <Filter className="w-4 h-4 mr-1.5 sm:mr-2" />
             필터
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <CardContent className="p-3 sm:p-4 lg:p-6 pt-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
             <div>
               <Label htmlFor="search">{t('filters.search')}</Label>
               <div className="relative">
@@ -847,8 +850,8 @@ export default function CompanyExpenseManager() {
             </div>
           </div>
           
-          <div className="flex justify-end mt-4">
-            <Button variant="outline" onClick={() => {
+          <div className="flex justify-end mt-3 sm:mt-4">
+            <Button variant="outline" size="sm" className="text-xs sm:text-sm" onClick={() => {
               setSearchTerm('')
               setCategoryFilter('')
               setStatusFilter('')
@@ -861,22 +864,55 @@ export default function CompanyExpenseManager() {
       </Card>
 
       {/* 지출 목록 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('expenseList')}</CardTitle>
-          <CardDescription>
+      <Card className="border rounded-lg">
+        <CardHeader className="p-3 sm:p-4 lg:p-6 pb-0">
+          <CardTitle className="text-base sm:text-lg">{t('expenseList')}</CardTitle>
+          <CardDescription className="text-xs sm:text-sm">
             총 {expenses.length}개의 지출이 등록되어 있습니다.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-3 sm:p-4 lg:p-6">
           {loading ? (
-            <div className="text-center py-8">{t('loading')}</div>
+            <div className="text-center py-6 sm:py-8 text-sm">{t('loading')}</div>
           ) : expenses.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
+            <div className="text-center py-6 sm:py-8 text-muted-foreground text-sm">
               {t('noExpenses')}
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+              {/* 모바일: 카드 리스트 - 라벨/값 구조로 가독성 개선 */}
+              <div className="md:hidden space-y-3">
+                {expenses.map((expense) => (
+                  <div
+                    key={expense.id}
+                    onClick={() => handleEdit(expense)}
+                    className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm cursor-pointer hover:bg-gray-50/80 active:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <p className="font-semibold text-gray-900 text-sm truncate flex-1">{expense.paid_for}</p>
+                      <p className="text-lg font-bold text-green-600 whitespace-nowrap">
+                        ${expense.amount ? parseFloat(expense.amount.toString()).toLocaleString() : '0'}
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs text-gray-600 border-t border-gray-100 pt-3">
+                      <span className="text-gray-400">제출일</span>
+                      <span>{expense.submit_on ? new Date(expense.submit_on).toLocaleDateString() : '-'}</span>
+                      <span className="text-gray-400">결제처</span>
+                      <span className="truncate">{expense.paid_to}</span>
+                      {expense.category && (
+                        <>
+                          <span className="text-gray-400">카테고리</span>
+                          <span><Badge variant="outline" className="text-xs">{getCategoryLabel(expense.category)}</Badge></span>
+                        </>
+                      )}
+                      <span className="text-gray-400">상태</span>
+                      <span>{getStatusBadge(expense.status || 'pending')}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* 데스크톱: 테이블 */}
+              <div className="hidden md:block overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -934,7 +970,8 @@ export default function CompanyExpenseManager() {
                   ))}
                 </TableBody>
               </Table>
-            </div>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

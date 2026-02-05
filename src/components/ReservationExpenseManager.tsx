@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { Plus, Upload, X, Eye, DollarSign, Edit, Trash2, Calendar, User, CreditCard } from 'lucide-react'
+import { Plus, Upload, X, Eye, DollarSign, Edit, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 
@@ -530,18 +530,19 @@ export default function ReservationExpenseManager({
   const totalAmount = expenses.reduce((sum, expense) => sum + expense.amount, 0)
 
   return (
-    <div className="space-y-4">
-      {/* 헤더 */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <DollarSign className="h-6 w-6 text-blue-600" />
-          <h3 className="text-lg font-semibold text-gray-900">{t('expenseManagement')}</h3>
+    <div className="space-y-3 sm:space-y-4">
+      {/* 헤더 - 모바일 컴팩트 */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+          <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600 flex-shrink-0" />
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900 truncate">{t('expenseManagement')}</h3>
         </div>
-        <div className="flex items-center space-x-4">
-          <div className="text-sm text-gray-600">
+        <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0 ml-auto">
+          <div className="text-xs sm:text-sm text-gray-600">
             {t('totalAmountLabel')}: <span className="font-semibold text-green-600">{formatCurrency(totalAmount)}</span>
           </div>
           <button
+            type="button"
             onClick={() => {
               setShowAddForm(true)
               setEditingExpense(null)
@@ -560,19 +561,19 @@ export default function ReservationExpenseManager({
                 uploaded_files: []
               })
             }}
-            className="flex items-center space-x-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors flex-shrink-0"
           >
-            <Plus size={16} />
+            <Plus size={14} />
             <span>{t('addExpense')}</span>
           </button>
         </div>
       </div>
 
-      {/* 지출 추가/수정 폼 */}
+      {/* 지출 추가/수정 폼 - 모바일 컴팩트 */}
       {showAddForm && (
-        <div className="bg-white border rounded-lg p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="text-lg font-medium text-gray-900">
+        <div className="bg-white border rounded-lg p-3 sm:p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <h4 className="text-base sm:text-lg font-medium text-gray-900">
               {editingExpense ? t('editExpense') : t('addExpense')}
             </h4>
             <button
@@ -600,11 +601,11 @@ export default function ReservationExpenseManager({
             </button>
           </div>
 
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-3 sm:space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
               {/* 결제처 */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
                   {t('paidTo')} <span className="text-red-500">*</span>
                 </label>
                 {!showCustomPaidTo ? (
@@ -612,7 +613,7 @@ export default function ReservationExpenseManager({
                     <select
                       value={formData.paid_to}
                       onChange={(e) => setFormData(prev => ({ ...prev, paid_to: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       required
                     >
                       <option value="">{t('selectOptions.pleaseSelect')}</option>
@@ -623,7 +624,7 @@ export default function ReservationExpenseManager({
                     <button
                       type="button"
                       onClick={() => setShowCustomPaidTo(true)}
-                      className="text-sm text-blue-600 hover:text-blue-800"
+                      className="text-xs sm:text-sm text-blue-600 hover:text-blue-800"
                     >
                       {t('directInput')}
                     </button>
@@ -654,7 +655,7 @@ export default function ReservationExpenseManager({
 
               {/* 결제내용 */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
                   {t('paidFor')} <span className="text-red-500">*</span>
                 </label>
                 {!showCustomPaidFor ? (
@@ -704,7 +705,7 @@ export default function ReservationExpenseManager({
 
               {/* 금액 */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
                   {t('amount')} <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -714,14 +715,14 @@ export default function ReservationExpenseManager({
                   placeholder="0"
                   min="0"
                   step="0.01"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 />
               </div>
 
               {/* 결제방법 */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
                   {t('form.paymentMethod')}
                 </label>
                   <select
@@ -740,7 +741,7 @@ export default function ReservationExpenseManager({
 
               {/* 예약 ID */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
                   {t('form.reservationId')}
                 </label>
                 <select
@@ -759,7 +760,7 @@ export default function ReservationExpenseManager({
 
               {/* 이벤트 ID */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
                   {t('form.eventId')}
                 </label>
                 <input
@@ -774,7 +775,7 @@ export default function ReservationExpenseManager({
 
             {/* 메모 */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
                 {t('memo')}
               </label>
               <textarea
@@ -788,7 +789,7 @@ export default function ReservationExpenseManager({
 
             {/* 영수증 이미지 업로드 */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
                 {t('form.image')}
               </label>
               <div
@@ -949,83 +950,73 @@ export default function ReservationExpenseManager({
           <p className="text-gray-500 mt-2">{t('loading')}</p>
         </div>
       ) : expenses.length > 0 ? (
-        <div className="space-y-2">
+        <div className="space-y-3 sm:space-y-2">
           {expenses.map((expense) => (
-            <div key={expense.id} className="border rounded-lg p-3 hover:bg-gray-50">
-              {/* 상단: 지출명, 금액, 상태 뱃지, 수정/삭제 버튼 */}
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center space-x-2">
-                  <span className="font-medium text-gray-900">{expense.paid_for}</span>
-                  <span className="text-lg font-bold text-green-600">
+            <div key={expense.id} className="border border-gray-200 rounded-xl p-4 sm:p-3 bg-white hover:bg-gray-50/80 shadow-sm active:bg-gray-100 transition-colors">
+              {/* 1행: 결제내용 + 금액 + 상태 */}
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-gray-900 text-sm sm:text-base truncate">{expense.paid_for}</p>
+                  <p className="text-lg sm:text-xl font-bold text-green-600 mt-0.5">
                     {formatCurrency(expense.amount)}
-                  </span>
-                  <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(expense.status)}`}>
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(expense.status)}`}>
                     {getStatusText(expense.status)}
                   </span>
-                </div>
-                <div className="flex items-center space-x-1">
-                  {/* 수정 버튼 */}
-                  <button
-                    onClick={() => handleEditExpense(expense)}
-                    className="p-1 text-gray-600 hover:text-blue-600"
-                    title={t('buttons.edit')}
-                  >
-                    <Edit size={14} />
-                  </button>
-                  
-                  {/* 삭제 버튼 */}
-                  <button
-                    onClick={() => handleDeleteExpense(expense.id)}
-                    className="p-1 text-gray-600 hover:text-red-600"
-                    title={t('buttons.delete')}
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleEditExpense(expense); }}
+                      className="p-2 min-w-[44px] min-h-[44px] sm:p-1 sm:min-w-0 sm:min-h-0 rounded-lg text-gray-500 hover:text-blue-600 hover:bg-blue-50 flex items-center justify-center"
+                      title={t('buttons.edit')}
+                    >
+                      <Edit size={18} className="sm:w-[14px] sm:h-[14px]" />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDeleteExpense(expense.id); }}
+                      className="p-2 min-w-[44px] min-h-[44px] sm:p-1 sm:min-w-0 sm:min-h-0 rounded-lg text-gray-500 hover:text-red-600 hover:bg-red-50 flex items-center justify-center"
+                      title={t('buttons.delete')}
+                    >
+                      <Trash2 size={18} className="sm:w-[14px] sm:h-[14px]" />
+                    </button>
+                  </div>
                 </div>
               </div>
-              
-              {/* 하단: 결제처, 제출자, 제출일, 결제방법 */}
-              <div className="flex items-center justify-between text-sm text-gray-600">
-                <div className="flex items-center space-x-4">
-                  <span className="flex items-center space-x-1">
-                    <CreditCard size={12} />
-                    <span>{expense.paid_to}</span>
-                  </span>
-                  <span className="flex items-center space-x-1">
-                    <User size={12} />
-                    <span>{teamMembers[expense.submitted_by] || expense.submitted_by}</span>
-                  </span>
-                  <span className="flex items-center space-x-1">
-                    <Calendar size={12} />
-                    <span>{new Date(expense.submit_on).toLocaleDateString('ko-KR')}</span>
-                  </span>
-                  {expense.payment_method && (
-                    <span className="px-2 py-1 bg-gray-100 rounded text-xs">
-                      {expense.payment_method}
-                    </span>
-                  )}
-                </div>
-                {expense.image_url && (
-                  <button
-                    onClick={() => window.open(expense.image_url!, '_blank')}
-                    className="flex items-center space-x-1 text-blue-600 hover:text-blue-800"
-                  >
-                    <Eye size={12} />
-                    <span>{t('viewReceipt')}</span>
-                  </button>
+              {/* 2행: 라벨/값 그리드 (모바일 가독성) */}
+              <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs sm:text-sm text-gray-600 border-t border-gray-100 pt-3">
+                <span className="text-gray-400">결제처</span>
+                <span className="truncate">{expense.paid_to}</span>
+                <span className="text-gray-400">제출일</span>
+                <span>{new Date(expense.submit_on).toLocaleDateString('ko-KR')}</span>
+                <span className="text-gray-400">제출자</span>
+                <span className="truncate">{teamMembers[expense.submitted_by] || expense.submitted_by}</span>
+                {expense.payment_method && (
+                  <>
+                    <span className="text-gray-400">결제방법</span>
+                    <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs w-fit">{expense.payment_method}</span>
+                  </>
                 )}
               </div>
-
-              {/* 예약 정보 */}
-              {expense.reservations && (
-                <div className="mt-2 text-xs text-gray-500">
-                  {t('reservation')}: {expense.reservations.customer_name} ({expense.reservations.product_id})
+              {expense.image_url && (
+                <div className="mt-3 pt-3 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); window.open(expense.image_url!, '_blank'); }}
+                    className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800 text-sm font-medium py-1.5"
+                  >
+                    <Eye size={14} />
+                    {t('viewReceipt')}
+                  </button>
                 </div>
               )}
-
-              {/* 메모 */}
+              {expense.reservations && (
+                <p className="mt-2 text-xs text-gray-500">
+                  {t('reservation')}: {expense.reservations.customer_name} ({expense.reservations.product_id})
+                </p>
+              )}
               {expense.note && (
-                <div className="mt-2 text-sm text-gray-600 bg-gray-50 p-2 rounded">
+                <div className="mt-2 text-sm text-gray-600 bg-gray-50 p-2.5 rounded-lg">
                   {expense.note}
                 </div>
               )}

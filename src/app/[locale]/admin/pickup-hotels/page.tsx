@@ -1451,23 +1451,21 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
   return (
 
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
 
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
 
-        <h1 className="text-3xl font-bold text-gray-900">Pickup Hotel Management</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Pickup Hotel Management</h1>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
 
-          {/* 뷰 모드 전환 버튼 */}
-
-          <div className="flex items-center bg-gray-100 rounded-lg p-1">
+          <div className="flex items-center bg-gray-100 rounded-md p-1">
 
             <button
 
               onClick={() => setViewMode('grid')}
 
-              className={`px-3 py-2 rounded-md flex items-center space-x-2 transition-colors ${
+              className={`px-2.5 py-1.5 rounded flex items-center gap-1.5 text-sm font-medium transition-colors ${
 
                 viewMode === 'grid' 
 
@@ -1489,7 +1487,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
               onClick={() => setViewMode('table')}
 
-              className={`px-3 py-2 rounded-md flex items-center space-x-2 transition-colors ${
+              className={`px-2.5 py-1.5 rounded flex items-center gap-1.5 text-sm font-medium transition-colors ${
 
                 viewMode === 'table' 
 
@@ -1511,7 +1509,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
               onClick={() => setViewMode('map')}
 
-              className={`px-3 py-2 rounded-lg flex items-center space-x-2 transition-colors ${
+              className={`px-2.5 py-1.5 rounded flex items-center gap-1.5 text-sm font-medium transition-colors ${
 
                 viewMode === 'map' 
 
@@ -1531,37 +1529,23 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
           </div>
 
-
-
           {sortedGroupKeys.length > 0 && viewMode === 'grid' && (
 
             <button
 
               onClick={toggleAllGroups}
 
-              className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 flex items-center space-x-2"
+              className="bg-gray-600 text-white px-3 py-1.5 rounded-md hover:bg-gray-700 flex items-center gap-1.5 text-sm font-medium"
 
             >
 
               {Object.values(expandedGroups).every(expanded => expanded) ? (
 
-                <>
-
-                  <ChevronUp size={20} />
-
-                  <span>Collapse All</span>
-
-                </>
+                <><ChevronUp size={16} /><span>Collapse All</span></>
 
               ) : (
 
-                <>
-
-                  <ChevronDown size={20} />
-
-                  <span>Expand All</span>
-
-                </>
+                <><ChevronDown size={16} /><span>Expand All</span></>
 
               )}
 
@@ -1573,11 +1557,11 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
             onClick={() => setShowAddForm(true)}
 
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+            className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium"
 
           >
 
-            <Plus size={20} />
+            <Plus size={16} />
 
             <span>Add Hotel</span>
 
@@ -1589,47 +1573,35 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
 
 
-      {/* 검색 */}
-
       {/* 검색창 및 필터 */}
-      <div className="flex items-center space-x-4">
-        <div className="relative flex-1">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-
-        <input
-
-          type="text"
-
-          placeholder="Search by hotel name, location, address..."
-
-          value={searchTerm}
-
-          onChange={(e) => setSearchTerm(e.target.value)}
-
-          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-
-        />
-
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+        <div className="relative flex-1 min-w-0">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+          <input
+            type="text"
+            placeholder="Search by hotel name, location, address..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+          />
         </div>
-        
-        {/* 필터 버튼들 */}
-        <div className="flex items-center space-x-2">
-          {/* Group filter */}
-          <div className="flex items-center space-x-1">
-            <span className="text-sm text-gray-600 font-medium">Group:</span>
+        {/* 필터 버튼들 - 모바일에서 줄바꿈 */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-sm text-gray-600 font-medium shrink-0">Group:</span>
             <button
               onClick={() => setGroupFilter('integer')}
-              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+              className={`px-2.5 py-1 text-sm rounded-md transition-colors ${
                 groupFilter === 'integer'
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              Integers Only
+              Integers
             </button>
             <button
               onClick={() => setGroupFilter('all')}
-              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+              className={`px-2.5 py-1 text-sm rounded-md transition-colors ${
                 groupFilter === 'all'
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
@@ -1638,13 +1610,11 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
               All
             </button>
           </div>
-          
-          {/* Status filter */}
-          <div className="flex items-center space-x-1">
-            <span className="text-sm text-gray-600 font-medium">Status:</span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-sm text-gray-600 font-medium shrink-0">Status:</span>
             <button
               onClick={() => setStatusFilter('all')}
-              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+              className={`px-2.5 py-1 text-sm rounded-md transition-colors ${
                 statusFilter === 'all'
                   ? 'bg-green-600 text-white'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
@@ -1654,7 +1624,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
             </button>
             <button
               onClick={() => setStatusFilter('active')}
-              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+              className={`px-2.5 py-1 text-sm rounded-md transition-colors ${
                 statusFilter === 'active'
                   ? 'bg-green-600 text-white'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
@@ -1664,7 +1634,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
             </button>
             <button
               onClick={() => setStatusFilter('inactive')}
-              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+              className={`px-2.5 py-1 text-sm rounded-md transition-colors ${
                 statusFilter === 'inactive'
                   ? 'bg-green-600 text-white'
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
@@ -1680,25 +1650,23 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
       {/* Pickup Request Test */}
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
 
-        <div className="flex items-center space-x-2 mb-3">
+        <div className="flex items-center gap-2 mb-2 sm:mb-3">
 
-          <Info size={20} className="text-blue-600" />
+          <Info size={18} className="text-blue-600 shrink-0" />
 
-          <h3 className="text-lg font-semibold text-blue-900">Pickup Request Test</h3>
+          <h3 className="text-base sm:text-lg font-semibold text-blue-900">Pickup Request Test</h3>
 
         </div>
 
-        <p className="text-sm text-blue-700 mb-4">
+        <p className="text-sm text-blue-700 mb-3 sm:mb-4">
 
           Enter a hotel name to test if it correctly guides to the rounded hotel based on the group number.
 
         </p>
 
-        
-
-        <div className="flex space-x-3">
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
 
           <input
 
@@ -1710,7 +1678,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
             onChange={(e) => setTestRequest(e.target.value)}
 
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
 
             onKeyPress={(e) => {
 
@@ -1728,7 +1696,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
             onClick={testPickupRequest}
 
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium shrink-0"
 
           >
 
@@ -1737,8 +1705,6 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
           </button>
 
         </div>
-
-
 
         {/* Test Result */}
 
@@ -1796,7 +1762,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
           {viewMode === 'grid' && (
 
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-6">
 
               {sortedGroupKeys.map((groupKey) => (
 
@@ -1806,17 +1772,17 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                 <div 
 
-                  className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                  className="flex items-center justify-between p-3 sm:p-4 cursor-pointer hover:bg-gray-50 transition-colors gap-2"
 
                   onClick={() => toggleGroup(groupKey)}
 
                 >
 
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
 
-                     <h2 className="text-lg font-semibold text-gray-900">{getGroupLabel(groupKey)}</h2>
+                    <h2 className="text-base sm:text-lg font-semibold text-gray-900 truncate">{getGroupLabel(groupKey)}</h2>
 
-                    <span className="px-2 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
+                    <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs sm:text-sm font-medium rounded-full shrink-0">
 
                       {groupedHotels[groupKey].length} hotels
 
@@ -1824,15 +1790,15 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                   </div>
 
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center shrink-0">
 
                     {expandedGroups[groupKey] ? (
 
-                      <ChevronUp size={20} className="text-gray-500" />
+                      <ChevronUp size={18} className="text-gray-500" />
 
                     ) : (
 
-                      <ChevronDown size={20} className="text-gray-500" />
+                      <ChevronDown size={18} className="text-gray-500" />
 
                     )}
 
@@ -1840,15 +1806,13 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
                 </div>
 
-
-
                 {/* 그룹 내용 */}
 
                 {expandedGroups[groupKey] && (
 
-                  <div className="p-4 pt-0">
+                  <div className="p-3 sm:p-4 pt-0">
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
 
                       {groupedHotels[groupKey].map((hotel) => (
 
@@ -1856,7 +1820,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
 
             key={hotel.id} 
 
-            className="bg-white rounded-lg shadow-md p-6 border border-gray-200 cursor-pointer hover:shadow-lg transition-shadow"
+            className="bg-white rounded-lg shadow-md p-3 sm:p-4 border border-gray-200 cursor-pointer hover:shadow-lg transition-shadow"
 
             onClick={() => setEditingHotel(hotel)}
 

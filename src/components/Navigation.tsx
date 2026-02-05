@@ -66,9 +66,9 @@ const NavigationContent = () => {
   }
 
   return (
-    <nav className="bg-white shadow-lg border-b relative z-50">
-      <div className="container mx-auto px-4">
-        <div className="flex justify-between items-center h-16">
+    <nav className="bg-white shadow-lg border-b relative z-50 h-[var(--header-height)] min-h-[var(--header-height)] flex items-center">
+      <div className="container mx-auto px-2 sm:px-4 w-full h-full flex items-center">
+        <div className="flex justify-between items-center w-full">
           {/* 로고 및 제목 */}
           <div className="flex items-center space-x-4">
             <Link href={`/${locale}`} className="flex items-center space-x-2">

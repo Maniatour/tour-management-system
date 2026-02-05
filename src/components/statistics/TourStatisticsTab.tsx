@@ -986,67 +986,67 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* 요약 통계 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Calendar className="h-6 w-6 text-blue-600" />
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-4">
+        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center gap-2 sm:gap-0">
+            <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg flex-shrink-0">
+              <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">총 투어 수</p>
-              <p className="text-2xl font-bold text-gray-900">{tourStatisticsData.totalTours}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <DollarSign className="h-6 w-6 text-green-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">총 수익</p>
-              <p className="text-2xl font-bold text-gray-900">${tourStatisticsData.totalRevenue.toLocaleString()}</p>
+            <div className="min-w-0 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 투어 수</p>
+              <p className="text-sm sm:text-base font-bold text-gray-900 truncate">{tourStatisticsData.totalTours}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-red-100 rounded-lg">
-              <TrendingUp className="h-6 w-6 text-red-600" />
+        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center gap-2 sm:gap-0">
+            <div className="p-1.5 sm:p-2 bg-green-100 rounded-lg flex-shrink-0">
+              <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">총 지출</p>
-              <p className="text-2xl font-bold text-gray-900">${tourStatisticsData.totalExpenses.toLocaleString()}</p>
+            <div className="min-w-0 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 수익</p>
+              <p className="text-sm sm:text-base font-bold text-gray-900 truncate">${tourStatisticsData.totalRevenue.toLocaleString()}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <BarChart3 className="h-6 w-6 text-purple-600" />
+        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center gap-2 sm:gap-0">
+            <div className="p-1.5 sm:p-2 bg-red-100 rounded-lg flex-shrink-0">
+              <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6 text-red-600" />
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">순수익</p>
-              <p className={`text-2xl font-bold ${tourStatisticsData.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            <div className="min-w-0 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">총 지출</p>
+              <p className="text-sm sm:text-base font-bold text-gray-900 truncate">${tourStatisticsData.totalExpenses.toLocaleString()}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center gap-2 sm:gap-0">
+            <div className="p-1.5 sm:p-2 bg-purple-100 rounded-lg flex-shrink-0">
+              <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
+            </div>
+            <div className="min-w-0 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">순수익</p>
+              <p className={`text-sm sm:text-base font-bold truncate ${tourStatisticsData.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 ${tourStatisticsData.netProfit.toLocaleString()}
               </p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-2 bg-orange-100 rounded-lg">
-              <Users className="h-6 w-6 text-orange-600" />
+        <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200 col-span-2 lg:col-span-1">
+          <div className="flex items-center gap-2 sm:gap-0">
+            <div className="p-1.5 sm:p-2 bg-orange-100 rounded-lg flex-shrink-0">
+              <Users className="h-5 w-5 sm:h-6 sm:w-6 text-orange-600" />
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">비거주자비용</p>
-              <p className="text-2xl font-bold text-orange-600">
+            <div className="min-w-0 sm:ml-4">
+              <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">비거주자비용</p>
+              <p className="text-sm sm:text-base font-bold text-orange-600 truncate">
                 ${tourStatisticsData.totalAdditionalCostRounded.toLocaleString()}
               </p>
             </div>
@@ -1055,11 +1055,11 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
       </div>
 
       {/* 차트 선택 탭 */}
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white p-3 sm:p-6 rounded-lg shadow-sm border border-gray-200">
         {/* 투어 필터 */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 mb-1">상품(투어) 필터</label>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4 sm:mb-6">
+          <div className="flex-1 min-w-0">
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">상품(투어) 필터</label>
             <select
               multiple
               value={selectedProducts}
@@ -1067,31 +1067,31 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                 const options = Array.from(e.target.selectedOptions).map(o => o.value)
                 setSelectedProducts(options)
               }}
-              className="w-full md:w-96 px-3 py-2 border border-gray-300 rounded-md h-28"
+              className="w-full md:w-96 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-md h-20 sm:h-28 text-sm"
             >
               {Array.from(new Set(tourStatisticsData.tourStats.map(t => t.productName))).sort().map((name) => (
                 <option key={name} value={name}>{name}</option>
               ))}
             </select>
           </div>
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 mb-1">검색(상품명/날짜)</label>
+          <div className="flex-1 min-w-0">
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">검색(상품명/날짜)</label>
             <input
               value={tourSearch}
               onChange={(e) => setTourSearch(e.target.value)}
               placeholder="예: 그랜드, 2025. 01. 20"
-              className="w-full md:w-80 px-3 py-2 border border-gray-300 rounded-md"
+              className="w-full md:w-80 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-md text-sm"
             />
           </div>
-          <div className="flex items-end gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => { setSelectedProducts([]); setTourSearch('') }}
-              className="px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+              className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 text-sm"
             >필터 초기화</button>
-            <div className="text-sm text-gray-500">표시: {visibleTourStats.length}개</div>
+            <div className="text-xs sm:text-sm text-gray-500">표시: {visibleTourStats.length}개</div>
           </div>
         </div>
-        <div className="flex space-x-4 mb-6">
+        <div className="flex flex-wrap gap-2 sm:gap-4 mb-4 sm:mb-6">
           {[
             { key: 'profit', label: '투어별 손익', icon: BarChart3 },
             { key: 'daily', label: '날짜별 집계', icon: LineChart },
@@ -1101,13 +1101,13 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
             <button
               key={key}
               onClick={() => setSelectedChart(key as any)}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-md sm:rounded-lg transition-colors text-sm ${
                 selectedChart === key
                   ? 'bg-blue-500 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              <Icon size={20} />
+              <Icon size={16} className="sm:w-5 sm:h-5" />
               <span>{label}</span>
             </button>
           ))}
@@ -1115,11 +1115,11 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
 
         {/* 투어별 손익 차트 */}
         {selectedChart === 'profit' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-gray-900">투어별 손익 분석</h3>
-              <div className="flex items-center space-x-2">
-                <div className="hidden md:flex items-center bg-gray-100 rounded-md overflow-hidden">
+          <div className="space-y-4 sm:space-y-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900">투어별 손익 분석</h3>
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <div className="flex items-center bg-gray-100 rounded-md overflow-hidden flex-wrap">
                   {[
                     { key: 'none', label: '전체' },
                     { key: 'revenuePer', label: '1인 수익' },
@@ -1129,24 +1129,26 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                     <button
                       key={key}
                       onClick={() => setPerPersonMetric(key as any)}
-                      className={`px-2.5 py-1 text-xs md:text-sm ${perPersonMetric === key ? 'bg-blue-600 text-white' : 'text-gray-700'}`}
+                      className={`px-2 py-1 text-xs ${perPersonMetric === key ? 'bg-blue-600 text-white' : 'text-gray-700'}`}
                     >{label}</button>
                   ))}
                 </div>
-                <button 
-                  onClick={() => generateTourStatisticsPDF({ data: tourStatisticsData, dateRange })}
-                  className="flex items-center space-x-2 px-3 py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                >
-                  <Download size={16} />
-                  <span>전체 리포트</span>
-                </button>
-                <button 
-                  onClick={() => generateChartPDF('profit-chart', '투어별손익차트.pdf')}
-                  className="flex items-center space-x-2 px-3 py-1 bg-green-600 text-white rounded-md hover:bg-green-700"
-                >
-                  <Download size={16} />
-                  <span>차트만</span>
-                </button>
+                <div className="flex gap-1.5">
+                  <button 
+                    onClick={() => generateTourStatisticsPDF({ data: tourStatisticsData, dateRange })}
+                    className="flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-xs sm:text-sm"
+                  >
+                    <Download size={14} />
+                    <span>리포트</span>
+                  </button>
+                  <button 
+                    onClick={() => generateChartPDF('profit-chart', '투어별손익차트.pdf')}
+                    className="flex items-center gap-1 px-2.5 py-1 sm:px-3 sm:py-1 bg-green-600 text-white rounded-md hover:bg-green-700 text-xs sm:text-sm"
+                  >
+                    <Download size={14} />
+                    <span>차트</span>
+                  </button>
+                </div>
               </div>
             </div>
             
@@ -1253,33 +1255,33 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
             </div>
 
             {/* 지출 상세 테이블 */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h4 className="font-semibold text-gray-700">지출 상세 내역</h4>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+              <div className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-200">
+                <h4 className="font-semibold text-gray-700 text-sm sm:text-base">지출 상세 내역</h4>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full divide-y divide-gray-200">
+                <table className="w-full divide-y divide-gray-200 min-w-[280px]">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">항목</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">금액</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">비율</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">투어당 평균</th>
+                      <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">항목</th>
+                      <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">금액</th>
+                      <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">비율</th>
+                      <th className="px-3 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase">투어당 평균</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {tourStatisticsData.expenseBreakdown.map((item, index) => (
                       <tr key={index} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                           {item.category}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-600">
                           ${item.amount.toLocaleString()}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-600">
                           {item.percentage.toFixed(1)}%
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-600">
                           ${tourStatisticsData.totalTours > 0 ? (item.amount / tourStatisticsData.totalTours).toFixed(0) : 0}
                         </td>
                       </tr>
@@ -1454,87 +1456,87 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
         )}
       </div>
 
-      {/* 투어 통계 테이블 */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">투어 상세 통계</h3>
+      {/* 투어 통계 테이블 - 컴팩트 */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="px-3 sm:px-4 py-2 border-b border-gray-200">
+          <h3 className="text-sm font-semibold text-gray-900">투어 상세 통계</h3>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full divide-y divide-gray-200">
+        <div className="overflow-x-auto -mx-0">
+          <table className="w-full divide-y divide-gray-200 min-w-[760px] text-xs">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">
                   <button
                     onClick={() => setDateSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'))}
-                    className="inline-flex items-center gap-1 text-gray-700 hover:text-gray-900"
+                    className="inline-flex items-center gap-0.5 text-gray-700 hover:text-gray-900"
                     title="투어 날짜로 정렬"
                   >
-                    <span>투어 날짜</span>
+                    <span>날짜</span>
                     <span className={`transition-transform ${dateSortDir === 'asc' ? '-rotate-180' : 'rotate-0'}`}>
-                      <ChevronDown size={14} />
+                      <ChevronDown size={12} />
                     </span>
                   </button>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">상품명</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">인원</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">수익</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">지출</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">순수익</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">수익률</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  1인당 수익
-                  <div className="text-[10px] text-gray-400 mt-0.5">전체 평균: ${perPersonAverages.overall.revenuePer.toFixed(2)}</div>
+                <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">상품명</th>
+                <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight w-12">인원</th>
+                <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">수익</th>
+                <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">지출</th>
+                <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">순수익</th>
+                <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight w-12">수익률</th>
+                <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">
+                  1인 수익
+                  <div className="text-[9px] text-gray-400 mt-0.5 font-normal">avg ${perPersonAverages.overall.revenuePer.toFixed(2)}</div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  1인당 지출
-                  <div className="text-[10px] text-gray-400 mt-0.5">전체 평균: ${perPersonAverages.overall.expensesPer.toFixed(2)}</div>
+                <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">
+                  1인 지출
+                  <div className="text-[9px] text-gray-400 mt-0.5 font-normal">avg ${perPersonAverages.overall.expensesPer.toFixed(2)}</div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  1인당 순수익
-                  <div className="text-[10px] text-gray-400 mt-0.5">전체 평균: ${perPersonAverages.overall.profitPer.toFixed(2)}</div>
+                <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">
+                  1인 순수익
+                  <div className="text-[9px] text-gray-400 mt-0.5 font-normal">avg ${perPersonAverages.overall.profitPer.toFixed(2)}</div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  추가비용 합산
-                  <div className="text-[10px] text-gray-400 mt-0.5">$100 단위 내림</div>
+                <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">
+                  추가비용
+                  <div className="text-[9px] text-gray-400 mt-0.5 font-normal">$100단위</div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">상세</th>
+                <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight w-14">상세</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white divide-y divide-gray-100">
               {visibleTourStats.map((tour, index) => (
                 <React.Fragment key={index}>
                   <tr className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-gray-900">
                       {formatDate(tour.tourDate)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-gray-900 max-w-[120px] truncate" title={tour.productName}>
                       {tour.hasValidTourId ? (
                         <Link 
                           href={`/ko/admin/tours/${tour.tourId}`}
-                          className="flex items-center space-x-1 text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                          className="flex items-center gap-0.5 text-blue-600 hover:text-blue-800 hover:underline transition-colors"
                         >
-                          <span>{tour.productName}</span>
-                          <ExternalLink size={14} />
+                          <span className="truncate">{tour.productName}</span>
+                          <ExternalLink size={11} className="flex-shrink-0" />
                         </Link>
                       ) : (
-                        <span className="text-gray-500">{tour.productName}</span>
+                        <span className="text-gray-500 truncate block">{tour.productName}</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-gray-500">
                       {tour.totalPeople}명
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600">
+                    <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-green-600">
                       ${tour.revenue.toLocaleString()}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">
+                    <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-red-600">
                       ${tour.expenses.toLocaleString()}
                     </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-semibold ${
+                    <td className={`px-2 sm:px-3 py-1.5 whitespace-nowrap font-semibold ${
                       tour.netProfit >= 0 ? 'text-green-600' : 'text-red-600'
                     }`}>
                       ${tour.netProfit.toLocaleString()}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-gray-500">
                       {tour.revenue > 0 ? ((tour.netProfit / tour.revenue) * 100).toFixed(1) : 0}%
                     </td>
                     {(() => {
@@ -1552,35 +1554,35 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                       const productAvg = perPersonAverages.byProduct[tour.productName] || { revenuePer: 0, expensesPer: 0, profitPer: 0 }
                       return (
                         <>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            <span className={`font-medium text-green-600 ${devBadge(revenuePer, productAvg.revenuePer)} rounded px-1`} title={`상품 평균: $${productAvg.revenuePer.toFixed(2)}`}>
+                          <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap">
+                            <span className={`font-medium text-green-600 ${devBadge(revenuePer, productAvg.revenuePer)} rounded px-0.5`} title={`상품 평균: $${productAvg.revenuePer.toFixed(2)}`}>
                               ${revenuePer.toFixed(2)}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            <span className={`font-medium text-red-600 ${devBadge(expPer, productAvg.expensesPer)} rounded px-1`} title={`상품 평균: $${productAvg.expensesPer.toFixed(2)}`}>
+                          <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap">
+                            <span className={`font-medium text-red-600 ${devBadge(expPer, productAvg.expensesPer)} rounded px-0.5`} title={`상품 평균: $${productAvg.expensesPer.toFixed(2)}`}>
                               ${expPer.toFixed(2)}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            <span className={`font-medium ${profitPer >= 0 ? 'text-green-600' : 'text-red-600'} ${devBadge(profitPer, productAvg.profitPer)} rounded px-1`} title={`상품 평균: $${productAvg.profitPer.toFixed(2)}`}>
+                          <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap">
+                            <span className={`font-medium ${profitPer >= 0 ? 'text-green-600' : 'text-red-600'} ${devBadge(profitPer, productAvg.profitPer)} rounded px-0.5`} title={`상품 평균: $${productAvg.profitPer.toFixed(2)}`}>
                               ${profitPer.toFixed(2)}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-600 font-medium">
+                          <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-purple-600 font-medium">
                             ${(tour.additionalCostRounded || 0).toLocaleString()}
                           </td>
                         </>
                       )
                     })()}
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
+                    <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-center">
                       <button
                         onClick={() => toggleExpenseDetails(tour.tourId, tour.tourDate)}
-                        className="flex items-center justify-center space-x-1 hover:text-blue-700 transition-colors text-blue-600"
+                        className="flex items-center justify-center gap-0.5 hover:text-blue-700 transition-colors text-blue-600 mx-auto"
                         title="상세 내역 보기"
                       >
-                        <Eye size={16} />
-                        {expandedExpenses[tour.tourId] ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                        <Eye size={12} />
+                        {expandedExpenses[tour.tourId] ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                       </button>
                     </td>
                   </tr>
@@ -1588,7 +1590,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                   {/* 지출 상세 내역 */}
                   {expandedExpenses[tour.tourId] && (
                     <tr>
-                      <td colSpan={12} className="px-6 py-4 bg-gray-50">
+                      <td colSpan={12} className="px-2 sm:px-4 py-2 sm:py-3 bg-gray-50">
                         <div className="space-y-4">
                           <h4 className="font-semibold text-gray-900">상세 내역</h4>
                           

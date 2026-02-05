@@ -745,7 +745,7 @@ export default function TeamBoardPage() {
   return (
     <ProtectedRoute requiredPermission="canViewAdmin">
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-gray-900">업무 관리</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">업무 관리</h1>
 
         {loading ? (
           <div className="flex items-center text-gray-500"><Loader2 className="w-4 h-4 mr-2 animate-spin"/>Loading...</div>

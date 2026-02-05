@@ -628,48 +628,47 @@ export default function AdminTours() {
     <div className="px-2 sm:px-6 py-3 sm:py-6">
       {/* 헤더 */}
       <div className="mb-4 sm:mb-6">
-        {/* 제목 + 뷰 전환 + 추가 버튼 (한 줄) */}
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <h1 className="text-base sm:text-2xl font-bold text-gray-900 m-0 truncate">{t('title')}</h1>
-          <div className="flex items-center gap-1 sm:gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 m-0 truncate">{t('title')}</h1>
+          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
             <button
               onClick={() => setViewMode('list')}
-              className={`px-2 py-1 sm:px-4 sm:py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 text-xs sm:text-base ${
+              className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 text-sm font-medium ${
                 viewMode === 'list' 
                   ? 'bg-blue-600 text-white' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              <Grid className="w-4 h-4" />
+              <Grid size={16} />
               <span className="hidden sm:inline">{t('calendar.listView')}</span>
             </button>
             <button
               onClick={() => setViewMode('calendar')}
-              className={`px-2 py-1 sm:px-4 sm:py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 text-xs sm:text-base ${
+              className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 text-sm font-medium ${
                 viewMode === 'calendar' 
                   ? 'bg-blue-600 text-white' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              <Calendar className="w-4 h-4" />
+              <Calendar size={16} />
               <span className="hidden sm:inline">{t('calendar.calendarView')}</span>
             </button>
             <button
               onClick={() => setViewMode('schedule')}
-              className={`px-2 py-1 sm:px-4 sm:py-2 rounded-lg flex items-center space-x-1 sm:space-x-2 text-xs sm:text-base ${
+              className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 text-sm font-medium ${
                 viewMode === 'schedule' 
                   ? 'bg-blue-600 text-white' 
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >
-              <CalendarDays className="w-4 h-4" />
+              <CalendarDays size={16} />
               <span className="hidden sm:inline">{t('calendar.scheduleView')}</span>
             </button>
             <button
               onClick={() => router.push('/ko/admin/tours/new')}
-              className="bg-blue-600 text-white px-2 py-1 sm:px-4 sm:py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-1 sm:space-x-2 text-xs sm:text-base"
+              className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium"
             >
-              <Plus className="w-4 h-4" />
+              <Plus size={16} />
               <span className="hidden sm:inline">{t('addTour')}</span>
             </button>
           </div>

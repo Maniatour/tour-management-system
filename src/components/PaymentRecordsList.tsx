@@ -268,16 +268,17 @@ export default function PaymentRecordsList({ reservationId, customerName }: Paym
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h3 className="text-base font-semibold text-gray-900 flex items-center">
           <DollarSign size={16} className="mr-1" />
           입금 내역 ({paymentRecords.length})
         </h3>
         <button
+          type="button"
           onClick={() => setShowForm(true)}
-          className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 flex items-center"
+          className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors flex-shrink-0 ml-auto"
         >
-          <Plus size={12} className="mr-1" />
+          <Plus size={14} />
           추가
         </button>
       </div>

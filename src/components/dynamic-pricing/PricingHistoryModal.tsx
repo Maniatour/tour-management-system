@@ -49,6 +49,7 @@ export default function PricingHistoryModal({
   choiceCombinations = [],
   priceType = 'all'
 }: PricingHistoryModalProps) {
+  const t = useTranslations('products.dynamicPricingPage')
   const [history, setHistory] = useState<PricingHistoryItem[]>([])
   const [loading, setLoading] = useState(false)
   const [expandedChoices, setExpandedChoices] = useState<Set<string>>(new Set())
@@ -254,6 +255,7 @@ export default function PricingHistoryModal({
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center space-x-2">
                         <Calendar className="h-4 w-4 text-gray-400" />
+                        <span className="text-xs text-gray-500">수정:</span>
                         <span className="text-sm font-medium text-gray-900">
                           {formatDate(item.updated_at)}
                         </span>

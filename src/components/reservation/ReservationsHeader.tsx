@@ -32,7 +32,7 @@ export default function ReservationsHeader({
       {/* 첫 번째 줄: 타이틀과 액션 버튼들 */}
       <div className="flex items-center justify-between space-x-2">
         <div className="flex items-center space-x-3">
-          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 flex-shrink-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex-shrink-0">
             {customerIdFromUrl ? (
               <div className="flex items-center space-x-2">
                 <span>{t('title')}</span>
@@ -89,9 +89,9 @@ export default function ReservationsHeader({
           </div>
           <button
             onClick={onAddReservation}
-            className="bg-blue-600 text-white px-2 sm:px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center space-x-1 text-xs sm:text-sm flex-shrink-0"
+            className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium flex-shrink-0"
           >
-            <Plus size={14} />
+            <Plus size={16} />
             <span className="hidden sm:inline">{t('addReservation')}</span>
             <span className="sm:hidden">추가</span>
           </button>

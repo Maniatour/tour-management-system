@@ -91,7 +91,7 @@ export default function ReservationExpensesPage() {
       <div className="mb-8">
         <div className="flex items-center space-x-3 mb-4">
           <DollarSign className="h-8 w-8 text-blue-600" />
-          <h1 className="text-3xl font-bold text-gray-900">{t('title')}</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t('title')}</h1>
         </div>
         <p className="text-gray-600">
           {t('subtitle')}

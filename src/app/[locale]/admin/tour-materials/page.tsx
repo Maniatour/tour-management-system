@@ -299,34 +299,40 @@ export default function TourMaterialsManagementPage() {
 
   return (
     <div className="space-y-6">
-      {/* 헤더 */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">투어 자료 관리</h1>
-            <p className="text-gray-600 mt-1">가이드가 사용할 투어 자료들을 관리합니다</p>
+      {/* 헤더 - 모바일: 버튼 컴팩트 */}
+      <div className="bg-white rounded-lg shadow p-3 sm:p-4 lg:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-2xl font-bold text-gray-900">투어 자료 관리</h1>
+            <p className="text-gray-600 mt-0.5 sm:mt-1 text-xs sm:text-sm hidden sm:block">가이드가 사용할 투어 자료들을 관리합니다</p>
           </div>
-          <div className="flex space-x-3">
+          <div className="flex flex-wrap gap-2 sm:gap-3 flex-shrink-0">
             <button
               onClick={() => setShowUploadModal(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+              className="flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 py-2 sm:px-4 sm:py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              title="자료 업로드"
             >
-              <Upload className="w-4 h-4" />
-              <span>자료 업로드</span>
+              <Upload className="w-4 h-4 flex-shrink-0" />
+              <span className="sm:hidden">자료</span>
+              <span className="hidden sm:inline">자료 업로드</span>
             </button>
             <button
               onClick={() => setShowQuizModal(true)}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
+              className="flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 py-2 sm:px-4 sm:py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700"
+              title="퀴즈 추가"
             >
-              <Plus className="w-4 h-4" />
-              <span>퀴즈 추가</span>
+              <Plus className="w-4 h-4 flex-shrink-0" />
+              <span className="sm:hidden">퀴즈</span>
+              <span className="hidden sm:inline">퀴즈 추가</span>
             </button>
             <button
               onClick={() => setShowAttractionModal(true)}
-              className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center space-x-2"
+              className="flex items-center justify-center gap-1.5 sm:gap-2 px-2.5 py-2 sm:px-4 sm:py-2 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+              title="관광지 추가"
             >
-              <MapPin className="w-4 h-4" />
-              <span>관광지 추가</span>
+              <MapPin className="w-4 h-4 flex-shrink-0" />
+              <span className="sm:hidden">관광지</span>
+              <span className="hidden sm:inline">관광지 추가</span>
             </button>
           </div>
         </div>

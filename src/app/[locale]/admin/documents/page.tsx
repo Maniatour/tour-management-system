@@ -290,86 +290,86 @@ export default function DocumentManagementPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* 헤더 */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">문서 관리</h1>
-              <p className="mt-2 text-gray-600">회사 문서를 체계적으로 관리하고 만료일을 추적하세요</p>
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+        {/* 헤더 - 모바일 컴팩트 */}
+        <div className="mb-4 sm:mb-6 lg:mb-8">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-2xl font-bold text-gray-900 truncate">문서 관리</h1>
+              <p className="mt-1 sm:mt-2 text-xs sm:text-sm text-gray-600 hidden sm:block">회사 문서를 체계적으로 관리하고 만료일을 추적하세요</p>
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <button
                 onClick={() => setShowReminderDashboard(true)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="p-2 sm:px-4 sm:py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                title="알림 관리"
               >
-                <Bell className="w-4 h-4 mr-2" />
-                알림 관리
+                <Bell className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">알림 관리</span>
               </button>
               <button
                 onClick={() => setShowCategoryModal(true)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="p-2 sm:px-4 sm:py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                title="카테고리 관리"
               >
-                <Folder className="w-4 h-4 mr-2" />
-                카테고리 관리
+                <Folder className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">카테고리</span>
               </button>
               <button
                 onClick={() => setShowUploadModal(true)}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="p-2 sm:px-4 sm:py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                title="문서 업로드"
               >
-                <Upload className="w-4 h-4 mr-2" />
-                문서 업로드
+                <Upload className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">업로드</span>
               </button>
             </div>
           </div>
         </div>
 
-        {/* 통계 카드 */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <FileText className="w-6 h-6 text-blue-600" />
+        {/* 통계 카드 - 모바일 2x2 컴팩트 */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4 lg:gap-6 mb-4 sm:mb-6 lg:mb-8">
+          <div className="bg-white rounded-lg shadow p-3 sm:p-4 lg:p-6">
+            <div className="flex items-center gap-2 sm:gap-0 sm:block">
+              <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg w-8 h-8 sm:w-auto sm:h-auto flex items-center justify-center">
+                <FileText className="w-4 h-4 sm:w-6 sm:h-6 text-blue-600" />
               </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">전체 문서</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <CheckCircle className="w-6 h-6 text-green-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">활성 문서</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.active}</p>
+              <div className="min-w-0 flex-1 sm:ml-4 sm:mt-0">
+                <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">전체</p>
+                <p className="text-lg sm:text-2xl font-bold text-gray-900">{stats.total}</p>
               </div>
             </div>
           </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-yellow-100 rounded-lg">
-                <Clock className="w-6 h-6 text-yellow-600" />
+          <div className="bg-white rounded-lg shadow p-3 sm:p-4 lg:p-6">
+            <div className="flex items-center gap-2 sm:gap-0 sm:block">
+              <div className="p-1.5 sm:p-2 bg-green-100 rounded-lg w-8 h-8 sm:w-auto sm:h-auto flex items-center justify-center">
+                <CheckCircle className="w-4 h-4 sm:w-6 sm:h-6 text-green-600" />
               </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">만료 예정</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.expiring_soon}</p>
+              <div className="min-w-0 flex-1 sm:ml-4 sm:mt-0">
+                <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">활성</p>
+                <p className="text-lg sm:text-2xl font-bold text-gray-900">{stats.active}</p>
               </div>
             </div>
           </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-red-100 rounded-lg">
-                <XCircle className="w-6 h-6 text-red-600" />
+          <div className="bg-white rounded-lg shadow p-3 sm:p-4 lg:p-6">
+            <div className="flex items-center gap-2 sm:gap-0 sm:block">
+              <div className="p-1.5 sm:p-2 bg-yellow-100 rounded-lg w-8 h-8 sm:w-auto sm:h-auto flex items-center justify-center">
+                <Clock className="w-4 h-4 sm:w-6 sm:h-6 text-yellow-600" />
               </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">만료된 문서</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.expired}</p>
+              <div className="min-w-0 flex-1 sm:ml-4 sm:mt-0">
+                <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">만료 예정</p>
+                <p className="text-lg sm:text-2xl font-bold text-gray-900">{stats.expiring_soon}</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-3 sm:p-4 lg:p-6">
+            <div className="flex items-center gap-2 sm:gap-0 sm:block">
+              <div className="p-1.5 sm:p-2 bg-red-100 rounded-lg w-8 h-8 sm:w-auto sm:h-auto flex items-center justify-center">
+                <XCircle className="w-4 h-4 sm:w-6 sm:h-6 text-red-600" />
+              </div>
+              <div className="min-w-0 flex-1 sm:ml-4 sm:mt-0">
+                <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">만료됨</p>
+                <p className="text-lg sm:text-2xl font-bold text-gray-900">{stats.expired}</p>
               </div>
             </div>
           </div>
@@ -393,21 +393,21 @@ export default function DocumentManagementPage() {
         />
 
         {/* 문서 목록 */}
-        <div className="mt-8">
+        <div className="mt-4 sm:mt-6 lg:mt-8">
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <span className="ml-3 text-gray-600">문서를 불러오는 중...</span>
+            <div className="flex items-center justify-center py-8 sm:py-12">
+              <div className="animate-spin rounded-full h-6 w-6 sm:h-8 sm:w-8 border-b-2 border-blue-600"></div>
+              <span className="ml-2 sm:ml-3 text-sm text-gray-600">문서를 불러오는 중...</span>
             </div>
           ) : sortedDocuments.length === 0 ? (
-            <div className="text-center py-12">
-              <FileText className="mx-auto h-12 w-12 text-gray-400" />
+            <div className="text-center py-8 sm:py-12 px-4">
+              <FileText className="mx-auto h-10 w-10 sm:h-12 sm:w-12 text-gray-400" />
               <h3 className="mt-2 text-sm font-medium text-gray-900">문서가 없습니다</h3>
-              <p className="mt-1 text-sm text-gray-500">새로운 문서를 업로드해보세요.</p>
-              <div className="mt-6">
+              <p className="mt-1 text-xs sm:text-sm text-gray-500">새로운 문서를 업로드해보세요.</p>
+              <div className="mt-4 sm:mt-6">
                 <button
                   onClick={() => setShowUploadModal(true)}
-                  className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  className="inline-flex items-center px-3 py-2 sm:px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   문서 업로드
@@ -415,7 +415,7 @@ export default function DocumentManagementPage() {
               </div>
             </div>
           ) : (
-            <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-4'}>
+            <div className={viewMode === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6' : 'space-y-2 sm:space-y-4'}>
               {sortedDocuments.map((document) => (
                 <DocumentCard
                   key={document.id}
@@ -464,8 +464,8 @@ export default function DocumentManagementPage() {
       )}
 
       {showReminderDashboard && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-0 sm:p-4">
+          <div className="bg-white rounded-none sm:rounded-lg shadow-xl max-w-4xl w-full h-full sm:h-auto sm:max-h-[90vh] overflow-y-auto">
             <DocumentReminderDashboard onClose={() => setShowReminderDashboard(false)} />
           </div>
         </div>

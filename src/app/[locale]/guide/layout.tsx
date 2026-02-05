@@ -467,8 +467,8 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
            </div>
          </header> */}
 
-         {/* 메인 컨텐츠 */}
-         <main className="max-w-7xl mx-auto px-0 sm:px-1 lg:px-2 py-2 sm:py-4 pb-20 sm:pb-4">
+         {/* 메인 컨텐츠 - 모바일 좌우 여백 축소, 푸터 높이만큼 하단 여백 */}
+         <main className="max-w-7xl mx-auto px-2 sm:px-2 lg:px-4 py-2 sm:py-4 main-safe-area">
            {children}
          </main>
 
@@ -476,8 +476,8 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
         <GlobalAudioPlayer />
 
         {/* 모바일 푸터 네비게이션 */}
-        <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 sm:hidden z-50">
-        <div className="grid grid-cols-5 py-2">
+        <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 sm:hidden z-50" style={{ height: 'var(--footer-height)' }}>
+        <div className="grid grid-cols-5 h-full py-2">
           <button
             onClick={() => {
               const currentLocale = pathname.split('/')[1] || 'ko'

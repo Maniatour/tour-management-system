@@ -273,7 +273,7 @@ export default function TourCoursesPage() {
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">투어 코스 관리</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">투어 코스 관리</h1>
         <div className="flex gap-2">
           <button
             onClick={() => setShowHelpModal(true)}

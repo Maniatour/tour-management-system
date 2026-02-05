@@ -1360,7 +1360,7 @@ export default function DataSyncPage() {
   return (
     <div className="max-w-full mx-auto px-2 sm:px-4 py-4 sm:py-6">
       <div className="mb-6 sm:mb-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">데이터 동기화</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">데이터 동기화</h1>
         <p className="text-sm sm:text-base text-gray-600">
           구글 시트 데이터 동기화 및 날씨 데이터 수집을 관리합니다.
         </p>

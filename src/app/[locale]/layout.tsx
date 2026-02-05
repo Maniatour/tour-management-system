@@ -122,7 +122,7 @@ export default async function LocaleLayout({
               <Navigation />
               <div className="flex flex-col lg:flex-row">
                 <Sidebar />
-                <main className="flex-1 p-4 lg:p-6 pb-20 lg:pb-6">
+                <main className="flex-1 px-2 pt-4 lg:px-6 lg:pt-6 main-safe-area">
                   {children}
                 </main>
               </div>

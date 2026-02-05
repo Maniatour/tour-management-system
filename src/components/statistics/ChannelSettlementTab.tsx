@@ -862,80 +862,78 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
   }
 
   return (
-    <div className="space-y-4 overflow-x-hidden max-w-full">
+    <div className="space-y-3 sm:space-y-4 overflow-x-hidden max-w-full">
       {/* 채널 선택 버튼 */}
-      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Filter className="h-5 w-5 text-gray-500" />
-            <span className="text-sm font-medium text-gray-700">채널 필터:</span>
+      <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <Filter className="h-4 w-4 sm:h-5 sm:w-5 text-gray-500 flex-shrink-0" />
+          <span className="text-xs sm:text-sm font-medium text-gray-700">채널 필터:</span>
+          <button
+            onClick={() => setIsChannelModalOpen(true)}
+            className="px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-50 hover:bg-blue-100 border border-blue-300 rounded-md sm:rounded-lg text-xs sm:text-sm font-medium text-blue-700 transition-colors flex items-center gap-1.5"
+          >
+            <span className="truncate max-w-[140px] sm:max-w-none">{selectedChannelName}</span>
+            <ChevronDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
+          </button>
+          {channelFilter && (
             <button
-              onClick={() => setIsChannelModalOpen(true)}
-              className="px-4 py-2 bg-blue-50 hover:bg-blue-100 border border-blue-300 rounded-lg text-sm font-medium text-blue-700 transition-colors flex items-center gap-2"
+              onClick={() => onChannelChange?.('')}
+              className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+              title="필터 제거"
             >
-              {selectedChannelName}
-              <ChevronDown className="h-4 w-4" />
+              <X className="h-3 w-3" />
+              초기화
             </button>
-            {channelFilter && (
-              <button
-                onClick={() => onChannelChange?.('')}
-                className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
-                title="필터 제거"
-              >
-                <X className="h-3 w-3" />
-                초기화
-              </button>
-            )}
-          </div>
+          )}
         </div>
       </div>
 
       {/* 요약 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-              <div className="flex items-center">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Calendar className="h-6 w-6 text-blue-600" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+            <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center gap-2 sm:gap-0">
+                <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg flex-shrink-0">
+                  <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
                 </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">예약 건수</p>
-                  <p className="text-2xl font-bold text-gray-900">{totals.reservations.count}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-              <div className="flex items-center">
-                <div className="p-2 bg-green-100 rounded-lg">
-                  <Users className="h-6 w-6 text-green-600" />
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">예약 인원</p>
-                  <p className="text-2xl font-bold text-gray-900">{totals.reservations.totalPeople}명</p>
+                <div className="min-w-0 sm:ml-4">
+                  <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">예약 건수</p>
+                  <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{totals.reservations.count}</p>
                 </div>
               </div>
             </div>
 
-            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-              <div className="flex items-center">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <Calendar className="h-6 w-6 text-purple-600" />
+            <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center gap-2 sm:gap-0">
+                <div className="p-1.5 sm:p-2 bg-green-100 rounded-lg flex-shrink-0">
+                  <Users className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
                 </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">투어 진행 예약</p>
-                  <p className="text-2xl font-bold text-gray-900">{totals.tours.count}건</p>
+                <div className="min-w-0 sm:ml-4">
+                  <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">예약 인원</p>
+                  <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{totals.reservations.totalPeople}명</p>
                 </div>
               </div>
             </div>
 
-            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-              <div className="flex items-center">
-                <div className="p-2 bg-yellow-100 rounded-lg">
-                  <DollarSign className="h-6 w-6 text-yellow-600" />
+            <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center gap-2 sm:gap-0">
+                <div className="p-1.5 sm:p-2 bg-purple-100 rounded-lg flex-shrink-0">
+                  <Calendar className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
                 </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">투어 진행 총액</p>
-                  <p className="text-2xl font-bold text-green-600">
+                <div className="min-w-0 sm:ml-4">
+                  <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">투어 예약</p>
+                  <p className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{totals.tours.count}건</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200 col-span-2 lg:col-span-1">
+              <div className="flex items-center gap-2 sm:gap-0">
+                <div className="p-1.5 sm:p-2 bg-yellow-100 rounded-lg flex-shrink-0">
+                  <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-yellow-600" />
+                </div>
+                <div className="min-w-0 sm:ml-4">
+                  <p className="text-xs sm:text-sm font-medium text-gray-600 truncate">투어 총액</p>
+                  <p className="text-lg sm:text-2xl font-bold text-green-600 truncate">
                     ${totals.tours.totalPrice.toLocaleString()}
                   </p>
                 </div>
@@ -944,13 +942,13 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           </div>
 
           {/* 상세 내역 탭 */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
             {/* 탭 네비게이션 */}
             <div className="border-b border-gray-200">
-              <nav className="-mb-px flex space-x-8 px-6">
+              <nav className="-mb-px flex gap-4 sm:gap-8 px-3 sm:px-6 overflow-x-auto">
                 <button
                   onClick={() => setActiveDetailTab('reservations')}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  className={`py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${
                     activeDetailTab === 'reservations'
                       ? 'border-blue-500 text-blue-600'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -960,7 +958,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                 </button>
                 <button
                   onClick={() => setActiveDetailTab('tours')}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  className={`py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${
                     activeDetailTab === 'tours'
                       ? 'border-blue-500 text-blue-600'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -975,7 +973,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             {activeDetailTab === 'reservations' && (
           <div className="divide-y divide-gray-200">
             {/* 정렬 버튼 */}
-            <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
+            <div className="px-3 sm:px-6 py-2 sm:py-3 bg-gray-50 border-b border-gray-200">
                       <button
                         onClick={() => setReservationSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
                 className="inline-flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900"
@@ -1062,17 +1060,17 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                        {/* 자체 채널 그룹 헤더 */}
                        <button
                          onClick={() => toggleGroup(group.type)}
-                         className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                         className="w-full px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
                        >
-                         <div className="flex items-center space-x-3">
-                           {isGroupExpanded ? (
-                             <ChevronDown className="w-5 h-5 text-gray-500" />
+<div className="flex flex-wrap items-center gap-1.5 sm:gap-3 min-w-0">
+                         {isGroupExpanded ? (
+                             <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500 flex-shrink-0" />
                            ) : (
-                             <ChevronRight className="w-5 h-5 text-gray-500" />
+                             <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500 flex-shrink-0" />
                            )}
-                           <span className="font-semibold text-gray-900">{group.label}</span>
-                           <span className="text-sm text-gray-500">({group.channels.length}개 채널)</span>
-                           <span className="text-sm font-medium text-green-600">
+                         <span className="font-semibold text-gray-900 text-sm sm:text-base truncate">{group.label}</span>
+                         <span className="text-xs sm:text-sm text-gray-500">({group.channels.length}개)</span>
+                         <span className="text-xs sm:text-sm font-medium text-green-600">
                              총 ${groupTotal.toLocaleString()}
                            </span>
                          </div>
@@ -1237,17 +1235,17 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                      {/* 그룹 헤더 */}
                      <button
                        onClick={() => toggleGroup(group.type)}
-                       className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                       className="w-full px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
                      >
-                       <div className="flex items-center space-x-3">
+<div className="flex flex-wrap items-center gap-1.5 sm:gap-3 min-w-0">
                          {isGroupExpanded ? (
-                           <ChevronDown className="w-5 h-5 text-gray-500" />
-                         ) : (
-                           <ChevronRight className="w-5 h-5 text-gray-500" />
-                         )}
-                         <span className="font-semibold text-gray-900">{group.label}</span>
-                         <span className="text-sm text-gray-500">({group.channels.length}개 채널)</span>
-                         <span className="text-sm font-medium text-green-600">
+                             <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500 flex-shrink-0" />
+                           ) : (
+                             <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500 flex-shrink-0" />
+                           )}
+                         <span className="font-semibold text-gray-900 text-sm sm:text-base truncate">{group.label}</span>
+                         <span className="text-xs sm:text-sm text-gray-500">({group.channels.length}개)</span>
+                         <span className="text-xs sm:text-sm font-medium text-green-600">
                            총 ${groupTotal.toLocaleString()}
                          </span>
                        </div>
@@ -1336,17 +1334,17 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                               {/* 채널 헤더 */}
                               <button
                                 onClick={() => toggleChannel(channel.id)}
-                                className="w-full px-8 py-3 flex items-center justify-between hover:bg-gray-100 transition-colors"
+                                className="w-full px-3 sm:px-8 py-2.5 sm:py-3 flex flex-wrap items-center justify-between gap-2 hover:bg-gray-100 transition-colors text-left"
                               >
-                                <div className="flex items-center space-x-3">
-                                  {isChannelExpanded ? (
-                                    <ChevronDown className="w-4 h-4 text-gray-500" />
-                                  ) : (
-                                    <ChevronRight className="w-4 h-4 text-gray-500" />
-                                  )}
-                                  <span className="font-medium text-gray-800">{channel.name}</span>
+<div className="flex flex-wrap items-center gap-1.5 sm:gap-3 min-w-0">
+                                {isChannelExpanded ? (
+                                  <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                ) : (
+                                  <ChevronRight className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                )}
+                                  <span className="font-medium text-gray-800 text-sm sm:text-base truncate">{channel.name}</span>
                                   <span className="text-xs text-gray-500">({channelItems.length}건)</span>
-                                  <div className="flex items-center space-x-4 text-xs">
+                                  <div className="flex flex-wrap items-center gap-x-2 sm:gap-x-4 gap-y-0 text-xs">
                                     <span className="font-medium text-green-600">
                                       Grand Total: ${channelStats.grandTotal.toLocaleString()}
                                     </span>
@@ -1555,7 +1553,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             {activeDetailTab === 'tours' && (
           <div className="divide-y divide-gray-200">
             {/* 정렬 버튼 */}
-            <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
+            <div className="px-3 sm:px-6 py-2 sm:py-3 bg-gray-50 border-b border-gray-200">
               <button
                 onClick={() => setTourSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
                 className="inline-flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900"
@@ -1602,17 +1600,17 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                       {/* 자체 채널 그룹 헤더 */}
                         <button
                         onClick={() => toggleGroup(group.type)}
-                        className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                        className="w-full px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
                       >
-                        <div className="flex items-center space-x-3">
-                          {isGroupExpanded ? (
-                            <ChevronDown className="w-5 h-5 text-gray-500" />
-                          ) : (
-                            <ChevronRight className="w-5 h-5 text-gray-500" />
-                          )}
-                          <span className="font-semibold text-gray-900">{group.label}</span>
-                          <span className="text-sm text-gray-500">({group.channels.length}개 채널)</span>
-                          <span className="text-sm font-medium text-green-600">
+<div className="flex flex-wrap items-center gap-1.5 sm:gap-3 min-w-0">
+                         {isGroupExpanded ? (
+                             <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500 flex-shrink-0" />
+                           ) : (
+                             <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500 flex-shrink-0" />
+                           )}
+                         <span className="font-semibold text-gray-900 text-sm sm:text-base truncate">{group.label}</span>
+                         <span className="text-xs sm:text-sm text-gray-500">({group.channels.length}개)</span>
+                         <span className="text-xs sm:text-sm font-medium text-green-600">
                             총 ${groupTotal.toLocaleString()}
                           </span>
                         </div>
@@ -1813,17 +1811,17 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                     {/* 그룹 헤더 */}
                     <button
                       onClick={() => toggleGroup(group.type)}
-                      className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                      className="w-full px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
                     >
-                      <div className="flex items-center space-x-3">
-                        {isGroupExpanded ? (
-                          <ChevronDown className="w-5 h-5 text-gray-500" />
-                        ) : (
-                          <ChevronRight className="w-5 h-5 text-gray-500" />
-                        )}
-                        <span className="font-semibold text-gray-900">{group.label}</span>
-                        <span className="text-sm text-gray-500">({group.channels.length}개 채널)</span>
-                        <span className="text-sm font-medium text-green-600">
+<div className="flex flex-wrap items-center gap-1.5 sm:gap-3 min-w-0">
+                         {isGroupExpanded ? (
+                             <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500 flex-shrink-0" />
+                           ) : (
+                             <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500 flex-shrink-0" />
+                           )}
+                         <span className="font-semibold text-gray-900 text-sm sm:text-base truncate">{group.label}</span>
+                         <span className="text-xs sm:text-sm text-gray-500">({group.channels.length}개)</span>
+                         <span className="text-xs sm:text-sm font-medium text-green-600">
                           총 ${groupTotal.toLocaleString()}
                         </span>
                       </div>
@@ -1863,7 +1861,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                               {/* 채널 헤더 */}
                               <button
                                 onClick={() => toggleChannel(channel.id)}
-                                className="w-full px-8 py-3 flex items-center justify-between hover:bg-gray-100 transition-colors"
+                                className="w-full px-3 sm:px-8 py-2.5 sm:py-3 flex flex-wrap items-center justify-between gap-2 hover:bg-gray-100 transition-colors text-left"
                               >
                                 <div className="flex items-center space-x-3">
                                   {isChannelExpanded ? (

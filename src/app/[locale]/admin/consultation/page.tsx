@@ -612,7 +612,7 @@ export default function ConsultationManagementPage() {
       <div className="mb-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
               {locale === 'ko' ? '상담 관리' : 'Consultation Management'}
             </h1>
             <p className="text-gray-600">
