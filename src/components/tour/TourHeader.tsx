@@ -61,20 +61,23 @@ export default function TourHeader({
     <div className="bg-white shadow-sm border-b">
       <div className="px-2 sm:px-6 py-2 sm:py-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
             <button
               onClick={() => router.push(`/${params.locale}/admin/tours`)}
-              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
+              className="p-1.5 sm:p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg flex-shrink-0"
             >
               <ArrowLeft size={20} />
             </button>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-base sm:text-xl font-bold text-gray-900 truncate">
+            <div className="min-w-0 flex-1">
+              {/* 모바일: 뒤로가기와 제목·일출을 한 줄에 배치 */}
+              <div className="flex items-center gap-2 min-w-0">
+                <h1 className="text-base sm:text-xl font-bold text-gray-900 truncate min-w-0">
                   {productName || 'Tour Detail'}
                 </h1>
-                {/* 일출 시간 표시 (투어 날짜 기반) */}
-                <TourSunriseTime tourDate={tour.tour_date} />
+                {/* 일출 시간 (박스 넘침 방지) */}
+                <div className="flex-shrink-0 min-w-0 max-w-[80px] sm:max-w-none">
+                  <TourSunriseTime tourDate={tour.tour_date} />
+                </div>
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-600 mt-1">
                 <span>{params.locale === 'ko' ? '투어 ID' : 'Tour ID'}: {tour.id}</span>

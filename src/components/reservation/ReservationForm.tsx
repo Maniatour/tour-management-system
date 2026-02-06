@@ -3529,7 +3529,7 @@ export default function ReservationForm({
   return (
     <div className={isModal ? "fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4 max-lg:items-stretch max-lg:p-0" : "w-full"}>
       <div className={isModal 
-        ? "bg-white rounded-none sm:rounded-lg p-0 sm:p-4 w-full max-w-full h-full max-h-full max-lg:min-h-[100dvh] max-lg:flex max-lg:flex-col max-lg:overflow-hidden sm:w-[90vw] sm:max-h-[90vh] lg:block lg:overflow-y-auto"
+        ? "bg-white rounded-none sm:rounded-lg p-0 sm:p-4 w-full max-w-full h-full max-h-full max-lg:h-[100dvh] max-lg:max-h-[100dvh] max-lg:flex max-lg:flex-col max-lg:overflow-hidden sm:w-[90vw] sm:max-h-[90vh] lg:block lg:overflow-y-auto"
         : "bg-white rounded-lg p-2 sm:p-4 w-full"}
       >
         {/* 헤더: 모바일에서 스티키, 데스크톱 기존 */}
@@ -3543,13 +3543,13 @@ export default function ReservationForm({
                 </span>
               )}
             </h2>
-            <div className="flex items-center gap-2 flex-shrink-0 sm:hidden">
+            <div className="flex items-center gap-2 flex-shrink-0 min-w-0 max-sm:flex sm:hidden">
               <label className="sr-only" htmlFor="reservation-status-mobile">{t('form.status')}</label>
               <select
                 id="reservation-status-mobile"
                 value={formData.status}
                 onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as 'pending' | 'confirmed' | 'completed' | 'cancelled' }))}
-                className="px-2 py-1.5 border border-gray-300 rounded-lg text-xs"
+                className="min-w-[6.5rem] px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white"
               >
                 <option value="pending">{t('status.pending')}</option>
                 <option value="confirmed">{t('status.confirmed')}</option>
@@ -3601,9 +3601,8 @@ export default function ReservationForm({
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 max-lg:flex-1 lg:block">
-          {/* 모바일: 단일 열 순서 - 고객 → 예약 정보 → 상품 → 채널 → 가격 / 데스크톱: 기존 스크롤 */}
-          <div className="flex-1 overflow-y-auto p-3 sm:p-0 sm:space-y-6 min-h-0 max-lg:flex-1 max-lg:min-h-0 lg:flex-none lg:min-h-0">
+        <form onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col overflow-hidden lg:overflow-visible">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-0 sm:space-y-6 lg:flex-none lg:min-h-0">
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4 lg:gap-4 lg:h-[940px] lg:grid-rows-1">
             {/* 1. 고객 정보 */}
             <div id="customer-section" className="space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 lg:col-span-1 lg:row-span-1 lg:h-[940px] bg-gray-50/50 max-lg:order-1">
@@ -3783,11 +3782,26 @@ export default function ReservationForm({
             <div className="col-span-1 lg:col-span-2 lg:col-start-2 lg:flex lg:flex-col lg:gap-4 lg:self-start max-lg:contents">
               {/* 2. 예약 정보 (투어 정보, 참가자) */}
               <div className="space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-2">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-900 mb-2 max-lg:flex max-lg:items-center max-lg:gap-2">
+                <div className="max-lg:flex max-lg:items-center max-lg:justify-between max-lg:gap-2 lg:block mb-2 lg:mb-0">
+                  <h3 className="text-sm font-medium text-gray-900 max-lg:flex max-lg:items-center max-lg:gap-2 max-lg:mb-0">
                     <span className="max-lg:flex max-lg:items-center max-lg:justify-center max-lg:w-6 max-lg:h-6 max-lg:rounded-full max-lg:bg-blue-100 max-lg:text-blue-600 max-lg:text-xs">2</span>
                     예약 정보
                   </h3>
+                  {/* 모바일/태블릿 전용: 타이틀과 같은 줄 오른쪽 끝 정렬 */}
+                  <div className="hidden max-lg:block lg:hidden flex-shrink-0">
+                    <label className="sr-only" htmlFor="reservation-status-section">{t('form.status')}</label>
+                    <select
+                      id="reservation-status-section"
+                      value={formData.status}
+                      onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as 'pending' | 'confirmed' | 'completed' | 'cancelled' }))}
+                      className="min-w-[6.5rem] px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="pending">{t('status.pending')}</option>
+                      <option value="confirmed">{t('status.confirmed')}</option>
+                      <option value="completed">{t('status.completed')}</option>
+                      <option value="cancelled">{t('status.cancelled')}</option>
+                    </select>
+                  </div>
                 </div>
                 <div id="tour-info-section">
                   <TourInfoSection
@@ -3873,6 +3887,41 @@ export default function ReservationForm({
                   </div>
                 </div>
               )}
+
+              {/* 편집/취소 버튼 박스 - 예약 옵션·입금·지출 아래 배치 (스크롤 시 보임) */}
+              <div className="w-full border border-gray-200 rounded-xl p-4 bg-white shadow-sm max-lg:order-7">
+                <div className="flex flex-row items-center gap-2">
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="flex-1 min-w-0 bg-blue-600 text-white py-2.5 px-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                  >
+                    {isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('edit') : tCommon('add'))}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onCancel}
+                    className="flex-1 min-w-0 bg-gray-300 text-gray-700 py-2.5 px-3 rounded-lg hover:bg-gray-400 text-sm font-medium"
+                  >
+                    {tCommon('cancel')}
+                  </button>
+                  {reservation && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm(t('deleteConfirm'))) {
+                          onDelete(reservation.id);
+                          onCancel();
+                        }
+                      }}
+                      className="shrink-0 px-3 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
+                    >
+                      <Trash2 size={16} className="inline mr-1" />
+                      {tCommon('delete')}
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* 3. 상품 선택 */}
@@ -3930,38 +3979,6 @@ export default function ReservationForm({
               )}
             </div>
           </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3 pt-4 flex-shrink-0 p-3 sm:p-0 sm:pt-4 border-t border-gray-200 max-lg:bg-white max-lg:sticky max-lg:bottom-0">
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
-            >
-              {isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('edit') : tCommon('add'))}
-            </button>
-            <button
-              type="button"
-              onClick={onCancel}
-              className="flex-1 bg-gray-300 text-gray-700 py-1.5 px-3 rounded-lg hover:bg-gray-400 text-xs sm:text-sm"
-            >
-              {tCommon('cancel')}
-            </button>
-            {reservation && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (confirm(t('deleteConfirm'))) {
-                    onDelete(reservation.id);
-                    onCancel();
-                  }
-                }}
-                className="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-xs"
-              >
-                <Trash2 size={16} className="inline mr-2" />
-                {tCommon('delete')}
-              </button>
-            )}
           </div>
         </form>
       </div>

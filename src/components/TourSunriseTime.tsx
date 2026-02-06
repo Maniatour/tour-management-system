@@ -56,9 +56,9 @@ export default function TourSunriseTime({ tourDate, className = '' }: TourSunris
 
   if (loading) {
     return (
-      <div className={`flex items-center space-x-1 px-2 py-1 bg-yellow-50 text-yellow-700 rounded-lg ${className}`}>
-        <Sun className="w-3 h-3 animate-pulse" />
-        <span className="text-xs font-mono">--:--</span>
+      <div className={`flex items-center space-x-1 px-2 py-1 bg-yellow-50 text-yellow-700 rounded-lg min-w-0 max-w-full overflow-hidden ${className}`}>
+        <Sun className="w-3 h-3 animate-pulse flex-shrink-0" />
+        <span className="text-xs font-mono truncate">--:--</span>
       </div>
     )
   }
@@ -68,9 +68,9 @@ export default function TourSunriseTime({ tourDate, className = '' }: TourSunris
   }
 
   return (
-    <div className={`flex items-center space-x-1 px-2 py-1 bg-yellow-50 text-yellow-700 rounded-lg ${className}`}>
-      <Sun className="w-3 h-3" />
-      <span className="text-xs font-mono font-medium">
+    <div className={`flex items-center space-x-1 px-2 py-1 bg-yellow-50 text-yellow-700 rounded-lg min-w-0 max-w-full overflow-hidden ${className}`}>
+      <Sun className="w-3 h-3 flex-shrink-0" />
+      <span className="text-xs font-mono font-medium truncate block min-w-0">
         {sunriseTime}
       </span>
     </div>

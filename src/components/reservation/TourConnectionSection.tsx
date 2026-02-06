@@ -51,35 +51,32 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
   const [creatingTour, setCreatingTour] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // 가이드 정보를 별도로 가져오는 함수 (안전한 방식)
-  const fetchGuideInfo = async (guideEmail: string | null) => {
-    if (!guideEmail) return null
-    
+  // 가이드 정보를 별도로 가져오는 함수 (email 기준 조회, 결과 없음은 에러로 로깅하지 않음)
+  const fetchGuideInfo = async (guideIdOrEmail: string | null) => {
+    if (!guideIdOrEmail?.trim()) return null
+
+    const value = guideIdOrEmail.trim()
     try {
-      // 먼저 직접 조회 시도 (더 안전한 방식)
+      // maybeSingle 사용: 결과 0건이어도 에러가 아니므로 "Both failed" 로그 방지
       const { data: directData, error: directError } = await supabase
         .from('team')
         .select('name_ko, name_en')
-        .eq('email', guideEmail)
-        .single()
-      
-      if (!directError && directData) {
-        return directData
+        .eq('email', value)
+        .maybeSingle()
+
+      if (!directError && directData) return directData
+
+      // 실제 에러(RLS/네트워크 등)인 경우에만 RPC 폴백 시도. PGRST116(0 rows)은 무시
+      if (directError && directError.code !== 'PGRST116') {
+        const { data: rpcData, error: rpcError } = await supabase
+          .rpc('get_team_member_info', { p_email: value })
+        if (!rpcError && rpcData && rpcData.length > 0) return rpcData[0]
+        if (rpcError) {
+          console.error('RPC get_team_member_info failed:', rpcError.message, rpcError.code)
+        }
       }
-      
-      // 직접 조회 실패 시 RPC 함수 시도 (fallback)
-      console.log('Direct query failed, trying RPC function...', directError)
-      
-      const { data: rpcData, error: rpcError } = await supabase
-        .rpc('get_team_member_info', { p_email: guideEmail })
-      
-      if (!rpcError && rpcData && rpcData.length > 0) {
-        return rpcData[0]
-      }
-      
-      console.error('Both direct query and RPC failed:', { directError, rpcError })
+
       return null
-      
     } catch (error) {
       console.error('Error fetching guide info:', error)
       return null

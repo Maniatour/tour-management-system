@@ -1782,6 +1782,9 @@
     "actionRequired": {
       "title": "Action Required",
       "button": "Action Required",
+      "helpButton": "Tab guide",
+      "manualTitle": "Which reservations appear in each tab",
+      "manualIntro": "Each tab shows only reservations that match the conditions below.",
       "tabs": {
         "status": "Status",
         "tour": "Tour",
@@ -1789,6 +1792,11 @@
         "deposit": "Deposit",
         "balance": "Balance"
       },
+      "manualStatus": "Reservations with **pending** status and tour date **within the next 7 days** (from today)",
+      "manualTour": "Reservations with **confirmed** status that are **not yet assigned to a tour**",
+      "manualPricing": "① Reservations with no stored total price, ② Reservations where **stored total** and **calculated total** (from current options) **differ**",
+      "manualDeposit": "① Reservations that **have payment/deposit** but are **not assigned to a tour**, ② **Confirmed** reservations with **no payment record**",
+      "manualBalance": "Reservations whose **tour date has passed** and **balance is greater than 0** (outstanding balance)",
       "empty": "No items in this category."
     }
   },

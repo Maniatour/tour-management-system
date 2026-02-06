@@ -85,9 +85,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   }, [])
 
   // 새로운 초이스 시스템에서 선택된 옵션을 가져오는 함수
-  const getSelectedChoicesFromNewSystem = useCallback(async (reservationId: string) => {
-    try {
-      // 마이그레이션 전/후 모두 지원: choice_group, option_key는 선택적
+  const getSelectedChoicesFromNewSystem = useCallback(async (reservationId: string, isRetry = false) => {
+    const run = async () => {
       const { data, error } = await supabase
         .from('reservation_choices')
         .select(`
@@ -105,28 +104,38 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         `)
         .eq('reservation_id', reservationId)
 
-      if (error) {
-        // 에러가 실제로 존재하고 의미 있는 정보가 있을 때만 로깅
-        if (error.message || error.code || error.details) {
-          console.error('Error fetching reservation choices:', {
-            message: error.message,
-            details: error.details,
-            hint: error.hint,
-            code: error.code,
-            reservationId
-          })
-        }
+      if (error) throw error
+      return data || []
+    }
+
+    try {
+      return await run()
+    } catch (error) {
+      const isAbortError =
+        error instanceof Error &&
+        (error.name === 'AbortError' || error.message.includes('aborted') || error.message.includes('signal is aborted'))
+
+      if (isAbortError && !isRetry) {
+        // 동시 다수 요청 시 발생하는 AbortError는 한 번만 재시도
+        await new Promise((r) => setTimeout(r, 100))
+        return getSelectedChoicesFromNewSystem(reservationId, true)
+      }
+
+      if (isAbortError) {
+        // 재시도 후에도 AbortError면 로그 없이 빈 배열 반환 (동시 요청/모달 전환 등으로 인한 정상적 취소)
         return []
       }
 
-      return data || []
-    } catch (error) {
-      // 예외가 발생한 경우에만 로깅
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      if (errorMessage && errorMessage !== '{}') {
-        console.error('Error in getSelectedChoicesFromNewSystem:', {
-          errorMessage,
-          errorStack: error instanceof Error ? error.stack : undefined,
+      // 의미 있는 에러 정보가 있을 때만 로그 (빈 객체 로그 방지)
+      const err = error as { message?: string; code?: string; details?: string; hint?: string }
+      const msg = (err?.message && err.message.trim()) || (error instanceof Error ? error.message : '')
+      const code = err?.code?.trim?.()
+      const details = (err?.details && err.details.trim()) || (err?.hint && err.hint.trim())
+      if (msg || code || details) {
+        console.error('Error fetching reservation choices:', {
+          message: msg || undefined,
+          code: code || undefined,
+          details: details || undefined,
           reservationId
         })
       }

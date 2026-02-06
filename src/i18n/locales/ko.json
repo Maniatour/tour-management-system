@@ -1791,6 +1791,9 @@
     "actionRequired": {
       "title": "예약 처리 필요",
       "button": "예약 처리 필요",
+      "helpButton": "탭별 안내",
+      "manualTitle": "탭별 표시 예약 안내",
+      "manualIntro": "각 탭에는 아래 조건에 해당하는 예약만 표시됩니다.",
       "tabs": {
         "status": "상태",
         "tour": "투어",
@@ -1798,6 +1801,11 @@
         "deposit": "입금",
         "balance": "Balance"
       },
+      "manualStatus": "투어일이 **오늘부터 7일 이내**이고, 예약 상태가 **대기(pending)** 인 예약",
+      "manualTour": "예약 상태가 **확정(confirmed)** 인데, 아직 **투어에 배정되지 않은** 예약",
+      "manualPricing": "① 총 가격이 저장되지 않은 예약, ② 저장된 총 가격과 현재 옵션으로 계산한 금액이 **다른** 예약",
+      "manualDeposit": "① 입금/결제 기록은 있는데 **투어에 배정되지 않은** 예약, ② **확정**됐는데 **입금 기록이 없는** 예약",
+      "manualBalance": "**투어일이 이미 지난** 예약 중 **잔액이 0보다 큰** 예약 (미수금)",
       "empty": "해당 항목이 없습니다."
     }
   },

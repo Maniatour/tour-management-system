@@ -31,6 +31,7 @@ interface Product {
   name?: string | null
   name_ko?: string | null
   name_en?: string | null
+  tour_departure_times?: string[] | unknown
 }
 
 export const TourInfo: React.FC<TourInfoProps> = ({
@@ -57,6 +58,22 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   const tCommon = useTranslations('common')
   const productName = params.locale === 'ko' ? product?.name_ko : product?.name_en
   const dateLocale = params.locale === 'ko' ? 'ko-KR' : 'en-US'
+
+  // 투어 시간 미입력 시 product.tour_departure_times 첫 번째 값 사용 (HH:mm 또는 HH:mm:ss → HH:mm)
+  const getDefaultTimeString = (): string => {
+    if (tour.tour_start_datetime) {
+      const date = new Date(tour.tour_start_datetime)
+      return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+    }
+    const times = product?.tour_departure_times
+    if (Array.isArray(times) && times.length > 0 && typeof times[0] === 'string') {
+      const first = times[0].trim()
+      const match = first.match(/^(\d{1,2}):(\d{2})/)
+      if (match) return `${match[1].padStart(2, '0')}:${match[2]}`
+    }
+    return '08:00'
+  }
+  const defaultTimeStr = getDefaultTimeString()
   
   // 편집 상태 관리
   const [editingProduct, setEditingProduct] = useState(false)
@@ -132,13 +149,11 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   const [loadingProducts, setLoadingProducts] = useState(false)
   const [selectedProductId, setSelectedProductId] = useState(tour.product_id || '')
   const [dateValue, setDateValue] = useState(tour.tour_date || '')
-  const [timeValue, setTimeValue] = useState(() => {
-    if (tour.tour_start_datetime) {
-      const date = new Date(tour.tour_start_datetime)
-      return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
-    }
-    return '08:00'
-  })
+  const [timeValue, setTimeValue] = useState(defaultTimeStr)
+
+  useEffect(() => {
+    if (!editingTime) setTimeValue(defaultTimeStr)
+  }, [defaultTimeStr, editingTime])
 
   // 상품 목록 로드
   useEffect(() => {
@@ -206,12 +221,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
   }
 
   const handleTimeCancel = () => {
-    if (tour.tour_start_datetime) {
-      const date = new Date(tour.tour_start_datetime)
-      setTimeValue(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`)
-    } else {
-      setTimeValue('08:00')
-    }
+    setTimeValue(defaultTimeStr)
     setEditingTime(false)
   }
   
@@ -356,7 +366,7 @@ export const TourInfo: React.FC<TourInfoProps> = ({
             ) : (
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 <span className="font-medium text-sm truncate">
-                  {tour.tour_start_datetime ? new Date(tour.tour_start_datetime).toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' }) : '08:00'}
+                  {defaultTimeStr}
                 </span>
                 {onTourTimeChange && (
                   <button
