@@ -28,6 +28,7 @@ import { DateGroupHeader } from '@/components/reservation/DateGroupHeader'
 import ReservationsEmptyState from '@/components/reservation/ReservationsEmptyState'
 import ReservationsPagination from '@/components/reservation/ReservationsPagination'
 import { ReservationCardItem } from '@/components/reservation/ReservationCardItem'
+import ReservationActionRequiredModal from '@/components/reservation/ReservationActionRequiredModal'
 import { useAuth } from '@/contexts/AuthContext'
 import { 
   getPickupHotelDisplay, 
@@ -38,7 +39,9 @@ import {
 } from '@/utils/reservationUtils'
 import type { 
   Customer, 
-  Reservation
+  Reservation,
+  Channel,
+  PickupHotel
 } from '@/types/reservation'
 
 interface AdminReservationsProps {
@@ -130,6 +133,17 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       return []
     }
   }, [])
+
+  // ReservationCardItem용: null을 빈 값으로 정규화한 choices 반환
+  const getSelectedChoicesNormalized = useCallback(async (reservationId: string) => {
+    const rows = await getSelectedChoicesFromNewSystem(reservationId)
+    return rows.map(r => ({
+      choice_id: r.choice_id ?? '',
+      option_id: r.option_id ?? '',
+      quantity: r.quantity ?? 0,
+      choice_options: r.choice_options
+    }))
+  }, [getSelectedChoicesFromNewSystem])
 
   // 초이스 데이터 캐시 (깜빡거림 방지)
   const choicesCacheRef = useRef<Map<string, Array<{
@@ -252,6 +266,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   // 예약 상세 모달 관련 상태
   const [showReservationDetailModal, setShowReservationDetailModal] = useState(false)
   const [selectedReservationForDetail, setSelectedReservationForDetail] = useState<Reservation | null>(null)
+
+  // 예약 처리 필요 모달 및 입금 데이터(배지 카운트용)
+  const [showActionRequiredModal, setShowActionRequiredModal] = useState(false)
+  const [reservationIdsWithPayments, setReservationIdsWithPayments] = useState<Set<string>>(new Set())
 
   // 이메일 발송 관련 상태
   const [emailDropdownOpen, setEmailDropdownOpen] = useState<string | null>(null)
@@ -664,6 +682,90 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     buildTourInfoMap()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reservations, hookToursMap])
+
+  // 예약 처리 필요 배지용: 입금이 있는 예약 ID 수집
+  useEffect(() => {
+    if (!reservations.length) {
+      setReservationIdsWithPayments(new Set())
+      return
+    }
+    const ids = reservations.map(r => r.id)
+    const load = async () => {
+      const set = new Set<string>()
+      const chunkSize = 200
+      for (let i = 0; i < ids.length; i += chunkSize) {
+        const chunk = ids.slice(i, i + chunkSize)
+        const { data } = await supabase
+          .from('payment_records')
+          .select('reservation_id')
+          .in('reservation_id', chunk)
+        if (data) {
+          data.forEach((row: { reservation_id: string }) => set.add(row.reservation_id))
+        }
+      }
+      setReservationIdsWithPayments(set)
+    }
+    load()
+  }, [reservations])
+
+  // 예약 처리 필요 건수 (배지 표시용)
+  const actionRequiredCount = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0]
+    const d = new Date()
+    d.setDate(d.getDate() + 7)
+    const sevenDaysLaterStr = d.toISOString().split('T')[0]
+    const statusPending = (r: Reservation) => (r.status === 'pending' || (r.status as string)?.toLowerCase?.() === 'pending')
+    const statusConfirmed = (r: Reservation) => (r.status === 'confirmed' || (r.status as string)?.toLowerCase?.() === 'confirmed')
+    const hasPayment = (r: Reservation) => reservationIdsWithPayments.has(r.id)
+    const hasTourAssigned = (r: Reservation) => {
+      const id = r.tourId?.trim?.()
+      return !!(id && id !== '' && id !== 'null' && id !== 'undefined')
+    }
+    const hasPricing = (r: Reservation) => {
+      const p = reservationPricingMap.get(r.id)
+      return !!(p && (p.total_price != null && p.total_price > 0))
+    }
+    const storedTotalMatchesDynamic = (r: Reservation) => {
+      const stored = reservationPricingMap.get(r.id)?.total_price
+      if (stored == null) return true
+      const calculated = calculateTotalPrice(r, products || [], optionChoices || [])
+      return Math.abs((stored ?? 0) - calculated) <= 0.01
+    }
+    const getBalance = (r: Reservation) => {
+      const p = reservationPricingMap.get(r.id)
+      const b = p?.balance_amount
+      if (b == null) return 0
+      return typeof b === 'number' ? b : parseFloat(String(b)) || 0
+    }
+    const tourDateBeforeToday = (r: Reservation) => (r.tourDate || '') < todayStr
+    const tourDateWithin7Days = (r: Reservation) => {
+      const d = r.tourDate
+      if (!d) return false
+      return d >= todayStr && d <= sevenDaysLaterStr
+    }
+    const statusList = reservations.filter(r => tourDateWithin7Days(r) && statusPending(r))
+    const tourList = reservations.filter(r => statusConfirmed(r) && !hasTourAssigned(r))
+    const noPricing = reservations.filter(r => !hasPricing(r))
+    const pricingMismatch = reservations.filter(r => hasPricing(r) && !storedTotalMatchesDynamic(r))
+    const depositNoTour = reservations.filter(r => hasPayment(r) && !hasTourAssigned(r))
+    const confirmedNoDeposit = reservations.filter(r => statusConfirmed(r) && !hasPayment(r))
+    const balanceList = reservations.filter(r => tourDateBeforeToday(r) && getBalance(r) > 0)
+    const allIds = new Set<string>()
+    statusList.forEach(r => allIds.add(r.id))
+    tourList.forEach(r => allIds.add(r.id))
+    noPricing.forEach(r => allIds.add(r.id))
+    pricingMismatch.forEach(r => allIds.add(r.id))
+    depositNoTour.forEach(r => allIds.add(r.id))
+    confirmedNoDeposit.forEach(r => allIds.add(r.id))
+    balanceList.forEach(r => allIds.add(r.id))
+    return allIds.size
+  }, [
+    reservations,
+    reservationPricingMap,
+    reservationIdsWithPayments,
+    products,
+    optionChoices
+  ])
 
   // 필터링 및 정렬 로직 - useMemo로 최적화
   const filteredAndSortedReservations = useMemo(() => {
@@ -2230,6 +2332,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           setShowAddForm(true)
           console.log('새 예약 모달 오픈, 예약 ID 생성:', newId)
         }}
+        onActionRequired={() => setShowActionRequiredModal(true)}
+        actionRequiredCount={actionRequiredCount}
       />
 
       {/* 검색 및 필터 */}
@@ -2402,7 +2506,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         onRefreshReservations={refreshReservations}
                         generatePriceCalculation={generatePriceCalculation}
                         getGroupColorClasses={getGroupColorClasses}
-                        getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}
+                        getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
                         choicesCacheRef={choicesCacheRef}
                         showResidentStatusIcon={false}
                       />
@@ -2463,7 +2567,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                     onRefreshReservations={refreshReservations}
                     generatePriceCalculation={generatePriceCalculation}
                     getGroupColorClasses={getGroupColorClasses}
-                    getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}
+                    getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
                     choicesCacheRef={choicesCacheRef}
                     showResidentStatusIcon={false}
                   />
@@ -2493,11 +2597,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           reservation={editingReservation || (newReservationId ? { id: newReservationId } as Reservation : null)}
           customers={customers || []}
           products={products || []}
-          channels={channels || []}
+          channels={(channels || []) as Channel[]}
           productOptions={productOptions || []}
           options={options || []}
-          pickupHotels={pickupHotels || []}
-          coupons={coupons || []}
+          pickupHotels={(pickupHotels || []) as PickupHotel[]}
+          coupons={(coupons || []) as { id: string; coupon_code: string; discount_type: 'percentage' | 'fixed'; [key: string]: unknown }[]}
           onSubmit={editingReservation ? handleEditReservation : handleAddReservation}
           onCancel={() => {
             setShowAddForm(false)
@@ -2614,6 +2718,41 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           </div>
         </div>
       )}
+
+      {/* 예약 처리 필요 모달 */}
+      <ReservationActionRequiredModal
+        isOpen={showActionRequiredModal}
+        onClose={() => setShowActionRequiredModal(false)}
+        reservations={reservations}
+        customers={(customers as Customer[]) || []}
+        products={(products as Array<{ id: string; name: string; sub_category?: string; base_price?: number }>) || []}
+        channels={(channels as Array<{ id: string; name: string; favicon_url?: string | null }>) || []}
+        pickupHotels={(pickupHotels as Array<{ id: string; hotel?: string | null; name?: string | null; name_ko?: string | null; pick_up_location?: string | null }>) || []}
+        productOptions={(productOptions as Array<{ id: string; name: string; is_required?: boolean }>) || []}
+        optionChoices={(optionChoices as Array<{ id: string; name: string; option_id?: string; adult_price?: number; child_price?: number; infant_price?: number }>) || []}
+        tourInfoMap={tourInfoMap}
+        reservationPricingMap={reservationPricingMap}
+        locale={locale}
+        onPricingInfoClick={handlePricingInfoClick}
+        onCreateTour={handleCreateTour}
+        onPickupTimeClick={handlePickupTimeClick}
+        onPickupHotelClick={handlePickupHotelClick}
+        onPaymentClick={handlePaymentClick}
+        onDetailClick={handleDetailClick}
+        onReviewClick={handleReviewClick}
+        onEmailPreview={handleOpenEmailPreview}
+        onEmailLogsClick={handleEmailLogsClick}
+        onEmailDropdownToggle={(id) => handleEmailDropdownToggle(id)}
+        onEditClick={handleEditClick}
+        onCustomerClick={handleCustomerClick}
+        onRefreshReservations={refreshReservations}
+        generatePriceCalculation={generatePriceCalculation}
+        getGroupColorClasses={getGroupColorClasses}
+        getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
+        choicesCacheRef={choicesCacheRef}
+        emailDropdownOpen={emailDropdownOpen}
+        sendingEmail={sendingEmail}
+      />
 
       {/* 픽업 시간 수정 모달 */}
       {showPickupTimeModal && selectedReservationForPickupTime && (

@@ -10,10 +10,10 @@ import type {
   Reservation 
 } from '@/types/reservation'
 
-// 픽업 호텔 ID로 호텔 정보를 찾는 헬퍼 함수
-export const getPickupHotelDisplay = (hotelId: string, pickupHotels: PickupHotel[] | null) => {
+// 픽업 호텔 ID로 호텔 정보를 찾는 헬퍼 함수 (id, hotel, pick_up_location만 있으면 동작)
+export const getPickupHotelDisplay = (hotelId: string, pickupHotels: Array<{ id: string; hotel?: string; pick_up_location?: string | null }> | null) => {
   const hotel = pickupHotels?.find(h => h.id === hotelId)
-  return hotel ? `${hotel.hotel} - ${hotel.pick_up_location}` : hotelId
+  return hotel ? `${hotel.hotel ?? ''} - ${hotel.pick_up_location ?? ''}` : hotelId
 }
 
 // 고객 이름 가져오기
@@ -26,8 +26,8 @@ export const getProductName = (productId: string, products: Product[] | null) =>
   return products?.find(p => p.id === productId)?.name || 'Unknown'
 }
 
-// 채널 이름 가져오기
-export const getChannelName = (channelId: string, channels: Channel[] | null) => {
+// 채널 이름 가져오기 (id, name만 있으면 동작)
+export const getChannelName = (channelId: string, channels: Array<{ id: string; name?: string | null }> | null) => {
   return channels?.find(c => c.id === channelId)?.name || 'Unknown'
 }
 

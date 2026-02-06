@@ -66,9 +66,33 @@ export default function PickupScheduleAutoGenerateModal({
   const [markers, setMarkers] = useState<google.maps.Marker[]>([]) // 커스텀 마커 배열
   const [customFirstPickupTime, setCustomFirstPickupTime] = useState<string>('') // 사용자 정의 첫 번째 픽업 시간
   const [customLastPickupTime, setCustomLastPickupTime] = useState<string>('') // 사용자 정의 마지막 픽업 시간
+  // 일출 시간 대비 마지막 픽업 오프셋 (일출 N시간 M분 전 = 마지막 픽업)
+  const [sunriseOffsetHours, setSunriseOffsetHours] = useState<number>(6)
+  const [sunriseOffsetMinutes, setSunriseOffsetMinutes] = useState<number>(30)
 
   // 일출 투어 여부 확인
   const isSunriseTour = productId === 'MDGCSUNRISE'
+
+  /** 일출 시간 대비 마지막 픽업까지의 오프셋(분). */
+  const sunriseOffsetTotalMinutes = sunriseOffsetHours * 60 + sunriseOffsetMinutes
+
+  /** 이동 시간(분)에 따라 총 소요 시간(이동+대기) 계산. 대기 고정 5분 제거.
+   * 1~5분 → 5분 (이동 3분, 대기 2분)
+   * 5~10분 → 10분 (이동 7분, 대기 3분)
+   * 10분 초과 → (이동+대기3분)을 5분 단위로 반올림
+   */
+  const getTravelAndWaitFromRawMinutes = (rawTravelMinutes: number): { total: number; travel: number; wait: number } => {
+    if (rawTravelMinutes >= 1 && rawTravelMinutes <= 5) {
+      return { total: 5, travel: 3, wait: 2 }
+    }
+    if (rawTravelMinutes > 5 && rawTravelMinutes <= 10) {
+      return { total: 10, travel: 7, wait: 3 }
+    }
+    const total = Math.round((rawTravelMinutes + 3) / 5) * 5
+    const wait = 3
+    const travel = Math.max(rawTravelMinutes, total - wait)
+    return { total, travel, wait }
+  }
 
   // 시작점 정보 정의
   const startPointInfo = {
@@ -368,7 +392,7 @@ export default function PickupScheduleAutoGenerateModal({
       let lastPickupTime: string = '08:00'
       if (isSunriseTour && sunriseTime) {
         const [sunriseHours, sunriseMinutes] = sunriseTime.split(':').map(Number)
-        let totalMinutes = sunriseHours * 60 + sunriseMinutes - (6 * 60 + 30)
+        let totalMinutes = sunriseHours * 60 + sunriseMinutes - sunriseOffsetTotalMinutes
         if (totalMinutes < 0) {
           totalMinutes += 24 * 60
         }
@@ -526,8 +550,7 @@ export default function PickupScheduleAutoGenerateModal({
       lastPickupTime = customLastPickupTime
     } else if (isSunriseTour && sunriseTime) {
       const [sunriseHours, sunriseMinutes] = sunriseTime.split(':').map(Number)
-      // 일출 시간에서 6시간 30분 전
-      let totalMinutes = sunriseHours * 60 + sunriseMinutes - (6 * 60 + 30)
+      let totalMinutes = sunriseHours * 60 + sunriseMinutes - sunriseOffsetTotalMinutes
       
       // 음수 처리 (전날로 넘어가는 경우)
       if (totalMinutes < 0) {
@@ -588,7 +611,7 @@ export default function PickupScheduleAutoGenerateModal({
     })
 
     setPickupSchedule(schedule)
-  }, [assignedReservations, pickupHotels, isSunriseTour, sunriseTime, mapLoaded])
+  }, [assignedReservations, pickupHotels, isSunriseTour, sunriseTime, sunriseOffsetTotalMinutes, mapLoaded])
 
   // 실제 이동 시간을 기반으로 픽업 시간 업데이트
   const updatePickupTimesWithTravelTimes = useCallback((travelTimes: number[]) => {
@@ -602,8 +625,7 @@ export default function PickupScheduleAutoGenerateModal({
         lastPickupTime = customLastPickupTime
       } else if (isSunriseTour && sunriseTime) {
         const [sunriseHours, sunriseMinutes] = sunriseTime.split(':').map(Number)
-        // 일출 시간에서 6시간 30분 전
-        let totalMinutes = sunriseHours * 60 + sunriseMinutes - (6 * 60 + 30)
+        let totalMinutes = sunriseHours * 60 + sunriseMinutes - sunriseOffsetTotalMinutes
         
         // 음수 처리 (전날로 넘어가는 경우)
         if (totalMinutes < 0) {
@@ -648,11 +670,9 @@ export default function PickupScheduleAutoGenerateModal({
           // 원본 이동 시간 저장 (대기시간 제외)
           updatedSchedule[i].rawTravelTime = travelTimeMinutes
           
-          // 이동 시간 + 대기 시간(5분)을 합쳐서 5분 단위로 반올림
-          const totalTimeWithWait = travelTimeMinutes + 5 // 이동 시간 + 대기 시간
-          roundedTime = Math.round(totalTimeWithWait / 5) * 5 // 5분 단위로 반올림
-          
-          // 이동 시간을 스케줄에 저장 (분 단위)
+          // 1~5분→5분(이동3+대기2), 5~10분→10분(이동7+대기3) 등 적용
+          const { total } = getTravelAndWaitFromRawMinutes(travelTimeMinutes)
+          roundedTime = total
           updatedSchedule[i].travelTimeFromPrevious = roundedTime
         } else {
           // travelTimes가 없거나 0이면 기존 값 유지 (중요!)
@@ -682,7 +702,7 @@ export default function PickupScheduleAutoGenerateModal({
 
       return updatedSchedule
     })
-  }, [isSunriseTour, sunriseTime, customLastPickupTime])
+  }, [isSunriseTour, sunriseTime, customLastPickupTime, sunriseOffsetTotalMinutes])
 
   // 사용자 정의 첫 번째 픽업 시간을 기준으로 픽업 시간 재계산
   const updatePickupTimesFromFirstPickup = useCallback((firstPickupTime: string) => {
@@ -714,8 +734,8 @@ export default function PickupScheduleAutoGenerateModal({
             const nextTravelTimeSeconds = travelTimes[i + 1]
             const nextTravelTimeMinutes = Math.ceil(nextTravelTimeSeconds / 60)
             updatedSchedule[i + 1].rawTravelTime = nextTravelTimeMinutes
-            const totalTimeWithWait = nextTravelTimeMinutes + 5
-            roundedTime = Math.round(totalTimeWithWait / 5) * 5
+            const { total } = getTravelAndWaitFromRawMinutes(nextTravelTimeMinutes)
+            roundedTime = total
             updatedSchedule[i + 1].travelTimeFromPrevious = roundedTime
           }
           
@@ -732,9 +752,8 @@ export default function PickupScheduleAutoGenerateModal({
       if (travelTimes.length > 0 && travelTimes[0] > 0) {
         const firstTravelTimeMinutes = Math.ceil(travelTimes[0] / 60)
         updatedSchedule[0].rawTravelTime = firstTravelTimeMinutes
-        const totalTimeWithWait = firstTravelTimeMinutes + 5
-        const roundedTime = Math.round(totalTimeWithWait / 5) * 5
-        updatedSchedule[0].travelTimeFromPrevious = roundedTime
+        const { total } = getTravelAndWaitFromRawMinutes(firstTravelTimeMinutes)
+        updatedSchedule[0].travelTimeFromPrevious = total
       }
       // travelTimes가 없으면 기존 값 유지 (이미 prevSchedule에서 복사됨)
 
@@ -757,6 +776,13 @@ export default function PickupScheduleAutoGenerateModal({
     }
   }, [customLastPickupTime, updatePickupTimesWithTravelTimes, travelTimes, pickupSchedule.length])
 
+  // 일출 오프셋(몇 시간 몇 분 전) 변경 시 마지막 픽업 자동 계산 갱신
+  useEffect(() => {
+    if (isSunriseTour && !customLastPickupTime && pickupSchedule.length > 0) {
+      updatePickupTimesWithTravelTimes(travelTimes)
+    }
+  }, [sunriseOffsetTotalMinutes, isSunriseTour, customLastPickupTime, pickupSchedule.length, travelTimes, updatePickupTimesWithTravelTimes])
+
   // 스케줄 생성 시 자동 실행 (Google Maps API가 로드된 후)
   useEffect(() => {
     if (isOpen && assignedReservations.length > 0 && pickupHotels.length > 0) {
@@ -773,12 +799,14 @@ export default function PickupScheduleAutoGenerateModal({
     }
   }, [isOpen, generatePickupSchedule, assignedReservations.length, pickupHotels.length])
 
-  // 모달이 열릴 때 routeCalculated 및 customLastPickupTime 초기화
+  // 모달이 열릴 때 routeCalculated 및 customLastPickupTime, 일출 오프셋 초기화
   useEffect(() => {
     if (isOpen) {
       setRouteCalculated(false)
       setCustomLastPickupTime('')
       setCustomFirstPickupTime('')
+      setSunriseOffsetHours(6)
+      setSunriseOffsetMinutes(30)
     }
   }, [isOpen])
 
@@ -1173,6 +1201,23 @@ export default function PickupScheduleAutoGenerateModal({
     }
   }, [map, directionsService, directionsRenderer, pickupSchedule.length, routeCalculated, updatePickupTimesWithTravelTimes, markers]) // pickupSchedule.length만 의존성으로 사용하여 핀 깜빡임 방지
 
+  // 픽업 순서 변경 (위로/아래로)
+  const movePickupOrder = (fromIndex: number, direction: 'up' | 'down') => {
+    setPickupSchedule(prev => {
+      if (prev.length <= 1) return prev
+      const toIndex = direction === 'up' ? fromIndex - 1 : fromIndex + 1
+      if (toIndex < 0 || toIndex >= prev.length) return prev
+      const next = [...prev]
+      ;[next[fromIndex], next[toIndex]] = [next[toIndex], next[fromIndex]]
+      return next.map((item, i) => ({ ...item, order: i + 1 }))
+    })
+  }
+
+  // 수정 후 경로 계산 다시 하기 (현재 순서로 Directions API 재호출)
+  const recalculateRoute = () => {
+    setRouteCalculated(false)
+  }
+
   // 구글맵 공유 링크 생성
   const generateGoogleMapsLink = (): string => {
     if (pickupSchedule.length === 0) return ''
@@ -1277,8 +1322,7 @@ export default function PickupScheduleAutoGenerateModal({
     let travelTime = firstPickup.travelTimeFromPrevious
     if (!travelTime && travelTimes.length > 0 && travelTimes[0] > 0) {
       const travelTimeMinutes = Math.ceil(travelTimes[0] / 60)
-      const totalTimeWithWait = travelTimeMinutes + 5
-      travelTime = Math.round(totalTimeWithWait / 5) * 5
+      travelTime = getTravelAndWaitFromRawMinutes(travelTimeMinutes).total
     }
     
     if (!travelTime) return null
@@ -1394,6 +1438,35 @@ export default function PickupScheduleAutoGenerateModal({
               (일출 {sunriseTimeArizona || sunriseTime} AZ 기준 자동 계산)
             </span>
           )}
+          {isSunriseTour && sunriseTime && (
+            <div className="flex items-center gap-2 border-l border-gray-300 pl-4">
+              <label className="text-sm text-gray-600 whitespace-nowrap">일출 시간으로부터</label>
+              <input
+                type="number"
+                min={0}
+                max={24}
+                value={sunriseOffsetHours}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10)
+                  if (!isNaN(v) && v >= 0 && v <= 24) setSunriseOffsetHours(v)
+                }}
+                className="w-12 px-1.5 py-1.5 border border-gray-300 rounded text-sm text-center"
+              />
+              <span className="text-sm text-gray-600">시간</span>
+              <input
+                type="number"
+                min={0}
+                max={59}
+                value={sunriseOffsetMinutes}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10)
+                  if (!isNaN(v) && v >= 0 && v <= 59) setSunriseOffsetMinutes(v)
+                }}
+                className="w-12 px-1.5 py-1.5 border border-gray-300 rounded text-sm text-center"
+              />
+              <span className="text-sm text-gray-600">전에 마지막 픽업</span>
+            </div>
+          )}
         </div>
 
         {/* 본문 */}
@@ -1429,17 +1502,15 @@ export default function PickupScheduleAutoGenerateModal({
                   {startPointHotel.address}
                 </div>
                 {/* 첫 번째 픽업까지의 이동 시간 표시 */}
-                {pickupSchedule.length > 0 && (pickupSchedule[0].travelTimeFromPrevious || (travelTimes.length > 0 && travelTimes[0] > 0)) && (
-                  <div className="text-xs text-orange-600 font-medium">
-                    → 첫 번째 픽업까지: 이동 {
-                      pickupSchedule[0].rawTravelTime || 
-                      (travelTimes.length > 0 ? Math.ceil(travelTimes[0] / 60) : 0)
-                    }분 + 대기 5분 = {
-                      pickupSchedule[0].travelTimeFromPrevious || 
-                      (travelTimes.length > 0 ? Math.round((Math.ceil(travelTimes[0] / 60) + 5) / 5) * 5 : 0)
-                    }분
-                  </div>
-                )}
+                {pickupSchedule.length > 0 && (pickupSchedule[0].travelTimeFromPrevious || (travelTimes.length > 0 && travelTimes[0] > 0)) && (() => {
+                  const raw = pickupSchedule[0].rawTravelTime ?? (travelTimes.length > 0 ? Math.ceil(travelTimes[0] / 60) : 0)
+                  const { total, travel, wait } = getTravelAndWaitFromRawMinutes(raw)
+                  return (
+                    <div className="text-xs text-orange-600 font-medium">
+                      → 첫 번째 픽업까지: 이동 {travel}분, 대기 {wait}분 = {total}분
+                    </div>
+                  )
+                })()}
               </div>
               
               {/* 호텔 스케줄 카드 */}
@@ -1462,6 +1533,26 @@ export default function PickupScheduleAutoGenerateModal({
                         )}명 | {item.reservations.length}건
                       </span>
                     </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => movePickupOrder(index, 'up')}
+                        disabled={index === 0}
+                        className="p-1 rounded hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600"
+                        title="순서 위로"
+                      >
+                        <ChevronUp size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => movePickupOrder(index, 'down')}
+                        disabled={index === pickupSchedule.length - 1}
+                        className="p-1 rounded hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600"
+                        title="순서 아래로"
+                      >
+                        <ChevronDown size={16} />
+                      </button>
+                    </div>
                     {item.hotel.group_number !== null && (
                       <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
                         그룹 {item.hotel.group_number}
@@ -1477,19 +1568,19 @@ export default function PickupScheduleAutoGenerateModal({
                     </div>
                   )}
                   {/* 이동 시간 표시 */}
-                  {item.travelTimeFromPrevious && (
-                    <div className="text-xs text-orange-600 mb-2 font-medium">
-                      {index === 0 ? (
-                        <>
-                          시작점에서: 이동 {item.rawTravelTime || 0}분 + 대기 5분 = {item.travelTimeFromPrevious}분
-                        </>
-                      ) : (
-                        <>
-                          ← 이전 호텔에서: 이동 {item.rawTravelTime || 0}분 + 대기 5분 = {item.travelTimeFromPrevious}분
-                        </>
-                      )}
-                    </div>
-                  )}
+                  {item.travelTimeFromPrevious && (() => {
+                    const raw = item.rawTravelTime ?? 0
+                    const { total, travel, wait } = getTravelAndWaitFromRawMinutes(raw)
+                    return (
+                      <div className="text-xs text-orange-600 mb-2 font-medium">
+                        {index === 0 ? (
+                          <>시작점에서: 이동 {travel}분, 대기 {wait}분 = {total}분</>
+                        ) : (
+                          <>← 이전 호텔에서: 이동 {travel}분, 대기 {wait}분 = {total}분</>
+                        )}
+                      </div>
+                    )
+                  })()}
                   <div className="mt-2 space-y-1">
                     {item.reservations.map(reservation => {
                       const totalPeople = (reservation.adults || 0) + (reservation.children || 0) + (reservation.infants || 0)
@@ -1522,13 +1613,22 @@ export default function PickupScheduleAutoGenerateModal({
 
         {/* 푸터 */}
         <div className="flex items-center justify-between p-4 border-t">
-          <div className="flex space-x-2">
+          <div className="flex space-x-2 flex-wrap gap-2">
             <button
               onClick={generatePickupSchedule}
               className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
             >
               다시 생성
             </button>
+            {pickupSchedule.length > 0 && (
+              <button
+                onClick={recalculateRoute}
+                className="px-4 py-2 bg-amber-100 text-amber-800 border border-amber-300 rounded hover:bg-amber-200"
+                title="순서 수정 후 현재 순서로 경로·이동시간을 다시 계산합니다"
+              >
+                경로 계산 다시 하기
+              </button>
+            )}
             {pickupSchedule.length > 0 && (
               <button
                 onClick={copyGoogleMapsLink}

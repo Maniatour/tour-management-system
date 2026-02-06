@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { useTranslations } from 'next-intl'
-import { Plus, Search, Grid3X3, CalendarDays } from 'lucide-react'
+import { Plus, Search, Grid3X3, CalendarDays, AlertCircle } from 'lucide-react'
 import { getCustomerName } from '@/utils/reservationUtils'
 import type { Customer } from '@/types/reservation'
 
@@ -14,6 +14,8 @@ interface ReservationsHeaderProps {
   searchTerm: string
   onSearchChange: (term: string) => void
   onAddReservation: () => void
+  onActionRequired?: () => void
+  actionRequiredCount?: number
 }
 
 export default function ReservationsHeader({
@@ -23,7 +25,9 @@ export default function ReservationsHeader({
   onViewModeChange,
   searchTerm,
   onSearchChange,
-  onAddReservation
+  onAddReservation,
+  onActionRequired,
+  actionRequiredCount = 0
 }: ReservationsHeaderProps) {
   const t = useTranslations('reservations')
 
@@ -73,9 +77,9 @@ export default function ReservationsHeader({
           </div>
         </div>
         
-        {/* 검색창과 새예약 추가 버튼 */}
-        <div className="flex items-center space-x-2 flex-1 max-w-xs">
-          <div className="relative flex-1">
+        {/* 검색창, 예약 처리 필요, 새예약 추가 버튼 */}
+        <div className="flex items-center space-x-2 flex-1 max-w-md justify-end">
+          <div className="relative flex-1 max-w-xs">
             <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={14} />
             <input
               type="text"
@@ -87,6 +91,26 @@ export default function ReservationsHeader({
               className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-xs sm:text-sm"
             />
           </div>
+          {typeof onActionRequired === 'function' && (
+            <button
+              type="button"
+              onClick={onActionRequired}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium flex-shrink-0 ${
+                actionRequiredCount > 0
+                  ? 'bg-amber-500 text-white hover:bg-amber-600'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+              title={t('actionRequired.button')}
+            >
+              <AlertCircle size={16} />
+              <span className="hidden sm:inline">{t('actionRequired.button')}</span>
+              {actionRequiredCount > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[1.25rem] px-1.5 py-0.5 rounded-full text-xs bg-white/20">
+                  {actionRequiredCount}
+                </span>
+              )}
+            </button>
+          )}
           <button
             onClick={onAddReservation}
             className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium flex-shrink-0"

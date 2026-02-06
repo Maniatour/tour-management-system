@@ -1778,6 +1778,18 @@
       "confirmDelete": "Are you sure you want to delete this option?",
       "loadingOptions": "Loading options...",
       "errorLoading": "Error: {error}"
+    },
+    "actionRequired": {
+      "title": "Action Required",
+      "button": "Action Required",
+      "tabs": {
+        "status": "Status",
+        "tour": "Tour",
+        "pricing": "Reservation Price",
+        "deposit": "Deposit",
+        "balance": "Balance"
+      },
+      "empty": "No items in this category."
     }
   },
   "weather": {

@@ -1787,6 +1787,18 @@
       "confirmDelete": "이 옵션을 삭제하시겠습니까?",
       "loadingOptions": "옵션 로딩 중...",
       "errorLoading": "오류: {error}"
+    },
+    "actionRequired": {
+      "title": "예약 처리 필요",
+      "button": "예약 처리 필요",
+      "tabs": {
+        "status": "상태",
+        "tour": "투어",
+        "pricing": "예약 가격",
+        "deposit": "입금",
+        "balance": "Balance"
+      },
+      "empty": "해당 항목이 없습니다."
     }
   },
   "weather": {
