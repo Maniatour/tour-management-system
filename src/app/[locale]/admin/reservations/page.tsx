@@ -1187,6 +1187,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       
       if (reservationId) {
         try {
+          const UNDECIDED_OPTION_ID = '__undecided__' // "미정" 선택은 reservation_choices에 저장하지 않음
           let choicesToSave: Array<{
             reservation_id: string
             choice_id: string
@@ -1208,7 +1209,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             if (Array.isArray(selectedChoices) && selectedChoices.length > 0) {
               console.log('reservation.selectedChoices에서 초이스 데이터 발견:', selectedChoices.length, '개')
               for (const choice of selectedChoices) {
-                if (choice.choice_id && choice.option_id) {
+                if (choice.choice_id && choice.option_id && choice.option_id !== UNDECIDED_OPTION_ID) {
                   choicesToSave.push({
                     reservation_id: reservationId,
                     choice_id: choice.choice_id,
@@ -1216,6 +1217,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                     quantity: choice.quantity || 1,
                     total_price: choice.total_price || 0
                   })
+                } else if (choice.option_id === UNDECIDED_OPTION_ID) {
+                  // "미정" 선택은 reservation_choices에 저장하지 않음 (choice_options FK 제약)
                 } else {
                   console.warn('초이스 데이터에 choice_id 또는 option_id가 없습니다:', choice)
                 }
@@ -1227,7 +1230,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           if (choicesToSave.length === 0 && reservation.choices && reservation.choices.required && Array.isArray(reservation.choices.required)) {
             console.log('reservation.choices.required에서 초이스 데이터 발견:', reservation.choices.required.length, '개')
             for (const choice of reservation.choices.required) {
-              if (choice.choice_id && choice.option_id) {
+              if (choice.choice_id && choice.option_id && choice.option_id !== UNDECIDED_OPTION_ID) {
                 choicesToSave.push({
                   reservation_id: reservationId,
                   choice_id: choice.choice_id,
@@ -1464,6 +1467,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
         // 새로운 초이스 시스템: reservation_choices 테이블에 저장
         try {
+          const UNDECIDED_OPTION_ID = '__undecided__'
           // 기존 reservation_choices 삭제
           await supabase
             .from('reservation_choices')
@@ -1491,7 +1495,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             if (Array.isArray(selectedChoices) && selectedChoices.length > 0) {
               console.log('handleEditReservation: reservation.selectedChoices에서 초이스 데이터 발견:', selectedChoices.length, '개')
               for (const choice of selectedChoices) {
-                if (choice.choice_id && choice.option_id) {
+                if (choice.choice_id && choice.option_id && choice.option_id !== UNDECIDED_OPTION_ID) {
                   const totalPrice = choice.total_price !== undefined && choice.total_price !== null 
                     ? Number(choice.total_price) 
                     : 0
@@ -1510,6 +1514,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                     quantity: choice.quantity || 1,
                     total_price: totalPrice
                   })
+                } else if (choice.option_id === UNDECIDED_OPTION_ID) {
+                  // "미정" 선택은 reservation_choices에 저장하지 않음
                 } else {
                   console.warn('초이스 데이터에 choice_id 또는 option_id가 없습니다:', choice)
                 }
@@ -1521,7 +1527,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           if (choicesToSave.length === 0 && reservation.choices && reservation.choices.required && Array.isArray(reservation.choices.required)) {
             console.log('handleEditReservation: reservation.choices.required에서 초이스 데이터 발견:', reservation.choices.required.length, '개')
             for (const choice of reservation.choices.required) {
-              if (choice.choice_id && choice.option_id) {
+              if (choice.choice_id && choice.option_id && choice.option_id !== UNDECIDED_OPTION_ID) {
                 choicesToSave.push({
                   reservation_id: editingReservation.id,
                   choice_id: choice.choice_id,

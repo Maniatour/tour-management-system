@@ -3157,13 +3157,14 @@ export default function ReservationForm({
         return false // 거주 상태별 인원 수가 설정되어 있으면 검증 건너뛰기
       }
       
-      // 해당 초이스에서 선택된 옵션이 있는지 확인
+      // "미정" 선택도 유효한 선택으로 인정 (미국 거주자 구분·기타 입장료 등)
+      const UNDECIDED_OPTION_ID = '__undecided__'
       const hasSelection = selectedChoicesArray.some(selectedChoice => {
         const matches = selectedChoice.choice_id === choice.id
-        if (!matches) {
-          console.log(`ReservationForm: 선택 불일치 - choice.id: ${choice.id}, selectedChoice.choice_id: ${selectedChoice.choice_id}`)
-        }
-        return matches
+        if (!matches) return false
+        // 미정(__undecided__) 선택 시 필수 검증 통과
+        if (selectedChoice.option_id === UNDECIDED_OPTION_ID) return true
+        return true
       })
       
       console.log(`ReservationForm: 초이스 검증 - ${choice.choice_group_ko || choice.choice_group}`, {
@@ -3303,10 +3304,11 @@ export default function ReservationForm({
         selectedChoices: formData.selectedChoices
       })
       
-      // 새로운 초이스 시스템에서 선택된 초이스 처리
+      // "미정"(__undecided__)은 DB choice_options에 없으므로 reservation_choices에 저장하지 않음
+      const UNDECIDED_OPTION_ID = '__undecided__'
       if (Array.isArray(formData.selectedChoices) && formData.selectedChoices.length > 0) {
         formData.selectedChoices.forEach(choice => {
-          if (choice.choice_id && choice.option_id) {
+          if (choice.choice_id && choice.option_id && choice.option_id !== UNDECIDED_OPTION_ID) {
             choicesData.required.push({
               choice_id: choice.choice_id,
               option_id: choice.option_id,
@@ -3320,7 +3322,7 @@ export default function ReservationForm({
         Object.entries(formData.selectedChoices).forEach(([choiceId, choiceData]) => {
           if (choiceData && typeof choiceData === 'object' && 'selected' in choiceData) {
             const choice = choiceData as { selected: string; timestamp?: string }
-            if (choice.selected) {
+            if (choice.selected && choice.selected !== UNDECIDED_OPTION_ID) {
               choicesData.required.push({
                 choice_id: choiceId,
                 option_id: choice.selected,
