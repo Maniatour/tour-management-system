@@ -46,32 +46,8 @@ interface Product {
   }
 }
 
-interface ChannelProductPricing {
-  id: string
-  channelId: string
-  productId: string
-  price: {
-    adult: number
-    child: number
-    infant: number
-  }
-  markup: {
-    adult: number
-    child: number
-    infant: number
-  }
-  finalPrice: {
-    adult: number
-    child: number
-    infant: number
-  }
-  status: 'active' | 'inactive'
-  created_at: string
-}
-
 export default function AdminChannels() {
   const t = useTranslations('channels')
-  const tCommon = useTranslations('common')
   
   const [channels, setChannels] = useState<Channel[]>([])
   const [loading, setLoading] = useState(true)
@@ -1196,7 +1172,7 @@ export default function AdminChannels() {
       {/* 채널 추가/편집 모달 */}
       {(showAddForm || editingChannel) && (
         <ChannelForm
-          channel={editingChannel}
+          channel={editingChannel ?? null}
           onSubmit={(channelData) => {
             console.log('onSubmit called in page.tsx, editingChannel:', editingChannel);
             console.log('onSubmit channelData:', channelData);
@@ -1212,11 +1188,15 @@ export default function AdminChannels() {
             setShowAddForm(false)
             setEditingChannel(null)
           }}
-          onDelete={editingChannel ? () => handleDeleteChannel(editingChannel.id) : undefined}
-          onManageProducts={editingChannel ? () => {
-            setSelectedChannelForProducts(editingChannel)
-            setShowProductSelection(true)
-          } : undefined}
+          {...(editingChannel
+            ? {
+                onDelete: () => { void handleDeleteChannel(editingChannel.id) },
+                onManageProducts: () => {
+                  setSelectedChannelForProducts(editingChannel)
+                  setShowProductSelection(true)
+                }
+              }
+            : {})}
         />
       )}
 

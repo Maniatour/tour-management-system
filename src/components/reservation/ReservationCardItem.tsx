@@ -325,42 +325,34 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           )}
         </div>
 
-        {/* 투어 날짜 및 픽업 시간 */}
-        <div className="flex items-center space-x-2">
-          <Calendar className="h-4 w-4 text-gray-400" />
+        {/* 투어 날짜(tour_date) · 픽업 날짜&시간(pickup_date & pickup_time) - 같은 줄 */}
+        <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
+          <Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" />
+          <span className="text-sm text-gray-900">{reservation.tourDate || '-'}</span>
+          <span className="text-gray-400">·</span>
+          <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
           {(() => {
             const pickupTime = reservation.pickUpTime || ''
-            let displayDate = reservation.tourDate
-            
-            // 픽업 시간이 21시(9PM) 이후면 날짜를 -1일
-            if (pickupTime) {
-              const timeMatch = pickupTime.match(/(\d{1,2}):(\d{2})/)
-              if (timeMatch) {
-                const hour = parseInt(timeMatch[1], 10)
-                if (hour >= 21) {
-                  const date = new Date(reservation.tourDate)
-                  date.setDate(date.getDate() - 1)
-                  displayDate = date.toISOString().split('T')[0]
-                }
+            if (!pickupTime) {
+              return <span className="text-sm text-gray-500 italic">픽업 미정</span>
+            }
+            let pickupDate = reservation.tourDate || ''
+            const timeMatch = pickupTime.match(/(\d{1,2}):(\d{2})/)
+            if (timeMatch && reservation.tourDate) {
+              const hour = parseInt(timeMatch[1], 10)
+              if (hour >= 21) {
+                const d = new Date(reservation.tourDate)
+                d.setDate(d.getDate() - 1)
+                pickupDate = d.toISOString().split('T')[0]
               }
             }
-            
             return (
-              <>
-                <span className="text-sm text-gray-900">{displayDate}</span>
-                {pickupTime && (
-                  <>
-                    <span className="text-gray-400">|</span>
-                    <Clock className="h-4 w-4 text-gray-400" />
-                    <span 
-                      className="text-sm text-gray-900 hover:text-blue-600 hover:underline cursor-pointer"
-                      onClick={(e) => onPickupTimeClick(reservation, e)}
-                    >
-                      {pickupTime}
-                    </span>
-                  </>
-                )}
-              </>
+              <span 
+                className="text-sm text-gray-900 hover:text-blue-600 hover:underline cursor-pointer"
+                onClick={(e) => onPickupTimeClick(reservation, e)}
+              >
+                {pickupDate} {pickupTime}
+              </span>
             )
           })()}
         </div>

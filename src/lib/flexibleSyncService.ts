@@ -458,8 +458,7 @@ export const flexibleSync = async (
 
         const converted = convertDataTypes(transformed, targetTable)
         
-        // tours 테이블 동기화 시 reservation_ids 명시적 처리
-        // 구글 시트에 reservation_ids 컬럼이 있으면 그 값으로, 없으면 빈 배열로 설정
+        // tours 테이블: reservation_ids는 시트 값만 사용 (기존 DB 값과 합치지 않음)
         if (targetTable === 'tours') {
           if (converted.reservation_ids === undefined || converted.reservation_ids === null) {
             converted.reservation_ids = []
@@ -561,8 +560,8 @@ export const flexibleSync = async (
     }
 
     // tours 테이블 동기화 시 특정 컬럼들 초기화
-    // 동기화 전에 tour_guide_id, assistant_id, tour_car_id, reservation_ids를 초기화하여
-    // 기존 데이터를 삭제하고 새로 입력되도록 합니다.
+    // reservation_ids는 반드시 시트 값으로만 저장(기존+신규 합치기 금지). 이를 위해
+    // 동기화 전 해당 투어들의 reservation_ids를 []로 초기화한 뒤, upsert에서 시트 값으로 덮어씁니다.
     if (targetTable === 'tours') {
       onProgress?.({ type: 'info', message: 'tours 테이블 동기화 - 배정 관련 컬럼 초기화 중...' })
       
@@ -573,8 +572,7 @@ export const flexibleSync = async (
           .filter((id): id is string => typeof id === 'string' && id.length > 0)
         
         if (tourIdsToSync.length > 0) {
-          // 해당 투어들의 배정 관련 컬럼들을 초기화
-          // tour_guide_id, assistant_id, tour_car_id는 null로, reservation_ids는 빈 배열로
+          // 해당 투어들의 배정 관련 컬럼 초기화 (이후 upsert에서 시트 값으로만 덮어씀, 병합 없음)
           const { error: resetError } = await db
             .from('tours')
             .update({ 
@@ -752,12 +750,15 @@ export const flexibleSync = async (
           if (tableColumns && tableColumns.has('updated_at')) {
             row.updated_at = nowIso
           }
-          // tours 테이블 동기화 시 reservation_ids 명시적 처리
-          // 구글 시트에 값이 있으면 그 값으로, 없으면 빈 배열로 설정
+          // tours 테이블 동기화 시 reservation_ids: 반드시 동기화 값으로만 저장 (기존 값과 합치지 않음)
+          // 기존 1,2,3 + 시트 2,4,6 → 결과는 2,4,6 만 저장
           if (targetTable === 'tours') {
-            row.reservation_ids = row.reservation_ids !== undefined && row.reservation_ids !== null 
-              ? row.reservation_ids 
-              : []
+            const raw = row.reservation_ids
+            if (raw !== undefined && raw !== null && Array.isArray(raw)) {
+              row.reservation_ids = [...raw]
+            } else {
+              row.reservation_ids = []
+            }
           }
           return row
         })

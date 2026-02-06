@@ -101,10 +101,10 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
       if (otherToursAssignedReservations.length === 0) return
 
       try {
-        // 고유한 투어 ID 목록 추출
+        // 그룹화와 동일한 키 사용: assigned_tour_id 우선, 없으면 tour_id
         const uniqueTourIds = [...new Set(
           otherToursAssignedReservations
-            .map(r => r.tour_id)
+            .map(r => (r as { assigned_tour_id?: string | null; tour_id: string | null }).assigned_tour_id || r.tour_id)
             .filter(Boolean)
         )] as string[]
 

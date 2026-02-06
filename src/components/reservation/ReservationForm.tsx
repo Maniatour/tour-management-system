@@ -2,7 +2,8 @@
 /* eslint-disable */
 
 import React, { useState, useCallback, useEffect, useRef } from 'react'
-import { Trash2, Eye, AlertTriangle, X, Mail, Phone } from 'lucide-react'
+import { Trash2, Eye, AlertTriangle, X, Mail, Phone, ChevronDown } from 'lucide-react'
+import ReactCountryFlag from 'react-country-flag'
 import { useTranslations } from 'next-intl'
 import { sanitizeTimeInput } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
@@ -31,6 +32,20 @@ import type {
   PickupHotel, 
   Reservation 
 } from '@/types/reservation'
+
+// 언어 선택 옵션 (국기용 country code + 라벨)
+const LANGUAGE_OPTIONS: { value: string; countryCode: string; label: string }[] = [
+  { value: 'KR', countryCode: 'KR', label: '한국어' },
+  { value: 'EN', countryCode: 'US', label: 'English' },
+  { value: 'JA', countryCode: 'JP', label: '日本語' },
+  { value: 'ZH', countryCode: 'CN', label: '中文' },
+  { value: 'ES', countryCode: 'ES', label: 'Español' },
+  { value: 'FR', countryCode: 'FR', label: 'Français' },
+  { value: 'DE', countryCode: 'DE', label: 'Deutsch' },
+  { value: 'IT', countryCode: 'IT', label: 'Italiano' },
+  { value: 'PT', countryCode: 'PT', label: 'Português' },
+  { value: 'RU', countryCode: 'RU', label: 'Русский' }
+]
 
 type CouponRow = {
   id: string
@@ -102,6 +117,8 @@ export default function ReservationForm({
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false)
+  const [languageDropdownOpen, setLanguageDropdownOpen] = useState(false)
+  const languageDropdownRef = useRef<HTMLDivElement | null>(null)
   const t = useTranslations('reservations')
   const tCommon = useTranslations('common')
   const customerSearchRef = useRef<HTMLDivElement | null>(null)
@@ -3488,11 +3505,14 @@ export default function ReservationForm({
     }
   }, [onRefreshCustomers])
 
-  // 외부 클릭 시 고객 검색 드롭다운 닫기
+  // 외부 클릭 시 고객 검색 드롭다운 / 언어 드롭다운 닫기
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (customerSearchRef.current && !customerSearchRef.current.contains(event.target as Node)) {
         setFormData(prev => ({ ...prev, showCustomerDropdown: false }))
+      }
+      if (languageDropdownRef.current && !languageDropdownRef.current.contains(event.target as Node)) {
+        setLanguageDropdownOpen(false)
       }
     }
 
@@ -3582,7 +3602,7 @@ export default function ReservationForm({
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 max-lg:flex-1 lg:block">
           {/* 모바일: 단일 열 순서 - 고객 → 예약 정보 → 상품 → 채널 → 가격 / 데스크톱: 기존 스크롤 */}
           <div className="flex-1 overflow-y-auto p-3 sm:p-0 sm:space-y-6 min-h-0 max-lg:flex-1 max-lg:min-h-0 lg:flex-none lg:min-h-0">
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4 lg:gap-4 lg:h-[940px] lg:grid-rows-[1fr_auto_auto]">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4 lg:gap-4 lg:h-[940px] lg:grid-rows-1">
             {/* 1. 고객 정보 */}
             <div id="customer-section" className="space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 lg:col-span-1 lg:row-span-1 lg:h-[940px] bg-gray-50/50 max-lg:order-1">
               <div>
@@ -3647,24 +3667,54 @@ export default function ReservationForm({
                         />
                       </div>
                       
-                      <div>
+                      <div ref={languageDropdownRef}>
                         <label className="block text-sm font-medium text-gray-700 mb-1">언어</label>
-                        <select
-                          value={formData.customerLanguage}
-                          onChange={(e) => setFormData(prev => ({ ...prev, customerLanguage: e.target.value }))}
-                          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
-                        >
-                          <option value="KR">🇰🇷 한국어</option>
-                          <option value="EN">🇺🇸 English</option>
-                          <option value="JA">🇯🇵 日本語</option>
-                          <option value="ZH">🇨🇳 中文</option>
-                          <option value="ES">🇪🇸 Español</option>
-                          <option value="FR">🇫🇷 Français</option>
-                          <option value="DE">🇩🇪 Deutsch</option>
-                          <option value="IT">🇮🇹 Italiano</option>
-                          <option value="PT">🇵🇹 Português</option>
-                          <option value="RU">🇷🇺 Русский</option>
-                        </select>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setLanguageDropdownOpen(prev => !prev)}
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs bg-white flex items-center justify-between gap-2 text-left"
+                          >
+                            <span className="flex items-center gap-2">
+                              {(() => {
+                                const opt = LANGUAGE_OPTIONS.find(o => o.value === formData.customerLanguage) || LANGUAGE_OPTIONS[0]
+                                return (
+                                  <>
+                                    <ReactCountryFlag
+                                      countryCode={opt.countryCode}
+                                      svg
+                                      style={{ width: '18px', height: '14px', borderRadius: '2px', flexShrink: 0 }}
+                                    />
+                                    <span>{opt.label}</span>
+                                  </>
+                                )
+                              })()}
+                            </span>
+                            <ChevronDown className={`w-4 h-4 text-gray-500 flex-shrink-0 transition-transform ${languageDropdownOpen ? 'rotate-180' : ''}`} />
+                          </button>
+                          {languageDropdownOpen && (
+                            <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg py-1 max-h-56 overflow-auto">
+                              {LANGUAGE_OPTIONS.map((opt) => (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  onClick={() => {
+                                    setFormData(prev => ({ ...prev, customerLanguage: opt.value }))
+                                    setLanguageDropdownOpen(false)
+                                  }}
+                                  className={`w-full px-2 py-1.5 text-xs flex items-center gap-2 hover:bg-gray-100 text-left ${formData.customerLanguage === opt.value ? 'bg-blue-50 text-blue-700' : ''}`}
+                                >
+                                  <ReactCountryFlag
+                                    countryCode={opt.countryCode}
+                                    svg
+                                    style={{ width: '18px', height: '14px', borderRadius: '2px', flexShrink: 0 }}
+                                  />
+                                  <span>{opt.label}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                       
                       <div>
@@ -3727,99 +3777,101 @@ export default function ReservationForm({
               </div>
             </div>
 
-            {/* 2. 예약 정보 (투어 정보, 참가자) - 모바일 순서 2, 데스크톱 2열 */}
-            <div className="col-span-1 lg:col-span-2 lg:row-span-1 space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 lg:h-[940px] bg-gray-50/50 max-lg:order-2">
-              <div>
+            {/* 데스크톱: 2·5·6 한 컬럼에 내용 높이만 사용, 예약 정보 바로 아래 가격/예약옵션 */}
+            <div className="col-span-1 lg:col-span-2 lg:col-start-2 lg:flex lg:flex-col lg:gap-4 lg:self-start max-lg:contents">
+              {/* 2. 예약 정보 (투어 정보, 참가자) */}
+              <div className="space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-2">
+                <div>
+                  <h3 className="text-sm font-medium text-gray-900 mb-2 max-lg:flex max-lg:items-center max-lg:gap-2">
+                    <span className="max-lg:flex max-lg:items-center max-lg:justify-center max-lg:w-6 max-lg:h-6 max-lg:rounded-full max-lg:bg-blue-100 max-lg:text-blue-600 max-lg:text-xs">2</span>
+                    예약 정보
+                  </h3>
+                </div>
+                <div id="tour-info-section">
+                  <TourInfoSection
+                    formData={formData}
+                    setFormData={setFormData}
+                    pickupHotels={pickupHotels}
+                    sanitizeTimeInput={sanitizeTimeInput}
+                    t={t}
+                  />
+                </div>
+                <div id="participants-section">
+                  <ParticipantsSection
+                    formData={formData}
+                    setFormData={setFormData}
+                    t={t}
+                  />
+                </div>
+              </div>
+
+              {/* 5. 가격 정보 - 예약 정보 바로 아래, 내용 높이만 */}
+              <div id="pricing-section" className="space-y-2 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-5">
                 <h3 className="text-sm font-medium text-gray-900 mb-2 max-lg:flex max-lg:items-center max-lg:gap-2">
-                  <span className="max-lg:flex max-lg:items-center max-lg:justify-center max-lg:w-6 max-lg:h-6 max-lg:rounded-full max-lg:bg-blue-100 max-lg:text-blue-600 max-lg:text-xs">2</span>
-                  예약 정보
+                  <span className="max-lg:flex max-lg:items-center max-lg:justify-center max-lg:w-6 max-lg:h-6 max-lg:rounded-full max-lg:bg-emerald-100 max-lg:text-emerald-600 max-lg:text-xs">5</span>
+                  가격 정보
                 </h3>
-              </div>
-              <div id="tour-info-section">
-                <TourInfoSection
-                formData={formData}
-                setFormData={setFormData}
-                pickupHotels={pickupHotels}
-                sanitizeTimeInput={sanitizeTimeInput}
-                t={t}
-              />
-              </div>
-              
-              <div id="participants-section">
-                <ParticipantsSection
-                  formData={formData}
+                <PricingSection
+                  formData={formData as any}
                   setFormData={setFormData}
+                  savePricingInfo={savePricingInfo}
+                  calculateProductPriceTotal={calculateProductPriceTotal}
+                  calculateChoiceTotal={calculateRequiredOptionTotal}
+                  calculateCouponDiscount={calculateCouponDiscount}
+                  coupons={coupons}
+                  getOptionalOptionsForProduct={(productId) =>
+                    getOptionalOptionsForProduct(productId, productOptions) as any
+                  }
+                  options={options}
                   t={t}
+                  autoSelectCoupon={autoSelectCoupon}
+                  reservationOptionsTotalPrice={reservationOptionsTotalPrice}
+                  isExistingPricingLoaded={isExistingPricingLoaded}
+                  {...(reservation?.id ? { reservationId: reservation.id } : {})}
+                  expenseUpdateTrigger={expenseUpdateTrigger}
+                  channels={channels.map(({ type, ...c }) => ({ ...c, ...(type != null ? { type } : {}) })) as any}
+                  products={products}
                 />
               </div>
-            </div>
 
-            {/* 5. 가격 정보 - 모바일에서는 채널 선택 후 마지막에 표시 (가격 로드 순서 반영) */}
-            <div id="pricing-section" className="col-span-1 lg:col-span-2 lg:col-start-2 lg:row-start-2 space-y-2 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-5">
-              <h3 className="text-sm font-medium text-gray-900 mb-2 max-lg:flex max-lg:items-center max-lg:gap-2">
-                <span className="max-lg:flex max-lg:items-center max-lg:justify-center max-lg:w-6 max-lg:h-6 max-lg:rounded-full max-lg:bg-emerald-100 max-lg:text-emerald-600 max-lg:text-xs">5</span>
-                가격 정보
-              </h3>
-              <PricingSection
-                formData={formData as any}
-                setFormData={setFormData}
-                savePricingInfo={savePricingInfo}
-                calculateProductPriceTotal={calculateProductPriceTotal}
-                calculateChoiceTotal={calculateRequiredOptionTotal}
-                calculateCouponDiscount={calculateCouponDiscount}
-                coupons={coupons}
-                getOptionalOptionsForProduct={(productId) =>
-                  getOptionalOptionsForProduct(productId, productOptions) as any
-                }
-                options={options}
-                t={t}
-                autoSelectCoupon={autoSelectCoupon}
-                reservationOptionsTotalPrice={reservationOptionsTotalPrice}
-                isExistingPricingLoaded={isExistingPricingLoaded}
-                {...(reservation?.id ? { reservationId: reservation.id } : {})}
-                expenseUpdateTrigger={expenseUpdateTrigger}
-                channels={channels.map(({ type, ...c }) => ({ ...c, ...(type != null ? { type } : {}) })) as any}
-                products={products}
-              />
-            </div>
-
-            {/* 6. 예약 옵션 / 입금 내역 / 예약 지출 관리 - 5. 가격 정보(정산) 이후, 예약이 있을 때만 */}
-            {reservation && (
-              <div className="col-span-1 lg:col-span-2 lg:col-start-2 lg:row-start-3 space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6">
-                <h3 className="text-sm font-medium text-gray-900 mb-2 max-lg:flex max-lg:items-center max-lg:gap-2">
-                  <span className="max-lg:flex max-lg:items-center max-lg:justify-center max-lg:w-6 max-lg:h-6 max-lg:rounded-full max-lg:bg-slate-100 max-lg:text-slate-600 max-lg:text-xs">6</span>
-                  예약 옵션 · 입금 · 지출
-                </h3>
-                <div className="space-y-4">
-                  <div id="options-section">
-                    <ReservationOptionsSection 
-                      reservationId={reservation.id} 
-                      onTotalPriceChange={setReservationOptionsTotalPrice}
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div id="payment-section">
-                      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                        <PaymentRecordsList
-                          reservationId={reservation.id}
-                          customerName={customers.find(c => c.id === reservation.customerId)?.name || 'Unknown'}
-                        />
-                      </div>
+              {/* 6. 예약 옵션 · 입금 · 지출 - 가격 정보 바로 아래, 내용 높이만 */}
+              {reservation && (
+                <div className="space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6">
+                  <h3 className="text-sm font-medium text-gray-900 mb-2 max-lg:flex max-lg:items-center max-lg:gap-2">
+                    <span className="max-lg:flex max-lg:items-center max-lg:justify-center max-lg:w-6 max-lg:h-6 max-lg:rounded-full max-lg:bg-slate-100 max-lg:text-slate-600 max-lg:text-xs">6</span>
+                    예약 옵션 · 입금 · 지출
+                  </h3>
+                  <div className="space-y-4">
+                    <div id="options-section">
+                      <ReservationOptionsSection 
+                        reservationId={reservation.id} 
+                        onTotalPriceChange={setReservationOptionsTotalPrice}
+                      />
                     </div>
-                    <div id="expense-section">
-                      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                        <ReservationExpenseManager
-                          reservationId={reservation.id}
-                          submittedBy={reservation.addedBy}
-                          userRole="admin"
-                          onExpenseUpdated={() => setExpenseUpdateTrigger(prev => prev + 1)}
-                        />
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <div id="payment-section">
+                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                          <PaymentRecordsList
+                            reservationId={reservation.id}
+                            customerName={customers.find(c => c.id === reservation.customerId)?.name || 'Unknown'}
+                          />
+                        </div>
+                      </div>
+                      <div id="expense-section">
+                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                          <ReservationExpenseManager
+                            reservationId={reservation.id}
+                            submittedBy={reservation.addedBy}
+                            userRole="admin"
+                            onExpenseUpdated={() => setExpenseUpdateTrigger(prev => prev + 1)}
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* 3. 상품 선택 */}
             <div id="product-section" className="col-span-1 lg:col-span-1 space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 lg:h-[940px] bg-gray-50/50 max-lg:order-3">

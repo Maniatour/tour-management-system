@@ -6,6 +6,7 @@ import { X, Upload, MapPin, Globe, Video, Trash2, Languages, Loader2, Sparkles }
 import { supabase } from '@/lib/supabase'
 import { translatePickupHotelFields, type PickupHotelTranslationFields } from '@/lib/translationService'
 import { suggestHotelDescription } from '@/lib/chatgptService'
+import type { PickupHotel } from '@/utils/pickupHotelUtils'
 
 // Google Maps 타입 정의
 interface GoogleMapsMap {
@@ -63,23 +64,6 @@ declare global {
       }
     }
   }
-}
-
-interface PickupHotel {
-  id: string
-  hotel: string
-  pick_up_location: string
-  description_ko: string | null
-  description_en: string | null
-  address: string
-  pin: string | null
-  link: string | null
-  youtube_link: string | null
-  media: string[] | null
-  is_active: boolean | null
-  group_number: number | null
-  created_at: string | null
-  updated_at: string | null
 }
 
 interface PickupHotelFormProps {

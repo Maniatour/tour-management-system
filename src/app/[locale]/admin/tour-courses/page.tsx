@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, type ComponentProps } from 'react'
 import { 
   Search, 
   Edit, 
@@ -81,22 +81,6 @@ interface TourCourse {
   updated_at?: string | null
 }
 
-interface TourCoursePhoto {
-  id: string
-  course_id: string
-  file_name: string
-  file_path: string
-  file_size: number
-  file_type: string
-  mime_type: string
-  thumbnail_url?: string
-  is_primary: boolean
-  sort_order?: number
-  uploaded_by?: string
-  created_at: string
-  updated_at: string
-}
-
 interface TourCourseCategory {
   id: string
   name_ko: string
@@ -169,7 +153,7 @@ export default function TourCoursesPage() {
         .order('created_at', { ascending: false })
       
       if (error) throw error
-      return data || []
+      return (data || []) as TourCourse[]
     },
     cacheKey: 'tour_courses'
   })
@@ -184,7 +168,7 @@ export default function TourCoursesPage() {
         .order('sort_order', { ascending: true })
       
       if (error) throw error
-      return data || []
+      return (data || []) as TourCourseCategory[]
     },
     cacheKey: 'tour_course_categories'
   })
@@ -208,7 +192,7 @@ export default function TourCoursesPage() {
           console.error('사진 가져오기 오류:', error)
           setCoursePhotos([])
         } else {
-          setCoursePhotos(data || [])
+          setCoursePhotos((data || []) as TourCoursePhoto[])
         }
       } catch (error) {
         console.error('사진 가져오기 오류:', error)
@@ -919,7 +903,7 @@ export default function TourCoursesPage() {
       <TourCourseEditModal
         isOpen={showEditModal}
         onClose={() => setShowEditModal(false)}
-        course={editingCourse}
+        course={editingCourse as ComponentProps<typeof TourCourseEditModal>['course']}
         onSave={(updatedCourse) => {
           console.log('투어 코스 저장:', updatedCourse)
           setShowEditModal(false)

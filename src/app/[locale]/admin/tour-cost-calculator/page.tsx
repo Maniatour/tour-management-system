@@ -2277,8 +2277,8 @@ export default function TourCostCalculatorPage() {
                         break
                       }
                       
-                      const parentId = current.parent_id
-                      const parent = tourCourses.find((c: TourCourse) => c.id === parentId)
+                      const parentId: string = current.parent_id
+                      const parent: TourCourse | undefined = tourCourses.find((c: TourCourse) => c.id === parentId)
                       if (parent) {
                         current = parent
                       } else {

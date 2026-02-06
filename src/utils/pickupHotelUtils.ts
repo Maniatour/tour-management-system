@@ -6,7 +6,7 @@ export interface PickupHotel {
   pick_up_location: string
   description_ko: string | null
   description_en: string | null
-  address: string
+  address: string | null
   pin: string | null
   link: string | null
   youtube_link: string | null

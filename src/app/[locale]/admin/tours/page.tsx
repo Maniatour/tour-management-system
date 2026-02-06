@@ -76,6 +76,8 @@ export default function AdminTours() {
   const [viewMode, setViewMode] = useState<'list' | 'calendar' | 'schedule'>('calendar')
   const [statusOptions, setStatusOptions] = useState<string[]>([])
   const [gridMonth, setGridMonth] = useState<Date>(new Date())
+  // 리스트 뷰 날짜 필터: 'month' = 선택한 달만, 'all' = 전체, 'scheduled' = 오늘 포함 예정
+  const [listViewDateFilter, setListViewDateFilter] = useState<'month' | 'all' | 'scheduled'>('month')
 
   // 최적화된 데이터 로딩
   const { data: toursData, loading: toursLoading } = useOptimizedData({
@@ -173,7 +175,7 @@ export default function AdminTours() {
 
   useEffect(() => {
     if (productsData) {
-      setProducts(productsData)
+      setProducts((productsData || []) as Product[])
     }
   }, [productsData])
 
@@ -181,7 +183,7 @@ export default function AdminTours() {
   const processToursData = useCallback(async (toursData: Database['public']['Tables']['tours']['Row'][]) => {
     try {
       // 2. 상품 정보 가져오기 (status 포함) 및 비활성 상품 제외
-      const productIdsAll = [...new Set((toursData || []).map((tour: ExtendedTour) => tour.product_id).filter(Boolean))]
+      const productIdsAll: string[] = [...new Set((toursData || []).map((tour: ExtendedTour) => tour.product_id).filter((id): id is string => id != null))]
       const { data: productsData } = await supabase
         .from('products')
         .select('id, name, name_ko, name_en, status')
@@ -206,8 +208,8 @@ export default function AdminTours() {
       )
 
       // 3. 가이드와 어시스턴트 정보 가져오기
-      const guideEmails = [...new Set((toursDataActive || []).map((tour: ExtendedTour) => tour.tour_guide_id).filter(Boolean))]
-      const assistantEmails = [...new Set((toursDataActive || []).map((tour: ExtendedTour) => tour.assistant_id).filter(Boolean))]
+      const guideEmails: string[] = [...new Set((toursDataActive || []).map((tour: ExtendedTour) => tour.tour_guide_id).filter((id): id is string => id != null))]
+      const assistantEmails: string[] = [...new Set((toursDataActive || []).map((tour: ExtendedTour) => tour.assistant_id).filter((id): id is string => id != null))]
       const allEmails = [...new Set([...guideEmails, ...assistantEmails])]
 
       const { data: teamMembers } = await supabase
@@ -218,7 +220,7 @@ export default function AdminTours() {
       const teamMap = new Map((teamMembers || []).map((member: { email: string; name_ko: string }) => [member.email, member]))
 
       // 3-1. 차량 정보 가져오기 (카드에 차량 번호 표시)
-      const vehicleIds = [...new Set((toursDataActive || []).map((t: { tour_car_id?: string | null }) => t.tour_car_id).filter(Boolean))]
+      const vehicleIds: string[] = [...new Set((toursDataActive || []).map((t: { tour_car_id?: string | null }) => t.tour_car_id).filter((id): id is string => id != null))]
       let vehicleMap = new Map<string, string | null>()
       if (vehicleIds.length > 0) {
         const { data: vehiclesData } = await supabase
@@ -538,9 +540,23 @@ export default function AdminTours() {
     })
   }, [tours, searchTerm, selectedStatuses, asGuideEmail])
 
-  // 리스트(카드) 뷰 전용: 선택된 gridMonth로 월 필터링
+  // 리스트(카드) 뷰 전용: 날짜 필터 + 날짜 오름차순 정렬
   const listMonthPrefix = `${gridMonth.getFullYear()}-${String(gridMonth.getMonth() + 1).padStart(2, '0')}-`
-  const listViewTours = filteredTours.filter(t => (t.tour_date || '').startsWith(listMonthPrefix))
+  const todayStr = useMemo(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }, [])
+  const listViewTours = useMemo(() => {
+    let list: ExtendedTour[] = []
+    if (listViewDateFilter === 'month') {
+      list = filteredTours.filter(t => (t.tour_date || '').startsWith(listMonthPrefix))
+    } else if (listViewDateFilter === 'scheduled') {
+      list = filteredTours.filter(t => (t.tour_date || '') >= todayStr)
+    } else {
+      list = [...filteredTours]
+    }
+    return list.sort((a, b) => (a.tour_date || '').localeCompare(b.tour_date || ''))
+  }, [filteredTours, listViewDateFilter, listMonthPrefix, todayStr])
 
   const [navigatingToTour, setNavigatingToTour] = useState<string | null>(null)
   const [updatingAssignment, setUpdatingAssignment] = useState<string | null>(null)
@@ -837,16 +853,56 @@ export default function AdminTours() {
       {/* 리스트(카드) 뷰 */}
       {viewMode === 'list' && (
         <>
-          <div className="flex items-center justify-between mb-2">
-            <button onClick={goToPrevGridMonth} className="p-1 hover:bg-gray-100 rounded">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <div className="text-sm font-medium">
-              {gridMonth.getFullYear()}년 {gridMonth.getMonth() + 1}월
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+            <div className="flex items-center justify-between sm:justify-start gap-2">
+              {listViewDateFilter === 'month' && (
+                <>
+                  <button onClick={goToPrevGridMonth} className="p-1.5 hover:bg-gray-100 rounded">
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <div className="text-sm font-medium min-w-[100px] text-center">
+                    {gridMonth.getFullYear()}년 {gridMonth.getMonth() + 1}월
+                  </div>
+                  <button onClick={goToNextGridMonth} className="p-1.5 hover:bg-gray-100 rounded">
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </>
+              )}
+              {(listViewDateFilter === 'all' || listViewDateFilter === 'scheduled') && (
+                <div className="text-sm font-medium text-gray-600">
+                  {listViewDateFilter === 'all' ? '전체 날짜' : '오늘 포함 예정 투어'}
+                </div>
+              )}
             </div>
-            <button onClick={goToNextGridMonth} className="p-1 hover:bg-gray-100 rounded">
-              <ChevronRight className="w-4 h-4" />
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setListViewDateFilter('month')}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium ${
+                  listViewDateFilter === 'month' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                이번 달 보기
+              </button>
+              <button
+                type="button"
+                onClick={() => setListViewDateFilter('all')}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium ${
+                  listViewDateFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                전체 날짜 보기
+              </button>
+              <button
+                type="button"
+                onClick={() => setListViewDateFilter('scheduled')}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium ${
+                  listViewDateFilter === 'scheduled' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                오늘 포함 예정 투어 보기
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {listViewTours.map((tour) => (
@@ -906,7 +962,11 @@ export default function AdminTours() {
             </div>
           ))}
           {listViewTours.length === 0 && (
-            <div className="col-span-full text-center text-sm text-gray-500 py-6">해당 월에 표시할 투어가 없습니다.</div>
+            <div className="col-span-full text-center text-sm text-gray-500 py-6">
+              {listViewDateFilter === 'month' && '해당 월에 표시할 투어가 없습니다.'}
+              {listViewDateFilter === 'all' && '표시할 투어가 없습니다.'}
+              {listViewDateFilter === 'scheduled' && '오늘 이후 예정된 투어가 없습니다.'}
+            </div>
           )}
           </div>
         </>

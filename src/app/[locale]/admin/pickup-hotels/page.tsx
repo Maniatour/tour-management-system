@@ -10,7 +10,7 @@ import { useParams } from 'next/navigation'
 
 import PickupHotelForm from '@/components/PickupHotelForm'
 
-import { groupHotelsByGroupNumber, processPickupRequest } from '@/utils/pickupHotelUtils'
+import { groupHotelsByGroupNumber, processPickupRequest, type PickupHotel } from '@/utils/pickupHotelUtils'
 
 
 
@@ -124,40 +124,6 @@ interface GoogleMapsInfoWindowConstructor {
 // Google Maps API는 동적으로 로드되므로 any 타입으로 처리
 
 
-interface PickupHotel {
-
-  id: string
-
-  hotel: string
-
-  pick_up_location: string
-
-  description_ko: string | null
-
-  description_en: string | null
-
-  address: string
-
-  pin: string | null
-
-  link: string | null
-
-  youtube_link: string | null
-
-  media: string[] | null
-
-  is_active: boolean | null
-
-  group_number: number | null
-
-  created_at: string | null
-
-  updated_at: string | null
-
-}
-
-
-
 interface AdminPickupHotelsProps {
 
   params: Promise<{ locale: string }>
@@ -166,7 +132,7 @@ interface AdminPickupHotelsProps {
 
 
 
-export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
+export default function AdminPickupHotels({ params: _params }: AdminPickupHotelsProps) {
   const paramsObj = useParams()
   const locale = paramsObj.locale as string
 
@@ -1083,7 +1049,7 @@ export default function AdminPickupHotels({ params }: AdminPickupHotelsProps) {
       
       return () => clearTimeout(timeoutId)
     }
-
+    return undefined
   }, [filteredHotels, mapInstance, mapLoaded, viewMode, addHotelMarkers])
 
 

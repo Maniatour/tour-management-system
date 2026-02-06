@@ -8,7 +8,7 @@ import { useTranslations } from 'next-intl'
 interface Channel {
   id: string
   name: string
-  type: string
+  type?: string
   website?: string
   website_url?: string
   customer_website?: string

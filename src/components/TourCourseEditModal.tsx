@@ -42,7 +42,7 @@ interface TourCourse {
   end_longitude?: number | null
   duration_hours?: number | null
   distance?: number | null
-  difficulty_level?: 'easy' | 'medium' | 'hard'
+  difficulty_level?: 'easy' | 'medium' | 'hard' | null
   price_type?: 'per_person' | 'per_vehicle' | 'none' | null
   price_adult?: number | null
   price_child?: number | null
@@ -155,7 +155,7 @@ const ParentSelectionTreeItem = ({
   expandedNodes: Set<string>
   selectedParentId?: string | null | undefined
   currentCourseId?: string | null | undefined
-  currentCourseLabel?: string
+  currentCourseLabel?: string | undefined
   locale?: string
   onToggle: (id: string) => void
   onSelect: (id: string | null) => void
@@ -329,7 +329,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
           .order('created_at', { ascending: false })
 
         if (error) throw error
-        setTourCourses(data || [])
+        setTourCourses((data || []) as TourCourse[])
       } catch (error) {
         console.error('투어 코스 로드 오류:', error)
       }
@@ -344,7 +344,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
           .order('sort_order', { ascending: true })
 
         if (error) throw error
-        setCategories(data || [])
+        setCategories((data || []) as TourCourseCategory[])
       } catch (error) {
         console.error('카테고리 로드 오류:', error)
       }
@@ -364,7 +364,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
           throw error
         }
 
-        setPhotos(data || [])
+        setPhotos((data || []) as TourCoursePhoto[])
       } catch (error) {
         console.error('사진 로드 오류:', error)
         // 오류가 발생해도 빈 배열로 설정하여 UI가 깨지지 않도록 함
@@ -715,7 +715,7 @@ export default function TourCourseEditModal({ isOpen, onClose, course, onSave }:
           .order('created_at', { ascending: false })
 
         if (!refreshError && refreshedData) {
-          setTourCourses(refreshedData)
+          setTourCourses(refreshedData as TourCourse[])
         }
       } catch (refreshError) {
         console.error('투어 코스 목록 새로고침 오류:', refreshError)

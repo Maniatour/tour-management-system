@@ -977,28 +977,26 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     return selectedChoices
   }
 
-  // choice 라벨을 간단하게 변환하는 함수
+  // 앤텔롭 캐년 관련: 이모지 + L / X / U 로 간단 표시
+  const ANTLOPE_EMOJI = '🏜️'
+
   const simplifyChoiceLabel = (label: string) => {
     if (!label) return label
-    
-    const labelLower = label.toLowerCase()
-    
-    // Antelope X Canyon → X Canyon
-    if (labelLower.includes('antelope x canyon')) {
-      return 'X Canyon'
+    const labelLower = label.toLowerCase().trim()
+    const labelKo = label.trim()
+
+    // 엑스 앤텔롭 캐년 (Antelope X Canyon) → 🏜️ X
+    if (labelLower.includes('antelope x canyon') || /엑스\s*앤텔롭|엑스\s*앤틸롭|엑스\s*엔텔롭/.test(labelKo)) {
+      return `${ANTLOPE_EMOJI} X`
     }
-    
-    // Lower Antelope Canyon → Lower
-    if (labelLower.includes('lower antelope canyon')) {
-      return 'Lower'
+    // 로어 앤텔롭 캐년 (Lower Antelope Canyon) → 🏜️ L
+    if (labelLower.includes('lower antelope canyon') || /로어\s*앤텔롭|로어\s*앤틸롭|로어\s*엔텔롭/.test(labelKo)) {
+      return `${ANTLOPE_EMOJI} L`
     }
-    
-    // Upper Antelope Canyon → Upper
-    if (labelLower.includes('upper antelope canyon')) {
-      return 'Upper'
+    // 어퍼 앤텔롭 (Upper Antelope Canyon) → 🏜️ U
+    if (labelLower.includes('upper antelope canyon') || /어퍼\s*앤텔롭|어퍼\s*앤틸롭|어퍼\s*엔텔롭/.test(labelKo)) {
+      return `${ANTLOPE_EMOJI} U`
     }
-    
-    // 다른 패턴들도 필요시 추가 가능
     return label
   }
 

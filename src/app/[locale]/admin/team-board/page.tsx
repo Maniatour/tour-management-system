@@ -6,11 +6,6 @@ import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 import { Check, Edit, Loader2, Pin, PinOff, Plus, Trash2, X } from 'lucide-react'
-import { useParams } from 'next/navigation'
-
-interface TeamBoardPageProps {
-  params: Promise<{ locale: string }>
-}
 
 type Announcement = {
   id: string
@@ -97,8 +92,6 @@ type TeamMember = {
 }
 
 export default function TeamBoardPage() {
-  const params = useParams()
-  const locale = params.locale as string
   const { authUser } = useAuth()
   // supabase 클라이언트는 AuthContext에서 관리됨
   
@@ -333,8 +326,8 @@ export default function TeamBoardPage() {
       setAcksByAnnouncement(aMap)
 
       setOpTodos((opTodos || []) as OpTodo[])
-      setIssues((iss || []) as Issue[])
-      setTasks((tks || []) as Task[])
+      setIssues((iss || []) as unknown as Issue[])
+      setTasks((tks || []) as unknown as Task[])
       setTeamMembers((team || []) as TeamMember[])
     } finally {
       setLoading(false)
@@ -386,7 +379,6 @@ export default function TeamBoardPage() {
     try {
       const { data, error } = await supabase
         .from('team_announcements')
-        // @ts-expect-error Supabase type definition issue
         .update({ is_pinned: !announcement.is_pinned })
         .eq('id', announcement.id)
         .select()
@@ -470,7 +462,6 @@ export default function TeamBoardPage() {
 
       const { data, error } = await supabase
         .from('team_announcements')
-        // @ts-expect-error Supabase type definition issue
         .update({
           title: editAnnouncement.title.trim(),
           content: editAnnouncement.content.trim(),
@@ -625,7 +616,6 @@ export default function TeamBoardPage() {
     try {
       const { data, error } = await supabase
         .from('op_todos')
-        // @ts-expect-error Supabase type definition issue
         .update({
           title: editTodoForm.title.trim(),
           category: editTodoForm.category,
@@ -675,7 +665,7 @@ export default function TeamBoardPage() {
         .select()
         .single()
       if (error) throw error
-      setTasks(prev => [data as Task, ...prev])
+      setTasks(prev => [data as unknown as Task, ...prev])
       setShowNewTaskModal(false)
       setNewTask({
         title: '',
@@ -715,7 +705,7 @@ export default function TeamBoardPage() {
         .select()
         .single()
       if (error) throw error
-      setIssues(prev => [data as Issue, ...prev])
+      setIssues(prev => [data as unknown as Issue, ...prev])
       closeWorkModal()
       setNewIssue({
         title: '',
@@ -773,7 +763,6 @@ export default function TeamBoardPage() {
                   // ToDo 상태 업데이트
                   const { error } = await supabase
                     .from('op_todos')
-                    // @ts-expect-error Supabase type definition issue
                     .update({ completed: is_completed, completed_at: is_completed ? new Date().toISOString() : null } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
                     .eq('id', id)
                   

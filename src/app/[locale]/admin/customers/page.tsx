@@ -21,8 +21,7 @@ import {
   Receipt,
   X,
   Upload,
-  XCircle,
-  Calculator
+  XCircle
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
@@ -146,7 +145,7 @@ export default function AdminCustomers() {
         }
 
         if (data && data.length > 0) {
-          allCustomers = [...allCustomers, ...data]
+          allCustomers = [...allCustomers, ...(data as Customer[])]
           page++
         } else {
           hasMore = false
@@ -504,7 +503,7 @@ export default function AdminCustomers() {
         }
 
         if (data && data.length > 0) {
-          allReservations = [...allReservations, ...data]
+          allReservations = [...allReservations, ...(data as ReservationData[])]
           page++
         } else {
           hasMore = false
@@ -1048,8 +1047,8 @@ export default function AdminCustomers() {
     }
   }
 
-  // 거주 상태 빠른 변경 함수
-  const handleUpdateResidentStatus = async (customerId: string, newStatus: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null) => {
+  // 거주 상태 빠른 변경 함수 (카드 등에서 빠른 변경 드롭다운 연결 시 사용)
+  const handleUpdateResidentStatus = useCallback(async (customerId: string, newStatus: 'us_resident' | 'non_resident' | 'non_resident_with_pass' | null) => {
     // "비거주자 (패스 보유)" 선택 시 모달 열기
     if (newStatus === 'non_resident_with_pass') {
       const customer = (customers || []).find(c => c.id === customerId)
@@ -1082,7 +1081,7 @@ export default function AdminCustomers() {
       console.error('Error updating resident status:', error)
       alert('거주 상태 업데이트에 실패했습니다.')
     }
-  }
+  }, [customers, refetchCustomers])
 
   // 패스 및 ID 사진 업로드 완료 후 상태 업데이트
   const handlePassUploadComplete = async (passPhotoUrl: string | null, idPhotoUrl: string | null) => {
@@ -1115,7 +1114,7 @@ export default function AdminCustomers() {
     }
   }
 
-  // 외부 클릭 시 거주 상태 드롭다운 닫기
+  // 외부 클릭 시 거주 상태 드롭다운 닫기 (handleUpdateResidentStatus는 카드 등 빠른 변경 UI 연결 시 사용)
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (residentStatusDropdownOpen) {
@@ -1130,7 +1129,7 @@ export default function AdminCustomers() {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [residentStatusDropdownOpen])
+  }, [residentStatusDropdownOpen, handleUpdateResidentStatus])
 
   // 고객 삭제
   const handleDeleteCustomer = async (id: string) => {
@@ -2022,12 +2021,12 @@ export default function AdminCustomers() {
             created_at: c.created_at,
             updated_at: c.updated_at
           })) as ReservationCustomer[]}
-          products={products || []}
-          channels={channels || []}
+          products={(products || []) as Product[]}
+          channels={(channels || []) as Channel[]}
           productOptions={productOptions || []}
           options={options || []}
-          pickupHotels={pickupHotels || []}
-          coupons={coupons || []}
+          pickupHotels={(pickupHotels || []) as PickupHotel[]}
+          coupons={(coupons || []) as Array<{ id: string; coupon_code: string; discount_type: 'fixed' | 'percentage'; percentage_value?: number | null; fixed_value?: number | null; status?: string | null; channel_id?: string | null; product_id?: string | null; start_date?: string | null; end_date?: string | null }>}
         />
       )}
 

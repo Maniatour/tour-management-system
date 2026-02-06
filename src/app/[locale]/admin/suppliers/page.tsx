@@ -14,9 +14,9 @@ interface Supplier {
   email: string | null;
   address: string | null;
   notes: string | null;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  is_active: boolean | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 interface SeasonDate {
@@ -45,9 +45,9 @@ interface SupplierProduct {
   adult_season_price: number | null;
   child_season_price: number | null;
   infant_season_price: number | null;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  is_active: boolean | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 interface Choice {
@@ -86,13 +86,13 @@ interface SupplierTicketPurchase {
   quantity: number;
   unit_price: number;
   total_amount: number;
-  is_season_price: boolean;
+  is_season_price: boolean | null;
   purchase_date: string;
-  payment_status: string;
+  payment_status: string | null;
   payment_date: string | null;
   notes: string | null;
-  created_at: string;
-  updated_at: string;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export default function SuppliersPage() {
@@ -147,10 +147,10 @@ export default function SuppliersPage() {
 
       if (purchasesError) throw purchasesError;
 
-      setSuppliers(suppliersData || []);
-      setSupplierProducts(productsData || []);
-      setProducts(actualProductsData || []);
-      setPurchases(purchasesData || []);
+      setSuppliers((suppliersData || []) as Supplier[]);
+      setSupplierProducts((productsData || []) as SupplierProduct[]);
+      setProducts((actualProductsData || []) as Product[]);
+      setPurchases((purchasesData || []) as SupplierTicketPurchase[]);
     } catch (error) {
       console.error('데이터 로딩 오류:', error);
     } finally {
@@ -168,7 +168,7 @@ export default function SuppliersPage() {
 
       if (error) throw error;
 
-      setSuppliers([...suppliers, data]);
+      setSuppliers([...suppliers, data as Supplier]);
       setShowSupplierModal(false);
     } catch (error) {
       console.error('공급업체 생성 오류:', error);
@@ -186,7 +186,7 @@ export default function SuppliersPage() {
 
       if (error) throw error;
 
-      setSuppliers(suppliers.map(s => s.id === id ? data : s));
+      setSuppliers(suppliers.map(s => s.id === id ? (data as Supplier) : s));
       setShowSupplierModal(false);
       setEditingSupplier(null);
     } catch (error) {
@@ -767,7 +767,7 @@ function ProductFormModal({
               .single();
             
             if (optionData) {
-              setSelectedChoiceOption(optionData as ChoiceOption);
+              setSelectedChoiceOption(optionData as unknown as ChoiceOption);
             }
           }
         } else {
