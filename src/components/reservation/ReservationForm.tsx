@@ -484,6 +484,8 @@ export default function ReservationForm({
   const [, setPriceAutoFillMessage] = useState<string>('')
   // 기존 가격 정보가 로드되었는지 추적
   const [isExistingPricingLoaded, setIsExistingPricingLoaded] = useState<boolean>(false)
+  // reservation_pricing 행 id (상세/폼 가격 섹션 표시용)
+  const [reservationPricingId, setReservationPricingId] = useState<string | null>(null)
   
   // 무한 렌더링 방지를 위한 ref
   const prevPricingParams = useRef<{productId: string, tourDate: string, channelId: string, variantKey: string, selectedChoicesKey: string} | null>(null)
@@ -1801,6 +1803,7 @@ export default function ReservationForm({
     try {
       // 선택된 초이스 정보 가져오기 (파라미터로 전달되지 않으면 formData에서 가져오기)
       const currentSelectedChoices = selectedChoices || (Array.isArray(formData.selectedChoices) ? formData.selectedChoices : [])
+      setReservationPricingId(null)
       console.log('가격 정보 조회 시작:', { productId, tourDate, channelId, reservationId, selectedChoices: currentSelectedChoices })
       
       // 1. 먼저 reservation_pricing에서 기존 가격 정보 확인 (편집 모드인 경우)
@@ -1819,7 +1822,24 @@ export default function ReservationForm({
           console.log('기존 가격 정보 조회 오류:', existingError.message)
           // 오류가 발생해도 계속 진행 (dynamic_pricing 조회)
         } else if (existingPricing) {
+          setReservationPricingId((existingPricing as { id?: string }).id ?? null)
           console.log('기존 가격 정보 사용:', existingPricing)
+
+          // reservation_pricing에 채널 수수료 $ 가 있으면, 채널 수수료 % 를 역산 (기존 데이터는 $ 만 있음, channels 테이블 % 는 후순위)
+          const commissionAmount = (existingPricing as any).commission_amount != null && (existingPricing as any).commission_amount !== ''
+            ? Number((existingPricing as any).commission_amount)
+            : 0
+          let commissionPercentToUse: number
+          if (commissionAmount > 0) {
+            const base = Number((existingPricing as any).product_price_total) || Number((existingPricing as any).subtotal) || 0
+            commissionPercentToUse = base > 0 ? (commissionAmount / base) * 100 : 0
+            console.log('ReservationForm: 채널 수수료 % 역산 (채널 수수료 $ 기준)', { commission_amount: commissionAmount, base, commission_percent: commissionPercentToUse })
+          } else {
+            commissionPercentToUse = (existingPricing as any).commission_percent != null && (existingPricing as any).commission_percent !== ''
+              ? Number((existingPricing as any).commission_percent)
+              : 0
+          }
+
           console.log('쿠폰 정보 확인:', {
             coupon_code: existingPricing.coupon_code,
             coupon_discount: existingPricing.coupon_discount,
@@ -1962,9 +1982,7 @@ export default function ReservationForm({
               depositAmount: Number(existingPricing.deposit_amount) || 0,
               isPrivateTour: reservation?.isPrivateTour || false,
               privateTourAdditionalCost: Number(existingPricing.private_tour_additional_cost) || 0,
-              commission_percent: (existingPricing as any).commission_percent !== null && (existingPricing as any).commission_percent !== undefined
-                ? Number((existingPricing as any).commission_percent)
-                : 0,
+              commission_percent: commissionPercentToUse,
               commission_amount: (() => {
                 const dbValue = (existingPricing as any).commission_amount !== null && (existingPricing as any).commission_amount !== undefined
                   ? Number((existingPricing as any).commission_amount)
@@ -3992,6 +4010,11 @@ export default function ReservationForm({
 
             {/* 가격 정보 - 기존 상품/채널 선택 컬럼 자리 (제목은 PricingSection에서 버튼과 같은 줄로 표시) */}
             <div id="pricing-section" className={`col-span-1 lg:col-span-2 space-y-2 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-3 ${isModal ? 'lg:h-auto' : 'lg:h-[940px]'}`}>
+              {reservation?.id && (
+                <div className="text-xs text-gray-500 mb-2 pb-2 border-b border-gray-200">
+                  reservation_pricing id: <span className="font-mono text-gray-700">{reservationPricingId ?? '(아직 저장되지 않음)'}</span>
+                </div>
+              )}
               <PricingSection
                 formData={formData as any}
                 setFormData={setFormData}

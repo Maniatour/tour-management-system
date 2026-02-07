@@ -29,7 +29,7 @@ const NavigationContent = () => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   const [showCart, setShowCart] = useState(false)
   
-  // Admin, Photos 페이지에서는 네비게이션을 숨김
+  // Admin, Photos 페이지에서는 네비게이션을 숨김 (가이드는 기존 헤더 사용)
   if (pathname.startsWith(`/${locale}/admin`) || pathname.startsWith(`/${locale}/photos/`)) {
     return null
   }

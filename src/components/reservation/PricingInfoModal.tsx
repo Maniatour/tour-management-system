@@ -12,6 +12,7 @@ interface PricingInfoModalProps {
 }
 
 interface PricingData {
+  id?: string
   adult_product_price: number
   child_product_price: number
   infant_product_price: number
@@ -186,14 +187,26 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       if (data.coupon_discount > 0) {
         data.coupon_discount = -data.coupon_discount
       }
+
+      // reservation_pricing에 채널 수수료 $ 가 있으면 채널 수수료 % 역산 (기존 데이터는 $ 만 있는 경우 대비, channels % 는 후순위)
+      const commissionAmount = data.commission_amount ?? 0
+      const commissionPercentFromData = data.commission_percent ?? 0
+      let commissionPercentToUse = commissionPercentFromData
+      if (commissionAmount > 0) {
+        const base = (data.product_price_total ?? 0) || (data.subtotal ?? 0) || 0
+        if (base > 0) {
+          commissionPercentToUse = (commissionAmount / base) * 100
+        }
+      }
       
-      // choices_total과 not_included_price가 없으면 0으로 설정
+      // choices_total과 not_included_price가 없으면 0으로 설정 (id 명시적으로 포함)
       const pricingDataWithDefaults: PricingData = {
         ...data,
+        id: (data as { id?: string }).id,
         choices_total: data.choices_total ?? 0,
         not_included_price: data.not_included_price ?? 0,
         commission_amount: data.commission_amount ?? 0,
-        commission_percent: data.commission_percent ?? 0
+        commission_percent: commissionPercentToUse
       }
       
       setPricingData(pricingDataWithDefaults)
@@ -692,6 +705,11 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* reservation_pricing id (상품 가격·할인/추가비용 아래 표시) */}
+                <div className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100">
+                  reservation_pricing id: <span className="font-mono text-gray-700">{pricingData?.id ? pricingData.id : '(아직 저장되지 않음)'}</span>
                 </div>
               </div>
               </div>

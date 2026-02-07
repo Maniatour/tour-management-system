@@ -41,33 +41,43 @@ export async function middleware(req: NextRequest) {
 
   // 언어 처리 미들웨어 실행
   const response = intlMiddleware(req)
-  
-  // pathname을 헤더에 설정 (레이아웃에서 사용)
-  response.headers.set('x-pathname', req.nextUrl.pathname)
-  
+  const pathname = req.nextUrl.pathname
+
+  // 리다이렉트인 경우 그대로 반환 (pathname은 다음 요청에서 설정됨)
+  if (response.status >= 300 && response.status < 400) {
+    return response
+  }
+
+  // pathname을 서버(레이아웃)로 전달: 요청 헤더에 설정해야 layout의 headers()에서 읽을 수 있음
+  const requestHeaders = new Headers(req.headers)
+  requestHeaders.set('x-pathname', pathname)
+
+  const res = NextResponse.next({
+    request: { headers: requestHeaders }
+  })
+  // pathname 쿠키도 설정 (일부 환경에서 요청 헤더가 전달되지 않을 수 있어 레이아웃 fallback용)
+  res.cookies.set('x-pathname', pathname, { path: '/', maxAge: 60, sameSite: 'lax' })
+  // intlMiddleware가 설정한 쿠키/헤더 복사
+  response.cookies.getAll().forEach(c => res.cookies.set(c.name, c.value, c))
+  response.headers.forEach((v, k) => { if (k !== 'x-middleware-skip') res.headers.set(k, v) })
+
   // 언어 변경 시 쿠키 설정 (강제 리다이렉트 제거)
-  const locale = req.nextUrl.pathname.split('/')[1]
+  const locale = pathname.split('/')[1]
   const cookieLocale = req.cookies.get('NEXT_LOCALE')?.value
-  
+
   if (locale === 'ko' || locale === 'en') {
-    // 쿠키 설정
-    response.cookies.set('NEXT_LOCALE', locale, {
+    res.cookies.set('NEXT_LOCALE', locale, {
       path: '/',
       maxAge: 31536000,
       sameSite: 'lax'
     })
-    
-    // 개발 환경에서만 로그 출력
     if (process.env.NODE_ENV === 'development') {
       console.log('Middleware: Setting locale cookie:', locale)
       console.log('Middleware: Previous cookie locale:', cookieLocale)
     }
-    
-    // 강제 리다이렉트 제거 - LanguageSwitcher에서 처리하도록 변경
-    // 이렇게 하면 시뮬레이션 상태가 유지됨
   }
 
-  return response
+  return res
 }
 
 export const config = {

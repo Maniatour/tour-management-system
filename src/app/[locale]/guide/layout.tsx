@@ -11,14 +11,14 @@ import GlobalAudioPlayer from '@/components/GlobalAudioPlayer'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, usePathname, useParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { Calendar, CalendarOff, MessageSquare, Camera, FileText, MessageCircle, BookOpen, Receipt, Home, Shield } from 'lucide-react'
+import { Calendar, CalendarOff, MessageSquare, Camera, FileText, MessageCircle, BookOpen, Receipt, Home } from 'lucide-react'
 import { useTranslations } from 'next-intl'
+import Link from 'next/link'
 import TourPhotoUploadModal from '@/components/TourPhotoUploadModal'
 import TourReportModal from '@/components/TourReportModal'
 import TourReceiptModal from '@/components/TourReceiptModal'
 import MedicalReportWarningModal from '@/components/MedicalReportWarningModal'
 import GuideDocumentUploadModal from '@/components/GuideDocumentUploadModal'
-import LanguageSwitcher from '@/components/LanguageSwitcher'
 import { supabase } from '@/lib/supabase'
 import { createClientSupabase } from '@/lib/supabase'
 
@@ -28,7 +28,7 @@ interface GuideLayoutProps {
 }
 
 export default function GuideLayout({ children, params }: GuideLayoutProps) {
-  const { user, userRole, isLoading, simulatedUser, isSimulating } = useAuth()
+  const { user, userRole, isLoading, simulatedUser, isSimulating, signOut, stopSimulation } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
   const t = useTranslations('guide')
@@ -450,22 +450,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
    return (
      <AudioPlayerProvider>
        <div className="min-h-screen bg-gray-50">
-         {/* 헤더 (비활성화) */}
-         {/* <header className="bg-white border-b border-gray-200 px-4 py-3">
-           <div className="max-w-7xl mx-auto flex items-center justify-between">
-             <div className="flex items-center space-x-4">
-               <h1 className="text-xl font-semibold text-gray-900">
-                 {t('title')}
-               </h1>
-             </div>
-             <div className="flex items-center space-x-4">
-               <LanguageSwitcher />
-               <div className="text-sm text-gray-600">
-                 {currentUser ? (isSimulating && simulatedUser ? simulatedUser.name_ko : currentUser.email) : '사용자 없음'}
-               </div>
-             </div>
-           </div>
-         </header> */}
+         {/* 상단 헤더는 [locale] 레이아웃의 기존 Navigation 사용 (가이드/관리자 메뉴 포함) */}
 
          {/* 메인 컨텐츠 - 모바일 좌우 여백 축소, 푸터 높이만큼 하단 여백 */}
          <main className="max-w-7xl mx-auto px-2 sm:px-2 lg:px-4 py-2 sm:py-4 main-safe-area">
