@@ -66,9 +66,9 @@ const NavigationContent = () => {
   }
 
   return (
-    <nav className="bg-white shadow-lg border-b relative z-50 h-[var(--header-height)] min-h-[var(--header-height)] flex items-center">
-      <div className="container mx-auto px-2 sm:px-4 w-full h-full flex items-center">
-        <div className="flex justify-between items-center w-full">
+    <nav className="bg-white shadow-lg border-b relative z-50 min-h-[var(--header-height)] flex flex-col text-gray-900 overflow-visible md:flex-row md:items-center md:h-[var(--header-height)]">
+      <div className="container mx-auto px-2 sm:px-4 w-full flex flex-col md:flex-row md:items-center md:min-h-[var(--header-height)]">
+        <div className="flex justify-between items-center w-full min-h-[var(--header-height)] flex-shrink-0">
           {/* 로고 및 제목 */}
           <div className="flex items-center space-x-4">
             <Link href={`/${locale}`} className="flex items-center space-x-2">
@@ -147,9 +147,12 @@ const NavigationContent = () => {
                         onClick={() => setIsUserMenuOpen(false)}
                       />
                       
-                      {/* Dropdown */}
-                      <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-20">
-                        <div className="py-1">
+                      {/* Dropdown - 불투명 배경 + 진한 글자로 가독성 확보 */}
+                      <div
+                        className="absolute right-0 mt-2 w-56 rounded-lg border border-gray-200 z-20 ring-1 ring-black/10 overflow-hidden isolate !bg-white text-gray-900"
+                        style={{ backgroundColor: '#ffffff', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)', color: '#111827' }}
+                      >
+                        <div className="py-1 !bg-white text-gray-900" style={{ backgroundColor: '#ffffff', color: '#111827' }}>
                           <div className="px-4 py-2 border-b border-gray-100">
                             <p className="text-sm font-medium text-gray-900">
                               {(currentUser as any)?.name_ko || (currentUser as any)?.name_en || (currentUser as any)?.name || currentUser?.email?.split('@')[0] || t('user')}
@@ -378,10 +381,13 @@ const NavigationContent = () => {
           </div>
         </div>
 
-        {/* 모바일 메뉴 */}
+        {/* 모바일 메뉴 - 헤더 바로 아래 전체 너비로 표시 */}
         {isMobileMenuOpen && (
-          <div className="md:hidden border-t border-gray-200 py-4">
-            <div className="flex flex-col space-y-4">
+          <div
+            className="md:hidden w-full border-t border-gray-200 py-4 px-2 !bg-white text-gray-900 flex-shrink-0"
+            style={{ backgroundColor: '#ffffff', color: '#111827' }}
+          >
+            <div className="flex flex-col space-y-4 text-gray-900 max-w-7xl mx-auto" style={{ backgroundColor: '#ffffff', color: '#111827' }}>
               <Link 
                 href={`/${locale}`}
                 className="flex items-center text-gray-600 hover:text-gray-900 transition-colors px-2 py-2"

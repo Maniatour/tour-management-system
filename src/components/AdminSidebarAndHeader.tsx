@@ -692,9 +692,12 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
                       onClick={() => setIsUserMenuOpen(false)}
                     />
                     
-                    {/* Dropdown */}
-                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-20">
-                      <div className="py-1">
+                    {/* Dropdown - 불투명 배경 + 진한 글자로 가독성 확보 */}
+                    <div
+                      className="absolute right-0 mt-2 w-56 rounded-lg border border-gray-200 z-20 ring-1 ring-black/10 overflow-hidden isolate !bg-white text-gray-900"
+                      style={{ backgroundColor: '#ffffff', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)', color: '#111827' }}
+                    >
+                      <div className="py-1 !bg-white text-gray-900" style={{ backgroundColor: '#ffffff', color: '#111827' }}>
                         <div className="px-4 py-2 border-b border-gray-100">
                           <p className="text-sm font-medium text-gray-900">
                             {authUser?.name || authUser?.email?.split('@')[0] || t('user')}
