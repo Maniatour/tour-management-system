@@ -1804,6 +1804,10 @@
         "deposit": "입금",
         "balance": "Balance"
       },
+      "pricingSubTabs": {
+        "noPrice": "① 총 가격이 저장되지 않은 예약",
+        "mismatch": "② 저장된 총 가격과 계산 금액이 다른 예약"
+      },
       "manualStatus": "투어일이 **오늘부터 7일 이내**이고, 예약 상태가 **대기(pending)** 인 예약",
       "manualTour": "예약 상태가 **확정(confirmed)** 인데, 아직 **투어에 배정되지 않은** 예약",
       "manualPricing": "① 총 가격이 저장되지 않은 예약, ② 저장된 총 가격과 현재 옵션으로 계산한 금액이 **다른** 예약",

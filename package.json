@@ -45,6 +45,7 @@
     "html2canvas": "^1.4.1",
     "html2pdf.js": "^0.14.0",
     "jspdf": "^4.0.0",
+    "libphonenumber-js": "^1.12.36",
     "lucide-react": "^0.542.0",
     "multer": "^2.0.2",
     "next": "^16.1.1",

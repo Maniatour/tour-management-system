@@ -9,6 +9,7 @@ import { calculateTotalPrice } from '@/utils/reservationUtils'
 import type { Reservation, Customer } from '@/types/reservation'
 
 export type ActionRequiredTabId = 'status' | 'tour' | 'pricing' | 'deposit' | 'balance'
+export type PricingSubTabId = 'noPrice' | 'mismatch'
 
 interface ReservationActionRequiredModalProps {
   isOpen: boolean
@@ -127,6 +128,7 @@ export default function ReservationActionRequiredModal({
 }: ReservationActionRequiredModalProps) {
   const t = useTranslations('reservations')
   const [activeTab, setActiveTab] = useState<ActionRequiredTabId>('status')
+  const [pricingSubTab, setPricingSubTab] = useState<PricingSubTabId>('noPrice')
   const [page, setPage] = useState(1)
   const [manualOpen, setManualOpen] = useState(false)
   const [reservationIdsWithPayments, setReservationIdsWithPayments] = useState<Set<string>>(new Set())
@@ -135,7 +137,7 @@ export default function ReservationActionRequiredModal({
   // 탭 전환 시 1페이지로
   useEffect(() => {
     setPage(1)
-  }, [activeTab])
+  }, [activeTab, pricingSubTab])
 
   const renderManualText = (text: string) => {
     const parts = text.split(/\*\*(.*?)\*\*/g)
@@ -246,6 +248,8 @@ export default function ReservationActionRequiredModal({
       status: statusList,
       tour: tourList,
       pricing: pricingList,
+      pricingNoPrice: noPricing,
+      pricingMismatch,
       deposit: depositList,
       balance: balanceList
     }
@@ -278,7 +282,9 @@ export default function ReservationActionRequiredModal({
     ]).size
   , [filteredByTab])
 
-  const currentList = filteredByTab[activeTab]
+  const currentList = activeTab === 'pricing'
+    ? filteredByTab[pricingSubTab === 'noPrice' ? 'pricingNoPrice' : 'pricingMismatch']
+    : filteredByTab[activeTab]
   const totalPages = Math.max(1, Math.ceil(currentList.length / CARDS_PER_PAGE))
   const safePage = Math.min(page, totalPages)
   const paginatedList = useMemo(
@@ -348,6 +354,44 @@ export default function ReservationActionRequiredModal({
             </button>
           ))}
         </div>
+
+        {/* 예약 가격 탭 하위 탭 */}
+        {activeTab === 'pricing' && (
+          <div className="flex border-b border-gray-200 bg-gray-50/80 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setPricingSubTab('noPrice')}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                pricingSubTab === 'noPrice'
+                  ? 'border-blue-600 text-blue-600 bg-white'
+                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+              }`}
+            >
+              <span>{t('actionRequired.pricingSubTabs.noPrice')}</span>
+              <span className={`inline-flex items-center justify-center min-w-[1.25rem] px-1.5 py-0.5 rounded-full text-xs ${
+                filteredByTab.pricingNoPrice.length > 0 ? 'bg-amber-100 text-amber-800' : 'bg-gray-200 text-gray-500'
+              }`}>
+                {filteredByTab.pricingNoPrice.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPricingSubTab('mismatch')}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                pricingSubTab === 'mismatch'
+                  ? 'border-blue-600 text-blue-600 bg-white'
+                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+              }`}
+            >
+              <span>{t('actionRequired.pricingSubTabs.mismatch')}</span>
+              <span className={`inline-flex items-center justify-center min-w-[1.25rem] px-1.5 py-0.5 rounded-full text-xs ${
+                filteredByTab.pricingMismatch.length > 0 ? 'bg-amber-100 text-amber-800' : 'bg-gray-200 text-gray-500'
+              }`}>
+                {filteredByTab.pricingMismatch.length}
+              </span>
+            </button>
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto p-4 max-lg:pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
           {loadingPayments && (activeTab === 'deposit') ? (

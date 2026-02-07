@@ -23,6 +23,7 @@ import ReviewManagementSection from '@/components/reservation/ReviewManagementSe
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import { getOptionalOptionsForProduct } from '@/utils/reservationUtils'
 import { getFallbackOtaSalePrice } from '@/utils/choicePricingMatcher'
+import { getCountryFromPhone } from '@/utils/phoneUtils'
 import type { 
   Customer, 
   Product, 
@@ -124,6 +125,7 @@ export default function ReservationForm({
   const t = useTranslations('reservations')
   const tCommon = useTranslations('common')
   const customerSearchRef = useRef<HTMLDivElement | null>(null)
+  const reservationFormRef = useRef<HTMLFormElement>(null)
   const rez: RezLike = (reservation as unknown as RezLike) || ({} as RezLike)
   const [, setChannelAccordionExpanded] = useState(layout === 'modal')
   const [, setProductAccordionExpanded] = useState(layout === 'modal')
@@ -3492,16 +3494,23 @@ export default function ReservationForm({
       // 성공 시 고객 목록 새로고침
       await onRefreshCustomers()
       setShowCustomerForm(false)
-      alert('고객이 성공적으로 추가되었습니다!')
-      
-      // 새로 추가된 고객을 자동으로 선택
+
+      // 새로 추가된 고객을 선택하고, 예약 폼도 제출하여 고객+예약 모두 저장
       if (data && data[0]) {
+        const newCustomer = data[0] as Database['public']['Tables']['customers']['Row']
+        setShowNewCustomerForm(false)
         setFormData(prev => ({
           ...prev,
-          customerId: (data[0] as Database['public']['Tables']['customers']['Row']).id,
-          customerSearch: `${(data[0] as Database['public']['Tables']['customers']['Row']).name}${(data[0] as Database['public']['Tables']['customers']['Row']).email ? ` (${(data[0] as Database['public']['Tables']['customers']['Row']).email})` : ''}`,
+          customerId: newCustomer.id,
+          customerSearch: `${newCustomer.name}${newCustomer.email ? ` (${newCustomer.email})` : ''}`,
           showCustomerDropdown: false
         }))
+        // setState 후 예약 폼 제출을 트리거하여 예약도 함께 저장
+        setTimeout(() => {
+          reservationFormRef.current?.requestSubmit()
+        }, 0)
+      } else {
+        alert('고객이 성공적으로 추가되었습니다!')
       }
     } catch (error) {
       console.error('Error adding customer:', error)
@@ -3604,7 +3613,7 @@ export default function ReservationForm({
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col overflow-hidden lg:overflow-visible">
+        <form ref={reservationFormRef} onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col overflow-hidden lg:overflow-visible">
           <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-0 sm:space-y-6 lg:flex-none lg:min-h-0 pb-2">
           <div className={`grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4 lg:gap-4 lg:grid-rows-1 ${isModal ? 'lg:h-auto' : 'lg:h-[940px]'}`}>
             {/* 1. 고객 정보 */}
@@ -3655,9 +3664,29 @@ export default function ReservationForm({
                         <input
                           type="tel"
                           value={formData.customerPhone}
-                          onChange={(e) => setFormData(prev => ({ ...prev, customerPhone: e.target.value }))}
+                          onChange={(e) => {
+                            const phone = e.target.value
+                            setFormData(prev => {
+                              const next = { ...prev, customerPhone: phone }
+                              const country = getCountryFromPhone(phone)
+                              const langMatch = country ? LANGUAGE_OPTIONS.find(o => o.countryCode === country) : null
+                              if (langMatch) next.customerLanguage = langMatch.value
+                              return next
+                            })
+                          }}
                           className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+                          placeholder="+82 10 1234 5678"
                         />
+                        {(() => {
+                          const country = getCountryFromPhone(formData.customerPhone)
+                          const langMatch = country ? LANGUAGE_OPTIONS.find(o => o.countryCode === country) : null
+                          if (!langMatch) return null
+                          return (
+                            <p className="mt-1 text-xs text-gray-500">
+                              전화번호에서 국가가 감지됨 → 언어: {langMatch.label}
+                            </p>
+                          )
+                        })()}
                       </div>
                       
                       <div>

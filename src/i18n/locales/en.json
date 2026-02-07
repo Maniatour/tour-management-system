@@ -1795,6 +1795,10 @@
         "deposit": "Deposit",
         "balance": "Balance"
       },
+      "pricingSubTabs": {
+        "noPrice": "① No stored total price",
+        "mismatch": "② Stored total ≠ calculated total"
+      },
       "manualStatus": "Reservations with **pending** status and tour date **within the next 7 days** (from today)",
       "manualTour": "Reservations with **confirmed** status that are **not yet assigned to a tour**",
       "manualPricing": "① Reservations with no stored total price, ② Reservations where **stored total** and **calculated total** (from current options) **differ**",

@@ -483,84 +483,86 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
               <p className="text-sm text-gray-600">가격 정보가 없습니다.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {/* 1. 상품가격 */}
-              <div className="bg-white p-3 rounded border border-gray-200">
-                <h4 className="text-sm font-medium text-gray-900 mb-2">상품가격</h4>
-                <div className="space-y-2">
-                  {channelPricingType === 'single' ? (
-                    <>
-                      <div className="text-xs text-gray-600 mb-1">단일 가격</div>
-                      <div className="flex items-center space-x-1">
-                        <span className="font-medium text-xs">$</span>
-                        <input
-                          type="number"
-                          value={editData?.adult_product_price ?? ''}
-                          onChange={(e) => {
-                            const v = Number(e.target.value) || 0
-                            handleInputChange('adult_product_price', v)
-                            handleInputChange('child_product_price', v)
-                            handleInputChange('infant_product_price', v)
-                          }}
-                          className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded"
-                          step="0.01"
-                          placeholder="0"
-                        />
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-600">x{((reservation?.adults || 0) + (reservation?.child || 0) + (reservation?.infant || 0))}명</span>
-                        <span className="font-medium">= ${(editData?.product_price_total || 0).toFixed(2)}</span>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-600">성인 $</span>
-                        <input
-                          type="number"
-                          value={editData?.adult_product_price ?? ''}
-                          onChange={(e) => handleInputChange('adult_product_price', Number(e.target.value) || 0)}
-                          className="w-14 px-1 py-0.5 text-xs border border-gray-300 rounded text-right"
-                          step="0.01"
-                        />
-                        <span className="text-gray-500">x{reservation?.adults || 0}</span>
-                        <span className="font-medium">${((editData?.adult_product_price || 0) * (reservation?.adults || 0)).toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-600">아동 $</span>
-                        <input
-                          type="number"
-                          value={editData?.child_product_price ?? ''}
-                          onChange={(e) => handleInputChange('child_product_price', Number(e.target.value) || 0)}
-                          className="w-14 px-1 py-0.5 text-xs border border-gray-300 rounded text-right"
-                          step="0.01"
-                        />
-                        <span className="text-gray-500">x{reservation?.child || 0}</span>
-                        <span className="font-medium">${((editData?.child_product_price || 0) * (reservation?.child || 0)).toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-600">유아 $</span>
-                        <input
-                          type="number"
-                          value={editData?.infant_product_price ?? ''}
-                          onChange={(e) => handleInputChange('infant_product_price', Number(e.target.value) || 0)}
-                          className="w-14 px-1 py-0.5 text-xs border border-gray-300 rounded text-right"
-                          step="0.01"
-                        />
-                        <span className="text-gray-500">x{reservation?.infant || 0}</span>
-                        <span className="font-medium">${((editData?.infant_product_price || 0) * (reservation?.infant || 0)).toFixed(2)}</span>
-                      </div>
-                    </>
-                  )}
-                  <div className="border-t pt-1 flex justify-between items-center">
-                    <span className="text-sm font-medium text-gray-900">상품 가격 합계</span>
-                    <span className="text-sm font-bold text-blue-600">${(editData?.product_price_total || 0).toFixed(2)}</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* 왼쪽: 상품가격 + 할인/추가비용 (세로 배치) */}
+              <div className="space-y-3">
+                {/* 1. 상품가격 */}
+                <div className="bg-white p-3 rounded border border-gray-200">
+                  <h4 className="text-sm font-medium text-gray-900 mb-2">상품가격</h4>
+                  <div className="space-y-2">
+                    {channelPricingType === 'single' ? (
+                      <>
+                        <div className="text-xs text-gray-600 mb-1">단일 가격</div>
+                        <div className="flex items-center space-x-1">
+                          <span className="font-medium text-xs">$</span>
+                          <input
+                            type="number"
+                            value={editData?.adult_product_price ?? ''}
+                            onChange={(e) => {
+                              const v = Number(e.target.value) || 0
+                              handleInputChange('adult_product_price', v)
+                              handleInputChange('child_product_price', v)
+                              handleInputChange('infant_product_price', v)
+                            }}
+                            className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded"
+                            step="0.01"
+                            placeholder="0"
+                          />
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-600">x{((reservation?.adults || 0) + (reservation?.child || 0) + (reservation?.infant || 0))}명</span>
+                          <span className="font-medium">= ${(editData?.product_price_total || 0).toFixed(2)}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-600">성인 $</span>
+                          <input
+                            type="number"
+                            value={editData?.adult_product_price ?? ''}
+                            onChange={(e) => handleInputChange('adult_product_price', Number(e.target.value) || 0)}
+                            className="w-14 px-1 py-0.5 text-xs border border-gray-300 rounded text-right"
+                            step="0.01"
+                          />
+                          <span className="text-gray-500">x{reservation?.adults || 0}</span>
+                          <span className="font-medium">${((editData?.adult_product_price || 0) * (reservation?.adults || 0)).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-600">아동 $</span>
+                          <input
+                            type="number"
+                            value={editData?.child_product_price ?? ''}
+                            onChange={(e) => handleInputChange('child_product_price', Number(e.target.value) || 0)}
+                            className="w-14 px-1 py-0.5 text-xs border border-gray-300 rounded text-right"
+                            step="0.01"
+                          />
+                          <span className="text-gray-500">x{reservation?.child || 0}</span>
+                          <span className="font-medium">${((editData?.child_product_price || 0) * (reservation?.child || 0)).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-600">유아 $</span>
+                          <input
+                            type="number"
+                            value={editData?.infant_product_price ?? ''}
+                            onChange={(e) => handleInputChange('infant_product_price', Number(e.target.value) || 0)}
+                            className="w-14 px-1 py-0.5 text-xs border border-gray-300 rounded text-right"
+                            step="0.01"
+                          />
+                          <span className="text-gray-500">x{reservation?.infant || 0}</span>
+                          <span className="font-medium">${((editData?.infant_product_price || 0) * (reservation?.infant || 0)).toFixed(2)}</span>
+                        </div>
+                      </>
+                    )}
+                    <div className="border-t pt-1 flex justify-between items-center">
+                      <span className="text-sm font-medium text-gray-900">상품 가격 합계</span>
+                      <span className="text-sm font-bold text-blue-600">${(editData?.product_price_total || 0).toFixed(2)}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* 2. 할인/추가비용 */}
-              <div className="bg-white p-3 rounded border border-gray-200">
+                {/* 2. 할인/추가비용 (상품가격 아래) */}
+                <div className="bg-white p-3 rounded border border-gray-200">
                 <h4 className="text-sm font-medium text-gray-900 mb-2">할인/추가비용</h4>
                 <div className="space-y-2">
                   <div>
@@ -692,102 +694,270 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                   </div>
                 </div>
               </div>
+              </div>
 
-              {/* 3. 가격계산 */}
-              <div className="bg-white p-3 rounded border border-gray-200 md:col-span-1">
+              {/* 3. 가격계산 (1~4번 블록) */}
+              <div className="bg-white p-3 rounded border border-gray-200 overflow-y-auto max-h-[70vh]">
                 <h4 className="text-xs font-semibold text-gray-900 mb-2">가격 계산</h4>
-                <div className="space-y-1.5 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-gray-700">OTA 판매가</span>
-                    <span className="font-medium">${(editData?.product_price_total || 0).toFixed(2)}</span>
-                  </div>
-                  {(editData?.coupon_discount || 0) !== 0 && (
-                    <div className="flex justify-between text-green-600">
-                      <span>- 쿠폰 할인</span>
-                      <span>-${Math.abs(editData?.coupon_discount || 0).toFixed(2)}</span>
+                <div className="space-y-3 text-xs">
+                  {/* 1️⃣ 고객 기준 결제 흐름 */}
+                  <div className="pb-2 border-b border-gray-200">
+                    <div className="flex items-center mb-1.5">
+                      <span className="text-base mr-1">1️⃣</span>
+                      <span className="font-semibold text-gray-800">고객 기준 결제 흐름</span>
                     </div>
-                  )}
-                  <div className="border-t border-gray-200 my-1" />
-                  <div className="flex justify-between">
-                    <span className="text-gray-700">할인 후 상품가</span>
-                    <span className="font-medium">
-                      ${((editData?.product_price_total || 0) - Math.abs(editData?.coupon_discount || 0) - (editData?.additional_discount || 0)).toFixed(2)}
-                    </span>
-                  </div>
-                  {(editData?.additional_discount || 0) > 0 && (
-                    <div className="flex justify-between text-red-600">
-                      <span>- 추가 할인</span>
-                      <span>-${(editData?.additional_discount || 0).toFixed(2)}</span>
-                    </div>
-                  )}
-                  {(editData?.additional_cost || 0) > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">+ 추가 비용</span>
-                      <span>+${(editData?.additional_cost || 0).toFixed(2)}</span>
-                    </div>
-                  )}
-                  {(editData?.tax || 0) > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">+ 세금</span>
-                      <span>+${(editData?.tax || 0).toFixed(2)}</span>
-                    </div>
-                  )}
-                  {(editData?.card_fee || 0) > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">+ 카드 수수료</span>
-                      <span>+${(editData?.card_fee || 0).toFixed(2)}</span>
-                    </div>
-                  )}
-                  {(editData?.prepayment_cost || 0) > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">+ 선결제 지출</span>
-                      <span>+${(editData?.prepayment_cost || 0).toFixed(2)}</span>
-                    </div>
-                  )}
-                  {(editData?.prepayment_tip || 0) > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">+ 선결제 팁</span>
-                      <span>+${(editData?.prepayment_tip || 0).toFixed(2)}</span>
-                    </div>
-                  )}
-                  {(editData?.is_private_tour && (editData?.private_tour_additional_cost || 0) > 0) && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">+ 단독투어 추가비</span>
-                      <span>+${(editData?.private_tour_additional_cost || 0).toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="border-t border-gray-200 my-1" />
-                  <div className="flex justify-between">
-                    <span className="text-sm font-bold text-blue-800">고객 총 결제 금액</span>
-                    <span className="text-sm font-bold text-blue-600">${(editData?.total_price || 0).toFixed(2)}</span>
-                  </div>
-                  <div className="border-t pt-2 mt-2 space-y-1">
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600">예약금</span>
-                      <div className="relative">
-                        <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-[10px]">$</span>
-                        <input
-                          type="number"
-                          value={editData?.deposit_amount ?? ''}
-                          onChange={(e) => handleInputChange('deposit_amount', Number(e.target.value) || 0)}
-                          className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right"
-                          step="0.01"
-                        />
+                    <div className="space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-gray-700">OTA 판매가</span>
+                        <span className="font-medium">${(editData?.product_price_total || 0).toFixed(2)}</span>
+                      </div>
+                      {(editData?.coupon_discount || 0) !== 0 && (
+                        <div className="flex justify-between text-green-600">
+                          <span>- 쿠폰 할인</span>
+                          <span>-${Math.abs(editData?.coupon_discount || 0).toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="border-t border-gray-100 my-1" />
+                      <div className="flex justify-between">
+                        <span className="text-gray-700">할인 후 상품가</span>
+                        <span className="font-medium">
+                          ${((editData?.product_price_total || 0) - Math.abs(editData?.coupon_discount || 0) - (editData?.additional_discount || 0)).toFixed(2)}
+                        </span>
+                      </div>
+                      {(editData?.additional_discount || 0) > 0 && (
+                        <div className="flex justify-between text-red-600">
+                          <span>- 추가 할인</span>
+                          <span>-${(editData?.additional_discount || 0).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {(editData?.additional_cost || 0) > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">+ 추가 비용</span>
+                          <span>+${(editData?.additional_cost || 0).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {(editData?.tax || 0) > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">+ 세금</span>
+                          <span>+${(editData?.tax || 0).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {(editData?.card_fee || 0) > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">+ 카드 수수료</span>
+                          <span>+${(editData?.card_fee || 0).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {(editData?.prepayment_cost || 0) > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">+ 선결제 지출</span>
+                          <span>+${(editData?.prepayment_cost || 0).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {(editData?.prepayment_tip || 0) > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">+ 선결제 팁</span>
+                          <span>+${(editData?.prepayment_tip || 0).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {(editData?.is_private_tour && (editData?.private_tour_additional_cost || 0) > 0) && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">+ 단독투어 추가비</span>
+                          <span>+${(editData?.private_tour_additional_cost || 0).toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="border-t border-gray-100 my-1" />
+                      <div className="flex justify-between">
+                        <span className="font-bold text-blue-800">고객 총 결제 금액</span>
+                        <span className="font-bold text-blue-600">${(editData?.total_price || 0).toFixed(2)}</span>
                       </div>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600">잔금</span>
-                      <div className="relative">
-                        <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-[10px]">$</span>
-                        <input
-                          type="number"
-                          value={editData?.balance_amount ?? ''}
-                          onChange={(e) => handleInputChange('balance_amount', Number(e.target.value) || 0)}
-                          className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right"
-                          step="0.01"
-                        />
+                  </div>
+
+                  {/* 2️⃣ 고객 실제 지불 내역 */}
+                  <div className="pb-2 border-b border-gray-200">
+                    <div className="flex items-center mb-1.5">
+                      <span className="text-base mr-1">2️⃣</span>
+                      <span className="font-semibold text-gray-800">고객 실제 지불 내역</span>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-700">고객 실제 지불액 (보증금)</span>
+                        <div className="relative">
+                          <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-[10px]">$</span>
+                          <input
+                            type="number"
+                            value={editData?.deposit_amount ?? ''}
+                            onChange={(e) => handleInputChange('deposit_amount', Number(e.target.value) || 0)}
+                            className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right"
+                            step="0.01"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-700">잔액 (투어 당일 지불)</span>
+                        <div className="relative">
+                          <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-[10px]">$</span>
+                          <input
+                            type="number"
+                            value={editData?.balance_amount ?? ''}
+                            onChange={(e) => handleInputChange('balance_amount', Number(e.target.value) || 0)}
+                            className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right"
+                            step="0.01"
+                          />
+                        </div>
+                      </div>
+                      <div className="border-t border-gray-100 my-1" />
+                      <div className="flex justify-between">
+                        <span className="font-semibold text-gray-900">총 결제 예정 금액</span>
+                        <span className="font-bold text-blue-600">
+                          ${((editData?.deposit_amount || 0) + (editData?.balance_amount || 0)).toFixed(2)}
+                        </span>
                       </div>
                     </div>
+                  </div>
+
+                  {/* 3️⃣ 채널 정산 기준 */}
+                  <div className="pb-2 border-b border-gray-200">
+                    <div className="flex items-center mb-1.5">
+                      <span className="text-base mr-1">3️⃣</span>
+                      <span className="font-semibold text-gray-800">채널 정산 기준</span>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-700">채널 결제 금액</span>
+                        <span className="font-medium">${(editData?.deposit_amount || 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-700">채널 수수료 %</span>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            value={editData?.commission_percent ?? ''}
+                            onChange={(e) => handleInputChange('commission_percent', Number(e.target.value) || 0)}
+                            className="w-14 pl-1 pr-6 py-0.5 text-xs border border-gray-300 rounded text-right"
+                            step="0.01"
+                            min="0"
+                            max="100"
+                          />
+                          <span className="absolute right-1 top-1/2 -translate-y-1/2 text-gray-500 text-[10px]">%</span>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-700">채널 수수료 $</span>
+                        <div className="relative">
+                          <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-[10px]">$</span>
+                          <input
+                            type="number"
+                            value={editData?.commission_amount ?? ''}
+                            onChange={(e) => handleInputChange('commission_amount', Number(e.target.value) || 0)}
+                            className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right"
+                            step="0.01"
+                          />
+                        </div>
+                      </div>
+                      <div className="border-t border-gray-100 my-1" />
+                      <div className="flex justify-between">
+                        <span className="font-semibold text-gray-700">채널 정산 금액</span>
+                        <span className="font-bold text-blue-600">
+                          ${Math.max(0, (editData?.deposit_amount || 0) - (editData?.commission_amount || 0)).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 4️⃣ 최종 매출 & 운영 이익 */}
+                  <div className="pb-1">
+                    <div className="flex items-center mb-1.5">
+                      <span className="text-base mr-1">4️⃣</span>
+                      <span className="font-semibold text-gray-800">최종 매출 & 운영 이익</span>
+                    </div>
+                    {(() => {
+                      const channelSettlement = Math.max(0, (editData?.deposit_amount || 0) - (editData?.commission_amount || 0))
+                      const choicesTotal = editData?.choices_total ?? 0
+                      const people = (reservation?.adults || 0) + (reservation?.child || 0) + (reservation?.infant || 0)
+                      const notIncludedTotal = (editData?.not_included_price || 0) * people
+                      let totalRevenue = channelSettlement
+                      if (choicesTotal > 0) totalRevenue += choicesTotal
+                      if (notIncludedTotal > 0) totalRevenue += notIncludedTotal
+                      if ((editData?.additional_discount || 0) > 0) totalRevenue -= editData.additional_discount
+                      if ((editData?.additional_cost || 0) > 0) totalRevenue += editData.additional_cost
+                      if ((editData?.tax || 0) > 0) totalRevenue += editData.tax
+                      if ((editData?.card_fee || 0) > 0) totalRevenue += editData.card_fee
+                      if ((editData?.prepayment_cost || 0) > 0) totalRevenue += editData.prepayment_cost
+                      const operatingProfit = totalRevenue - (editData?.prepayment_tip || 0)
+                      return (
+                        <div className="space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-gray-700">채널 정산금액</span>
+                            <span className="font-medium">${channelSettlement.toFixed(2)}</span>
+                          </div>
+                          {choicesTotal > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">+ 초이스 총액</span>
+                              <span>+${choicesTotal.toFixed(2)}</span>
+                            </div>
+                          )}
+                          {notIncludedTotal > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">+ 불포함 가격</span>
+                              <span>+${notIncludedTotal.toFixed(2)}</span>
+                            </div>
+                          )}
+                          {(editData?.additional_discount || 0) > 0 && (
+                            <div className="flex justify-between text-red-600">
+                              <span className="text-gray-600">- 추가할인</span>
+                              <span>-${(editData?.additional_discount || 0).toFixed(2)}</span>
+                            </div>
+                          )}
+                          {(editData?.additional_cost || 0) > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">+ 추가비용</span>
+                              <span>+${(editData?.additional_cost || 0).toFixed(2)}</span>
+                            </div>
+                          )}
+                          {(editData?.tax || 0) > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">+ 세금</span>
+                              <span>+${(editData?.tax || 0).toFixed(2)}</span>
+                            </div>
+                          )}
+                          {(editData?.card_fee || 0) > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">+ 결제 수수료</span>
+                              <span>+${(editData?.card_fee || 0).toFixed(2)}</span>
+                            </div>
+                          )}
+                          {(editData?.prepayment_cost || 0) > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">+ 선결제 지출</span>
+                              <span>+${(editData?.prepayment_cost || 0).toFixed(2)}</span>
+                            </div>
+                          )}
+                          <div className="border-t border-gray-100 my-1" />
+                          <div className="flex justify-between">
+                            <span className="font-bold text-green-800">총 매출</span>
+                            <span className="font-bold text-green-600">${totalRevenue.toFixed(2)}</span>
+                          </div>
+                          {(editData?.prepayment_tip || 0) > 0 && (
+                            <>
+                              <div className="flex justify-between text-red-600">
+                                <span className="text-gray-600">- 선결제 팁 (수익 아님)</span>
+                                <span>-${(editData?.prepayment_tip || 0).toFixed(2)}</span>
+                              </div>
+                              <div className="border-t border-gray-100 my-1" />
+                            </>
+                          )}
+                          <div className="flex justify-between">
+                            <span className="font-bold text-purple-800">운영 이익</span>
+                            <span className="font-bold text-purple-600">${Math.max(0, operatingProfit).toFixed(2)}</span>
+                          </div>
+                        </div>
+                      )
+                    })()}
+                  </div>
+
+                  <div className="border-t border-gray-200 pt-2 mt-1">
                     <div className="flex justify-between pt-1">
                       <span className="font-semibold text-gray-900">총 가격</span>
                       <span className="font-bold text-gray-900">${(editData?.total_price || 0).toFixed(2)}</span>
