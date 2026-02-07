@@ -140,6 +140,28 @@ export default function GuideDashboard() {
     : (localeFromUrl && localeFromUrl !== '%24%7Blocale%7D' && localeFromUrl !== '${locale}') 
     ? localeFromUrl 
     : localeFromHook || 'ko'
+
+  // Off Schedule 빈 메시지 (번역 실패 시 locale 기반 폴백)
+  const getOffScheduleEmptyMessage = (tab: typeof offScheduleActiveTab): string => {
+    const isEn = locale === 'en'
+    const fallback: Record<typeof offScheduleActiveTab, string> = {
+      upcoming: isEn ? 'No scheduled off.' : '예정된 Off가 없습니다.',
+      past: isEn ? 'No past off.' : '과거 Off가 없습니다.',
+      pending: isEn ? 'No pending off.' : '대기 중인 Off가 없습니다.',
+      approved: isEn ? 'No approved off.' : '승인된 Off가 없습니다.',
+      rejected: isEn ? 'No rejected off.' : '거부된 Off가 없습니다.',
+    }
+    try {
+      if (tab === 'upcoming') return t('offSchedule.noUpcoming')
+      if (tab === 'past') return t('offSchedule.noPast')
+      if (tab === 'pending') return t('offSchedule.noPending')
+      if (tab === 'approved') return t('offSchedule.noApproved')
+      if (tab === 'rejected') return t('offSchedule.noRejected')
+    } catch {
+      // locale이 깨졌을 때(예: %24%7Blocale%7D) 폴백 사용
+    }
+    return fallback[tab]
+  }
   
   // 디버깅을 위한 로그
   console.log('GuideDashboard locale debug:', {
@@ -1308,13 +1330,7 @@ export default function GuideDashboard() {
           ) : (
             <div className="text-center text-gray-500 py-8">
               <CalendarOff className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p>
-                {offScheduleActiveTab === 'upcoming' && '예정된 Off가 없습니다.'}
-                {offScheduleActiveTab === 'past' && '과거 Off가 없습니다.'}
-                {offScheduleActiveTab === 'pending' && '대기 중인 Off가 없습니다.'}
-                {offScheduleActiveTab === 'approved' && '승인된 Off가 없습니다.'}
-                {offScheduleActiveTab === 'rejected' && '거부된 Off가 없습니다.'}
-              </p>
+              <p>{getOffScheduleEmptyMessage(offScheduleActiveTab)}</p>
             </div>
           )
         })()}
