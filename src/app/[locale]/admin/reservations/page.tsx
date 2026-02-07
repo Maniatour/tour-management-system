@@ -50,7 +50,8 @@ interface AdminReservationsProps {
 
 export default function AdminReservations({ }: AdminReservationsProps) {
   const t = useTranslations('reservations')
-  const { user } = useAuth()
+  const { user, userPosition } = useAuth()
+  const isSuper = userPosition === 'super'
   
   // 초이스 옵션별 색상 매핑 함수 (옵션 이름 기준으로 색상 결정) - useCallback으로 메모이제이션
   const getGroupColorClasses = useCallback((groupId: string, groupName?: string, optionName?: string) => {
@@ -2631,6 +2632,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           onRefreshCustomers={refreshCustomers}
           onDelete={handleDeleteReservation}
           layout="modal"
+          allowPastDateEdit={isSuper}
         />
       )}
 

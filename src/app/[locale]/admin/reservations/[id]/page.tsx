@@ -107,7 +107,8 @@ export default function ReservationDetailsPage() {
   const t = useTranslations('reservations')
   const router = useRouter()
   const params = useParams() as { locale?: string; id?: string }
-  const { hasPermission, userRole, user, loading: authLoading, isInitialized } = useAuth()
+  const { hasPermission, userRole, user, userPosition, loading: authLoading, isInitialized } = useAuth()
+  const isSuper = userPosition === 'super'
 
   // 모든 훅을 조건부 호출 없이 먼저 호출
   const {
@@ -452,6 +453,7 @@ export default function ReservationDetailsPage() {
           onDelete={handleDelete}
           layout="page"
           onViewCustomer={() => setShowReservationDetailModal(true)}
+          allowPastDateEdit={isSuper}
         />
       </div>
     )

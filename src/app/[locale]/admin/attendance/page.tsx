@@ -43,7 +43,8 @@ interface MonthlyStats {
 }
 
 export default function AttendancePage() {
-  const { authUser } = useAuth()
+  const { authUser, userPosition } = useAuth()
+  const isSuper = userPosition === 'super'
   const params = useParams()
   const locale = params.locale as string
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
@@ -1116,6 +1117,7 @@ export default function AttendancePage() {
             pickupHotels={reservationFormData.pickupHotels}
             coupons={reservationFormData.coupons}
             layout="modal"
+            allowPastDateEdit={isSuper}
             onSubmit={async (reservationData: any) => {
               try {
                 const dbReservationData = {

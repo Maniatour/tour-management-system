@@ -2177,6 +2177,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           onRefreshCustomers={refreshCustomers}
           onDelete={handleDeleteReservation}
           layout="modal"
+          allowPastDateEdit={isSuper || isSuperByEmail}
         />
       )}
     </div>

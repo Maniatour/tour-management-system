@@ -77,6 +77,8 @@ interface ReservationFormProps {
   layout?: 'modal' | 'page'
   onViewCustomer?: () => void
   initialCustomerId?: string
+  /** true이면 지난 날짜 예약도 수정 가능 (super 계정용) */
+  allowPastDateEdit?: boolean
 }
 
 type RezLike = Partial<Reservation> & {
@@ -110,10 +112,11 @@ export default function ReservationForm({
   onSubmit, 
   onCancel, 
   onRefreshCustomers, 
-  onDelete,
+  onDelete, 
   layout = 'modal',
   onViewCustomer,
-  initialCustomerId
+  initialCustomerId,
+  allowPastDateEdit = false
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
@@ -3909,6 +3912,7 @@ export default function ReservationForm({
                     pickupHotels={pickupHotels}
                     sanitizeTimeInput={sanitizeTimeInput}
                     t={t}
+                    allowPastDate={allowPastDateEdit}
                   />
                 </div>
                 <div id="participants-section">
