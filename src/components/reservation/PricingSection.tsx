@@ -136,7 +136,8 @@ export default function PricingSection({
   reservationId,
   expenseUpdateTrigger,
   channels = [],
-  products = []
+  products = [],
+  t
 }: PricingSectionProps) {
   const locale = useLocale()
   const isKorean = locale === 'ko'
@@ -1171,6 +1172,8 @@ export default function PricingSection({
 
   // 초이스 구매가 총합 상태
   const [choiceCostTotal, setChoiceCostTotal] = useState(0)
+  // 정산 카드 하단 설명 표시 (모바일: 클릭 시 토글)
+  const [expandedSettlementCard, setExpandedSettlementCard] = useState<string | null>(null)
 
   // 초이스 구매가 총합 업데이트 (formData.choicesTotal은 의존성에서 제외 - 우리가 설정하는 값이라 루프 방지)
   useEffect(() => {
@@ -1507,107 +1510,45 @@ export default function PricingSection({
 
   return (
     <div>
-      {/* 구분선 */}
-      <div className="border-t border-gray-300 mb-4"></div>
-      
-      <div className="space-y-2 mb-3">
-        {/* 첫 번째 줄: 가격 정보 제목, 가격 타입, 저장/초기화 버튼 */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <div className="flex items-center space-x-3">
-            <h3 className="text-sm font-medium text-gray-900">가격 정보</h3>
-          </div>
-          {/* 저장, 초기화 버튼 */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  const tempReservationId = `temp_${Date.now()}`
-                  await savePricingInfo(tempReservationId)
-                  alert('가격 정보가 저장되었습니다!')
-                } catch {
-                  alert('가격 정보 저장 중 오류가 발생했습니다.')
-                }
-              }}
-              className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
-            >
-              저장
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                // 가격 정보 초기화
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                setFormData((prev: any) => ({
-                  ...prev,
-                  adultProductPrice: 0,
-                  childProductPrice: 0,
-                  infantProductPrice: 0,
-                  selectedChoices: {},
-                  couponCode: '',
-                  couponDiscount: 0,
-                  additionalDiscount: 0,
-                  additionalCost: 0,
-                  cardFee: 0,
-                  tax: 0,
-                  prepaymentCost: 0,
-                  prepaymentTip: 0,
-                  selectedOptionalOptions: {},
-                  depositAmount: 0,
-                  isPrivateTour: false,
-                  privateTourAdditionalCost: 0,
-                  commission_percent: 0,
-                  commission_amount: 0,
-                  productChoices: []
-                }))
-              }}
-              className="px-2 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700"
-            >
-              초기화
-            </button>
-          </div>
-        </div>
-        
-        {/* 두 번째 줄: 기존 가격 뱃지, 완료 뱃지, 단독 투어 체크박스 */}
+      {/* 왼쪽: 제목·채널·날짜·기존가격/완료 뱃지·단독투어 / 오른쪽 끝: 저장·초기화 */}
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div className="flex flex-wrap items-center gap-2">
-          {/* 기존 가격 정보 표시 */}
-          {isExistingPricingLoaded && (
-            <span className="px-2 py-1 bg-green-100 border border-green-300 rounded text-xs text-green-700">
-              기존 가격
+          <h3 className="text-sm font-medium text-gray-900">{t('form.pricingInfo')}</h3>
+          {formData.channelId && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-sky-100 text-sky-800 border border-sky-200 text-xs font-medium" title={formData.channelId}>
+              {channels?.find((c: { id: string; name?: string }) => c.id === formData.channelId)?.name ?? formData.channelId}
             </span>
           )}
-          {/* 매핑 필드 상태 버튼들 */}
+          {formData.tourDate && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-sky-100 text-sky-800 border border-sky-200 text-xs font-medium" title={formData.tourDate}>
+              {formData.tourDate}
+            </span>
+          )}
+          {isExistingPricingLoaded && (
+            <span className="px-2 py-1 bg-green-100 border border-green-300 rounded text-xs text-green-700">기존 가격</span>
+          )}
           <div className="flex items-center space-x-1">
             {!formData.productId && (
-              <div className="px-2 py-1 bg-red-100 border border-red-300 rounded text-xs text-red-700">
-                상품
-              </div>
+              <span className="px-2 py-1 bg-red-100 border border-red-300 rounded text-xs text-red-700">상품</span>
             )}
             {!formData.channelId && (
-              <div className="px-2 py-1 bg-red-100 border border-red-300 rounded text-xs text-red-700">
-                채널
-              </div>
+              <span className="px-2 py-1 bg-red-100 border border-red-300 rounded text-xs text-red-700">채널</span>
             )}
             {!formData.tourDate && (
-              <div className="px-2 py-1 bg-red-100 border border-red-300 rounded text-xs text-red-700">
-                날짜
-              </div>
+              <span className="px-2 py-1 bg-red-100 border border-red-300 rounded text-xs text-red-700">날짜</span>
             )}
             {formData.productId && formData.channelId && formData.tourDate && (
-              <div className="px-2 py-1 bg-green-100 border border-green-300 rounded text-xs text-green-700">
-                ✓ 완료
-              </div>
+              <span className="px-2 py-1 bg-green-100 border border-green-300 rounded text-xs text-green-700">✓ 완료</span>
             )}
           </div>
-          {/* 단독 투어 체크박스 */}
-          <label className="flex items-center">
+          <label className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-violet-50 border border-violet-200 cursor-pointer hover:bg-violet-100 focus-within:ring-2 focus-within:ring-violet-400 focus-within:ring-offset-1">
             <input
               type="checkbox"
               checked={formData.isPrivateTour}
               onChange={(e) => setFormData({ ...formData, isPrivateTour: e.target.checked })}
-              className="mr-1 h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              className="h-4 w-4 text-violet-600 focus:ring-violet-500 border-violet-300 rounded"
             />
-            <span className="text-xs text-gray-700">단독투어</span>
+            <span className="text-xs font-medium text-violet-800">단독투어</span>
           </label>
           {formData.isPrivateTour && (
             <div className="flex items-center space-x-1">
@@ -1622,6 +1563,54 @@ export default function PricingSection({
               />
             </div>
           )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const tempReservationId = `temp_${Date.now()}`
+                await savePricingInfo(tempReservationId)
+                alert('가격 정보가 저장되었습니다!')
+              } catch {
+                alert('가격 정보 저장 중 오류가 발생했습니다.')
+              }
+            }}
+            className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+          >
+            저장
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              setFormData((prev: any) => ({
+                ...prev,
+                adultProductPrice: 0,
+                childProductPrice: 0,
+                infantProductPrice: 0,
+                selectedChoices: {},
+                couponCode: '',
+                couponDiscount: 0,
+                additionalDiscount: 0,
+                additionalCost: 0,
+                cardFee: 0,
+                tax: 0,
+                prepaymentCost: 0,
+                prepaymentTip: 0,
+                selectedOptionalOptions: {},
+                depositAmount: 0,
+                isPrivateTour: false,
+                privateTourAdditionalCost: 0,
+                commission_percent: 0,
+                commission_amount: 0,
+                productChoices: []
+              }))
+            }}
+            className="px-2 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700"
+          >
+            초기화
+          </button>
         </div>
       </div>
 
@@ -2097,35 +2086,35 @@ export default function PricingSection({
 
         {/* 오른쪽 열: 가격 계산 - 2/3 너비 */}
         <div className="md:col-span-2">
-          <div className="bg-white p-4 rounded border border-gray-200 h-full">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-semibold text-gray-900">가격 계산</h4>
+          <div className="bg-white p-3 rounded border border-gray-200 h-full">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-xs font-semibold text-gray-900">가격 계산</h4>
               <button
                 type="button"
                 onClick={() => setShowHelp(true)}
-                className="px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
+                className="px-1.5 py-0.5 text-[10px] border border-gray-300 rounded hover:bg-gray-50 text-gray-700"
               >
                 계산 안내
               </button>
             </div>
 
             {/* 1️⃣ 고객 기준 결제 흐름 (Customer View) */}
-            <div className="mb-6 pb-4 border-b-2 border-gray-300">
-              <div className="flex items-center mb-3">
-                <span className="text-lg mr-2">1️⃣</span>
+            <div className="mb-4 pb-3 border-b-2 border-gray-300">
+              <div className="flex items-center mb-2">
+                <span className="text-base mr-1.5">1️⃣</span>
                 <h5 
-                  className="text-sm font-semibold text-gray-800 cursor-help" 
+                  className="text-xs font-semibold text-gray-800 cursor-help" 
                   title="👉 고객이 얼마를 부담했는지만 보여주는 영역"
                 >
                   고객 기준 결제 흐름
                 </h5>
-                <span className="ml-2 text-xs text-gray-500">(Customer View)</span>
+                <span className="ml-1.5 text-[10px] text-gray-500">(Customer View)</span>
               </div>
               
               {/* 기본 가격 (OTA 판매가) */}
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-gray-700">{isKorean ? 'OTA 판매가' : 'OTA Sale Price'}</span>
-                <span className="text-sm font-medium text-gray-900">
+              <div className="flex justify-between items-center mb-1.5">
+                <span className="text-xs text-gray-700">{isKorean ? 'OTA 판매가' : 'OTA Sale Price'}</span>
+                <span className="text-xs font-medium text-gray-900">
                   ${(() => {
                     // OTA 판매가 = productPriceTotal (판매가 * 인원, 불포함 가격 제외)
                     // productPriceTotal은 이미 판매가만 포함하고 있음
@@ -2136,18 +2125,18 @@ export default function PricingSection({
               
               {/* 쿠폰 할인 */}
               {formData.couponDiscount > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs text-gray-600">{isKorean ? '- 쿠폰 할인' : '- Coupon Discount'}</span>
-                  <span className="text-xs text-green-600">-${formData.couponDiscount.toFixed(2)}</span>
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-[10px] text-gray-600">{isKorean ? '- 쿠폰 할인' : '- Coupon Discount'}</span>
+                  <span className="text-[10px] text-green-600">-${formData.couponDiscount.toFixed(2)}</span>
                 </div>
               )}
               
-              <div className="border-t border-gray-200 my-2"></div>
+              <div className="border-t border-gray-200 my-1.5"></div>
               
               {/* 할인 후 상품가 */}
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-gray-700">{isKorean ? '할인 후 상품가' : 'Discounted Product Price'}</span>
-                <span className="text-sm font-medium text-gray-900">
+              <div className="flex justify-between items-center mb-1.5">
+                <span className="text-xs text-gray-700">{isKorean ? '할인 후 상품가' : 'Discounted Product Price'}</span>
+                <span className="text-xs font-medium text-gray-900">
                   ${(() => {
                     // 할인 후 상품가 = OTA 판매가 - 쿠폰 할인 - 추가 할인
                     // productPriceTotal은 이미 판매가만 포함하고 있음 (불포함 가격 제외)
@@ -2159,18 +2148,18 @@ export default function PricingSection({
               
               {/* 옵션 추가 */}
               {reservationOptionsTotalPrice > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs text-gray-600">{isKorean ? '+ 옵션 추가' : '+ Options'}</span>
-                  <span className="text-xs text-gray-700">+${reservationOptionsTotalPrice.toFixed(2)}</span>
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-[10px] text-gray-600">{isKorean ? '+ 옵션 추가' : '+ Options'}</span>
+                  <span className="text-[10px] text-gray-700">+${reservationOptionsTotalPrice.toFixed(2)}</span>
                 </div>
               )}
               
-              <div className="border-t border-gray-200 my-2"></div>
+              <div className="border-t border-gray-200 my-1.5"></div>
               
               {/* 초이스 총액 */}
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-gray-700">{isKorean ? '초이스 총액' : 'Choices Total'}</span>
-                <span className="text-sm font-semibold text-gray-900">
+              <div className="flex justify-between items-center mb-1.5">
+                <span className="text-xs font-medium text-gray-700">{isKorean ? '초이스 총액' : 'Choices Total'}</span>
+                <span className="text-xs font-semibold text-gray-900">
                   +${(formData.choiceTotal || formData.choicesTotal || 0).toFixed(2)}
                 </span>
               </div>
@@ -2179,67 +2168,67 @@ export default function PricingSection({
               {(() => {
                 const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
                 return notIncludedPrice > 0 ? (
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-xs text-gray-600">{isKorean ? '+ 불포함 가격' : '+ Not Included Price'}</span>
-                    <span className="text-xs text-gray-700">+${notIncludedPrice.toFixed(2)}</span>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <span className="text-[10px] text-gray-600">{isKorean ? '+ 불포함 가격' : '+ Not Included Price'}</span>
+                    <span className="text-[10px] text-gray-700">+${notIncludedPrice.toFixed(2)}</span>
                   </div>
                 ) : null
               })()}
               
               {/* 추가 할인 */}
               {(formData.additionalDiscount || 0) > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs text-gray-600">{isKorean ? '- 추가 할인' : '- Additional Discount'}</span>
-                  <span className="text-xs text-red-600">-${(formData.additionalDiscount || 0).toFixed(2)}</span>
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-[10px] text-gray-600">{isKorean ? '- 추가 할인' : '- Additional Discount'}</span>
+                  <span className="text-[10px] text-red-600">-${(formData.additionalDiscount || 0).toFixed(2)}</span>
                 </div>
               )}
               
               {/* 추가 비용 */}
               {(formData.additionalCost || 0) > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs text-gray-600">{isKorean ? '+ 추가 비용' : '+ Additional Cost'}</span>
-                  <span className="text-xs text-gray-700">+${(formData.additionalCost || 0).toFixed(2)}</span>
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-[10px] text-gray-600">{isKorean ? '+ 추가 비용' : '+ Additional Cost'}</span>
+                  <span className="text-[10px] text-gray-700">+${(formData.additionalCost || 0).toFixed(2)}</span>
                 </div>
               )}
               
               {/* 세금 */}
               {(formData.tax || 0) > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs text-gray-600">{isKorean ? '+ 세금' : '+ Tax'}</span>
-                  <span className="text-xs text-gray-700">+${(formData.tax || 0).toFixed(2)}</span>
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-[10px] text-gray-600">{isKorean ? '+ 세금' : '+ Tax'}</span>
+                  <span className="text-[10px] text-gray-700">+${(formData.tax || 0).toFixed(2)}</span>
                 </div>
               )}
               
               {/* 카드 수수료 */}
               {(formData.cardFee || 0) > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs text-gray-600">{isKorean ? '+ 카드 수수료' : '+ Card Fee'}</span>
-                  <span className="text-xs text-gray-700">+${(formData.cardFee || 0).toFixed(2)}</span>
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-[10px] text-gray-600">{isKorean ? '+ 카드 수수료' : '+ Card Fee'}</span>
+                  <span className="text-[10px] text-gray-700">+${(formData.cardFee || 0).toFixed(2)}</span>
                 </div>
               )}
               
               {/* 선결제 지출 */}
               {(formData.prepaymentCost || 0) > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs text-gray-600">{isKorean ? '+ 선결제 지출' : '+ Prepaid Expenses'}</span>
-                  <span className="text-xs text-gray-700">+${(formData.prepaymentCost || 0).toFixed(2)}</span>
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-[10px] text-gray-600">{isKorean ? '+ 선결제 지출' : '+ Prepaid Expenses'}</span>
+                  <span className="text-[10px] text-gray-700">+${(formData.prepaymentCost || 0).toFixed(2)}</span>
                 </div>
               )}
               
               {/* 선결제 팁 */}
               {(formData.prepaymentTip || 0) > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs text-gray-600">{isKorean ? '+ 선결제 팁' : '+ Prepaid Tips'}</span>
-                  <span className="text-xs text-gray-700">+${(formData.prepaymentTip || 0).toFixed(2)}</span>
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-[10px] text-gray-600">{isKorean ? '+ 선결제 팁' : '+ Prepaid Tips'}</span>
+                  <span className="text-[10px] text-gray-700">+${(formData.prepaymentTip || 0).toFixed(2)}</span>
                 </div>
               )}
               
-              <div className="border-t border-gray-200 my-2"></div>
+              <div className="border-t border-gray-200 my-1.5"></div>
               
               {/* 고객 총 결제 금액 */}
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-base font-bold text-blue-800">{isKorean ? '고객 총 결제 금액' : 'Total Customer Payment'}</span>
-                <span className="text-base font-bold text-blue-600">
+              <div className="flex justify-between items-center mb-1.5">
+                <span className="text-sm font-bold text-blue-800">{isKorean ? '고객 총 결제 금액' : 'Total Customer Payment'}</span>
+                <span className="text-sm font-bold text-blue-600">
                   ${(() => {
                     // 할인 후 상품가 = 상품 가격 총합 - 쿠폰 할인 - 추가 할인
                     const discountedProductPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
@@ -2288,21 +2277,21 @@ export default function PricingSection({
             </div>
 
             {/* 2️⃣ 고객 실제 지불 내역 (Payment Status) */}
-            <div className="mb-6 pb-4 border-b-2 border-gray-300">
-              <div className="flex items-center mb-3">
-                <span className="text-lg mr-2">2️⃣</span>
+            <div className="mb-4 pb-3 border-b-2 border-gray-300">
+              <div className="flex items-center mb-2">
+                <span className="text-base mr-1.5">2️⃣</span>
                 <h5 
-                  className="text-sm font-semibold text-gray-800 cursor-help" 
+                  className="text-xs font-semibold text-gray-800 cursor-help" 
                   title="👉 지금 실제로 얼마 냈는지"
                 >
                   고객 실제 지불 내역
                 </h5>
-                <span className="ml-2 text-xs text-gray-500">(Payment Status)</span>
+                <span className="ml-1.5 text-[10px] text-gray-500">(Payment Status)</span>
               </div>
               
               {/* 고객 실제 지불액 (보증금) */}
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-gray-700">{isKorean ? '고객 실제 지불액 (보증금)' : 'Customer Payment (Deposit)'}</span>
+              <div className="flex justify-between items-center mb-1.5">
+                <span className="text-xs text-gray-700">{isKorean ? '고객 실제 지불액 (보증금)' : 'Customer Payment (Deposit)'}</span>
                 <div className="flex items-center gap-2">
                   <div className="relative">
                     <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
@@ -2350,17 +2339,17 @@ export default function PricingSection({
               
               {/* 잔금 수령 */}
               {calculatedBalanceReceivedTotal > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm text-gray-700">{isKorean ? '잔금 수령' : 'Balance Received'}</span>
-                  <span className="text-sm font-medium text-green-600">
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-xs text-gray-700">{isKorean ? '잔금 수령' : 'Balance Received'}</span>
+                  <span className="text-xs font-medium text-green-600">
                     ${calculatedBalanceReceivedTotal.toFixed(2)}
                   </span>
                 </div>
               )}
               
               {/* 잔액 (투어 당일 지불) */}
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-gray-700">{isKorean ? '잔액 (투어 당일 지불)' : 'Remaining Balance (On-site)'}</span>
+              <div className="flex justify-between items-center mb-1.5">
+                <span className="text-xs text-gray-700">{isKorean ? '잔액 (투어 당일 지불)' : 'Remaining Balance (On-site)'}</span>
                 <div className="relative">
                   <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
                   <input
@@ -2403,32 +2392,32 @@ export default function PricingSection({
                 </div>
               </div>
               
-              <div className="border-t border-gray-200 my-2"></div>
+              <div className="border-t border-gray-200 my-1.5"></div>
               
               {/* 총 결제 예정 금액 */}
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-semibold text-gray-900">{isKorean ? '총 결제 예정 금액' : 'Total Payment Due'}</span>
-                <span className="text-sm font-bold text-blue-600">
+              <div className="flex justify-between items-center mb-1.5">
+                <span className="text-xs font-semibold text-gray-900">{isKorean ? '총 결제 예정 금액' : 'Total Payment Due'}</span>
+                <span className="text-xs font-bold text-blue-600">
                   ${((formData.depositAmount || 0) + (calculatedBalanceReceivedTotal || 0) + (formData.onSiteBalanceAmount || 0)).toFixed(2)}
                 </span>
               </div>
             </div>
 
             {/* 3️⃣ 채널 정산 기준 (Channel / OTA View) */}
-            <div className="mb-6 pb-4 border-b-2 border-gray-300">
-              <div className="flex items-center mb-3">
-                <span className="text-lg mr-2">3️⃣</span>
+            <div className="mb-4 pb-3 border-b-2 border-gray-300">
+              <div className="flex items-center mb-2">
+                <span className="text-base mr-1.5">3️⃣</span>
                 <h5 
-                  className="text-sm font-semibold text-gray-800 cursor-help" 
+                  className="text-xs font-semibold text-gray-800 cursor-help" 
                   title="👉 플랫폼에서 얼마를 가져가고, 얼마를 보내줬는지"
                 >
                   채널 정산 기준
                 </h5>
-                <span className="ml-2 text-xs text-gray-500">(Channel / OTA View)</span>
+                <span className="ml-1.5 text-[10px] text-gray-500">(Channel / OTA View)</span>
               </div>
               
               {/* 채널 결제 금액 */}
-              <div className="flex justify-between items-center mb-2">
+              <div className="flex justify-between items-center mb-1.5">
                 <span className="text-xs font-medium text-gray-700">{isKorean ? '채널 결제 금액' : 'Channel Payment Amount'}</span>
                 <div className="flex items-center space-x-2">
                   <span className="text-xs text-gray-500">:</span>
@@ -2710,7 +2699,7 @@ export default function PricingSection({
                   
                   {/* 채널 수수료 $ */}
                   <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium text-gray-700">
+                    <span className="text-xs font-medium text-gray-700">
                       {isKorean ? '채널 수수료 $' : 'Channel Commission $'}
                     </span>
                     <div className="relative">
@@ -2771,7 +2760,7 @@ export default function PricingSection({
                               commission_amount: newAmount
                             })
                           }}
-                          className="w-16 px-1 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
+                          className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
                           step="0.01"
                           min="0"
                           max="100"
@@ -2787,7 +2776,7 @@ export default function PricingSection({
                   
                   {/* 자체 채널: 카드 수수료 $ */}
                   <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium text-gray-700">
+                    <span className="text-xs font-medium text-gray-700">
                       {isKorean ? '카드 수수료 $' : 'Card Processing Fee $'}
                     </span>
                     <div className="flex items-center space-x-2">
@@ -2813,7 +2802,7 @@ export default function PricingSection({
                             setFormData({ ...formData, commission_amount: finalAmount })
                             setCommissionAmountInput('')
                           }}
-                          className="w-24 pl-5 pr-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
+                          className="w-24 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 text-right"
                           step="0.01"
                           min="0"
                           placeholder="0"
@@ -2842,11 +2831,12 @@ export default function PricingSection({
                 </>
               )}
               
+              {/* 구분선: 카드 수수료 $ / 채널 수수료 $ 와 채널 정산 금액 사이 */}
+              <div className="border-t border-gray-200 my-1.5"></div>
               {/* 채널 정산금액 */}
-              {isOTAChannel && <div className="border-t border-gray-200 my-2"></div>}
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-xs font-medium text-gray-700">{isKorean ? '채널 정산 금액' : 'Channel Settlement Amount'}</span>
-                <span className="text-sm font-bold text-blue-600">
+              <div className="flex justify-between items-center mb-1.5">
+                <span className="text-xs font-bold text-gray-700">{isKorean ? '채널 정산 금액' : 'Channel Settlement Amount'}</span>
+                <span className="text-xs font-bold text-blue-600">
                   ${isOTAChannel
                     ? (() => {
                         // Returned 차감 후 채널 결제 금액
@@ -2873,26 +2863,26 @@ export default function PricingSection({
                       })()}
                 </span>
               </div>
-              <p className="text-xs text-gray-500 mt-1">✔️ 이 금액은 회사 계좌로 들어오는 돈 | ✔️ 고객 추가 현금, 잔금, 팁 포함 ❌</p>
+              <p className="text-[10px] text-gray-500 mt-0.5">✔️ 이 금액은 회사 계좌로 들어오는 돈 | ✔️ 고객 추가 현금, 잔금, 팁 포함 ❌</p>
             </div>
 
             {/* 4️⃣ 최종 매출 & 운영 이익 (Company View) */}
-            <div className="mb-4">
-              <div className="flex items-center mb-3">
-                <span className="text-lg mr-2">4️⃣</span>
+            <div className="mb-3">
+              <div className="flex items-center mb-2">
+                <span className="text-base mr-1.5">4️⃣</span>
                 <h5 
-                  className="text-sm font-semibold text-gray-800 cursor-help" 
+                  className="text-xs font-semibold text-gray-800 cursor-help" 
                   title="👉 회사 기준 실제 수익 구조"
                 >
                   최종 매출 & 운영 이익
                 </h5>
-                <span className="ml-2 text-xs text-gray-500">(Company View)</span>
+                <span className="ml-1.5 text-[10px] text-gray-500">(Company View)</span>
               </div>
               
               {/* 채널 정산금액 */}
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-gray-700">{isKorean ? '채널 정산금액' : 'Channel Settlement Amount'}</span>
-                <span className="text-sm font-medium text-gray-900">
+              <div className="flex justify-between items-center mb-1.5">
+                <span className="text-xs font-medium text-gray-700">{isKorean ? '채널 정산금액' : 'Channel Settlement Amount'}</span>
+                <span className="text-xs font-medium text-gray-900">
                   ${isOTAChannel 
                     ? (() => {
                         // Returned 차감 후 채널 결제 금액
@@ -2923,16 +2913,16 @@ export default function PricingSection({
               {/* 초이스 총액 */}
               {(formData.choiceTotal || formData.choicesTotal || 0) > 0 && (
                 <>
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium text-gray-700">+ {isKorean ? '초이스 총액' : 'Choices Total'}</span>
-                    <span className="text-sm font-medium text-gray-900">
+                  <div className="flex justify-between items-center mb-1.5">
+                    <span className="text-xs font-medium text-gray-700">+ {isKorean ? '초이스 총액' : 'Choices Total'}</span>
+                    <span className="text-xs font-medium text-gray-900">
                       +${(formData.choiceTotal || formData.choicesTotal || 0).toFixed(2)}
                     </span>
                   </div>
                   {/* 초이스 구매가 (운영 이익 계산용) - 수정 가능 */}
-                  <div className="flex justify-between items-center mb-2 p-2 bg-orange-50 border border-orange-200 rounded">
+                  <div className="flex justify-between items-center mb-1.5 p-1.5 bg-orange-50 border border-orange-200 rounded">
                     <div className="flex-1">
-                      <label className="block text-xs font-medium text-orange-700 mb-1">
+                      <label className="block text-[10px] font-medium text-orange-700 mb-0.5">
                         {isKorean ? '초이스 구매가 (운영 이익 계산용)' : 'Choices Cost (for Operating Profit)'}
                       </label>
                       <input
@@ -2953,16 +2943,16 @@ export default function PricingSection({
                             setChoiceCostTotal(numValue)
                           }
                         }}
-                        className="w-full px-2 py-1 text-sm border border-orange-300 rounded focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-white"
+                        className="w-full px-1.5 py-0.5 text-xs border border-orange-300 rounded focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-white"
                         placeholder="자동 불러오기 또는 수동 입력"
                       />
-                      <p className="text-xs text-orange-600 mt-1">
+                      <p className="text-[10px] text-orange-600 mt-0.5">
                         {isKorean ? '초이스별 구매가가 자동으로 불러와집니다. 필요시 수정 가능합니다.' : 'Choice cost prices are loaded automatically. You can modify if needed.'}
                       </p>
                     </div>
-                    <div className="ml-3 text-right">
-                      <div className="text-sm font-medium text-orange-700 mb-1">-</div>
-                      <div className="text-lg font-bold text-orange-700">
+                    <div className="ml-2 text-right">
+                      <div className="text-xs font-medium text-orange-700 mb-0.5">-</div>
+                      <div className="text-base font-bold text-orange-700">
                         ${(((formData as any).choicesCostTotal as number) || choiceCostTotal || 0).toFixed(2)}
                       </div>
                     </div>
@@ -2976,9 +2966,9 @@ export default function PricingSection({
                   ? choiceNotIncludedTotal 
                   : (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
                 return notIncludedTotal > 0 ? (
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium text-gray-700">+ {isKorean ? '불포함 가격' : 'Not Included Price'}</span>
-                    <span className="text-sm font-medium text-gray-900">
+                  <div className="flex justify-between items-center mb-1.5">
+                    <span className="text-xs font-medium text-gray-700">+ {isKorean ? '불포함 가격' : 'Not Included Price'}</span>
+                    <span className="text-xs font-medium text-gray-900">
                       +${notIncludedTotal.toFixed(2)}
                     </span>
                   </div>
@@ -2987,9 +2977,9 @@ export default function PricingSection({
               
               {/* 추가할인 */}
               {(formData.additionalDiscount || 0) > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700">- {isKorean ? '추가할인' : 'Additional Discount'}</span>
-                  <span className="text-sm font-medium text-red-600">
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-xs font-medium text-gray-700">- {isKorean ? '추가할인' : 'Additional Discount'}</span>
+                  <span className="text-xs font-medium text-red-600">
                     -${(formData.additionalDiscount || 0).toFixed(2)}
                   </span>
                 </div>
@@ -2997,9 +2987,9 @@ export default function PricingSection({
               
               {/* 추가비용 */}
               {(formData.additionalCost || 0) > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700">+ {isKorean ? '추가비용' : 'Additional Cost'}</span>
-                  <span className="text-sm font-medium text-gray-900">
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-xs font-medium text-gray-700">+ {isKorean ? '추가비용' : 'Additional Cost'}</span>
+                  <span className="text-xs font-medium text-gray-900">
                     +${(formData.additionalCost || 0).toFixed(2)}
                   </span>
                 </div>
@@ -3007,9 +2997,9 @@ export default function PricingSection({
               
               {/* 세금 */}
               {(formData.tax || 0) > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700">+ {isKorean ? '세금' : 'Tax'}</span>
-                  <span className="text-sm font-medium text-gray-900">
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-xs font-medium text-gray-700">+ {isKorean ? '세금' : 'Tax'}</span>
+                  <span className="text-xs font-medium text-gray-900">
                     +${(formData.tax || 0).toFixed(2)}
                   </span>
                 </div>
@@ -3017,9 +3007,9 @@ export default function PricingSection({
               
               {/* 결제 수수료 */}
               {(formData.cardFee || 0) > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700">+ {isKorean ? '결제 수수료' : 'Card Fee'}</span>
-                  <span className="text-sm font-medium text-gray-900">
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-xs font-medium text-gray-700">+ {isKorean ? '결제 수수료' : 'Card Fee'}</span>
+                  <span className="text-xs font-medium text-gray-900">
                     +${(formData.cardFee || 0).toFixed(2)}
                   </span>
                 </div>
@@ -3027,9 +3017,9 @@ export default function PricingSection({
               
               {/* 선결제 지출 */}
               {(formData.prepaymentCost || 0) > 0 && (
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700">+ {isKorean ? '선결제 지출' : 'Prepayment Cost'}</span>
-                  <span className="text-sm font-medium text-gray-900">
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-xs font-medium text-gray-700">+ {isKorean ? '선결제 지출' : 'Prepayment Cost'}</span>
+                  <span className="text-xs font-medium text-gray-900">
                     +${(formData.prepaymentCost || 0).toFixed(2)}
                   </span>
                 </div>
@@ -3043,17 +3033,17 @@ export default function PricingSection({
                 return (
                   <>
                     {refundedAmount > 0 && (
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-medium text-red-700">- {isKorean ? '환불금 (우리)' : 'Refunded (Our Side)'}</span>
-                        <span className="text-sm font-medium text-red-600">
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-xs font-medium text-red-700">- {isKorean ? '환불금 (우리)' : 'Refunded (Our Side)'}</span>
+                        <span className="text-xs font-medium text-red-600">
                           -${refundedAmount.toFixed(2)}
                         </span>
                       </div>
                     )}
                     {returnedAmount > 0 && (
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-medium text-red-700">- {isKorean ? '환불금 (파트너)' : 'Returned (Partner)'}</span>
-                        <span className="text-sm font-medium text-red-600">
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-xs font-medium text-red-700">- {isKorean ? '환불금 (파트너)' : 'Returned (Partner)'}</span>
+                        <span className="text-xs font-medium text-red-600">
                           -${returnedAmount.toFixed(2)}
                         </span>
                       </div>
@@ -3062,12 +3052,12 @@ export default function PricingSection({
                 )
               })()}
               
-              <div className="border-t border-gray-200 my-2"></div>
+              <div className="border-t border-gray-200 my-1.5"></div>
               
               {/* 총 매출 */}
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-base font-bold text-green-800">{isKorean ? '총 매출' : 'Total Revenue'}</span>
-                <span className="text-lg font-bold text-green-600">
+              <div className="flex justify-between items-center mb-1.5">
+                <span className="text-sm font-bold text-green-800">{isKorean ? '총 매출' : 'Total Revenue'}</span>
+                <span className="text-base font-bold text-green-600">
                   ${(() => {
                     // 채널 정산금액 계산 (Returned 반영)
                     const channelSettlementAmount = isOTAChannel 
@@ -3158,9 +3148,9 @@ export default function PricingSection({
               <div className="border-t border-gray-200 my-2"></div>
               
               {/* 운영 이익 */}
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-base font-bold text-purple-800">{isKorean ? '운영 이익' : 'Operating Profit'}</span>
-                <span className="text-lg font-bold text-purple-600">
+              <div className="flex justify-between items-center mb-1.5">
+                <span className="text-sm font-bold text-purple-800">{isKorean ? '운영 이익' : 'Operating Profit'}</span>
+                <span className="text-base font-bold text-purple-600">
                   ${(() => {
                     // 채널 정산금액 계산 (Returned 반영)
                     const channelSettlementAmount = isOTAChannel 
@@ -3248,12 +3238,12 @@ export default function PricingSection({
 
       {/* 정산 섹션 - 예약이 있을 때만 표시 */}
       {reservationId && (
-        <div className="mt-6">
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-2">
-                <Calculator className="h-5 w-5 text-blue-600" />
-                <h4 className="text-base font-semibold text-blue-900">정산 정보</h4>
+        <div className="mt-4">
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-3 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center space-x-1.5">
+                <Calculator className="h-4 w-4 text-blue-600" />
+                <h4 className="text-sm font-semibold text-blue-900">정산 정보</h4>
               </div>
               <div className="flex items-center space-x-2">
                 {loadingExpenses && (
@@ -3280,69 +3270,93 @@ export default function PricingSection({
               const isManiaTour = subCategory === 'Mania Tour' || subCategory === 'Mania Service'
               
               return (
-                <div className={`grid grid-cols-1 gap-4 ${isManiaTour ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
+                <div className={`grid grid-cols-1 gap-3 ${isManiaTour ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
                   {/* Net 가격 */}
-                  <div className="bg-white p-4 rounded-lg border border-blue-200 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <DollarSign className="h-4 w-4 text-blue-500" />
-                      <div className="text-sm font-medium text-gray-700">Net 가격</div>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setExpandedSettlementCard(prev => prev === 'net-price' ? null : 'net-price')}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedSettlementCard(prev => prev === 'net-price' ? null : 'net-price') } }}
+                    className="group bg-white p-3 rounded-lg border border-blue-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer md:cursor-default"
+                  >
+                    <div className="flex items-center space-x-1.5 mb-1">
+                      <DollarSign className="h-3 w-3 text-blue-500" />
+                      <div className="text-xs font-medium text-gray-700">Net 가격</div>
                     </div>
-                    <div className="text-xl font-bold text-blue-600 mb-1">
+                    <div className="text-base font-bold text-blue-600 mb-0.5">
                       ${calculateNetPrice().toFixed(2)}
                     </div>
-                    <div className="text-xs text-gray-500">
+                    <div className={`text-[10px] text-gray-500 ${expandedSettlementCard === 'net-price' ? 'block' : 'hidden'} md:block md:opacity-0 md:group-hover:opacity-100 md:transition-opacity`}>
                       커미션 차감 후 수령액
                     </div>
                   </div>
 
                   {/* 예약 지출 총합 */}
-                  <div className="bg-white p-4 rounded-lg border border-red-200 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <AlertCircle className="h-4 w-4 text-red-500" />
-                      <div className="text-sm font-medium text-gray-700">예약 지출 총합</div>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setExpandedSettlementCard(prev => prev === 'reservation-expenses' ? null : 'reservation-expenses')}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedSettlementCard(prev => prev === 'reservation-expenses' ? null : 'reservation-expenses') } }}
+                    className="group bg-white p-3 rounded-lg border border-red-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer md:cursor-default"
+                  >
+                    <div className="flex items-center space-x-1.5 mb-1">
+                      <AlertCircle className="h-3 w-3 text-red-500" />
+                      <div className="text-xs font-medium text-gray-700">예약 지출 총합</div>
                     </div>
-                    <div className="text-xl font-bold text-red-600 mb-1">
+                    <div className="text-base font-bold text-red-600 mb-0.5">
                       ${reservationExpensesTotal.toFixed(2)}
                     </div>
-                    <div className="text-xs text-gray-500">
+                    <div className={`text-[10px] text-gray-500 ${expandedSettlementCard === 'reservation-expenses' ? 'block' : 'hidden'} md:block md:opacity-0 md:group-hover:opacity-100 md:transition-opacity`}>
                       승인/대기/기타 지출 (거부 제외)
                     </div>
                   </div>
 
                   {/* 투어 지출 총합 (Mania Tour 또는 Mania Service인 경우만) */}
                   {isManiaTour && (
-                    <div className="bg-white p-4 rounded-lg border border-orange-200 shadow-sm hover:shadow-md transition-shadow">
-                      <div className="flex items-center space-x-2 mb-2">
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setExpandedSettlementCard(prev => prev === 'tour-expenses' ? null : 'tour-expenses')}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedSettlementCard(prev => prev === 'tour-expenses' ? null : 'tour-expenses') } }}
+                      className="group bg-white p-3 rounded-lg border border-orange-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer md:cursor-default"
+                    >
+                      <div className="flex items-center space-x-1.5 mb-1">
                         {loadingTourExpenses ? (
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-500"></div>
+                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-orange-500"></div>
                         ) : (
-                          <AlertCircle className="h-4 w-4 text-orange-500" />
+                          <AlertCircle className="h-3 w-3 text-orange-500" />
                         )}
-                        <div className="text-sm font-medium text-gray-700">투어 지출 총합</div>
+                        <div className="text-xs font-medium text-gray-700">투어 지출 총합</div>
                       </div>
-                      <div className="text-xl font-bold text-orange-600 mb-1">
+                      <div className="text-base font-bold text-orange-600 mb-0.5">
                         ${tourExpensesTotal.toFixed(2)}
                       </div>
-                      <div className="text-xs text-gray-500">
+                      <div className={`text-[10px] text-gray-500 ${expandedSettlementCard === 'tour-expenses' ? 'block' : 'hidden'} md:block md:opacity-0 md:group-hover:opacity-100 md:transition-opacity`}>
                         투어 총 지출 ÷ 투어 인원수 × 예약 인원수
                       </div>
                     </div>
                   )}
 
                   {/* 수익 */}
-                  <div className="bg-white p-4 rounded-lg border border-green-200 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="flex items-center space-x-2 mb-2">
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setExpandedSettlementCard(prev => prev === 'profit' ? null : 'profit')}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedSettlementCard(prev => prev === 'profit' ? null : 'profit') } }}
+                    className="group bg-white p-3 rounded-lg border border-green-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer md:cursor-default"
+                  >
+                    <div className="flex items-center space-x-1.5 mb-1">
                       {calculateProfit() >= 0 ? (
-                        <TrendingUp className="h-4 w-4 text-green-500" />
+                        <TrendingUp className="h-3 w-3 text-green-500" />
                       ) : (
-                        <TrendingDown className="h-4 w-4 text-red-500" />
+                        <TrendingDown className="h-3 w-3 text-red-500" />
                       )}
-                      <div className="text-sm font-medium text-gray-700">수익</div>
+                      <div className="text-xs font-medium text-gray-700">수익</div>
                     </div>
-                    <div className={`text-xl font-bold mb-1 ${calculateProfit() >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <div className={`text-base font-bold mb-0.5 ${calculateProfit() >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       ${calculateProfit().toFixed(2)}
                     </div>
-                    <div className="text-xs text-gray-500">
+                    <div className={`text-[10px] text-gray-500 ${expandedSettlementCard === 'profit' ? 'block' : 'hidden'} md:block md:opacity-0 md:group-hover:opacity-100 md:transition-opacity`}>
                       Net 가격 - 지출 총합{isManiaTour ? ' - 투어 지출' : ''}{choiceCostTotal > 0 ? ' - 초이스 구매가' : ''}
                     </div>
                   </div>
@@ -3350,33 +3364,31 @@ export default function PricingSection({
               )
             })()}
 
-            {/* 수익률 표시 */}
-            <div className="mt-4 pt-4 border-t border-blue-200">
+            {/* 수익률 표시 + 수익 발생 뱃지 */}
+            <div className="mt-3 pt-3 border-t border-blue-200">
               <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm font-medium text-gray-700">수익률</span>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center space-x-1.5">
+                    <span className="text-xs font-medium text-gray-700">수익률</span>
+                    {calculateProfit() >= 0 ? (
+                      <TrendingUp className="h-3 w-3 text-green-500" />
+                    ) : (
+                      <TrendingDown className="h-3 w-3 text-red-500" />
+                    )}
+                  </div>
                   {calculateProfit() >= 0 ? (
-                    <TrendingUp className="h-4 w-4 text-green-500" />
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-100 text-green-800">
+                      수익 발생
+                    </span>
                   ) : (
-                    <TrendingDown className="h-4 w-4 text-red-500" />
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-800">
+                      손실 발생
+                    </span>
                   )}
                 </div>
-                <span className={`text-lg font-bold ${calculateProfit() >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                <span className={`text-base font-bold ${calculateProfit() >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                   {calculateNetPrice() > 0 ? ((calculateProfit() / calculateNetPrice()) * 100).toFixed(1) : '0.0'}%
                 </span>
-              </div>
-              
-              {/* 수익 상태 표시 */}
-              <div className="mt-2">
-                {calculateProfit() >= 0 ? (
-                  <div className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    수익 발생
-                  </div>
-                ) : (
-                  <div className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                    손실 발생
-                  </div>
-                )}
               </div>
             </div>
           </div>

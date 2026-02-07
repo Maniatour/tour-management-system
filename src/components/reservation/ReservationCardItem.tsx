@@ -1,6 +1,6 @@
 'use client'
 
-import React from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Calendar, MapPin, Users, DollarSign, Eye, Clock, Mail, ChevronDown, Edit, MessageSquare } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -72,6 +72,7 @@ interface ReservationCardItemProps {
   onEditClick: (reservationId: string) => void
   onCustomerClick: (customer: Customer) => void
   onRefreshReservations: () => void
+  onStatusChange?: (reservationId: string, newStatus: string) => Promise<void>
   generatePriceCalculation: (reservation: Reservation, pricing: any) => string
   getGroupColorClasses: (groupId: string, groupName?: string, optionName?: string) => string
   getSelectedChoicesFromNewSystem: (reservationId: string) => Promise<Array<{
@@ -129,6 +130,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   onEditClick,
   onCustomerClick,
   onRefreshReservations,
+  onStatusChange,
   generatePriceCalculation,
   getGroupColorClasses,
   getSelectedChoicesFromNewSystem,
@@ -137,6 +139,41 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
 }: ReservationCardItemProps) {
   const t = useTranslations('reservations')
   const router = useRouter()
+  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false)
+  const [statusUpdating, setStatusUpdating] = useState(false)
+  const statusDropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!statusDropdownOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (statusDropdownRef.current && !statusDropdownRef.current.contains(e.target as Node)) {
+        setStatusDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [statusDropdownOpen])
+
+  const statusOptions = [
+    { value: 'pending', labelKey: 'status.pending' },
+    { value: 'confirmed', labelKey: 'status.confirmed' },
+    { value: 'completed', labelKey: 'status.completed' },
+    { value: 'cancelled', labelKey: 'status.cancelled' }
+  ] as const
+
+  const handleStatusSelect = async (newStatus: string) => {
+    if (!onStatusChange || newStatus === (reservation.status as string)?.toLowerCase?.()) {
+      setStatusDropdownOpen(false)
+      return
+    }
+    setStatusUpdating(true)
+    try {
+      await onStatusChange(reservation.id, newStatus)
+      setStatusDropdownOpen(false)
+    } finally {
+      setStatusUpdating(false)
+    }
+  }
 
   return (
     <div
@@ -146,9 +183,40 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
       {/* 카드 헤더 - 상태 표시 */}
       <div className="p-4 border-b border-gray-100">
         <div className="flex justify-between items-start mb-3">
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(reservation.status)}`}>
-            {getStatusLabel(reservation.status, t)}
-          </span>
+          <div className="relative" ref={statusDropdownRef}>
+            {onStatusChange ? (
+              <button
+                type="button"
+                onClick={() => setStatusDropdownOpen((v) => !v)}
+                disabled={statusUpdating}
+                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium cursor-pointer hover:opacity-90 disabled:opacity-70 ${getStatusColor(reservation.status)}`}
+              >
+                {getStatusLabel(reservation.status, t)}
+                <ChevronDown className={`w-3 h-3 ml-0.5 transition-transform ${statusDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+            ) : (
+              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(reservation.status)}`}>
+                {getStatusLabel(reservation.status, t)}
+              </span>
+            )}
+            {onStatusChange && statusDropdownOpen && (
+              <div className="absolute left-0 top-full mt-1 z-20 py-1 bg-white border border-gray-200 rounded-lg shadow-lg min-w-[7rem]">
+                {statusOptions.map((opt) => {
+                  const isCurrent = (reservation.status as string)?.toLowerCase?.() === opt.value
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => handleStatusSelect(opt.value)}
+                      className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100 ${getStatusColor(opt.value)} ${isCurrent ? 'font-semibold' : ''}`}
+                    >
+                      {t(opt.labelKey)}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
           <div className="flex items-center space-x-2">
             {(() => {
               const channel = channels?.find(c => c.id === reservation.channelId)

@@ -1713,7 +1713,10 @@
       "pickUpHotel": "Pickup Hotel",
       "pickUpTime": "Pickup Time",
       "productSelection": "Product Selection",
-      "channel": "Channel"
+      "channel": "Channel",
+      "openProductChoice": "Product & Choice Selection",
+      "openChannelSelect": "Channel Selection",
+      "pricingInfo": "Pricing"
     },
     "actions": {
       "price": "Price",

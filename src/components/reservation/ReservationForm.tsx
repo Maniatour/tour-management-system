@@ -116,6 +116,8 @@ export default function ReservationForm({
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
+  const [showProductChoiceModal, setShowProductChoiceModal] = useState(false)
+  const [showChannelModal, setShowChannelModal] = useState(false)
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false)
   const [languageDropdownOpen, setLanguageDropdownOpen] = useState(false)
   const languageDropdownRef = useRef<HTMLDivElement | null>(null)
@@ -3566,13 +3568,14 @@ export default function ReservationForm({
               </button>
             </div>
           </div>
-          <div className="hidden sm:flex w-full sm:w-auto items-end space-x-2">
-            <div className="flex-1 sm:flex-none">
-              <label className="block text-xs font-medium text-gray-700 mb-1">{t('form.status')}</label>
+          <div className="hidden sm:flex w-full sm:w-auto items-center space-x-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <label className="text-xs font-medium text-gray-700 whitespace-nowrap" htmlFor="reservation-status-desktop">{t('form.status')}</label>
               <select
+                id="reservation-status-desktop"
                 value={formData.status}
                 onChange={(e) => setFormData((prev: any) => ({ ...prev, status: e.target.value as 'pending' | 'confirmed' | 'completed' | 'cancelled' }))}
-                className="w-full sm:w-auto px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+                className="w-full min-w-[6.5rem] sm:w-auto px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
               >
                 <option value="pending">{t('status.pending')}</option>
                 <option value="confirmed">{t('status.confirmed')}</option>
@@ -3602,13 +3605,12 @@ export default function ReservationForm({
         </div>
 
         <form onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col overflow-hidden lg:overflow-visible">
-          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-0 sm:space-y-6 lg:flex-none lg:min-h-0">
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4 lg:gap-4 lg:h-[940px] lg:grid-rows-1">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-0 sm:space-y-6 lg:flex-none lg:min-h-0 pb-2">
+          <div className={`grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4 lg:gap-4 lg:grid-rows-1 ${isModal ? 'lg:h-auto' : 'lg:h-[940px]'}`}>
             {/* 1. 고객 정보 */}
-            <div id="customer-section" className="space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 lg:col-span-1 lg:row-span-1 lg:h-[940px] bg-gray-50/50 max-lg:order-1">
+            <div id="customer-section" className={`space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 lg:col-span-1 lg:row-span-1 bg-gray-50/50 max-lg:order-1 ${isModal ? 'lg:h-auto' : 'lg:h-[940px]'}`}>
               <div>
-                <h3 className="text-sm font-medium text-gray-900 mb-2 max-lg:flex max-lg:items-center max-lg:gap-2">
-                  <span className="max-lg:flex max-lg:items-center max-lg:justify-center max-lg:w-6 max-lg:h-6 max-lg:rounded-full max-lg:bg-blue-100 max-lg:text-blue-600 max-lg:text-xs">1</span>
+                <h3 className="text-sm font-medium text-gray-900 mb-2">
                   고객 정보
                 </h3>
                 {/* 고객 검색 */}
@@ -3783,8 +3785,7 @@ export default function ReservationForm({
               {/* 2. 예약 정보 (투어 정보, 참가자) */}
               <div className="space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-2">
                 <div className="max-lg:flex max-lg:items-center max-lg:justify-between max-lg:gap-2 lg:block mb-2 lg:mb-0">
-                  <h3 className="text-sm font-medium text-gray-900 max-lg:flex max-lg:items-center max-lg:gap-2 max-lg:mb-0">
-                    <span className="max-lg:flex max-lg:items-center max-lg:justify-center max-lg:w-6 max-lg:h-6 max-lg:rounded-full max-lg:bg-blue-100 max-lg:text-blue-600 max-lg:text-xs">2</span>
+                  <h3 className="text-sm font-medium text-gray-900 max-lg:mb-0">
                     예약 정보
                   </h3>
                   {/* 모바일/태블릿 전용: 타이틀과 같은 줄 오른쪽 끝 정렬 */}
@@ -3802,6 +3803,57 @@ export default function ReservationForm({
                       <option value="cancelled">{t('status.cancelled')}</option>
                     </select>
                   </div>
+                </div>
+                {/* 상품/초이스·채널 선택 모달 열기 버튼 - 상품 뱃지 + 초이스별 결과값 뱃지 */}
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowProductChoiceModal(true)}
+                    className="inline-flex flex-wrap items-center gap-1.5 text-left max-w-full min-w-0 rounded-lg hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-1"
+                  >
+                    {formData.productId ? (
+                      <>
+                        {/* 상품 뱃지 1개 - 채널 선택 버튼과 동일 크기 */}
+                        <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-amber-100 text-amber-800 border border-amber-200 text-xs font-medium truncate max-w-[200px]" title={(() => {
+                          const p = products.find((p: { id: string }) => p.id === formData.productId)
+                          return p ? (p as { name_ko?: string; name?: string }).name_ko || (p as { name?: string }).name || formData.productId : formData.productId
+                        })()}>
+                          {(() => {
+                            const product = products.find((p: { id: string }) => p.id === formData.productId)
+                            return product ? (product as { name_ko?: string; name?: string }).name_ko || (product as { name?: string }).name || formData.productId : formData.productId
+                          })()}
+                        </span>
+                        {/* 초이스별 결과값만 뱃지 */}
+                        {Array.isArray(formData.selectedChoices) && formData.selectedChoices.length > 0 && formData.selectedChoices.map((sc: { choice_id: string; option_id: string; option_name_ko?: string; option_key?: string }) => {
+                          const label = (sc as { option_name_ko?: string; option_key?: string }).option_name_ko
+                            || (sc as { option_name_ko?: string; option_key?: string }).option_key
+                            || (() => {
+                              const choice = formData.productChoices?.find((c: { id: string }) => c.id === sc.choice_id)
+                              const option = choice?.options?.find((o: { id: string }) => o.id === sc.option_id)
+                              return (option as { option_name_ko?: string; option_key?: string })?.option_name_ko || (option as { option_key?: string })?.option_key || sc.option_id
+                            })()
+                          return (
+                            <span key={`${sc.choice_id}-${sc.option_id}`} className="inline-flex items-center px-3 py-1.5 rounded-lg bg-amber-100 text-amber-800 border border-amber-200 text-xs font-medium truncate max-w-[120px]" title={label}>
+                              {label}
+                            </span>
+                          )
+                        })}
+                      </>
+                    ) : (
+                      <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-amber-100 text-amber-800 border border-amber-200 text-xs font-medium">{t('form.openProductChoice')}</span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowChannelModal(true)}
+                    className="px-3 py-1.5 text-xs font-medium bg-sky-100 text-sky-800 border border-sky-200 rounded-lg hover:bg-sky-200 text-left max-w-full min-w-0"
+                  >
+                    <span className="truncate block">
+                      {formData.channelId
+                        ? (channels.find((c: { id: string }) => c.id === formData.channelId)?.name ?? formData.channelId)
+                        : t('form.openChannelSelect')}
+                    </span>
+                  </button>
                 </div>
                 <div id="tour-info-section">
                   <TourInfoSection
@@ -3821,52 +3873,22 @@ export default function ReservationForm({
                 </div>
               </div>
 
-              {/* 5. 가격 정보 - 예약 정보 바로 아래, 내용 높이만 */}
-              <div id="pricing-section" className="space-y-2 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-5">
-                <h3 className="text-sm font-medium text-gray-900 mb-2 max-lg:flex max-lg:items-center max-lg:gap-2">
-                  <span className="max-lg:flex max-lg:items-center max-lg:justify-center max-lg:w-6 max-lg:h-6 max-lg:rounded-full max-lg:bg-emerald-100 max-lg:text-emerald-600 max-lg:text-xs">5</span>
-                  가격 정보
-                </h3>
-                <PricingSection
-                  formData={formData as any}
-                  setFormData={setFormData}
-                  savePricingInfo={savePricingInfo}
-                  calculateProductPriceTotal={calculateProductPriceTotal}
-                  calculateChoiceTotal={calculateRequiredOptionTotal}
-                  calculateCouponDiscount={calculateCouponDiscount}
-                  coupons={coupons}
-                  getOptionalOptionsForProduct={(productId) =>
-                    getOptionalOptionsForProduct(productId, productOptions) as any
-                  }
-                  options={options}
-                  t={t}
-                  autoSelectCoupon={autoSelectCoupon}
-                  reservationOptionsTotalPrice={reservationOptionsTotalPrice}
-                  isExistingPricingLoaded={isExistingPricingLoaded}
-                  {...(reservation?.id ? { reservationId: reservation.id } : {})}
-                  expenseUpdateTrigger={expenseUpdateTrigger}
-                  channels={channels.map(({ type, ...c }) => ({ ...c, ...(type != null ? { type } : {}) })) as any}
-                  products={products}
-                />
-              </div>
-
-              {/* 6. 예약 옵션 · 입금 · 지출 - 가격 정보 바로 아래, 내용 높이만 */}
+              {/* 6. 예약 옵션 · 입금 · 지출 */}
               {reservation && (
-                <div className="space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6">
-                  <h3 className="text-sm font-medium text-gray-900 mb-2 max-lg:flex max-lg:items-center max-lg:gap-2">
-                    <span className="max-lg:flex max-lg:items-center max-lg:justify-center max-lg:w-6 max-lg:h-6 max-lg:rounded-full max-lg:bg-slate-100 max-lg:text-slate-600 max-lg:text-xs">6</span>
+                <div className="space-y-3 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-3 bg-gray-50/50 max-lg:order-6">
+                  <h3 className="text-xs font-medium text-gray-900 mb-1.5">
                     예약 옵션 · 입금 · 지출
                   </h3>
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     <div id="options-section">
                       <ReservationOptionsSection 
                         reservationId={reservation.id} 
                         onTotalPriceChange={setReservationOptionsTotalPrice}
                       />
                     </div>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                       <div id="payment-section">
-                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
                           <PaymentRecordsList
                             reservationId={reservation.id}
                             customerName={customers.find(c => c.id === reservation.customerId)?.name || 'Unknown'}
@@ -3874,7 +3896,7 @@ export default function ReservationForm({
                         </div>
                       </div>
                       <div id="expense-section">
-                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
                           <ReservationExpenseManager
                             reservationId={reservation.id}
                             submittedBy={reservation.addedBy}
@@ -3888,8 +3910,23 @@ export default function ReservationForm({
                 </div>
               )}
 
+              {/* 연결된 투어 · 후기 관리 - 예약 옵션 아래 (page 레이아웃 시) */}
+              {layout === 'page' && reservation && (
+                <>
+                  <div className="mt-4">
+                    <TourConnectionSection
+                      reservation={reservation}
+                      onTourCreated={() => {}}
+                    />
+                  </div>
+                  <div id="review-section" className="mt-4">
+                    <ReviewManagementSection reservationId={reservation.id} />
+                  </div>
+                </>
+              )}
+
               {/* 편집/취소 버튼 박스 - 예약 옵션·입금·지출 아래 배치 (스크롤 시 보임) */}
-              <div className="w-full border border-gray-200 rounded-xl p-4 bg-white shadow-sm max-lg:order-7">
+              <div className="w-full border border-gray-200 rounded-xl p-3 bg-white shadow-sm max-lg:order-7">
                 <div className="flex flex-row items-center gap-2">
                   <button
                     type="submit"
@@ -3924,59 +3961,29 @@ export default function ReservationForm({
               </div>
             </div>
 
-            {/* 3. 상품 선택 */}
-            <div id="product-section" className="col-span-1 lg:col-span-1 space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 lg:h-[940px] bg-gray-50/50 max-lg:order-3">
-              <ProductSelectionSection
-                formData={formData}
+            {/* 가격 정보 - 기존 상품/채널 선택 컬럼 자리 (제목은 PricingSection에서 버튼과 같은 줄로 표시) */}
+            <div id="pricing-section" className={`col-span-1 lg:col-span-2 space-y-2 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-3 ${isModal ? 'lg:h-auto' : 'lg:h-[940px]'}`}>
+              <PricingSection
+                formData={formData as any}
                 setFormData={setFormData}
-                products={products.map((p) => ({
-                  ...p,
-                  name_ko: (p as { name?: string | null; name_ko?: string | null }).name ?? (p as { name_ko?: string | null }).name_ko ?? '',
-                }))}
-                loadProductChoices={(productId) => loadProductChoices(productId)}
-                getDynamicPricingForOption={getDynamicPricingForOption}
+                savePricingInfo={savePricingInfo}
+                calculateProductPriceTotal={calculateProductPriceTotal}
+                calculateChoiceTotal={calculateRequiredOptionTotal}
+                calculateCouponDiscount={calculateCouponDiscount}
+                coupons={coupons}
+                getOptionalOptionsForProduct={(productId) =>
+                  getOptionalOptionsForProduct(productId, productOptions) as any
+                }
+                options={options}
                 t={t}
-                layout={layout}
-                onAccordionToggle={setProductAccordionExpanded}
-                isEditMode={!!reservation?.id}
-                channels={channels.map(({ type, ...c }) => ({ ...c, ...(type != null ? { type } : {}) }))}
+                autoSelectCoupon={autoSelectCoupon}
+                reservationOptionsTotalPrice={reservationOptionsTotalPrice}
+                isExistingPricingLoaded={isExistingPricingLoaded}
+                {...(reservation?.id ? { reservationId: reservation.id } : {})}
+                expenseUpdateTrigger={expenseUpdateTrigger}
+                channels={channels.map(({ type, ...c }) => ({ ...c, ...(type != null ? { type } : {}) })) as any}
+                products={products}
               />
-
-              {/* 새로운 간결한 초이스 시스템이 ProductSelectionSection에서 처리됨 */}
-            </div>
-
-            {/* 4. 채널 선택 - 선택 시 가격 정보 로드 */}
-            <div className="col-span-1 lg:col-span-1 space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 lg:h-[940px] bg-gray-50/50 max-lg:order-4">
-              <ChannelSection
-                formData={formData}
-                setFormData={setFormData}
-                channels={channels.map((c) => ({
-                  ...c,
-                  type: (c.type ?? 'self') as 'partner' | 'ota' | 'self',
-                }))}
-                t={t}
-                layout={layout}
-                onAccordionToggle={setChannelAccordionExpanded}
-              />
-              
-              {/* 연결된 투어 섹션 - 채널 섹션 아래에 배치 */}
-              {layout === 'page' && reservation && (
-                <div className="mt-4">
-                  <TourConnectionSection 
-                    reservation={reservation}
-                    onTourCreated={() => {
-                      // 투어 생성 후 필요한 새로고침 로직
-                    }}
-                  />
-                </div>
-              )}
-
-              {/* 후기 관리 섹션 - 연결된 투어 아래에 배치 */}
-              {layout === 'page' && reservation && (
-                <div id="review-section" className="mt-4">
-                  <ReviewManagementSection reservationId={reservation.id} />
-                </div>
-              )}
             </div>
           </div>
           </div>
@@ -4000,6 +4007,92 @@ export default function ReservationForm({
           isOpen={showPricingModal}
           onClose={() => setShowPricingModal(false)}
         />
+      )}
+
+      {/* 상품 및 초이스 선택 모달 */}
+      {showProductChoiceModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-3 border-b border-gray-200 flex-shrink-0">
+              <h3 className="text-base font-semibold text-gray-900">{t('form.openProductChoice')}</h3>
+              <button
+                type="button"
+                onClick={() => setShowProductChoiceModal(false)}
+                className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+                aria-label="닫기"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto p-3">
+              <ProductSelectionSection
+                formData={formData}
+                setFormData={setFormData}
+                products={products.map((p) => ({
+                  ...p,
+                  name_ko: (p as { name?: string | null; name_ko?: string | null }).name ?? (p as { name_ko?: string | null }).name_ko ?? '',
+                }))}
+                loadProductChoices={(productId) => loadProductChoices(productId)}
+                getDynamicPricingForOption={getDynamicPricingForOption}
+                t={t}
+                layout="modal"
+                onAccordionToggle={setProductAccordionExpanded}
+                isEditMode={!!reservation?.id}
+                channels={channels.map(({ type, ...c }) => ({ ...c, ...(type != null ? { type } : {}) }))}
+              />
+            </div>
+            <div className="p-2 border-t border-gray-200 flex justify-end flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowProductChoiceModal(false)}
+                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium"
+              >
+                {tCommon('confirm') || '확인'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 채널 선택 모달 */}
+      {showChannelModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-3 border-b border-gray-200 flex-shrink-0">
+              <h3 className="text-base font-semibold text-gray-900">{t('form.openChannelSelect')}</h3>
+              <button
+                type="button"
+                onClick={() => setShowChannelModal(false)}
+                className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+                aria-label="닫기"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto p-3">
+              <ChannelSection
+                formData={formData}
+                setFormData={setFormData}
+                channels={channels.map((c) => ({
+                  ...c,
+                  type: (c.type ?? 'self') as 'partner' | 'ota' | 'self',
+                }))}
+                t={t}
+                layout="modal"
+                onAccordionToggle={setChannelAccordionExpanded}
+              />
+            </div>
+            <div className="p-2 border-t border-gray-200 flex justify-end flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowChannelModal(false)}
+                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium"
+              >
+                {tCommon('confirm') || '확인'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 중복 고객 확인 모달 */}

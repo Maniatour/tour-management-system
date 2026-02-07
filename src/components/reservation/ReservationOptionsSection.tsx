@@ -96,10 +96,10 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
 
   if (loading) {
     return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-        <div className="flex items-center justify-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-          <span className="ml-2 text-gray-600">{t('loadingOptions')}</span>
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
+        <div className="flex items-center justify-center py-4">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+          <span className="ml-2 text-xs text-gray-600">{t('loadingOptions')}</span>
         </div>
       </div>
     )
@@ -107,8 +107,8 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
 
   if (error) {
     return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-        <div className="text-red-600 text-center py-4">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
+        <div className="text-red-600 text-center py-3 text-xs">
           {t('errorLoading', { error })}
         </div>
       </div>
@@ -116,13 +116,13 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-      <div className="flex items-center justify-between gap-2 mb-4">
-        <h3 className="text-base font-semibold text-gray-900">{t('title')}</h3>
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h3 className="text-xs font-semibold text-gray-900">{t('title')}</h3>
         <button
           type="button"
           onClick={() => setShowAddForm(true)}
-          className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors flex-shrink-0 ml-auto"
+          className="inline-flex items-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium transition-colors flex-shrink-0 ml-auto"
         >
           <Plus size={14} />
           {t('addOption')}
@@ -131,8 +131,8 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
 
       {/* 옵션 추가 폼 */}
       {showAddForm && (
-        <div className="mb-4 p-4 bg-gray-50 rounded-lg border">
-          <h4 className="text-md font-medium mb-3">{t('addNewOption')}</h4>
+        <div className="mb-3 p-3 bg-gray-50 rounded-lg border">
+          <h4 className="text-xs font-medium mb-2">{t('addNewOption')}</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">{t('optionId')}</label>

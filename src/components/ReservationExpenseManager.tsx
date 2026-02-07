@@ -530,15 +530,15 @@ export default function ReservationExpenseManager({
   const totalAmount = expenses.reduce((sum, expense) => sum + expense.amount, 0)
 
   return (
-    <div className="space-y-3 sm:space-y-4">
-      {/* 헤더 - 모바일 컴팩트 */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-          <DollarSign className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600 flex-shrink-0" />
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900 truncate">{t('expenseManagement')}</h3>
+    <div className="space-y-2 sm:space-y-3">
+      {/* 헤더 - 컴팩트 */}
+      <div className="flex flex-wrap items-center justify-between gap-1.5">
+        <div className="flex items-center gap-1 sm:gap-1.5 min-w-0">
+          <DollarSign className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 flex-shrink-0" />
+          <h3 className="text-[11px] font-semibold text-gray-900 truncate">{t('expenseManagement')}</h3>
         </div>
-        <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0 ml-auto">
-          <div className="text-xs sm:text-sm text-gray-600">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0 ml-auto">
+          <div className="text-[10px] sm:text-xs text-gray-600">
             {t('totalAmountLabel')}: <span className="font-semibold text-green-600">{formatCurrency(totalAmount)}</span>
           </div>
           <button
@@ -561,9 +561,9 @@ export default function ReservationExpenseManager({
                 uploaded_files: []
               })
             }}
-            className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors flex-shrink-0"
+            className="inline-flex items-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium transition-colors flex-shrink-0"
           >
-            <Plus size={14} />
+            <Plus size={12} />
             <span>{t('addExpense')}</span>
           </button>
         </div>
@@ -1024,9 +1024,9 @@ export default function ReservationExpenseManager({
           ))}
         </div>
       ) : (
-        <div className="text-center py-8 text-gray-500">
-          <DollarSign className="h-12 w-12 text-gray-300 mx-auto mb-2" />
-          <p>{t('noExpensesMessage')}</p>
+        <div className="text-center py-3 text-gray-500">
+          <DollarSign className="h-8 w-8 text-gray-300 mx-auto mb-1" />
+          <p className="text-xs">{t('noExpensesMessage')}</p>
         </div>
       )}
     </div>

@@ -60,8 +60,8 @@ export const TourStatusModal: React.FC<TourStatusModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-white rounded-t-xl sm:rounded-lg shadow-xl max-w-md w-full max-h-[90vh] sm:max-h-[85vh] flex flex-col">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[85vh] flex flex-col overflow-hidden">
         {/* 헤더 */}
         <div className="flex items-center justify-between px-3 py-2 sm:p-4 border-b flex-shrink-0">
           <h2 className="text-base font-semibold text-gray-900">
@@ -130,8 +130,8 @@ export const TourStatusModal: React.FC<TourStatusModalProps> = ({
           </div>
         </div>
 
-        {/* 푸터 - 항상 보이도록 flex-shrink-0 + safe area */}
-        <div className="flex items-center justify-end gap-2 p-3 sm:p-4 pt-2 border-t bg-white flex-shrink-0 pb-[env(safe-area-inset-bottom)]">
+        {/* 푸터 - 항상 보이도록 flex-shrink-0 + safe area, 버튼 아래 패딩 */}
+        <div className="flex items-center justify-end gap-2 p-3 sm:p-4 pt-2 border-t bg-white flex-shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <button
             onClick={onClose}
             disabled={isUpdating}

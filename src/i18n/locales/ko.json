@@ -1722,7 +1722,10 @@
       "pickUpHotel": "픽업 호텔",
       "pickUpTime": "픽업 시간",
       "productSelection": "상품 선택",
-      "channel": "채널"
+      "channel": "채널",
+      "openProductChoice": "상품 및 초이스 선택",
+      "openChannelSelect": "채널 선택",
+      "pricingInfo": "가격 정보"
     },
     "actions": {
       "price": "가격",

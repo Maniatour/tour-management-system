@@ -267,18 +267,18 @@ export default function PaymentRecordsList({ reservationId, customerName }: Paym
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-base font-semibold text-gray-900 flex items-center">
-          <DollarSign size={16} className="mr-1" />
+        <h3 className="text-xs font-semibold text-gray-900 flex items-center">
+          <DollarSign size={14} className="mr-1" />
           입금 내역 ({paymentRecords.length})
         </h3>
         <button
           type="button"
           onClick={() => setShowForm(true)}
-          className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors flex-shrink-0 ml-auto"
+          className="inline-flex items-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium transition-colors flex-shrink-0 ml-auto"
         >
-          <Plus size={14} />
+          <Plus size={12} />
           추가
         </button>
       </div>
@@ -290,14 +290,14 @@ export default function PaymentRecordsList({ reservationId, customerName }: Paym
       )}
 
       {paymentRecords.length === 0 ? (
-        <div className="text-center py-4 text-gray-500 text-sm">
-          <DollarSign size={24} className="mx-auto mb-2 text-gray-300" />
+        <div className="text-center py-3 text-gray-500 text-xs">
+          <DollarSign size={20} className="mx-auto mb-1 text-gray-300" />
           <p>입금 내역이 없습니다</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           {paymentRecords.map((record) => (
-            <div key={record.id} className="bg-gray-50 border border-gray-200 rounded p-3">
+            <div key={record.id} className="bg-gray-50 border border-gray-200 rounded p-2">
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center space-x-2 mb-1">

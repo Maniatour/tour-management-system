@@ -271,12 +271,15 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       [field]: value
     }
     
-    // 자동 계산 로직 (total_price 재계산만 수행, 다른 필드는 보존)
+    // 자동 계산 로직: 상품 단가 변경 시 상품 가격 합계 = 단가 × 인원
     if (field === 'adult_product_price' || field === 'child_product_price' || field === 'infant_product_price') {
-      // 상품 가격 합계 계산
-      const productTotal = (updatedData.adult_product_price || 0) + 
-                          (updatedData.child_product_price || 0) + 
-                          (updatedData.infant_product_price || 0)
+      const adults = reservation?.adults || 0
+      const child = reservation?.child || 0
+      const infant = reservation?.infant || 0
+      const productTotal =
+        (updatedData.adult_product_price || 0) * adults +
+        (updatedData.child_product_price || 0) * child +
+        (updatedData.infant_product_price || 0) * infant
       updatedData.product_price_total = productTotal
     }
     
@@ -420,7 +423,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
   if (!isOpen || !reservation) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-2 sm:p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-[95vw] sm:max-w-2xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
         {/* 헤더 */}
         <div className="flex items-center justify-between p-3 sm:p-4 border-b border-gray-200">
@@ -480,564 +483,314 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
               <p className="text-sm text-gray-600">가격 정보가 없습니다.</p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {/* 상품 가격 */}
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-                  <DollarSign className="w-4 h-4 mr-1 text-blue-600" />
-                  상품 가격
-                </h3>
-                {channelPricingType === 'single' ? (
-                  // 단일 가격 모드
-                  <div className="space-y-2 text-xs">
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600">단일 가격</span>
-                      <div className="relative">
-                        <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* 1. 상품가격 */}
+              <div className="bg-white p-3 rounded border border-gray-200">
+                <h4 className="text-sm font-medium text-gray-900 mb-2">상품가격</h4>
+                <div className="space-y-2">
+                  {channelPricingType === 'single' ? (
+                    <>
+                      <div className="text-xs text-gray-600 mb-1">단일 가격</div>
+                      <div className="flex items-center space-x-1">
+                        <span className="font-medium text-xs">$</span>
                         <input
                           type="number"
-                          value={editData?.adult_product_price || 0}
+                          value={editData?.adult_product_price ?? ''}
                           onChange={(e) => {
-                            const newPrice = parseFloat(e.target.value) || 0
-                            handleInputChange('adult_product_price', newPrice)
-                            // 단일 가격 모드일 때는 아동/유아 가격도 동일하게 설정
-                            handleInputChange('child_product_price', newPrice)
-                            handleInputChange('infant_product_price', newPrice)
+                            const v = Number(e.target.value) || 0
+                            handleInputChange('adult_product_price', v)
+                            handleInputChange('child_product_price', v)
+                            handleInputChange('infant_product_price', v)
                           }}
-                          className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
+                          className="w-16 px-1 py-0.5 text-xs border border-gray-300 rounded"
+                          step="0.01"
+                          placeholder="0"
                         />
                       </div>
-                    </div>
-                    <div className="flex justify-between items-center bg-white rounded px-2 py-1">
-                      <span className="font-semibold text-gray-900">합계</span>
-                      <span className="font-bold">
-                        ${((editData?.adult_product_price || 0) * ((reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0))).toFixed(2)}
-                      </span>
-                    </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-gray-600">x{((reservation?.adults || 0) + (reservation?.child || 0) + (reservation?.infant || 0))}명</span>
+                        <span className="font-medium">= ${(editData?.product_price_total || 0).toFixed(2)}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-gray-600">성인 $</span>
+                        <input
+                          type="number"
+                          value={editData?.adult_product_price ?? ''}
+                          onChange={(e) => handleInputChange('adult_product_price', Number(e.target.value) || 0)}
+                          className="w-14 px-1 py-0.5 text-xs border border-gray-300 rounded text-right"
+                          step="0.01"
+                        />
+                        <span className="text-gray-500">x{reservation?.adults || 0}</span>
+                        <span className="font-medium">${((editData?.adult_product_price || 0) * (reservation?.adults || 0)).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-gray-600">아동 $</span>
+                        <input
+                          type="number"
+                          value={editData?.child_product_price ?? ''}
+                          onChange={(e) => handleInputChange('child_product_price', Number(e.target.value) || 0)}
+                          className="w-14 px-1 py-0.5 text-xs border border-gray-300 rounded text-right"
+                          step="0.01"
+                        />
+                        <span className="text-gray-500">x{reservation?.child || 0}</span>
+                        <span className="font-medium">${((editData?.child_product_price || 0) * (reservation?.child || 0)).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-gray-600">유아 $</span>
+                        <input
+                          type="number"
+                          value={editData?.infant_product_price ?? ''}
+                          onChange={(e) => handleInputChange('infant_product_price', Number(e.target.value) || 0)}
+                          className="w-14 px-1 py-0.5 text-xs border border-gray-300 rounded text-right"
+                          step="0.01"
+                        />
+                        <span className="text-gray-500">x{reservation?.infant || 0}</span>
+                        <span className="font-medium">${((editData?.infant_product_price || 0) * (reservation?.infant || 0)).toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="border-t pt-1 flex justify-between items-center">
+                    <span className="text-sm font-medium text-gray-900">상품 가격 합계</span>
+                    <span className="text-sm font-bold text-blue-600">${(editData?.product_price_total || 0).toFixed(2)}</span>
                   </div>
-                ) : (
-                  // 분리 가격 모드 (성인/아동/유아)
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600">성인</span>
-                      <div className="relative">
-                        <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                        <input
-                          type="number"
-                          value={editData?.adult_product_price || 0}
-                          onChange={(e) => handleInputChange('adult_product_price', parseFloat(e.target.value) || 0)}
-                          className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600">아동</span>
-                      <div className="relative">
-                        <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                        <input
-                          type="number"
-                          value={editData?.child_product_price || 0}
-                          onChange={(e) => handleInputChange('child_product_price', parseFloat(e.target.value) || 0)}
-                          className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600">유아</span>
-                      <div className="relative">
-                        <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                        <input
-                          type="number"
-                          value={editData?.infant_product_price || 0}
-                          onChange={(e) => handleInputChange('infant_product_price', parseFloat(e.target.value) || 0)}
-                          className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex justify-between items-center bg-white rounded px-2 py-1">
-                      <span className="font-semibold text-gray-900">합계</span>
-                      <span className="font-bold">${(editData?.product_price_total || 0).toFixed(2)}</span>
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
 
-              {/* 옵션 가격 */}
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">옵션 가격</h3>
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">필수 옵션</span>
-                    <div className="relative">
-                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+              {/* 2. 할인/추가비용 */}
+              <div className="bg-white p-3 rounded border border-gray-200">
+                <h4 className="text-sm font-medium text-gray-900 mb-2">할인/추가비용</h4>
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">쿠폰</label>
+                    <select
+                      value={selectedCoupon}
+                      onChange={(e) => handleCouponChange(e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
+                    >
+                      <option value="">쿠폰 선택</option>
+                      {coupons.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.coupon_code} ({c.discount_type === 'percentage' ? (c.percentage_value ?? 0) + '%' : '$' + (c.fixed_value ?? 0)})
+                        </option>
+                      ))}
+                    </select>
+                    {editData?.coupon_code && (
+                      <div className="mt-1 text-xs text-blue-600">
+                        할인: ${Math.abs(editData?.coupon_discount || 0).toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-1">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">추가할인</label>
+                      <div className="relative">
+                        <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
+                        <input
+                          type="number"
+                          value={editData?.additional_discount ?? ''}
+                          onChange={(e) => handleInputChange('additional_discount', Number(e.target.value) || 0)}
+                          className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded"
+                          step="0.01"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">추가비용</label>
+                      <div className="relative">
+                        <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
+                        <input
+                          type="number"
+                          value={editData?.additional_cost ?? ''}
+                          onChange={(e) => handleInputChange('additional_cost', Number(e.target.value) || 0)}
+                          className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded"
+                          step="0.01"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">세금</label>
+                      <div className="relative">
+                        <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
+                        <input
+                          type="number"
+                          value={editData?.tax ?? ''}
+                          onChange={(e) => handleInputChange('tax', Number(e.target.value) || 0)}
+                          className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded"
+                          step="0.01"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">카드수수료</label>
+                      <div className="relative">
+                        <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
+                        <input
+                          type="number"
+                          value={editData?.card_fee ?? ''}
+                          onChange={(e) => handleInputChange('card_fee', Number(e.target.value) || 0)}
+                          className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded"
+                          step="0.01"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 border-t pt-2">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">선결제 지출</label>
+                      <div className="relative">
+                        <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
+                        <input
+                          type="number"
+                          value={editData?.prepayment_cost ?? ''}
+                          onChange={(e) => handleInputChange('prepayment_cost', Number(e.target.value) || 0)}
+                          className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded"
+                          step="0.01"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">선결제 팁</label>
+                      <div className="relative">
+                        <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
+                        <input
+                          type="number"
+                          value={editData?.prepayment_tip ?? ''}
+                          onChange={(e) => handleInputChange('prepayment_tip', Number(e.target.value) || 0)}
+                          className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded"
+                          step="0.01"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="border-t pt-2">
+                    <label className="flex items-center gap-2 text-xs">
                       <input
-                        type="number"
-                        value={editData?.required_option_total || 0}
-                        onChange={(e) => handleInputChange('required_option_total', parseFloat(e.target.value) || 0)}
-                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
+                        type="checkbox"
+                        checked={editData?.is_private_tour || false}
+                        onChange={(e) => handlePrivateTourChange(e.target.checked)}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded"
                       />
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">선택 옵션</span>
-                    <div className="relative">
-                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                      <input
-                        type="number"
-                        value={editData?.option_total || 0}
-                        onChange={(e) => handleInputChange('option_total', parseFloat(e.target.value) || 0)}
-                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center bg-white rounded px-2 py-1 col-span-2">
-                    <span className="font-semibold text-gray-900">옵션 합계</span>
-                    <span className="font-bold">${((editData?.required_option_total || 0) + (editData?.option_total || 0)).toFixed(2)}</span>
+                      프라이빗 투어
+                    </label>
+                    {editData?.is_private_tour && (
+                      <div className="relative mt-1">
+                        <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
+                        <input
+                          type="number"
+                          value={editData?.private_tour_additional_cost ?? ''}
+                          onChange={(e) => handleInputChange('private_tour_additional_cost', Number(e.target.value) || 0)}
+                          className="w-full pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded"
+                          step="0.01"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* 소계 (상품 가격 + 옵션 가격) */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">소계</h3>
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-gray-700">상품 가격 + 옵션 가격</span>
-                  <span className="font-bold text-blue-600">${(editData?.subtotal || 0).toFixed(2)}</span>
-                </div>
-              </div>
-
-              {/* 할인 및 추가 비용 */}
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">할인 및 추가 비용</h3>
-                
-                {/* 쿠폰 선택 */}
-                <div className="mb-3">
-                  <label className="block text-xs text-gray-600 mb-1">쿠폰 선택</label>
-                  <select
-                    value={selectedCoupon}
-                    onChange={(e) => handleCouponChange(e.target.value)}
-                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
-                  >
-                    <option value="">쿠폰 없음</option>
-                    {coupons.map((coupon) => (
-                      <option key={coupon.id} value={coupon.id}>
-                        {coupon.coupon_code} - {coupon.description || `${coupon.discount_type === 'percentage' ? coupon.percentage_value + '%' : '$' + coupon.fixed_value} 할인`}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">쿠폰 할인</span>
-                    <span className="font-semibold text-green-600">
-                      {editData?.coupon_discount && editData.coupon_discount < 0 
-                        ? `-$${Math.abs(editData.coupon_discount).toFixed(2)}` 
-                        : editData?.coupon_discount && editData.coupon_discount > 0
-                        ? `-$${editData.coupon_discount.toFixed(2)}`
-                        : `$${(editData?.coupon_discount || 0).toFixed(2)}`}
+              {/* 3. 가격계산 */}
+              <div className="bg-white p-3 rounded border border-gray-200 md:col-span-1">
+                <h4 className="text-xs font-semibold text-gray-900 mb-2">가격 계산</h4>
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-gray-700">OTA 판매가</span>
+                    <span className="font-medium">${(editData?.product_price_total || 0).toFixed(2)}</span>
+                  </div>
+                  {(editData?.coupon_discount || 0) !== 0 && (
+                    <div className="flex justify-between text-green-600">
+                      <span>- 쿠폰 할인</span>
+                      <span>-${Math.abs(editData?.coupon_discount || 0).toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="border-t border-gray-200 my-1" />
+                  <div className="flex justify-between">
+                    <span className="text-gray-700">할인 후 상품가</span>
+                    <span className="font-medium">
+                      ${((editData?.product_price_total || 0) - Math.abs(editData?.coupon_discount || 0) - (editData?.additional_discount || 0)).toFixed(2)}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">추가 할인</span>
-                    <div className="relative">
-                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                      <input
-                        type="number"
-                        value={editData?.additional_discount || 0}
-                        onChange={(e) => handleInputChange('additional_discount', parseFloat(e.target.value) || 0)}
-                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                      />
+                  {(editData?.additional_discount || 0) > 0 && (
+                    <div className="flex justify-between text-red-600">
+                      <span>- 추가 할인</span>
+                      <span>-${(editData?.additional_discount || 0).toFixed(2)}</span>
                     </div>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">추가 비용</span>
-                    <div className="relative">
-                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                      <input
-                        type="number"
-                        value={editData?.additional_cost || 0}
-                        onChange={(e) => handleInputChange('additional_cost', parseFloat(e.target.value) || 0)}
-                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                      />
+                  )}
+                  {(editData?.additional_cost || 0) > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">+ 추가 비용</span>
+                      <span>+${(editData?.additional_cost || 0).toFixed(2)}</span>
                     </div>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">카드 수수료</span>
-                    <div className="relative">
-                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                      <input
-                        type="number"
-                        value={editData?.card_fee || 0}
-                        onChange={(e) => handleInputChange('card_fee', parseFloat(e.target.value) || 0)}
-                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                      />
+                  )}
+                  {(editData?.tax || 0) > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">+ 세금</span>
+                      <span>+${(editData?.tax || 0).toFixed(2)}</span>
                     </div>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">세금</span>
-                    <div className="relative">
-                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                      <input
-                        type="number"
-                        value={editData?.tax || 0}
-                        onChange={(e) => handleInputChange('tax', parseFloat(e.target.value) || 0)}
-                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                      />
+                  )}
+                  {(editData?.card_fee || 0) > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">+ 카드 수수료</span>
+                      <span>+${(editData?.card_fee || 0).toFixed(2)}</span>
                     </div>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">선불 비용</span>
-                    <div className="relative">
-                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                      <input
-                        type="number"
-                        value={editData?.prepayment_cost || 0}
-                        onChange={(e) => handleInputChange('prepayment_cost', parseFloat(e.target.value) || 0)}
-                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                      />
+                  )}
+                  {(editData?.prepayment_cost || 0) > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">+ 선결제 지출</span>
+                      <span>+${(editData?.prepayment_cost || 0).toFixed(2)}</span>
                     </div>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600">선불 팁</span>
-                    <div className="relative">
-                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                      <input
-                        type="number"
-                        value={editData?.prepayment_tip || 0}
-                        onChange={(e) => handleInputChange('prepayment_tip', parseFloat(e.target.value) || 0)}
-                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                      />
+                  )}
+                  {(editData?.prepayment_tip || 0) > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">+ 선결제 팁</span>
+                      <span>+${(editData?.prepayment_tip || 0).toFixed(2)}</span>
                     </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* 프라이빗 투어 */}
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">프라이빗 투어</h3>
-                
-                {/* 프라이빗 투어 선택 체크박스 */}
-                <div className="mb-3">
-                  <label className="flex items-center space-x-2 text-xs">
-                    <input
-                      type="checkbox"
-                      checked={editData?.is_private_tour || false}
-                      onChange={(e) => handlePrivateTourChange(e.target.checked)}
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    />
-                    <span className="text-gray-700">프라이빗 투어 선택</span>
-                  </label>
-                </div>
-                
-                {editData?.is_private_tour && (
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-gray-600">추가 비용</span>
-                    <div className="relative">
-                      <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
-                      <input
-                        type="number"
-                        value={editData?.private_tour_additional_cost || 0}
-                        onChange={(e) => handleInputChange('private_tour_additional_cost', parseFloat(e.target.value) || 0)}
-                        className="w-20 pl-4 pr-1 py-0.5 text-right border border-gray-300 rounded text-xs"
-                      />
+                  )}
+                  {(editData?.is_private_tour && (editData?.private_tour_additional_cost || 0) > 0) && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">+ 단독투어 추가비</span>
+                      <span>+${(editData?.private_tour_additional_cost || 0).toFixed(2)}</span>
                     </div>
+                  )}
+                  <div className="border-t border-gray-200 my-1" />
+                  <div className="flex justify-between">
+                    <span className="text-sm font-bold text-blue-800">고객 총 결제 금액</span>
+                    <span className="text-sm font-bold text-blue-600">${(editData?.total_price || 0).toFixed(2)}</span>
                   </div>
-                )}
-              </div>
-
-              {/* 할인 및 추가 비용 & 프라이빗 투어 소계 */}
-              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">할인 및 추가 비용 & 프라이빗 투어 소계</h3>
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-gray-700">할인/추가비용 + 프라이빗투어</span>
-                  <span className="font-bold text-orange-600">
-                    {(() => {
-                      const couponDiscount = editData?.coupon_discount || 0;
-                      const additionalDiscount = editData?.additional_discount || 0;
-                      const additionalCost = editData?.additional_cost || 0;
-                      const cardFee = editData?.card_fee || 0;
-                      const tax = editData?.tax || 0;
-                      const prepaymentCost = editData?.prepayment_cost || 0;
-                      const prepaymentTip = editData?.prepayment_tip || 0;
-                      const privateTourCost = editData?.private_tour_additional_cost || 0;
-                      
-                      const total = couponDiscount + additionalDiscount + additionalCost + cardFee + tax + prepaymentCost + prepaymentTip + privateTourCost;
-                      
-                      // 디버깅용 콘솔 로그
-                      console.log('소계 계산 디버깅:', {
-                        couponDiscount,
-                        additionalDiscount,
-                        additionalCost,
-                        cardFee,
-                        tax,
-                        prepaymentCost,
-                        prepaymentTip,
-                        privateTourCost,
-                        total
-                      });
-                      
-                      return total < 0 ? `-$${Math.abs(total).toFixed(2)}` : `$${total.toFixed(2)}`;
-                    })()}
-                  </span>
-                </div>
-              </div>
-
-              {/* 4️⃣ 최종 매출 & 운영 이익 */}
-              <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-200 rounded-lg p-4">
-                <div className="flex items-center mb-3">
-                  <span className="text-lg mr-2">4️⃣</span>
-                  <h3 className="text-lg font-bold text-gray-900">최종 매출 & 운영 이익</h3>
-                  <span className="ml-2 text-xs text-gray-500">(Company View)</span>
-                </div>
-                
-                {(() => {
-                  // 값들을 메모이제이션하여 안정적으로 유지
-                  if (!editData || !reservation) return null
-                  
-                  const productSubtotal = (editData.product_price_total || 0) - Math.abs(editData.coupon_discount || 0)
-                  const choicesTotal = editData.choices_total ?? 0
-                  const commissionAmount = editData.commission_amount ?? 0
-                  const channelSettlementAmount = Math.max(0, productSubtotal - choicesTotal - commissionAmount)
-                  
-                  const notIncludedPrice = editData.not_included_price ?? 0
-                  const totalPeople = (reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)
-                  const notIncludedTotal = notIncludedPrice * totalPeople
-                  
-                  const additionalDiscount = editData.additional_discount ?? 0
-                  const additionalCost = editData.additional_cost ?? 0
-                  const cardFee = editData.card_fee ?? 0
-                  const tax = editData.tax ?? 0
-                  const prepaymentCost = editData.prepayment_cost ?? 0
-                  
-                  return (
-                    <div className="space-y-2 text-sm">
-                      {/* 채널 정산 금액 */}
-                      {channelSettlementAmount > 0 && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-700">채널 정산 금액</span>
-                          <span className="text-sm font-medium text-gray-900">
-                            ${channelSettlementAmount.toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-                      
-                      {/* 초이스 총액 */}
-                      {choicesTotal > 0 && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-700">+ 초이스 총액</span>
-                          <span className="text-sm font-medium text-gray-900">
-                            +${choicesTotal.toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-                      
-                      {/* 불포함 가격 */}
-                      {notIncludedTotal > 0 && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-700">+ 불포함 가격</span>
-                          <span className="text-sm font-medium text-gray-900">
-                            +${notIncludedTotal.toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-                  
-                      {/* 추가할인 (음수) */}
-                      {additionalDiscount > 0 && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-700">- 추가할인</span>
-                          <span className="text-sm font-medium text-red-600">
-                            -${additionalDiscount.toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-                      
-                      {/* 추가비용 */}
-                      {additionalCost > 0 && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-700">+ 추가비용</span>
-                          <span className="text-sm font-medium text-gray-900">
-                            +${additionalCost.toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-                      
-                      {/* 결제 수수료 */}
-                      {cardFee > 0 && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-700">+ 결제 수수료</span>
-                          <span className="text-sm font-medium text-gray-900">
-                            +${cardFee.toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-                      
-                      {/* 세금 */}
-                      {tax > 0 && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-700">+ 세금</span>
-                          <span className="text-sm font-medium text-gray-900">
-                            +${tax.toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-                      
-                      {/* 선결제 지출 */}
-                      {prepaymentCost > 0 && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-700">+ 선결제 지출</span>
-                          <span className="text-sm font-medium text-gray-900">
-                            +${prepaymentCost.toFixed(2)}
-                          </span>
-                        </div>
-                      )}
-                  
-                      <div className="border-t border-gray-300 my-2"></div>
-                      
-                      {/* 총 매출 */}
-                      <div className="flex justify-between items-center">
-                        <span className="text-base font-bold text-green-800">총 매출</span>
-                        <span className="text-lg font-bold text-green-600">
-                          ${(() => {
-                            // 총 매출 계산: 표시된 각 항목의 합계
-                            // 채널 정산 금액 + 초이스 총액 + 불포함 가격 - 추가할인 + 추가비용 + 결제 수수료 + 세금 + 선결제 지출
-                            let totalRevenue = 0
-                            
-                            // 채널 정산 금액이 0보다 크면 추가
-                            if (channelSettlementAmount > 0) {
-                              totalRevenue += channelSettlementAmount
-                            }
-                            
-                            // 초이스 총액이 0보다 크면 추가
-                            if (choicesTotal > 0) {
-                              totalRevenue += choicesTotal
-                            }
-                            
-                            // 불포함 가격이 0보다 크면 추가
-                            if (notIncludedTotal > 0) {
-                              totalRevenue += notIncludedTotal
-                            }
-                            
-                            // 추가할인이 0보다 크면 차감
-                            if (additionalDiscount > 0) {
-                              totalRevenue -= additionalDiscount
-                            }
-                            
-                            // 추가비용이 0보다 크면 추가
-                            if (additionalCost > 0) {
-                              totalRevenue += additionalCost
-                            }
-                            
-                            // 결제 수수료가 0보다 크면 추가
-                            if (cardFee > 0) {
-                              totalRevenue += cardFee
-                            }
-                            
-                            // 세금이 0보다 크면 추가
-                            if (tax > 0) {
-                              totalRevenue += tax
-                            }
-                            
-                            // 선결제 지출이 0보다 크면 추가
-                            if (prepaymentCost > 0) {
-                              totalRevenue += prepaymentCost
-                            }
-                            
-                            return totalRevenue.toFixed(2)
-                          })()}
-                        </span>
-                      </div>
-                  
-                      {/* 선결제 팁 (수익 아님) */}
-                      {editData.prepayment_tip && editData.prepayment_tip > 0 && (
-                        <>
-                          <p className="text-xs text-red-600 mb-1">❗ 팁은 수익 아님 → 반드시 분리</p>
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-600">- 선결제 팁</span>
-                            <span className="text-xs text-gray-700">-${editData.prepayment_tip.toFixed(2)}</span>
-                          </div>
-                        </>
-                      )}
-                      
-                      <div className="border-t border-gray-300 my-2"></div>
-                      
-                      {/* 운영 이익 */}
-                      <div className="flex justify-between items-center">
-                        <span className="text-base font-bold text-purple-800">운영 이익</span>
-                        <span className="text-lg font-bold text-purple-600">
-                          ${(() => {
-                            // 총 매출 계산 (위에서 계산한 값들 사용)
-                            let totalRevenue = 0
-                            
-                            if (channelSettlementAmount > 0) {
-                              totalRevenue += channelSettlementAmount
-                            }
-                            if (choicesTotal > 0) {
-                              totalRevenue += choicesTotal
-                            }
-                            if (notIncludedTotal > 0) {
-                              totalRevenue += notIncludedTotal
-                            }
-                            if (additionalDiscount > 0) {
-                              totalRevenue -= additionalDiscount
-                            }
-                            if (additionalCost > 0) {
-                              totalRevenue += additionalCost
-                            }
-                            if (cardFee > 0) {
-                              totalRevenue += cardFee
-                            }
-                            if (tax > 0) {
-                              totalRevenue += tax
-                            }
-                            if (prepaymentCost > 0) {
-                              totalRevenue += prepaymentCost
-                            }
-                            
-                            // 운영 이익 = 총 매출 - 선결제 팁
-                            const operatingProfit = totalRevenue - (editData.prepayment_tip || 0)
-                            
-                            return operatingProfit.toFixed(2)
-                          })()}
-                        </span>
-                      </div>
-                    </div>
-                  )
-                })()}
-              </div>
-
-              {/* 최종 가격 */}
-              <div className="bg-gradient-to-r from-blue-50 to-green-50 border-2 border-blue-200 rounded-lg p-4">
-                <h3 className="text-lg font-bold text-gray-900 mb-3 text-center">최종 가격 정보</h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between items-center py-2 border-t border-gray-300">
-                    <span className="text-lg font-bold text-gray-900">총 가격</span>
-                    <span className="text-xl font-bold text-blue-600">${(editData?.total_price || 0).toFixed(2)}</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 mt-3">
-                    <div className="text-center">
-                      <div className="text-xs text-gray-600">예약금</div>
+                  <div className="border-t pt-2 mt-2 space-y-1">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">예약금</span>
                       <div className="relative">
-                        <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                        <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-[10px]">$</span>
                         <input
                           type="number"
-                          value={editData?.deposit_amount || 0}
-                          onChange={(e) => handleInputChange('deposit_amount', parseFloat(e.target.value) || 0)}
-                          className="w-full pl-4 pr-1 py-0.5 text-center border border-gray-300 rounded text-sm"
+                          value={editData?.deposit_amount ?? ''}
+                          onChange={(e) => handleInputChange('deposit_amount', Number(e.target.value) || 0)}
+                          className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right"
+                          step="0.01"
                         />
                       </div>
                     </div>
-                    <div className="text-center">
-                      <div className="text-xs text-gray-600">잔금</div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">잔금</span>
                       <div className="relative">
-                        <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
+                        <span className="absolute left-1 top-1/2 -translate-y-1/2 text-gray-500 text-[10px]">$</span>
                         <input
                           type="number"
-                          value={editData?.balance_amount || 0}
-                          onChange={(e) => handleInputChange('balance_amount', parseFloat(e.target.value) || 0)}
-                          className="w-full pl-4 pr-1 py-0.5 text-center border border-gray-300 rounded text-sm"
+                          value={editData?.balance_amount ?? ''}
+                          onChange={(e) => handleInputChange('balance_amount', Number(e.target.value) || 0)}
+                          className="w-20 pl-4 pr-1 py-0.5 text-xs border border-gray-300 rounded text-right"
+                          step="0.01"
                         />
                       </div>
+                    </div>
+                    <div className="flex justify-between pt-1">
+                      <span className="font-semibold text-gray-900">총 가격</span>
+                      <span className="font-bold text-gray-900">${(editData?.total_price || 0).toFixed(2)}</span>
                     </div>
                   </div>
                 </div>

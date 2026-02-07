@@ -62,6 +62,7 @@ interface ReservationActionRequiredModalProps {
   onEditClick: (reservationId: string) => void
   onCustomerClick: (customer: Customer) => void
   onRefreshReservations: () => void
+  onStatusChange?: (reservationId: string, newStatus: string) => Promise<void>
   generatePriceCalculation: (reservation: Reservation, pricing: unknown) => string
   getGroupColorClasses: (groupId: string, groupName?: string, optionName?: string) => string
   getSelectedChoicesFromNewSystem: (reservationId: string) => Promise<Array<{
@@ -116,6 +117,7 @@ export default function ReservationActionRequiredModal({
   onEditClick,
   onCustomerClick,
   onRefreshReservations,
+  onStatusChange,
   generatePriceCalculation,
   getGroupColorClasses,
   getSelectedChoicesFromNewSystem,
@@ -347,7 +349,7 @@ export default function ReservationActionRequiredModal({
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-4 max-lg:pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
           {loadingPayments && (activeTab === 'deposit') ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent" />
@@ -388,6 +390,7 @@ export default function ReservationActionRequiredModal({
                     onEditClick={onEditClick}
                     onCustomerClick={onCustomerClick}
                     onRefreshReservations={onRefreshReservations}
+                    onStatusChange={onStatusChange}
                     generatePriceCalculation={generatePriceCalculation}
                     getGroupColorClasses={getGroupColorClasses}
                     getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}

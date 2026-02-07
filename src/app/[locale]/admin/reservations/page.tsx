@@ -2180,6 +2180,15 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     setEditingCustomer(customer)
   }, [])
 
+  const handleStatusChange = useCallback(async (reservationId: string, newStatus: string) => {
+    const { error } = await supabase
+      .from('reservations')
+      .update({ status: newStatus })
+      .eq('id', reservationId)
+    if (error) throw error
+    await refreshReservations()
+  }, [refreshReservations])
+
   const handleEmailLogsClick = useCallback((reservationId: string) => {
     setSelectedReservationForEmailLogs(reservationId)
     setShowEmailLogs(true)
@@ -2513,6 +2522,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         onEditClick={handleEditClick}
                         onCustomerClick={handleCustomerClick}
                         onRefreshReservations={refreshReservations}
+                        onStatusChange={handleStatusChange}
                         generatePriceCalculation={generatePriceCalculation}
                         getGroupColorClasses={getGroupColorClasses}
                         getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
@@ -2574,6 +2584,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                     onEditClick={handleEditClick}
                     onCustomerClick={handleCustomerClick}
                     onRefreshReservations={refreshReservations}
+                    onStatusChange={handleStatusChange}
                     generatePriceCalculation={generatePriceCalculation}
                     getGroupColorClasses={getGroupColorClasses}
                     getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
@@ -2700,7 +2711,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
       {/* 입금 내역 모달 */}
       {showPaymentRecords && selectedReservationForPayment && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <h2 className="text-xl font-semibold text-gray-900">
@@ -2755,6 +2766,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         onEditClick={handleEditClick}
         onCustomerClick={handleCustomerClick}
         onRefreshReservations={refreshReservations}
+        onStatusChange={handleStatusChange}
         generatePriceCalculation={generatePriceCalculation}
         getGroupColorClasses={getGroupColorClasses}
         getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
@@ -2883,7 +2895,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
       {/* 후기 관리 모달 */}
       {showReviewModal && selectedReservationForReview && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-gray-200 flex-shrink-0">
               <h2 className="text-xl font-semibold text-gray-900">후기 관리</h2>
