@@ -334,9 +334,18 @@ export default function AdminReports({ }: AdminReportsProps) {
             ))}
           </div>
           <div className="flex flex-wrap gap-2 ml-2 border-l pl-4">
-            {(['yesterday', 'lastWeek', 'lastMonth', 'lastYear'] as ReportPeriod[]).map((period) => (
+            {/* 어제, 오늘, 지난주, 지난달, 이번달, 작년, 올해 (주황 스타일) */}
+            {[
+              { period: 'yesterday' as ReportPeriod, label: '어제' },
+              { period: 'daily' as ReportPeriod, label: '오늘' },
+              { period: 'lastWeek' as ReportPeriod, label: '지난주' },
+              { period: 'lastMonth' as ReportPeriod, label: '지난달' },
+              { period: 'monthly' as ReportPeriod, label: '이번달' },
+              { period: 'lastYear' as ReportPeriod, label: '작년' },
+              { period: 'yearly' as ReportPeriod, label: '올해' }
+            ].map(({ period, label }) => (
               <button
-                key={period}
+                key={label}
                 onClick={() => handlePeriodChange(period)}
                 className={`px-4 py-2 text-sm rounded-md transition-colors ${
                   reportPeriod === period
@@ -344,10 +353,7 @@ export default function AdminReports({ }: AdminReportsProps) {
                     : 'bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200'
                 }`}
               >
-                {period === 'yesterday' ? '어제' : 
-                 period === 'lastWeek' ? '지난주' : 
-                 period === 'lastMonth' ? '지난달' : 
-                 period === 'lastYear' ? '작년' : period}
+                {label}
               </button>
             ))}
           </div>
