@@ -8,9 +8,12 @@ import { useReservationOptions, type ReservationOption, type CreateReservationOp
 interface ReservationOptionsSectionProps {
   reservationId: string
   onTotalPriceChange?: (totalPrice: number) => void
+  hideTitle?: boolean
+  title?: string
+  itemVariant?: 'card' | 'line'
 }
 
-export default function ReservationOptionsSection({ reservationId, onTotalPriceChange }: ReservationOptionsSectionProps) {
+export default function ReservationOptionsSection({ reservationId, onTotalPriceChange, hideTitle, title: titleProp, itemVariant = 'card' }: ReservationOptionsSectionProps) {
   const t = useTranslations('reservations.reservationOptions')
   const tCommon = useTranslations('common')
   
@@ -94,9 +97,12 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
     }
   }, [reservationOptions, onTotalPriceChange])
 
+  const isLine = itemVariant === 'line'
+  const wrapperClass = isLine ? 'space-y-2' : 'bg-white rounded-lg shadow-sm border border-gray-200 p-3'
+
   if (loading) {
     return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
+      <div className={wrapperClass || 'p-3'}>
         <div className="flex items-center justify-center py-4">
           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
           <span className="ml-2 text-xs text-gray-600">{t('loadingOptions')}</span>
@@ -107,7 +113,7 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
 
   if (error) {
     return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
+      <div className={wrapperClass || 'p-3'}>
         <div className="text-red-600 text-center py-3 text-xs">
           {t('errorLoading', { error })}
         </div>
@@ -115,10 +121,12 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
     )
   }
 
+  const showTitle = !hideTitle || titleProp
+  const titleText = titleProp ?? t('title')
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
+    <div className={wrapperClass}>
       <div className="flex items-center justify-between gap-2 mb-2">
-        <h3 className="text-xs font-semibold text-gray-900">{t('title')}</h3>
+        {showTitle && <h3 className="text-xs font-semibold text-gray-900">{titleText}</h3>}
         <button
           type="button"
           onClick={() => setShowAddForm(true)}
@@ -235,14 +243,14 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
       )}
 
       {/* 옵션 목록 */}
-      <div className="space-y-3">
+      <div className={isLine ? 'divide-y divide-gray-200' : 'space-y-3'}>
         {reservationOptions.length === 0 ? (
           <div className="text-center py-6 text-gray-500 text-xs">
             {t('noOptions')}
           </div>
         ) : (
           reservationOptions.map((option) => (
-            <div key={option.id} className="border border-gray-200 rounded-lg p-4">
+            <div key={option.id} className={isLine ? 'py-3 first:pt-0' : 'border border-gray-200 rounded-lg p-4'}>
               {editingOption === option.id ? (
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

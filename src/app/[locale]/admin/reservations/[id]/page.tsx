@@ -453,7 +453,7 @@ export default function ReservationDetailsPage() {
           onDelete={handleDelete}
           layout="page"
           onViewCustomer={() => setShowReservationDetailModal(true)}
-          allowPastDateEdit={isSuper}
+          allowPastDateEdit={isSuper || !!reservation}
         />
       </div>
     )

@@ -32,9 +32,12 @@ interface PaymentRecord {
 interface PaymentRecordsListProps {
   reservationId: string
   customerName: string
+  hideTitle?: boolean
+  title?: string
+  itemVariant?: 'card' | 'line'
 }
 
-export default function PaymentRecordsList({ reservationId, customerName }: PaymentRecordsListProps) {
+export default function PaymentRecordsList({ reservationId, customerName, hideTitle, title: titleProp, itemVariant = 'card' }: PaymentRecordsListProps) {
   const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -266,13 +269,18 @@ export default function PaymentRecordsList({ reservationId, customerName }: Paym
     )
   }
 
+  const isLine = itemVariant === 'line'
+  const showTitle = !hideTitle || titleProp
+  const titleText = titleProp ? `${titleProp} (${paymentRecords.length})` : `입금 내역 (${paymentRecords.length})`
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold text-gray-900 flex items-center">
-          <DollarSign size={14} className="mr-1" />
-          입금 내역 ({paymentRecords.length})
-        </h3>
+        {showTitle && (
+          <h3 className="text-xs font-semibold text-gray-900 flex items-center">
+            <DollarSign size={14} className="mr-1" />
+            {titleText}
+          </h3>
+        )}
         <button
           type="button"
           onClick={() => setShowForm(true)}
@@ -295,9 +303,9 @@ export default function PaymentRecordsList({ reservationId, customerName }: Paym
           <p>입금 내역이 없습니다</p>
         </div>
       ) : (
-        <div className="space-y-1.5">
+        <div className={isLine ? 'divide-y divide-gray-200' : 'space-y-1.5'}>
           {paymentRecords.map((record) => (
-            <div key={record.id} className="bg-gray-50 border border-gray-200 rounded p-2">
+            <div key={record.id} className={isLine ? 'py-2 first:pt-0' : 'bg-gray-50 border border-gray-200 rounded p-2'}>
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center space-x-2 mb-1">

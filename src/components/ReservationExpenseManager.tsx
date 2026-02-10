@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Plus, Upload, X, Eye, DollarSign, Edit, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 interface ReservationExpense {
   id: string
@@ -57,12 +58,18 @@ interface ReservationExpenseManagerProps {
   submittedBy?: string
   userRole?: 'admin' | 'team_member'
   onExpenseUpdated?: () => void
+  hideTitle?: boolean
+  title?: string
+  itemVariant?: 'card' | 'line'
 }
 
 export default function ReservationExpenseManager({ 
   reservationId, 
   submittedBy, 
-  onExpenseUpdated 
+  onExpenseUpdated,
+  hideTitle,
+  title: titleProp,
+  itemVariant = 'card'
 }: ReservationExpenseManagerProps) {
   
   const t = useTranslations('reservationExpense')
@@ -72,7 +79,10 @@ export default function ReservationExpenseManager({
   const [loading, setLoading] = useState(false)
   const [teamMembers, setTeamMembers] = useState<Record<string, string>>({})
   const [reservations, setReservations] = useState<Reservation[]>([])
+  const [paymentMethodMap, setPaymentMethodMap] = useState<Record<string, string>>({})
+  const [paymentMethodOptions, setPaymentMethodOptions] = useState<{ id: string; name: string }[]>([])
   const [showAddForm, setShowAddForm] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
   const [editingExpense, setEditingExpense] = useState<ReservationExpense | null>(null)
   const [uploading, setUploading] = useState(false)
   const [showCustomPaidTo, setShowCustomPaidTo] = useState(false)
@@ -103,7 +113,32 @@ export default function ReservationExpenseManager({
     loadVendors()
     loadTeamMembers()
     loadReservations()
+    loadPaymentMethods()
   }, [reservationId])
+
+  const loadPaymentMethods = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('payment_methods')
+        .select('id, method, display_name')
+        .order('method')
+      if (error) throw error
+      const map: Record<string, string> = {}
+      const options: { id: string; name: string }[] = []
+      data?.forEach((pm: { id: string; method: string; display_name?: string | null }) => {
+        const raw = (pm.display_name && pm.display_name.trim()) || pm.method
+        // "PAYM001 - Cash" → "Cash" 만 표시
+        const name = raw.includes(' - ') ? raw.split(' - ').pop()!.trim() : raw
+        map[pm.id] = name
+        map[pm.method] = name
+        options.push({ id: pm.id, name })
+      })
+      setPaymentMethodMap(map)
+      setPaymentMethodOptions(options)
+    } catch (error) {
+      console.error('결제 방법 로드 오류:', error)
+    }
+  }
 
   const loadExpenses = async () => {
     try {
@@ -360,25 +395,7 @@ export default function ReservationExpenseManager({
       setExpenses(prev => prev.map(expense => 
         expense.id === editingExpense.id ? result.data : expense
       ))
-      
-      setEditingExpense(null)
-      setShowAddForm(false)
-      setFormData({
-        paid_to: '',
-        paid_for: '',
-        amount: '',
-        payment_method: '',
-        note: '',
-        image_url: '',
-        file_path: '',
-        custom_paid_to: '',
-        custom_paid_for: '',
-        reservation_id: reservationId || '',
-        event_id: '',
-        uploaded_files: []
-      })
-      setShowCustomPaidFor(false)
-      setShowCustomPaidTo(false)
+      closeEditModal()
       onExpenseUpdated?.()
       alert('예약 지출이 수정되었습니다.')
     } catch (error) {
@@ -412,7 +429,7 @@ export default function ReservationExpenseManager({
     }
   }
 
-  // 지출 수정 모드로 전환
+  // 지출 수정 모드로 전환 (모달로 열기)
   const handleEditExpense = (expense: ReservationExpense) => {
     setEditingExpense(expense)
     setFormData({
@@ -429,7 +446,28 @@ export default function ReservationExpenseManager({
       event_id: expense.event_id || '',
       uploaded_files: []
     })
-    setShowAddForm(true)
+    setShowEditModal(true)
+  }
+
+  const closeEditModal = () => {
+    setShowEditModal(false)
+    setEditingExpense(null)
+    setFormData({
+      paid_to: '',
+      paid_for: '',
+      amount: '',
+      payment_method: '',
+      note: '',
+      image_url: '',
+      file_path: '',
+      custom_paid_to: '',
+      custom_paid_for: '',
+      reservation_id: reservationId || '',
+      event_id: '',
+      uploaded_files: []
+    })
+    setShowCustomPaidFor(false)
+    setShowCustomPaidTo(false)
   }
 
 
@@ -528,16 +566,23 @@ export default function ReservationExpenseManager({
 
   // 총 금액 계산
   const totalAmount = expenses.reduce((sum, expense) => sum + expense.amount, 0)
+  const isLine = itemVariant === 'line'
 
+  const showTitle = !hideTitle || titleProp
+  const titleText = titleProp ?? t('expenseManagement')
   return (
     <div className="space-y-2 sm:space-y-3">
-      {/* 헤더 - 컴팩트 */}
-      <div className="flex flex-wrap items-center justify-between gap-1.5">
-        <div className="flex items-center gap-1 sm:gap-1.5 min-w-0">
-          <DollarSign className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 flex-shrink-0" />
-          <h3 className="text-[11px] font-semibold text-gray-900 truncate">{t('expenseManagement')}</h3>
+      {/* 헤더: 제목 왼쪽, 총액·추가 버튼 오른쪽 끝 */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {showTitle && (
+            <>
+              <DollarSign className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 flex-shrink-0" />
+              <h3 className="text-xs font-semibold text-gray-900 truncate">{titleText}</h3>
+            </>
+          )}
         </div>
-        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0 ml-auto">
+        <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
           <div className="text-[10px] sm:text-xs text-gray-600">
             {t('totalAmountLabel')}: <span className="font-semibold text-green-600">{formatCurrency(totalAmount)}</span>
           </div>
@@ -569,8 +614,8 @@ export default function ReservationExpenseManager({
         </div>
       </div>
 
-      {/* 지출 추가/수정 폼 - 모바일 컴팩트 */}
-      {showAddForm && (
+      {/* 지출 추가 폼 - 인라인 (추가만, 수정은 모달 사용) */}
+      {showAddForm && !editingExpense && (
         <div className="bg-white border rounded-lg p-3 sm:p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3 sm:mb-4">
             <h4 className="text-base sm:text-lg font-medium text-gray-900">
@@ -611,7 +656,7 @@ export default function ReservationExpenseManager({
                 {!showCustomPaidTo ? (
                   <div className="space-y-2">
                     <select
-                      value={formData.paid_to}
+                      value={formData.paid_to || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, paid_to: e.target.value }))}
                       className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       required
@@ -633,7 +678,7 @@ export default function ReservationExpenseManager({
                   <div className="space-y-2">
                     <input
                       type="text"
-                      value={formData.custom_paid_to}
+                      value={formData.custom_paid_to ?? ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, custom_paid_to: e.target.value }))}
                       placeholder={t('newPaidToPlaceholder')}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -661,7 +706,7 @@ export default function ReservationExpenseManager({
                 {!showCustomPaidFor ? (
                   <div className="space-y-2">
                     <select
-                      value={formData.paid_for}
+                      value={formData.paid_for || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, paid_for: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       required
@@ -683,7 +728,7 @@ export default function ReservationExpenseManager({
                   <div className="space-y-2">
                     <input
                       type="text"
-                      value={formData.custom_paid_for}
+                      value={formData.custom_paid_for ?? ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, custom_paid_for: e.target.value }))}
                       placeholder={t('newPaidForPlaceholder')}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -710,7 +755,7 @@ export default function ReservationExpenseManager({
                 </label>
                 <input
                   type="number"
-                  value={formData.amount}
+                  value={formData.amount ?? ''}
                   onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
                   placeholder="0"
                   min="0"
@@ -720,23 +765,21 @@ export default function ReservationExpenseManager({
                 />
               </div>
 
-              {/* 결제방법 */}
+              {/* 결제방법 - payment_methods 테이블 기준 */}
               <div>
                 <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
                   {t('form.paymentMethod')}
                 </label>
-                  <select
-                    value={formData.payment_method}
-                    onChange={(e) => setFormData(prev => ({ ...prev, payment_method: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">{t('selectOptions.pleaseSelect')}</option>
-                    <option value="cash">{t('paymentMethods.cash')}</option>
-                    <option value="creditCard">{t('paymentMethods.creditCard')}</option>
-                    <option value="debitCard">{t('paymentMethods.debitCard')}</option>
-                    <option value="mobilePayment">{t('paymentMethods.mobilePayment')}</option>
-                    <option value="other">{t('paymentMethods.other')}</option>
-                  </select>
+                <select
+                  value={formData.payment_method || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, payment_method: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">{t('selectOptions.pleaseSelect')}</option>
+                  {paymentMethodOptions.map((pm) => (
+                    <option key={pm.id} value={pm.id}>{pm.name}</option>
+                  ))}
+                </select>
               </div>
 
               {/* 예약 ID */}
@@ -745,7 +788,7 @@ export default function ReservationExpenseManager({
                   {t('form.reservationId')}
                 </label>
                 <select
-                  value={formData.reservation_id}
+                  value={formData.reservation_id || ''}
                   onChange={(e) => setFormData(prev => ({ ...prev, reservation_id: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
@@ -765,7 +808,7 @@ export default function ReservationExpenseManager({
                 </label>
                 <input
                   type="text"
-                  value={formData.event_id}
+                  value={formData.event_id || ''}
                   onChange={(e) => setFormData(prev => ({ ...prev, event_id: e.target.value }))}
                   placeholder={t('enterEventId')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -779,7 +822,7 @@ export default function ReservationExpenseManager({
                 {t('memo')}
               </label>
               <textarea
-                value={formData.note}
+                value={formData.note ?? ''}
                 onChange={(e) => setFormData(prev => ({ ...prev, note: e.target.value }))}
                 placeholder={t('memoPlaceholder')}
                 rows={3}
@@ -950,75 +993,59 @@ export default function ReservationExpenseManager({
           <p className="text-gray-500 mt-2">{t('loading')}</p>
         </div>
       ) : expenses.length > 0 ? (
-        <div className="space-y-3 sm:space-y-2">
+        <div className={isLine ? 'divide-y divide-gray-200' : 'space-y-1.5'}>
           {expenses.map((expense) => (
-            <div key={expense.id} className="border border-gray-200 rounded-xl p-4 sm:p-3 bg-white hover:bg-gray-50/80 shadow-sm active:bg-gray-100 transition-colors">
-              {/* 1행: 결제내용 + 금액 + 상태 */}
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-gray-900 text-sm sm:text-base truncate">{expense.paid_for}</p>
-                  <p className="text-lg sm:text-xl font-bold text-green-600 mt-0.5">
-                    {formatCurrency(expense.amount)}
-                  </p>
+            <div key={expense.id} className={isLine ? 'py-2 first:pt-0' : 'border border-gray-200 rounded-lg px-2.5 py-2 bg-white hover:bg-gray-50/80 shadow-sm transition-colors'}>
+              {/* 1행: 결제내용 + 금액 + 상태 + 액션 */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1 flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-gray-900 text-xs truncate">{expense.paid_for}</span>
+                  <span className="text-sm font-semibold text-green-600 flex-shrink-0">{formatCurrency(expense.amount)}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${getStatusColor(expense.status)}`}>{getStatusText(expense.status)}</span>
+                  {expense.payment_method && (
+                    <span className="text-[10px] text-gray-500 flex-shrink-0">
+                      {paymentMethodMap[expense.payment_method] || expense.payment_method}
+                    </span>
+                  )}
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(expense.status)}`}>
-                    {getStatusText(expense.status)}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleEditExpense(expense); }}
-                      className="p-2 min-w-[44px] min-h-[44px] sm:p-1 sm:min-w-0 sm:min-h-0 rounded-lg text-gray-500 hover:text-blue-600 hover:bg-blue-50 flex items-center justify-center"
-                      title={t('buttons.edit')}
-                    >
-                      <Edit size={18} className="sm:w-[14px] sm:h-[14px]" />
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDeleteExpense(expense.id); }}
-                      className="p-2 min-w-[44px] min-h-[44px] sm:p-1 sm:min-w-0 sm:min-h-0 rounded-lg text-gray-500 hover:text-red-600 hover:bg-red-50 flex items-center justify-center"
-                      title={t('buttons.delete')}
-                    >
-                      <Trash2 size={18} className="sm:w-[14px] sm:h-[14px]" />
-                    </button>
-                  </div>
+                <div className="flex items-center gap-0.5 flex-shrink-0">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleEditExpense(expense); }}
+                    className="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                    title={t('buttons.edit')}
+                  >
+                    <Edit size={14} />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteExpense(expense.id); }}
+                    className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
+                    title={t('buttons.delete')}
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
               </div>
-              {/* 2행: 라벨/값 그리드 (모바일 가독성) */}
-              <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs sm:text-sm text-gray-600 border-t border-gray-100 pt-3">
-                <span className="text-gray-400">결제처</span>
+              {/* 2행: 결제처 · 제출일 · 제출자 (한 줄) */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-[10px] text-gray-500">
                 <span className="truncate">{expense.paid_to}</span>
-                <span className="text-gray-400">제출일</span>
                 <span>{new Date(expense.submit_on).toLocaleDateString('ko-KR')}</span>
-                <span className="text-gray-400">제출자</span>
                 <span className="truncate">{teamMembers[expense.submitted_by] || expense.submitted_by}</span>
-                {expense.payment_method && (
-                  <>
-                    <span className="text-gray-400">결제방법</span>
-                    <span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs w-fit">{expense.payment_method}</span>
-                  </>
-                )}
-              </div>
-              {expense.image_url && (
-                <div className="mt-3 pt-3 border-t border-gray-100">
+                {expense.image_url && (
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); window.open(expense.image_url!, '_blank'); }}
-                    className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800 text-sm font-medium py-1.5"
+                    className="text-blue-600 hover:underline inline-flex items-center gap-0.5"
                   >
-                    <Eye size={14} />
+                    <Eye size={10} />
                     {t('viewReceipt')}
                   </button>
-                </div>
-              )}
-              {expense.reservations && (
-                <p className="mt-2 text-xs text-gray-500">
-                  {t('reservation')}: {expense.reservations.customer_name} ({expense.reservations.product_id})
-                </p>
+                )}
+              </div>
+              {!reservationId && expense.reservations && (
+                <p className="mt-0.5 text-[10px] text-gray-400 truncate">{expense.reservations.customer_name} · {expense.reservations.product_id}</p>
               )}
               {expense.note && (
-                <div className="mt-2 text-sm text-gray-600 bg-gray-50 p-2.5 rounded-lg">
-                  {expense.note}
-                </div>
+                <p className="mt-0.5 text-[10px] text-gray-500 truncate max-w-full" title={expense.note}>{expense.note}</p>
               )}
             </div>
           ))}
@@ -1029,6 +1056,132 @@ export default function ReservationExpenseManager({
           <p className="text-xs">{t('noExpensesMessage')}</p>
         </div>
       )}
+
+      {/* 예약 지출 수정 모달 */}
+      <Dialog open={showEditModal} onOpenChange={(open) => { if (!open) closeEditModal(); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{t('editExpense')}</DialogTitle>
+          </DialogHeader>
+          {editingExpense && (
+            <div className="space-y-4 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('paidTo')} <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    value={formData.custom_paid_to || formData.paid_to || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, paid_to: e.target.value, custom_paid_to: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('paidFor')} <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    value={formData.custom_paid_for || formData.paid_for || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, paid_for: e.target.value, custom_paid_for: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('amount')} <span className="text-red-500">*</span></label>
+                  <input
+                    type="number"
+                    value={formData.amount ?? ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
+                    min="0"
+                    step="0.01"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.paymentMethod')}</label>
+                  <select
+                    value={formData.payment_method || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, payment_method: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">{t('selectOptions.pleaseSelect')}</option>
+                    {paymentMethodOptions.map((pm) => (
+                      <option key={pm.id} value={pm.id}>{pm.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {!reservationId && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.reservationId')}</label>
+                    <select
+                      value={formData.reservation_id || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, reservation_id: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="">{t('selectOptions.pleaseSelect')}</option>
+                      {reservations.map((reservation: Reservation) => (
+                        <option key={reservation.id} value={reservation.id}>
+                          {reservation.customers.name} ({reservation.product_id})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.eventId')}</label>
+                    <input
+                      type="text"
+                      value={formData.event_id || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, event_id: e.target.value }))}
+                      placeholder={t('enterEventId')}
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('memo')}</label>
+                <textarea
+                  value={formData.note ?? ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, note: e.target.value }))}
+                  placeholder={t('memoPlaceholder')}
+                  rows={3}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              {formData.image_url && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">{t('form.image')}:</span>
+                  <button
+                    type="button"
+                    onClick={() => window.open(formData.image_url!, '_blank')}
+                    className="text-blue-600 hover:underline text-sm"
+                  >
+                    <Eye size={14} className="inline mr-1" />
+                    {t('viewReceipt')}
+                  </button>
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={closeEditModal}
+                  className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  {t('buttons.cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAddExpense()}
+                  disabled={uploading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {uploading ? t('processing') : t('buttons.edit')}
+                </button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

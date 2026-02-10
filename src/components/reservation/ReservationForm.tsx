@@ -3626,6 +3626,36 @@ export default function ReservationForm({
               </button>
             )}
             <button
+              type="submit"
+              form="reservation-edit-form"
+              disabled={isSubmitting}
+              className="px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('edit') : tCommon('add'))}
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-3 py-2 text-sm bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
+            >
+              {tCommon('cancel')}
+            </button>
+            {reservation && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm(t('deleteConfirm'))) {
+                    onDelete(reservation.id);
+                    onCancel();
+                  }
+                }}
+                className="px-3 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 flex items-center gap-1.5"
+              >
+                <Trash2 size={16} />
+                {tCommon('delete')}
+              </button>
+            )}
+            <button
               type="button"
               onClick={() => window.history.back()}
               className="px-2 py-1.5 rounded bg-gray-100 hover:bg-gray-200 text-xs"
@@ -3635,7 +3665,7 @@ export default function ReservationForm({
           </div>
         </div>
 
-        <form ref={reservationFormRef} onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        <form id="reservation-edit-form" ref={reservationFormRef} onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col overflow-hidden">
           <div className={`flex-1 min-h-0 overflow-x-hidden p-3 sm:p-0 sm:space-y-6 ${isModal ? 'overflow-y-auto' : 'lg:overflow-hidden lg:flex lg:flex-col lg:min-h-0'} ${isModal ? '' : 'lg:pb-0'} pb-2`}>
           <div className={`grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4 lg:gap-4 lg:grid-rows-1 lg:min-h-0 ${isModal ? 'lg:h-auto' : 'lg:flex-1 lg:h-[calc(100vh-var(--header-height,4rem)-6rem)] lg:max-h-[calc(100vh-var(--header-height,4rem)-6rem)]'}`}>
             {/* 1열: 고객 정보 + Follow up */}
@@ -3985,38 +4015,35 @@ export default function ReservationForm({
               )}
               </div>
 
-              {/* 3열: 예약 옵션 · 입금 · 지출 (한 줄씩) */}
+              {/* 3열: 예약 옵션 · 입금 · 지출 (각각 별도 박스, 타이틀 한 번, 내역은 가로줄 구분) */}
               <div className="lg:flex lg:flex-col lg:gap-4 lg:min-h-0 lg:overflow-y-auto max-lg:contents">
               {reservation && (
                 <>
-                  <div className="space-y-3 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-3 bg-gray-50/50 max-lg:order-6">
-                    <h3 className="text-xs font-medium text-gray-900 mb-1.5">예약 옵션</h3>
-                    <div id="options-section">
-                      <ReservationOptionsSection 
-                        reservationId={reservation.id} 
-                        onTotalPriceChange={setReservationOptionsTotalPrice}
-                      />
-                    </div>
+                  <div id="options-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">
+                    <ReservationOptionsSection
+                      reservationId={reservation.id}
+                      onTotalPriceChange={setReservationOptionsTotalPrice}
+                      title="예약 옵션"
+                      itemVariant="line"
+                    />
                   </div>
-                  <div className="space-y-3 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-3 bg-gray-50/50 max-lg:order-6">
-                    <h3 className="text-xs font-medium text-gray-900 mb-1.5">입금 내역</h3>
-                    <div id="payment-section" className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
-                      <PaymentRecordsList
-                        reservationId={reservation.id}
-                        customerName={customers.find(c => c.id === reservation.customerId)?.name || 'Unknown'}
-                      />
-                    </div>
+                  <div id="payment-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">
+                    <PaymentRecordsList
+                      reservationId={reservation.id}
+                      customerName={customers.find(c => c.id === reservation.customerId)?.name || 'Unknown'}
+                      title="입금 내역"
+                      itemVariant="line"
+                    />
                   </div>
-                  <div className="space-y-3 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-3 bg-gray-50/50 max-lg:order-6">
-                    <h3 className="text-xs font-medium text-gray-900 mb-1.5">예약 지출</h3>
-                    <div id="expense-section" className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
-                      <ReservationExpenseManager
-                        reservationId={reservation.id}
-                        submittedBy={reservation.addedBy}
-                        userRole="admin"
-                        onExpenseUpdated={() => setExpenseUpdateTrigger(prev => prev + 1)}
-                      />
-                    </div>
+                  <div id="expense-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">
+                    <ReservationExpenseManager
+                      reservationId={reservation.id}
+                      submittedBy={reservation.addedBy}
+                      userRole="admin"
+                      onExpenseUpdated={() => setExpenseUpdateTrigger(prev => prev + 1)}
+                      title="예약 지출"
+                      itemVariant="line"
+                    />
                   </div>
                   {/* 후기 관리 - 3열 */}
                   {layout === 'page' && reservation && (
