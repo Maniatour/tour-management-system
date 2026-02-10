@@ -1793,7 +1793,8 @@
         "tour": "Tour",
         "pricing": "Reservation Price",
         "deposit": "Deposit",
-        "balance": "Balance"
+        "balance": "Balance",
+        "followUpCancel": "Follow up (Cancel)"
       },
       "pricingSubTabs": {
         "noPrice": "① No stored total price",
@@ -1804,6 +1805,7 @@
       "manualPricing": "① Reservations with no stored total price, ② Reservations where **stored total** and **calculated total** (from current options) **differ**",
       "manualDeposit": "① Reservations that **have payment/deposit** but are **not assigned to a tour**, ② **Confirmed** reservations with **no payment record**",
       "manualBalance": "Reservations whose **tour date has passed** and **balance is greater than 0** (outstanding balance)",
+      "manualFollowUpCancel": "**Cancelled** reservations, sorted by **most recently updated** status first.",
       "empty": "No items in this category."
     }
   },

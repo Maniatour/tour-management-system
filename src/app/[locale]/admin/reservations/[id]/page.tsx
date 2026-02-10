@@ -8,7 +8,7 @@ import ReservationForm from '@/components/reservation/ReservationForm'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { Reservation, Customer } from '@/types/reservation'
 import { useAuth } from '@/contexts/AuthContext'
-import { Eye, X, GripVertical, Menu, User, Calendar, Users, DollarSign, Settings, CreditCard, Receipt, Star } from 'lucide-react'
+import { Eye, X, GripVertical, Menu, User, Calendar, Users, DollarSign, Settings, CreditCard, Receipt, Star, MessageSquare } from 'lucide-react'
 import { getCustomerName } from '@/utils/reservationUtils'
 
 // 리사이즈 가능한 모달 컴포넌트
@@ -437,7 +437,7 @@ export default function ReservationDetailsPage() {
     }
 
     return (
-      <div className="space-y-6">
+      <div className="flex flex-col min-h-0 max-h-[calc(100vh-var(--header-height,4rem)-3rem)] lg:max-h-[calc(100vh-var(--header-height,4rem)-4rem)]">
         <ReservationForm
           reservation={reservation}
           customers={(customers as Customer[]) || []}
@@ -498,7 +498,8 @@ export default function ReservationDetailsPage() {
                     { id: 'options-section', label: '옵션', icon: Settings },
                     { id: 'payment-section', label: '입금 내역', icon: CreditCard },
                     { id: 'expense-section', label: '지출 내역', icon: Receipt },
-                    { id: 'review-section', label: '리뷰 관리', icon: Star }
+                    { id: 'review-section', label: '리뷰 관리', icon: Star },
+                    { id: 'follow-up-section', label: 'Follow up', icon: MessageSquare }
                   ].map((section) => {
                     const Icon = section.icon
                     const isActive = activeSection === section.id

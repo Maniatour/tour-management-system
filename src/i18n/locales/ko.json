@@ -1802,7 +1802,8 @@
         "tour": "투어",
         "pricing": "예약 가격",
         "deposit": "입금",
-        "balance": "Balance"
+        "balance": "Balance",
+        "followUpCancel": "Follow up (Cancel)"
       },
       "pricingSubTabs": {
         "noPrice": "① 총 가격이 저장되지 않은 예약",
@@ -1813,6 +1814,7 @@
       "manualPricing": "① 총 가격이 저장되지 않은 예약, ② 저장된 총 가격과 현재 옵션으로 계산한 금액이 **다른** 예약",
       "manualDeposit": "① 입금/결제 기록은 있는데 **투어에 배정되지 않은** 예약, ② **확정**됐는데 **입금 기록이 없는** 예약",
       "manualBalance": "**투어일이 이미 지난** 예약 중 **잔액이 0보다 큰** 예약 (미수금)",
+      "manualFollowUpCancel": "**취소된** 예약 목록 (상태가 가장 최근에 변경된 순)",
       "empty": "해당 항목이 없습니다."
     }
   },

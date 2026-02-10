@@ -237,7 +237,7 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
       {/* 옵션 목록 */}
       <div className="space-y-3">
         {reservationOptions.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-6 text-gray-500 text-xs">
             {t('noOptions')}
           </div>
         ) : (

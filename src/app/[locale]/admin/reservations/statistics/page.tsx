@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
-import { Calendar, BarChart3, TrendingUp, Users, Package, Link, CheckCircle, Clock, XCircle, Receipt, Search } from 'lucide-react'
+import { Calendar, BarChart3, TrendingUp, Users, Package, Link, CheckCircle, Clock, XCircle, Receipt, Search, DollarSign } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useReservationData } from '@/hooks/useReservationData'
 import { 
@@ -14,6 +14,7 @@ import {
 import TourStatisticsTab from '@/components/statistics/TourStatisticsTab'
 import ReservationSettlementTab from '@/components/statistics/ReservationSettlementTab'
 import ChannelSettlementTab from '@/components/statistics/ChannelSettlementTab'
+import CashReportTab from '@/components/reports/CashReportTab'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 
@@ -23,7 +24,7 @@ interface AdminReservationStatisticsProps {
 
 type TimeRange = 'daily' | 'monthly' | 'yearly'
 type ChartType = 'channel' | 'product' | 'trend'
-type TabType = 'reservations' | 'tours' | 'settlement' | 'channelSettlement'
+type TabType = 'reservations' | 'tours' | 'settlement' | 'channelSettlement' | 'cash'
 
 interface StatisticsData {
   totalReservations: number
@@ -64,7 +65,7 @@ const getDefaultDateRange = () => {
   return { start: thirtyDaysAgo.toISOString().split('T')[0], end: today.toISOString().split('T')[0] }
 }
 
-const VALID_TABS = ['reservations', 'tours', 'settlement', 'channelSettlement'] as const
+const VALID_TABS = ['reservations', 'tours', 'settlement', 'channelSettlement', 'cash'] as const
 
 export default function AdminReservationStatistics({ }: AdminReservationStatisticsProps) {
   const t = useTranslations('reservations')
@@ -515,7 +516,8 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                 { key: 'reservations', label: '예약 통계', icon: BarChart3 },
                 { key: 'tours', label: '투어 통계', icon: TrendingUp },
                 { key: 'settlement', label: '예약 정산', icon: Receipt },
-                { key: 'channelSettlement', label: '채널별 정산', icon: Receipt }
+                { key: 'channelSettlement', label: '채널별 정산', icon: Receipt },
+                { key: 'cash', label: '현금 관리', icon: DollarSign }
               ].map(({ key, label, icon: Icon }) => (
                 <button
                   key={key}
@@ -560,7 +562,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
       <div className="bg-white p-3 sm:p-4 rounded-lg shadow-sm border border-gray-200">
         <div className="flex flex-col gap-3 sm:gap-4">
           {/* 1. 채널 선택 */}
-          {activeTab !== 'channelSettlement' && (
+          {activeTab !== 'channelSettlement' && activeTab !== 'cash' && (
             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
               <label className="text-xs sm:text-sm font-medium text-gray-700 whitespace-nowrap">채널 선택:</label>
               <select
@@ -924,6 +926,14 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
           selectedStatuses={selectedStatuses}
           searchQuery={searchQuery}
           isSuper={isSuper}
+        />
+      )}
+
+      {/* 현금 관리 탭 (admin/reports와 동일) */}
+      {activeTab === 'cash' && (
+        <CashReportTab 
+          dateRange={dateRange} 
+          period={timeRange === 'yearly' ? 'yearly' : timeRange === 'monthly' ? 'monthly' : 'daily'}
         />
       )}
     </div>

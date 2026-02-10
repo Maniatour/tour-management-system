@@ -20,6 +20,7 @@ import PaymentRecordsList from '@/components/PaymentRecordsList'
 import ReservationExpenseManager from '@/components/ReservationExpenseManager'
 import ReservationOptionsSection from '@/components/reservation/ReservationOptionsSection'
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
+import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import { getOptionalOptionsForProduct } from '@/utils/reservationUtils'
 import { getFallbackOtaSalePrice } from '@/utils/choicePricingMatcher'
@@ -3559,10 +3560,10 @@ export default function ReservationForm({
   const isModal = layout !== 'page'
 
   return (
-    <div className={isModal ? "fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4 max-lg:items-stretch max-lg:p-0" : "w-full"}>
+    <div className={isModal ? "fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4 max-lg:items-stretch max-lg:p-0" : "w-full min-h-0 flex-1 flex flex-col"}>
       <div className={isModal 
         ? "bg-white rounded-none sm:rounded-lg p-0 sm:p-4 w-full max-w-full h-full max-h-full max-lg:h-[100dvh] max-lg:max-h-[100dvh] max-lg:flex max-lg:flex-col max-lg:overflow-hidden sm:w-[90vw] sm:max-h-[90vh] lg:block lg:overflow-y-auto"
-        : "bg-white rounded-lg p-2 sm:p-4 w-full"}
+        : "bg-white rounded-lg p-2 sm:p-4 w-full min-h-0 flex-1 flex flex-col overflow-hidden"}
       >
         {/* 헤더: 모바일에서 스티키, 데스크톱 기존 */}
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center flex-shrink-0 p-3 sm:p-0 sm:mb-2 sm:space-y-0 space-y-3 border-b border-gray-200 max-lg:bg-white max-lg:sticky max-lg:top-0 max-lg:z-10 max-lg:shadow-sm">
@@ -3634,11 +3635,12 @@ export default function ReservationForm({
           </div>
         </div>
 
-        <form ref={reservationFormRef} onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col overflow-hidden lg:overflow-visible">
-          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-0 sm:space-y-6 lg:flex-none lg:min-h-0 pb-2">
-          <div className={`grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4 lg:gap-4 lg:grid-rows-1 ${isModal ? 'lg:h-auto' : 'lg:h-[940px]'}`}>
-            {/* 1. 고객 정보 */}
-            <div id="customer-section" className={`space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 lg:col-span-1 lg:row-span-1 bg-gray-50/50 max-lg:order-1 ${isModal ? 'lg:h-auto' : 'lg:h-[940px]'}`}>
+        <form ref={reservationFormRef} onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div className={`flex-1 min-h-0 overflow-x-hidden p-3 sm:p-0 sm:space-y-6 ${isModal ? 'overflow-y-auto' : 'lg:overflow-hidden lg:flex lg:flex-col lg:min-h-0'} ${isModal ? '' : 'lg:pb-0'} pb-2`}>
+          <div className={`grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4 lg:gap-4 lg:grid-rows-1 lg:min-h-0 ${isModal ? 'lg:h-auto' : 'lg:flex-1 lg:h-[calc(100vh-var(--header-height,4rem)-6rem)] lg:max-h-[calc(100vh-var(--header-height,4rem)-6rem)]'}`}>
+            {/* 1열: 고객 정보 + Follow up */}
+            <div className="lg:col-span-1 lg:flex lg:flex-col lg:gap-4 max-lg:contents">
+            <div id="customer-section" className={`space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-1 lg:h-auto lg:flex-none`}>
               <div>
                 <h3 className="text-sm font-medium text-gray-900 mb-2">
                   고객 정보
@@ -3721,7 +3723,7 @@ export default function ReservationForm({
                       </div>
                       
                       <div ref={languageDropdownRef}>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">언어</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">언어</label>
                         <div className="relative">
                           <button
                             type="button"
@@ -3771,7 +3773,7 @@ export default function ReservationForm({
                       </div>
                       
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">비상연락처</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">비상연락처</label>
                         <input
                           type="tel"
                           value={formData.customerEmergencyContact}
@@ -3781,7 +3783,7 @@ export default function ReservationForm({
                       </div>
                       
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">주소</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">주소</label>
                         <input
                           type="text"
                           value={formData.customerAddress}
@@ -3791,7 +3793,7 @@ export default function ReservationForm({
                       </div>
                       
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">특별요청</label>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">특별요청</label>
                         <textarea
                           value={formData.customerSpecialRequests}
                           onChange={(e) => setFormData(prev => ({ ...prev, customerSpecialRequests: e.target.value }))}
@@ -3801,7 +3803,7 @@ export default function ReservationForm({
                       </div>
                       
                       <div className="flex items-center space-x-2">
-                        <label className="block text-sm font-medium text-gray-700">상태</label>
+                        <label className="block text-xs font-medium text-gray-700">상태</label>
                         <button
                           type="button"
                           onClick={() => setFormData(prev => ({
@@ -3830,10 +3832,55 @@ export default function ReservationForm({
               </div>
             </div>
 
-            {/* 데스크톱: 2·5·6 한 컬럼에 내용 높이만 사용, 예약 정보 바로 아래 가격/예약옵션 */}
-            <div className="col-span-1 lg:col-span-2 lg:col-start-2 lg:flex lg:flex-col lg:gap-4 lg:self-start max-lg:contents">
-              {/* 2. 예약 정보 (투어 정보, 참가자) */}
-              <div className="space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-2">
+            {/* Follow up - 1열 고객 정보 아래 */}
+            {layout === 'page' && reservation && (
+              <div id="follow-up-section" className="max-lg:order-9 max-lg:mt-4">
+                <ReservationFollowUpSection reservationId={reservation.id} status={formData.status as string} />
+              </div>
+            )}
+
+            {/* 편집/취소/삭제 버튼 - Follow up 아래 (1열 하단) */}
+            <div className="w-full border border-gray-200 rounded-xl p-3 bg-white shadow-sm max-lg:order-7 flex-shrink-0">
+              <div className="flex flex-row items-center gap-2">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 min-w-0 bg-blue-600 text-white py-2.5 px-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                >
+                  {isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('edit') : tCommon('add'))}
+                </button>
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  className="flex-1 min-w-0 bg-gray-300 text-gray-700 py-2.5 px-3 rounded-lg hover:bg-gray-400 text-sm font-medium"
+                >
+                  {tCommon('cancel')}
+                </button>
+                {reservation && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm(t('deleteConfirm'))) {
+                        onDelete(reservation.id);
+                        onCancel();
+                      }
+                    }}
+                    className="shrink-0 px-3 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
+                  >
+                    <Trash2 size={16} className="inline mr-1" />
+                    {tCommon('delete')}
+                  </button>
+                )}
+              </div>
+            </div>
+            </div>
+
+            {/* 데스크톱: 2열 예약정보+연결된투어 | 3열 예약옵션/입금/지출/후기관리 */}
+            <div className="col-span-1 lg:col-span-2 lg:col-start-2 lg:grid lg:grid-cols-2 lg:gap-4 lg:min-h-0 max-lg:contents">
+              {/* 2열: 예약 정보 + 연결된 투어 */}
+              <div className="lg:flex lg:flex-col lg:gap-4 lg:min-h-0 max-lg:contents">
+              {/* 예약 정보 (투어 정보, 참가자) */}
+              <div className="space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:pt-4 sm:px-4 sm:pb-1 bg-gray-50/50 max-lg:order-2 lg:min-h-0 lg:flex-none lg:h-auto">
                 <div className="max-lg:flex max-lg:items-center max-lg:justify-between max-lg:gap-2 lg:block mb-2 lg:mb-0">
                   <h3 className="text-sm font-medium text-gray-900 max-lg:mb-0">
                     예약 정보
@@ -3854,8 +3901,9 @@ export default function ReservationForm({
                     </select>
                   </div>
                 </div>
-                {/* 상품/초이스·채널 선택 모달 열기 버튼 - 상품 뱃지 + 초이스별 결과값 뱃지 */}
-                <div className="flex flex-wrap gap-2 mb-3">
+                {/* 1번째 줄: 상품명 및 초이스 */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">상품 · 초이스</label>
                   <button
                     type="button"
                     onClick={() => setShowProductChoiceModal(true)}
@@ -3863,7 +3911,6 @@ export default function ReservationForm({
                   >
                     {formData.productId ? (
                       <>
-                        {/* 상품 뱃지 1개 - 채널 선택 버튼과 동일 크기 */}
                         <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-amber-100 text-amber-800 border border-amber-200 text-xs font-medium truncate max-w-[200px]" title={(() => {
                           const p = products.find((p: { id: string }) => p.id === formData.productId)
                           return p ? (p as { name_ko?: string; name?: string }).name_ko || (p as { name?: string }).name || formData.productId : formData.productId
@@ -3873,7 +3920,6 @@ export default function ReservationForm({
                             return product ? (product as { name_ko?: string; name?: string }).name_ko || (product as { name?: string }).name || formData.productId : formData.productId
                           })()}
                         </span>
-                        {/* 초이스별 결과값만 뱃지 */}
                         {Array.isArray(formData.selectedChoices) && formData.selectedChoices.length > 0 && formData.selectedChoices.map((sc: { choice_id: string; option_id: string; option_name_ko?: string; option_key?: string }) => {
                           const label = (sc as { option_name_ko?: string; option_key?: string }).option_name_ko
                             || (sc as { option_name_ko?: string; option_key?: string }).option_key
@@ -3893,19 +3939,9 @@ export default function ReservationForm({
                       <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-amber-100 text-amber-800 border border-amber-200 text-xs font-medium">{t('form.openProductChoice')}</span>
                     )}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowChannelModal(true)}
-                    className="px-3 py-1.5 text-xs font-medium bg-sky-100 text-sky-800 border border-sky-200 rounded-lg hover:bg-sky-200 text-left max-w-full min-w-0"
-                  >
-                    <span className="truncate block">
-                      {formData.channelId
-                        ? (channels.find((c: { id: string }) => c.id === formData.channelId)?.name ?? formData.channelId)
-                        : t('form.openChannelSelect')}
-                    </span>
-                  </button>
                 </div>
-                <div id="tour-info-section">
+                {/* 2·3·4번째 줄: 투어 날짜/시간, 채널/픽업시간, 픽업 호텔 */}
+                <div id="tour-info-section" className="space-y-4">
                   <TourInfoSection
                     formData={formData}
                     setFormData={setFormData}
@@ -3913,6 +3949,20 @@ export default function ReservationForm({
                     sanitizeTimeInput={sanitizeTimeInput}
                     t={t}
                     allowPastDate={allowPastDateEdit}
+                    channelSlot={
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">채널</label>
+                        <button
+                          type="button"
+                          onClick={() => setShowChannelModal(true)}
+                          className="w-full px-3 py-1.5 text-xs font-medium bg-sky-100 text-sky-800 border border-sky-200 rounded-lg hover:bg-sky-200 text-left truncate"
+                        >
+                          {formData.channelId
+                            ? (channels.find((c: { id: string }) => c.id === formData.channelId)?.name ?? formData.channelId)
+                            : t('form.openChannelSelect')}
+                        </button>
+                      </div>
+                    }
                   />
                 </div>
                 <div id="participants-section">
@@ -3924,96 +3974,63 @@ export default function ReservationForm({
                 </div>
               </div>
 
-              {/* 6. 예약 옵션 · 입금 · 지출 */}
+              {/* 연결된 투어 - 2열 하단 */}
+              {layout === 'page' && reservation && (
+                <div className="max-lg:mt-4 max-lg:order-5">
+                  <TourConnectionSection
+                    reservation={reservation}
+                    onTourCreated={() => {}}
+                  />
+                </div>
+              )}
+              </div>
+
+              {/* 3열: 예약 옵션 · 입금 · 지출 (한 줄씩) */}
+              <div className="lg:flex lg:flex-col lg:gap-4 lg:min-h-0 lg:overflow-y-auto max-lg:contents">
               {reservation && (
-                <div className="space-y-3 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-3 bg-gray-50/50 max-lg:order-6">
-                  <h3 className="text-xs font-medium text-gray-900 mb-1.5">
-                    예약 옵션 · 입금 · 지출
-                  </h3>
-                  <div className="space-y-3">
+                <>
+                  <div className="space-y-3 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-3 bg-gray-50/50 max-lg:order-6">
+                    <h3 className="text-xs font-medium text-gray-900 mb-1.5">예약 옵션</h3>
                     <div id="options-section">
                       <ReservationOptionsSection 
                         reservationId={reservation.id} 
                         onTotalPriceChange={setReservationOptionsTotalPrice}
                       />
                     </div>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                      <div id="payment-section">
-                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
-                          <PaymentRecordsList
-                            reservationId={reservation.id}
-                            customerName={customers.find(c => c.id === reservation.customerId)?.name || 'Unknown'}
-                          />
-                        </div>
-                      </div>
-                      <div id="expense-section">
-                        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
-                          <ReservationExpenseManager
-                            reservationId={reservation.id}
-                            submittedBy={reservation.addedBy}
-                            userRole="admin"
-                            onExpenseUpdated={() => setExpenseUpdateTrigger(prev => prev + 1)}
-                          />
-                        </div>
-                      </div>
+                  </div>
+                  <div className="space-y-3 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-3 bg-gray-50/50 max-lg:order-6">
+                    <h3 className="text-xs font-medium text-gray-900 mb-1.5">입금 내역</h3>
+                    <div id="payment-section" className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
+                      <PaymentRecordsList
+                        reservationId={reservation.id}
+                        customerName={customers.find(c => c.id === reservation.customerId)?.name || 'Unknown'}
+                      />
                     </div>
                   </div>
-                </div>
-              )}
-
-              {/* 연결된 투어 · 후기 관리 - 예약 옵션 아래 (page 레이아웃 시) */}
-              {layout === 'page' && reservation && (
-                <>
-                  <div className="mt-4">
-                    <TourConnectionSection
-                      reservation={reservation}
-                      onTourCreated={() => {}}
-                    />
+                  <div className="space-y-3 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-3 bg-gray-50/50 max-lg:order-6">
+                    <h3 className="text-xs font-medium text-gray-900 mb-1.5">예약 지출</h3>
+                    <div id="expense-section" className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
+                      <ReservationExpenseManager
+                        reservationId={reservation.id}
+                        submittedBy={reservation.addedBy}
+                        userRole="admin"
+                        onExpenseUpdated={() => setExpenseUpdateTrigger(prev => prev + 1)}
+                      />
+                    </div>
                   </div>
-                  <div id="review-section" className="mt-4">
-                    <ReviewManagementSection reservationId={reservation.id} />
-                  </div>
+                  {/* 후기 관리 - 3열 */}
+                  {layout === 'page' && reservation && (
+                    <div id="review-section" className="max-lg:order-8 max-lg:mt-4">
+                      <ReviewManagementSection reservationId={reservation.id} compact={true} />
+                    </div>
+                  )}
                 </>
               )}
-
-              {/* 편집/취소 버튼 박스 - 예약 옵션·입금·지출 아래 배치 (스크롤 시 보임) */}
-              <div className="w-full border border-gray-200 rounded-xl p-3 bg-white shadow-sm max-lg:order-7">
-                <div className="flex flex-row items-center gap-2">
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="flex-1 min-w-0 bg-blue-600 text-white py-2.5 px-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-                  >
-                    {isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('edit') : tCommon('add'))}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onCancel}
-                    className="flex-1 min-w-0 bg-gray-300 text-gray-700 py-2.5 px-3 rounded-lg hover:bg-gray-400 text-sm font-medium"
-                  >
-                    {tCommon('cancel')}
-                  </button>
-                  {reservation && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (confirm(t('deleteConfirm'))) {
-                          onDelete(reservation.id);
-                          onCancel();
-                        }
-                      }}
-                      className="shrink-0 px-3 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
-                    >
-                      <Trash2 size={16} className="inline mr-1" />
-                      {tCommon('delete')}
-                    </button>
-                  )}
-                </div>
               </div>
             </div>
 
             {/* 가격 정보 - 기존 상품/채널 선택 컬럼 자리 (제목은 PricingSection에서 버튼과 같은 줄로 표시) */}
-            <div id="pricing-section" className={`col-span-1 lg:col-span-2 space-y-2 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-3 ${isModal ? 'lg:h-auto' : 'lg:h-[940px]'}`}>
+            <div id="pricing-section" className={`col-span-1 lg:col-span-2 space-y-2 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-3 ${isModal ? 'lg:h-auto' : 'lg:min-h-0 lg:flex-1'}`}>
               {reservation?.id && (
                 <div className="text-xs text-gray-500 mb-2 pb-2 border-b border-gray-200">
                   reservation_pricing id: <span className="font-mono text-gray-700">{reservationPricingId ?? '(아직 저장되지 않음)'}</span>

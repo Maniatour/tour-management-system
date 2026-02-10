@@ -259,6 +259,21 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
                         'pending'
   }
 
+  // reservation_options 테이블의 status 변환: 'Canceled' 등 대문자/혼합 표기를 소문자 cancelled 등으로 통일
+  if (tableName === 'reservation_options' && converted.status) {
+    const optionStatusMap: { [key: string]: string } = {
+      'Canceled': 'cancelled',
+      'Cancel': 'cancelled',
+      'CANCELLED': 'cancelled',
+      'Active': 'active',
+      'ACTIVE': 'active',
+      'Refunded': 'refunded',
+      'REFUNDED': 'refunded'
+    }
+    const raw = String(converted.status).trim()
+    converted.status = optionStatusMap[raw] ?? optionStatusMap[raw.toLowerCase()] ?? raw.toLowerCase()
+  }
+
   // 기본값은 삽입 시에만 적용하도록 이 단계에서는 설정하지 않음
 
   return converted
@@ -866,6 +881,28 @@ export const flexibleSync = async (
 
         // 삽입 시 기본값 보완
         const prepared = applyInsertDefaults(targetTable, row, tableColumns)
+        // reservation_options: option_id, reservation_id NOT NULL 제약 위반 방지 — 비어 있는 행은 스킵
+        if (targetTable === 'reservation_options') {
+          const pre = prepared as Record<string, unknown>
+          const optionId = pre.option_id
+          const reservationId = pre.reservation_id
+          const hasOptionId = optionId != null && String(optionId).trim() !== ''
+          const hasReservationId = reservationId != null && String(reservationId).trim() !== ''
+          if (!hasOptionId || !hasReservationId) {
+            results.errors++
+            const skipMsg = `예약 옵션 행 스킵: option_id 또는 reservation_id 없음 (id: ${pre.id ?? 'unknown'})`
+            results.errorDetails.push(skipMsg)
+            onProgress?.({ type: 'warn', message: skipMsg })
+            processed++
+            onProgress?.({ type: 'progress', processed, total: totalRows, inserted: results.inserted, updated: results.updated, errors: results.errors })
+            if (rowsBuffer.length >= batchSize) {
+              await flush()
+              const batchDelayMs = totalRows > 5000 ? 10 : Math.min(50, Math.max(10, Math.floor(batchSize / 10)))
+              await new Promise(resolve => setTimeout(resolve, batchDelayMs))
+            }
+            continue
+          }
+        }
         rowsBuffer.push(prepared)
       } catch (error) {
         console.error('Error preparing row:', error)

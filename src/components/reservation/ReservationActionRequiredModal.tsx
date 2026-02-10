@@ -1,14 +1,14 @@
 'use client'
 
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react'
-import { X, AlertCircle, MapPin, DollarSign, CreditCard, Scale, HelpCircle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { X, AlertCircle, MapPin, DollarSign, CreditCard, Scale, HelpCircle, ChevronLeft, ChevronRight, XCircle } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import { ReservationCardItem } from '@/components/reservation/ReservationCardItem'
 import { calculateTotalPrice } from '@/utils/reservationUtils'
 import type { Reservation, Customer } from '@/types/reservation'
 
-export type ActionRequiredTabId = 'status' | 'tour' | 'pricing' | 'deposit' | 'balance'
+export type ActionRequiredTabId = 'status' | 'tour' | 'pricing' | 'deposit' | 'balance' | 'followUpCancel'
 export type PricingSubTabId = 'noPrice' | 'mismatch'
 
 interface ReservationActionRequiredModalProps {
@@ -87,7 +87,8 @@ const TABS: { id: ActionRequiredTabId; labelKey: string; icon: React.ElementType
   { id: 'tour', labelKey: 'actionRequired.tabs.tour', icon: MapPin },
   { id: 'pricing', labelKey: 'actionRequired.tabs.pricing', icon: DollarSign },
   { id: 'deposit', labelKey: 'actionRequired.tabs.deposit', icon: CreditCard },
-  { id: 'balance', labelKey: 'actionRequired.tabs.balance', icon: Scale }
+  { id: 'balance', labelKey: 'actionRequired.tabs.balance', icon: Scale },
+  { id: 'followUpCancel', labelKey: 'actionRequired.tabs.followUpCancel', icon: XCircle }
 ]
 
 const CARDS_PER_PAGE = 12 // 가로 4개 x 3행
@@ -227,6 +228,10 @@ export default function ReservationActionRequiredModal({
       const s = (r.status as string)?.trim?.() ?? ''
       return !s.toLowerCase().startsWith('cancelled')
     }
+    const isCancelled = (r: Reservation) => {
+      const s = (r.status as string)?.trim?.() ?? ''
+      return s.toLowerCase() === 'cancelled' || s.toLowerCase() === 'canceled'
+    }
 
     const statusList = reservations.filter(r =>
       tourDateWithin7Days(r) && statusPending(r)
@@ -244,6 +249,16 @@ export default function ReservationActionRequiredModal({
     const depositList = [...new Map([...depositNoTour.map(r => [r.id, r]), ...confirmedNoDeposit.map(r => [r.id, r])]).values()]
     const balanceList = reservations.filter(r => tourDateBeforeToday(r) && getBalance(r) > 0)
 
+    // 취소된 예약: 최신 상태 변경 순(updated_at 기준, 없으면 addedTime)
+    const followUpCancelList = reservations
+      .filter(r => isCancelled(r))
+      .slice()
+      .sort((a, b) => {
+        const aTime = a.updated_at || a.addedTime || ''
+        const bTime = b.updated_at || b.addedTime || ''
+        return bTime.localeCompare(aTime)
+      })
+
     return {
       status: statusList,
       tour: tourList,
@@ -251,7 +266,8 @@ export default function ReservationActionRequiredModal({
       pricingNoPrice: noPricing,
       pricingMismatch,
       deposit: depositList,
-      balance: balanceList
+      balance: balanceList,
+      followUpCancel: followUpCancelList
     }
   }, [
     reservations,
@@ -269,7 +285,8 @@ export default function ReservationActionRequiredModal({
     tour: filteredByTab.tour.length,
     pricing: filteredByTab.pricing.length,
     deposit: filteredByTab.deposit.length,
-    balance: filteredByTab.balance.length
+    balance: filteredByTab.balance.length,
+    followUpCancel: filteredByTab.followUpCancel.length
   }), [filteredByTab])
 
   const totalActionCount = useMemo(() =>
@@ -278,13 +295,14 @@ export default function ReservationActionRequiredModal({
       ...filteredByTab.tour.map(r => r.id),
       ...filteredByTab.pricing.map(r => r.id),
       ...filteredByTab.deposit.map(r => r.id),
-      ...filteredByTab.balance.map(r => r.id)
+      ...filteredByTab.balance.map(r => r.id),
+      ...filteredByTab.followUpCancel.map(r => r.id)
     ]).size
   , [filteredByTab])
 
   const currentList = activeTab === 'pricing'
     ? filteredByTab[pricingSubTab === 'noPrice' ? 'pricingNoPrice' : 'pricingMismatch']
-    : filteredByTab[activeTab]
+    : filteredByTab[activeTab as keyof typeof filteredByTab]
   const totalPages = Math.max(1, Math.ceil(currentList.length / CARDS_PER_PAGE))
   const safePage = Math.min(page, totalPages)
   const paginatedList = useMemo(
@@ -517,6 +535,10 @@ export default function ReservationActionRequiredModal({
                 <li className="flex gap-2">
                   <span className="font-medium text-gray-900 shrink-0">{t('actionRequired.tabs.balance')}:</span>
                   <span>{renderManualText(t('actionRequired.manualBalance'))}</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-medium text-gray-900 shrink-0">{t('actionRequired.tabs.followUpCancel')}:</span>
+                  <span>{renderManualText(t('actionRequired.manualFollowUpCancel'))}</span>
                 </li>
               </ul>
             </div>

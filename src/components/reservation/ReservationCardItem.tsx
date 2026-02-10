@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Calendar, MapPin, Users, DollarSign, Eye, Clock, Mail, ChevronDown, Edit, MessageSquare } from 'lucide-react'
+import { Plus, Calendar, MapPin, Users, DollarSign, Eye, Clock, Mail, ChevronDown, Edit, MessageSquare, X, FileText } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
 // @ts-expect-error - react-country-flag 라이브러리의 타입 정의가 없음
@@ -18,6 +18,7 @@ import {
 } from '@/utils/reservationUtils'
 import { ResidentStatusIcon } from '@/components/reservation/ResidentStatusIcon'
 import { ChoicesDisplay } from '@/components/reservation/ChoicesDisplay'
+import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
 import type { Reservation, Customer } from '@/types/reservation'
 
 interface ReservationCardItemProps {
@@ -141,6 +142,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   const router = useRouter()
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
+  const [followUpModalOpen, setFollowUpModalOpen] = useState(false)
   const statusDropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -623,6 +625,19 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               <span>고객 보기</span>
             </button>
 
+            {/* Follow up 버튼 - 모든 상태에서 표시 */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setFollowUpModalOpen(true)
+              }}
+              className="px-2 py-1 text-xs bg-amber-50 text-amber-700 rounded-md hover:bg-amber-100 transition-colors flex items-center space-x-1 border border-amber-200"
+              title="Follow up"
+            >
+              <FileText className="w-3 h-3" />
+              <span>Follow up</span>
+            </button>
+
             {/* 후기 관리 버튼 */}
             <button
               onClick={(e) => {
@@ -709,6 +724,40 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           </div>
         </div>
       </div>
+
+      {/* Follow up 모달 */}
+      {followUpModalOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50"
+          onClick={(e) => {
+            e.stopPropagation()
+            setFollowUpModalOpen(false)
+          }}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
+              <h3 className="text-base font-semibold text-gray-900">Follow up</h3>
+              <button
+                type="button"
+                onClick={() => setFollowUpModalOpen(false)}
+                className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                aria-label="닫기"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              <ReservationFollowUpSection
+                reservationId={reservation.id}
+                status={reservation.status as string}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }, (prevProps, nextProps) => {

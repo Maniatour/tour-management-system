@@ -388,6 +388,7 @@ export function useReservationData() {
           addedTime: item.created_at || '',
           tourId: item.tour_id || '',
           status: (item.status as 'pending' | 'confirmed' | 'completed' | 'cancelled') || 'pending',
+          updated_at: (item as { updated_at?: string | null }).updated_at ?? null,
           selectedOptions: (typeof item.selected_options === 'string'
             ? (() => { try { return JSON.parse(item.selected_options as unknown as string) } catch { return {} } })()
             : (item.selected_options as { [optionId: string]: string[] }) || {}),

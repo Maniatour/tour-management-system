@@ -74,6 +74,8 @@ export interface Reservation {
   addedTime: string
   tourId: string
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled'
+  /** DB updated_at (상태 변경 순 정렬 등에 사용) */
+  updated_at?: string | null
   selectedOptions?: { [optionId: string]: string[] }
   selectedOptionPrices?: { [key: string]: number }
   isPrivateTour?: boolean

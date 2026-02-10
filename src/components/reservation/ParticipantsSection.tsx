@@ -108,14 +108,12 @@ export default function ParticipantsSection({
         <label className="block text-xs font-medium text-gray-700 mb-2">
           거주 상태별 인원 수
         </label>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">
-              <span className="inline-flex items-center">
-                <span className="w-3 h-3 rounded-full bg-green-600 mr-1"></span>
-                미국 거주자
-              </span>
-            </label>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-gray-600 inline-flex items-center shrink-0">
+              <span className="w-3 h-3 rounded-full bg-green-600 mr-1"></span>
+              미국 거주자 :
+            </span>
             <input
               type="number"
               value={formData.usResidentCount || 0}
@@ -134,16 +132,14 @@ export default function ParticipantsSection({
                 }))
               }}
               min="0"
-              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-xs"
+              className="w-20 px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-xs"
             />
           </div>
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">
-              <span className="inline-flex items-center">
-                <span className="w-3 h-3 rounded-full bg-blue-600 mr-1"></span>
-                비거주자
-              </span>
-            </label>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-gray-600 inline-flex items-center shrink-0">
+              <span className="w-3 h-3 rounded-full bg-blue-600 mr-1"></span>
+              비거주자 :
+            </span>
             <input
               type="number"
               value={formData.nonResidentCount || 0}
@@ -162,16 +158,14 @@ export default function ParticipantsSection({
                 }))
               }}
               min="0"
-              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+              className="w-20 px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
             />
           </div>
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">
-              <span className="inline-flex items-center">
-                <span className="w-3 h-3 rounded-full bg-orange-600 mr-1"></span>
-                비 거주자 (16세 이하)
-              </span>
-            </label>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-gray-600 inline-flex items-center shrink-0">
+              <span className="w-3 h-3 rounded-full bg-orange-600 mr-1"></span>
+              비 거주자 (16세 이하) :
+            </span>
             <input
               type="number"
               value={formData.nonResidentUnder16Count || 0}
@@ -190,19 +184,17 @@ export default function ParticipantsSection({
                 }))
               }}
               min="0"
-              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-xs"
+              className="w-20 px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-xs"
             />
           </div>
-          <div>
-            <label 
-              className="block text-xs text-gray-600 mb-1 cursor-help"
+          <div className="flex items-center justify-between gap-2">
+            <span 
+              className="text-xs text-gray-600 inline-flex items-center shrink-0 cursor-help"
               title={`패스 ${formData.nonResidentWithPassCount || 0}장 = ${calculateActualPassCovered(formData.nonResidentWithPassCount || 0, formData.usResidentCount || 0, formData.nonResidentCount || 0, formData.nonResidentUnder16Count || 0)}인 커버 (최대 ${(formData.nonResidentWithPassCount || 0) * 4}인 가능)`}
             >
-              <span className="inline-flex items-center">
-                <span className="w-3 h-3 rounded-full bg-purple-600 mr-1"></span>
-                비거주자 (패스 보유)
-              </span>
-            </label>
+              <span className="w-3 h-3 rounded-full bg-purple-600 mr-1"></span>
+              비거주자 (패스 보유) :
+            </span>
             <input
               type="number"
               value={formData.nonResidentWithPassCount || 0}
@@ -221,23 +213,21 @@ export default function ParticipantsSection({
                 }))
               }}
               min="0"
-              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-xs"
-              placeholder="실제 보유한 패스 장수 입력"
+              className="w-20 px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-xs"
+              placeholder="패스 장수"
             />
-            <p className="text-xs text-gray-500 mt-1">(패스 장수)</p>
           </div>
         </div>
         <div className="mt-2 text-xs text-gray-500">
-          총 인원: {formData.totalPeople}명 | 
-          거주 상태별 합계: {(formData.usResidentCount || 0) + (formData.nonResidentCount || 0) + (formData.nonResidentUnder16Count || 0) + (formData.passCoveredCount || 0)}명
+          <span>총 인원: {formData.totalPeople}명 | 거주 상태별 합계: {(formData.usResidentCount || 0) + (formData.nonResidentCount || 0) + (formData.nonResidentUnder16Count || 0) + (formData.passCoveredCount || 0)}명</span>
           {((formData.usResidentCount || 0) + (formData.nonResidentCount || 0) + (formData.nonResidentUnder16Count || 0) + (formData.passCoveredCount || 0)) !== formData.totalPeople && (
-            <span className="text-orange-600 ml-1">⚠️ 인원 수가 일치하지 않습니다</span>
+            <span className="block mt-1 text-orange-600">⚠️ 인원 수가 일치하지 않습니다</span>
           )}
         </div>
       </div>
 
-      {/* 다섯 번째 행: 특별 요청 사항 */}
-      <div>
+      {/* 다섯 번째 행: 이벤트 노트 */}
+      <div className="mt-4 mb-0">
         <label className="block text-xs font-medium text-gray-700 mb-1">{t('form.eventNote')}</label>
         <textarea
           value={formData.eventNote}
@@ -247,8 +237,6 @@ export default function ParticipantsSection({
           placeholder={t('form.eventNotePlaceholder')}
         />
       </div>
-
-
     </>
   )
 }

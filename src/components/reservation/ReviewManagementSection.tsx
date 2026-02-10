@@ -21,9 +21,11 @@ interface Review {
 
 interface ReviewManagementSectionProps {
   reservationId: string
+  /** true이면 제목·버튼 등 크기 축소 */
+  compact?: boolean
 }
 
-export default function ReviewManagementSection({ reservationId }: ReviewManagementSectionProps) {
+export default function ReviewManagementSection({ reservationId, compact = false }: ReviewManagementSectionProps) {
   const [reviews, setReviews] = useState<Review[]>([])
   const [loading, setLoading] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -499,10 +501,10 @@ export default function ReviewManagementSection({ reservationId }: ReviewManagem
 
   return (
     <>
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 sm:p-4 lg:p-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-2">
-          <h3 className="text-base sm:text-lg font-semibold text-gray-900 flex items-center">
-            <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5 mr-2 text-blue-600" />
+      <div className={`bg-white rounded-lg shadow-sm border border-gray-200 ${compact ? 'p-2 sm:p-3' : 'p-3 sm:p-4 lg:p-6'}`}>
+        <div className={`flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 ${compact ? 'mb-2' : 'mb-4'}`}>
+          <h3 className={`text-gray-900 flex items-center ${compact ? 'text-xs font-medium' : 'text-base sm:text-lg font-semibold'}`}>
+            <MessageSquare className={`text-blue-600 ${compact ? 'w-3.5 h-3.5 mr-1.5' : 'w-4 h-4 sm:w-5 sm:h-5 mr-2'}`} />
             후기 관리
           </h3>
           <button
@@ -512,9 +514,9 @@ export default function ReviewManagementSection({ reservationId }: ReviewManagem
               e.stopPropagation()
               setShowAddForm(true)
             }}
-            className="flex items-center px-2 py-1.5 sm:px-3 text-xs sm:text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors w-full sm:w-auto justify-center"
+            className={`flex items-center text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors justify-center ${compact ? 'px-2 py-1 text-xs font-medium' : 'px-2 py-1.5 sm:px-3 text-xs sm:text-sm font-medium w-full sm:w-auto'}`}
           >
-            <Plus className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+            <Plus className={compact ? 'w-3 h-3 mr-1' : 'w-3 h-3 sm:w-4 sm:h-4 mr-1'} />
             후기 추가
           </button>
         </div>

@@ -30,7 +30,7 @@ interface CashTransaction {
   notes: string | null
   created_at: string
   updated_at: string
-  source?: 'cash_transactions' | 'payment_records' | 'company_expenses' // 데이터 출처
+  source?: 'cash_transactions' | 'payment_records' | 'company_expenses' | 'reservation_expenses' // 데이터 출처
   created_by_name?: string // team 테이블에서 가져온 name_ko
 }
 
@@ -95,6 +95,8 @@ export default function CashManagement() {
   const [editingCompanyExpense, setEditingCompanyExpense] = useState<any>(null)
   const [showReservationModal, setShowReservationModal] = useState(false)
   const [selectedReservationId, setSelectedReservationId] = useState<string | null>(null)
+  const [showReservationExpenseModal, setShowReservationExpenseModal] = useState(false)
+  const [editingReservationExpense, setEditingReservationExpense] = useState<any>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(50)
   
@@ -220,11 +222,11 @@ export default function CashManagement() {
         console.warn('payment_records 로드 오류:', paymentError)
       }
 
-      // 3. company_expenses 테이블에서 Cash (대소문자 구분 없이) 데이터 가져오기
+      // 3. company_expenses 테이블에서 Cash/cash 데이터 가져오기
       let companyExpensesQuery = supabase
         .from('company_expenses')
         .select('id, amount, submit_on, submit_by, description, notes, paid_for, paid_to')
-        .ilike('payment_method', 'Cash')
+        .in('payment_method', ['Cash', 'cash'])
         .order('submit_on', { ascending: false })
 
       if (searchTerm) {
@@ -252,7 +254,39 @@ export default function CashManagement() {
         console.warn('company_expenses 로드 오류:', companyError)
       }
 
-      // 4. 데이터 변환 및 통합
+      // 4. reservation_expenses 테이블에서 Cash (현금) 데이터 가져오기
+      let reservationExpensesQuery = supabase
+        .from('reservation_expenses')
+        .select('id, amount, submit_on, submitted_by, note, paid_for, paid_to, reservation_id')
+        .ilike('payment_method', 'Cash')
+        .order('submit_on', { ascending: false })
+
+      if (searchTerm) {
+        reservationExpensesQuery = reservationExpensesQuery.or(`note.ilike.%${searchTerm}%,paid_for.ilike.%${searchTerm}%,paid_to.ilike.%${searchTerm}%`)
+      }
+
+      if (categoryFilter !== 'all') {
+        reservationExpensesQuery = reservationExpensesQuery.eq('paid_for', categoryFilter)
+      }
+
+      if (startDate) {
+        const start = new Date(startDate)
+        start.setHours(0, 0, 0, 0)
+        reservationExpensesQuery = reservationExpensesQuery.gte('submit_on', start.toISOString())
+      }
+
+      if (endDate) {
+        const end = new Date(endDate)
+        end.setHours(23, 59, 59, 999)
+        reservationExpensesQuery = reservationExpensesQuery.lte('submit_on', end.toISOString())
+      }
+
+      const { data: reservationExpenses, error: reservationExpensesError } = await reservationExpensesQuery
+      if (reservationExpensesError) {
+        console.warn('reservation_expenses 로드 오류:', reservationExpensesError)
+      }
+
+      // 5. 데이터 변환 및 통합
       const allTransactions: CashTransaction[] = []
 
       // cash_transactions 변환
@@ -303,6 +337,27 @@ export default function CashManagement() {
           created_at: ce.submit_on || new Date().toISOString(),
           updated_at: ce.submit_on || new Date().toISOString(),
           source: 'company_expenses' as const
+        }))
+        allTransactions.push(...converted)
+      }
+
+      // reservation_expenses 변환 (출금으로 처리)
+      if (reservationExpenses) {
+        const converted = reservationExpenses.map(re => ({
+          id: `re_${re.id}`,
+          transaction_date: re.submit_on || new Date().toISOString(),
+          transaction_type: 'withdrawal' as const,
+          amount: Number(re.amount),
+          description: re.note || `${re.paid_to || ''} - ${re.paid_for || ''}`.trim() || `예약 지출 (${re.reservation_id})`,
+          category: re.paid_for || '예약 지출',
+          reference_type: 'reservation',
+          reference_id: re.reservation_id,
+          created_by: re.submitted_by || '',
+          created_by_name: teamMembers.get(re.submitted_by || '') || re.submitted_by || '',
+          notes: re.note || null,
+          created_at: re.submit_on || new Date().toISOString(),
+          updated_at: re.submit_on || new Date().toISOString(),
+          source: 'reservation_expenses' as const
         }))
         allTransactions.push(...converted)
       }
@@ -578,6 +633,22 @@ export default function CashManagement() {
       
       setEditingCompanyExpense(data)
       setShowCompanyExpenseModal(true)
+    } else if (transaction.source === 'reservation_expenses') {
+      // reservation_expenses 원본 데이터 가져오기
+      const originalId = transaction.id.replace('re_', '')
+      const { data, error } = await supabase
+        .from('reservation_expenses')
+        .select('*')
+        .eq('id', originalId)
+        .single()
+      
+      if (error) {
+        toast.error('예약 지출을 불러오는 중 오류가 발생했습니다.')
+        return
+      }
+      
+      setEditingReservationExpense(data)
+      setShowReservationExpenseModal(true)
     } else {
       // cash_transactions는 기존 모달 사용
       setEditingTransaction(transaction)
@@ -642,6 +713,17 @@ export default function CashManagement() {
         
         // 히스토리 저장
         await saveHistory(originalId, 'company_expenses', 'deleted', oldValues, null)
+      } else if (transaction.source === 'reservation_expenses') {
+        const originalId = id.replace('re_', '')
+        const { error } = await supabase
+          .from('reservation_expenses')
+          .delete()
+          .eq('id', originalId)
+
+        if (error) throw error
+        
+        // 히스토리 저장
+        await saveHistory(originalId, 'reservation_expenses', 'deleted', oldValues, null)
       }
 
       toast.success('현금 거래가 삭제되었습니다.')
@@ -653,7 +735,7 @@ export default function CashManagement() {
   }
 
   const handleViewHistory = async (transaction: CashTransaction) => {
-    const originalId = transaction.id.replace(/^(pr_|ce_)/, '')
+    const originalId = transaction.id.replace(/^(pr_|ce_|re_)/, '')
     const sourceTable = transaction.source || 'cash_transactions'
     setSelectedTransactionId(transaction.id)
     setShowHistory(true)
@@ -1063,7 +1145,7 @@ export default function CashManagement() {
                     const displayType = isBankDeposit ? '은행' : (transaction.transaction_type === 'deposit' ? '입금' : '출금')
                     const date = new Date(transaction.transaction_date)
                     const dateStr = `${date.getFullYear()}. ${String(date.getMonth() + 1).padStart(2, '0')}. ${String(date.getDate()).padStart(2, '0')}.`
-                    const sourceLabel = transaction.source === 'payment_records' ? '예약 결제' : transaction.source === 'company_expenses' ? '회사 지출' : '현금 관리'
+                    const sourceLabel = transaction.source === 'payment_records' ? '예약 결제' : transaction.source === 'company_expenses' ? '회사 지출' : transaction.source === 'reservation_expenses' ? '예약 지출' : '현금 관리'
                     return (
                       <div key={transaction.id} className="border border-gray-200 rounded-xl p-4 bg-white shadow-sm hover:bg-gray-50/80 active:bg-gray-100 transition-colors">
                         <div className="flex items-start justify-between gap-3 mb-3">
@@ -1137,6 +1219,7 @@ export default function CashManagement() {
                       const sourceLabel = 
                         transaction.source === 'payment_records' ? '예약 결제' :
                         transaction.source === 'company_expenses' ? '회사 지출' :
+                        transaction.source === 'reservation_expenses' ? '예약 지출' :
                         '현금 관리'
                       
                       return (
@@ -1178,7 +1261,7 @@ export default function CashManagement() {
                             </span>
                           </TableCell>
                           <TableCell className="py-1 text-sm">
-                            {transaction.source === 'payment_records' && transaction.reference_id ? (
+                            {(transaction.source === 'payment_records' || transaction.source === 'reservation_expenses') && transaction.reference_id ? (
                               <button
                                 onClick={() => {
                                   setSelectedReservationId(transaction.reference_id)
@@ -1187,7 +1270,7 @@ export default function CashManagement() {
                                 className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
                                 title="예약 상세 보기"
                               >
-                                {transaction.description || `예약 결제 (${transaction.reference_id})`}
+                                {transaction.description || (transaction.source === 'payment_records' ? `예약 결제 (${transaction.reference_id})` : `예약 지출 (${transaction.reference_id})`)}
                               </button>
                             ) : (
                               transaction.description || '-'
@@ -1676,6 +1759,126 @@ export default function CashManagement() {
                   onClick={() => {
                     setShowCompanyExpenseModal(false)
                     setEditingCompanyExpense(null)
+                  }}
+                >
+                  취소
+                </Button>
+                <Button type="submit">수정</Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Reservation Expense (예약 지출) 수정 모달 */}
+      <Dialog open={showReservationExpenseModal} onOpenChange={setShowReservationExpenseModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>예약 지출 수정</DialogTitle>
+            <DialogDescription>
+              예약 지출(현금) 기록을 수정합니다.
+            </DialogDescription>
+          </DialogHeader>
+          {editingReservationExpense && (
+            <form onSubmit={async (e) => {
+              e.preventDefault()
+              const formData = new FormData(e.currentTarget)
+              try {
+                const oldValues = {
+                  amount: editingReservationExpense.amount,
+                  submit_on: editingReservationExpense.submit_on,
+                  note: editingReservationExpense.note,
+                  paid_for: editingReservationExpense.paid_for,
+                  paid_to: editingReservationExpense.paid_to
+                }
+                const newValues = {
+                  amount: parseFloat(formData.get('amount') as string),
+                  submit_on: new Date(formData.get('submit_on') as string).toISOString(),
+                  note: (formData.get('note') as string) || null,
+                  paid_for: (formData.get('paid_for') as string) || null,
+                  paid_to: (formData.get('paid_to') as string) || null
+                }
+                const { error } = await supabase
+                  .from('reservation_expenses')
+                  .update({
+                    amount: newValues.amount,
+                    submit_on: newValues.submit_on,
+                    note: newValues.note,
+                    paid_for: newValues.paid_for,
+                    paid_to: newValues.paid_to,
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('id', editingReservationExpense.id)
+
+                if (error) throw error
+                await saveHistory(editingReservationExpense.id, 'reservation_expenses', 'updated', oldValues, newValues)
+                toast.success('예약 지출이 수정되었습니다.')
+                setShowReservationExpenseModal(false)
+                setEditingReservationExpense(null)
+                loadTransactions()
+              } catch (error) {
+                console.error('예약 지출 수정 오류:', error)
+                toast.error('예약 지출을 수정하는 중 오류가 발생했습니다.')
+              }
+            }} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="re_amount">금액 *</Label>
+                  <Input
+                    id="re_amount"
+                    name="amount"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    defaultValue={editingReservationExpense.amount}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="re_submit_on">제출일시 *</Label>
+                  <Input
+                    id="re_submit_on"
+                    name="submit_on"
+                    type="datetime-local"
+                    defaultValue={editingReservationExpense.submit_on ? new Date(editingReservationExpense.submit_on).toISOString().slice(0, 16) : ''}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="re_paid_to">결제처</Label>
+                  <Input
+                    id="re_paid_to"
+                    name="paid_to"
+                    defaultValue={editingReservationExpense.paid_to || ''}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="re_paid_for">결제내용</Label>
+                  <Input
+                    id="re_paid_for"
+                    name="paid_for"
+                    defaultValue={editingReservationExpense.paid_for || ''}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="re_note">메모</Label>
+                <Textarea
+                  id="re_note"
+                  name="note"
+                  defaultValue={editingReservationExpense.note || ''}
+                  rows={3}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowReservationExpenseModal(false)
+                    setEditingReservationExpense(null)
                   }}
                 >
                   취소

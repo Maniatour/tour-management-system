@@ -10,7 +10,7 @@ interface CashReportTabProps {
 }
 
 type CashDetailRow = {
-  source: 'cash_transactions' | 'payment_records'
+  source: 'cash_transactions' | 'payment_records' | 'company_expenses' | 'reservation_expenses'
   occurred_at: string
   transaction_type: 'deposit' | 'withdrawal'
   amount: number
@@ -69,7 +69,11 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         periodTransactionsResult,
         allTransactionsResult,
         cashPaymentsResult,
-        allCashPaymentsResult
+        allCashPaymentsResult,
+        periodCompanyExpensesResult,
+        allCompanyExpensesResult,
+        periodReservationExpensesResult,
+        allReservationExpensesResult
       ] = await Promise.all([
         // 기간 내 현금 거래 조회
         supabase
@@ -98,6 +102,34 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           .select('amount')
           .in('payment_method', ['PAYM032', 'PAYM001'])
           .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
+          .gte('submit_on', baseDate + 'T00:00:00'),
+        // 기간 내 company_expenses 현금 지출 (Cash, cash 모두 포함)
+        supabase
+          .from('company_expenses')
+          .select('id, amount, submit_on, description, notes, paid_for, paid_to')
+          .in('payment_method', ['Cash', 'cash'])
+          .gte('submit_on', startISO)
+          .lte('submit_on', endISO)
+          .order('submit_on', { ascending: false }),
+        // 2026년 1월 1일부터 company_expenses 현금 지출 (잔액 계산용)
+        supabase
+          .from('company_expenses')
+          .select('amount')
+          .in('payment_method', ['Cash', 'cash'])
+          .gte('submit_on', baseDate + 'T00:00:00'),
+        // 기간 내 reservation_expenses 현금 지출
+        supabase
+          .from('reservation_expenses')
+          .select('id, amount, submit_on, note, paid_for, paid_to, reservation_id')
+          .ilike('payment_method', 'Cash')
+          .gte('submit_on', startISO)
+          .lte('submit_on', endISO)
+          .order('submit_on', { ascending: false }),
+        // 2026년 1월 1일부터 reservation_expenses 현금 지출 (잔액 계산용)
+        supabase
+          .from('reservation_expenses')
+          .select('amount')
+          .ilike('payment_method', 'Cash')
           .gte('submit_on', baseDate + 'T00:00:00')
       ])
 
@@ -105,19 +137,28 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
       const allTransactions = allTransactionsResult.data
       const cashPayments = cashPaymentsResult.data
       const allCashPayments = allCashPaymentsResult.data
+      const periodCompanyExpenses = periodCompanyExpensesResult.data
+      const allCompanyExpenses = allCompanyExpensesResult.data
+      const periodReservationExpenses = periodReservationExpensesResult.data
+      const allReservationExpenses = allReservationExpensesResult.data
 
       if (periodTransactionsResult.error) console.error('기간 내 현금 거래 조회 오류:', periodTransactionsResult.error)
       if (allTransactionsResult.error) console.error('전체 현금 거래 조회 오류:', allTransactionsResult.error)
       if (cashPaymentsResult.error) console.error('현금 입금 조회 오류:', cashPaymentsResult.error)
+      if (periodCompanyExpensesResult.error) console.error('기간 내 회사 지출(현금) 조회 오류:', periodCompanyExpensesResult.error)
+      if (periodReservationExpensesResult.error) console.error('기간 내 예약 지출(현금) 조회 오류:', periodReservationExpensesResult.error)
 
       // 기간 내 통계 계산
       const periodDeposits = (periodTransactions || [])
         .filter(t => t.transaction_type === 'deposit')
         .reduce((sum, t) => sum + toNumber((t as any).amount), 0)
 
-      const periodWithdrawals = (periodTransactions || [])
+      const periodWithdrawalsFromCash = (periodTransactions || [])
         .filter(t => t.transaction_type === 'withdrawal')
         .reduce((sum, t) => sum + toNumber((t as any).amount), 0)
+      const periodCompanyWithdrawals = (periodCompanyExpenses || []).reduce((sum, p) => sum + toNumber((p as any).amount), 0)
+      const periodReservationWithdrawals = (periodReservationExpenses || []).reduce((sum, p) => sum + toNumber((p as any).amount), 0)
+      const periodWithdrawals = periodWithdrawalsFromCash + periodCompanyWithdrawals + periodReservationWithdrawals
 
       // payment_records에서의 현금 입금도 포함
       const cashPaymentsTotal = (cashPayments || [])
@@ -138,8 +179,11 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
       // payment_records에서 2026년 1월 1일부터의 현금 입금도 포함 (이미 병렬 쿼리로 조회됨)
       const allCashPaymentsTotal = (allCashPayments || [])
         .reduce((sum, p) => sum + toNumber((p as any).amount), 0)
+      // company_expenses, reservation_expenses 현금 지출은 잔액에서 차감
+      const allCompanyExpensesTotal = (allCompanyExpenses || []).reduce((sum, p) => sum + toNumber((p as any).amount), 0)
+      const allReservationExpensesTotal = (allReservationExpenses || []).reduce((sum, p) => sum + toNumber((p as any).amount), 0)
 
-      const finalBalance = totalBalance + allCashPaymentsTotal
+      const finalBalance = totalBalance + allCashPaymentsTotal - allCompanyExpensesTotal - allReservationExpensesTotal
 
       // 카테고리별 집계
       const categoryMap = new Map<string, { deposits: number; withdrawals: number }>()
@@ -155,34 +199,15 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           cat.withdrawals += toNumber((t as any).amount)
         }
       })
-
-      // 일별/주별/월별 추이
-      const trendMap = new Map<string, { deposits: number; withdrawals: number }>()
-      ;(periodTransactions || []).forEach(t => {
-        const date = new Date(t.transaction_date)
-        let periodKey: string
-
-        if (period === 'daily') {
-          periodKey = date.toISOString().split('T')[0]
-        } else if (period === 'weekly') {
-          const weekStart = new Date(date)
-          weekStart.setDate(date.getDate() - date.getDay())
-          periodKey = weekStart.toISOString().split('T')[0]
-        } else if (period === 'monthly') {
-          periodKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-        } else {
-          periodKey = String(date.getFullYear())
-        }
-
-        if (!trendMap.has(periodKey)) {
-          trendMap.set(periodKey, { deposits: 0, withdrawals: 0 })
-        }
-        const trend = trendMap.get(periodKey)!
-        if (t.transaction_type === 'deposit') {
-          trend.deposits += toNumber((t as any).amount)
-        } else {
-          trend.withdrawals += toNumber((t as any).amount)
-        }
+      ;(periodCompanyExpenses || []).forEach((p: any) => {
+        const category = p.paid_for || '회사 지출'
+        if (!categoryMap.has(category)) categoryMap.set(category, { deposits: 0, withdrawals: 0 })
+        categoryMap.get(category)!.withdrawals += toNumber(p.amount)
+      })
+      ;(periodReservationExpenses || []).forEach((p: any) => {
+        const category = p.paid_for || '예약 지출'
+        if (!categoryMap.has(category)) categoryMap.set(category, { deposits: 0, withdrawals: 0 })
+        categoryMap.get(category)!.withdrawals += toNumber(p.amount)
       })
 
       const details: CashDetailRow[] = [
@@ -207,6 +232,28 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           payment_status: p.payment_status || null,
           reservation_id: p.reservation_id || null,
           payment_method: p.payment_method || null
+        })),
+        ...(periodCompanyExpenses || []).map((p: any) => ({
+          source: 'company_expenses' as const,
+          occurred_at: p.submit_on,
+          transaction_type: 'withdrawal' as const,
+          amount: toNumber(p.amount),
+          category: p.paid_for || '회사 지출',
+          description: [p.paid_to, p.description].filter(Boolean).join(' - ') || '',
+          payment_status: null,
+          reservation_id: null,
+          payment_method: null
+        })),
+        ...(periodReservationExpenses || []).map((p: any) => ({
+          source: 'reservation_expenses' as const,
+          occurred_at: p.submit_on,
+          transaction_type: 'withdrawal' as const,
+          amount: toNumber(p.amount),
+          category: p.paid_for || '예약 지출',
+          description: p.note || `${p.paid_to || ''} - ${p.paid_for || ''}`.trim() || '',
+          payment_status: null,
+          reservation_id: p.reservation_id || null,
+          payment_method: null
         }))
       ].sort((a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at)))
 
@@ -228,15 +275,6 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           withdrawals: data.withdrawals,
           net: data.deposits - data.withdrawals
         })),
-        trend: Array.from(trendMap.entries())
-          .map(([period, data]) => ({
-            period,
-            deposits: data.deposits,
-            withdrawals: data.withdrawals,
-            net: data.deposits - data.withdrawals
-          }))
-          .sort((a, b) => a.period.localeCompare(b.period))
-        ,
         details
       })
     } catch (error) {
@@ -371,62 +409,23 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         </div>
       )}
 
-      {/* 추이 그래프 */}
-      {stats.trend.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">현금 흐름 추이</h3>
-          <div className="space-y-4">
-            {stats.trend.map((item: any, idx: number) => (
-              <div key={idx} className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-gray-700">{item.period}</span>
-                  <span className={`text-sm font-medium ${
-                    item.net >= 0 ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    ${item.net.toLocaleString()}
-                  </span>
-                </div>
-                <div className="flex space-x-2">
-                  <div className="flex-1 bg-gray-200 rounded-full h-4 relative">
-                    <div
-                      className="bg-green-500 h-4 rounded-full"
-                      style={{ width: `${stats.period.deposits > 0 ? (item.deposits / stats.period.deposits) * 100 : 0}%` }}
-                    />
-                  </div>
-                  <div className="flex-1 bg-gray-200 rounded-full h-4 relative">
-                    <div
-                      className="bg-red-500 h-4 rounded-full"
-                      style={{ width: `${stats.period.withdrawals > 0 ? (item.withdrawals / stats.period.withdrawals) * 100 : 0}%` }}
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>입금: ${item.deposits.toLocaleString()}</span>
-                  <span>출금: ${item.withdrawals.toLocaleString()}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* 상세 거래 내역 */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-2">상세 거래 내역</h3>
         <p className="text-sm text-gray-500 mb-4">
-          선택한 기간 내 현금 거래(`cash_transactions`)와 현금 입금(`payment_records`: PAYM032/PAYM001)을 함께 표시합니다.
+          선택한 기간 내 현금 거래(cash_transactions), 현금 입금(payment_records), 회사 지출(company_expenses), 예약 지출(reservation_expenses)의 현금 내역을 함께 표시합니다.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">일시</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">구분</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap" style={{ minWidth: '11rem' }}>일시</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap" style={{ minWidth: '4.5rem' }}>구분</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">금액</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">카테고리</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap" style={{ minWidth: '7rem' }}>카테고리</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">설명/메모</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">출처</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">상태</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap" style={{ minWidth: '10rem' }}>상태</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">예약</th>
               </tr>
             </thead>
@@ -440,10 +439,10 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
               ) : (
                 (stats.details as CashDetailRow[]).map((row, idx) => (
                   <tr key={idx}>
-                    <td className="px-4 py-3 text-sm">
+                    <td className="px-4 py-3 text-sm whitespace-nowrap">
                       {row.occurred_at ? new Date(row.occurred_at).toLocaleString() : '-'}
                     </td>
-                    <td className="px-4 py-3 text-sm">
+                    <td className="px-4 py-3 text-sm whitespace-nowrap">
                       <span
                         className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                           row.transaction_type === 'deposit'
@@ -455,17 +454,19 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
                       </span>
                     </td>
                     <td
-                      className={`px-4 py-3 text-sm font-medium ${
+                      className={`px-4 py-3 text-sm font-medium whitespace-nowrap ${
                         row.transaction_type === 'deposit' ? 'text-green-600' : 'text-red-600'
                       }`}
                     >
                       ${Number(row.amount || 0).toLocaleString()}
                     </td>
-                    <td className="px-4 py-3 text-sm">{row.category || '-'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-700">{row.description || '-'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{row.source}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{row.payment_status || '-'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{row.reservation_id || '-'}</td>
+                    <td className="px-4 py-3 text-sm whitespace-nowrap">{row.category || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700 min-w-0">{row.description || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                      {row.source === 'payment_records' ? '예약 결제' : row.source === 'company_expenses' ? '회사 지출' : row.source === 'reservation_expenses' ? '예약 지출' : '현금 관리'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{row.payment_status || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600 min-w-0">{row.reservation_id || '-'}</td>
                   </tr>
                 ))
               )}
