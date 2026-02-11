@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { X } from 'lucide-react'
+import { X, Search, SlidersHorizontal } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -251,7 +251,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [groupByDate, setGroupByDate] = useState<boolean>(true) // 기본값을 true로 설정하여 날짜별 그룹화
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
-  const [isFiltersCollapsed, setIsFiltersCollapsed] = useState<boolean>(true) // 필터 접힘/펼침 상태 (기본 접힘)
+  const [filterModalOpen, setFilterModalOpen] = useState(false) // 필터 모달 열림 상태
 
   // 그룹 접기/펼치기 함수 - useCallback으로 메모이제이션
   const toggleGroupCollapse = useCallback((date: string) => {
@@ -2353,12 +2353,38 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         }}
         onActionRequired={() => setShowActionRequiredModal(true)}
         actionRequiredCount={actionRequiredCount}
+        onOpenFilter={() => setFilterModalOpen(true)}
       />
 
-      {/* 검색 및 필터 */}
+      {/* 모바일 전용: 검색창(넓게) + 필터 버튼(추가 버튼과 동일 크기) */}
+      <div className="md:hidden flex items-center gap-2">
+        <div className="relative flex-1 min-w-0">
+          <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none" size={14} />
+          <input
+            type="text"
+            placeholder={t('searchPlaceholder')}
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value)
+              setCurrentPage(1)
+            }}
+            className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => setFilterModalOpen(true)}
+          className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium flex-shrink-0"
+        >
+          <SlidersHorizontal className="w-4 h-4" />
+          <span>필터</span>
+        </button>
+      </div>
+
+      {/* 필터 버튼(데스크톱) + 필터 모달 */}
       <ReservationsFilters
-        isFiltersCollapsed={isFiltersCollapsed}
-        onToggleFilters={() => setIsFiltersCollapsed(!isFiltersCollapsed)}
+        filterModalOpen={filterModalOpen}
+        onFilterModalOpenChange={setFilterModalOpen}
         selectedStatus={selectedStatus}
         onStatusChange={(status) => {
           setSelectedStatus(status)

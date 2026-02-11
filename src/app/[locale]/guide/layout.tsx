@@ -453,7 +453,7 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
          {/* 상단 헤더는 [locale] 레이아웃의 기존 Navigation 사용 (가이드/관리자 메뉴 포함) */}
 
          {/* 메인 컨텐츠 - 모바일 좌우 여백 축소, 푸터 높이만큼 하단 여백 */}
-         <main className="max-w-7xl mx-auto px-2 sm:px-2 lg:px-4 py-2 sm:py-4 main-safe-area">
+         <main className="max-w-7xl mx-auto px-2 sm:px-2 lg:px-4 pt-2 sm:pt-4 main-safe-area">
            {children}
          </main>
 

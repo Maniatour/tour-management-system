@@ -52,6 +52,7 @@ interface EstimateModalProps {
   customer: Customer | null
   courses: CourseScheduleItem[]
   tourCourses: TourCourseInfo[]
+  isCharterGuide?: boolean
   locale?: string
   tourCourseDescription: string
   scheduleDescription: string
@@ -65,6 +66,7 @@ interface EstimateModalProps {
   otherExpensesTotal: number
   participantCount: number
   vehicleType: string
+  vehicleTypeLabel?: string
   numberOfDays: number
   sellingPrice: number
   additionalCost: number
@@ -118,6 +120,7 @@ export default function EstimateModal({
   customer,
   courses,
   tourCourses,
+  isCharterGuide,
   locale = 'ko',
   tourCourseDescription,
   scheduleDescription,
@@ -131,6 +134,7 @@ export default function EstimateModal({
   otherExpensesTotal,
   participantCount,
   vehicleType,
+  vehicleTypeLabel,
   numberOfDays,
   sellingPrice,
   additionalCost,
@@ -587,9 +591,11 @@ export default function EstimateModal({
     }
   }, [map, directionsRenderer, courses, tourCourses])
 
+  const resolvedVehicleTypeName = vehicleTypeLabel ?? (vehicleType === 'minivan' ? '미니밴' : vehicleType === '9seater' ? '9인승' : '13인승')
+
   // PDF용 Estimate HTML 생성 (인보이스 스타일)
   const generateEstimateHTMLForPDF = (mapImageDataParam?: string | null): string => {
-    const vehicleTypeName = vehicleType === 'minivan' ? '미니밴' : vehicleType === '9seater' ? '9인승' : '13인승'
+    const vehicleTypeName = resolvedVehicleTypeName
     const isEnglish = locale === 'en'
     const estimateNumber = `EST-${Date.now()}-${Math.random().toString(36).substring(2, 9).toUpperCase()}`
     const formattedDate = estimateDate ? new Date(estimateDate).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US') : new Date().toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US')
@@ -971,6 +977,7 @@ export default function EstimateModal({
               <p><strong>${isEnglish ? 'Customer' : '고객'}:</strong> ${customerName || 'N/A'}</p>
               <p><strong>${isEnglish ? 'Email' : '이메일'}:</strong> ${customerEmail || 'N/A'}</p>
               ${customerPhone ? `<p><strong>${isEnglish ? 'Phone' : '전화번호'}:</strong> ${customerPhone}</p>` : ''}
+              ${isCharterGuide ? `<p><strong>${isEnglish ? 'Tour type' : '투어 유형'}:</strong> ${isEnglish ? 'Charter vehicle dedicated guide' : '차량 대절 전담 가이드'}</p>` : ''}
             </div>
           </div>
         </div>
@@ -2063,7 +2070,7 @@ export default function EstimateModal({
 
   // 텍스트 형식으로 estimate 생성
   const generateEstimateText = (): string => {
-    const vehicleTypeName = vehicleType === 'minivan' ? '미니밴' : vehicleType === '9seater' ? '9인승' : '13인승'
+    const vehicleTypeName = resolvedVehicleTypeName
     const isEnglish = locale === 'en'
     
     let text = ''
@@ -2077,7 +2084,12 @@ export default function EstimateModal({
     }
     text += `${isEnglish ? 'Participants' : '참가 인원'}: ${participantCount} ${isEnglish ? 'people' : '명'}\n`
     text += `${isEnglish ? 'Vehicle' : '차량'}: ${vehicleTypeName}\n`
-    text += `${isEnglish ? 'Duration' : '기간'}: ${numberOfDays} ${isEnglish ? 'day(s)' : '일'}\n\n`
+    text += `${isEnglish ? 'Duration' : '기간'}: ${numberOfDays} ${isEnglish ? 'day(s)' : '일'}\n`
+    if (isCharterGuide) {
+      text += `${isEnglish ? 'Date' : '날짜'}: ${estimateDate || '—'}\n`
+      text += `${isEnglish ? 'Tour type' : '투어 유형'}: ${isEnglish ? 'Charter vehicle dedicated guide' : '차량 대절 전담 가이드'}\n`
+    }
+    text += '\n'
 
     if (courses.length > 0) {
       text += isEnglish ? 'Tour Schedule\n' : '투어 스케줄\n'
@@ -2206,7 +2218,7 @@ export default function EstimateModal({
   }
 
   const generateEstimateHTML = (): string => {
-    const vehicleTypeName = vehicleType === 'minivan' ? '미니밴' : vehicleType === '9seater' ? '9인승' : '13인승'
+    const vehicleTypeName = resolvedVehicleTypeName
     
     return `
       <!DOCTYPE html>
@@ -2267,6 +2279,16 @@ export default function EstimateModal({
               <span class="info-label">Duration:</span>
               <span>${numberOfDays} day(s)</span>
             </div>
+            ${isCharterGuide ? `
+            <div class="info-row">
+              <span class="info-label">${locale === 'en' ? 'Date' : '날짜'}:</span>
+              <span>${estimateDate ? new Date(estimateDate).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US') : '—'}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">${locale === 'en' ? 'Tour type' : '투어 유형'}:</span>
+              <span>${locale === 'en' ? 'Charter vehicle dedicated guide' : '차량 대절 전담 가이드'}</span>
+            </div>
+            ` : ''}
           </div>
 
           ${courses.length > 0 ? `
@@ -2521,6 +2543,19 @@ export default function EstimateModal({
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
+              {isCharterGuide && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                  <div className="text-sm font-medium text-blue-900 mb-1">
+                    {locale === 'en' ? 'Tour type' : '투어 유형'}
+                  </div>
+                  <div className="text-base font-semibold text-blue-800">
+                    {locale === 'en' ? 'Charter vehicle dedicated guide' : '차량 대절 전담 가이드'}
+                  </div>
+                  <div className="text-xs text-blue-700 mt-1">
+                    {locale === 'en' ? 'Date' : '날짜'}: {estimateDate ? new Date(estimateDate).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US') : '—'}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

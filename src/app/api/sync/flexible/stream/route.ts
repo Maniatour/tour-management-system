@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { flexibleSync } from '@/lib/flexibleSyncService'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { supabaseAdmin } from '@/lib/supabase'
 
 export const runtime = 'nodejs'
 
@@ -101,14 +102,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Authorization 헤더에서 JWT 추출
+    // Authorization 헤더에서 JWT 추출 (동기화 실행 권한 확인용)
     const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
     const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined
 
-    // JWT 기반 Supabase 클라이언트 생성 (없으면 익명키로 생성)
+    // 장시간 배치 시 JWT 만료를 피하기 위해 서버에서는 service role 클라이언트 사용.
+    // (토큰이 있으면 로그인 사용자로 간주하고, 실제 DB 작업은 만료 없는 service role로 수행)
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
-    const client = createClient(supabaseUrl, anonKey, token ? { global: { headers: { Authorization: `Bearer ${token}` } } } : undefined)
+    const client: SupabaseClient =
+      supabaseAdmin ??
+      createClient(supabaseUrl, anonKey, token ? { global: { headers: { Authorization: `Bearer ${token}` } } } : undefined)
 
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {

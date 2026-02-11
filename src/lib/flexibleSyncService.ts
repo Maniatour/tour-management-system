@@ -14,6 +14,20 @@ const isGoogleSheetsError = (value: unknown): boolean => {
          str.includes('No matches are found')
 }
 
+// 날짜 형식 문자열인지 감지 (M/D/YYYY, MM/DD/YYYY, YYYY-MM-DD 등) — integer 컬럼에 잘못 들어가는 것 방지
+const isDateLikeString = (value: unknown): boolean => {
+  if (value === undefined || value === null || value === '') return false
+  const str = String(value).trim()
+  // M/D/YYYY, MM/DD/YYYY, M-D-YYYY, YYYY-MM-DD, D.M.YYYY 등
+  if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(str)) return true
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return true
+  if (/^\d{1,2}-\d{1,2}-\d{2,4}$/.test(str)) return true
+  if (/^\d{1,2}\.\d{1,2}\.\d{2,4}$/.test(str)) return true
+  // Date 객체로 파싱 가능한 경우
+  const d = new Date(str)
+  return !isNaN(d.getTime()) && /^\d|[-/.]/.test(str)
+}
+
 // 시간 형식 변환 비활성화 - PostgreSQL이 자동으로 처리함
 // 12시간/24시간 형식 변환은 PostgreSQL TIME 타입이 자동으로 처리하므로 불필요
 
@@ -49,13 +63,44 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
   console.log(`convertDataTypes called with tableName: ${tableName}`)
   const converted = { ...data }
 
-  // 숫자 필드 변환
-  const numberFields = ['adults', 'child', 'infant', 'total_people', 'price', 'rooms', 'unit_price', 'total_price', 'base_price', 'commission_amount', 'commission_percent']
+  // 숫자 필드 변환 (소수 가능 — float/numeric)
+  const numberFields = ['price', 'unit_price', 'total_price', 'base_price', 'commission_amount', 'commission_percent', 'expense', 'income', 'amount']
   numberFields.forEach(field => {
     if (converted[field] !== undefined && converted[field] !== '') {
-      converted[field] = parseFloat(String(converted[field])) || 0
+      if (isGoogleSheetsError(converted[field]) || isDateLikeString(converted[field])) {
+        converted[field] = null
+      } else {
+        const n = parseFloat(String(converted[field]))
+        converted[field] = Number.isFinite(n) ? n : null
+      }
     }
   })
+
+  // integer 전용 필드 변환 — 날짜 문자열("2/26/2024" 등)이 들어오면 null/0으로 처리
+  const integerFields = [
+    'adults', 'child', 'infant', 'total_people', 'rooms', 'ea',
+    'capacity', 'year', 'mileage_at_purchase', 'engine_oil_change_cycle',
+    'current_mileage', 'recent_engine_oil_change_mileage', 'car_year'
+  ]
+  integerFields.forEach(field => {
+    if (converted[field] === undefined || converted[field] === '') return
+    if (isGoogleSheetsError(converted[field]) || isDateLikeString(converted[field])) {
+      converted[field] = null
+      return
+    }
+    const n = parseInt(String(converted[field]), 10)
+    converted[field] = Number.isFinite(n) ? n : null
+  })
+
+  // vehicles 테이블: NOT NULL 컬럼에 null/빈 값이면 기본값 적용
+  if (tableName === 'vehicles') {
+    if (converted.capacity === undefined || converted.capacity === null) converted.capacity = 0
+    if (converted.year === undefined || converted.year === null) converted.year = 0
+    const vt = converted.vehicle_type
+    if (vt === undefined || vt === null || (typeof vt === 'string' && vt.trim() === '')) converted.vehicle_type = 'Unknown'
+    const vn = converted.vehicle_number
+    if (vn === undefined || vn === null || (typeof vn === 'string' && vn.trim() === '')) converted.vehicle_number = converted.id ? String(converted.id) : `SYNC-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+  }
 
   // 텍스트 필드 변환 (UUID가 아닌 TEXT 타입들)
   const textFields = ['product_id', 'customer_id', 'tour_id', 'id']
@@ -103,14 +148,19 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
     }
   })
   
-  // tour_date는 그대로 저장 (변환하지 않음)
+  // tour_date: 날짜 형식이면 YYYY-MM-DD로 통일 (M/D/YYYY 등 US 형식 포함)
   if (converted.tour_date !== undefined && converted.tour_date !== null && converted.tour_date !== '') {
-    // Google Sheets 에러 값 체크만 수행
     if (isGoogleSheetsError(converted.tour_date)) {
       console.warn(`Google Sheets 에러 값 감지 (tour_date):`, converted.tour_date, '→ null로 변환')
       converted.tour_date = null
     } else {
-      converted.tour_date = String(converted.tour_date).trim()
+      const raw = String(converted.tour_date).trim()
+      const d = new Date(raw)
+      if (!isNaN(d.getTime())) {
+        converted.tour_date = d.toISOString().split('T')[0]
+      } else {
+        converted.tour_date = raw
+      }
     }
   }
 

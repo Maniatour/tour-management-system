@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { useTranslations } from 'next-intl'
-import { Plus, Search, Grid3X3, CalendarDays, AlertCircle } from 'lucide-react'
+import { Plus, Search, Grid3X3, CalendarDays, AlertCircle, SlidersHorizontal } from 'lucide-react'
 import { getCustomerName } from '@/utils/reservationUtils'
 import type { Customer } from '@/types/reservation'
 
@@ -16,6 +16,8 @@ interface ReservationsHeaderProps {
   onAddReservation: () => void
   onActionRequired?: () => void
   actionRequiredCount?: number
+  /** 데스크톱 제목줄에 필터 버튼 표시 (클릭 시 호출) */
+  onOpenFilter?: () => void
 }
 
 export default function ReservationsHeader({
@@ -27,7 +29,8 @@ export default function ReservationsHeader({
   onSearchChange,
   onAddReservation,
   onActionRequired,
-  actionRequiredCount = 0
+  actionRequiredCount = 0,
+  onOpenFilter
 }: ReservationsHeaderProps) {
   const t = useTranslations('reservations')
 
@@ -77,9 +80,9 @@ export default function ReservationsHeader({
           </div>
         </div>
         
-        {/* 검색창, 예약 처리 필요, 새예약 추가 버튼 */}
-        <div className="flex items-center space-x-2 flex-1 max-w-md justify-end">
-          <div className="relative flex-1 max-w-xs">
+        {/* 검색창, 예약 처리 필요, 새예약 추가 버튼 (모바일에서는 검색은 아래 검색+필터 한 줄에 표시) */}
+        <div className="flex items-center space-x-2 flex-1 max-w-2xl justify-end">
+          <div className="relative flex-1 max-w-md max-md:hidden min-w-[12rem]">
             <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={14} />
             <input
               type="text"
@@ -109,6 +112,16 @@ export default function ReservationsHeader({
                   {actionRequiredCount}
                 </span>
               )}
+            </button>
+          )}
+          {typeof onOpenFilter === 'function' && (
+            <button
+              type="button"
+              onClick={onOpenFilter}
+              className="hidden md:flex bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 items-center gap-1.5 text-sm font-medium flex-shrink-0"
+            >
+              <SlidersHorizontal size={16} />
+              <span>필터</span>
             </button>
           )}
           <button

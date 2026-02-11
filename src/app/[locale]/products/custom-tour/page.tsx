@@ -335,8 +335,11 @@ export default function CustomTourPage() {
 
       if (error) throw error
       setVehicleSettings((data || []).map(item => ({
-        ...item,
-        vehicle_type: item.vehicle_type as 'minivan' | '9seater' | '13seater'
+        id: item.id,
+        vehicle_type: item.vehicle_type,
+        display_name: (item as { display_name?: string | null }).display_name ?? null,
+        daily_rental_rate: item.daily_rental_rate,
+        mpg: item.mpg
       })))
     } catch (error) {
       console.error('차량 설정 로드 오류:', error)

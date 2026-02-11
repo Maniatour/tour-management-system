@@ -1004,7 +1004,7 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       {/* 메인 콘텐츠 - 헤더 높이만큼 상단 여백, 모바일 푸터 높이만큼 하단 여백 */}
       <div className="pt-[var(--header-height)] lg:pl-64">
         {/* 페이지 콘텐츠 */}
-        <main className="py-2 sm:py-4 lg:py-6 main-safe-area">
+        <main className="pt-2 sm:pt-4 lg:pt-6 main-safe-area">
           <div className="max-w-none mx-auto px-2 sm:px-2 lg:px-4">
             {children}
           </div>

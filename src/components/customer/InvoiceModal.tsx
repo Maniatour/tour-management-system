@@ -1039,19 +1039,8 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
     `
   }
 
-  // 인보이스 저장
+  // 인보이스 저장 (임시저장 / 다시 저장)
   const handleSaveInvoice = async () => {
-    // 최소 하나의 항목이 선택되어 있는지 확인
-    const hasValidItems = invoiceItems.some(item => 
-      (item.itemType === 'product' && item.productId) || 
-      (item.itemType === 'option' && item.optionId)
-    )
-    
-    if (!hasValidItems) {
-      alert(locale === 'ko' ? '최소 하나의 상품 또는 통합 옵션을 선택해주세요.' : 'Please select at least one product or integrated option.')
-      return
-    }
-
     setSaving(true)
     try {
       const invoiceData = {
@@ -1095,8 +1084,11 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
 
       if (response.error) throw response.error
 
+      const isUpdate = !!savedInvoiceId
       setSavedInvoiceId(response.data.id)
-      alert(locale === 'ko' ? '인보이스가 저장되었습니다.' : 'Invoice has been saved.')
+      alert(isUpdate
+        ? (locale === 'ko' ? '인보이스가 다시 저장되었습니다.' : 'Invoice has been updated.')
+        : (locale === 'ko' ? '인보이스가 임시 저장되었습니다.' : 'Invoice has been saved as draft.'))
     } catch (error) {
       console.error('인보이스 저장 오류:', error)
       alert(locale === 'ko' ? '인보이스 저장 중 오류가 발생했습니다.' : 'An error occurred while saving invoice.')
@@ -1954,7 +1946,7 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
           <div className="flex items-center space-x-2">
             {savedInvoiceId && (
               <span className="text-sm text-green-600">
-                {locale === 'ko' ? '저장됨' : 'Saved'}
+                {locale === 'ko' ? '임시 저장됨 (다시 저장 가능)' : 'Saved as draft (can save again)'}
               </span>
             )}
           </div>
@@ -1978,13 +1970,14 @@ export default function InvoiceModal({ customer, products, onClose, locale: init
             </button>
             <button
               onClick={handleSaveInvoice}
-              disabled={saving || !invoiceItems.some(item => 
-                (item.itemType === 'product' && item.productId) || 
-                (item.itemType === 'option' && item.optionId)
-              )}
+              disabled={saving}
               className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {saving ? (locale === 'ko' ? '저장 중...' : 'Saving...') : (locale === 'ko' ? '저장' : 'Save')}
+              {saving
+                ? (locale === 'ko' ? '저장 중...' : 'Saving...')
+                : savedInvoiceId
+                  ? (locale === 'ko' ? '다시 저장' : 'Save Again')
+                  : (locale === 'ko' ? '임시저장' : 'Save as Draft')}
             </button>
             <button
               onClick={handleSendEmail}

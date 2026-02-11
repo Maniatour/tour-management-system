@@ -249,9 +249,10 @@ export default function ReservationActionRequiredModal({
     const depositList = [...new Map([...depositNoTour.map(r => [r.id, r]), ...confirmedNoDeposit.map(r => [r.id, r])]).values()]
     const balanceList = reservations.filter(r => tourDateBeforeToday(r) && getBalance(r) > 0)
 
-    // 취소된 예약: 최신 상태 변경 순(updated_at 기준, 없으면 addedTime)
+    // 취소된 예약: 최신 상태 변경 순(updated_at 기준, 없으면 addedTime). 투어날짜가 지난 것은 제외
     const followUpCancelList = reservations
       .filter(r => isCancelled(r))
+      .filter(r => !tourDateBeforeToday(r))
       .slice()
       .sort((a, b) => {
         const aTime = a.updated_at || a.addedTime || ''
