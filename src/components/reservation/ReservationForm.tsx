@@ -3631,7 +3631,7 @@ export default function ReservationForm({
               disabled={isSubmitting}
               className="px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('edit') : tCommon('add'))}
+              {isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('save') : tCommon('add'))}
             </button>
             <button
               type="button"
@@ -3877,7 +3877,7 @@ export default function ReservationForm({
                   disabled={isSubmitting}
                   className="flex-1 min-w-0 bg-blue-600 text-white py-2.5 px-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
                 >
-                  {isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('edit') : tCommon('add'))}
+                  {isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('save') : tCommon('add'))}
                 </button>
                 <button
                   type="button"
