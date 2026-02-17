@@ -13,7 +13,7 @@ type PickupHotel = Database['public']['Tables']['pickup_hotels']['Row']
 type Vehicle = Database['public']['Tables']['vehicles']['Row']
 type ProductRow = { id: string; name_ko?: string | null; name_en?: string | null; [k: string]: unknown }
 type CustomerRow = { id: string; name?: string | null; email?: string | null; language?: string | null; [k: string]: unknown }
-type TeamMember = { email: string; name_ko: string; name_en?: string }
+type TeamMember = { email: string; name_ko: string; name_en?: string | null; nick_name?: string | null }
 
 // 확장된 예약 타입 (고객 정보 포함)
 type ExtendedReservationRow = ReservationRow & {
@@ -1124,6 +1124,11 @@ export function useTourDetailData() {
     const member = teamMembers.find((member) => member.email === email)
     if (!member) {
       return email
+    }
+    
+    // nick_name이 있으면 우선 사용 (간단한 표시용)
+    if (member.nick_name) {
+      return member.nick_name
     }
     
     const locale = window.location.pathname.split('/')[1] || 'ko'

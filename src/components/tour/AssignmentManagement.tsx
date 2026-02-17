@@ -35,6 +35,7 @@ interface TeamMember {
   email: string
   name_ko: string | null
   name_en: string | null
+  nick_name?: string | null
 }
 
 interface AssignmentManagementProps {
@@ -141,7 +142,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
         if (allEmails.length > 0) {
           const { data: teamData, error: teamError } = await supabase
             .from('team')
-            .select('email, name_ko, name_en')
+            .select('email, name_ko, name_en, nick_name')
             .in('email', allEmails)
 
           if (teamError) {
@@ -165,7 +166,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
     const member = teamMembers.find(m => m.email === email)
     if (!member) return email
     
-    return member.name_ko || member.name_en || email
+    return member.nick_name || member.name_ko || member.name_en || email
   }
 
   // 상태 뱃지 색상 결정 함수

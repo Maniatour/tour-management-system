@@ -214,10 +214,10 @@ export default function AdminTours() {
 
       const { data: teamMembers } = await supabase
         .from('team')
-        .select('email, name_ko')
+        .select('email, name_ko, nick_name')
         .in('email', allEmails)
 
-      const teamMap = new Map((teamMembers || []).map((member: { email: string; name_ko: string }) => [member.email, member]))
+      const teamMap = new Map((teamMembers || []).map((member: { email: string; name_ko: string; nick_name?: string | null }) => [member.email, member]))
 
       // 3-1. 차량 정보 가져오기 (카드에 차량 번호 표시)
       const vehicleIds: string[] = [...new Set((toursDataActive || []).map((t: { tour_car_id?: string | null }) => t.tour_car_id).filter((id): id is string => id != null))]
@@ -409,8 +409,8 @@ export default function AdminTours() {
           total_people: totalPeople,
           assigned_people: assignedPeople,
           unassigned_people: unassignedPeople,
-          guide_name: guide?.name_ko || null,
-          assistant_name: assistant?.name_ko || null,
+          guide_name: guide?.nick_name || guide?.name_ko || null,
+          assistant_name: assistant?.nick_name || assistant?.name_ko || null,
           is_private_tour: tour.is_private_tour === true,
           vehicle_number: tour.tour_car_id ? (vehicleMap.get(tour.tour_car_id as unknown as string) || null) : null
         }

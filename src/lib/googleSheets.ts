@@ -302,7 +302,7 @@ const readGoogleSheetInChunks = async (
     const firstChunkData = firstResponse.data.values.slice(1).map((row: string[]) => {
       const obj: Record<string, unknown> = {}
       headers.forEach((header, index) => {
-        obj[header] = row[index] || ''
+        obj[header] = row[index] ?? ''
       })
       return obj
     })
@@ -364,7 +364,7 @@ const readGoogleSheetInChunks = async (
               return chunkResponse.data.values.map((row: string[]) => {
                 const obj: Record<string, unknown> = {}
                 headers.forEach((header, idx) => {
-                  obj[header] = row[idx] || ''
+                  obj[header] = row[idx] ?? ''
                 })
                 return obj
               })
@@ -460,7 +460,7 @@ export const readGoogleSheet = async (spreadsheetId: string, range: string, chun
     const data = rows.slice(1).map((row) => {
       const obj: Record<string, unknown> = {}
       headers.forEach((header, index) => {
-        obj[header] = row[index] || ''
+        obj[header] = row[index] ?? ''
       })
       return obj
     })

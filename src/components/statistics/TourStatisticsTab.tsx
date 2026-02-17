@@ -529,19 +529,19 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
       if (tour?.tour_guide_id) {
         const { data: guideData } = await supabase
           .from('team')
-          .select('name_ko')
+          .select('name_ko, nick_name')
           .eq('email', tour.tour_guide_id)
           .maybeSingle()
-        guideName = guideData?.name_ko || ''
+        guideName = guideData?.nick_name || guideData?.name_ko || ''
       }
       
       if (tour?.assistant_id) {
         const { data: assistantData } = await supabase
           .from('team')
-          .select('name_ko')
+          .select('name_ko, nick_name')
           .eq('email', tour.assistant_id)
           .maybeSingle()
-        assistantName = assistantData?.name_ko || ''
+        assistantName = assistantData?.nick_name || assistantData?.name_ko || ''
       }
 
       // 입금 내역 조회 (예약별 입금/결제 정보) - 날짜 필터링 적용

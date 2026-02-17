@@ -117,7 +117,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko' }: 
       // 팀 멤버 조회
       const { data: teamData, error: teamError } = await supabase
         .from('team')
-        .select('email, name_ko, name_en, position, languages')
+        .select('email, name_ko, name_en, nick_name, position, languages')
         .eq('is_active', true)
         .order('name_ko')
 

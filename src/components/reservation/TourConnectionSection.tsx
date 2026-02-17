@@ -60,7 +60,7 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
       // maybeSingle 사용: 결과 0건이어도 에러가 아니므로 "Both failed" 로그 방지
       const { data: directData, error: directError } = await supabase
         .from('team')
-        .select('name_ko, name_en')
+        .select('name_ko, name_en, nick_name')
         .eq('email', value)
         .maybeSingle()
 
@@ -437,7 +437,7 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
                       <div className="flex items-center">
                         <Users className="w-3 h-3 mr-1 text-gray-400" />
                         <span className="font-medium">가이드:</span>
-                        <span className="ml-1">{tour.guide.name_ko}</span>
+                        <span className="ml-1">{(tour.guide as any).nick_name || tour.guide.name_ko}</span>
                       </div>
                     )}
 
@@ -445,7 +445,7 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
                       <div className="flex items-center">
                         <Users className="w-3 h-3 mr-1 text-gray-400" />
                         <span className="font-medium">어시스턴트:</span>
-                        <span className="ml-1">{tour.assistant.name_ko}</span>
+                        <span className="ml-1">{(tour.assistant as any).nick_name || tour.assistant.name_ko}</span>
                       </div>
                     )}
 

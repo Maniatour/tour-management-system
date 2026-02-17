@@ -6,6 +6,7 @@ import { ConnectionStatusLabel } from './TourUIComponents'
 interface TeamMember {
   id: string
   name_ko: string
+  nick_name?: string | null
   email: string
   position: string
   is_active: boolean
@@ -114,9 +115,9 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
     })
   }
 
-  const getDisplayName = (member: { name_ko: string; email: string }) => {
-    // name_ko만 표시, 없으면 이메일 표시
-    return member.name_ko || member.email
+  const getDisplayName = (member: { name_ko: string; nick_name?: string | null; email: string }) => {
+    // nick_name 우선, 없으면 name_ko, 없으면 이메일 표시
+    return member.nick_name || member.name_ko || member.email
   }
 
   const guideDriverCount = teamMembers.filter((m) => {

@@ -369,11 +369,11 @@ export default function GuideDashboard() {
         if (allEmails.length > 0) {
           const { data: teamData } = await supabase
             .from('team')
-            .select('email, name_ko, name_en')
+            .select('email, name_ko, name_en, nick_name')
             .in('email', allEmails)
           
-          teamMap = new Map((teamData || []).map(member => [member.email, member.name_ko]))
-          teamEnMap = new Map((teamData || []).map(member => [member.email, member.name_en || member.name_ko]))
+          teamMap = new Map((teamData || []).map(member => [member.email, member.nick_name || member.name_ko]))
+          teamEnMap = new Map((teamData || []).map(member => [member.email, member.nick_name || member.name_en || member.name_ko]))
         }
 
         // 차량 정보 가져오기
@@ -681,12 +681,12 @@ export default function GuideDashboard() {
             // 먼저 직접 조회 시도 (더 안전한 방식)
             const { data: directData, error: directError } = await supabase
               .from('team')
-              .select('email, name_ko, name_en')
+              .select('email, name_ko, name_en, nick_name')
               .in('email', allEmails)
             
             if (!directError && directData) {
-              teamMap = new Map((directData as Array<{ email: string; name_ko: string; name_en: string }> || []).map(member => [member.email, member.name_ko]))
-              teamEnMap = new Map((directData as Array<{ email: string; name_ko: string; name_en: string }> || []).map(member => [member.email, member.name_en]))
+              teamMap = new Map((directData as Array<{ email: string; name_ko: string; name_en: string; nick_name?: string | null }> || []).map(member => [member.email, member.nick_name || member.name_ko]))
+              teamEnMap = new Map((directData as Array<{ email: string; name_ko: string; name_en: string; nick_name?: string | null }> || []).map(member => [member.email, member.nick_name || member.name_en]))
             } else {
               // 직접 조회 실패 시 RPC 함수 시도 (fallback)
               console.log('Direct query failed, trying RPC function...', directError)
@@ -696,8 +696,8 @@ export default function GuideDashboard() {
                 .rpc('get_team_members_info', { p_emails: allEmails } as any)
               
               if (!rpcError && rpcData) {
-                teamMap = new Map((rpcData as Array<{ email: string; name_ko: string; name_en: string }> || []).map((member: { email: string; name_ko: string; name_en: string }) => [member.email, member.name_ko]))
-                teamEnMap = new Map((rpcData as Array<{ email: string; name_ko: string; name_en: string }> || []).map((member: { email: string; name_ko: string; name_en: string }) => [member.email, member.name_en]))
+                teamMap = new Map((rpcData as Array<{ email: string; name_ko: string; name_en: string; nick_name?: string | null }> || []).map((member: { email: string; name_ko: string; name_en: string; nick_name?: string | null }) => [member.email, member.nick_name || member.name_ko]))
+                teamEnMap = new Map((rpcData as Array<{ email: string; name_ko: string; name_en: string; nick_name?: string | null }> || []).map((member: { email: string; name_ko: string; name_en: string; nick_name?: string | null }) => [member.email, member.nick_name || member.name_en]))
               } else {
                 console.error('Both direct query and RPC failed:', { directError, rpcError })
                 teamMap = new Map()

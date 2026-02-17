@@ -31,6 +31,7 @@ export const getAutoCompleteSuggestions = (dbColumn: string, sheetColumns: strin
     const koreanMappings: { [key: string]: string[] } = {
       'id': ['예약번호', 'ID', '아이디'],
       'name': ['고객명', '이름', 'Name'],
+      'nick_name': ['닉네임', 'Nickname', '별명', '별칭'],
       'customer_name': ['고객명', '이름', 'Name'],
       'email': ['이메일', 'Email', '메일'],
       'customer_email': ['이메일', 'Email', '메일'],
@@ -387,6 +388,7 @@ export const getFallbackColumns = (tableName: string): ColumnInfo[] => {
       { name: 'email', type: 'text', nullable: false, default: null },
       { name: 'name_ko', type: 'text', nullable: false, default: null },
       { name: 'name_en', type: 'text', nullable: true, default: null },
+      { name: 'nick_name', type: 'text', nullable: true, default: null },
       { name: 'phone', type: 'text', nullable: false, default: null },
       { name: 'position', type: 'text', nullable: true, default: null },
       { name: 'languages', type: 'text[]', nullable: true, default: '{}' },

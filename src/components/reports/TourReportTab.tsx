@@ -64,7 +64,7 @@ export default function TourReportTab({ dateRange, period }: TourReportTabProps)
           ? supabase.from('products').select('id, name, name_en').in('id', productIds)
           : Promise.resolve({ data: [] as any[] } as any),
         teamEmails.length > 0
-          ? supabase.from('team').select('email, name_ko, name_en').in('email', teamEmails)
+          ? supabase.from('team').select('email, name_ko, name_en, nick_name').in('email', teamEmails)
           : Promise.resolve({ data: [] as any[] } as any),
         allReservationIds.length > 0
           ? supabase.from('reservations').select('id, total_people').in('id', allReservationIds)
@@ -90,7 +90,7 @@ export default function TourReportTab({ dateRange, period }: TourReportTabProps)
 
       const teamNameMap = new Map<string, string>()
       ;(team || []).forEach((m: any) => {
-        teamNameMap.set(m.email, m.name_ko || m.name_en || m.email)
+        teamNameMap.set(m.email, m.nick_name || m.name_ko || m.name_en || m.email)
       })
 
       const peopleMap = new Map<string, number>()

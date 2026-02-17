@@ -39,6 +39,10 @@ export default function AdminTeam() {
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null)
   const [viewMode, setViewMode] = useState<'table' | 'card'>('card')
   const [memberDocuments, setMemberDocuments] = useState<{[email: string]: {[type: string]: Array<{id: string, name: string, url: string, path: string, size: number, uploadedAt: string}>}}>({})
+  
+  // 인라인 편집 상태
+  const [inlineEditing, setInlineEditing] = useState<{ email: string; field: string } | null>(null)
+  const [inlineEditValue, setInlineEditValue] = useState<string>('')
 
   // 팀원 목록 불러오기
   const fetchTeamMembers = async () => {
@@ -171,6 +175,76 @@ export default function AdminTeam() {
     }
   }
 
+  // 인라인 편집 시작
+  const handleInlineEditStart = (email: string, field: string, currentValue: string) => {
+    setInlineEditing({ email, field })
+    setInlineEditValue(currentValue || '')
+  }
+
+  // 인라인 편집 저장
+  const handleInlineEditSave = async () => {
+    if (!inlineEditing) return
+    
+    const { email, field } = inlineEditing
+    const member = teamMembers.find(m => m.email === email)
+    if (!member) return
+
+    // 값이 변경되지 않았으면 취소
+    const currentValue = (member as Record<string, unknown>)[field] as string || ''
+    if (inlineEditValue === currentValue) {
+      setInlineEditing(null)
+      return
+    }
+
+    try {
+      const updateData: Record<string, string | null> = {
+        [field]: inlineEditValue.trim() || null
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        .from('team')
+        .update(updateData)
+        .eq('email', email)
+
+      if (error) {
+        console.error('인라인 수정 오류:', error)
+        alert('수정 중 오류가 발생했습니다.')
+      } else {
+        // 로컬 상태 즉시 업데이트 (리로드 없이)
+        setTeamMembers(prev => prev.map(m => 
+          m.email === email 
+            ? { ...m, [field]: inlineEditValue.trim() || null } as TeamMember
+            : m
+        ))
+      }
+    } catch (error) {
+      console.error('인라인 수정 오류:', error)
+      alert('수정 중 오류가 발생했습니다.')
+    } finally {
+      setInlineEditing(null)
+    }
+  }
+
+  // 인라인 편집 취소
+  const handleInlineEditCancel = () => {
+    setInlineEditing(null)
+    setInlineEditValue('')
+  }
+
+  // 인라인 편집 키 이벤트
+  const handleInlineEditKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleInlineEditSave()
+    } else if (e.key === 'Escape') {
+      handleInlineEditCancel()
+    } else if (e.key === 'Tab') {
+      e.preventDefault()
+      handleInlineEditSave()
+    }
+  }
+
   // 정렬 처리 함수
   const handleSort = (field: keyof TeamMember) => {
     if (sortField === field) {
@@ -283,6 +357,7 @@ export default function AdminTeam() {
     return (
       member.name_ko.toLowerCase().includes(searchTerm.toLowerCase()) ||
       member.name_en?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      member.nick_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       member.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
       member.position?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (String(member.is_active).toLowerCase() === 'true' ? '활성' : '비활성').includes(searchTerm.toLowerCase())
@@ -403,145 +478,254 @@ export default function AdminTeam() {
           </div>
           
           {viewMode === 'table' ? (
-            /* 테이블 뷰 - 모바일 최적화 */
+            /* 테이블 뷰 - 인라인 편집 지원 */
             <div className="bg-white shadow rounded-lg overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     <th 
-                      className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                       onClick={() => handleSort('name_ko')}
                     >
                       <div className="flex items-center space-x-1">
-                        <span>{t('columns.name')}</span>
+                        <span>이름</span>
                         {sortField === 'name_ko' && (
-                          <span className="text-blue-600">
-                            {sortDirection === 'asc' ? '↑' : '↓'}
-                          </span>
+                          <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                         )}
                       </div>
                     </th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      닉네임
+                    </th>
                     <th 
-                      className="hidden sm:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      className="hidden sm:table-cell px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                       onClick={() => handleSort('email')}
                     >
                       <div className="flex items-center space-x-1">
-                        <span>{t('columns.email')}</span>
+                        <span>이메일</span>
                         {sortField === 'email' && (
-                          <span className="text-blue-600">
-                            {sortDirection === 'asc' ? '↑' : '↓'}
-                          </span>
+                          <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                         )}
                       </div>
                     </th>
                     <th 
-                      className="hidden md:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      className="hidden md:table-cell px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                       onClick={() => handleSort('phone')}
                     >
                       <div className="flex items-center space-x-1">
-                        <span>{t('columns.phone')}</span>
+                        <span>전화번호</span>
                         {sortField === 'phone' && (
-                          <span className="text-blue-600">
-                            {sortDirection === 'asc' ? '↑' : '↓'}
-                          </span>
+                          <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                         )}
                       </div>
                     </th>
                     <th 
-                      className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                       onClick={() => handleSort('position')}
                     >
                       <div className="flex items-center space-x-1">
-                        <span>{t('columns.position')}</span>
+                        <span>직책</span>
                         {sortField === 'position' && (
-                          <span className="text-blue-600">
-                            {sortDirection === 'asc' ? '↑' : '↓'}
-                          </span>
+                          <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                         )}
                       </div>
                     </th>
-                    {/* 주소 컬럼 제거 - 데이터베이스에 address 컬럼이 없음 */}
-                    {/* <th 
-                      className="hidden lg:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
-                      onClick={() => handleSort('address')}
-                    >
-                      <div className="flex items-center space-x-1">
-                        <span>주소</span>
-                        {sortField === 'address' && (
-                          <span className="text-blue-600">
-                            {sortDirection === 'asc' ? '↑' : '↓'}
-                          </span>
-                        )}
-                      </div>
-                    </th> */}
                     <th 
-                      className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                      className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                       onClick={() => handleSort('is_active')}
                     >
                       <div className="flex items-center space-x-1">
                         <span>상태</span>
                         {sortField === 'is_active' && (
-                          <span className="text-blue-600">
-                            {sortDirection === 'asc' ? '↑' : '↓'}
-                          </span>
+                          <span className="text-blue-600">{sortDirection === 'asc' ? '↑' : '↓'}</span>
                         )}
                       </div>
                     </th>
-                    <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      {t('columns.actions')}
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      작업
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {sortedMembers.map((member) => (
-                    <tr key={member.email} className="hover:bg-gray-50">
-                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="flex-shrink-0 h-8 w-8 sm:h-10 sm:w-10">
-                            {member.avatar_url ? (
-                              <img
-                                className="h-8 w-8 sm:h-10 sm:w-10 rounded-full"
-                                src={member.avatar_url}
-                                alt={member.name_ko}
+                    <tr key={member.email} className="hover:bg-gray-50 group">
+                      {/* 이름 (한국어 + 영어) */}
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {inlineEditing?.email === member.email && inlineEditing?.field === 'name_ko' ? (
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="text"
+                                value={inlineEditValue}
+                                onChange={(e) => setInlineEditValue(e.target.value)}
+                                onKeyDown={handleInlineEditKeyDown}
+                                onBlur={handleInlineEditSave}
+                                autoFocus
+                                className="w-full px-2 py-1 text-sm border border-blue-400 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none bg-blue-50"
+                                placeholder="한국어 이름"
                               />
-                            ) : (
-                              <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-gray-300 flex items-center justify-center">
-                                <User className="h-4 w-4 sm:h-6 sm:w-6 text-gray-600" />
-                              </div>
-                            )}
+                            </div>
                           </div>
-                          <div className="ml-2 sm:ml-4">
-                            <div className="text-sm font-medium text-gray-900">
+                        ) : inlineEditing?.email === member.email && inlineEditing?.field === 'name_en' ? (
+                          <div className="space-y-1">
+                            <div className="text-sm font-medium text-gray-900">{member.name_ko}</div>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="text"
+                                value={inlineEditValue}
+                                onChange={(e) => setInlineEditValue(e.target.value)}
+                                onKeyDown={handleInlineEditKeyDown}
+                                onBlur={handleInlineEditSave}
+                                autoFocus
+                                className="w-full px-2 py-0.5 text-xs border border-blue-400 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none bg-blue-50"
+                                placeholder="영어 이름"
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="min-w-[100px]">
+                            <div
+                              className="text-sm font-medium text-gray-900 cursor-pointer hover:text-blue-600 hover:bg-blue-50 rounded px-1 py-0.5 -mx-1 transition-colors"
+                              onClick={() => handleInlineEditStart(member.email, 'name_ko', member.name_ko)}
+                              title="클릭하여 수정"
+                            >
                               {member.name_ko}
                             </div>
-                            {member.name_en && (
-                              <div className="text-xs sm:text-sm text-gray-500">{member.name_en}</div>
-                            )}
-                            {/* 모바일에서 이메일 표시 */}
-                            <div className="sm:hidden text-xs text-gray-500 truncate">
-                              {member.email}
+                            <div
+                              className="text-xs text-gray-500 cursor-pointer hover:text-blue-600 hover:bg-blue-50 rounded px-1 py-0.5 -mx-1 transition-colors"
+                              onClick={() => handleInlineEditStart(member.email, 'name_en', member.name_en || '')}
+                              title="클릭하여 수정"
+                            >
+                              {member.name_en || <span className="text-gray-300 italic">영문명</span>}
                             </div>
+                            <div className="sm:hidden text-xs text-gray-400 truncate">{member.email}</div>
                           </div>
-                        </div>
+                        )}
                       </td>
-                      <td className="hidden sm:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+
+                      {/* 닉네임 */}
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {inlineEditing?.email === member.email && inlineEditing?.field === 'nick_name' ? (
+                          <input
+                            type="text"
+                            value={inlineEditValue}
+                            onChange={(e) => setInlineEditValue(e.target.value)}
+                            onKeyDown={handleInlineEditKeyDown}
+                            onBlur={handleInlineEditSave}
+                            autoFocus
+                            className="w-full px-2 py-1 text-sm border border-blue-400 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none bg-blue-50 max-w-[100px]"
+                            placeholder="닉네임"
+                          />
+                        ) : (
+                          <div
+                            className="text-sm cursor-pointer hover:bg-blue-50 rounded px-1 py-0.5 -mx-1 transition-colors min-w-[60px]"
+                            onClick={() => handleInlineEditStart(member.email, 'nick_name', member.nick_name || '')}
+                            title="클릭하여 수정"
+                          >
+                            {member.nick_name ? (
+                              <span className="text-blue-600 font-medium">{member.nick_name}</span>
+                            ) : (
+                              <span className="text-gray-300 italic text-xs">미설정</span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* 이메일 (읽기전용) */}
+                      <td className="hidden sm:table-cell px-3 py-2 whitespace-nowrap text-sm text-gray-600">
                         {member.email}
                       </td>
-                      <td className="hidden md:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {member.phone || '-'}
+
+                      {/* 전화번호 */}
+                      <td className="hidden md:table-cell px-3 py-2 whitespace-nowrap">
+                        {inlineEditing?.email === member.email && inlineEditing?.field === 'phone' ? (
+                          <input
+                            type="tel"
+                            value={inlineEditValue}
+                            onChange={(e) => setInlineEditValue(e.target.value)}
+                            onKeyDown={handleInlineEditKeyDown}
+                            onBlur={handleInlineEditSave}
+                            autoFocus
+                            className="w-full px-2 py-1 text-sm border border-blue-400 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none bg-blue-50 max-w-[140px]"
+                            placeholder="전화번호"
+                          />
+                        ) : (
+                          <div
+                            className="text-sm text-gray-900 cursor-pointer hover:text-blue-600 hover:bg-blue-50 rounded px-1 py-0.5 -mx-1 transition-colors"
+                            onClick={() => handleInlineEditStart(member.email, 'phone', member.phone || '')}
+                            title="클릭하여 수정"
+                          >
+                            {member.phone || <span className="text-gray-300">-</span>}
+                          </div>
+                        )}
                       </td>
-                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {member.position || '-'}
+
+                      {/* 직책 */}
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {inlineEditing?.email === member.email && inlineEditing?.field === 'position' ? (
+                          <select
+                            value={inlineEditValue}
+                            onChange={(e) => {
+                              setInlineEditValue(e.target.value)
+                              // 셀렉트는 선택 즉시 저장
+                              setTimeout(() => {
+                                setInlineEditing(null)
+                                // 직접 저장 처리
+                                const updatePosition = async () => {
+                                  try {
+                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                    const { error } = await (supabase as any)
+                                      .from('team')
+                                      .update({ position: e.target.value || null })
+                                      .eq('email', member.email)
+                                    if (!error) {
+                                      setTeamMembers(prev => prev.map(m => 
+                                        m.email === member.email 
+                                          ? { ...m, position: e.target.value || null } as TeamMember
+                                          : m
+                                      ))
+                                    }
+                                  } catch (err) {
+                                    console.error('직책 수정 오류:', err)
+                                  }
+                                }
+                                updatePosition()
+                              }, 0)
+                            }}
+                            onBlur={handleInlineEditCancel}
+                            autoFocus
+                            className="px-2 py-1 text-sm border border-blue-400 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none bg-blue-50"
+                          >
+                            <option value="">미지정</option>
+                            <option value="manager">매니저</option>
+                            <option value="admin">관리자</option>
+                            <option value="tour guide">투어 가이드</option>
+                            <option value="driver">운전기사</option>
+                            <option value="op">운영자</option>
+                          </select>
+                        ) : (
+                          <div
+                            className="text-sm text-gray-900 cursor-pointer hover:text-blue-600 hover:bg-blue-50 rounded px-1 py-0.5 -mx-1 transition-colors"
+                            onClick={() => handleInlineEditStart(member.email, 'position', member.position || '')}
+                            title="클릭하여 수정"
+                          >
+                            {member.position ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                                {member.position}
+                              </span>
+                            ) : (
+                              <span className="text-gray-300">-</span>
+                            )}
+                          </div>
+                        )}
                       </td>
-                      {/* 주소 컬럼 제거 - 데이터베이스에 address 컬럼이 없음 */}
-                      {/* <td className="hidden lg:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {member.address || '-'}
-                      </td> */}
-                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium">
+
+                      {/* 상태 */}
+                      <td className="px-3 py-2 whitespace-nowrap text-sm font-medium">
                         <button
                           onClick={() => handleToggleActive(member.email, member.is_active ?? true)}
-                          className={`px-2 sm:px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                          className={`px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${
                             member.is_active 
                               ? 'bg-green-100 text-green-800 hover:bg-green-200' 
                               : 'bg-red-100 text-red-800 hover:bg-red-200'
@@ -550,31 +734,36 @@ export default function AdminTeam() {
                           {member.is_active ? '활성' : '비활성'}
                         </button>
                       </td>
-                      <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex items-center space-x-2">
+
+                      {/* 작업 */}
+                      <td className="px-3 py-2 whitespace-nowrap text-sm font-medium">
+                        <div className="flex items-center space-x-1">
                           <button
                             onClick={() => {
                               setSelectedMember(member)
                               setShowDetailModal(true)
                             }}
-                            className="text-blue-600 hover:text-blue-900"
+                            className="p-1 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded transition-colors"
+                            title="상세보기"
                           >
-                            <Eye size={16} />
+                            <Eye size={15} />
                           </button>
                           <button
                             onClick={() => {
                               setEditingMember(member)
                               setShowForm(true)
                             }}
-                            className="text-indigo-600 hover:text-indigo-900"
+                            className="p-1 text-indigo-600 hover:text-indigo-900 hover:bg-indigo-50 rounded transition-colors"
+                            title="전체 수정"
                           >
-                            <Edit size={16} />
+                            <Edit size={15} />
                           </button>
                           <button
                             onClick={() => handleDeleteMember(member.email)}
-                            className="text-red-600 hover:text-red-900"
+                            className="p-1 text-red-600 hover:text-red-900 hover:bg-red-50 rounded transition-colors"
+                            title="삭제"
                           >
-                            <Trash2 size={16} />
+                            <Trash2 size={15} />
                           </button>
                         </div>
                       </td>
@@ -610,6 +799,9 @@ export default function AdminTeam() {
                           <div className="flex items-center space-x-2">
                             <h3 className="text-lg font-semibold text-gray-900 truncate">
                               {member.name_ko}
+                              {member.nick_name && (
+                                <span className="ml-1.5 text-sm font-normal text-blue-600">({member.nick_name})</span>
+                              )}
                             </h3>
                             {member.languages && member.languages.length > 0 && (
                               <div className="flex space-x-1">
@@ -1044,6 +1236,7 @@ function TeamMemberForm({
     email: member?.email || '',
     name_ko: member?.name_ko || '',
     name_en: member?.name_en || '',
+    nick_name: member?.nick_name || '',
     phone: member?.phone || '',
     position: member?.position || '',
     languages: member?.languages || ['KR'],
@@ -1109,7 +1302,7 @@ function TeamMemberForm({
         
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* 기본 정보 */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 한국어 이름 *
@@ -1132,6 +1325,21 @@ function TeamMemberForm({
                 value={formData.name_en || ''}
                 onChange={(e) => setFormData({...formData, name_en: e.target.value})}
                 className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                닉네임 <span className="text-xs text-gray-400">(투어 테이블 표시용)</span>
+              </label>
+              <input
+                type="text"
+                value={formData.nick_name || ''}
+                onChange={(e) => setFormData({...formData, nick_name: e.target.value})}
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent text-sm"
+                placeholder="예: 홍길동 → 길동"
               />
             </div>
             
@@ -1786,6 +1994,12 @@ function TeamMemberDetailModal({
                 <div>
                   <span className="text-sm font-medium text-gray-500">이름 (영어)</span>
                   <p className="text-gray-900">{member.name_en}</p>
+                </div>
+              )}
+              {member.nick_name && (
+                <div>
+                  <span className="text-sm font-medium text-gray-500">닉네임</span>
+                  <p className="text-gray-900">{member.nick_name}</p>
                 </div>
               )}
               <div>

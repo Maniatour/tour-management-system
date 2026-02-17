@@ -533,13 +533,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             const chunk = guideEmailsArray.slice(i, i + chunkSize)
             const { data: guides } = await supabase
               .from('team')
-              .select('email, name_ko')
+              .select('email, name_ko, nick_name')
               .in('email', chunk)
             
             if (guides) {
-              guides.forEach((guide: { email: string; name_ko: string | null }) => {
+              guides.forEach((guide: { email: string; name_ko: string | null; nick_name?: string | null }) => {
                 if (guide.email) {
-                  guideMap.set(guide.email, guide.name_ko || '-')
+                  guideMap.set(guide.email, guide.nick_name || guide.name_ko || '-')
                 }
               })
             }
@@ -554,13 +554,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             const chunk = assistantEmailsArray.slice(i, i + chunkSize)
             const { data: assistants } = await supabase
               .from('team')
-              .select('email, name_ko')
+              .select('email, name_ko, nick_name')
               .in('email', chunk)
             
             if (assistants) {
-              assistants.forEach((assistant: { email: string; name_ko: string | null }) => {
+              assistants.forEach((assistant: { email: string; name_ko: string | null; nick_name?: string | null }) => {
                 if (assistant.email) {
-                  assistantMap.set(assistant.email, assistant.name_ko || '-')
+                  assistantMap.set(assistant.email, assistant.nick_name || assistant.name_ko || '-')
                 }
               })
             }

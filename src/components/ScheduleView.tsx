@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useLocale } from 'next-intl'
@@ -87,6 +87,12 @@ export default function ScheduleView() {
   const [confirmModalContent, setConfirmModalContent] = useState({ title: '', message: '', onConfirm: () => {}, buttonText: '확인', buttonColor: 'bg-red-500 hover:bg-red-600' })
   const [showGuideModal, setShowGuideModal] = useState(false)
   const [guideModalContent, setGuideModalContent] = useState({ title: '', content: '', tourId: '' })
+  
+  // 행 드래그앤드롭 상태 (가이드/상품)
+  const [draggedGuideRow, setDraggedGuideRow] = useState<string | null>(null)
+  const [dragOverGuideRow, setDragOverGuideRow] = useState<string | null>(null)
+  const [draggedProductRow, setDraggedProductRow] = useState<string | null>(null)
+  const [dragOverProductRow, setDragOverProductRow] = useState<string | null>(null)
   const [shareProductsSetting, setShareProductsSetting] = useState(false)
   const [shareTeamMembersSetting, setShareTeamMembersSetting] = useState(false)
   
@@ -105,6 +111,14 @@ export default function ScheduleView() {
   const [showOffScheduleActionModal, setShowOffScheduleActionModal] = useState(false)
   const [selectedOffSchedule, setSelectedOffSchedule] = useState<{ team_email: string; off_date: string; reason: string; status: string } | null>(null)
   const [newOffScheduleReason, setNewOffScheduleReason] = useState('')
+
+  // 일괄 오프 스케줄 모달 상태
+  const [showBatchOffModal, setShowBatchOffModal] = useState(false)
+  const [batchOffGuides, setBatchOffGuides] = useState<string[]>([])
+  const [batchOffStartDate, setBatchOffStartDate] = useState('')
+  const [batchOffEndDate, setBatchOffEndDate] = useState('')
+  const [batchOffReason, setBatchOffReason] = useState('')
+  const [batchOffSaving, setBatchOffSaving] = useState(false)
 
   // 통합 스크롤 컨테이너는 하나의 스크롤로 동기화됨
 
@@ -313,7 +327,7 @@ export default function ScheduleView() {
       const { data: sharedSettings, error: sharedError } = await supabase
         .from('shared_settings')
         .select('setting_key, setting_value')
-        .in('setting_key', ['schedule_selected_products', 'schedule_selected_team_members'])
+        .in('setting_key', ['schedule_selected_products', 'schedule_selected_team_members', 'schedule_product_colors'])
 
       if (sharedError) {
         console.warn('Error loading shared settings from database:', sharedError)
@@ -365,6 +379,24 @@ export default function ScheduleView() {
           console.warn('Error parsing saved team members:', parseError)
         }
       }
+
+      // 상품 색상 복원
+      const sharedColors = sharedSettingsMap.get('schedule_product_colors')
+        || (() => {
+          const cached = localStorage.getItem('shared_schedule_product_colors')
+          return cached ? JSON.parse(cached) : null
+        })()
+      const savedColors = sharedColors || localStorage.getItem('schedule_product_colors')
+      if (savedColors) {
+        try {
+          const colors = typeof savedColors === 'string' ? JSON.parse(savedColors) : savedColors
+          if (colors && typeof colors === 'object') {
+            setProductColors(prev => ({ ...prev, ...colors }))
+          }
+        } catch (parseError) {
+          console.warn('Error parsing saved product colors:', parseError)
+        }
+      }
     } catch (error) {
       console.warn('Error in loadUserSettings, using localStorage fallback:', error)
       // localStorage에서 직접 로드
@@ -383,6 +415,18 @@ export default function ScheduleView() {
           setSelectedTeamMembers(JSON.parse(savedTeamMembers))
         } catch (parseError) {
           console.warn('Error parsing saved team members from localStorage:', parseError)
+        }
+      }
+      // 색상도 localStorage에서 복원
+      const savedColors = localStorage.getItem('shared_schedule_product_colors') || localStorage.getItem('schedule_product_colors')
+      if (savedColors) {
+        try {
+          const colors = JSON.parse(savedColors)
+          if (colors && typeof colors === 'object') {
+            setProductColors(prev => ({ ...prev, ...colors }))
+          }
+        } catch (parseError) {
+          console.warn('Error parsing saved product colors from localStorage:', parseError)
         }
       }
     }
@@ -405,12 +449,23 @@ export default function ScheduleView() {
   ], [])
 
 
-  // 상품 색상 변경
-  const changeProductColor = (productId: string, colorClass: string) => {
-    setProductColors(prev => ({
-      ...prev,
-      [productId]: colorClass
-    }))
+  // 상품 색상 변경 (localStorage + 공유 설정 DB 저장)
+  const changeProductColor = async (productId: string, colorClass: string) => {
+    const newColors = { ...productColors, [productId]: colorClass }
+    setProductColors(newColors)
+    
+    // localStorage에 저장
+    localStorage.setItem('schedule_product_colors', JSON.stringify(newColors))
+    
+    // 공유 설정이 있으면 DB에도 저장
+    const hasSharedSetting = !!localStorage.getItem('shared_schedule_product_colors')
+    if (hasSharedSetting && isSuperAdmin) {
+      await saveSharedSetting('schedule_product_colors', newColors as unknown as string[])
+    }
+    // 공유 캐시도 갱신
+    if (hasSharedSetting) {
+      localStorage.setItem('shared_schedule_product_colors', JSON.stringify(newColors))
+    }
   }
 
   // Tailwind CSS 클래스를 실제 색상 값으로 변환
@@ -807,13 +862,28 @@ export default function ScheduleView() {
     }
   }, [pendingCount])
 
-  // 상품별 색상 초기화 (products가 변경될 때만)
+  // 상품별 색상 초기화 (저장된 색상 로드 후 없는 것만 기본값 할당)
   useEffect(() => {
     if (products.length > 0) {
       setProductColors(prev => {
-        const newColors = { ...prev }
-        let hasChanges = false
+        // 저장된 색상 로드 (공유 설정 > localStorage > 현재 상태)
+        let savedColors: { [key: string]: string } = {}
+        try {
+          const sharedSaved = localStorage.getItem('shared_schedule_product_colors')
+          const personalSaved = localStorage.getItem('schedule_product_colors')
+          const savedStr = sharedSaved || personalSaved
+          if (savedStr) {
+            savedColors = JSON.parse(savedStr)
+          }
+        } catch (e) {
+          console.warn('Error parsing saved product colors:', e)
+        }
         
+        // 저장된 색상 + 현재 상태를 병합
+        const newColors = { ...prev, ...savedColors }
+        let hasChanges = Object.keys(savedColors).length > 0
+        
+        // 색상이 아직 없는 상품만 기본 팔레트 할당
         products.forEach((product, index) => {
           if (!newColors[product.id]) {
             newColors[product.id] = colorPalette[index % colorPalette.length].class
@@ -966,7 +1036,8 @@ export default function ScheduleView() {
           if (guideTour && guideTour.tour_guide_id) {
             const guide = teamMap.get(guideTour.tour_guide_id)
             if (guide) {
-              guideInitials = guide.name_ko.split('').map((char: string) => char.charAt(0)).join('').substring(0, 2)
+              const gName = (guide as any).nick_name || guide.name_ko
+              guideInitials = gName.split('').map((char: string) => char.charAt(0)).join('').substring(0, 2)
             }
           }
         }
@@ -1059,7 +1130,7 @@ export default function ScheduleView() {
       })
 
       data[teamMemberId] = {
-        team_member_name: teamMember.name_ko,
+        team_member_name: (teamMember as any).nick_name || teamMember.name_ko,
         position: teamMember.position || '',
         dailyData,
         totalPeople,
@@ -1140,11 +1211,21 @@ export default function ScheduleView() {
     
     setSelectedProducts(newSelection)
     
-    // 데이터베이스에 저장
+    // 공유 설정이 존재하면 DB에도 저장 (순서 변경이 다른 사용자에게도 반영)
+    const hasSharedSetting = !!localStorage.getItem('shared_schedule_selected_products')
+    if (hasSharedSetting && isSuperAdmin) {
+      await saveSharedSetting('schedule_selected_products', newSelection)
+    }
+    
+    // 개인 설정 저장
     await saveUserSetting('schedule_selected_products', newSelection)
     
     // 로컬 스토리지에도 저장 (fallback)
     localStorage.setItem('schedule_selected_products', JSON.stringify(newSelection))
+    // 공유 캐시도 갱신
+    if (hasSharedSetting) {
+      localStorage.setItem('shared_schedule_selected_products', JSON.stringify(newSelection))
+    }
   }
 
   // 팀원 순서 변경
@@ -1155,11 +1236,116 @@ export default function ScheduleView() {
     
     setSelectedTeamMembers(newSelection)
     
-    // 데이터베이스에 저장
+    // 공유 설정이 존재하면 DB에도 저장 (순서 변경이 다른 사용자에게도 반영)
+    const hasSharedSetting = !!localStorage.getItem('shared_schedule_selected_team_members')
+    if (hasSharedSetting && isSuperAdmin) {
+      await saveSharedSetting('schedule_selected_team_members', newSelection)
+    }
+    
+    // 개인 설정 저장
     await saveUserSetting('schedule_selected_team_members', newSelection)
     
     // 로컬 스토리지에도 저장 (fallback)
     localStorage.setItem('schedule_selected_team_members', JSON.stringify(newSelection))
+    // 공유 캐시도 갱신
+    if (hasSharedSetting) {
+      localStorage.setItem('shared_schedule_selected_team_members', JSON.stringify(newSelection))
+    }
+  }
+
+  // 가이드 행 드래그앤드롭 핸들러
+  const handleGuideRowDragStart = (e: React.DragEvent, teamMemberId: string) => {
+    setDraggedGuideRow(teamMemberId)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/guide-row', teamMemberId)
+    // 드래그 이미지를 작게 설정
+    const target = e.currentTarget as HTMLElement
+    if (target) {
+      e.dataTransfer.setDragImage(target, 40, 15)
+    }
+  }
+
+  const handleGuideRowDragOver = (e: React.DragEvent, teamMemberId: string) => {
+    e.preventDefault()
+    if (draggedGuideRow && draggedGuideRow !== teamMemberId) {
+      e.dataTransfer.dropEffect = 'move'
+      setDragOverGuideRow(teamMemberId)
+    }
+  }
+
+  const handleGuideRowDragLeave = () => {
+    setDragOverGuideRow(null)
+  }
+
+  const handleGuideRowDrop = async (e: React.DragEvent, targetTeamMemberId: string) => {
+    e.preventDefault()
+    setDragOverGuideRow(null)
+    
+    if (!draggedGuideRow || draggedGuideRow === targetTeamMemberId) {
+      setDraggedGuideRow(null)
+      return
+    }
+
+    const fromIndex = selectedTeamMembers.indexOf(draggedGuideRow)
+    const toIndex = selectedTeamMembers.indexOf(targetTeamMemberId)
+    
+    if (fromIndex !== -1 && toIndex !== -1) {
+      await moveTeamMember(fromIndex, toIndex)
+    }
+    
+    setDraggedGuideRow(null)
+  }
+
+  const handleGuideRowDragEnd = () => {
+    setDraggedGuideRow(null)
+    setDragOverGuideRow(null)
+  }
+
+  // 상품 행 드래그앤드롭 핸들러
+  const handleProductRowDragStart = (e: React.DragEvent, productId: string) => {
+    setDraggedProductRow(productId)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/product-row', productId)
+    const target = e.currentTarget as HTMLElement
+    if (target) {
+      e.dataTransfer.setDragImage(target, 40, 15)
+    }
+  }
+
+  const handleProductRowDragOver = (e: React.DragEvent, productId: string) => {
+    e.preventDefault()
+    if (draggedProductRow && draggedProductRow !== productId) {
+      e.dataTransfer.dropEffect = 'move'
+      setDragOverProductRow(productId)
+    }
+  }
+
+  const handleProductRowDragLeave = () => {
+    setDragOverProductRow(null)
+  }
+
+  const handleProductRowDrop = async (e: React.DragEvent, targetProductId: string) => {
+    e.preventDefault()
+    setDragOverProductRow(null)
+    
+    if (!draggedProductRow || draggedProductRow === targetProductId) {
+      setDraggedProductRow(null)
+      return
+    }
+
+    const fromIndex = selectedProducts.indexOf(draggedProductRow)
+    const toIndex = selectedProducts.indexOf(targetProductId)
+    
+    if (fromIndex !== -1 && toIndex !== -1) {
+      await moveProduct(fromIndex, toIndex)
+    }
+    
+    setDraggedProductRow(null)
+  }
+
+  const handleProductRowDragEnd = () => {
+    setDraggedProductRow(null)
+    setDragOverProductRow(null)
   }
 
   // 드래그 시작
@@ -1278,6 +1464,94 @@ export default function ScheduleView() {
     } catch (error) {
       console.error('Error creating off schedule:', error)
       showMessage('오류 발생', '오프 스케줄 생성 중 오류가 발생했습니다.', 'error')
+    }
+  }
+
+  // 일괄 오프 스케줄 생성
+  const handleBatchOffScheduleCreate = async () => {
+    if (batchOffGuides.length === 0) {
+      showMessage('입력 필요', '가이드를 선택해주세요.', 'error')
+      return
+    }
+    if (!batchOffStartDate || !batchOffEndDate) {
+      showMessage('입력 필요', '시작일과 종료일을 선택해주세요.', 'error')
+      return
+    }
+    if (dayjs(batchOffEndDate).isBefore(dayjs(batchOffStartDate))) {
+      showMessage('날짜 오류', '종료일이 시작일보다 앞설 수 없습니다.', 'error')
+      return
+    }
+    if (!batchOffReason.trim()) {
+      showMessage('입력 필요', '사유를 입력 또는 선택해주세요.', 'error')
+      return
+    }
+
+    setBatchOffSaving(true)
+    try {
+      // 시작일~종료일 사이의 모든 날짜 생성
+      const dates: string[] = []
+      let current = dayjs(batchOffStartDate)
+      const end = dayjs(batchOffEndDate)
+      while (current.isBefore(end) || current.isSame(end, 'day')) {
+        dates.push(current.format('YYYY-MM-DD'))
+        current = current.add(1, 'day')
+      }
+
+      // 각 가이드 x 각 날짜에 대해 오프 스케줄 생성
+      const insertData = batchOffGuides.flatMap(guideEmail =>
+        dates.map(date => ({
+          id: crypto.randomUUID(),
+          team_email: guideEmail,
+          off_date: date,
+          reason: batchOffReason.trim(),
+          status: 'pending'
+        }))
+      )
+
+      // 이미 존재하는 오프 스케줄 제외
+      const filteredInsertData = insertData.filter(item => 
+        !offSchedules.some(off => 
+          off.team_email === item.team_email && off.off_date === item.off_date
+        )
+      )
+
+      if (filteredInsertData.length === 0) {
+        showMessage('중복', '선택한 기간에 이미 모든 오프 스케줄이 등록되어 있습니다.', 'error')
+        setBatchOffSaving(false)
+        return
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('off_schedules' as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .insert(filteredInsertData as any)
+
+      if (error) {
+        console.error('Error creating batch off schedules:', error)
+        showMessage('생성 실패', '오프 스케줄 일괄 생성에 실패했습니다.', 'error')
+        setBatchOffSaving(false)
+        return
+      }
+
+      const skipped = insertData.length - filteredInsertData.length
+      const msg = skipped > 0
+        ? `${filteredInsertData.length}건 생성 완료 (${skipped}건 중복 제외)`
+        : `${filteredInsertData.length}건 생성 완료`
+
+      await fetchData()
+      setShowBatchOffModal(false)
+      setBatchOffGuides([])
+      setBatchOffStartDate('')
+      setBatchOffEndDate('')
+      setBatchOffReason('')
+      showMessage('일괄 생성 완료', msg, 'success')
+    } catch (error) {
+      console.error('Error creating batch off schedules:', error)
+      showMessage('오류 발생', '오프 스케줄 일괄 생성 중 오류가 발생했습니다.', 'error')
+    } finally {
+      setBatchOffSaving(false)
     }
   }
 
@@ -1507,19 +1781,23 @@ export default function ScheduleView() {
     }
     const assignedEn = Math.max(assignedPeople - assignedKo, 0)
 
-    // 가이드/어시스턴트 이름
+    // 가이드/어시스턴트 이름 (닉네임 우선)
     const guide = teamMembers.find(t => t.email === tour.tour_guide_id)
     const assistant = teamMembers.find(t => t.email === tour.assistant_id)
-    const guideName = guide?.name_ko || '-'
-    const assistantName = assistant?.name_ko || '-'
+    const guideName = (guide as any)?.nick_name || guide?.name_ko || '-'
+    const assistantName = (assistant as any)?.nick_name || assistant?.name_ko || '-'
 
     // 차량 번호(가능한 필드 우선 사용)
     const vehicleNumber = tour.vehicle_number || tour.vehicle_id || '-'
     const vehicleAssigned = tour.tour_car_id && String(tour.tour_car_id).trim().length > 0
 
-    // 부킹 Confirm EA 합계
+    // 부킹 Confirm EA 합계 (대소문자 무관)
     const confirmedEa = ticketBookings
-      .filter(tb => tb.tour_id === tour.id && (tb.status === 'confirmed' || tb.status === 'paid'))
+      .filter(tb => {
+        if (tb.tour_id !== tour.id) return false
+        const s = tb.status?.toLowerCase()
+        return s === 'confirmed' || s === 'paid' || s === 'pending' || s === 'completed'
+      })
       .reduce((s, tb) => s + (tb.ea || 0), 0)
 
     // 단독투어 여부 확인
@@ -1587,43 +1865,66 @@ export default function ScheduleView() {
       }
     })
 
+    // tour_id → tour_date 매핑 (check_in_date가 없거나 매칭 안 될 때 fallback)
+    const tourDateMap = new Map<string, string>()
+    tours.forEach(tour => {
+      if (tour.id && tour.tour_date) {
+        tourDateMap.set(tour.id, tour.tour_date.substring(0, 10))
+      }
+    })
+
+    const isActiveStatus = (status: string | null) => {
+      if (!status) return false
+      const s = status.toLowerCase()
+      return s === 'confirmed' || s === 'paid' || s === 'pending' || s === 'completed'
+    }
+
     // 입장권 부킹 합산
     ticketBookings.forEach(booking => {
-      if (booking.check_in_date && (booking.status === 'confirmed' || booking.status === 'paid')) {
-        const dateString = booking.check_in_date
-        if (dailyTotals[dateString]) {
-          dailyTotals[dateString].ticketCount += booking.ea || 0
-          dailyTotals[dateString].totalCount += booking.ea || 0
-          if (booking.company && booking.time) {
-            dailyTotals[dateString].ticketDetails.push({
-              company: booking.company,
-              time: booking.time,
-              ea: booking.ea || 0
-            })
-          }
+      if (!isActiveStatus(booking.status)) return
+      
+      // check_in_date를 YYYY-MM-DD로 정규화, 없으면 tour_date에서 가져오기
+      let dateString = booking.check_in_date ? booking.check_in_date.substring(0, 10) : null
+      if (!dateString && booking.tour_id) {
+        dateString = tourDateMap.get(booking.tour_id) || null
+      }
+      
+      if (dateString && dailyTotals[dateString]) {
+        dailyTotals[dateString].ticketCount += booking.ea || 0
+        dailyTotals[dateString].totalCount += booking.ea || 0
+        if (booking.company && booking.time) {
+          dailyTotals[dateString].ticketDetails.push({
+            company: booking.company,
+            time: booking.time,
+            ea: booking.ea || 0
+          })
         }
       }
     })
 
     // 투어 호텔 부킹 합산
     tourHotelBookings.forEach(booking => {
-      if (booking.check_in_date && (booking.status === 'confirmed' || booking.status === 'paid')) {
-        const dateString = booking.check_in_date
-        if (dailyTotals[dateString]) {
-          dailyTotals[dateString].hotelCount += booking.rooms || 0
-          dailyTotals[dateString].totalCount += booking.rooms || 0
-          if (booking.hotel) {
-            dailyTotals[dateString].hotelDetails.push({
-              hotel: booking.hotel,
-              rooms: booking.rooms || 0
-            })
-          }
+      if (!isActiveStatus(booking.status)) return
+      
+      let dateString = booking.check_in_date ? booking.check_in_date.substring(0, 10) : null
+      if (!dateString && booking.tour_id) {
+        dateString = tourDateMap.get(booking.tour_id) || null
+      }
+      
+      if (dateString && dailyTotals[dateString]) {
+        dailyTotals[dateString].hotelCount += booking.rooms || 0
+        dailyTotals[dateString].totalCount += booking.rooms || 0
+        if (booking.hotel) {
+          dailyTotals[dateString].hotelDetails.push({
+            hotel: booking.hotel,
+            rooms: booking.rooms || 0
+          })
         }
       }
     })
 
     return dailyTotals
-  }, [ticketBookings, tourHotelBookings, monthDays])
+  }, [ticketBookings, tourHotelBookings, tours, monthDays])
 
   // 가이드별 총계 계산
   const guideTotals = useMemo(() => {
@@ -1709,6 +2010,19 @@ export default function ScheduleView() {
                     {selectedTeamMembers.length}
                   </span>
                 )}
+              </button>
+
+              {/* 일괄 오프 스케줄 버튼 */}
+              <button
+                onClick={() => {
+                  setBatchOffStartDate(dayjs(currentDate).startOf('month').format('YYYY-MM-DD'))
+                  setBatchOffEndDate(dayjs(currentDate).startOf('month').format('YYYY-MM-DD'))
+                  setShowBatchOffModal(true)
+                }}
+                className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
+                title="일괄 오프 스케줄 추가"
+              >
+                <CalendarOff className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
 
             </div>
@@ -1886,7 +2200,7 @@ export default function ScheduleView() {
           <table className="w-full" style={{tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px`}}>
             <thead className="bg-blue-50">
               <tr>
-                <th className="px-2 py-2 text-left text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
+                <th className="px-2 py-0.5 text-left text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   상품명
                 </th>
                 {monthDays.map(({ date, dayOfWeek, dateString }) => {
@@ -1899,7 +2213,7 @@ export default function ScheduleView() {
                     >
                       <div 
                         className={`
-                          px-1 py-2 cursor-pointer transition-colors relative
+                          px-1 py-0.5 cursor-pointer transition-colors relative
                           ${isToday(dateString) 
                             ? 'border-l-2 border-r-2 border-red-500 bg-red-50' 
                             : hasNote 
@@ -1934,7 +2248,7 @@ export default function ScheduleView() {
                     </th>
                   )
                 })}
-                <th className="px-2 py-2 text-center text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
+                <th className="px-2 py-0.5 text-center text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   합계
                 </th>
               </tr>
@@ -1945,9 +2259,28 @@ export default function ScheduleView() {
                 const colorClass = productColors[productId] || colorPalette[index % colorPalette.length].class
                 
                 return (
-                  <tr key={productId} className="hover:bg-gray-50">
-                    <td className={`px-2 py-2 text-xs font-medium ${colorClass}`} style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
-                      {product.product_name}
+                  <tr 
+                    key={productId} 
+                    className={`hover:bg-gray-50 transition-colors ${
+                      draggedProductRow === productId ? 'opacity-50 bg-blue-50' : ''
+                    } ${
+                      dragOverProductRow === productId ? 'border-t-2 border-blue-500' : ''
+                    }`}
+                    onDragOver={(e) => handleProductRowDragOver(e, productId)}
+                    onDragLeave={handleProductRowDragLeave}
+                    onDrop={(e) => handleProductRowDrop(e, productId)}
+                  >
+                    <td 
+                      className={`px-2 py-0.5 text-xs font-medium cursor-grab active:cursor-grabbing select-none ${colorClass}`} 
+                      style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}
+                      draggable
+                      onDragStart={(e) => handleProductRowDragStart(e, productId)}
+                      onDragEnd={handleProductRowDragEnd}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span className="text-gray-500 hover:text-gray-700" title="드래그하여 순서 변경">⠿</span>
+                        {product.product_name}
+                      </div>
                     </td>
                     {monthDays.map(({ dateString }) => {
                       const dayData = product.dailyData[dateString]
@@ -1971,7 +2304,7 @@ export default function ScheduleView() {
                               : langBgClass
                             const titleText = dayData ? `ko ${dayData.koPeople || 0} / en ${dayData.enPeople || 0}` : undefined
                             return (
-                              <div className={`${todayWrapClass} px-1 py-2`} title={titleText}>
+                              <div className={`${todayWrapClass} px-1 py-0.5`} title={titleText}>
                                 {dayData ? (
                                   <div className={`font-medium ${
                                     dayData.totalPeople === 0 
@@ -1989,7 +2322,7 @@ export default function ScheduleView() {
                         </td>
                       )
                     })}
-                <td className="px-2 py-2 text-center text-xs font-medium bg-white" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
+                <td className="px-2 py-0.5 text-center text-xs font-medium bg-white" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   <div className={`font-medium ${
                     product.totalPeople === 0 
                       ? 'text-gray-300' 
@@ -2004,7 +2337,7 @@ export default function ScheduleView() {
 
               {/* 상품별 총계 행 - 가장 아래로 이동 */}
               <tr className="bg-blue-100 font-semibold">
-                <td className="px-2 py-2 text-xs text-gray-900" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
+                <td className="px-2 py-0.5 text-xs text-gray-900" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   일별 합계
                 </td>
                 {monthDays.map(({ dateString }) => {
@@ -2015,7 +2348,7 @@ export default function ScheduleView() {
                       className="p-0 text-center text-xs"
                       style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                     >
-                      <div className={`${isToday(dateString) ? 'border-2 border-red-500 bg-red-50' : ''} px-1 py-2`}>
+                      <div className={`${isToday(dateString) ? 'border-2 border-red-500 bg-red-50' : ''} px-1 py-0.5`}>
                         <div className={`font-medium ${
                           dayTotal.totalPeople === 0 
                             ? 'text-gray-300' 
@@ -2027,7 +2360,7 @@ export default function ScheduleView() {
                     </td>
                   )
                 })}
-                <td className="px-2 py-2 text-center text-xs font-medium" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
+                <td className="px-2 py-0.5 text-center text-xs font-medium" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   <div>{Object.values(productScheduleData).reduce((sum, product) => sum + product.totalPeople, 0)}</div>
                 </td>
               </tr>
@@ -2041,7 +2374,7 @@ export default function ScheduleView() {
           <table className="w-full" style={{tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px`}}>
             <thead className="bg-green-50 hidden">
               <tr>
-                <th className="px-2 py-2 text-left text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
+                <th className="px-2 py-0.5 text-left text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   가이드명
                 </th>
                 {monthDays.map(({ date, dayOfWeek, dateString }) => (
@@ -2050,13 +2383,13 @@ export default function ScheduleView() {
                     className="p-0 text-center text-xs font-medium text-gray-700"
                     style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                   >
-                    <div className={`${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''} px-1 py-2`}>
+                    <div className={`${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''} px-1 py-0.5`}>
                       <div className={isToday(dateString) ? 'font-bold text-red-700' : ''}>{date}일</div>
                       <div className={`text-xs ${isToday(dateString) ? 'text-red-600' : 'text-gray-500'}`}>{dayOfWeek}</div>
                     </div>
                   </th>
                 ))}
-                <th className="px-2 py-2 text-center text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
+                <th className="px-2 py-0.5 text-center text-xs font-medium text-gray-700" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   합계
                 </th>
               </tr>
@@ -2064,7 +2397,7 @@ export default function ScheduleView() {
             <tbody className="divide-y divide-gray-200">
               {/* 가이드별 총계 행 */}
               <tr className="bg-green-100 font-semibold">
-                <td className="px-2 py-2 text-xs text-gray-900" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
+                <td className="px-1 py-0 text-xs text-gray-900" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   일별 합계
                 </td>
                 {monthDays.map(({ dateString }) => {
@@ -2072,7 +2405,7 @@ export default function ScheduleView() {
                   return (
                     <td 
                       key={dateString} 
-                      className={`px-1 py-2 text-center text-xs ${
+                      className={`px-0 py-0 text-center text-xs ${
                         isToday(dateString) 
                           ? 'border-2 border-red-500 bg-red-50' 
                           : ''
@@ -2089,7 +2422,7 @@ export default function ScheduleView() {
                     </td>
                   )
                 })}
-                <td className="px-2 py-2 text-center text-xs font-medium" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
+                <td className="px-1 py-0 text-center text-xs font-medium" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                   <div>{Object.values(guideScheduleData).reduce((sum, guide) => sum + guide.totalAssignedPeople, 0)} ({Object.values(guideScheduleData).reduce((sum, guide) => sum + guide.totalTours, 0)}일)</div>
                 </td>
               </tr>
@@ -2143,7 +2476,8 @@ export default function ScheduleView() {
                       if (role === 'assistant' && tour.tour_guide_id) {
                         const guideInfo = teamMembers.find(member => member.email === tour.tour_guide_id)
                         if (guideInfo) {
-                          guideInitials = guideInfo.name_ko.split('').map((ch: string) => ch.charAt(0)).join('').substring(0, 2)
+                          const gInfoName = (guideInfo as any).nick_name || guideInfo.name_ko
+                          guideInitials = gInfoName.split('').map((ch: string) => ch.charAt(0)).join('').substring(0, 2)
                         }
                       }
                       const lastDayOfCurrentMonth = dayjs(currentDate).endOf('month')
@@ -2180,9 +2514,28 @@ export default function ScheduleView() {
                 })
                 
                 return (
-                  <tr key={teamMemberId} className="hover:bg-gray-50">
-                    <td className="px-2 py-1 text-xs" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
-                      <div className="font-medium text-gray-900">{guide.team_member_name}</div>
+                  <tr 
+                    key={teamMemberId} 
+                    className={`hover:bg-gray-50 transition-colors ${
+                      draggedGuideRow === teamMemberId ? 'opacity-50 bg-blue-50' : ''
+                    } ${
+                      dragOverGuideRow === teamMemberId ? 'border-t-2 border-blue-500' : ''
+                    }`}
+                    onDragOver={(e) => handleGuideRowDragOver(e, teamMemberId)}
+                    onDragLeave={handleGuideRowDragLeave}
+                    onDrop={(e) => handleGuideRowDrop(e, teamMemberId)}
+                  >
+                    <td 
+                      className="px-1 py-0 text-xs leading-tight cursor-grab active:cursor-grabbing select-none" 
+                      style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}
+                      draggable
+                      onDragStart={(e) => handleGuideRowDragStart(e, teamMemberId)}
+                      onDragEnd={handleGuideRowDragEnd}
+                    >
+                      <div className="font-medium text-gray-900 flex items-center gap-0.5">
+                        <span className="text-gray-400 hover:text-gray-600 text-[8px]" title="드래그하여 순서 변경">⠿</span>
+                        {guide.team_member_name}
+                      </div>
                     </td>
                     <td className="p-0" colSpan={monthDays.length}>
                       <div className="relative">
@@ -2218,7 +2571,7 @@ export default function ScheduleView() {
                                 style={{ minWidth: '40px', boxSizing: 'border-box' }}
                               >
                                 <div
-                                  className={`relative h-[32px] ${
+                                  className={`relative h-[22px] ${
                                     dragOverCell === `${teamMemberId}-${dateString}-guide` 
                                       ? 'bg-blue-200 border-2 border-blue-400' 
                                       : ''
@@ -2281,7 +2634,7 @@ export default function ScheduleView() {
                                               : isApproved 
                                                 ? 'bg-black text-white hover:bg-gray-800'
                                                 : 'bg-gray-500 text-white hover:bg-gray-600'
-                                          } rounded px-1 py-0.5 text-xs font-bold flex items-center justify-center h-full cursor-pointer transition-colors select-none`}
+                                          } rounded px-1 py-0 text-[10px] font-bold flex items-center justify-center h-full cursor-pointer transition-colors select-none`}
                                           onClick={() => {
                                             if (offSchedule) {
                                               openOffScheduleActionModal(offSchedule)
@@ -2317,7 +2670,7 @@ export default function ScheduleView() {
                               style={{ minWidth: '40px', boxSizing: 'border-box' }}
                             >
                               <div
-                                className={`relative h-[32px] ${
+                                className={`relative h-[22px] ${
                                   dragOverCell === `${teamMemberId}-${dateString}-guide` 
                                     ? 'bg-blue-200 border-2 border-blue-400' 
                                     : ''
@@ -2614,7 +2967,7 @@ export default function ScheduleView() {
                                     })()}
                                   </div>
                                 ) : (
-                                  <div className="text-gray-300 text-center py-1 text-xs">
+                                  <div className="text-gray-300 text-center py-0 text-[10px]">
                                     {/* Off 날짜 표시 */}
                                     {isOffDate(teamMemberId, dateString) && !(() => {
                                       const teamMember = teamMembers.find(member => member.email === teamMemberId)
@@ -2643,7 +2996,7 @@ export default function ScheduleView() {
                                                 : isApproved 
                                                   ? 'bg-black text-white hover:bg-gray-800'
                                                   : 'bg-gray-500 text-white hover:bg-gray-600'
-                                            } rounded px-1 py-0.5 text-xs font-bold cursor-pointer transition-colors select-none`}
+                                            } rounded px-1 py-0 text-[10px] font-bold cursor-pointer transition-colors select-none`}
                                             onClick={() => {
                                               if (offSchedule) {
                                                 openOffScheduleActionModal(offSchedule)
@@ -2697,7 +3050,7 @@ export default function ScheduleView() {
                           return (
                             <div
                               key={`md-overlay-${idx}-${tour.startDate}`}
-                              className="absolute z-10 top-0 h-[32px] flex items-center"
+                              className="absolute z-10 top-0 h-[22px] flex items-center"
                               style={{ left: `calc(${visibleStartIdx} * (100% / ${monthDays.length}))`, width: `calc(${spanDays} * (100% / ${monthDays.length}))` }}
                             >
                               <div
@@ -2779,7 +3132,7 @@ export default function ScheduleView() {
                         })}
                       </div>
                     </td>
-                    <td className="px-2 py-2 text-center text-xs font-medium" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
+                    <td className="px-1 py-0 text-center text-[10px] font-medium" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                       <div className={`font-medium ${
                         guide.totalAssignedPeople === 0 
                           ? 'text-gray-300' 
@@ -2802,7 +3155,7 @@ export default function ScheduleView() {
               <table className="w-full" style={{tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px`}}>
                 <tbody className="divide-y divide-gray-200">
                   <tr className="bg-purple-50">
-                    <td className="px-2 py-2 text-xs font-medium text-gray-900" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
+                    <td className="px-2 py-0.5 text-xs font-medium text-gray-900" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                       부킹
                     </td>
                     {monthDays.map(({ dateString }) => {
@@ -2816,7 +3169,7 @@ export default function ScheduleView() {
                           onMouseEnter={() => setHoveredBookingDate(dateString)}
                           onMouseLeave={() => setHoveredBookingDate(null)}
                         >
-                          <div className={`px-1 py-2 ${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''}`}>
+                          <div className={`px-1 py-0.5 ${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''}`}>
                             {hasBooking ? (
                               <div className={`font-medium ${
                                 bookingData.totalCount === 0 
@@ -2861,7 +3214,7 @@ export default function ScheduleView() {
                         </td>
                       )
                     })}
-                    <td className="px-2 py-2 text-center text-xs font-medium" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
+                    <td className="px-2 py-0.5 text-center text-xs font-medium" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                       <div>{Object.values(bookingTotals).reduce((sum, day) => sum + day.totalCount, 0)}</div>
                     </td>
                   </tr>
@@ -3094,7 +3447,12 @@ export default function ScheduleView() {
                   onClick={async () => {
                     if (shareProductsSetting && selectedProducts.length > 0) {
                       await saveSharedSetting('schedule_selected_products', selectedProducts)
+                      // 색상도 공유 설정으로 저장
+                      await saveSharedSetting('schedule_product_colors', productColors as unknown as string[])
+                      localStorage.setItem('shared_schedule_product_colors', JSON.stringify(productColors))
                     }
+                    // 개인 설정에 색상 항상 저장
+                    localStorage.setItem('schedule_product_colors', JSON.stringify(productColors))
                     setShareProductsSetting(false)
                     setShowProductModal(false)
                   }}
@@ -3145,7 +3503,7 @@ export default function ScheduleView() {
                               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                           }`}
                         >
-                          {member.name_ko} ({member.position})
+                          {(member as any).nick_name || member.name_ko} ({member.position})
                         </button>
                       </div>
                       
@@ -3386,6 +3744,192 @@ export default function ScheduleView() {
                 className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
               >
                 닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 일괄 오프 스케줄 모달 */}
+      {showBatchOffModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full mx-4 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <CalendarOff className="w-5 h-5 text-orange-500" />
+                일괄 오프 스케줄 추가
+              </h3>
+              <button
+                onClick={() => {
+                  setShowBatchOffModal(false)
+                  setBatchOffGuides([])
+                  setBatchOffStartDate('')
+                  setBatchOffEndDate('')
+                  setBatchOffReason('')
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* 가이드 선택 */}
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                가이드 선택 <span className="text-red-500">*</span>
+              </label>
+              <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto p-2 space-y-1">
+                {/* 전체 선택/해제 */}
+                <button
+                  onClick={() => {
+                    const guideMembers = teamMembers.filter(m => m.position === 'guide' || m.position === '가이드')
+                    if (batchOffGuides.length === guideMembers.length) {
+                      setBatchOffGuides([])
+                    } else {
+                      setBatchOffGuides(guideMembers.map(m => m.email))
+                    }
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                >
+                  {batchOffGuides.length === teamMembers.filter(m => m.position === 'guide' || m.position === '가이드').length ? '전체 해제' : '가이드 전체 선택'}
+                </button>
+                <div className="border-t border-gray-100 my-1"></div>
+                {teamMembers.map(member => {
+                  const isSelected = batchOffGuides.includes(member.email)
+                  const displayName = (member as any).nick_name || member.name_ko || member.email
+                  return (
+                    <label
+                      key={member.email}
+                      className={`flex items-center gap-2 px-3 py-2 rounded cursor-pointer transition-colors ${
+                        isSelected ? 'bg-orange-50 border border-orange-200' : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {
+                          setBatchOffGuides(prev =>
+                            isSelected
+                              ? prev.filter(e => e !== member.email)
+                              : [...prev, member.email]
+                          )
+                        }}
+                        className="w-4 h-4 text-orange-500 border-gray-300 rounded focus:ring-orange-500"
+                      />
+                      <span className="text-sm text-gray-700">{displayName}</span>
+                      <span className="text-xs text-gray-400 ml-auto">{member.position || ''}</span>
+                    </label>
+                  )
+                })}
+              </div>
+              {batchOffGuides.length > 0 && (
+                <p className="mt-1 text-xs text-orange-600">{batchOffGuides.length}명 선택됨</p>
+              )}
+            </div>
+
+            {/* 기간 선택 */}
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                기간 선택 <span className="text-red-500">*</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={batchOffStartDate}
+                  onChange={(e) => {
+                    setBatchOffStartDate(e.target.value)
+                    if (!batchOffEndDate || dayjs(e.target.value).isAfter(dayjs(batchOffEndDate))) {
+                      setBatchOffEndDate(e.target.value)
+                    }
+                  }}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
+                />
+                <span className="text-gray-500 text-sm font-medium">~</span>
+                <input
+                  type="date"
+                  value={batchOffEndDate}
+                  min={batchOffStartDate}
+                  onChange={(e) => setBatchOffEndDate(e.target.value)}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
+                />
+              </div>
+              {batchOffStartDate && batchOffEndDate && (
+                <p className="mt-1 text-xs text-gray-500">
+                  {dayjs(batchOffEndDate).diff(dayjs(batchOffStartDate), 'day') + 1}일간
+                  ({dayjs(batchOffStartDate).format('MM/DD(ddd)')} ~ {dayjs(batchOffEndDate).format('MM/DD(ddd)')})
+                </p>
+              )}
+            </div>
+
+            {/* 사유 선택/입력 */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                사유 <span className="text-red-500">*</span>
+              </label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {['연차', '반차', '병가', '경조사', '출장', '교육', '기타'].map(reason => (
+                  <button
+                    key={reason}
+                    onClick={() => setBatchOffReason(reason === '기타' ? '' : reason)}
+                    className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
+                      batchOffReason === reason
+                        ? 'bg-orange-500 text-white border-orange-500'
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-orange-400 hover:text-orange-500'
+                    }`}
+                  >
+                    {reason}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="text"
+                value={batchOffReason}
+                onChange={(e) => setBatchOffReason(e.target.value)}
+                placeholder="사유를 입력하세요 (위 버튼으로 빠른 선택 가능)"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
+              />
+            </div>
+
+            {/* 요약 */}
+            {batchOffGuides.length > 0 && batchOffStartDate && batchOffEndDate && batchOffReason && (
+              <div className="mb-5 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                <p className="text-sm text-orange-800">
+                  <span className="font-medium">{batchOffGuides.length}명</span>의 가이드에 대해{' '}
+                  <span className="font-medium">{dayjs(batchOffEndDate).diff(dayjs(batchOffStartDate), 'day') + 1}일</span>간{' '}
+                  총 <span className="font-medium text-orange-600">
+                    {batchOffGuides.length * (dayjs(batchOffEndDate).diff(dayjs(batchOffStartDate), 'day') + 1)}건
+                  </span>의 오프 스케줄이 생성됩니다.
+                </p>
+              </div>
+            )}
+
+            {/* 버튼 */}
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowBatchOffModal(false)
+                  setBatchOffGuides([])
+                  setBatchOffStartDate('')
+                  setBatchOffEndDate('')
+                  setBatchOffReason('')
+                }}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleBatchOffScheduleCreate}
+                disabled={batchOffSaving || batchOffGuides.length === 0 || !batchOffStartDate || !batchOffEndDate || !batchOffReason.trim()}
+                className="px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {batchOffSaving ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    저장 중...
+                  </>
+                ) : (
+                  '일괄 추가'
+                )}
               </button>
             </div>
           </div>

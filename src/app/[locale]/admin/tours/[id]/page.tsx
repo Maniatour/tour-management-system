@@ -1517,6 +1517,7 @@ export default function TourDetailPage() {
               teamMembers={tourData.teamMembers.map(member => ({
                 id: member.email, // email을 id로 사용
                 name_ko: member.name_ko,
+                nick_name: member.nick_name || null,
                 email: member.email,
                 position: 'guide', // 기본값 설정
                 is_active: true // 기본값 설정

@@ -220,10 +220,10 @@ export default function GuideTours({ params }: GuideToursProps) {
 
       const { data: teamMembers } = await supabase
         .from('team')
-        .select('email, name_ko, name_en')
+        .select('email, name_ko, name_en, nick_name')
         .in('email', allEmails)
 
-      const teamMap = new Map((teamMembers || []).map((member: { email: string; name_ko: string; name_en?: string | null }) => [member.email, member]))
+      const teamMap = new Map((teamMembers || []).map((member: { email: string; name_ko: string; name_en?: string | null; nick_name?: string | null }) => [member.email, member]))
 
       // 3-1. 차량 정보 가져오기 (카드에 차량 번호 표시)
       const vehicleIds = [...new Set((toursDataActive || []).map((t: { tour_car_id?: string | null }) => t.tour_car_id).filter(Boolean))]
@@ -400,10 +400,10 @@ export default function GuideTours({ params }: GuideToursProps) {
           assigned_children: assignedChildren,
           assigned_infants: assignedInfants,
           unassigned_people: unassignedPeople,
-          guide_name: guide?.name_ko || null,
-          guide_name_en: guide?.name_en || null,
-          assistant_name: assistant?.name_ko || null,
-          assistant_name_en: assistant?.name_en || null,
+          guide_name: guide?.nick_name || guide?.name_ko || null,
+          guide_name_en: guide?.nick_name || guide?.name_en || null,
+          assistant_name: assistant?.nick_name || assistant?.name_ko || null,
+          assistant_name_en: assistant?.nick_name || assistant?.name_en || null,
           is_private_tour: tour.is_private_tour === true,
           vehicle_number: tour.tour_car_id ? (vehicleMap.get(tour.tour_car_id as unknown as string) || null) : null
         }

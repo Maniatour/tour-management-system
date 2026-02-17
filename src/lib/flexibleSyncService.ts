@@ -1,14 +1,6 @@
 import { supabase } from './supabase'
 import { readSheetDataDynamic } from './googleSheets'
 
-// reservations 테이블에만 존재하는 컬럼 (스키마에 없는 컬럼 제거 시 사용 — capacity 등 다른 테이블용 컬럼 제외)
-const RESERVATIONS_TABLE_COLUMNS = new Set([
-  'id', 'customer_id', 'product_id', 'tour_id', 'tour_date', 'tour_time', 'pickup_hotel', 'pickup_time',
-  'adults', 'child', 'infant', 'total_people', 'channel_id', 'channel_rn', 'added_by', 'status',
-  'event_note', 'is_private_tour', 'selected_options', 'selected_option_prices', 'created_at', 'updated_at',
-  'customer_name', 'customer_email', 'customer_phone'
-])
-
 // 하드코딩된 매핑 제거 - 실제 데이터베이스 스키마 기반으로 동적 매핑 생성
 
 // Google Sheets 에러 값 감지 함수
@@ -26,6 +18,8 @@ const isGoogleSheetsError = (value: unknown): boolean => {
 const isDateLikeString = (value: unknown): boolean => {
   if (value === undefined || value === null || value === '') return false
   const str = String(value).trim()
+  // 순수 숫자(정수/소수)는 날짜가 아님 — integer 컬럼의 숫자 값을 날짜로 잘못 판별하는 것을 방지
+  if (/^\d+(\.\d+)?$/.test(str)) return false
   // M/D/YYYY, MM/DD/YYYY, M-D-YYYY, YYYY-MM-DD, D.M.YYYY 등
   if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(str)) return true
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return true
@@ -71,30 +65,21 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
   console.log(`convertDataTypes called with tableName: ${tableName}`)
   const converted = { ...data }
 
-  // 숫자(numeric) 필드 변환 — 빈 문자열 ""은 PostgreSQL에 invalid하므로 null로 처리
-  const numberFields = [
-    'price', 'unit_price', 'total_price', 'base_price', 'commission_amount', 'commission_percent',
-    'expense', 'income', 'amount', 'amount_krw', 'guide_fee', 'assistant_fee', 'purchase_amount',
-    'installment_amount', 'interest_rate', 'monthly_payment', 'additional_payment',
-    'adult_product_price', 'child_product_price', 'infant_product_price', 'product_price_total',
-    'required_option_total', 'choices_total', 'subtotal', 'coupon_discount', 'additional_discount',
-    'additional_cost', 'card_fee', 'tax', 'prepayment_cost', 'prepayment_tip', 'option_total',
-    'private_tour_additional_cost', 'deposit_amount', 'balance_amount', 'limit_amount',
-    'monthly_limit', 'daily_limit', 'total_cost', 'labor_cost', 'parts_cost', 'other_cost'
-  ]
+  // 숫자 필드 변환 (소수 가능 — float/numeric)
+  const numberFields = ['price', 'unit_price', 'total_price', 'base_price', 'commission_amount', 'commission_percent', 'expense', 'income', 'amount']
   numberFields.forEach(field => {
-    if (!(field in converted)) return
-    const val = converted[field]
-    if (val === undefined || val === null || val === '') {
-      converted[field] = null
-      return
+    if (converted[field] !== undefined && converted[field] !== '') {
+      const rawValue = converted[field]
+      // 숫자 타입이면 바로 사용 (isDateLikeString 등 문자열 검사 불필요)
+      if (typeof rawValue === 'number') {
+        converted[field] = Number.isFinite(rawValue) ? rawValue : null
+      } else if (isGoogleSheetsError(rawValue) || isDateLikeString(rawValue)) {
+        converted[field] = null
+      } else {
+        const n = parseFloat(String(rawValue))
+        converted[field] = Number.isFinite(n) ? n : null
+      }
     }
-    if (isGoogleSheetsError(val) || isDateLikeString(val)) {
-      converted[field] = null
-      return
-    }
-    const n = parseFloat(String(val))
-    converted[field] = Number.isFinite(n) ? n : null
   })
 
   // integer 전용 필드 변환 — 날짜 문자열("2/26/2024" 등)이 들어오면 null/0으로 처리
@@ -104,34 +89,18 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
     'current_mileage', 'recent_engine_oil_change_mileage', 'car_year'
   ]
   integerFields.forEach(field => {
-    // 시트에 매핑된 컬럼만 처리 (키가 없으면 넣지 않음 — 기존 DB 값 유지)
-    if (!(field in converted)) return
-    const val = converted[field]
-    // 빈 값일 때만 null (숫자 있으면 그대로 저장)
-    if (val === undefined || val === null || val === '') {
+    if (converted[field] === undefined || converted[field] === '') return
+    const rawValue = converted[field]
+    // 숫자 타입이면 바로 정수 변환 (isDateLikeString 등 문자열 검사 불필요)
+    if (typeof rawValue === 'number') {
+      converted[field] = Number.isFinite(rawValue) ? Math.round(rawValue) : null
+      return
+    }
+    if (isGoogleSheetsError(rawValue) || isDateLikeString(rawValue)) {
       converted[field] = null
       return
     }
-    if (isGoogleSheetsError(val)) {
-      converted[field] = null
-      return
-    }
-    // 구글 시트에서 숫자로 오면 그대로 사용 (isDateLikeString은 "2"를 날짜로 오인하므로 숫자 먼저 처리)
-    if (typeof val === 'number' && Number.isFinite(val)) {
-      converted[field] = Number.isInteger(val) ? val : Math.floor(val)
-      return
-    }
-    const str = String(val).trim()
-    if (/^-?\d+$/.test(str)) {
-      const n = parseInt(str, 10)
-      converted[field] = Number.isFinite(n) ? n : null
-      return
-    }
-    if (isDateLikeString(val)) {
-      converted[field] = null
-      return
-    }
-    const n = parseInt(String(val), 10)
+    const n = parseInt(String(rawValue), 10)
     converted[field] = Number.isFinite(n) ? n : null
   })
 
@@ -153,18 +122,11 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
     }
   })
 
-  // 불린 필드 변환 (빈 문자열 ""은 PostgreSQL boolean에 invalid하므로 null로 처리)
-  const booleanFields = [
-    'is_private_tour', 'is_active', 'is_installment', 'cpr', 'medical_report',
-    'tax_deductible', 'is_scheduled_maintenance'
-  ]
+  // 불린 필드 변환
+  const booleanFields = ['is_private_tour']
   booleanFields.forEach(field => {
-    if (!(field in converted)) return
-    const val = converted[field]
-    if (val === undefined || val === null || val === '') {
-      converted[field] = null
-    } else {
-      converted[field] = val === 'TRUE' || val === 'true' || val === '1'
+    if (converted[field] !== undefined && converted[field] !== '') {
+      converted[field] = converted[field] === 'TRUE' || converted[field] === 'true' || converted[field] === '1'
     }
   })
 
@@ -220,17 +182,6 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
     converted.tour_id = val.length === 0 ? null : val
   }
 
-  // TIME 타입 필드: 빈 문자열 ""은 PostgreSQL에 invalid하므로 null로 처리
-  const timeFields = ['tour_time', 'pickup_time', 'time']
-  timeFields.forEach(field => {
-    if (field in converted) {
-      const v = converted[field]
-      if (v === undefined || v === null || v === '' || (typeof v === 'string' && v.trim() === '') || isGoogleSheetsError(v)) {
-        converted[field] = null
-      }
-    }
-  })
-
   // tour_hotel_bookings 및 ticket_bookings 테이블 특별 처리
   if (tableName === 'tour_hotel_bookings' || tableName === 'ticket_bookings') {
     console.log('Processing tour_hotel_bookings data:', Object.keys(converted))
@@ -247,6 +198,8 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
       ]
 
       if (converted.submitted_by === '') converted.submitted_by = null
+      // rooms: NOT NULL 컬럼 — null/undefined/빈 문자열이면 기본값 1 적용
+      if (converted.rooms === undefined || converted.rooms === null || converted.rooms === '') converted.rooms = 1
     } else if (tableName === 'ticket_bookings') {
       validFields = [
         'id', 'category', 'submit_on', 'submitted_by', 'check_in_date', 'time',
@@ -344,27 +297,6 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
       }
     }
   })
-
-  // reservations 테이블: adults / total_people 빈 값 보정 (서로 계산해 채움)
-  if (tableName === 'reservations') {
-    const a = converted.adults
-    const c = converted.child
-    const i = converted.infant
-    const t = converted.total_people
-    const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v)) ? v : 0
-    const adultsNum = num(a)
-    const childNum = num(c)
-    const infantNum = num(i)
-    const totalNum = num(t)
-    const sum = adultsNum + childNum + infantNum
-    if (totalNum === 0 && sum > 0) {
-      converted.total_people = sum
-    }
-    if (adultsNum === 0 && totalNum > 0) {
-      const derived = totalNum - childNum - infantNum
-      converted.adults = derived >= 0 ? derived : 0
-    }
-  }
 
   // reservations 테이블의 status 변환: 구글 시트의 상태 값을 프론트엔드에서 사용하는 값으로 변환
   if (tableName === 'reservations' && converted.status) {
@@ -585,10 +517,11 @@ export const flexibleSync = async (
 
         const transformed: Record<string, unknown> = {}
         
-        // 사용자 정의 컬럼 매핑 적용 (빈 값도 전달해 정수 필드가 null로 DB에 반영되도록 함)
+        // 사용자 정의 컬럼 매핑 적용
+        // 주의: 0, false 같은 falsy 값도 유효한 데이터이므로 null/undefined/빈문자열만 제외
         Object.entries(columnMapping).forEach(([sheetColumn, dbColumn]) => {
           const val = row[sheetColumn]
-          if (val !== undefined) {
+          if (val !== undefined && val !== null && val !== '') {
             transformed[dbColumn] = val
           }
         })
@@ -631,13 +564,6 @@ export const flexibleSync = async (
           }
         }
         
-        // reservations 테이블: 스키마에 없는 컬럼(capacity 등) 제거 — 테이블이 비어 있어 tableColumns가 없을 때도 적용
-        if (targetTable === 'reservations') {
-          for (const key of Object.keys(converted)) {
-            if (!RESERVATIONS_TABLE_COLUMNS.has(key)) delete converted[key]
-          }
-        }
-
         // 첫 번째 행에 대한 디버그 로그
         if (index === 0) {
           console.log('First row after conversion:', {
@@ -714,24 +640,27 @@ export const flexibleSync = async (
       tableColumns = new Set()
     }
 
-    // tours 테이블 동기화 시 배정 관련 컬럼 모두 초기화
-    // tour_guide_id, assistant_id, tour_car_id, reservation_ids — 기존 값 지우고 upsert 시 시트 값만 저장
+    // tours 테이블 동기화 시 특정 컬럼들 초기화
+    // reservation_ids는 반드시 시트 값으로만 저장(기존+신규 합치기 금지). 이를 위해
+    // 동기화 전 해당 투어들의 reservation_ids를 []로 초기화한 뒤, upsert에서 시트 값으로 덮어씁니다.
     if (targetTable === 'tours') {
       onProgress?.({ type: 'info', message: 'tours 테이블 동기화 - 배정 관련 컬럼 초기화 중...' })
       
       try {
+        // 동기화할 투어 ID 목록 추출
         const tourIdsToSync = transformedData
           .map(row => row.id)
           .filter((id): id is string => typeof id === 'string' && id.length > 0)
         
         if (tourIdsToSync.length > 0) {
+          // 해당 투어들의 배정 관련 컬럼 초기화 (이후 upsert에서 시트 값으로만 덮어씀, 병합 없음)
           const { error: resetError } = await db
             .from('tours')
-            .update({
+            .update({ 
               tour_guide_id: null,
               assistant_id: null,
               tour_car_id: null,
-              reservation_ids: []
+              reservation_ids: [] 
             })
             .in('id', tourIdsToSync)
           
@@ -739,7 +668,7 @@ export const flexibleSync = async (
             console.warn('배정 컬럼 초기화 중 오류 (계속 진행):', resetError.message)
             onProgress?.({ type: 'warn', message: `배정 컬럼 초기화 중 경고: ${resetError.message}` })
           } else {
-            console.log(`✅ ${tourIdsToSync.length}개 투어의 tour_guide_id, assistant_id, tour_car_id, reservation_ids 초기화 완료`)
+            console.log(`✅ ${tourIdsToSync.length}개 투어의 배정 컬럼 초기화 완료 (tour_guide_id, assistant_id, tour_car_id, reservation_ids)`)
             onProgress?.({ type: 'info', message: `${tourIdsToSync.length}개 투어의 배정 컬럼 초기화 완료` })
           }
         }
@@ -902,23 +831,15 @@ export const flexibleSync = async (
           if (tableColumns && tableColumns.has('updated_at')) {
             row.updated_at = nowIso
           }
-          // tours 테이블: reservation_ids는 기존 값 무시, 구글 시트에 있는 값만 저장 (미매핑/빈칸이면 [])
+          // tours 테이블 동기화 시 reservation_ids: 반드시 동기화 값으로만 저장 (기존 값과 합치지 않음)
+          // 기존 1,2,3 + 시트 2,4,6 → 결과는 2,4,6 만 저장
           if (targetTable === 'tours') {
             const raw = row.reservation_ids
-            row.reservation_ids =
-              raw !== undefined && raw !== null && Array.isArray(raw)
-                ? [...raw]
-                : []
-          }
-          // 스키마에 없는 컬럼 제거 (다른 테이블용 매핑이 섞였을 때 'column not in schema' 오류 방지)
-          if (tableColumns && tableColumns.size > 0) {
-            const filtered: Record<string, unknown> = {}
-            for (const key of Object.keys(row)) {
-              if (tableColumns.has(key)) {
-                filtered[key] = row[key]
-              }
+            if (raw !== undefined && raw !== null && Array.isArray(raw)) {
+              row.reservation_ids = [...raw]
+            } else {
+              row.reservation_ids = []
             }
-            return filtered
           }
           return row
         })
@@ -1114,16 +1035,20 @@ export const flexibleSync = async (
 const sanitizeTimestampFields = (row: Record<string, unknown>): Record<string, unknown> => {
   const sanitized = { ...row }
   
-  // 타임스탬프 필드 (_at, _on): 빈 문자열 ""은 PostgreSQL에 invalid하므로 null로 처리
+  // 타임스탬프 필드만 검증 (_at, _on으로 끝나는 필드)
+  // 시간 필드 (pickup_time, tour_time 등)는 PostgreSQL이 자동 처리하므로 건너뜀
   Object.keys(sanitized).forEach(key => {
     const value = sanitized[key]
     
-    if (key.match(/_at$|_on$/i)) {
-      if (value === undefined || value === null || value === '' || (typeof value === 'string' && value.trim() === '') || isGoogleSheetsError(value)) {
+    // 타임스탬프 필드 검증 (_at, _on 등으로 끝나는 필드)
+    if (key.match(/_at$|_on$/i) && value !== undefined && value !== null && value !== '') {
+      // Google Sheets 에러 값 체크
+      if (isGoogleSheetsError(value)) {
         sanitized[key] = null
-      } else {
+      } else if (typeof value === 'string') {
+        // 문자열인 경우 유효한 타임스탬프인지만 확인
         try {
-          const dateValue = new Date(value as string | number)
+          const dateValue = new Date(value)
           if (isNaN(dateValue.getTime())) {
             sanitized[key] = null
           } else {
@@ -1134,11 +1059,12 @@ const sanitizeTimestampFields = (row: Record<string, unknown>): Record<string, u
         }
       }
     }
-    // 시간(TIME) 필드: 빈 문자열 ""은 PostgreSQL에 invalid하므로 null로 처리
-    else if (key === 'pickup_time' || key === 'tour_time' || key === 'time') {
-      if (value === undefined || value === null || value === '' || (typeof value === 'string' && value.trim() === '') || isGoogleSheetsError(value)) {
+    // 시간 필드 (pickup_time, tour_time 등)에서 에러 값만 제거
+    else if ((key === 'pickup_time' || key === 'tour_time') && value !== undefined && value !== null) {
+      if (isGoogleSheetsError(value)) {
         sanitized[key] = null
       }
+      // 그 외의 경우 원본 값 유지 - PostgreSQL이 자동 변환
     }
   })
   
