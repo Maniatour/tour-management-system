@@ -653,23 +653,42 @@ export const flexibleSync = async (
           .filter((id): id is string => typeof id === 'string' && id.length > 0)
         
         if (tourIdsToSync.length > 0) {
-          // 해당 투어들의 배정 관련 컬럼 초기화 (이후 upsert에서 시트 값으로만 덮어씀, 병합 없음)
-          const { error: resetError } = await db
-            .from('tours')
-            .update({ 
-              tour_guide_id: null,
-              assistant_id: null,
-              tour_car_id: null,
-              reservation_ids: [] 
-            })
-            .in('id', tourIdsToSync)
+          // statement timeout 방지: 200개씩 배치로 나누어 초기화
+          const RESET_BATCH_SIZE = 200
+          let resetSuccess = 0
+          let resetFailed = 0
           
-          if (resetError) {
-            console.warn('배정 컬럼 초기화 중 오류 (계속 진행):', resetError.message)
-            onProgress?.({ type: 'warn', message: `배정 컬럼 초기화 중 경고: ${resetError.message}` })
+          for (let i = 0; i < tourIdsToSync.length; i += RESET_BATCH_SIZE) {
+            const batchIds = tourIdsToSync.slice(i, i + RESET_BATCH_SIZE)
+            
+            const { error: resetError } = await db
+              .from('tours')
+              .update({ 
+                tour_guide_id: null,
+                assistant_id: null,
+                tour_car_id: null,
+                reservation_ids: [] 
+              })
+              .in('id', batchIds)
+            
+            if (resetError) {
+              console.warn(`배정 컬럼 초기화 배치 ${Math.floor(i / RESET_BATCH_SIZE) + 1} 오류:`, resetError.message)
+              resetFailed += batchIds.length
+            } else {
+              resetSuccess += batchIds.length
+            }
+            
+            // 배치 간 짧은 지연 (서버 부하 방지)
+            if (i + RESET_BATCH_SIZE < tourIdsToSync.length) {
+              await new Promise(resolve => setTimeout(resolve, 50))
+            }
+          }
+          
+          if (resetFailed > 0) {
+            onProgress?.({ type: 'warn', message: `배정 컬럼 초기화: ${resetSuccess}개 성공, ${resetFailed}개 실패 (계속 진행)` })
           } else {
-            console.log(`✅ ${tourIdsToSync.length}개 투어의 배정 컬럼 초기화 완료 (tour_guide_id, assistant_id, tour_car_id, reservation_ids)`)
-            onProgress?.({ type: 'info', message: `${tourIdsToSync.length}개 투어의 배정 컬럼 초기화 완료` })
+            console.log(`✅ ${resetSuccess}개 투어의 배정 컬럼 초기화 완료`)
+            onProgress?.({ type: 'info', message: `${resetSuccess}개 투어의 배정 컬럼 초기화 완료` })
           }
         }
       } catch (resetException) {

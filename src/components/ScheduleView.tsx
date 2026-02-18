@@ -91,6 +91,7 @@ export default function ScheduleView() {
   // 행 드래그앤드롭 상태 (가이드/상품)
   const [draggedGuideRow, setDraggedGuideRow] = useState<string | null>(null)
   const [dragOverGuideRow, setDragOverGuideRow] = useState<string | null>(null)
+  const [hoveredGuideRow, setHoveredGuideRow] = useState<string | null>(null)
   const [draggedProductRow, setDraggedProductRow] = useState<string | null>(null)
   const [dragOverProductRow, setDragOverProductRow] = useState<string | null>(null)
   const [shareProductsSetting, setShareProductsSetting] = useState(false)
@@ -675,7 +676,7 @@ export default function ScheduleView() {
       const startDate = firstDayOfMonth.subtract(3, 'day').format('YYYY-MM-DD')
       const endDate = lastDayOfMonth.format('YYYY-MM-DD')
       
-      // 가이드나 어시스턴트가 배정되지 않은 투어들 (특정 상태 제외)
+      // 가이드 또는 어시스턴트가 배정되지 않은 투어들 (특정 상태 제외)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: unassignedToursData, error } = await (supabase as any)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -686,7 +687,7 @@ export default function ScheduleView() {
         `)
         .gte('tour_date', startDate)
         .lte('tour_date', endDate)
-        .or('tour_guide_id.is.null,tour_guide_id.eq.')
+        .or('tour_guide_id.is.null,tour_guide_id.eq.,assistant_id.is.null,assistant_id.eq.')
         .not('tour_status', 'like', 'canceled%')
         .not('tour_status', 'like', 'Canceled%')
         .not('tour_status', 'eq', 'Deleted')
@@ -843,6 +844,62 @@ export default function ScheduleView() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // 로컬 임시 저장
+  const LOCAL_DRAFT_KEY = 'schedule_pending_draft'
+
+  const saveDraftToLocal = () => {
+    const draft = {
+      pendingChanges,
+      pendingOffScheduleChanges,
+      savedAt: new Date().toISOString(),
+      month: `${currentDate.getFullYear()}-${currentDate.getMonth() + 1}`
+    }
+    localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(draft))
+    showMessage('임시 저장 완료', `${pendingCount}건의 변경사항이 로컬에 임시 저장되었습니다.`, 'success')
+  }
+
+  const loadDraftFromLocal = () => {
+    try {
+      const saved = localStorage.getItem(LOCAL_DRAFT_KEY)
+      if (!saved) return false
+      const draft = JSON.parse(saved)
+      if (draft.pendingChanges) {
+        setPendingChanges(draft.pendingChanges)
+        // tours 상태에 변경사항을 즉시 반영하여 화면에 미리보기
+        setTours(prev => prev.map(t => {
+          const change = draft.pendingChanges[t.id]
+          return change ? { ...t, ...change } : t
+        }))
+      }
+      if (draft.pendingOffScheduleChanges) setPendingOffScheduleChanges(draft.pendingOffScheduleChanges)
+      return draft
+    } catch {
+      return false
+    }
+  }
+
+  const clearDraftFromLocal = () => {
+    localStorage.removeItem(LOCAL_DRAFT_KEY)
+  }
+
+  // 초기 로드 시 로컬 임시 저장 데이터 확인
+  const [hasDraft, setHasDraft] = useState(false)
+  const [draftInfo, setDraftInfo] = useState<{ savedAt: string; month: string; count: number } | null>(null)
+  
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_DRAFT_KEY)
+      if (saved) {
+        const draft = JSON.parse(saved)
+        const count = Object.keys(draft.pendingChanges || {}).length + Object.keys(draft.pendingOffScheduleChanges || {}).length
+        if (count > 0) {
+          setHasDraft(true)
+          setDraftInfo({ savedAt: draft.savedAt, month: draft.month, count })
+        }
+      }
+    } catch { /* ignore */ }
+  }, [])
 
   // 페이지 이탈 시 저장되지 않은 변경사항이 있으면 경고
   useEffect(() => {
@@ -2031,10 +2088,48 @@ export default function ScheduleView() {
           {/* 오른쪽: 월 이동/저장 버튼들 */}
           <div className="flex items-center space-x-2 sm:space-x-4 flex-shrink-0">
             {/* 대기 변경 배지 및 버튼 */}
+            {/* 로컬 임시 저장 복원 알림 */}
+            {hasDraft && pendingCount === 0 && (
+              <div className="flex items-center gap-1">
+                <span className="px-2 py-1 text-[10px] bg-purple-100 text-purple-800 rounded-full">
+                  임시 저장 {draftInfo?.count}건 ({draftInfo?.month})
+                </span>
+                <button
+                  onClick={() => {
+                    loadDraftFromLocal()
+                    setHasDraft(false)
+                    setDraftInfo(null)
+                    showMessage('복원 완료', '임시 저장된 변경사항을 불러왔습니다.', 'success')
+                  }}
+                  className="px-2 py-1 text-[10px] bg-purple-500 text-white rounded-lg hover:bg-purple-600"
+                >
+                  복원
+                </button>
+                <button
+                  onClick={() => {
+                    clearDraftFromLocal()
+                    setHasDraft(false)
+                    setDraftInfo(null)
+                  }}
+                  className="px-2 py-1 text-[10px] bg-gray-400 text-white rounded-lg hover:bg-gray-500"
+                >
+                  삭제
+                </button>
+              </div>
+            )}
             {pendingCount > 0 && (
-              <span className="px-2 py-1 text-xs bg-amber-100 text-amber-800 rounded-full">
-                변경 {pendingCount}건 대기중
-              </span>
+              <div className="flex items-center gap-1">
+                <span className="px-2 py-1 text-xs bg-amber-100 text-amber-800 rounded-full">
+                  변경 {pendingCount}건 대기중
+                </span>
+                <button
+                  onClick={saveDraftToLocal}
+                  className="px-2 py-1 text-[10px] bg-purple-500 text-white rounded-lg hover:bg-purple-600 whitespace-nowrap"
+                  title="변경사항을 로컬에 임시 저장"
+                >
+                  임시저장
+                </button>
+              </div>
             )}
             <button
               onClick={async () => {
@@ -2105,9 +2200,12 @@ export default function ScheduleView() {
                     }
                   }
 
-                  // 모든 변경사항 초기화
+                  // 모든 변경사항 초기화 + 로컬 임시 저장 삭제
                   setPendingChanges({})
                   setPendingOffScheduleChanges({})
+                  clearDraftFromLocal()
+                  setHasDraft(false)
+                  setDraftInfo(null)
                   await fetchData()
                   await fetchUnassignedTours()
                   showMessage('저장 완료', '변경사항이 저장되었습니다.', 'success')
@@ -2176,23 +2274,20 @@ export default function ScheduleView() {
           
           {/* 상품별 스케줄 테이블 */}
           <div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center justify-between">
               <div className="flex items-center">
-                <MapPin className="w-5 h-5 mr-2 text-blue-500" />
+                <MapPin className="w-4 h-4 mr-1 text-blue-500" />
                 상품별 투어 인원
               </div>
-              <div className="flex items-center gap-3 text-xs text-gray-600">
-                <div className="flex items-center gap-1">
-                  <div className="w-4 h-4 bg-yellow-100 border border-yellow-300 rounded"></div>
-                  <span>한국어진행</span>
+              <div className="flex items-center gap-2 text-[11px]">
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-yellow-100 border border-yellow-300 rounded-full">
+                  <span className="font-medium text-yellow-800">한국어</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <div className="w-4 h-4 bg-red-100 border border-red-300 rounded"></div>
-                  <span>영어진행</span>
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-red-100 border border-red-300 rounded-full">
+                  <span className="font-medium text-red-800">영어</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <div className="w-4 h-4 bg-orange-100 border border-orange-300 rounded"></div>
-                  <span>한국어 & 영어</span>
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-orange-100 border border-orange-300 rounded-full">
+                  <span className="font-medium text-orange-800">한국어 & 영어</span>
                 </div>
               </div>
             </h3>
@@ -2524,6 +2619,8 @@ export default function ScheduleView() {
                     onDragOver={(e) => handleGuideRowDragOver(e, teamMemberId)}
                     onDragLeave={handleGuideRowDragLeave}
                     onDrop={(e) => handleGuideRowDrop(e, teamMemberId)}
+                    onMouseEnter={() => setHoveredGuideRow(teamMemberId)}
+                    onMouseLeave={() => setHoveredGuideRow(null)}
                   >
                     <td 
                       className="px-1 py-0 text-xs leading-tight cursor-grab active:cursor-grabbing select-none" 
@@ -2532,7 +2629,11 @@ export default function ScheduleView() {
                       onDragStart={(e) => handleGuideRowDragStart(e, teamMemberId)}
                       onDragEnd={handleGuideRowDragEnd}
                     >
-                      <div className="font-medium text-gray-900 flex items-center gap-0.5">
+                      <div className={`font-medium flex items-center gap-0.5 ${
+                        hoveredGuideRow === teamMemberId 
+                          ? 'text-blue-600 animate-pulse' 
+                          : 'text-gray-900'
+                      }`}>
                         <span className="text-gray-400 hover:text-gray-600 text-[8px]" title="드래그하여 순서 변경">⠿</span>
                         {guide.team_member_name}
                       </div>
@@ -2760,7 +2861,7 @@ export default function ScheduleView() {
                                         
                                         return (
                                           <div 
-                                            className={`absolute inset-0 flex items-center justify-center gap-1 font-bold text-white px-2 py-0 text-xs rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
+                                            className={`absolute inset-0 flex items-center justify-center gap-1 text-white px-2 py-0 text-[10px] rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
                                               dayData.assignedPeople === 0 
                                                 ? 'bg-gray-400' 
                                                 : 'bg-transparent'
@@ -2804,7 +2905,7 @@ export default function ScheduleView() {
                                       // 기본 렌더링 (product_id가 없는 경우)
                                       return (
                                         <div 
-                                          className={`absolute inset-0 flex items-center justify-center gap-1 font-bold text-white px-2 py-0 text-xs rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
+                                          className={`absolute inset-0 flex items-center justify-center gap-1 text-white px-2 py-0 text-[10px] rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
                                             dayData.assignedPeople === 0 
                                               ? 'bg-gray-400' 
                                               : 'bg-transparent'
@@ -2882,7 +2983,7 @@ export default function ScheduleView() {
                                         
                                         return (
                                           <div 
-                                            className={`absolute inset-0 flex items-center justify-center gap-1 font-bold text-white px-2 py-0 text-xs rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
+                                            className={`absolute inset-0 flex items-center justify-center gap-1 text-white px-2 py-0 text-[10px] rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
                                               dayData.assignedPeople === 0 
                                                 ? 'bg-gray-400' 
                                                 : 'bg-transparent'
@@ -2926,7 +3027,7 @@ export default function ScheduleView() {
                                       // 기본 렌더링 (product_id가 없거나 tour_guide_id가 없는 경우)
                                       return (
                                         <div 
-                                          className={`absolute inset-0 flex items-center justify-center gap-1 font-bold text-white px-2 py-0 text-xs rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
+                                          className={`absolute inset-0 flex items-center justify-center gap-1 text-white px-2 py-0 text-[10px] rounded z-10 cursor-pointer hover:opacity-80 transition-opacity ${
                                             dayData.assignedPeople === 0 
                                               ? 'bg-gray-400' 
                                               : 'bg-transparent'
@@ -3054,7 +3155,7 @@ export default function ScheduleView() {
                               style={{ left: `calc(${visibleStartIdx} * (100% / ${monthDays.length}))`, width: `calc(${spanDays} * (100% / ${monthDays.length}))` }}
                             >
                               <div
-                                className={`w-full h-full rounded font-bold px-2 py-0 text-xs flex items-center justify-center gap-1 cursor-pointer hover:opacity-90 transition-opacity ${tour.dayData.assignedPeople === 0 ? 'bg-gray-400 text-white' : ''}`}
+                                className={`w-full h-full rounded px-2 py-0 text-[10px] flex items-center justify-center gap-1 cursor-pointer hover:opacity-90 transition-opacity ${tour.dayData.assignedPeople === 0 ? 'bg-gray-400 text-white' : ''}`}
                                 style={{ 
                                   background: tour.dayData.assignedPeople > 0 && hasColors ? gradient : undefined,
                                   color: (() => {
