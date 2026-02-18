@@ -1259,43 +1259,46 @@ export function useTourDetailData() {
       const reservations = (reservationsData || []) as ReservationRow[]
       if (reservations && reservations.length > 0) {
         const customerIds = [...new Set(reservations.map(r => r.customer_id).filter(Boolean) as string[])]
-        
+        let reservationsList: ExtendedReservationRow[] = reservations.map(r => ({
+          ...r,
+          customers: null,
+          customer_name: '정보 없음',
+          customer_email: '',
+          customer_language: 'Unknown'
+        } as ExtendedReservationRow))
+
         if (customerIds.length > 0) {
           const { data: customersData, error: customersError } = await supabase
             .from('customers')
             .select('*')
             .in('id', customerIds)
-          
+
+          if (!customersError && customersData) {
+            const customers = (customersData || []) as CustomerRow[]
+            reservationsList = reservations.map(reservation => {
+              const customer = customers.find(c => c.id === reservation.customer_id)
+              return {
+                ...reservation,
+                customers: customer || null,
+                customer_name: customer?.name || '정보 없음',
+                customer_email: customer?.email || '',
+                customer_language: customer?.language || 'Unknown'
+              } as ExtendedReservationRow
+            })
+          }
           if (customersError) {
             console.error('고객 정보 조회 오류:', customersError)
-            const extendedReservations = reservations.map(r => ({ ...r } as ExtendedReservationRow))
-            setAllReservations(extendedReservations)
-            return
           }
-          
-          const customers = (customersData || []) as CustomerRow[]
-          const reservationsWithCustomers: ExtendedReservationRow[] = reservations.map(reservation => {
-            const customer = customers.find(c => c.id === reservation.customer_id)
-            
-            return {
-              ...reservation,
-              customers: customer || null,
-              customer_name: customer?.name || '정보 없음',
-              customer_email: customer?.email || '',
-              customer_language: customer?.language || 'Unknown'
-            } as ExtendedReservationRow
-          })
-          
-          setAllReservations(reservationsWithCustomers)
-          
-          // 예약 분류도 다시 계산
-          const assignedReservationIds = (tour.reservation_ids || []) as string[]
-          
-          // 같은 tour_date와 product_id를 가진 모든 투어들의 reservation_ids 수집
-          if (!tour.product_id || !tour.tour_date) {
-            console.error('투어 product_id 또는 tour_date가 없습니다.')
-            return
-          }
+        }
+
+        setAllReservations(reservationsList)
+
+        // 예약 분류도 다시 계산 (픽업 스케줄 등에 반영되도록 항상 수행)
+        const assignedReservationIds = (tour.reservation_ids || []) as string[]
+
+        if (!tour.product_id || !tour.tour_date) {
+          console.error('투어 product_id 또는 tour_date가 없습니다.')
+        } else {
           const { data: allSameDateProductTours, error: allToursError } = await supabase
             .from('tours')
             .select('id, reservation_ids')
@@ -1306,10 +1309,9 @@ export function useTourDetailData() {
             console.error('❌ Error loading all tours with same date/product:', allToursError)
           }
 
-          // 모든 투어의 reservation_ids를 수집 (Set으로 중복 제거)
           const allAssignedReservationIdsSet = new Set<string>()
           const reservationToTourMap = new Map<string, string>()
-          
+
           const toursList = (allSameDateProductTours || []) as Array<{ id: string; reservation_ids?: unknown }>
           if (toursList.length > 0) {
             toursList.forEach(t => {
@@ -1326,20 +1328,16 @@ export function useTourDetailData() {
             })
           }
 
-          // 1. 이 투어에 배정된 예약
           let assignedReservations: ExtendedReservationRow[] = []
           if (assignedReservationIds.length > 0) {
-            assignedReservations = reservationsWithCustomers.filter(r => 
+            assignedReservations = reservationsList.filter(r =>
               assignedReservationIds.includes(r.id)
             )
           }
 
-          // 2. 다른 투어에 배정된 예약
           const otherToursAssignedReservations = await (async () => {
             try {
-              if (!tour.product_id || !tour.tour_date) {
-                return []
-              }
+              if (!tour.product_id || !tour.tour_date) return []
               const { data: otherTours, error: toursError } = await supabase
                 .from('tours')
                 .select('id, reservation_ids')
@@ -1347,17 +1345,9 @@ export function useTourDetailData() {
                 .eq('tour_date', tour.tour_date)
                 .neq('id', tour.id)
 
-              if (toursError) {
-                console.error('❌ Error loading other tours:', toursError)
-                return []
-              }
-
-              if (!otherTours || otherTours.length === 0) {
-                return []
-              }
+              if (toursError || !otherTours || otherTours.length === 0) return []
 
               const otherReservationIdsSet = new Set<string>()
-              
               otherTours.forEach(t => {
                 const tourRow = t as TourRow
                 if (tourRow.reservation_ids && Array.isArray(tourRow.reservation_ids)) {
@@ -1370,69 +1360,54 @@ export function useTourDetailData() {
                   })
                 }
               })
-
               const otherReservationIds = Array.from(otherReservationIdsSet)
+              if (otherReservationIds.length === 0) return []
 
-              if (otherReservationIds.length === 0) {
-                return []
-              }
-
-              const filteredReservations = reservationsWithCustomers.filter(r => 
+              const filteredReservations = reservationsList.filter(r =>
                 otherReservationIds.includes(r.id) && !assignedReservationIds.includes(r.id)
               )
-
-              return filteredReservations.map(reservation => {
-                const assignedTourId = reservationToTourMap.get(reservation.id) || null
-                return {
-                  ...reservation,
-                  assigned_tour_id: assignedTourId
-                }
-              })
+              return filteredReservations.map(reservation => ({
+                ...reservation,
+                assigned_tour_id: reservationToTourMap.get(reservation.id) || null
+              }))
             } catch (error) {
               console.error('❌ Error processing other tours reservations:', error)
               return []
             }
           })()
 
-          // 3. 배정 대기 중인 예약
-          const pendingReservations = reservationsWithCustomers.filter(r => {
+          const pendingReservations = reservationsList.filter(r => {
             const reservationId = String(r.id).trim()
             const isInAnyTour = allAssignedReservationIdsSet.has(reservationId)
             const status = r.status ? String(r.status).toLowerCase().trim() : ''
             const isConfirmedOrRecruiting = status === 'confirmed' || status === 'recruiting'
-            
             return !isInAnyTour && isConfirmedOrRecruiting
           })
 
-          // 4. 다른 상태의 예약
-          const otherStatusReservations = reservationsWithCustomers.filter(r => {
+          const otherStatusReservations = reservationsList.filter(r => {
             const status = r.status ? String(r.status).toLowerCase().trim() : ''
             const isConfirmedOrRecruiting = status === 'confirmed' || status === 'recruiting'
-            
             return !isConfirmedOrRecruiting
           })
 
-          // cancelled 상태 확인 함수
           const isCancelled = (status: string | null | undefined): boolean => {
             if (!status) return false
             const normalizedStatus = String(status).toLowerCase().trim()
             return normalizedStatus === 'cancelled' || normalizedStatus === 'canceled' || normalizedStatus.includes('cancel')
           }
 
-          // assignedReservations에서 cancelled 상태 제외
           const activeAssignedReservations = assignedReservations.filter(r => !isCancelled(r.status))
-          // otherToursAssignedReservations에서도 cancelled 상태 제외
           const activeOtherToursAssignedReservations = otherToursAssignedReservations.filter(r => !isCancelled(r.status))
 
           setAssignedReservations(activeAssignedReservations)
           setPendingReservations(pendingReservations)
           setOtherToursAssignedReservations(activeOtherToursAssignedReservations)
           setOtherStatusReservations(otherStatusReservations)
-        } else {
-          setAllReservations(reservationsData)
         }
       } else {
         setAllReservations(reservationsData || [])
+        setAssignedReservations([])
+        setPendingReservations([])
       }
     },
 

@@ -2029,11 +2029,10 @@ export default function ScheduleView() {
     <div className="bg-white rounded-lg shadow-md border p-2">
       {/* 헤더 */}
       <div className="mb-2">
-        {/* 메인 헤더 - 모든 요소를 한 줄에 배치 */}
+        {/* 첫 번째 줄: 아이콘 버튼들 + 월 이동/오늘 */}
         <div className="flex items-center justify-between gap-2 mb-2">
-          {/* 왼쪽: 선택 버튼들 (제목 제거) */}
-          <div className="flex items-center gap-2 flex-1">
-            {/* 선택 버튼들 */}
+          {/* 왼쪽: 선택 버튼들 */}
+          <div className="flex items-center gap-2">
             <div className="flex gap-2">
               {/* 상품 선택 버튼 */}
               <button
@@ -2081,156 +2080,11 @@ export default function ScheduleView() {
               >
                 <CalendarOff className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
-
             </div>
           </div>
 
-          {/* 오른쪽: 월 이동/저장 버튼들 */}
-          <div className="flex items-center space-x-2 sm:space-x-4 flex-shrink-0">
-            {/* 대기 변경 배지 및 버튼 */}
-            {/* 로컬 임시 저장 복원 알림 */}
-            {hasDraft && pendingCount === 0 && (
-              <div className="flex items-center gap-1">
-                <span className="px-2 py-1 text-[10px] bg-purple-100 text-purple-800 rounded-full">
-                  임시 저장 {draftInfo?.count}건 ({draftInfo?.month})
-                </span>
-                <button
-                  onClick={() => {
-                    loadDraftFromLocal()
-                    setHasDraft(false)
-                    setDraftInfo(null)
-                    showMessage('복원 완료', '임시 저장된 변경사항을 불러왔습니다.', 'success')
-                  }}
-                  className="px-2 py-1 text-[10px] bg-purple-500 text-white rounded-lg hover:bg-purple-600"
-                >
-                  복원
-                </button>
-                <button
-                  onClick={() => {
-                    clearDraftFromLocal()
-                    setHasDraft(false)
-                    setDraftInfo(null)
-                  }}
-                  className="px-2 py-1 text-[10px] bg-gray-400 text-white rounded-lg hover:bg-gray-500"
-                >
-                  삭제
-                </button>
-              </div>
-            )}
-            {pendingCount > 0 && (
-              <div className="flex items-center gap-1">
-                <span className="px-2 py-1 text-xs bg-amber-100 text-amber-800 rounded-full">
-                  변경 {pendingCount}건 대기중
-                </span>
-                <button
-                  onClick={saveDraftToLocal}
-                  className="px-2 py-1 text-[10px] bg-purple-500 text-white rounded-lg hover:bg-purple-600 whitespace-nowrap"
-                  title="변경사항을 로컬에 임시 저장"
-                >
-                  임시저장
-                </button>
-              </div>
-            )}
-            <button
-              onClick={async () => {
-                // 일괄 저장: pendingChanges와 pendingOffScheduleChanges를 순회하며 업데이트
-                try {
-                  // 투어 변경사항 저장
-                  const tourEntries = Object.entries(pendingChanges)
-                  for (const [tourId, updateData] of tourEntries) {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const { error } = await (supabase as any)
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      .from('tours' as any)
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      .update(updateData as any)
-                      .eq('id', tourId)
-                    if (error) {
-                      console.error('Batch save error:', error)
-                      showMessage('저장 실패', '일부 변경사항 저장에 실패했습니다.', 'error')
-                      return
-                    }
-                  }
-
-                  // 오프 스케줄 변경사항 저장
-                  const offScheduleEntries = Object.entries(pendingOffScheduleChanges)
-                  for (const [, change] of offScheduleEntries) {
-                    if (change.action === 'approve') {
-                      // 오프 스케줄 승인
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      const { error } = await (supabase as any)
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        .from('off_schedules' as any)
-                        .update({ status: 'approved' })
-                        .eq('team_email', change.team_email)
-                        .eq('off_date', change.off_date)
-                      if (error) {
-                        console.error('Off schedule approve error:', error)
-                        showMessage('저장 실패', '오프 스케줄 승인에 실패했습니다.', 'error')
-                        return
-                      }
-                    } else if (change.action === 'reject') {
-                      // 오프 스케줄 거절
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      const { error } = await (supabase as any)
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        .from('off_schedules' as any)
-                        .update({ status: 'rejected' })
-                        .eq('team_email', change.team_email)
-                        .eq('off_date', change.off_date)
-                      if (error) {
-                        console.error('Off schedule reject error:', error)
-                        showMessage('저장 실패', '오프 스케줄 거절에 실패했습니다.', 'error')
-                        return
-                      }
-                    } else if (change.action === 'delete') {
-                      // 오프 스케줄 삭제
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      const { error } = await (supabase as any)
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        .from('off_schedules' as any)
-                        .delete()
-                        .eq('team_email', change.team_email)
-                        .eq('off_date', change.off_date)
-                      if (error) {
-                        console.error('Off schedule delete error:', error)
-                        showMessage('저장 실패', '오프 스케줄 삭제에 실패했습니다.', 'error')
-                        return
-                      }
-                    }
-                  }
-
-                  // 모든 변경사항 초기화 + 로컬 임시 저장 삭제
-                  setPendingChanges({})
-                  setPendingOffScheduleChanges({})
-                  clearDraftFromLocal()
-                  setHasDraft(false)
-                  setDraftInfo(null)
-                  await fetchData()
-                  await fetchUnassignedTours()
-                  showMessage('저장 완료', '변경사항이 저장되었습니다.', 'success')
-                } catch (err) {
-                  console.error('Batch save unexpected error:', err)
-                  showMessage('오류', '변경사항 저장 중 오류가 발생했습니다.', 'error')
-                }
-              }}
-              disabled={pendingCount === 0}
-              className={`px-2 py-1 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
-            >
-              저장
-            </button>
-            <button
-              onClick={async () => {
-                setPendingChanges({})
-                setPendingOffScheduleChanges({})
-                await fetchData()
-                await fetchUnassignedTours()
-              }}
-              disabled={pendingCount === 0}
-              className={`px-2 py-1 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-gray-600 text-white hover:bg-gray-700'}`}
-            >
-              취소
-            </button>
+          {/* 오른쪽: 월 이동 + 오늘 */}
+          <div className="flex items-center gap-1 sm:gap-2">
             <div className="flex items-center space-x-1 sm:space-x-4">
               <button
                 onClick={goToPreviousMonth}
@@ -2256,6 +2110,150 @@ export default function ScheduleView() {
             </button>
           </div>
         </div>
+
+        {/* 두 번째 줄: 저장/취소/임시저장 버튼들 */}
+        <div className="flex flex-wrap items-center justify-end gap-1 sm:gap-2 mb-2">
+          {/* 로컬 임시 저장 복원 알림 */}
+          {hasDraft && pendingCount === 0 && (
+            <div className="flex items-center gap-1">
+              <span className="px-2 py-1 text-[10px] bg-purple-100 text-purple-800 rounded-full">
+                임시 저장 {draftInfo?.count}건 ({draftInfo?.month})
+              </span>
+              <button
+                onClick={() => {
+                  loadDraftFromLocal()
+                  setHasDraft(false)
+                  setDraftInfo(null)
+                  showMessage('복원 완료', '임시 저장된 변경사항을 불러왔습니다.', 'success')
+                }}
+                className="px-2 py-1 text-[10px] bg-purple-500 text-white rounded-lg hover:bg-purple-600"
+              >
+                복원
+              </button>
+              <button
+                onClick={() => {
+                  clearDraftFromLocal()
+                  setHasDraft(false)
+                  setDraftInfo(null)
+                }}
+                className="px-2 py-1 text-[10px] bg-gray-400 text-white rounded-lg hover:bg-gray-500"
+              >
+                삭제
+              </button>
+            </div>
+          )}
+          {pendingCount > 0 && (
+            <div className="flex items-center gap-1">
+              <span className="px-2 py-1 text-xs bg-amber-100 text-amber-800 rounded-full">
+                변경 {pendingCount}건 대기중
+              </span>
+              <button
+                onClick={saveDraftToLocal}
+                className="px-2 py-1 text-[10px] bg-purple-500 text-white rounded-lg hover:bg-purple-600 whitespace-nowrap"
+                title="변경사항을 로컬에 임시 저장"
+              >
+                임시저장
+              </button>
+            </div>
+          )}
+          <button
+            onClick={async () => {
+              // 일괄 저장: pendingChanges와 pendingOffScheduleChanges를 순회하며 업데이트
+              try {
+                // 투어 변경사항 저장
+                const tourEntries = Object.entries(pendingChanges)
+                for (const [tourId, updateData] of tourEntries) {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const { error } = await (supabase as any)
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    .from('tours' as any)
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    .update(updateData as any)
+                    .eq('id', tourId)
+                  if (error) {
+                    console.error('Batch save error:', error)
+                    showMessage('저장 실패', '일부 변경사항 저장에 실패했습니다.', 'error')
+                    return
+                  }
+                }
+
+                // 오프 스케줄 변경사항 저장
+                const offScheduleEntries = Object.entries(pendingOffScheduleChanges)
+                for (const [, change] of offScheduleEntries) {
+                  if (change.action === 'approve') {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const { error } = await (supabase as any)
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      .from('off_schedules' as any)
+                      .update({ status: 'approved' })
+                      .eq('team_email', change.team_email)
+                      .eq('off_date', change.off_date)
+                    if (error) {
+                      console.error('Off schedule approve error:', error)
+                      showMessage('저장 실패', '오프 스케줄 승인에 실패했습니다.', 'error')
+                      return
+                    }
+                  } else if (change.action === 'reject') {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const { error } = await (supabase as any)
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      .from('off_schedules' as any)
+                      .update({ status: 'rejected' })
+                      .eq('team_email', change.team_email)
+                      .eq('off_date', change.off_date)
+                    if (error) {
+                      console.error('Off schedule reject error:', error)
+                      showMessage('저장 실패', '오프 스케줄 거절에 실패했습니다.', 'error')
+                      return
+                    }
+                  } else if (change.action === 'delete') {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const { error } = await (supabase as any)
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      .from('off_schedules' as any)
+                      .delete()
+                      .eq('team_email', change.team_email)
+                      .eq('off_date', change.off_date)
+                    if (error) {
+                      console.error('Off schedule delete error:', error)
+                      showMessage('저장 실패', '오프 스케줄 삭제에 실패했습니다.', 'error')
+                      return
+                    }
+                  }
+                }
+
+                // 모든 변경사항 초기화 + 로컬 임시 저장 삭제
+                setPendingChanges({})
+                setPendingOffScheduleChanges({})
+                clearDraftFromLocal()
+                setHasDraft(false)
+                setDraftInfo(null)
+                await fetchData()
+                await fetchUnassignedTours()
+                showMessage('저장 완료', '변경사항이 저장되었습니다.', 'success')
+              } catch (err) {
+                console.error('Batch save unexpected error:', err)
+                showMessage('오류', '변경사항 저장 중 오류가 발생했습니다.', 'error')
+              }
+            }}
+            disabled={pendingCount === 0}
+            className={`px-2 py-1 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+          >
+            저장
+          </button>
+          <button
+            onClick={async () => {
+              setPendingChanges({})
+              setPendingOffScheduleChanges({})
+              await fetchData()
+              await fetchUnassignedTours()
+            }}
+            disabled={pendingCount === 0}
+            className={`px-2 py-1 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm whitespace-nowrap ${pendingCount === 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-gray-600 text-white hover:bg-gray-700'}`}
+          >
+            취소
+          </button>
+        </div>
       </div>
 
       {/* 통합 스케줄 테이블 컨테이너 */}
@@ -2280,14 +2278,14 @@ export default function ScheduleView() {
                 상품별 투어 인원
               </div>
               <div className="flex items-center gap-2 text-[11px]">
-                <div className="flex items-center gap-1 px-2 py-0.5 bg-yellow-100 border border-yellow-300 rounded-full">
-                  <span className="font-medium text-yellow-800">한국어</span>
+                <div className="flex items-center gap-1 px-1.5 py-0.5 bg-yellow-100 border border-yellow-300 rounded-full" title="한국어">
+                  <span className="text-sm leading-none">🇰🇷</span>
                 </div>
-                <div className="flex items-center gap-1 px-2 py-0.5 bg-red-100 border border-red-300 rounded-full">
-                  <span className="font-medium text-red-800">영어</span>
+                <div className="flex items-center gap-1 px-1.5 py-0.5 bg-red-100 border border-red-300 rounded-full" title="영어">
+                  <span className="text-sm leading-none">🇺🇸</span>
                 </div>
-                <div className="flex items-center gap-1 px-2 py-0.5 bg-orange-100 border border-orange-300 rounded-full">
-                  <span className="font-medium text-orange-800">한국어 & 영어</span>
+                <div className="flex items-center gap-1 px-1.5 py-0.5 bg-orange-100 border border-orange-300 rounded-full" title="한국어 & 영어">
+                  <span className="text-sm leading-none">🇰🇷</span><span className="text-[9px] text-orange-400">&</span><span className="text-sm leading-none">🇺🇸</span>
                 </div>
               </div>
             </h3>
@@ -2741,7 +2739,7 @@ export default function ScheduleView() {
                                               openOffScheduleActionModal(offSchedule)
                                             }
                                           }}
-                                          title={`오프 스케줄 (${isPending ? '대기중' : isApproved ? '승인됨' : '알 수 없음'}) - 클릭하여 액션 선택`}
+                                          title={guide.team_member_name}
                                           >
                                             OFF
                                           </div>
@@ -2872,6 +2870,7 @@ export default function ScheduleView() {
                                                 : undefined,
                                               boxShadow: borderColor ? `0 0 0 2px ${getBorderColorValue(borderColor)}` : undefined
                                             }}
+                                            title={guide.team_member_name}
                                             draggable
                                             onDragStart={(e) => {
                                               if (guideTours.length > 0) {
@@ -2915,6 +2914,7 @@ export default function ScheduleView() {
                                               ? getColorFromClass(Object.values(dayData.productColors)[0])
                                               : undefined
                                           }}
+                                          title={guide.team_member_name}
                                           draggable
                                           onDragStart={(e) => {
                                             if (guideTours.length > 0) {
@@ -2994,6 +2994,7 @@ export default function ScheduleView() {
                                                 : undefined,
                                               boxShadow: borderColor ? `0 0 0 2px ${getBorderColorValue(borderColor)}` : undefined
                                             }}
+                                          title={guide.team_member_name}
                                           draggable
                                           onDragStart={(e) => {
                                             if (assistantTours.length > 0) {
@@ -3037,6 +3038,7 @@ export default function ScheduleView() {
                                               ? getColorFromClass(Object.values(dayData.productColors)[0])
                                               : undefined
                                           }}
+                                          title={guide.team_member_name}
                                           draggable
                                           onDragStart={(e) => {
                                             if (assistantTours.length > 0) {
@@ -3103,14 +3105,14 @@ export default function ScheduleView() {
                                                 openOffScheduleActionModal(offSchedule)
                                               }
                                             }}
-                                            title={`오프 스케줄 (${isPending ? '대기중' : isApproved ? '승인됨' : '알 수 없음'}) - 클릭하여 액션 선택`}
+                                            title={guide.team_member_name}
                                           >
                                             OFF
                                           </div>
                                         )
                                       })()
                                     ) : (
-                                      /* 드롭 영역 - 클릭으로 오프 스케줄 액션 모달, 더블클릭으로 오프 스케줄 생성 */
+                                      /* 드롭 영역 */
                                       <div 
                                         className="h-full flex items-center justify-center cursor-pointer hover:bg-gray-100 transition-colors"
                                         onClick={() => openOffScheduleActionModal(null, teamMemberId, dateString)}
@@ -3118,7 +3120,7 @@ export default function ScheduleView() {
                                           e.stopPropagation()
                                           handleCreateOffSchedule(teamMemberId, dateString)
                                         }}
-                                        title="클릭: 오프 스케줄 액션, 더블클릭: 오프 스케줄 생성"
+                                        title={guide.team_member_name}
                                       >
                                         <div className="text-gray-300 text-xs">+</div>
                                       </div>
@@ -3192,15 +3194,7 @@ export default function ScheduleView() {
                                     handleTourDoubleClick(guideTours[0].id)
                                   }
                                 }}
-                                title={(() => {
-                                  const guideTours = tours.filter(tourItem => 
-                                    tourItem.tour_date === tour.startDate && 
-                                    (tour.dayData.role === 'guide' 
-                                      ? tourItem.tour_guide_id === teamMemberId 
-                                      : tourItem.assistant_id === teamMemberId)
-                                  )
-                                  return guideTours.length > 0 ? getTourSummary(guideTours[0]) : ''
-                                })()}
+                                title={guide.team_member_name}
                               >
                                 {(() => {
                                   const guideTours = tours.filter(tourItem => 

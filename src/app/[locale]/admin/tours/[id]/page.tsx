@@ -1584,7 +1584,25 @@ export default function TourDetailPage() {
               onEditPickupHotel={handleEditReservationClick}
               getCustomerName={(customerId: string) => tourData.getCustomerName(customerId) || 'Unknown'}
               getCustomerLanguage={(customerId: string) => tourData.getCustomerLanguage(customerId) ?? 'Unknown'}
-              onRefresh={tourData.refreshReservations}
+              onRefresh={async (updatedPickup) => {
+                if (updatedPickup) {
+                  tourData.setAssignedReservations((prev: any) =>
+                    prev.map((r: any) =>
+                      r.id === updatedPickup.reservationId
+                        ? { ...r, pickup_time: updatedPickup.pickup_time, pickup_hotel: updatedPickup.pickup_hotel }
+                        : r
+                    )
+                  )
+                  tourData.setPendingReservations((prev: any) =>
+                    prev.map((r: any) =>
+                      r.id === updatedPickup.reservationId
+                        ? { ...r, pickup_time: updatedPickup.pickup_time, pickup_hotel: updatedPickup.pickup_hotel }
+                        : r
+                    )
+                  )
+                }
+                await tourData.refreshReservations()
+              }}
               getChannelInfo={getChannelInfo}
               safeJsonParse={safeJsonParse}
               pickupHotels={tourData.pickupHotels}

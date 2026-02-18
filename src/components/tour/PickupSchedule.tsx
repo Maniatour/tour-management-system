@@ -413,13 +413,14 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
       )
     }
 
-    // 호텔별로 그룹화
-    const groupedByHotel = assignedReservations.reduce((acc: Record<string, Array<{ id: string; customer_id: string | null; pickup_time: string | null; adults: number | null; children?: number | null; infants?: number | null; tour_date?: string | null }>>, reservation) => {
-      const hotelName = getPickupHotelNameOnly(reservation.pickup_hotel || '')
-      if (!acc[hotelName]) {
-        acc[hotelName] = []
+    // 픽업 호텔 ID별로 그룹화 (같은 호텔이어도 픽업 장소가 다르면 별도 그룹으로 표시)
+    const groupedByPickupHotelId = assignedReservations.reduce((acc: Record<string, Array<{ id: string; customer_id: string | null; pickup_time: string | null; pickup_hotel?: string | null; adults: number | null; children?: number | null; infants?: number | null; tour_date?: string | null }>>, reservation) => {
+      const hotelId = reservation.pickup_hotel || ''
+      if (!hotelId) return acc
+      if (!acc[hotelId]) {
+        acc[hotelId] = []
       }
-      acc[hotelName].push(reservation)
+      acc[hotelId].push(reservation)
       return acc
     }, {} as Record<string, any[]>)
 
@@ -472,8 +473,8 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
       return dateTimeA - dateTimeB
     }
 
-    // 호텔별로 정렬 (가장 빠른 픽업 시간 기준)
-    const sortedHotelEntries = Object.entries(groupedByHotel).sort(([, reservationsA], [, reservationsB]) => {
+    // 픽업 호텔 ID별로 정렬 (가장 빠른 픽업 시간 기준)
+    const sortedHotelEntries = Object.entries(groupedByPickupHotelId).sort(([, reservationsA], [, reservationsB]) => {
       const firstTimeA = reservationsA[0]?.pickup_time || null
       const firstTimeB = reservationsB[0]?.pickup_time || null
       return sortByPickupTime(
@@ -482,9 +483,12 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
       )
     })
 
-    return sortedHotelEntries.map(([hotelName, reservations]) => {
-      // 각 호텔 내 예약도 정렬
+    return sortedHotelEntries.map(([pickupHotelId, reservations]) => {
+      // 각 그룹 내 예약도 정렬
       const sortedReservations = [...reservations].sort(sortByPickupTime)
+      // 픽업 호텔 ID로 정보 조회 (예약에 저장된 실제 픽업 장소 사용)
+      const hotelInfo = pickupHotels.find((h) => h.id === pickupHotelId)
+      const hotelName = hotelInfo ? hotelInfo.hotel : getPickupHotelNameOnly(pickupHotelId)
       
       const totalPeople = sortedReservations.reduce((sum: number, res) => {
         const adults = res.adults || 0
@@ -492,7 +496,6 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
         const infants = (res.infants || (res as any).infant || 0) as number
         return sum + adults + children + infants
       }, 0)
-      const hotelInfo = pickupHotels.find((h) => h.hotel === hotelName)
       
       // 가장 빠른 픽업 시간 찾기 (정렬된 첫 번째 예약)
       const earliestTime = sortedReservations[0]?.pickup_time 
@@ -500,7 +503,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
         : '08:00'
       
       return (
-        <div key={hotelName} className="border rounded-lg p-3">
+        <div key={pickupHotelId} className="border rounded-lg p-3">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-2">
               <span className="text-sm font-medium text-blue-600">{earliestTime}</span>

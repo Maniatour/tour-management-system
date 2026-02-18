@@ -61,7 +61,7 @@ interface AssignmentManagementProps {
   getChannelInfo?: (channelId: string) => Promise<{ name: string; favicon?: string } | null | undefined>
   safeJsonParse: (data: string | object | null | undefined, fallback?: unknown) => unknown
   pickupHotels?: Array<{ id: string; hotel: string; pick_up_location?: string }>
-  onRefresh?: () => Promise<void> | void
+  onRefresh?: (updatedPickup?: { reservationId: string; pickup_time: string; pickup_hotel: string }) => Promise<void> | void
 }
 
 export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({

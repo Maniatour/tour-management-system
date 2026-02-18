@@ -70,7 +70,8 @@ interface ReservationCardProps {
   getChannelInfo?: (channelId: string) => Promise<{ name: string; favicon?: string } | null | undefined>
   safeJsonParse: (data: string | object | null | undefined, fallback?: unknown) => unknown
   pickupHotels?: Array<{ id: string; hotel: string; pick_up_location?: string }>
-  onRefresh?: () => Promise<void> | void
+  /** 새로고침. 픽업 수정 직후 픽업 스케줄 반영을 위해 수정된 픽업 정보를 넘기면 즉시 반영 후 서버 새로고침을 수행합니다. */
+  onRefresh?: (updatedPickup?: { reservationId: string; pickup_time: string; pickup_hotel: string }) => Promise<void> | void
 }
 
 export const ReservationCard: React.FC<ReservationCardProps> = ({
@@ -736,10 +737,10 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
       
       console.log('픽업 정보가 저장되었습니다:', { reservationId, pickupTime, pickupHotel })
 
-      // 성공 시 부모 컴포넌트에 새로고침 요청 (예약 카드뷰와 픽업 스케줄 업데이트)
+      // 성공 시 부모에 수정된 픽업 정보 전달 후 새로고침 (픽업 스케줄 섹션 즉시 반영)
       if (onRefresh) {
         try {
-          await onRefresh()
+          await onRefresh({ reservationId, pickup_time: pickupTime, pickup_hotel: pickupHotel })
           console.log('예약 데이터 새로고침 완료')
         } catch (refreshError) {
           console.error('데이터 새로고침 중 오류:', refreshError)

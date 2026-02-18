@@ -29,29 +29,25 @@ const fetchWithRetry = async (
   let lastError: Error | null = null
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    // 호출자의 signal이 이미 abort된 경우 즉시 중단 (컴포넌트 언마운트 등)
+    if (options.signal?.aborted) {
+      throw new DOMException('The operation was aborted.', 'AbortError')
+    }
+
     try {
-      // 타임아웃 설정 (30초)
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 30000)
 
-      // 헤더를 안전하게 병합
-      // Supabase 클라이언트가 설정한 헤더를 보존하면서 필요한 헤더만 추가
       const headers = new Headers(options.headers)
       
-      // Connection 헤더가 없으면 추가 (기존 헤더를 덮어쓰지 않음)
       if (!headers.has('Connection')) {
         headers.set('Connection', 'keep-alive')
       }
       
-      // Accept 헤더 추가 (406 에러 방지)
-      // Supabase PostgREST는 application/json 또는 application/vnd.pgjson.object+json을 지원
-      // 기존 Accept 헤더가 있으면 그대로 사용, 없으면 Supabase가 지원하는 모든 형식 포함
       if (!headers.has('Accept')) {
         headers.set('Accept', 'application/json, application/vnd.pgjson.object+json, application/vnd.pgjson.array+json')
       }
 
-      // 기존 signal이 있으면 타임아웃과 함께 사용
-      // (실제로는 Supabase가 signal을 전달하지 않으므로 controller.signal 사용)
       const response = await fetch(url, {
         ...options,
         signal: options.signal || controller.signal,
@@ -60,12 +56,10 @@ const fetchWithRetry = async (
 
       clearTimeout(timeoutId)
 
-      // 성공적인 응답이거나 재시도할 수 없는 오류인 경우
       if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 408)) {
         return response
       }
 
-      // 서버 오류인 경우 재시도
       if (response.status >= 500 || response.status === 408) {
         throw new Error(`Server error: ${response.status}`)
       }
@@ -74,25 +68,31 @@ const fetchWithRetry = async (
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error))
 
-      // 재시도 가능한 오류인지 확인
+      // 호출자의 signal이 abort된 경우 재시도 없이 즉시 중단
+      if (options.signal?.aborted) {
+        throw lastError
+      }
+
       const isRetryableError = 
         error instanceof Error && (
-          error.name === 'AbortError' ||
           error.message.includes('Failed to fetch') ||
           error.message.includes('ERR_CONNECTION_CLOSED') ||
           error.message.includes('ERR_QUIC_PROTOCOL_ERROR') ||
           error.message.includes('network') ||
-          error.message.includes('timeout') ||
           error.message.includes('ECONNRESET') ||
           error.message.includes('ETIMEDOUT')
         )
 
-      // 마지막 시도이거나 재시도할 수 없는 오류인 경우
-      if (attempt === maxRetries || !isRetryableError) {
+      // AbortError는 재시도하지 않음 (타임아웃 또는 컴포넌트 언마운트)
+      const isAbortError = error instanceof Error && (
+        error.name === 'AbortError' ||
+        error.message.includes('aborted')
+      )
+
+      if (attempt === maxRetries || !isRetryableError || isAbortError) {
         throw lastError
       }
 
-      // 지수 백오프로 대기
       const delay = retryDelay * Math.pow(2, attempt)
       console.warn(`Supabase 요청 실패, ${delay}ms 후 재시도 (${attempt + 1}/${maxRetries}):`, lastError.message)
       await new Promise(resolve => setTimeout(resolve, delay))
