@@ -19,7 +19,7 @@ interface Vehicle {
   engine_oil_change_cycle: number
   current_mileage: number
   recent_engine_oil_change_mileage: number
-  vehicle_status: string
+  status: string
   front_tire_size?: string
   rear_tire_size?: string
   windshield_wiper_size?: string
@@ -43,7 +43,6 @@ interface Vehicle {
   rental_pickup_location?: string
   rental_return_location?: string
   rental_total_cost?: number
-  rental_status?: string
   rental_notes?: string
 }
 
@@ -67,7 +66,6 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
     engine_oil_change_cycle: 10000,
     current_mileage: 0,
     recent_engine_oil_change_mileage: 0,
-    vehicle_status: '운행 가능',
     front_tire_size: '',
     rear_tire_size: '',
     windshield_wiper_size: '',
@@ -91,7 +89,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
     rental_pickup_location: '',
     rental_return_location: '',
     rental_total_cost: 0,
-    rental_status: 'available',
+    status: 'available',
     rental_notes: ''
   })
 
@@ -311,9 +309,8 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
         // 불린 필드들
         is_installment: vehicle.is_installment || false,
         // 기타 필드들
-        vehicle_status: vehicle.vehicle_status || '운행 가능',
-        vehicle_category: vehicle.vehicle_category || 'company',
-        rental_status: vehicle.rental_status || 'available'
+        status: vehicle.status || (vehicle.vehicle_category === 'rental' ? 'available' : '운행 가능'),
+        vehicle_category: vehicle.vehicle_category || 'company'
       })
       if (vehicle.vehicle_image_url) {
         setImagePreview(vehicle.vehicle_image_url)
@@ -333,7 +330,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
         engine_oil_change_cycle: 10000,
         current_mileage: 0,
         recent_engine_oil_change_mileage: 0,
-        vehicle_status: '운행 가능',
+        status: '운행 가능',
         front_tire_size: '',
         rear_tire_size: '',
         windshield_wiper_size: '',
@@ -357,7 +354,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
         rental_pickup_location: '',
         rental_return_location: '',
         rental_total_cost: 0,
-        rental_status: 'available',
+        status: 'available',
         rental_notes: ''
       })
     }
@@ -371,15 +368,25 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
       setFormData(prev => ({ ...prev, [name]: checked }))
     } else if (type === 'number') {
       setFormData(prev => ({ ...prev, [name]: parseFloat(value) || 0 }))
-    } else if (name === 'vehicle_type') {
-      // 차종 선택 시 자동으로 탑승 인원 설정 및 이미지 가져오기
-      const selectedType = vehicleTypes.find(type => type.name === value)
+    } else if (name === 'vehicle_category') {
       setFormData(prev => ({
         ...prev,
         [name]: value,
-        capacity: selectedType ? selectedType.passenger_capacity : prev.capacity,
-        vehicle_category: selectedType ? selectedType.vehicle_category : prev.vehicle_category
+        status: value === 'company' ? '운행 가능' : 'available'
       }))
+    } else if (name === 'vehicle_type') {
+      // 차종 선택 시 자동으로 탑승 인원 설정 및 이미지 가져오기
+      const selectedType = vehicleTypes.find(type => type.name === value)
+      setFormData(prev => {
+        const nextCategory = selectedType ? selectedType.vehicle_category : prev.vehicle_category
+        return {
+          ...prev,
+          [name]: value,
+          capacity: selectedType ? selectedType.passenger_capacity : prev.capacity,
+          vehicle_category: nextCategory,
+          status: nextCategory === 'company' ? '운행 가능' : 'available'
+        }
+      })
       
       // 차종의 모든 이미지 가져오기
       if (selectedType && selectedType.photos && selectedType.photos.length > 0) {
@@ -985,8 +992,8 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                       <div>
                         <label className="block text-sm font-medium text-gray-700">렌터카 상태</label>
                         <select
-                          name="rental_status"
-                          value={formData.rental_status}
+                          name="status"
+                          value={formData.status}
                           onChange={handleInputChange}
                           className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                         >
@@ -1061,8 +1068,8 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                     <div>
                       <label className="block text-sm font-medium text-gray-700">차량 상태</label>
                       <select
-                        name="vehicle_status"
-                        value={formData.vehicle_status}
+                        name="status"
+                        value={formData.status}
                         onChange={handleInputChange}
                         className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                       >

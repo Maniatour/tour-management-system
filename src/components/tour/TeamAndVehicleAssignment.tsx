@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { User, Users, Car, Save } from 'lucide-react'
+import React, { useState, useRef, useEffect } from 'react'
+import { User, Users, Car, Save, ChevronDown } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { ConnectionStatusLabel } from './TourUIComponents'
 
@@ -16,7 +16,7 @@ interface Vehicle {
   id: string
   vehicle_number: string | null
   vehicle_type: string | null
-  vehicle_status: string | null
+  status: string | null
 }
 
 interface TeamAndVehicleAssignmentProps {
@@ -53,6 +53,103 @@ interface TeamAndVehicleAssignmentProps {
   onFetchVehicles: () => void
   getTeamMemberName: (email: string) => string
   getVehicleName: (vehicleId: string) => string
+}
+
+/** 드롭다운 열었을 때 내부에 활성/비활성 탭이 있는 팀원 선택 드롭다운 */
+function MemberSelectWithTabs({
+  value,
+  onChange,
+  activeMembers,
+  inactiveMembers,
+  placeholder,
+  getDisplayName,
+  getTeamMemberName
+}: {
+  value: string
+  onChange: (email: string) => void
+  activeMembers: TeamMember[]
+  inactiveMembers: TeamMember[]
+  placeholder: string
+  getDisplayName: (m: TeamMember) => string
+  getTeamMemberName: (email: string) => string
+}) {
+  const t = useTranslations('tours.teamAndVehicle')
+  const [isOpen, setIsOpen] = useState(false)
+  const [tab, setTab] = useState<'active' | 'inactive'>('active')
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+    const onOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onOutside)
+    return () => document.removeEventListener('mousedown', onOutside)
+  }, [isOpen])
+
+  const members = tab === 'active' ? activeMembers : inactiveMembers
+  const displayText = value ? getTeamMemberName(value) : placeholder
+
+  return (
+    <div className="relative flex-1 min-w-0" ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen((o) => !o)}
+        className="w-full text-left text-sm border border-gray-300 rounded px-3 py-2 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 flex items-center justify-between gap-2"
+      >
+        <span className={value ? 'text-gray-900' : 'text-gray-500'}>{displayText}</span>
+        <ChevronDown className={`w-4 h-4 text-gray-500 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      {isOpen && (
+        <div className="absolute z-50 mt-1 w-full min-w-[200px] bg-white border border-gray-200 rounded-lg shadow-lg py-1">
+          {/* 드롭다운 내부: 활성 | 비활성 탭 */}
+          <div className="flex border-b border-gray-200 px-2 pb-1 mb-1">
+            <button
+              type="button"
+              onClick={() => setTab('active')}
+              className={`flex-1 py-1.5 text-sm font-medium rounded ${tab === 'active' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              {t('memberTabActive')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('inactive')}
+              className={`flex-1 py-1.5 text-sm font-medium rounded ${tab === 'inactive' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              {t('memberTabInactive')}
+            </button>
+          </div>
+          {/* 선택 해제 */}
+          <button
+            type="button"
+            onClick={() => { onChange(''); setIsOpen(false); }}
+            className="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-50"
+          >
+            {placeholder}
+          </button>
+          {/* 탭별 목록 */}
+          <div className="max-h-48 overflow-y-auto">
+            {members.length === 0 ? (
+              <div className="px-3 py-2 text-sm text-gray-400">{tab === 'active' ? t('memberTabActive') : t('memberTabInactive')} 팀원 없음</div>
+            ) : (
+              members.map((member) => (
+                <button
+                  key={member.email}
+                  type="button"
+                  onClick={() => { onChange(member.email); setIsOpen(false); }}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${value === member.email ? 'bg-blue-50 text-blue-800' : 'text-gray-900'}`}
+                >
+                  {getDisplayName(member)}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> = ({
@@ -93,27 +190,32 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
   const t = useTranslations('tours.teamAndVehicle')
   const [isSaving, setIsSaving] = useState(false)
 
-  const getFilteredTeamMembers = (excludeEmail?: string) => {
-    return teamMembers.filter((member) => {
-      // is_active가 TRUE인 사람만 포함 (대소문자 구별 없이)
-      if (String(member.is_active).toLowerCase() !== 'true') return false
-      
-      // 제외할 이메일이 있으면 제외
-      if (excludeEmail && member.email === excludeEmail) return false
-      
-      // position이 없으면 포함
-      if (!member.position) return true
-      
-      // position 필터링
-      const position = member.position.toLowerCase()
-      return position.includes('tour') && position.includes('guide') ||
-             position.includes('guide') ||
-             position.includes('가이드') ||
-             position.includes('driver') ||
-             position.includes('드라이버') ||
-             position.includes('운전')
-    })
+  const positionFilter = (member: TeamMember) => {
+    if (!member.position) return true
+    const position = member.position.toLowerCase()
+    return position.includes('tour') && position.includes('guide') ||
+           position.includes('guide') ||
+           position.includes('가이드') ||
+           position.includes('driver') ||
+           position.includes('드라이버') ||
+           position.includes('운전')
   }
+
+  /** 활성 팀원만 (가이드/드라이버 포지션) */
+  const getFilteredTeamMembersActive = (excludeEmail?: string) =>
+    teamMembers.filter((m) => {
+      if (String(m.is_active).toLowerCase() !== 'true') return false
+      if (excludeEmail && m.email === excludeEmail) return false
+      return positionFilter(m)
+    })
+
+  /** 비활성 팀원만 (가이드/드라이버 포지션) */
+  const getFilteredTeamMembersInactive = (excludeEmail?: string) =>
+    teamMembers.filter((m) => {
+      if (String(m.is_active).toLowerCase() === 'true') return false
+      if (excludeEmail && m.email === excludeEmail) return false
+      return positionFilter(m)
+    })
 
   const getDisplayName = (member: { name_ko: string; nick_name?: string | null; email: string }) => {
     // nick_name 우선, 없으면 name_ko, 없으면 이메일 표시
@@ -121,17 +223,8 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
   }
 
   const guideDriverCount = teamMembers.filter((m) => {
-    // is_active가 TRUE인 사람만 포함 (대소문자 구별 없이)
     if (String(m.is_active).toLowerCase() !== 'true') return false
-    
-    if (!m.position) return true
-    const position = m.position.toLowerCase()
-    return position.includes('tour') && position.includes('guide') ||
-           position.includes('guide') ||
-           position.includes('가이드') ||
-           position.includes('driver') ||
-           position.includes('드라이버') ||
-           position.includes('운전')
+    return positionFilter(m)
   }).length
 
   const handleSave = async () => {
@@ -242,21 +335,18 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
             </div>
 
             <div className="space-y-4">
-              {/* 가이드 선택 */}
+              {/* 가이드 선택 (드롭다운 열면 활성/비활성 탭) */}
               <div className="flex flex-wrap items-center gap-2 sm:gap-4">
                 <label className="text-sm font-medium text-gray-700 flex-shrink-0 whitespace-nowrap">{t('guide')}</label>
-                <select
+                <MemberSelectWithTabs
                   value={selectedGuide || ''}
-                  onChange={(e) => onGuideSelect(e.target.value)}
-                  className="flex-1 min-w-0 text-sm border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">{t('selectGuide')}</option>
-                  {getFilteredTeamMembers().map((member) => (
-                    <option key={member.email} value={member.email}>
-                      {getDisplayName(member)}
-                    </option>
-                  ))}
-                </select>
+                  onChange={onGuideSelect}
+                  activeMembers={getFilteredTeamMembersActive()}
+                  inactiveMembers={getFilteredTeamMembersInactive()}
+                  placeholder={t('selectGuide')}
+                  getDisplayName={getDisplayName}
+                  getTeamMemberName={getTeamMemberName}
+                />
                 <div className="flex items-center space-x-2 relative flex-shrink-0">
                   <input
                     type="number"
@@ -286,24 +376,21 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                 </div>
               </div>
 
-              {/* 2차 가이드/드라이버 선택 */}
+              {/* 2차 가이드/드라이버 선택 (드롭다운 열면 활성/비활성 탭) */}
               {(teamType === '2guide' || teamType === 'guide+driver') && (
                 <div className="flex flex-wrap items-center gap-2 sm:gap-4">
                   <label className="text-sm font-medium text-gray-700 flex-shrink-0 whitespace-nowrap">
                     {teamType === '2guide' ? t('secondGuide') : t('driver')}
                   </label>
-                  <select
+                  <MemberSelectWithTabs
                     value={selectedAssistant || ''}
-                    onChange={(e) => onAssistantSelect(e.target.value)}
-                    className="flex-1 min-w-0 text-sm border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="">{t('selectGuide')}</option>
-                    {getFilteredTeamMembers(selectedGuide).map((member) => (
-                      <option key={member.email} value={member.email}>
-                        {getDisplayName(member)}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={onAssistantSelect}
+                    activeMembers={getFilteredTeamMembersActive(selectedGuide)}
+                    inactiveMembers={getFilteredTeamMembersInactive(selectedGuide)}
+                    placeholder={t('selectGuide')}
+                    getDisplayName={getDisplayName}
+                    getTeamMemberName={getTeamMemberName}
+                  />
                   <div className="flex items-center space-x-2 relative flex-shrink-0">
                     <input
                       type="number"

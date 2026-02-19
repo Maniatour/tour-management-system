@@ -2044,7 +2044,9 @@
       "totalExpensesWithFeesAndBookings": "총 지출 (수수료 + 부킹 포함)",
       "savedValue": "저장된 값",
       "defaultValue": "기본값",
-      "teamType": "팀 타입"
+      "teamType": "팀 타입",
+      "memberTabActive": "활성",
+      "memberTabInactive": "비활성"
     },
     "calendar": {
       "title": "투어 달력",
@@ -2152,7 +2154,9 @@
         "editable": "수정 가능",
         "savedValue": "저장된 값",
         "defaultValue": "기본값",
-        "teamType": "팀 타입"
+        "teamType": "팀 타입",
+        "memberTabActive": "활성",
+        "memberTabInactive": "비활성"
       },
       "months": {
         "0": "1월",

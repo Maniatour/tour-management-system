@@ -42,27 +42,34 @@ export default function AttendanceEditModal({
   // 라스베가스 현지 날짜/시간을 UTC로 변환하는 함수 (썸머타임 자동 처리)
   const convertToUTC = (localDate: string, localTime: string) => {
     if (!localDate || !localTime) return null
-    
-    console.log('변환할 로컬 날짜/시간:', localDate, localTime)
-    
+
     // 라스베가스 시간대를 명시적으로 처리 (썸머타임 자동 처리)
     // 1. 라스베가스 날짜/시간을 파싱
     const [year, month, day] = localDate.split('-').map(Number)
     const [hours, minutes] = localTime.split(':').map(Number)
-    
+
+    // 유효하지 않은 값이 있으면 변환하지 않음 (Invalid time value 방지)
+    if (
+      Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day) ||
+      Number.isNaN(hours) || Number.isNaN(minutes) ||
+      month < 1 || month > 12 || day < 1 || day > 31 ||
+      hours < 0 || hours > 23 || minutes < 0 || minutes > 59
+    ) {
+      return null
+    }
+
     // 2. 라스베가스 시간대의 특정 날짜/시간에 대한 UTC 오프셋을 정확히 계산
-    // 라스베가스 시간대의 날짜/시간을 나타내는 ISO 문자열 생성
     const lasVegasDateString = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
-    
+
     // 3. 라스베가스 시간대의 오프셋을 계산
-    // 라스베가스 시간대의 특정 날짜/시간에 대한 UTC 오프셋을 정확히 계산
-    // 라스베가스 시간대의 날짜/시간을 나타내는 Date 객체 생성 (로컬 시간대로 해석)
     const lasVegasLocalDate = new Date(year, month - 1, day, hours, minutes, 0)
-    
-    // 같은 시각을 라스베가스 시간대로 해석한 것과 UTC로 해석한 것의 차이를 계산
-    // 먼저 임시로 UTC로 해석된 Date 객체를 만들고, 그 시각을 라스베가스 시간대로 포맷팅하여 오프셋 계산
-    const tempUTC = new Date(`${lasVegasDateString}Z`) // UTC로 해석
-    
+    const tempUTC = new Date(`${lasVegasDateString}Z`)
+
+    // Invalid Date면 formatToParts 호출 전에 반환 (RangeError 방지)
+    if (Number.isNaN(tempUTC.getTime())) {
+      return null
+    }
+
     // 라스베가스 시간대로 포맷팅하여 실제 라스베가스 시간 확인
     const lasVegasFormatter = new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/Los_Angeles',

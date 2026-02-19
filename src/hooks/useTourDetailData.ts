@@ -388,17 +388,17 @@ export function useTourDetailData() {
       // 전체 차량 목록 가져오기
       console.log('전체 차량 목록 가져오기 시작')
       try {
-        // 먼저 vehicle_status 필터로 시도 (운행 가능한 차량만)
+        // 먼저 status 필터로 시도 (운행 가능한 차량만)
         let { data: allVehicles, error: vehiclesError } = await supabase
           .from('vehicles')
           .select('*')
-          .eq('vehicle_status', '운행 가능')
+          .eq('status', '운행 가능')
           .order('vehicle_type', { ascending: true })
           .order('vehicle_number', { ascending: true })
 
-        // vehicle_status 필터가 실패하면 전체 차량 가져오기 시도
+        // status 필터가 실패하면 전체 차량 가져오기 시도
         if (vehiclesError) {
-          console.log('vehicle_status 필터 실패, 전체 차량 가져오기 시도:', vehiclesError.message)
+          console.log('status 필터 실패, 전체 차량 가져오기 시도:', vehiclesError.message)
           console.log('차량 목록 오류 상세:', {
             message: vehiclesError.message,
             details: vehiclesError.details,

@@ -2025,7 +2025,9 @@
       "totalExpensesWithFeesAndBookings": "Total Expenses (Fees + Bookings)",
       "savedValue": "Saved Value",
       "defaultValue": "Default Value",
-      "teamType": "Team Type"
+      "teamType": "Team Type",
+      "memberTabActive": "Active",
+      "memberTabInactive": "Inactive"
     },
     "calendar": {
       "title": "Tour Calendar",

@@ -800,7 +800,13 @@ export default function PricingSection({
     selectedChannel.type?.toLowerCase() === 'ota' || 
     selectedChannel.category === 'OTA'
   )
-  
+  // Homepage 채널 (채널 type이 ota가 아닐 때 쿠폰 선택에 함께 사용). id M00001 또는 이름에 Homepage/홈페이지 포함
+  const homepageChannel = Array.isArray(channels) ? channels.find(ch =>
+    ch.id === 'M00001' ||
+    (ch.name && (String(ch.name).toLowerCase().includes('homepage') || String(ch.name).includes('홈페이지')))
+  ) : null
+  const homepageChannelId = homepageChannel?.id ?? null
+
   // 채널의 commission_percent 가져오기 (여러 필드명 지원)
   // channels 테이블에는 commission 컬럼이 있음 (commission_percent는 없을 수 있음)
   const channelCommissionPercent = selectedChannel
@@ -1229,24 +1235,25 @@ export default function PricingSection({
     }
   }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.not_included_price, formData.adults, formData.child, formData.infant, isOTAChannel, isChannelPaymentAmountFocused, setFormData])
 
-  // 채널 변경 시 선택된 쿠폰이 해당 채널에 속하지 않으면 쿠폰 초기화
+  // 채널 변경 시 선택된 쿠폰이 해당 채널에 속하지 않으면 쿠폰 초기화 (ota가 아닐 때 Homepage 쿠폰은 유지)
   useEffect(() => {
     if (formData.couponCode && formData.channelId) {
       const selectedCoupon = coupons.find(c => 
         c.coupon_code && 
         c.coupon_code.trim().toLowerCase() === formData.couponCode.trim().toLowerCase()
       )
-      
-      // 선택된 쿠폰이 있고, 쿠폰에 채널이 지정되어 있으며, 선택된 채널과 일치하지 않으면 초기화
-      if (selectedCoupon && selectedCoupon.channel_id && selectedCoupon.channel_id !== formData.channelId) {
-        setFormData((prev: typeof formData) => ({
-          ...prev,
-          couponCode: '',
-          couponDiscount: 0
-        }))
-      }
+      if (!selectedCoupon || !selectedCoupon.channel_id) return
+      const isHomepageCoupon = homepageChannelId && selectedCoupon.channel_id === homepageChannelId
+      // 채널과 일치하거나, (ota가 아니고 Homepage 쿠폰이면) 유지. 그 외에만 초기화
+      if (selectedCoupon.channel_id === formData.channelId) return
+      if (!isOTAChannel && isHomepageCoupon) return
+      setFormData((prev: typeof formData) => ({
+        ...prev,
+        couponCode: '',
+        couponDiscount: 0
+      }))
     }
-  }, [formData.channelId, formData.couponCode, coupons, setFormData])
+  }, [formData.channelId, formData.couponCode, coupons, homepageChannelId, isOTAChannel, setFormData])
 
   // 인원 변경 시 쿠폰 할인 재계산 (percentage 타입 쿠폰만)
   useEffect(() => {
@@ -1924,11 +1931,12 @@ export default function PricingSection({
                   value={formData.couponCode}
                   onChange={(e) => {
                     const selectedCouponCode = e.target.value
-                    // 필터링된 쿠폰 목록에서 찾기
+                    // 필터링된 쿠폰 목록에서 찾기 (채널이 ota가 아니면 Homepage 연결 쿠폰도 포함)
                     const filteredCoupons = coupons.filter(coupon => 
                       !formData.channelId || 
                       !coupon.channel_id || 
-                      coupon.channel_id === formData.channelId
+                      coupon.channel_id === formData.channelId ||
+                      (!isOTAChannel && homepageChannelId && coupon.channel_id === homepageChannelId)
                     )
                     const selectedCoupon = filteredCoupons.find(coupon => 
                       coupon.coupon_code && 
@@ -1953,12 +1961,17 @@ export default function PricingSection({
                 >
                   <option value="">쿠폰 선택</option>
                   {coupons
-                    .filter(coupon => 
-                      // 채널이 선택되지 않았거나, 쿠폰에 채널이 지정되지 않았거나, 선택된 채널과 일치하는 경우만 표시
-                      !formData.channelId || 
-                      !coupon.channel_id || 
-                      coupon.channel_id === formData.channelId
-                    )
+                    .filter(coupon => {
+                      // 현재 선택/저장된 쿠폰은 항상 목록에 포함 (reservation_pricing에 저장된 값이 선택되어 보이도록)
+                      const isCurrentCoupon = formData.couponCode && coupon.coupon_code &&
+                        String(coupon.coupon_code).trim().toLowerCase() === String(formData.couponCode).trim().toLowerCase()
+                      if (isCurrentCoupon) return true
+                      // 채널 미선택 / 쿠폰 채널 없음 / 선택 채널과 일치 시 표시. 채널 type이 ota가 아니면 Homepage 연결 쿠폰도 표시
+                      return !formData.channelId ||
+                        !coupon.channel_id ||
+                        coupon.channel_id === formData.channelId ||
+                        (!isOTAChannel && homepageChannelId && coupon.channel_id === homepageChannelId)
+                    })
                     .map((coupon) => {
                       let discountText = '할인 정보 없음'
                       if (coupon.discount_type === 'percentage' && coupon.percentage_value) {

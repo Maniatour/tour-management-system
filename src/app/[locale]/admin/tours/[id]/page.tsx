@@ -136,9 +136,11 @@ export default function TourDetailPage() {
   const [reservationFormData, setReservationFormData] = useState<{
     productOptions: any[]
     options: any[]
+    coupons: any[]
   }>({
     productOptions: [],
-    options: []
+    options: [],
+    coupons: []
   })
   
   // 스크롤 감지로 현재 섹션 추적
@@ -1159,13 +1161,34 @@ export default function TourDetailPage() {
         .select('*')
         .order('name', { ascending: true })
 
-      setReservationFormData({
+      setReservationFormData(prev => ({
+        ...prev,
         productOptions: productOptionsData || [],
         options: optionsData || []
-      })
+      }))
     } catch (error) {
       console.error('Error loading reservation form data:', error)
     }
+  }, [])
+
+  // 활성 쿠폰 목록 로드 (예약 편집 모달 쿠폰 드롭다운용)
+  useEffect(() => {
+    let cancelled = false
+    const loadCoupons = async () => {
+      const { data, error } = await supabase
+        .from('coupons')
+        .select('*')
+        .eq('status', 'active')
+        .order('coupon_code', { ascending: true })
+      if (cancelled) return
+      if (error) {
+        console.warn('쿠폰 로드 오류:', error)
+        return
+      }
+      setReservationFormData(prev => ({ ...prev, coupons: data || [] }))
+    }
+    loadCoupons()
+    return () => { cancelled = true }
   }, [])
 
   // 예약 편집 모달 열기
@@ -1514,13 +1537,13 @@ export default function TourDetailPage() {
             {/* 팀 구성 & 차량 배정 통합 */}
             <div id="team-vehicle" className="scroll-mt-20">
               <TeamAndVehicleAssignment
-              teamMembers={tourData.teamMembers.map(member => ({
-                id: member.email, // email을 id로 사용
+              teamMembers={tourData.teamMembers.map((member: any) => ({
+                id: member.email,
                 name_ko: member.name_ko,
                 nick_name: member.nick_name || null,
                 email: member.email,
-                position: 'guide', // 기본값 설정
-                is_active: true // 기본값 설정
+                position: member.position ?? 'guide',
+                is_active: member.is_active ?? true
               }))}
               vehicles={tourData.vehicles}
               vehiclesLoading={tourData.vehiclesLoading}
@@ -1785,7 +1808,7 @@ export default function TourDetailPage() {
           productOptions={reservationFormData.productOptions}
           options={reservationFormData.options}
           pickupHotels={tourData.pickupHotels}
-          coupons={[]}
+          coupons={reservationFormData.coupons}
           onSubmit={async (reservationData: any) => {
             try {
               // camelCase를 snake_case로 변환

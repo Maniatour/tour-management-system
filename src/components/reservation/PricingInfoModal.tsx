@@ -85,6 +85,14 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
     setLoading(true)
     setError(null)
 
+    // 숫자 정규화 (Supabase/Postgres가 numeric을 문자열로 반환할 수 있음)
+    const toNum = (v: unknown): number => {
+      if (v === null || v === undefined) return 0
+      if (typeof v === 'number' && !Number.isNaN(v)) return v
+      if (typeof v === 'string') return parseFloat(v) || 0
+      return Number(v) || 0
+    }
+
     try {
       // 채널 정보 가져오기
       if (reservation.channelId) {
@@ -98,10 +106,12 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
           setChannelPricingType(channelData.pricing_type as 'separate' | 'single')
         }
       }
+      // reservation_id는 DB에서 문자열/UUID이므로 문자열로 통일해 조회. 상품 단가 컬럼 명시적으로 요청.
+      const reservationId = String(reservation.id)
       const { data, error } = await supabase
         .from('reservation_pricing')
-        .select('*')
-        .eq('reservation_id', reservation.id)
+        .select('id, reservation_id, adult_product_price, child_product_price, infant_product_price, product_price_total, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, choices, choices_total, not_included_price, commission_amount, commission_percent')
+        .eq('reservation_id', reservationId)
         .maybeSingle()
 
       if (error) {
@@ -109,17 +119,17 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
         throw error
       }
 
-      // 데이터가 없으면 reservation 객체의 pricingInfo를 사용하거나 상품 정보로 기본 가격 계산
+      // 데이터가 없으면 reservation 객체의 pricing / pricingInfo를 사용하거나 상품 정보로 기본 가격 계산
       if (!data) {
         console.log('📋 No reservation pricing data found for reservation:', reservation.id)
         
-        // reservation 객체의 pricingInfo가 있으면 사용
+        // reservation.pricing (snake_case, 대시보드에서 전달) 또는 pricingInfo (camelCase) 사용
+        const pricingRow = (reservation as { pricing?: { adult_product_price?: unknown; child_product_price?: unknown; infant_product_price?: unknown; [k: string]: unknown } }).pricing
         const pricingInfo = reservation.pricingInfo
         
-        // pricingInfo도 없으면 상품 정보를 가져와서 기본 가격 계산
-        let adultPrice = pricingInfo?.adultProductPrice || 0
-        let childPrice = pricingInfo?.childProductPrice || 0
-        let infantPrice = pricingInfo?.infantProductPrice || 0
+        let adultPrice = (toNum(pricingRow?.adult_product_price) || toNum(pricingInfo?.adultProductPrice) || reservation.adultProductPrice) ?? 0
+        let childPrice = (toNum(pricingRow?.child_product_price) || toNum(pricingInfo?.childProductPrice) || reservation.childProductPrice) ?? 0
+        let infantPrice = (toNum(pricingRow?.infant_product_price) || toNum(pricingInfo?.infantProductPrice) || reservation.infantProductPrice) ?? 0
         
         if (!adultPrice && !childPrice && !infantPrice && reservation.productId) {
           try {
@@ -199,13 +209,28 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
         }
       }
       
-      // choices_total과 not_included_price가 없으면 0으로 설정 (id 명시적으로 포함)
+      // DB 행에서 상품 단가 직접 읽기 (snake_case). Postgres numeric은 문자열로 올 수 있어 toNum 사용
+      const raw = data as Record<string, unknown>
+      const fromRow = (reservation as { pricing?: { adult_product_price?: unknown; child_product_price?: unknown; infant_product_price?: unknown } }).pricing
+      const adultPrice = toNum(raw.adult_product_price) || toNum(fromRow?.adult_product_price)
+      const childPrice = toNum(raw.child_product_price) || toNum(fromRow?.child_product_price)
+      const infantPrice = toNum(raw.infant_product_price) || toNum(fromRow?.infant_product_price)
+      const productPriceTotalFromDb = toNum(raw.product_price_total)
+      const productPriceTotal =
+        productPriceTotalFromDb > 0
+          ? productPriceTotalFromDb
+          : (adultPrice * (reservation?.adults || 0) + childPrice * (reservation?.child || 0) + infantPrice * (reservation?.infant || 0))
+
       const pricingDataWithDefaults: PricingData = {
         ...data,
         id: (data as { id?: string }).id,
-        choices_total: data.choices_total ?? 0,
-        not_included_price: data.not_included_price ?? 0,
-        commission_amount: data.commission_amount ?? 0,
+        adult_product_price: adultPrice,
+        child_product_price: childPrice,
+        infant_product_price: infantPrice,
+        product_price_total: productPriceTotal,
+        choices_total: toNum(data.choices_total),
+        not_included_price: toNum(data.not_included_price),
+        commission_amount: toNum(data.commission_amount),
         commission_percent: commissionPercentToUse
       }
       
@@ -510,7 +535,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                           <span className="font-medium text-xs">$</span>
                           <input
                             type="number"
-                            value={editData?.adult_product_price ?? ''}
+                            value={editData?.adult_product_price != null ? editData.adult_product_price : ''}
                             onChange={(e) => {
                               const v = Number(e.target.value) || 0
                               handleInputChange('adult_product_price', v)
@@ -533,7 +558,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                           <span className="text-gray-600">성인 $</span>
                           <input
                             type="number"
-                            value={editData?.adult_product_price ?? ''}
+                            value={editData?.adult_product_price != null ? editData.adult_product_price : ''}
                             onChange={(e) => handleInputChange('adult_product_price', Number(e.target.value) || 0)}
                             className="w-14 px-1 py-0.5 text-xs border border-gray-300 rounded text-right"
                             step="0.01"
@@ -545,7 +570,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                           <span className="text-gray-600">아동 $</span>
                           <input
                             type="number"
-                            value={editData?.child_product_price ?? ''}
+                            value={editData?.child_product_price != null ? editData.child_product_price : ''}
                             onChange={(e) => handleInputChange('child_product_price', Number(e.target.value) || 0)}
                             className="w-14 px-1 py-0.5 text-xs border border-gray-300 rounded text-right"
                             step="0.01"
@@ -557,7 +582,7 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
                           <span className="text-gray-600">유아 $</span>
                           <input
                             type="number"
-                            value={editData?.infant_product_price ?? ''}
+                            value={editData?.infant_product_price != null ? editData.infant_product_price : ''}
                             onChange={(e) => handleInputChange('infant_product_price', Number(e.target.value) || 0)}
                             className="w-14 px-1 py-0.5 text-xs border border-gray-300 rounded text-right"
                             step="0.01"

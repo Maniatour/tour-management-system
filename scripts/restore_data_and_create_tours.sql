@@ -77,7 +77,7 @@ VALUES
 ON CONFLICT DO NOTHING;
 
 -- 6. 기본 차량 데이터 생성
-INSERT INTO vehicles (id, vehicle_number, vehicle_type, make, model, year, color, license_plate, vehicle_status, vehicle_category, current_mileage, created_at, updated_at)
+INSERT INTO vehicles (id, vehicle_number, vehicle_type, make, model, year, color, license_plate, status, vehicle_category, current_mileage, created_at, updated_at)
 VALUES 
     (gen_random_uuid(), 'COMP001', 'SUV', 'Toyota', 'Highlander', 2022, 'White', 'NV-ABC123', '운행 가능', 'company', 25000, NOW(), NOW()),
     (gen_random_uuid(), 'COMP002', 'Van', 'Ford', 'Transit', 2021, 'Black', 'NV-DEF456', '운행 가능', 'company', 30000, NOW(), NOW()),
@@ -89,7 +89,7 @@ ON CONFLICT (vehicle_number) DO UPDATE SET
     year = EXCLUDED.year,
     color = EXCLUDED.color,
     license_plate = EXCLUDED.license_plate,
-    vehicle_status = EXCLUDED.vehicle_status,
+    status = EXCLUDED.status,
     vehicle_category = EXCLUDED.vehicle_category,
     current_mileage = EXCLUDED.current_mileage,
     updated_at = NOW();
@@ -117,7 +117,7 @@ SELECT
     END as tour_status,
     (SELECT email FROM employees WHERE type = 'guide' LIMIT 1) as tour_guide_id,
     (SELECT email FROM employees WHERE type = 'guide' LIMIT 1 OFFSET 1) as assistant_id,
-    (SELECT id FROM vehicles WHERE vehicle_status = '운행 가능' LIMIT 1) as tour_car_id,
+    (SELECT id FROM vehicles WHERE status = '운행 가능' LIMIT 1) as tour_car_id,
     'regular' as team_type,
     false as is_private_tour,
     NOW() as created_at,

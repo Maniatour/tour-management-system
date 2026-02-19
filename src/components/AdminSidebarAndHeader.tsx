@@ -47,6 +47,27 @@ import SimulationModal from './SimulationModal'
 import CustomerSimulationModal from './CustomerSimulationModal'
 import AdminWeatherWidget from './AdminWeatherWidget'
 
+/** Supabase/Error 객체를 로깅 가능한 형태로 변환 (빈 {} 방지) */
+function serializeError(err: unknown): Record<string, unknown> {
+  if (err == null) return { _raw: null }
+  if (err instanceof Error) {
+    return { message: err.message, name: err.name, stack: err.stack }
+  }
+  if (typeof err === 'object') {
+    const o = err as Record<string, unknown>
+    return {
+      message: o.message,
+      code: o.code ?? o.status,
+      details: o.details,
+      hint: o.hint,
+      ...Object.fromEntries(
+        Object.entries(o).filter(([k]) => !['message', 'code', 'details', 'hint', 'status'].includes(k))
+      )
+    }
+  }
+  return { _raw: String(err) }
+}
+
 interface AdminSidebarAndHeaderProps {
   locale: string
   children: React.ReactNode
@@ -165,34 +186,13 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       const { data, error } = await executeQuery()
 
       if (error) {
-        // Supabase 오류 객체의 상세 정보 로깅
-        console.error('만료 예정 문서 수 조회 오류:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-          fullError: error
-        })
-        throw error
+        console.error('만료 예정 문서 수 조회 오류:', serializeError(error))
+        setExpiringDocumentsCount(0)
+        return
       }
       setExpiringDocumentsCount(data?.length || 0)
     } catch (error) {
-      // 오류 타입에 따라 상세 정보 로깅
-      if (error instanceof Error) {
-        console.error('만료 예정 문서 수 조회 오류:', {
-          message: error.message,
-          stack: error.stack,
-          name: error.name
-        })
-      } else if (error && typeof error === 'object') {
-        console.error('만료 예정 문서 수 조회 오류:', {
-          error: JSON.stringify(error, null, 2),
-          type: typeof error,
-          keys: Object.keys(error)
-        })
-      } else {
-        console.error('만료 예정 문서 수 조회 오류:', error)
-      }
+      console.error('만료 예정 문서 수 조회 오류:', serializeError(error))
       setExpiringDocumentsCount(0)
     }
   }, [authUser, userRole])
@@ -273,10 +273,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       // 에러 로깅 (앱 중단 방지)
       if (meError) {
         console.error('Error fetching team position:', {
-          error: meError,
           email: authUser.email,
-          message: meError.message || String(meError),
-          code: meError.code || meError.status
+          ...serializeError(meError)
         })
       }
 

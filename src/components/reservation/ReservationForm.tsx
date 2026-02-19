@@ -1816,10 +1816,16 @@ export default function ReservationForm({
       const channelChangedInForm = reservationChannelId != null && channelId !== reservationChannelId
 
       if (reservationId && !channelChangedInForm) {
+        const toNum = (v: unknown): number => {
+          if (v === null || v === undefined) return 0
+          if (typeof v === 'number' && !Number.isNaN(v)) return v
+          if (typeof v === 'string') return parseFloat(v) || 0
+          return Number(v) || 0
+        }
         const { data: existingPricing, error: existingError } = await (supabase as any)
           .from('reservation_pricing')
           .select('id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, commission_percent, commission_amount, choices, choices_total')
-          .eq('reservation_id', reservationId)
+          .eq('reservation_id', String(reservationId))
           .maybeSingle()
 
         if (existingError) {
@@ -1870,13 +1876,14 @@ export default function ReservationForm({
           const commissionBasePriceOnly = (selectedChannel as any)?.commission_base_price_only || false
           const shouldLoadBalanceAmount = hasNotIncludedPrice || commissionBasePriceOnly
           
-          // 상품가(성인 판매가)는 reservation_pricing 말고 dynamic_pricing 기준으로만 결정
-          // 새예약(임시 ID)이어도 reservation_pricing에 236이 들어가므로, choices_pricing 있으면 무시하고 dynamic_pricing 사용
-          let adultPrice = existingPricing.adult_product_price || 0
-          let childPrice = isSinglePrice ? adultPrice : (existingPricing.child_product_price || 0)
-          let infantPrice = isSinglePrice ? adultPrice : (existingPricing.infant_product_price || 0)
-          
-          if (productId && tourDate && channelId) {
+          // reservation_pricing에 저장된 상품 단가를 우선 사용 (DB가 문자열로 반환할 수 있으므로 toNum 적용)
+          let adultPrice = toNum((existingPricing as any).adult_product_price)
+          let childPrice = isSinglePrice ? adultPrice : toNum((existingPricing as any).child_product_price)
+          let infantPrice = isSinglePrice ? adultPrice : toNum((existingPricing as any).infant_product_price)
+          const hasSavedProductPrices = adultPrice > 0 || childPrice > 0 || infantPrice > 0
+
+          // 저장된 상품 단가가 없을 때만 dynamic_pricing/choices_pricing으로 채움 (있으면 덮어쓰지 않음)
+          if (productId && tourDate && channelId && !hasSavedProductPrices) {
             const variantKey = formData.variantKey || 'default'
             let dpRows: any[] | null = null
             const { data: dpRows1 } = await (supabase as any)

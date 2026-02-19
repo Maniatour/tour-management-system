@@ -38,7 +38,7 @@ interface Vehicle {
   engine_oil_change_cycle: number
   current_mileage: number
   recent_engine_oil_change_mileage: number
-  vehicle_status: string
+  status: string
   front_tire_size?: string
   rear_tire_size?: string
   windshield_wiper_size?: string
@@ -57,6 +57,8 @@ interface Vehicle {
   created_at: string
   updated_at: string
   photos?: VehiclePhoto[]
+  /** 차종 관리에 등록된 차종 사진 (표시 시 우선 사용) */
+  typePhotos?: { photo_url: string; is_primary?: boolean; display_order?: number }[]
   // 렌터카 관련 필드 (간소화)
   vehicle_category?: string
   rental_company?: string
@@ -66,7 +68,6 @@ interface Vehicle {
   rental_pickup_location?: string
   rental_return_location?: string
   rental_total_cost?: number
-  rental_status?: string
   rental_notes?: string
 }
 
@@ -103,7 +104,7 @@ export default function VehiclesPage() {
           engine_oil_change_cycle,
           current_mileage,
           recent_engine_oil_change_mileage,
-          vehicle_status,
+          status,
           front_tire_size,
           rear_tire_size,
           windshield_wiper_size,
@@ -127,7 +128,6 @@ export default function VehiclesPage() {
           rental_pickup_location,
           rental_return_location,
           rental_total_cost,
-          rental_status,
           rental_notes,
           created_at,
           updated_at
@@ -160,6 +160,55 @@ export default function VehiclesPage() {
           }
         }
         return { ...vehicle, photos: [] }
+      })
+
+      // 2.5 차종(vehicle_type)별 사진 조회 — 차량 카드에서 차종 사진 우선 표시
+      const uniqueTypeNames = [...new Set(vehiclesWithLegacyPhotos.map(v => v.vehicle_type).filter(Boolean))] as string[]
+      const typeNameToPhotos = new Map<string, { photo_url: string; is_primary?: boolean; display_order?: number }[]>()
+      if (uniqueTypeNames.length > 0) {
+        try {
+          const { data: typesData } = await supabase
+            .from('vehicle_types')
+            .select('id, name')
+            .in('name', uniqueTypeNames)
+          const typeIds = (typesData || []).map(t => t.id)
+          if (typeIds.length > 0) {
+            const BATCH_SIZE = 20
+            for (let i = 0; i < typeIds.length; i += BATCH_SIZE) {
+              const batchIds = typeIds.slice(i, i + BATCH_SIZE)
+              const { data: typePhotosData } = await supabase
+                .from('vehicle_type_photos')
+                .select('vehicle_type_id, photo_url, is_primary, display_order')
+                .in('vehicle_type_id', batchIds)
+              if (typePhotosData?.length) {
+                const idToName = new Map((typesData || []).map(t => [t.id, t.name]))
+                typePhotosData.forEach(p => {
+                  const name = idToName.get(p.vehicle_type_id)
+                  if (!name) return
+                  if (!typeNameToPhotos.has(name)) typeNameToPhotos.set(name, [])
+                  typeNameToPhotos.get(name)!.push({
+                    photo_url: p.photo_url,
+                    is_primary: p.is_primary,
+                    display_order: p.display_order ?? 0
+                  })
+                })
+              }
+            }
+            // 차종별 사진 정렬: is_primary 우선, 그 다음 display_order
+            typeNameToPhotos.forEach((arr, _key) => {
+              arr.sort((a, b) => {
+                if (a.is_primary && !b.is_primary) return -1
+                if (!a.is_primary && b.is_primary) return 1
+                return (a.display_order ?? 0) - (b.display_order ?? 0)
+              })
+            })
+          }
+        } catch (_e) {
+          // 차종 사진 조회 실패 시 무시 (기존 차량/차량 사진으로 표시)
+        }
+      }
+      vehiclesWithLegacyPhotos.forEach(v => {
+        v.typePhotos = typeNameToPhotos.get(v.vehicle_type) || []
       })
       
       // 3. vehicle_image_url이 없는 차량들만 vehicle_photos 배치 조회 (최적화)
@@ -274,7 +323,7 @@ export default function VehiclesPage() {
       rental_pickup_location: vehicle.rental_pickup_location || '',
       rental_return_location: vehicle.rental_return_location || '',
       rental_total_cost: 0,
-      rental_status: 'available',
+      status: 'available',
       rental_notes: vehicle.rental_notes || '',
       // 회사 차량 관련 필드들은 초기화
       year: new Date().getFullYear(),
@@ -284,7 +333,7 @@ export default function VehiclesPage() {
       engine_oil_change_cycle: 10000,
       current_mileage: 0,
       recent_engine_oil_change_mileage: 0,
-      vehicle_status: '운행 가능',
+      status: '운행 가능',
       front_tire_size: '',
       rear_tire_size: '',
       windshield_wiper_size: '',
@@ -331,24 +380,24 @@ export default function VehiclesPage() {
     if (!vehicles || vehicles.length === 0) return []
     
     return vehicles.filter(vehicle => {
-      // 검색어 필터링 (vehicle_number, vehicle_type 인덱스 활용 가능하지만 클라이언트 사이드 처리)
-      const matchesSearch = !searchTerm || 
-        vehicle.vehicle_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        vehicle.vehicle_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (vehicle.rental_company && vehicle.rental_company.toLowerCase().includes(searchTerm.toLowerCase()))
+      // 검색어 필터링 (id, vehicle_number, vehicle_type, rental_company)
+      const term = searchTerm.toLowerCase()
+      const matchesSearch = !searchTerm ||
+        (vehicle.id && vehicle.id.toLowerCase().includes(term)) ||
+        vehicle.vehicle_number.toLowerCase().includes(term) ||
+        vehicle.vehicle_type.toLowerCase().includes(term) ||
+        (vehicle.rental_company && vehicle.rental_company.toLowerCase().includes(term))
       
-      // 탭별 필터링 (vehicle_category, rental_status 인덱스 활용)
+      // 탭별 필터링: vehicle_category(company=회사차, rental=렌터카), rental은 status로 종료 여부 구분
       let matchesTab = true
       if (activeTab === 'company') {
         matchesTab = vehicle.vehicle_category === 'company' || !vehicle.vehicle_category
       } else if (activeTab === 'rental_active') {
-        const status = vehicle.rental_status || ''
-        matchesTab = vehicle.vehicle_category === 'rental' && 
-                     status !== '' && 
-                     ['reserved', 'picked_up', 'in_use'].includes(status)
+        const s = (vehicle.status || '').trim()
+        matchesTab = vehicle.vehicle_category === 'rental' && s !== 'returned' && s !== 'cancelled'
       } else if (activeTab === 'rental_returned') {
-        matchesTab = vehicle.vehicle_category === 'rental' && 
-                     vehicle.rental_status === 'returned'
+        const s = (vehicle.status || '').trim()
+        matchesTab = vehicle.vehicle_category === 'rental' && (s === 'returned' || s === 'cancelled')
       } else if (activeTab === 'vehicle_types') {
         // 차종 관리 탭에서는 차량 목록을 표시하지 않음
         matchesTab = false
@@ -365,14 +414,14 @@ export default function VehiclesPage() {
       
       const { error } = await supabase
         .from('vehicles')
-        .update({ vehicle_status: newStatus })
+        .update({ status: newStatus })
         .eq('id', vehicleId)
 
       if (error) throw error
       
       // 로컬 상태 업데이트
       setVehicles(vehicles.map(v => 
-        v.id === vehicleId ? { ...v, vehicle_status: newStatus } : v
+        v.id === vehicleId ? { ...v, status: newStatus } : v
       ))
       
       console.log('차량 상태가 업데이트되었습니다:', newStatus)
@@ -384,31 +433,10 @@ export default function VehiclesPage() {
     }
   }, [vehicles])
 
-  // 렌터카 상태 변경 함수 (useCallback으로 메모이제이션)
-  const handleRentalStatusChange = useCallback(async (vehicleId: string, newStatus: string) => {
-    try {
-      setUpdatingStatus(vehicleId)
-      
-      const { error } = await supabase
-        .from('vehicles')
-        .update({ rental_status: newStatus })
-        .eq('id', vehicleId)
-
-      if (error) throw error
-      
-      // 로컬 상태 업데이트
-      setVehicles(vehicles.map(v => 
-        v.id === vehicleId ? { ...v, rental_status: newStatus } : v
-      ))
-      
-      console.log('렌터카 상태가 업데이트되었습니다:', newStatus)
-    } catch (error) {
-      console.error('렌터카 상태 변경 중 오류가 발생했습니다:', error)
-      alert('렌터카 상태 변경 중 오류가 발생했습니다.')
-    } finally {
-      setUpdatingStatus(null)
-    }
-  }, [vehicles])
+  // 렌터카 상태 변경 (동일한 status 컬럼 사용)
+  const handleRentalStatusChange = useCallback((vehicleId: string, newStatus: string) => {
+    handleStatusChange(vehicleId, newStatus)
+  }, [handleStatusChange])
 
   const handleSaveVehicle = useCallback(async (vehicleData: Partial<Vehicle>) => {
     try {
@@ -417,13 +445,13 @@ export default function VehiclesPage() {
         'vehicle_number', 'vin', 'vehicle_type', 'capacity', 'year',
         'mileage_at_purchase', 'purchase_amount', 'purchase_date', 'memo',
         'engine_oil_change_cycle', 'current_mileage', 'recent_engine_oil_change_mileage',
-        'vehicle_status', 'front_tire_size', 'rear_tire_size', 'windshield_wiper_size',
+        'status', 'front_tire_size', 'rear_tire_size', 'windshield_wiper_size',
         'headlight_model', 'headlight_model_name', 'is_installment', 'installment_amount',
         'interest_rate', 'monthly_payment', 'additional_payment', 'payment_due_date',
         'installment_start_date', 'installment_end_date', 'vehicle_image_url',
         'vehicle_category', 'rental_company', 'daily_rate', 'rental_start_date',
         'rental_end_date', 'rental_pickup_location', 'rental_return_location',
-        'rental_total_cost', 'rental_status', 'rental_notes'
+        'rental_total_cost', 'rental_notes'
       ]
       
       // 날짜 필드 정리
@@ -502,12 +530,6 @@ export default function VehiclesPage() {
       case '대기 중': return 'bg-blue-100 text-blue-800'
       case '폐차': return 'bg-gray-100 text-gray-800'
       case '사용 종료': return 'bg-red-100 text-red-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }, [])
-
-  const getRentalStatusColor = useCallback((status: string) => {
-    switch (status) {
       case 'available': return 'bg-green-100 text-green-800'
       case 'reserved': return 'bg-yellow-100 text-yellow-800'
       case 'picked_up': return 'bg-blue-100 text-blue-800'
@@ -596,7 +618,11 @@ export default function VehiclesPage() {
                   : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
               }`}
             >
-              렌터카 ({vehicles.filter(v => v.vehicle_category === 'rental' && v.rental_status && ['reserved', 'picked_up', 'in_use'].includes(v.rental_status)).length})
+              렌터카 ({vehicles.filter(v => {
+                if (v.vehicle_category !== 'rental') return false
+                const s = (v.status || '').trim()
+                return s !== 'returned' && s !== 'cancelled'
+              }).length})
             </button>
             <button
               onClick={() => setActiveTab('rental_returned')}
@@ -606,7 +632,11 @@ export default function VehiclesPage() {
                   : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
               }`}
             >
-              렌터카(종료) ({vehicles.filter(v => v.vehicle_category === 'rental' && v.rental_status === 'returned').length})
+              렌터카(종료) ({vehicles.filter(v => {
+                if (v.vehicle_category !== 'rental') return false
+                const s = (v.status || '').trim()
+                return s === 'returned' || s === 'cancelled'
+              }).length})
             </button>
             <button
               onClick={() => {
@@ -629,7 +659,7 @@ export default function VehiclesPage() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input
               type="text"
-              placeholder="차량 번호, 차종, 렌터카 회사로 검색..."
+              placeholder="ID, 차량 번호, 차종, 렌터카 회사로 검색..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-3 sm:pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
@@ -642,13 +672,18 @@ export default function VehiclesPage() {
       {activeTab !== 'vehicle_types' && (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {filteredVehicles.map((vehicle) => {
-          // 대표사진 찾기
+          // 대표사진 찾기 — 차종 사진 우선, 그 다음 차량 사진, vehicle_image_url
+          const typePrimary = vehicle.typePhotos?.find(p => p.is_primary)
+          const typeFirst = vehicle.typePhotos?.[0]
           const primaryPhoto = vehicle.photos?.find(photo => photo.is_primary)
           const firstPhoto = vehicle.photos?.[0]
           
-          // 사진 URL 결정: vehicle_photos > vehicle_image_url
           let photoUrl: string | null = null
-          if (primaryPhoto?.photo_url) {
+          if (typePrimary?.photo_url) {
+            photoUrl = typePrimary.photo_url
+          } else if (typeFirst?.photo_url) {
+            photoUrl = typeFirst.photo_url
+          } else if (primaryPhoto?.photo_url) {
             photoUrl = primaryPhoto.photo_url
           } else if (firstPhoto?.photo_url) {
             photoUrl = firstPhoto.photo_url
@@ -698,12 +733,12 @@ export default function VehiclesPage() {
                         {vehicle.vehicle_number}
                       </h3>
                   <div className="flex items-center space-x-2">
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(vehicle.vehicle_status || '운행 가능')}`}>
-                      {vehicle.vehicle_status || '운행 가능'}
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(vehicle.status || '운행 가능')}`}>
+                      {activeTab === 'rental_active' || activeTab === 'rental_returned' ? getRentalStatusText(vehicle.status || 'available') : (vehicle.status || '운행 가능')}
                     </span>
                     {activeTab === 'company' ? (
                       <select
-                        value={vehicle.vehicle_status || '운행 가능'}
+                        value={vehicle.status || '운행 가능'}
                         onChange={(e) => handleStatusChange(vehicle.id, e.target.value)}
                         disabled={updatingStatus === vehicle.id}
                         className="text-xs border border-gray-300 rounded px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
@@ -716,7 +751,7 @@ export default function VehiclesPage() {
                       </select>
                     ) : activeTab === 'rental_active' ? (
                       <select
-                        value={vehicle.rental_status || 'available'}
+                        value={vehicle.status || 'available'}
                         onChange={(e) => handleRentalStatusChange(vehicle.id, e.target.value)}
                         disabled={updatingStatus === vehicle.id}
                         className="text-xs border border-gray-300 rounded px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
@@ -737,6 +772,7 @@ export default function VehiclesPage() {
                 </div>
                 
                 <div className="mt-2 space-y-1 text-xs text-gray-600">
+                  <p><span className="font-medium">ID:</span> <span className="text-gray-500 font-mono">{vehicle.id}</span></p>
                   <p><span className="font-medium">차종:</span> {vehicle.vehicle_type}</p>
                   <p><span className="font-medium">연식:</span> {vehicle.year}년식</p>
                   <p><span className="font-medium">탑승인원:</span> {vehicle.capacity}인승</p>

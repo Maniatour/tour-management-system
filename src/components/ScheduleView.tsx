@@ -103,6 +103,18 @@ export default function ScheduleView() {
   const [selectedDateForNote, setSelectedDateForNote] = useState<string | null>(null)
   const [hoveredDate, setHoveredDate] = useState<string | null>(null)
 
+  // 해당 월 사용 가능 차량 목록 (취소 제외, 렌터카는 렌트 기간이 월과 겹치는 것만)
+  const [scheduleVehicles, setScheduleVehicles] = useState<Array<{
+    id: string
+    label: string
+    vehicle_category?: string | null
+    rental_start_date?: string | null
+    rental_end_date?: string | null
+  }>>([])
+  // 차량·날짜 셀 클릭 시 투어 배정 모달
+  const [showVehicleAssignModal, setShowVehicleAssignModal] = useState(false)
+  const [vehicleAssignTarget, setVehicleAssignTarget] = useState<{ vehicleId: string; dateString: string } | null>(null)
+
   // 배치 저장용 변경 대기 상태
   const [pendingChanges, setPendingChanges] = useState<{ [tourId: string]: Partial<Tour> }>({})
   const [pendingOffScheduleChanges, setPendingOffScheduleChanges] = useState<{ [key: string]: { team_email: string; off_date: string; reason: string; status: string; action: 'approve' | 'delete' | 'reject' } }>({})
@@ -469,7 +481,7 @@ export default function ScheduleView() {
     }
   }
 
-  // Tailwind CSS 클래스를 실제 색상 값으로 변환
+  // Tailwind CSS 클래스를 실제 색상 값으로 변환 (단일 bg-*-500 클래스 포함, 차량 뱃지용)
   const getColorFromClass = (colorClass: string) => {
     const colorMap: { [key: string]: string } = {
       'bg-blue-500 border-blue-600 text-white': '#3b82f6',
@@ -479,11 +491,26 @@ export default function ScheduleView() {
       'bg-pink-500 border-pink-600 text-white': '#ec4899',
       'bg-indigo-500 border-indigo-600 text-white': '#6366f1',
       'bg-red-500 border-red-600 text-white': '#ef4444',
+      'bg-red-500': '#ef4444',
       'bg-orange-500 border-orange-600 text-white': '#f97316',
+      'bg-orange-500': '#f97316',
       'bg-cyan-500 border-cyan-600 text-white': '#06b6d4',
+      'bg-cyan-500': '#06b6d4',
       'bg-lime-500 border-lime-600 text-black': '#84cc16',
+      'bg-lime-500': '#84cc16',
       'bg-gray-500 border-gray-600 text-white': '#6b7280',
-      'bg-slate-500 border-slate-600 text-white': '#64748b'
+      'bg-slate-500 border-slate-600 text-white': '#64748b',
+      'bg-blue-500': '#3b82f6',
+      'bg-green-500': '#10b981',
+      'bg-amber-500': '#f59e0b',
+      'bg-violet-500': '#8b5cf6',
+      'bg-pink-500': '#ec4899',
+      'bg-teal-500': '#14b8a6',
+      'bg-indigo-500': '#6366f1',
+      'bg-rose-500': '#f43f5e',
+      'bg-sky-500': '#0ea5e9',
+      'bg-fuchsia-500': '#d946ef',
+      'bg-emerald-500': '#10b981'
     }
     return colorMap[colorClass] || '#6b7280'
   }
@@ -739,6 +766,58 @@ export default function ScheduleView() {
         .gte('tour_date', startDate)
         .lte('tour_date', endDate)
 
+      // 해당 월 투어에서 사용하는 차량 ID로 차량 정보 조회 (라벨/범례용)
+      const rawVehicleIds = (toursData || []).map((t: { tour_car_id?: string | null }) => t.tour_car_id).filter((id: string | null | undefined): id is string => id != null && String(id).trim().length > 0)
+      const vehicleIds: string[] = Array.from(new Set(rawVehicleIds))
+      let vehicleMap = new Map<string, string | null>()
+      if (vehicleIds.length > 0) {
+        const { data: vehiclesData } = await supabase
+          .from('vehicles')
+          .select('id, vehicle_number')
+          .in('id', vehicleIds)
+        vehicleMap = new Map((vehiclesData || []).map((v: { id: string; vehicle_number: string | null }) => [v.id, v.vehicle_number]))
+      }
+      const toursWithVehicles = (toursData || []).map((t: Tour) => ({
+        ...t,
+        vehicle_number: t.tour_car_id ? (vehicleMap.get(String(t.tour_car_id).trim()) ?? null) : null
+      }))
+
+      // 해당 월 사용 가능 차량 목록 (취소 제외, 렌터카는 렌트 기간이 월과 겹치는 것만)
+      const monthStart = firstDayOfMonth.format('YYYY-MM-DD')
+      const monthEnd = lastDayOfMonth.format('YYYY-MM-DD')
+      const { data: allVehiclesData } = await supabase
+        .from('vehicles')
+        .select('id, vehicle_number, vehicle_category, status, rental_start_date, rental_end_date')
+      const isCancelled = (s: string | null | undefined) => {
+        if (!s) return false
+        const lower = String(s).toLowerCase().trim()
+        return lower === 'cancelled' || lower === '취소됨' || lower.includes('취소') || lower.includes('cancel')
+      }
+      const availableInMonth = (allVehiclesData || []).filter((v: { vehicle_category?: string | null; status?: string | null; rental_start_date?: string | null; rental_end_date?: string | null }) => {
+        if (isCancelled(v.status)) return false
+        const isRental = (v.vehicle_category || '').toString().toLowerCase() === 'rental'
+        if (!isRental) return true
+        const start = (v.rental_start_date || '').toString().trim()
+        const end = (v.rental_end_date || '').toString().trim()
+        if (!start || !end) return true
+        return start <= monthEnd && end >= monthStart
+      })
+      const sorted = availableInMonth.sort((a: { vehicle_category?: string | null; vehicle_number?: string | null; id: string }, b: typeof a) => {
+        const aRental = (a.vehicle_category || '').toString().toLowerCase() === 'rental' ? 1 : 0
+        const bRental = (b.vehicle_category || '').toString().toLowerCase() === 'rental' ? 1 : 0
+        if (aRental !== bRental) return aRental - bRental
+        const an = (a.vehicle_number || a.id).toString()
+        const bn = (b.vehicle_number || b.id).toString()
+        return an.localeCompare(bn)
+      })
+      setScheduleVehicles(sorted.map((v: { id: string; vehicle_number?: string | null; vehicle_category?: string | null; rental_start_date?: string | null; rental_end_date?: string | null }) => ({
+        id: v.id,
+        label: (v.vehicle_number || v.id).toString().trim() || v.id,
+        vehicle_category: v.vehicle_category ?? null,
+        rental_start_date: v.rental_start_date ?? null,
+        rental_end_date: v.rental_end_date ?? null
+      })))
+
       // 예약 데이터 가져오기 (현재 월)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: reservationsData } = await (supabase as any)
@@ -750,7 +829,7 @@ export default function ScheduleView() {
 
       // 고객 데이터 가져오기 (해당 예약의 고객만)
       let customersData: Pick<Customer, 'id' | 'language'>[] | null = []
-      const customerIds = Array.from(new Set((reservationsData || []).map((r: { customer_id?: string | null }) => r.customer_id).filter(Boolean)))
+      const customerIds: string[] = Array.from(new Set((reservationsData || []).map((r: { customer_id?: string | null }) => r.customer_id).filter((id: string | null | undefined): id is string => Boolean(id))))
       if (customerIds.length > 0) {
         const { data: customersFetched } = await supabase
           .from('customers')
@@ -816,7 +895,7 @@ export default function ScheduleView() {
 
       setProducts(productsData || [])
       setTeamMembers(teamData || [])
-      setTours(toursData || [])
+      setTours(toursWithVehicles)
       setReservations(reservationsData || [])
       setCustomers((customersData || []) as Customer[])
       setTicketBookings(ticketBookingsData || [])
@@ -1653,6 +1732,28 @@ export default function ScheduleView() {
     }
   }
 
+  // 차량 셀에 드롭 처리 (이미 배정된 투어를 다른 차량으로 재배정)
+  const handleVehicleCellDrop = (e: React.DragEvent, targetVehicleId: string, dateString: string) => {
+    e.preventDefault()
+    setDragOverCell(null)
+    if (!draggedTour) return
+    if (draggedTour.tour_date !== dateString) {
+      return
+    }
+    const newLabel = monthVehiclesWithColors.vehicleList.find(v => v.id === targetVehicleId)?.label ?? null
+    setPendingChanges(prev => ({
+      ...prev,
+      [draggedTour.id]: {
+        ...(prev[draggedTour.id] || {}),
+        tour_car_id: targetVehicleId
+      }
+    }))
+    setTours(prev => prev.map(t => t.id === draggedTour.id ? { ...t, tour_car_id: targetVehicleId, vehicle_number: newLabel } : t))
+    setDraggedTour(null)
+    setHighlightedDate(null)
+    setDraggedRole(null)
+  }
+
   // 미배정 영역으로 드롭 처리 (배정 해제)
   const handleUnassignDrop = async (e: React.DragEvent) => {
     e.preventDefault()
@@ -1707,7 +1808,7 @@ export default function ScheduleView() {
       const product = products.find(p => p.id === tour.product_id)
       const productName = product?.name || 'N/A'
       // tour_date를 그대로 사용 (변환하지 않음)
-      const [year, month, day] = tour.tour_date.split('-')
+      const [, month, day] = tour.tour_date.split('-')
       const tourDate = `${month}월 ${day}일`
       const baseTitle = `${tourDate} ${productName}`
       
@@ -2016,6 +2117,97 @@ export default function ScheduleView() {
 
     return dailyTotals
   }, [guideScheduleData, monthDays])
+
+  // 해당 월 사용 가능 차량 목록 + 차량별 색상 (scheduleVehicles 기준, 취소 제외)
+  const VEHICLE_COLOR_PALETTE = [
+    'bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-amber-500', 'bg-violet-500',
+    'bg-pink-500', 'bg-cyan-500', 'bg-orange-500', 'bg-teal-500', 'bg-indigo-500',
+    'bg-rose-500', 'bg-lime-500', 'bg-sky-500', 'bg-fuchsia-500', 'bg-emerald-500'
+  ] as const
+  const monthVehiclesWithColors = useMemo(() => {
+    const vehicleIdToColor = new Map<string, string>()
+    const list = scheduleVehicles.map((v, i) => {
+      const colorClass = VEHICLE_COLOR_PALETTE[i % VEHICLE_COLOR_PALETTE.length]
+      vehicleIdToColor.set(v.id, colorClass)
+      return {
+        id: v.id,
+        label: v.label,
+        colorClass,
+        vehicle_category: v.vehicle_category,
+        rental_start_date: v.rental_start_date,
+        rental_end_date: v.rental_end_date
+      }
+    })
+    return { vehicleIdToColor, vehicleList: list }
+  }, [scheduleVehicles])
+
+  // 차량별·날짜별 배차 수, 가이드/어시스턴트/드라이버 이름, 투어(상품) 색상 (차량 스케줄 테이블용)
+  const vehicleScheduleData = useMemo(() => {
+    const result: Record<string, {
+      daily: Record<string, {
+        count: number
+        guideNames: string[]
+        assistantNames: string[]
+        driverNames: string[]
+        productColorClass: string
+      }>
+      totalDays: number
+    }> = {}
+    monthVehiclesWithColors.vehicleList.forEach(({ id }) => {
+      result[id] = { daily: {}, totalDays: 0 }
+      monthDays.forEach(({ dateString }) => {
+        const dayTours = tours.filter(t => t.tour_car_id && String(t.tour_car_id).trim() === id && t.tour_date === dateString)
+        const guideNames = [...new Set(dayTours.map(t => {
+          const guide = teamMembers.find(m => m.email === t.tour_guide_id)
+          return (guide?.nick_name || guide?.name_ko || t.tour_guide_id || '-').trim()
+        }).filter(Boolean))]
+        const assistantNames = [...new Set(dayTours.map(t => {
+          if (!t.assistant_id) return null
+          const asst = teamMembers.find(m => m.email === t.assistant_id)
+          return (asst?.nick_name || asst?.name_ko || t.assistant_id || '-').trim()
+        }).filter(Boolean))] as string[]
+        const driverNames = [...new Set(dayTours.map(t => {
+          const carDriver = (t as { car_driver_name?: string | null }).car_driver_name
+          if (carDriver && String(carDriver).trim()) return String(carDriver).trim()
+          const tt = (t.team_type || '').toString().toLowerCase()
+          if ((tt === 'guide+driver' || tt === 'guide + driver') && t.assistant_id) {
+            const asst = teamMembers.find(m => m.email === t.assistant_id)
+            return (asst?.nick_name || asst?.name_ko || t.assistant_id || '-').trim()
+          }
+          return null
+        }).filter(Boolean))] as string[]
+        const productColorClass = dayTours.length > 0 && dayTours[0].product_id
+          ? (productColors[dayTours[0].product_id] || 'bg-gray-500')
+          : 'bg-gray-500'
+        result[id].daily[dateString] = { count: dayTours.length, guideNames, assistantNames, driverNames, productColorClass }
+        result[id].totalDays += dayTours.length
+      })
+    })
+    return result
+  }, [monthVehiclesWithColors.vehicleList, monthDays, tours, teamMembers, productColors])
+
+  // 날짜별 차량 배차 합계 (차량 스케줄 테이블 일별 합계 행용)
+  const vehicleDailyTotals = useMemo(() => {
+    const totals: Record<string, number> = {}
+    monthDays.forEach(({ dateString }) => {
+      totals[dateString] = Object.keys(vehicleScheduleData).reduce(
+        (sum, vehicleId) => sum + (vehicleScheduleData[vehicleId]?.daily[dateString]?.count ?? 0),
+        0
+      )
+    })
+    return totals
+  }, [vehicleScheduleData, monthDays])
+
+  // 날짜별 투어 갯수 (일별 합계에서 차량 합계와 비교용) - confirmed 상태만
+  const tourCountPerDate = useMemo(() => {
+    const counts: Record<string, number> = {}
+    monthDays.forEach(({ dateString }) => {
+      counts[dateString] = tours.filter(
+        t => t.tour_date === dateString && (t.tour_status || '').toString().toLowerCase() === 'confirmed'
+      ).length
+    })
+    return counts
+  }, [tours, monthDays])
 
   if (loading) {
     return (
@@ -2832,8 +3024,10 @@ export default function ScheduleView() {
                                         tour.is_private_tour === 'TRUE' || tour.is_private_tour === true
                                       )
                                       
-                                      // 차량 배차 여부
+                                      // 차량 배차 여부 및 배정된 차량 색상
                                       const hasUnassignedVehicle = guideTours.some(t => !t.tour_car_id || String(t.tour_car_id).trim().length === 0)
+                                      const assignedCarId = guideTours.find(t => t.tour_car_id && String(t.tour_car_id).trim())?.tour_car_id
+                                      const vehicleColorClass = assignedCarId ? monthVehiclesWithColors.vehicleIdToColor.get(String(assignedCarId).trim()) : null
                                       
                                       // 같은 날짜에 같은 product_id의 투어가 여러 팀(가이드)으로 나가는지 확인
                                       if (guideTours.length > 0 && guideTours[0].product_id && guideTours[0].id) {
@@ -2892,6 +3086,9 @@ export default function ScheduleView() {
                                             {hasUnassignedVehicle && (
                                               <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
                                             )}
+                                            {!hasUnassignedVehicle && vehicleColorClass && (
+                                              <span className={`absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full border border-white ${vehicleColorClass}`} />
+                                            )}
                                             {hasPrivateTour && <span>🔒</span>}
                                             <span>{dayData.assignedPeople}</span>
                                             {dayData.extendsToNextMonth && (
@@ -2936,6 +3133,9 @@ export default function ScheduleView() {
                                           {hasUnassignedVehicle && (
                                             <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
                                           )}
+                                          {!hasUnassignedVehicle && vehicleColorClass && (
+                                            <span className={`absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full border border-white ${vehicleColorClass}`} />
+                                          )}
                                           {hasPrivateTour && <span>🔒</span>}
                                           <span>{dayData.assignedPeople}</span>
                                           {dayData.extendsToNextMonth && (
@@ -2956,8 +3156,10 @@ export default function ScheduleView() {
                                         tour.is_private_tour === 'TRUE' || tour.is_private_tour === true
                                       )
                                       
-                                      // 차량 배차 여부
+                                      // 차량 배차 여부 및 배정된 차량 색상
                                       const hasUnassignedVehicle = assistantTours.some(t => !t.tour_car_id || String(t.tour_car_id).trim().length === 0)
+                                      const assignedCarIdAsst = assistantTours.find(t => t.tour_car_id && String(t.tour_car_id).trim())?.tour_car_id
+                                      const vehicleColorClassAsst = assignedCarIdAsst ? monthVehiclesWithColors.vehicleIdToColor.get(String(assignedCarIdAsst).trim()) : null
                                       
                                       // 같은 날짜에 같은 product_id의 투어가 여러 팀(가이드)으로 나가는지 확인
                                       if (assistantTours.length > 0 && assistantTours[0].product_id && assistantTours[0].id && assistantTours[0].tour_guide_id) {
@@ -3016,6 +3218,9 @@ export default function ScheduleView() {
                                           {hasUnassignedVehicle && (
                                             <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
                                           )}
+                                          {!hasUnassignedVehicle && vehicleColorClassAsst && (
+                                            <span className={`absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full border border-white ${vehicleColorClassAsst}`} />
+                                          )}
                                           {hasPrivateTour && <span>🔒</span>}
                                           <span>{dayData.guideInitials || 'A'}</span>
                                           {dayData.extendsToNextMonth && (
@@ -3059,6 +3264,9 @@ export default function ScheduleView() {
                                         >
                                           {hasUnassignedVehicle && (
                                             <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
+                                          )}
+                                          {!hasUnassignedVehicle && vehicleColorClassAsst && (
+                                            <span className={`absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full border border-white ${vehicleColorClassAsst}`} />
                                           )}
                                           {hasPrivateTour && <span>🔒</span>}
                                           <span>{dayData.guideInitials || 'A'}</span>
@@ -3316,6 +3524,126 @@ export default function ScheduleView() {
                 </tbody>
               </table>
             </div>
+            {/* 차량별 스케줄 테이블 (부킹 아래, 가이드 스케줄과 동일 형식) */}
+            {monthVehiclesWithColors.vehicleList.length > 0 && (
+              <div className="mt-1 overflow-visible">
+                <table className="w-full" style={{ tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px` }}>
+                  <tbody className="divide-y divide-gray-200">
+                    {monthVehiclesWithColors.vehicleList.map(({ id, label, colorClass, rental_start_date, rental_end_date }) => {
+                      const data = vehicleScheduleData[id]
+                      if (!data) return null
+                      return (
+                        <tr key={id} className="hover:bg-gray-50/50">
+                          <td className="px-1 py-0.5 text-xs text-gray-900" style={{ width: '80px', minWidth: '80px', maxWidth: '80px' }}>
+                            <div className="flex items-center gap-1">
+                              <span className={`flex-shrink-0 w-2 h-2 rounded-full border border-white ${colorClass}`} title={label} />
+                              <span className="truncate font-medium">{label}</span>
+                            </div>
+                          </td>
+                          {monthDays.map(({ dateString }) => {
+                            const dayInfo = data.daily[dateString]
+                            const count = dayInfo?.count ?? 0
+                            const guideNames = dayInfo?.guideNames ?? []
+                            const assistantNames = dayInfo?.assistantNames ?? []
+                            const driverNames = dayInfo?.driverNames ?? []
+                            const hoverLines: string[] = []
+                            if (guideNames.length > 0) hoverLines.push(`가이드: ${guideNames.join(', ')}`)
+                            const asstOrDriverNames = [...new Set([...assistantNames, ...driverNames])].filter(Boolean)
+                            if (asstOrDriverNames.length > 0) hoverLines.push(`어시스턴트/드라이버: ${asstOrDriverNames.join(', ')}`)
+                            hoverLines.push('드래그하여 다른 차량으로 이동')
+                            const cellTooltip = hoverLines.join('\n')
+                            const dayTours = tours.filter(t => t.tour_car_id && String(t.tour_car_id).trim() === id && t.tour_date === dateString)
+                            const isInRentalPeriod = rental_start_date && rental_end_date &&
+                              dateString >= (rental_start_date || '').toString().substring(0, 10) &&
+                              dateString <= (rental_end_date || '').toString().substring(0, 10)
+                            const vehicleCellKey = `vehicle-${id}-${dateString}`
+                            const isDragOver = dragOverCell === vehicleCellKey
+                            const baseTdClass = isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''
+                            const rentalBgClass = isInRentalPeriod ? 'bg-amber-50/70' : ''
+                            return (
+                              <td
+                                key={dateString}
+                                className={`px-1 py-0 text-center text-xs relative cursor-pointer hover:ring-1 hover:ring-blue-300 ${baseTdClass} ${rentalBgClass} ${isDragOver ? 'ring-2 ring-blue-400 bg-blue-50' : ''}`}
+                                style={{ width: dayColumnWidthCalc, minWidth: '40px', boxSizing: 'border-box' }}
+                                title={count > 0 ? cellTooltip : (isInRentalPeriod ? `렌트 기간: ${(rental_start_date || '').toString().substring(0, 10)} ~ ${(rental_end_date || '').toString().substring(0, 10)}` : '클릭하여 투어 배정 / 드래그하여 다른 차량으로 이동')}
+                                onClick={(e) => {
+                                  if ((e.target as HTMLElement).closest('[data-drag-handle]')) return
+                                  setVehicleAssignTarget({ vehicleId: id, dateString })
+                                  setShowVehicleAssignModal(true)
+                                }}
+                                onDragOver={(e) => {
+                                  e.preventDefault()
+                                  e.dataTransfer.dropEffect = 'move'
+                                  setDragOverCell(vehicleCellKey)
+                                }}
+                                onDragLeave={handleDragLeave}
+                                onDrop={(e) => handleVehicleCellDrop(e, id, dateString)}
+                              >
+                                <div className="relative h-[22px]" style={{ overflow: 'hidden' }}>
+                                  {count > 0 ? (
+                                    <div
+                                      data-drag-handle
+                                      className="absolute inset-0 flex items-center justify-center rounded text-white px-0.5 py-0 text-[10px] font-medium leading-tight cursor-grab active:cursor-grabbing"
+                                      style={{ backgroundColor: getColorFromClass(dayInfo?.productColorClass || 'bg-gray-500') }}
+                                      title={cellTooltip}
+                                      draggable
+                                      onDragStart={(e) => {
+                                        if (dayTours.length > 0) {
+                                          setDraggedRole(null)
+                                          handleDragStart(e, dayTours[0])
+                                        }
+                                      }}
+                                      onDragEnd={() => {
+                                        setDraggedTour(null)
+                                        setHighlightedDate(null)
+                                        setDragOverCell(null)
+                                      }}
+                                    >
+                                      <span className="truncate w-full text-center">
+                                        {guideNames.length > 0 ? guideNames.join(', ') : count}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-300 text-[10px]">-</span>
+                                  )}
+                                </div>
+                              </td>
+                            )
+                          })}
+                          <td className="px-1 py-0.5 text-center text-xs font-medium" style={{ width: '80px', minWidth: '80px', maxWidth: '80px' }}>
+                            {data.totalDays > 0 ? data.totalDays : '-'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                    {/* 일별 합계 행 */}
+                    <tr className="bg-gray-100 font-semibold">
+                      <td className="px-1 py-0.5 text-xs text-gray-900" style={{ width: '80px', minWidth: '80px', maxWidth: '80px' }}>
+                        일별 합계
+                      </td>
+                      {monthDays.map(({ dateString }) => {
+                        const dayTotal = vehicleDailyTotals[dateString] ?? 0
+                        const tourCount = tourCountPerDate[dateString] ?? 0
+                        const isMismatch = tourCount !== dayTotal
+                        return (
+                          <td
+                            key={dateString}
+                            className={`px-1 py-0.5 text-center text-xs ${isToday(dateString) ? 'border-l-2 border-r-2 border-red-500 bg-red-50' : ''} ${isMismatch ? 'text-red-600 font-bold' : ''}`}
+                            style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
+                            title={isMismatch ? `투어 ${tourCount}건, 차량 ${dayTotal}건` : undefined}
+                          >
+                            {dayTotal > 0 ? dayTotal : '-'}
+                          </td>
+                        )
+                      })}
+                      <td className="px-1 py-0.5 text-center text-xs font-medium" style={{ width: '80px', minWidth: '80px', maxWidth: '80px' }}>
+                        {Object.values(vehicleScheduleData).reduce((sum, d) => sum + (d?.totalDays ?? 0), 0)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -4202,6 +4530,87 @@ export default function ScheduleView() {
           </div>
         )
       })()}
+
+      {/* 차량 스케줄: 날짜 셀 클릭 시 투어 배정 모달 */}
+      {showVehicleAssignModal && vehicleAssignTarget && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-4 max-w-lg w-full mx-4 max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold text-gray-900">
+                차량 배정 — {monthVehiclesWithColors.vehicleList.find(v => v.id === vehicleAssignTarget.vehicleId)?.label || vehicleAssignTarget.vehicleId} / {vehicleAssignTarget.dateString}
+              </h3>
+              <button
+                type="button"
+                onClick={() => { setShowVehicleAssignModal(false); setVehicleAssignTarget(null) }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-3">해당 날짜의 투어 중 배정할 투어를 선택하세요.</p>
+            <div className="overflow-y-auto flex-1 min-h-0 space-y-2">
+              {tours
+                .filter(t => t.tour_date === vehicleAssignTarget.dateString)
+                .filter(t => {
+                  const s = (t.tour_status || '').toString().toLowerCase()
+                  return s !== 'cancelled' && !s.includes('cancel') && s !== 'deleted'
+                })
+                .map(tour => {
+                  const guide = teamMembers.find(m => m.email === tour.tour_guide_id)
+                  const assistant = teamMembers.find(m => m.email === tour.assistant_id)
+                  const carDriver = (tour as { car_driver_name?: string | null }).car_driver_name
+                  const asstOrDriverName = (carDriver && String(carDriver).trim())
+                    ? String(carDriver).trim()
+                    : (assistant ? (assistant as { nick_name?: string; name_ko?: string }).nick_name || assistant.name_ko || '-' : '-')
+                  const productName = (tour as { products?: { name?: string } | null })?.products?.name || tour.product_id || '-'
+                  const currentCarId = tour.tour_car_id && String(tour.tour_car_id).trim()
+                  const isAlreadyThis = currentCarId === vehicleAssignTarget.vehicleId
+                  return (
+                    <div
+                      key={tour.id}
+                      className={`flex items-center justify-between p-3 border rounded-lg ${isAlreadyThis ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium text-gray-900 truncate">{productName}</div>
+                        <div className="text-xs text-gray-500">
+                          가이드: {(guide as { nick_name?: string; name_ko?: string })?.nick_name || guide?.name_ko || '-'}
+                          {' · 어시스턴트/드라이버: '}{asstOrDriverName}
+                          {currentCarId ? ` · 차량: ${monthVehiclesWithColors.vehicleList.find(v => v.id === currentCarId)?.label || currentCarId}` : ' · 미배정'}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={isAlreadyThis}
+                        onClick={() => {
+                          if (isAlreadyThis) return
+                          setPendingChanges(prev => ({ ...prev, [tour.id]: { ...prev[tour.id], tour_car_id: vehicleAssignTarget.vehicleId } }))
+                          setTours(prev => prev.map(t => t.id === tour.id ? { ...t, tour_car_id: vehicleAssignTarget.vehicleId, vehicle_number: monthVehiclesWithColors.vehicleList.find(v => v.id === vehicleAssignTarget.vehicleId)?.label ?? null } : t))
+                          setShowVehicleAssignModal(false)
+                          setVehicleAssignTarget(null)
+                        }}
+                        className={`ml-2 px-3 py-1.5 text-sm rounded-lg whitespace-nowrap ${isAlreadyThis ? 'bg-gray-300 text-gray-500 cursor-default' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                      >
+                        {isAlreadyThis ? '현재 배정됨' : '이 차량에 배정'}
+                      </button>
+                    </div>
+                  )
+                })}
+            </div>
+            {tours.filter(t => t.tour_date === vehicleAssignTarget.dateString).filter(t => { const s = (t.tour_status || '').toString().toLowerCase(); return s !== 'cancelled' && !s.includes('cancel') && s !== 'deleted'; }).length === 0 && (
+              <p className="text-sm text-gray-500 py-4">해당 날짜에 배정 가능한 투어가 없습니다.</p>
+            )}
+            <div className="mt-3 pt-3 border-t">
+              <button
+                type="button"
+                onClick={() => { setShowVehicleAssignModal(false); setVehicleAssignTarget(null) }}
+                className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )

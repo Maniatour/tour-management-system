@@ -1928,11 +1928,15 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
   }, [reservations])
 
-  // 가격 정보 모달 열기 - useCallback으로 메모이제이션
+  // 가격 정보 모달 열기 - reservationPricingMap의 가격을 reservation에 병합하여 모달에서 바로 표시
   const handlePricingInfoClick = useCallback((reservation: Reservation) => {
-    setPricingModalReservation(reservation)
+    const pricing = reservationPricingMap.get(reservation.id)
+    const reservationWithPricing = pricing
+      ? { ...reservation, pricing: pricing as { adult_product_price?: number; child_product_price?: number; infant_product_price?: number; [k: string]: unknown } }
+      : reservation
+    setPricingModalReservation(reservationWithPricing)
     setShowPricingModal(true)
-  }, [])
+  }, [reservationPricingMap])
 
   // 가격 정보 모달 닫기 - useCallback으로 메모이제이션
   const handleClosePricingModal = useCallback(() => {

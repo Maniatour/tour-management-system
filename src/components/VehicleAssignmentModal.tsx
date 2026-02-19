@@ -9,7 +9,7 @@ interface Vehicle {
   vehicle_number: string
   vehicle_type: string
   capacity: number
-  vehicle_status: string
+  status: string
   current_mileage: number
   vehicle_category: string
   rental_company?: string
@@ -19,7 +19,6 @@ interface Vehicle {
   rental_pickup_location?: string
   rental_return_location?: string
   rental_total_cost?: number
-  rental_status?: string
 }
 
 interface VehicleAssignmentModalProps {
