@@ -830,6 +830,12 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }
     
     // 풍부한 색상 팔레트
+    // 앤텔롭 캐년 초이스: 🏜️ L / 🏜️ X / 🏜️ U 고정 색상 (자동 배정 모달과 동일)
+    const name = (optionName || '').trim()
+    if (name === '🏜️ L') return { bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-300' }
+    if (name === '🏜️ X') return { bg: 'bg-violet-100', text: 'text-violet-800', border: 'border-violet-300' }
+    if (name === '🏜️ U') return { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-200' }
+
     const colorPalette = [
       { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-200' },
       { bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-200' },

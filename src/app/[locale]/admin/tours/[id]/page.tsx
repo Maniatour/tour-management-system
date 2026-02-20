@@ -1629,6 +1629,11 @@ export default function TourDetailPage() {
               getChannelInfo={getChannelInfo}
               safeJsonParse={safeJsonParse}
               pickupHotels={tourData.pickupHotels}
+              hasMultipleToursOnSameDay={(tourData.sameDayTourIds?.length ?? 0) >= 2}
+              currentTourId={tourData.tour?.id ?? ''}
+              productId={tourData.tour?.product_id ?? null}
+              tourDate={tourData.tour?.tour_date ?? null}
+              onAutoAssignSuccess={tourData.refreshReservations}
             />
             </div>
           </div>

@@ -88,6 +88,7 @@ export function useTourDetailData() {
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('')
   const [vehiclesLoading, setVehiclesLoading] = useState<boolean>(false)
   const [vehiclesError, setVehiclesError] = useState<string>('')
+  const [sameDayTourIds, setSameDayTourIds] = useState<string[]>([])
 
   // 권한 확인
   const isStaff = hasPermission('canManageReservations') || hasPermission('canManageTours') || (userRole === 'admin' || userRole === 'manager')
@@ -596,6 +597,7 @@ export function useTourDetailData() {
           const reservationToTourMap = new Map<string, string>()
           
           const tours = (allSameDateProductTours || []) as Array<{ id: string; reservation_ids?: unknown }>
+          setSameDayTourIds(tours.map(t => t.id))
           if (tours.length > 0) {
             tours.forEach(t => {
               const tourRow = t as TourRow
@@ -907,6 +909,7 @@ export function useTourDetailData() {
           // 모든 투어의 reservation_ids를 수집
           const allAssignedReservationIdsSet = new Set<string>()
           const tours = (allSameDateProductTours || []) as Array<{ id: string; reservation_ids?: unknown }>
+          setSameDayTourIds(tours.map(t => t.id))
           if (tours.length > 0) {
             tours.forEach(t => {
               const tourRow = t as TourRow
@@ -1182,6 +1185,7 @@ export function useTourDetailData() {
     setAssignedReservations,
     pendingReservations,
     setPendingReservations,
+    sameDayTourIds,
     otherToursAssignedReservations,
     setOtherToursAssignedReservations,
     otherStatusReservations,
@@ -1408,6 +1412,7 @@ export function useTourDetailData() {
         setAllReservations(reservationsData || [])
         setAssignedReservations([])
         setPendingReservations([])
+        setSameDayTourIds([])
       }
     },
 

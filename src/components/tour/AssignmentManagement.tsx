@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { ReservationSection } from './ReservationSection'
 import { supabase } from '@/lib/supabase'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
 import { getStatusColor, getStatusText, getAssignmentStatusColor, getAssignmentStatusText } from '@/utils/tourStatusUtils'
+import AutoAssignModal from './modals/AutoAssignModal'
 
 interface Reservation {
   id: string
@@ -62,6 +63,11 @@ interface AssignmentManagementProps {
   safeJsonParse: (data: string | object | null | undefined, fallback?: unknown) => unknown
   pickupHotels?: Array<{ id: string; hotel: string; pick_up_location?: string }>
   onRefresh?: (updatedPickup?: { reservationId: string; pickup_time: string; pickup_hotel: string }) => Promise<void> | void
+  hasMultipleToursOnSameDay?: boolean
+  currentTourId?: string
+  productId?: string | null
+  tourDate?: string | null
+  onAutoAssignSuccess?: () => Promise<void>
 }
 
 export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
@@ -87,7 +93,12 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   getChannelInfo,
   safeJsonParse,
   pickupHotels = [],
-  onRefresh
+  onRefresh,
+  hasMultipleToursOnSameDay = false,
+  currentTourId = '',
+  productId = null,
+  tourDate = null,
+  onAutoAssignSuccess
 }) => {
   const t = useTranslations('tours.assignmentManagement')
   const tHeader = useTranslations('tours.tourHeader')
@@ -95,6 +106,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   const isExpanded = expandedSections.has('assignment-management')
   const [tourInfos, setTourInfos] = useState<Record<string, TourInfo>>({})
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
+  const [showAutoAssignModal, setShowAutoAssignModal] = useState(false)
 
   // 다른 투어에 배정된 예약의 투어 정보 가져오기
   useEffect(() => {
@@ -265,7 +277,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
           <div className="mt-4">
             {/* 전체 액션 버튼들 */}
             {isStaff && (
-              <div className="mb-4 flex space-x-2">
+              <div className="mb-4 flex flex-wrap items-center gap-2">
                 <button
                   onClick={onAssignAllReservations}
                   className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
@@ -278,6 +290,16 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
                 >
                   {t('unassignAll')}
                 </button>
+                {hasMultipleToursOnSameDay && currentTourId && productId && tourDate && (
+                  <button
+                    onClick={() => setShowAutoAssignModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-600 text-white text-sm rounded hover:bg-amber-700"
+                    title={locale === 'ko' ? '조건에 맞게 팀 배정 제안 및 적용' : 'Auto-assign by language, choice, hotel, capacity'}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    {locale === 'ko' ? '자동 배정' : 'Auto assign'}
+                  </button>
+                )}
               </div>
             )}
 
@@ -479,6 +501,19 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
           </div>
         )}
       </div>
+
+      {showAutoAssignModal && currentTourId && productId && tourDate && onAutoAssignSuccess && (
+        <AutoAssignModal
+          isOpen={showAutoAssignModal}
+          onClose={() => setShowAutoAssignModal(false)}
+          currentTourId={currentTourId}
+          productId={productId}
+          tourDate={tourDate}
+          getCustomerName={getCustomerName}
+          getCustomerLanguage={getCustomerLanguage}
+          onSuccess={onAutoAssignSuccess}
+        />
+      )}
     </div>
   )
 }
