@@ -26,6 +26,19 @@ export const getProductName = (productId: string, products: Product[] | null) =>
   return products?.find(p => p.id === productId)?.name || 'Unknown'
 }
 
+// 상품 이름 가져오기 (locale에 따라 name_ko / name_en 사용)
+export const getProductNameForLocale = (
+  productId: string,
+  products: Array<{ id: string; name?: string | null; name_ko?: string | null; name_en?: string | null }> | null,
+  locale: string
+) => {
+  const product = products?.find(p => p.id === productId)
+  if (!product) return 'Unknown'
+  if (locale === 'en' && product.name_en) return product.name_en
+  if (product.name_ko) return product.name_ko
+  return product.name || 'Unknown'
+}
+
 // 채널 이름 가져오기 (id, name만 있으면 동작)
 export const getChannelName = (channelId: string, channels: Array<{ id: string; name?: string | null }> | null) => {
   return channels?.find(c => c.id === channelId)?.name || 'Unknown'

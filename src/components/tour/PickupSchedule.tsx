@@ -407,8 +407,8 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
       return (
         <div className="text-center py-4 text-gray-500">
           <MapPin className="h-8 w-8 mx-auto mb-2 text-gray-300" />
-          <p className="text-sm">배정된 예약이 없습니다.</p>
-          <p className="text-xs">예약을 배정하면 픽업 스케줄이 표시됩니다.</p>
+          <p className="text-sm">{t('noAssignedReservations')}</p>
+          <p className="text-xs">{t('assignToShowSchedule')}</p>
         </div>
       )
     }
@@ -633,7 +633,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                 setShowEmailStatusHelpModal(true)
               }}
               className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-              title="이메일 상태 아이콘 설명"
+              title={t('emailStatusHelpTitle')}
             >
               <HelpCircle size={18} />
             </button>
@@ -644,7 +644,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
               }}
               className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
             >
-              자동생성
+              {t('autoGenerate')}
             </button>
             {reservationsWithPickupTime > 0 && (
               <>
@@ -655,10 +655,10 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                       onPreviewEmail()
                     }}
                     className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 flex items-center gap-1"
-                    title="이메일 보내기"
+                    title={t('sendEmailTitle')}
                   >
                     <FaEnvelope size={14} />
-                    <span>이메일</span>
+                    <span>{t('email')}</span>
                   </button>
                 )}
               </>
@@ -686,7 +686,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                   <FaEnvelope className="w-5 h-5 text-blue-600" />
-                  이메일 발송 현황 아이콘 설명
+                  {t('emailStatusModalTitle')}
                 </h2>
                 <button
                   onClick={() => setShowEmailStatusHelpModal(false)}
@@ -701,9 +701,9 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                 <div className="flex items-start gap-3 p-3 bg-red-50 border border-red-200 rounded-lg">
                   <FaTimesCircle size={20} className="text-red-600 flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <h3 className="font-semibold text-red-900 mb-1">발송 실패</h3>
+                    <h3 className="font-semibold text-red-900 mb-1">{t('sendFailed')}</h3>
                     <p className="text-sm text-red-800">
-                      이메일 발송 중 오류가 발생했습니다. 이메일이 전송되지 않았습니다.
+                      {t('sendFailedDesc')}
                     </p>
                   </div>
                 </div>
@@ -712,11 +712,11 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                 <div className="flex items-start gap-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
                   <FaExclamationCircle size={20} className="text-orange-600 flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <h3 className="font-semibold text-orange-900 mb-1">반송됨</h3>
+                    <h3 className="font-semibold text-orange-900 mb-1">{t('bounced')}</h3>
                     <p className="text-sm text-orange-800">
-                      이메일이 수신자의 메일 서버에서 반송되었습니다. 이메일 주소가 잘못되었거나 존재하지 않을 수 있습니다.
+                      {t('bouncedDesc')}
                       <span className="block mt-1 text-xs text-orange-700">
-                        반송 사유는 아이콘에 마우스를 올리면 확인할 수 있습니다.
+                        {t('bouncedHover')}
                       </span>
                     </p>
                   </div>
@@ -726,11 +726,11 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                 <div className="flex items-start gap-3 p-3 bg-green-50 border border-green-200 rounded-lg">
                   <FaEye size={20} className="text-green-600 flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <h3 className="font-semibold text-green-900 mb-1">읽음</h3>
+                    <h3 className="font-semibold text-green-900 mb-1">{t('read')}</h3>
                     <p className="text-sm text-green-800">
-                      수신자가 이메일을 열어서 읽었습니다.
+                      {t('readDesc')}
                       <span className="block mt-1 text-xs text-green-700">
-                        읽은 횟수는 아이콘에 마우스를 올리면 확인할 수 있습니다.
+                        {t('readHover')}
                       </span>
                     </p>
                   </div>
@@ -740,9 +740,9 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                 <div className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                   <FaCheckCircle size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <h3 className="font-semibold text-blue-900 mb-1">전달 완료</h3>
+                    <h3 className="font-semibold text-blue-900 mb-1">{t('delivered')}</h3>
                     <p className="text-sm text-blue-800">
-                      이메일이 수신자의 메일 서버에 성공적으로 전달되었습니다. 아직 읽지 않았을 수 있습니다.
+                      {t('deliveredDesc')}
                     </p>
                   </div>
                 </div>
@@ -751,9 +751,9 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                 <div className="flex items-start gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
                   <FaPaperPlane size={20} className="text-gray-500 flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <h3 className="font-semibold text-gray-900 mb-1">발송 완료 (전달 대기 중)</h3>
+                    <h3 className="font-semibold text-gray-900 mb-1">{t('sentPending')}</h3>
                     <p className="text-sm text-gray-700">
-                      이메일이 발송되었지만 아직 전달 상태가 확인되지 않았습니다. 곧 전달될 예정입니다.
+                      {t('sentPendingDesc')}
                     </p>
                   </div>
                 </div>
@@ -762,9 +762,9 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                 <div className="flex items-start gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
                   <FaEnvelope size={20} className="text-gray-400 flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <h3 className="font-semibold text-gray-700 mb-1">미발송</h3>
+                    <h3 className="font-semibold text-gray-700 mb-1">{t('notSent')}</h3>
                     <p className="text-sm text-gray-600">
-                      아직 픽업 스케줄 알림 이메일이 발송되지 않았습니다.
+                      {t('notSentDesc')}
                     </p>
                   </div>
                 </div>
@@ -772,7 +772,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
 
               <div className="mt-6 pt-4 border-t border-gray-200">
                 <p className="text-xs text-gray-500">
-                  💡 <strong>팁:</strong> 각 아이콘에 마우스를 올리면 상세 정보를 확인할 수 있습니다.
+                  💡 <strong>{t('tipLabel')}:</strong> {t('tipHover')}
                 </p>
               </div>
 
@@ -781,7 +781,7 @@ export const PickupSchedule: React.FC<PickupScheduleProps> = ({
                   onClick={() => setShowEmailStatusHelpModal(false)}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
-                  확인
+                  {t('confirm')}
                 </button>
               </div>
             </div>

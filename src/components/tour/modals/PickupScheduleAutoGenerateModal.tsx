@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import { X, MapPin, Clock, Navigation, ChevronUp, ChevronDown } from 'lucide-react'
 import { getCachedSunriseSunsetData } from '@/lib/weatherApi'
 
@@ -45,6 +46,7 @@ export default function PickupScheduleAutoGenerateModal({
   onSave,
   getCustomerName
 }: PickupScheduleAutoGenerateModalProps) {
+  const t = useTranslations('tours.pickupSchedule')
   const [mapLoaded, setMapLoaded] = useState(false)
   const [map, setMap] = useState<google.maps.Map | null>(null)
   const [directionsService, setDirectionsService] = useState<google.maps.DirectionsService | null>(null)
@@ -215,7 +217,7 @@ export default function PickupScheduleAutoGenerateModal({
       // 새로운 스크립트 로드
       const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
       if (!apiKey) {
-        alert('Google Maps API 키가 설정되지 않았습니다.')
+        alert(t('autoGenApiKeyNotSet'))
         return
       }
 
@@ -238,7 +240,7 @@ export default function PickupScheduleAutoGenerateModal({
       }
       
       script.onerror = () => {
-        alert('Google Maps API 로드 중 오류가 발생했습니다.')
+        alert(t('autoGenApiLoadError'))
       }
       
       document.head.appendChild(script)
@@ -928,7 +930,7 @@ export default function PickupScheduleAutoGenerateModal({
     // 타임아웃 설정
     const routeTimeout = setTimeout(() => {
       console.error('Directions Service timeout')
-      alert('경로 계산 시간이 초과되었습니다. 네트워크 연결을 확인하고 다시 시도해주세요.')
+      alert(t('autoGenRouteTimeout'))
     }, 30000) // 30초 타임아웃
 
     directionsService.route(
@@ -1182,10 +1184,10 @@ export default function PickupScheduleAutoGenerateModal({
             // alert는 표시하지 않음 (사용자 경험 개선 - 경로가 없어도 수동으로 시간 설정 가능)
           } else if (status === 'OVER_QUERY_LIMIT') {
             console.error('Google Maps API 할당량 초과:', status)
-            alert('Google Maps API 할당량을 초과했습니다. 잠시 후 다시 시도해주세요.')
+            alert(t('autoGenQuotaExceeded'))
           } else if (status === 'REQUEST_DENIED') {
             console.error('Google Maps API 요청 거부:', status)
-            alert('Google Maps API 요청이 거부되었습니다. API 키를 확인해주세요.')
+            alert(t('autoGenRequestDenied'))
           } else if (status !== 'OK') {
             console.warn('경로 계산 실패:', status)
             // 다른 오류도 조용히 처리 (필요시에만 alert 표시)
@@ -1261,7 +1263,7 @@ export default function PickupScheduleAutoGenerateModal({
   const copyGoogleMapsLink = async () => {
     const link = generateGoogleMapsLink()
     if (!link) {
-      alert('공유할 경로가 없습니다.')
+      alert(t('autoGenNoRouteToShare'))
       return
     }
 
@@ -1271,7 +1273,7 @@ export default function PickupScheduleAutoGenerateModal({
       setTimeout(() => setLinkCopied(false), 3000)
     } catch (error) {
       console.error('링크 복사 실패:', error)
-      alert('링크 복사에 실패했습니다.')
+      alert(t('autoGenCopyLinkFailed'))
     }
   }
 
@@ -1289,7 +1291,7 @@ export default function PickupScheduleAutoGenerateModal({
       onClose()
     } catch (error) {
       console.error('픽업 시간 저장 실패:', error)
-      alert('픽업 시간 저장에 실패했습니다.')
+      alert(t('autoGenSaveFailed'))
     } finally {
       setLoading(false)
     }
@@ -1349,12 +1351,12 @@ export default function PickupScheduleAutoGenerateModal({
         {/* 헤더 */}
         <div className="flex items-center justify-between p-4 border-b">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">픽업 스케줄 자동 생성</h3>
+            <h3 className="text-lg font-semibold text-gray-900">{t('autoGenerateModalTitle')}</h3>
             <p className="text-sm text-gray-500 mt-1">
-              {pickupSchedule.length}개 호텔, {totalPeople}명
+              {t('autoGenHotelsPeople', { hotels: pickupSchedule.length, people: totalPeople })}
               {isSunriseTour && sunriseTime && (
                 <span className="ml-2 text-orange-600">
-                  🌅 그랜드캐년 일출: {sunriseTimeArizona || sunriseTime} (AZ) → 라스베가스: {sunriseTime} (마지막 픽업: {pickupSchedule[pickupSchedule.length - 1]?.pickupTime || 'N/A'})
+                  {t('autoGenSunriseSubtitle', { azTime: sunriseTimeArizona || sunriseTime, vegasTime: sunriseTime, lastPickup: pickupSchedule[pickupSchedule.length - 1]?.pickupTime || 'N/A' })}
                 </span>
               )}
             </p>
@@ -1371,7 +1373,7 @@ export default function PickupScheduleAutoGenerateModal({
         <div className="px-4 py-3 bg-gray-50 border-b flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
             <Clock size={16} className="text-orange-500" />
-            <label className="text-sm font-medium text-gray-700">마지막 픽업 시간:</label>
+            <label className="text-sm font-medium text-gray-700">{t('autoGenLastPickupTime')}</label>
             <div className="flex items-center">
               {/* 5분 감소 버튼 */}
               <button
@@ -1385,7 +1387,7 @@ export default function PickupScheduleAutoGenerateModal({
                   setCustomLastPickupTime(`${String(newHours).padStart(2, '0')}:${String(newMins).padStart(2, '0')}`)
                 }}
                 className="px-2 py-1.5 bg-orange-100 hover:bg-orange-200 rounded-l-md border border-r-0 border-orange-300 text-orange-700"
-                title="-5분"
+                title={t('autoGenMinus5')}
               >
                 <ChevronDown size={16} />
               </button>
@@ -1408,7 +1410,7 @@ export default function PickupScheduleAutoGenerateModal({
                   setCustomLastPickupTime(`${String(newHours).padStart(2, '0')}:${String(newMins).padStart(2, '0')}`)
                 }}
                 className="px-2 py-1.5 bg-orange-100 hover:bg-orange-200 rounded-r-md border border-l-0 border-orange-300 text-orange-700"
-                title="+5분"
+                title={t('autoGenPlus5')}
               >
                 <ChevronUp size={16} />
               </button>
@@ -1425,22 +1427,22 @@ export default function PickupScheduleAutoGenerateModal({
               }}
               className="text-xs text-gray-500 hover:text-gray-700 underline"
             >
-              초기화 (자동 계산으로 복원)
+              {t('autoGenReset')}
             </button>
           )}
           {customLastPickupTime && (
             <span className="text-xs text-green-600 font-medium">
-              ✓ 수동 설정됨
+              {t('autoGenManuallySet')}
             </span>
           )}
           {isSunriseTour && !customLastPickupTime && sunriseTime && (
             <span className="text-xs text-gray-500">
-              (일출 {sunriseTimeArizona || sunriseTime} AZ 기준 자동 계산)
+              {t('autoGenSunriseAuto', { time: sunriseTimeArizona || sunriseTime })}
             </span>
           )}
           {isSunriseTour && sunriseTime && (
             <div className="flex items-center gap-2 border-l border-gray-300 pl-4">
-              <label className="text-sm text-gray-600 whitespace-nowrap">일출 시간으로부터</label>
+              <label className="text-sm text-gray-600 whitespace-nowrap">{t('autoGenHoursFromSunrise')}</label>
               <input
                 type="number"
                 min={0}
@@ -1452,7 +1454,7 @@ export default function PickupScheduleAutoGenerateModal({
                 }}
                 className="w-12 px-1.5 py-1.5 border border-gray-300 rounded text-sm text-center"
               />
-              <span className="text-sm text-gray-600">시간</span>
+              <span className="text-sm text-gray-600">{t('autoGenHoursUnit')}</span>
               <input
                 type="number"
                 min={0}
@@ -1464,7 +1466,7 @@ export default function PickupScheduleAutoGenerateModal({
                 }}
                 className="w-12 px-1.5 py-1.5 border border-gray-300 rounded text-sm text-center"
               />
-              <span className="text-sm text-gray-600">전에 마지막 픽업</span>
+              <span className="text-sm text-gray-600">{t('autoGenBeforeLastPickup')}</span>
             </div>
           )}
         </div>
@@ -1483,11 +1485,11 @@ export default function PickupScheduleAutoGenerateModal({
                     </span>
                     {startPointDepartureTime ? (
                       <span className="text-sm font-medium text-gray-900">
-                        {startPointDepartureTime} 출발
+                        {startPointDepartureTime} {t('autoGenDepart')}
                       </span>
                     ) : (
                       <span className="text-sm font-medium text-gray-900">
-                        시작점
+                        {t('autoGenStartPoint')}
                       </span>
                     )}
                   </div>
@@ -1507,7 +1509,7 @@ export default function PickupScheduleAutoGenerateModal({
                   const { total, travel, wait } = getTravelAndWaitFromRawMinutes(raw)
                   return (
                     <div className="text-xs text-orange-600 font-medium">
-                      → 첫 번째 픽업까지: 이동 {travel}분, 대기 {wait}분 = {total}분
+                      {t('autoGenFirstPickupTravel', { travel, wait, total })}
                     </div>
                   )
                 })()}
@@ -1528,9 +1530,7 @@ export default function PickupScheduleAutoGenerateModal({
                         {item.pickupTime}
                       </span>
                       <span className="text-xs text-gray-500">
-                        {item.reservations.reduce((sum, res) => 
-                          sum + (res.adults || 0) + (res.children || 0) + (res.infants || 0), 0
-                        )}명 | {item.reservations.length}건
+                        {t('autoGenPeopleReservations', { people: item.reservations.reduce((sum, res) => sum + (res.adults || 0) + (res.children || 0) + (res.infants || 0), 0), count: item.reservations.length })}
                       </span>
                     </div>
                     <div className="flex items-center gap-1">
@@ -1539,7 +1539,7 @@ export default function PickupScheduleAutoGenerateModal({
                         onClick={() => movePickupOrder(index, 'up')}
                         disabled={index === 0}
                         className="p-1 rounded hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600"
-                        title="순서 위로"
+                        title={t('autoGenMoveUp')}
                       >
                         <ChevronUp size={16} />
                       </button>
@@ -1548,14 +1548,14 @@ export default function PickupScheduleAutoGenerateModal({
                         onClick={() => movePickupOrder(index, 'down')}
                         disabled={index === pickupSchedule.length - 1}
                         className="p-1 rounded hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600"
-                        title="순서 아래로"
+                        title={t('autoGenMoveDown')}
                       >
                         <ChevronDown size={16} />
                       </button>
                     </div>
                     {item.hotel.group_number !== null && (
                       <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
-                        그룹 {item.hotel.group_number}
+                        {t('autoGenGroup', { n: item.hotel.group_number })}
                       </span>
                     )}
                   </div>
@@ -1574,9 +1574,9 @@ export default function PickupScheduleAutoGenerateModal({
                     return (
                       <div className="text-xs text-orange-600 mb-2 font-medium">
                         {index === 0 ? (
-                          <>시작점에서: 이동 {travel}분, 대기 {wait}분 = {total}분</>
+                          <>{t('autoGenFromStart', { travel, wait, total })}</>
                         ) : (
-                          <>← 이전 호텔에서: 이동 {travel}분, 대기 {wait}분 = {total}분</>
+                          <>{t('autoGenFromPrevious', { travel, wait, total })}</>
                         )}
                       </div>
                     )
@@ -1587,7 +1587,7 @@ export default function PickupScheduleAutoGenerateModal({
                       return (
                         <div key={reservation.id} className="text-xs text-gray-600 bg-gray-50 p-1 rounded flex items-center justify-between">
                           <span>{getCustomerName(reservation.customer_id || '')}</span>
-                          <span className="text-gray-500">{totalPeople}명</span>
+                          <span className="text-gray-500">{totalPeople}{t('autoGenPeopleShort')}</span>
                         </div>
                       )
                     })}
@@ -1604,7 +1604,7 @@ export default function PickupScheduleAutoGenerateModal({
               <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
                 <div className="text-center">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                  <p className="text-sm text-gray-600">지도를 불러오는 중...</p>
+                  <p className="text-sm text-gray-600">{t('autoGenLoadingMap')}</p>
                 </div>
               </div>
             )}
@@ -1618,15 +1618,15 @@ export default function PickupScheduleAutoGenerateModal({
               onClick={generatePickupSchedule}
               className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
             >
-              다시 생성
+              {t('autoGenRegenerate')}
             </button>
             {pickupSchedule.length > 0 && (
               <button
                 onClick={recalculateRoute}
                 className="px-4 py-2 bg-amber-100 text-amber-800 border border-amber-300 rounded hover:bg-amber-200"
-                title="순서 수정 후 현재 순서로 경로·이동시간을 다시 계산합니다"
+                title={t('autoGenRecalcRouteTitle')}
               >
-                경로 계산 다시 하기
+                {t('autoGenRecalcRoute')}
               </button>
             )}
             {pickupSchedule.length > 0 && (
@@ -1637,21 +1637,21 @@ export default function PickupScheduleAutoGenerateModal({
                     ? 'bg-green-500 text-white' 
                     : 'bg-green-600 text-white hover:bg-green-700'
                 }`}
-                title="구글맵 경로 링크 복사"
+                title={t('autoGenCopyMapLinkTitle')}
               >
                 {linkCopied ? (
                   <>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
-                    <span>클립보드에 복사되었습니다!</span>
+                    <span>{t('autoGenCopied')}</span>
                   </>
                 ) : (
                   <>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                     </svg>
-                    <span>구글맵 링크 공유</span>
+                    <span>{t('autoGenShareMapLink')}</span>
                   </>
                 )}
               </button>
@@ -1662,7 +1662,7 @@ export default function PickupScheduleAutoGenerateModal({
               onClick={onClose}
               className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
             >
-              취소
+              {t('autoGenCancel')}
             </button>
             <button
               onClick={handleSave}
@@ -1672,12 +1672,12 @@ export default function PickupScheduleAutoGenerateModal({
               {loading ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  <span>저장 중...</span>
+                  <span>{t('autoGenSaving')}</span>
                 </>
               ) : (
                 <>
-                  <span>픽업 시간 업데이트</span>
-                  <span className="text-xs opacity-90">({pickupSchedule.reduce((sum, item) => sum + item.reservations.length, 0)}건)</span>
+                  <span>{t('autoGenUpdatePickupTimes')}</span>
+                  <span className="text-xs opacity-90">({pickupSchedule.reduce((sum, item) => sum + item.reservations.length, 0)}{t('autoGenCountUnit')})</span>
                 </>
               )}
             </button>

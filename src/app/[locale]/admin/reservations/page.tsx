@@ -1094,7 +1094,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     
     if (!reservationId) {
       console.error('예약 ID가 없습니다!')
-      alert('예약 ID가 없습니다. 모달을 다시 열어주세요.')
+      alert(t('messages.noReservationId'))
       isAddingReservationRef.current = false
       return
     }
@@ -1166,7 +1166,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
       if (error) {
         console.error('Error saving reservation:', error)
-        alert('예약 추가 중 오류가 발생했습니다: ' + error.message)
+        alert(t('messages.reservationAddError') + error.message)
         isAddingReservationRef.current = false
         return
       }
@@ -1374,7 +1374,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 hint: choicesError.hint,
                 code: choicesError.code
               })
-              alert('초이스 저장 중 오류가 발생했습니다: ' + choicesError.message)
+              alert(t('messages.choicesSaveError') + choicesError.message)
             } else {
               console.log('초이스 저장 성공:', choicesToSave.length, '개', insertedChoices)
             }
@@ -1462,14 +1462,14 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               hint: pricingError.hint,
               code: pricingError.code
             })
-            alert('가격 정보 저장 중 오류가 발생했습니다: ' + pricingError.message)
+            alert(t('messages.pricingSaveError') + pricingError.message)
           } else {
             console.log('reservation_pricing 생성 성공:', pricingId, insertedPricing)
           }
         } catch (pricingError) {
           console.error('reservation_pricing 생성 중 예외:', pricingError)
           console.error('예외 스택:', (pricingError as Error).stack)
-          alert('가격 정보 저장 중 예외가 발생했습니다: ' + (pricingError as Error).message)
+          alert(t('messages.pricingSaveException') + (pricingError as Error).message)
         }
       } else {
         console.warn('reservationId가 없어 reservation_pricing을 생성하지 않습니다.', {
@@ -1521,11 +1521,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       console.log('handleAddReservation: 예약 목록 새로고침 완료')
       setShowAddForm(false)
       setNewReservationId(null)
-      alert('예약이 성공적으로 추가되었습니다!')
+      alert(t('messages.reservationAdded'))
     } catch (error) {
       console.error('handleAddReservation: 예약 추가 중 오류:', error)
       console.error('오류 스택:', (error as Error).stack)
-      alert('예약 추가 중 오류가 발생했습니다: ' + ((error as Error).message || '알 수 없는 오류'))
+      alert(t('messages.reservationAddErrorGeneric') + ((error as Error).message || ''))
     } finally {
       isAddingReservationRef.current = false
     }
@@ -1671,7 +1671,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                 hint: choicesError.hint,
                 code: choicesError.code
               })
-              alert('초이스 저장 중 오류가 발생했습니다: ' + choicesError.message)
+              alert(t('messages.choicesSaveError') + choicesError.message)
             } else {
               console.log('초이스 저장 성공:', choicesToSave.length, '개', insertedChoices)
             }
@@ -1948,12 +1948,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const handleOpenEmailPreview = useCallback((reservation: Reservation, emailType: 'confirmation' | 'departure' | 'pickup') => {
     const customer = (customers as Customer[]).find(c => c.id === reservation.customerId)
     if (!customer?.email) {
-      alert('고객 이메일 주소가 없습니다.')
+      alert(t('messages.noCustomerEmail'))
       return
     }
 
     if (emailType === 'pickup' && (!reservation.pickUpTime || !reservation.tourDate)) {
-      alert('픽업 시간과 투어 날짜가 필요합니다.')
+      alert(t('messages.pickupAndTourDateRequired'))
       return
     }
 
@@ -2043,12 +2043,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         throw new Error(data.error || '이메일 발송에 실패했습니다.')
       }
 
-      alert('이메일이 성공적으로 발송되었습니다.')
+      alert(t('messages.emailSendSuccess'))
       setShowEmailPreview(false)
       setEmailPreviewData(null)
     } catch (error) {
       console.error('이메일 발송 오류:', error)
-      alert(error instanceof Error ? error.message : '이메일 발송 중 오류가 발생했습니다.')
+      alert(error instanceof Error ? error.message : t('messages.emailSendError'))
     } finally {
       setSendingEmail(null)
     }
@@ -2074,7 +2074,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
       if (error) {
         console.error('픽업 시간 업데이트 오류:', error)
-        alert('픽업 시간 업데이트 중 오류가 발생했습니다.')
+        alert(t('messages.pickupTimeUpdateError'))
         return
       }
 
@@ -2085,7 +2085,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       setSelectedReservationForPickupTime(null)
     } catch (error) {
       console.error('픽업 시간 저장 오류:', error)
-      alert('픽업 시간 저장 중 오류가 발생했습니다.')
+      alert(t('messages.pickupTimeSaveError'))
     }
   }, [selectedReservationForPickupTime, pickupTimeValue, refreshReservations])
 
@@ -2109,7 +2109,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
       if (error) {
         console.error('픽업 호텔 업데이트 오류:', error)
-        alert('픽업 호텔 업데이트 중 오류가 발생했습니다.')
+        alert(t('messages.pickupHotelUpdateError'))
         return
       }
 
@@ -2119,7 +2119,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       setHotelSearchTerm('')
     } catch (error) {
       console.error('픽업 호텔 저장 오류:', error)
-      alert('픽업 호텔 저장 중 오류가 발생했습니다.')
+      alert(t('messages.pickupHotelSaveError'))
     }
   }, [selectedReservationForPickupHotel, refreshReservations])
 
@@ -2220,16 +2220,16 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
         if (error) {
           console.error('Error deleting reservation:', error)
-          alert('예약 삭제 중 오류가 발생했습니다: ' + error.message)
+          alert(t('messages.reservationDeleteError') + error.message)
           return
         }
 
         // 성공 시 예약 목록 새로고침
         await refreshReservations()
-        alert('예약이 성공적으로 삭제되었습니다!')
+        alert(t('messages.reservationDeleted'))
       } catch (error) {
         console.error('Error deleting reservation:', error)
-        alert('예약 삭제 중 오류가 발생했습니다.')
+        alert(t('messages.reservationDeleteErrorGeneric'))
       }
     }
   }, [t, refreshReservations])
@@ -2457,7 +2457,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           </>
         ) : (
           <>
-            Total {filteredReservations.length} {t('stats.reservations')} {startIndex + 1}-{Math.min(endIndex, filteredReservations.length)} {t('stats.more')} displayed
+            {t('paginationDisplay', { total: filteredReservations.length, start: startIndex + 1, end: Math.min(endIndex, filteredReservations.length) })}
             {filteredReservations.length !== reservations.length && (
               <span className="ml-2 text-blue-600">
                 ({t('groupingLabels.filteredFromTotal')} {reservations.length} {t('stats.more')})
@@ -2717,17 +2717,17 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
                 if (error) {
                   console.error('Error deleting customer:', error)
-                  alert('고객 삭제 중 오류가 발생했습니다: ' + error.message)
+                  alert(t('messages.customerDeleteError') + error.message)
                   return
                 }
 
                 // 성공 시 고객 목록 새로고침
                 await refreshCustomers()
                 setEditingCustomer(null)
-                alert('고객이 성공적으로 삭제되었습니다!')
+                alert(t('messages.customerDeleted'))
               } catch (error) {
                 console.error('Error deleting customer:', error)
-                alert('고객 삭제 중 오류가 발생했습니다.')
+                alert(t('messages.customerDeleteErrorGeneric'))
               }
             }
           }}

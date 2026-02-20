@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useTranslations } from 'next-intl'
 import { X, Mail, Eye, Loader2, Users, Clock, Building, Copy, Check, Image as ImageIcon, FileText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import html2canvas from 'html2canvas'
@@ -29,6 +30,7 @@ export default function PickupScheduleEmailPreviewModal({
   tourId,
   onSend
 }: PickupScheduleEmailPreviewModalProps) {
+  const t = useTranslations('tours.pickupSchedule')
   const [selectedReservationId, setSelectedReservationId] = useState<string | null>(null)
   const [emailContent, setEmailContent] = useState<{
     subject: string
@@ -312,7 +314,7 @@ export default function PickupScheduleEmailPreviewModal({
       setEmailContent(data.emailContent)
     } catch (error) {
       console.error('이메일 미리보기 로드 오류:', error)
-      alert('이메일 미리보기를 불러오는 중 오류가 발생했습니다.')
+      alert(t('emailPreviewLoadError'))
     } finally {
       setLoading(false)
     }
@@ -507,7 +509,7 @@ export default function PickupScheduleEmailPreviewModal({
         setTimeout(() => setCopied(false), 2000)
       } catch (err) {
         console.error('복사 실패:', err)
-        alert('텍스트 복사에 실패했습니다.')
+        alert(t('emailPreviewCopyTextFailed'))
       }
       document.body.removeChild(textArea)
     }
@@ -537,7 +539,7 @@ export default function PickupScheduleEmailPreviewModal({
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
         // Gmail 사용 안내 표시
-        alert('HTML이 복사되었습니다.\n\nGmail에서 사용하려면:\n1. Gmail 작성 화면에서 "..." 메뉴 클릭\n2. "HTML 편집" 선택\n3. 붙여넣기 (Ctrl+V 또는 Cmd+V)')
+        alert(t('emailPreviewHTMLCopiedGmail'))
       } catch (err) {
         console.error('복사 실패:', err)
         // 최종 폴백: 텍스트 영역 사용
@@ -551,10 +553,10 @@ export default function PickupScheduleEmailPreviewModal({
           document.execCommand('copy')
           setCopied(true)
           setTimeout(() => setCopied(false), 2000)
-          alert('HTML이 복사되었습니다.\n\nGmail에서 사용하려면:\n1. Gmail 작성 화면에서 "..." 메뉴 클릭\n2. "HTML 편집" 선택\n3. 붙여넣기 (Ctrl+V 또는 Cmd+V)')
+          alert(t('emailPreviewHTMLCopiedGmail'))
         } catch (finalErr) {
           console.error('복사 실패:', finalErr)
-          alert('이메일 내용 복사에 실패했습니다.')
+          alert(t('emailPreviewCopyFailed'))
         }
         document.body.removeChild(textArea)
       }
@@ -639,7 +641,7 @@ export default function PickupScheduleEmailPreviewModal({
       link.click()
     } catch (error) {
       console.error('이미지 다운로드 오류:', error)
-      alert('이미지 다운로드에 실패했습니다.')
+      alert(t('emailPreviewImageDownloadFailed'))
     } finally {
       setDownloading(false)
     }
@@ -733,7 +735,7 @@ export default function PickupScheduleEmailPreviewModal({
         pdf.save(fileName)
       } catch (fallbackError) {
         console.error('PDF 폴백 다운로드 오류:', fallbackError)
-        alert('PDF 다운로드에 실패했습니다.')
+        alert(t('emailPreviewPDFDownloadFailed'))
       }
     } finally {
       setDownloading(false)
@@ -744,12 +746,12 @@ export default function PickupScheduleEmailPreviewModal({
     const reservation = reservations.find(r => r.id === reservationId)
     if (!reservation) {
       console.error('예약을 찾을 수 없습니다:', { reservationId, reservations: reservations.map(r => r.id) })
-      alert('예약을 찾을 수 없습니다.')
+      alert(t('emailPreviewReservationNotFound'))
       return
     }
 
     if (!reservation.pickup_time) {
-      alert('픽업 시간이 설정되지 않은 예약입니다.')
+      alert(t('emailPreviewNoPickupTime'))
       return
     }
 
@@ -757,7 +759,7 @@ export default function PickupScheduleEmailPreviewModal({
     try {
       const reservationTourDate = reservation.tour_date || tourDate
       if (!reservationTourDate) {
-        alert('투어 날짜를 찾을 수 없습니다.')
+        alert(t('emailPreviewNoTourDate'))
         return
       }
 
@@ -783,21 +785,21 @@ export default function PickupScheduleEmailPreviewModal({
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
-        const errorMessage = errorData.error || '이메일 발송에 실패했습니다.'
+        const errorMessage = errorData.error || t('emailPreviewSendError')
         const errorDetails = errorData.details ? `\n\n상세: ${errorData.details}` : ''
         const errorType = errorData.errorType ? `\n\n오류 유형: ${errorData.errorType}` : ''
         throw new Error(`${errorMessage}${errorDetails}${errorType}`)
       }
 
       setSentReservations(prev => new Set(prev).add(reservationId))
-      alert('이메일이 성공적으로 발송되었습니다.')
+      alert(t('emailPreviewSendSuccess'))
     } catch (error) {
       console.error('개별 발송 오류:', error)
       console.error('에러 상세:', {
         message: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined
       })
-      alert(error instanceof Error ? error.message : '이메일 발송 중 오류가 발생했습니다.')
+      alert(error instanceof Error ? error.message : t('emailPreviewSendError'))
     } finally {
       setSendingReservationId(null)
     }
@@ -812,9 +814,9 @@ export default function PickupScheduleEmailPreviewModal({
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-3">
             <Eye className="w-5 h-5 text-blue-600" />
-            <h2 className="text-xl font-bold text-gray-900">픽업 스케줄 알림 이메일 미리보기</h2>
+            <h2 className="text-xl font-bold text-gray-900">{t('emailPreviewModalTitle')}</h2>
             <span className="text-sm text-gray-500">
-              ({reservationsWithPickupTime.length}건)
+              ({reservationsWithPickupTime.length}{t('emailPreviewCountUnit')})
             </span>
           </div>
           <button
@@ -829,7 +831,7 @@ export default function PickupScheduleEmailPreviewModal({
         <div className="flex-1 flex overflow-hidden">
           {/* 왼쪽: 예약 목록 */}
           <div className="w-80 border-r overflow-y-auto p-4 bg-gray-50">
-            <h3 className="font-semibold text-gray-900 mb-3">예약 목록</h3>
+            <h3 className="font-semibold text-gray-900 mb-3">{t('emailPreviewReservationList')}</h3>
             <div className="space-y-3">
               {reservationsWithPickupTime.map((reservation, index) => {
                 const details = reservationDetails[reservation.id]
@@ -856,11 +858,11 @@ export default function PickupScheduleEmailPreviewModal({
                     >
                       <div className="flex items-center justify-between mb-2">
                         <div className="text-xs font-semibold text-gray-500">
-                          예약 #{index + 1}
+                          {t('emailPreviewReservationNum', { n: index + 1 })}
                         </div>
                         <div className="flex items-center gap-2">
                           {isSent && (
-                            <span className="text-xs text-green-600 font-medium">✓ 발송됨</span>
+                            <span className="text-xs text-green-600 font-medium">{t('emailPreviewSent')}</span>
                           )}
                           {selectedReservationId === reservation.id && (
                             <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
@@ -877,15 +879,15 @@ export default function PickupScheduleEmailPreviewModal({
                       {totalPeople > 0 && (
                         <div className="flex items-center gap-1 text-xs text-gray-600 mb-2">
                           <Users size={12} />
-                          <span>{totalPeople}명</span>
+                          <span>{totalPeople}{t('emailPreviewPeopleShort')}</span>
                           {details?.adults && details.adults > 0 && (
-                            <span className="text-gray-500">(성인 {details.adults}</span>
+                            <span className="text-gray-500">({t('emailPreviewAdults')} {details.adults}</span>
                           )}
                           {details?.children && details.children > 0 && (
-                            <span className="text-gray-500">, 아동 {details.children}</span>
+                            <span className="text-gray-500">, {t('emailPreviewChildren')} {details.children}</span>
                           )}
                           {details?.infants && details.infants > 0 && (
-                            <span className="text-gray-500">, 유아 {details.infants}</span>
+                            <span className="text-gray-500">, {t('emailPreviewInfants')} {details.infants}</span>
                           )}
                           {totalPeople > 0 && <span className="text-gray-500">)</span>}
                         </div>
@@ -919,7 +921,7 @@ export default function PickupScheduleEmailPreviewModal({
                         <>
                           <div className="w-full px-3 py-2 text-xs rounded bg-green-100 text-green-700 flex items-center justify-center gap-2">
                             <Mail className="w-3 h-3" />
-                            <span>발송 완료</span>
+                            <span>{t('emailPreviewSendDone')}</span>
                           </div>
                           <button
                             onClick={(e) => {
@@ -936,12 +938,12 @@ export default function PickupScheduleEmailPreviewModal({
                             {isSending ? (
                               <>
                                 <Loader2 className="w-3 h-3 animate-spin" />
-                                <span>재전송 중...</span>
+                                <span>{t('emailPreviewResending')}</span>
                               </>
                             ) : (
                               <>
                                 <Mail className="w-3 h-3" />
-                                <span>재전송</span>
+                                <span>{t('emailPreviewResend')}</span>
                               </>
                             )}
                           </button>
@@ -962,12 +964,12 @@ export default function PickupScheduleEmailPreviewModal({
                           {isSending ? (
                             <>
                               <Loader2 className="w-3 h-3 animate-spin" />
-                              <span>발송 중...</span>
+                              <span>{t('emailPreviewSending')}</span>
                             </>
                           ) : (
                             <>
                               <Mail className="w-3 h-3" />
-                              <span>개별 발송</span>
+                              <span>{t('emailPreviewSendIndividual')}</span>
                             </>
                           )}
                         </button>
@@ -985,7 +987,7 @@ export default function PickupScheduleEmailPreviewModal({
               <div className="flex items-center justify-center h-full">
                 <div className="text-center">
                   <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-                  <p className="text-gray-600">이메일 미리보기를 불러오는 중...</p>
+                  <p className="text-gray-600">{t('emailPreviewLoading')}</p>
                 </div>
               </div>
             ) : emailContent ? (
@@ -994,19 +996,19 @@ export default function PickupScheduleEmailPreviewModal({
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <div className="space-y-2 text-sm">
                     <div>
-                      <span className="font-semibold text-gray-700">받는 사람:</span>
+                      <span className="font-semibold text-gray-700">{t('emailPreviewTo')}</span>
                       <span className="ml-2 text-gray-900">{emailContent.customer?.name || 'N/A'}</span>
                     </div>
                     <div>
-                      <span className="font-semibold text-gray-700">이메일:</span>
+                      <span className="font-semibold text-gray-700">{t('emailPreviewEmailLabel')}</span>
                       <span className="ml-2 text-gray-900">{emailContent.customer?.email || 'N/A'}</span>
                     </div>
                     <div>
-                      <span className="font-semibold text-gray-700">언어:</span>
-                      <span className="ml-2 text-gray-900">{emailContent.customer?.language || '한국어'}</span>
+                      <span className="font-semibold text-gray-700">{t('emailPreviewLanguage')}</span>
+                      <span className="ml-2 text-gray-900">{emailContent.customer?.language || t('emailPreviewDefaultLanguage')}</span>
                     </div>
                     <div>
-                      <span className="font-semibold text-gray-700">제목:</span>
+                      <span className="font-semibold text-gray-700">{t('emailPreviewSubject')}</span>
                       <span className="ml-2 text-gray-900">{emailContent.subject || 'N/A'}</span>
                     </div>
                   </div>
@@ -1018,25 +1020,25 @@ export default function PickupScheduleEmailPreviewModal({
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2 text-sm text-gray-600">
                         <Mail className="w-4 h-4" />
-                        <span>이메일 미리보기</span>
+                        <span>{t('emailPreviewTitle')}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         {/* 텍스트 복사 버튼 */}
                         <button
                           onClick={handleCopyText}
                           className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
-                          title="텍스트 버전 복사 (카카오톡/왓츠앱용)"
+                          title={t('emailPreviewCopyTextTitle')}
                           disabled={downloading}
                         >
                           {copied ? (
                             <>
                               <Check className="w-4 h-4" />
-                              <span>복사됨</span>
+                              <span>{t('emailPreviewCopied')}</span>
                             </>
                           ) : (
                             <>
                               <Copy className="w-4 h-4" />
-                              <span>텍스트 복사</span>
+                              <span>{t('emailPreviewCopyText')}</span>
                             </>
                           )}
                         </button>
@@ -1044,18 +1046,18 @@ export default function PickupScheduleEmailPreviewModal({
                         <button
                           onClick={handleDownloadImage}
                           className="flex items-center gap-2 px-3 py-1.5 text-sm bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors disabled:opacity-50"
-                          title="이미지로 다운로드"
+                          title={t('emailPreviewDownloadImageTitle')}
                           disabled={downloading}
                         >
                           {downloading ? (
                             <>
                               <Loader2 className="w-4 h-4 animate-spin" />
-                              <span>다운로드 중...</span>
+                              <span>{t('emailPreviewDownloading')}</span>
                             </>
                           ) : (
                             <>
                               <ImageIcon className="w-4 h-4" />
-                              <span>이미지</span>
+                              <span>{t('emailPreviewImage')}</span>
                             </>
                           )}
                         </button>
@@ -1063,18 +1065,18 @@ export default function PickupScheduleEmailPreviewModal({
                         <button
                           onClick={handleDownloadPDF}
                           className="flex items-center gap-2 px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors disabled:opacity-50"
-                          title="PDF로 다운로드"
+                          title={t('emailPreviewDownloadPDFTitle')}
                           disabled={downloading}
                         >
                           {downloading ? (
                             <>
                               <Loader2 className="w-4 h-4 animate-spin" />
-                              <span>다운로드 중...</span>
+                              <span>{t('emailPreviewDownloading')}</span>
                             </>
                           ) : (
                             <>
                               <FileText className="w-4 h-4" />
-                              <span>PDF</span>
+                              <span>{t('emailPreviewPDF')}</span>
                             </>
                           )}
                         </button>
@@ -1082,16 +1084,16 @@ export default function PickupScheduleEmailPreviewModal({
                         <button
                           onClick={handleCopyEmail}
                           className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                          title="HTML 복사 (이메일용)"
+                          title={t('emailPreviewCopyHTMLTitle')}
                           disabled={downloading}
                         >
                           <Copy className="w-4 h-4" />
-                          <span>HTML 복사</span>
+                          <span>{t('emailPreviewCopyHTML')}</span>
                         </button>
                       </div>
                     </div>
                     <div className="text-xs text-gray-500 bg-yellow-50 border border-yellow-200 rounded p-2 mb-2">
-                      💡 <strong>사용 안내:</strong> 텍스트 복사는 카카오톡/왓츠앱용, 이미지/PDF는 파일로 공유용입니다.
+                      💡 <strong>{t('emailPreviewUsageTipLabel')}</strong> {t('emailPreviewUsageTip')}
                     </div>
                   </div>
                   <div 
@@ -1110,7 +1112,7 @@ export default function PickupScheduleEmailPreviewModal({
               <div className="flex items-center justify-center h-full">
                 <div className="text-center text-gray-500">
                   <Mail className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                  <p>이메일 미리보기를 불러올 수 없습니다.</p>
+                  <p>{t('emailPreviewLoadFailed')}</p>
                 </div>
               </div>
             )}
@@ -1120,9 +1122,7 @@ export default function PickupScheduleEmailPreviewModal({
         {/* 푸터 */}
         <div className="flex items-center justify-between p-4 border-t bg-gray-50">
           <div className="text-sm text-gray-600">
-            {selectedReservationId 
-              ? reservationsWithPickupTime.findIndex(r => r.id === selectedReservationId) + 1 
-              : 1} / {reservationsWithPickupTime.length} 건
+            {t('emailPreviewFooterCount', { current: selectedReservationId ? reservationsWithPickupTime.findIndex(r => r.id === selectedReservationId) + 1 : 1, total: reservationsWithPickupTime.length })}
           </div>
           <div className="flex items-center gap-3">
             {onSend && (
@@ -1134,12 +1134,12 @@ export default function PickupScheduleEmailPreviewModal({
                 {sending ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>일괄 발송 중...</span>
+                    <span>{t('emailPreviewBatchSending')}</span>
                   </>
                 ) : (
                   <>
                     <Mail className="w-4 h-4" />
-                    <span>일괄 발송 ({reservationsWithPickupTime.length}건)</span>
+                    <span>{t('emailPreviewBatchSend', { count: reservationsWithPickupTime.length })}</span>
                   </>
                 )}
               </button>
@@ -1148,7 +1148,7 @@ export default function PickupScheduleEmailPreviewModal({
               onClick={onClose}
               className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
             >
-              닫기
+              {t('emailPreviewClose')}
             </button>
           </div>
         </div>

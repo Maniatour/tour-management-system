@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useMemo, useCallback, memo, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X as XIcon } from 'lucide-react'
 import type { Database } from '@/lib/supabase'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -99,8 +99,17 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
       return tourName
     }
   }
+
+  // locale별 상품 표시명: 한국어=name 컬럼, 영문=name_en 컬럼
+  const getProductDisplayName = useCallback((meta: { name?: string; name_ko?: string | null; name_en?: string | null } | undefined) => {
+    if (!meta) return ''
+    if (locale === 'ko') return (meta.name || meta.name_ko || meta.name_en || '').trim() || ''
+    return (meta.name_en || meta.name || meta.name_ko || '').trim() || ''
+  }, [locale])
+
   const [currentDate, setCurrentDate] = useState(new Date())
-  const [productMetaById, setProductMetaById] = useState<{[id: string]: { name: string; sub_category: string }}>({})
+  const [productMetaById, setProductMetaById] = useState<{[id: string]: { name: string; name_ko?: string | null; name_en?: string | null; sub_category: string }}>({})
+  const [choiceSummaryByTourId, setChoiceSummaryByTourId] = useState<Record<string, Record<string, number>>>({})
   const [hoveredTour, setHoveredTour] = useState<ExtendedTour | null>(null)
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 })
   const [showOffScheduleModal, setShowOffScheduleModal] = useState(false)
@@ -476,6 +485,11 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
           return []
         }
       }
+      // Postgres text[] 형식 {uuid1,uuid2}
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        const inner = trimmed.slice(1, -1).trim()
+        return inner ? inner.split(',').map(s => s.trim()).filter(s => s.length > 0) : []
+      }
       // 콤마 구분 문자열 처리
       if (trimmed.includes(',')) {
         return trimmed.split(',').map(s => s.trim()).filter(s => s.length > 0)
@@ -564,16 +578,14 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
           return
         }
 
-        const next: {[id: string]: { name: string; sub_category: string }} = {}
+        const next: {[id: string]: { name: string; name_ko?: string | null; name_en?: string | null; sub_category: string }} = {}
         ;(data as Array<{ id: string; name?: string | null; name_ko?: string | null; name_en?: string | null; sub_category?: string | null }> | null || []).forEach((p) => {
-          // 상품명을 사용
-          let label = ''
-          if (locale === 'en') {
-            label = p.name_en || p.name_ko || p.name || p.id
-          } else {
-            label = p.name_ko || p.name_en || p.name || p.id
+          next[p.id] = {
+            name: p.name ?? '',
+            name_ko: p.name_ko ?? null,
+            name_en: p.name_en ?? null,
+            sub_category: p.sub_category || ''
           }
-          next[p.id] = { name: label, sub_category: p.sub_category || '' }
         })
 
         setProductMetaById(prev => ({ ...prev, ...next }))
@@ -584,6 +596,101 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
     loadProductMeta()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tours])
+
+  // 투어별 초이스 합계 로드 — 스케줄 뷰·투어 상세 모달과 동일: "초이스: X : 2 / L : 5"
+  useEffect(() => {
+    const loadChoiceSummaries = async () => {
+      const reservationIds = new Set<string>()
+      for (const tour of tours || []) {
+        const ids = normalizeReservationIds(tour.reservation_ids as unknown)
+        for (const id of ids) {
+          const rid = String(id).trim()
+          if (rid) reservationIds.add(rid)
+        }
+      }
+      if (reservationIds.size === 0) {
+        setChoiceSummaryByTourId({})
+        return
+      }
+      const isUuid = (s: string | null | undefined) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test((s || '').trim())
+      const choiceLabelToKey = (nameKo: string | null | undefined, nameEn: string | null | undefined, optionKey: string | null | undefined): string => {
+        const label = (nameKo || nameEn || (optionKey && !isUuid(optionKey) ? optionKey : '') || '').toString().trim()
+        const labelLower = label.toLowerCase()
+        const labelKo = label
+        if (labelLower.includes('antelope x canyon') || /엑스\s*앤텔롭|엑스\s*앤틸롭|엑스\s*엔텔롭/.test(labelKo)) return 'X'
+        if (labelLower.includes('lower antelope canyon') || /로어\s*앤텔롭|로어\s*앤틸롭|로어\s*엔텔롭/.test(labelKo)) return 'L'
+        if (labelLower.includes('upper antelope canyon') || /어퍼\s*앤텔롭|어퍼\s*앤틸롭|어퍼\s*엔텔롭/.test(labelKo)) return 'U'
+        if (labelLower.includes('antelope x') || labelLower.includes(' x ')) return 'X'
+        if (labelLower.includes('lower')) return 'L'
+        if (labelLower.includes('upper')) return 'U'
+        return '_other'
+      }
+      try {
+        const idsArray = Array.from(reservationIds)
+        const BATCH = 100
+        let choicesFlat: Array<{ reservation_id: string; choiceKey: string; quantity: number }> = []
+        for (let i = 0; i < idsArray.length; i += BATCH) {
+          const batchIds = idsArray.slice(i, i + BATCH)
+          const { data: rcData, error } = await supabase
+            .from('reservation_choices')
+            .select('reservation_id, quantity, choice_options!inner(option_key, option_name_ko, option_name)')
+            .in('reservation_id', batchIds)
+          if (error) {
+            console.warn('초이스 합계 로드 실패:', error)
+            setChoiceSummaryByTourId({})
+            return
+          }
+          const rows = (rcData || []) as Array<{
+            reservation_id: string
+            quantity?: number | null
+            choice_options?: { option_key?: string | null; option_name_ko?: string | null; option_name?: string | null } | null
+          }>
+          choicesFlat = choicesFlat.concat(rows.map((row) => {
+            const opt = row.choice_options
+            const choiceKey = choiceLabelToKey(opt?.option_name_ko ?? null, opt?.option_name ?? null, opt?.option_key ?? null)
+            return { reservation_id: row.reservation_id, choiceKey, quantity: Number(row.quantity) || 1 }
+          }))
+        }
+        const choiceRowsByResId = new Map<string, Array<{ choiceKey: string; quantity: number }>>()
+        choicesFlat.forEach((c) => {
+          const list = choiceRowsByResId.get(c.reservation_id) || []
+          list.push({ choiceKey: c.choiceKey, quantity: c.quantity })
+          choiceRowsByResId.set(c.reservation_id, list)
+        })
+        const displayOrder = ['X', 'L', 'U', '_other']
+        const next: Record<string, Record<string, number>> = {}
+        for (const tour of tours || []) {
+          const tourIdKey = tour.id != null ? String(tour.id) : ''
+          if (!tourIdKey) continue
+          const assignedIds = new Set(normalizeReservationIds(tour.reservation_ids as unknown))
+          const assignedResList = allReservations.filter((r) => assignedIds.has(String(r.id)))
+          const choiceCounts: Record<string, number> = {}
+          assignedResList.forEach((res) => {
+            const rows = choiceRowsByResId.get(String(res.id)) || []
+            const people = res.total_people || 0
+            if (rows.length === 0) return
+            if (rows.length === 1) {
+              const key = rows[0].choiceKey
+              choiceCounts[key] = (choiceCounts[key] || 0) + people
+            } else {
+              rows.forEach((r) => {
+                choiceCounts[r.choiceKey] = (choiceCounts[r.choiceKey] || 0) + r.quantity
+              })
+            }
+          })
+          const hasAny = displayOrder.some((k) => (choiceCounts[k] || 0) > 0)
+          if (hasAny) {
+            next[tourIdKey] = { ...choiceCounts }
+          }
+        }
+        setChoiceSummaryByTourId(next)
+      } catch (e) {
+        console.warn('초이스 합계 로드 중 예외:', e)
+        setChoiceSummaryByTourId({})
+      }
+    }
+    loadChoiceSummaries()
+  }, [tours, allReservations])
 
   // 상품 색상 범례 (Mania Tour / Mania Service만)
   const productLegend = useMemo(() => {
@@ -596,13 +703,12 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
       const meta = productMetaById[pid]
       if (!meta) continue
       if (!allowed.has(meta.sub_category)) continue
-      // internal_name이 이미 로케일에 맞게 설정되어 있으므로 그대로 사용
-      const translatedName = meta.name
+      const translatedName = getProductDisplayName(meta)
       items.push({ id: pid, label: translatedName, colorClass: getProductColor(pid, meta.name) })
       added.add(pid)
     }
     return items
-  }, [tours, productMetaById, getProductColor])
+  }, [tours, productMetaById, getProductColor, getProductDisplayName])
 
   return (
     <div className="bg-white rounded-lg shadow-md border p-1 sm:p-4">
@@ -806,36 +912,52 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                         (tourHasBalance ? '밸런스가 남아 있는 투어입니다.' : '')
                       }
                     >
-                      <div className="whitespace-normal break-words leading-tight sm:whitespace-nowrap sm:truncate">
+                      <div className="whitespace-normal break-words leading-tight sm:whitespace-nowrap sm:truncate flex flex-wrap items-baseline gap-x-0.5">
                         <span className={`font-medium ${isPrivateTour ? 'text-purple-100' : ''}`}>
                           {hasUnsentPickupNotification && <span className="inline-block mr-0.5" title="픽업 안내 미발송">📧</span>}
                           {tourHasBalance && <span className="inline-block mr-0.5" title="밸런스 남음">💲</span>}
                           {tourStatusIcon && <span className="inline-block mr-0.5">{tourStatusIcon}</span>}
                           {assignmentIcon && <span className="inline-block mr-0.5">{assignmentIcon}</span>}
-                          {isPrivateTour ? '🔒 ' : ''}{getTourDisplayName(tour)}
+                          {isPrivateTour ? '🔒 ' : ''}{getProductDisplayName(productMetaById[tour.product_id ?? '']) || getTourDisplayName(tour)}
                         </span>
-                        <span className="mx-0.5 sm:mx-1">
+                        <span className="ml-0.5 sm:ml-1">
                           {(() => {
-                            // tour 객체에 assigned_adults, assigned_children, assigned_infants가 있으면 사용
                             const children = tour.assigned_children ?? 0
                             const infants = tour.assigned_infants ?? 0
                             const total = tour.assigned_people ?? assignedPeople
-                            
                             if (children === 0 && infants === 0) {
                               return `${total}/${totalPeopleFiltered}${othersPeople > 0 ? ` (${othersPeople})` : ''}`
                             }
                             const detailParts: string[] = []
-                            if (children > 0) {
-                              detailParts.push(locale === 'en' ? `Child ${children}` : `아동${children}`)
-                            }
-                            if (infants > 0) {
-                              detailParts.push(locale === 'en' ? `Infant ${infants}` : `유아${infants}`)
-                            }
-                            return locale === 'en' 
+                            if (children > 0) detailParts.push(locale === 'en' ? `Child ${children}` : `아동${children}`)
+                            if (infants > 0) detailParts.push(locale === 'en' ? `Infant ${infants}` : `유아${infants}`)
+                            return locale === 'en'
                               ? `Total ${total}/${totalPeopleFiltered}${othersPeople > 0 ? ` (${othersPeople})` : ''}, ${detailParts.join(', ')}`
                               : `총 ${total}/${totalPeopleFiltered}${othersPeople > 0 ? ` (${othersPeople})` : ''}, ${detailParts.join(', ')}`
                           })()}
                         </span>
+                        {(() => {
+                          const counts = choiceSummaryByTourId[String(tour.id)]
+                          if (!counts) return null
+                          const order = ['X', 'L', 'U', '_other'] as const
+                          const labels: Record<string, string> = { X: 'X', L: 'L', U: 'U', _other: '기타' }
+                          const emojis: Record<string, string> = { X: '❌', L: '🔽', U: '🔼', _other: '⭕' }
+                          return (
+                            <span className="ml-0.5 inline-flex items-baseline gap-0.5 flex-wrap align-baseline">
+                              {order.filter((k) => (counts[k] || 0) > 0).map((k) => (
+                                <span key={k} className="inline-flex items-baseline gap-px opacity-95" title={`${labels[k]} : ${counts[k]}`}>
+                                  <span className="leading-none">{emojis[k]}</span>
+                                  <span className="text-[8px] sm:text-[9px] font-medium leading-none">{counts[k]}</span>
+                                </span>
+                              ))}
+                            </span>
+                          )
+                        })()}
+                        {tour.vehicle_number && (
+                          <span className="ml-0.5 text-[8px] sm:text-[9px] font-medium leading-none" title={t('vehicle')}>
+                            {tour.vehicle_number}
+                          </span>
+                        )}
                       </div>
                     </div>
                   )
@@ -1063,7 +1185,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
               <div className="font-semibold text-gray-900 mb-2 border-b border-gray-200 pb-1 flex items-center gap-1">
                 {tourStatusIcon && <span>{tourStatusIcon}</span>}
                 {assignmentIcon && <span>{assignmentIcon}</span>}
-                <span>{getTourDisplayName(hoveredTour)}</span>
+                <span>{getProductDisplayName(productMetaById[hoveredTour.product_id ?? '']) || getTourDisplayName(hoveredTour)}</span>
               </div>
               
               {/* 상태 정보 */}
@@ -1087,6 +1209,22 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                 {t('assignedPeople')}: {hoveredTour.assigned_people || 0}{t('peopleUnit')} / {t('totalPeople')}: {hoveredTour.total_people || 0}{t('peopleUnit')}
                 {hoveredTour.is_private_tour && <span className="ml-1 text-purple-600">({t('privateTour')})</span>}
               </div>
+              
+              {/* Lower / X / Upper 등 초이스별 인원 */}
+              {(() => {
+                const counts = choiceSummaryByTourId[String(hoveredTour.id)]
+                if (!counts || Object.keys(counts).length === 0) return null
+                const order = ['X', 'L', 'U', '_other'] as const
+                const labels: Record<string, string> = { X: 'X', L: 'L', U: 'U', _other: locale === 'ko' ? '기타' : 'Other' }
+                const parts = order.filter((k) => (counts[k] || 0) > 0).map((k) => `${labels[k]} ${counts[k]}`)
+                if (parts.length === 0) return null
+                return (
+                  <div className="mb-2 flex items-center text-xs">
+                    <span className="text-gray-600 shrink-0">{locale === 'ko' ? '초이스 인원' : 'Choice'}:</span>
+                    <span className="text-gray-900 font-medium ml-1">{parts.join(' / ')}</span>
+                  </div>
+                )
+              })()}
               
               <div className="space-y-1.5">
                 {hoveredTour.guide_name && (
@@ -1138,7 +1276,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                 onClick={closeOffScheduleModal}
                 className="text-gray-400 hover:text-gray-600"
               >
-                <X className="w-5 h-5 sm:w-6 sm:h-6" />
+                <XIcon className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             </div>
             

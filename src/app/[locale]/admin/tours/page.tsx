@@ -219,15 +219,15 @@ export default function AdminTours() {
 
       const teamMap = new Map((teamMembers || []).map((member: { email: string; name_ko: string; nick_name?: string | null }) => [member.email, member]))
 
-      // 3-1. 차량 정보 가져오기 (카드에 차량 번호 표시)
+      // 3-1. 차량 정보 가져오기 (카드에 차량 번호/닉네임 표시)
       const vehicleIds: string[] = [...new Set((toursDataActive || []).map((t: { tour_car_id?: string | null }) => t.tour_car_id).filter((id): id is string => id != null))]
       let vehicleMap = new Map<string, string | null>()
       if (vehicleIds.length > 0) {
         const { data: vehiclesData } = await supabase
           .from('vehicles')
-          .select('id, vehicle_number')
+          .select('id, vehicle_number, nick')
           .in('id', vehicleIds)
-        vehicleMap = new Map((vehiclesData || []).map((v: { id: string; vehicle_number: string | null }) => [v.id, v.vehicle_number]))
+        vehicleMap = new Map((vehiclesData || []).map((v: { id: string; vehicle_number: string | null; nick?: string | null }) => [v.id, (v.nick && v.nick.trim()) || v.vehicle_number || null]))
       }
 
       // 4. 현재 달력 그리드 범위를 커버하는 날짜 구간으로 예약 데이터 조회 (URL 길이/성능 고려)

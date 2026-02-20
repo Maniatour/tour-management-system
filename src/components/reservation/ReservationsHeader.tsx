@@ -64,7 +64,7 @@ export default function ReservationsHeader({
               }`}
             >
               <Grid3X3 className="w-3 h-3" />
-              <span className="hidden sm:inline">카드</span>
+              <span className="hidden sm:inline">{t('viewCard')}</span>
             </button>
             <button
               onClick={() => onViewModeChange('calendar')}
@@ -75,7 +75,7 @@ export default function ReservationsHeader({
               }`}
             >
               <CalendarDays className="w-3 h-3" />
-              <span className="hidden sm:inline">달력</span>
+              <span className="hidden sm:inline">{t('viewCalendar')}</span>
             </button>
           </div>
         </div>
@@ -121,7 +121,7 @@ export default function ReservationsHeader({
               className="hidden md:flex bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 items-center gap-1.5 text-sm font-medium flex-shrink-0"
             >
               <SlidersHorizontal size={16} />
-              <span>필터</span>
+              <span>{t('filter')}</span>
             </button>
           )}
           <button
@@ -130,7 +130,7 @@ export default function ReservationsHeader({
           >
             <Plus size={16} />
             <span className="hidden sm:inline">{t('addReservation')}</span>
-            <span className="sm:hidden">추가</span>
+            <span className="sm:hidden">{t('addShort')}</span>
           </button>
         </div>
       </div>

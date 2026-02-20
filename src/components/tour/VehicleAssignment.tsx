@@ -27,8 +27,9 @@ export const VehicleAssignment: React.FC<VehicleAssignmentProps> = ({
   onFetchVehicles
 }) => {
   const getVehicleDisplayName = (vehicle: any) => {
+    const displayNumber = (vehicle.nick && vehicle.nick.trim()) || vehicle.vehicle_number
     if (vehicle.vehicle_category === 'company') {
-      return `${vehicle.vehicle_number} - ${vehicle.vehicle_type} (${vehicle.capacity}인승)`
+      return `${displayNumber} - ${vehicle.vehicle_type} (${vehicle.capacity}인승)`
     } else {
       return `${vehicle.rental_company} - ${vehicle.vehicle_type} (${vehicle.capacity}인승) - ${vehicle.rental_start_date} ~ ${vehicle.rental_end_date}`
     }

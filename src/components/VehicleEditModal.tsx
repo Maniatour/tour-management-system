@@ -44,6 +44,8 @@ interface Vehicle {
   rental_return_location?: string
   rental_total_cost?: number
   rental_notes?: string
+  /** 달력/일정 뷰 표시용 닉네임 */
+  nick?: string | null
 }
 
 interface VehicleEditModalProps {
@@ -90,7 +92,8 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
     rental_return_location: '',
     rental_total_cost: 0,
     status: 'available',
-    rental_notes: ''
+    rental_notes: '',
+    nick: ''
   })
 
   const [imageFiles, setImageFiles] = useState<File[]>([])
@@ -306,6 +309,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
         rental_pickup_location: vehicle.rental_pickup_location || '',
         rental_return_location: vehicle.rental_return_location || '',
         rental_notes: vehicle.rental_notes || '',
+        nick: vehicle.nick || '',
         // 불린 필드들
         is_installment: vehicle.is_installment || false,
         // 기타 필드들
@@ -355,7 +359,8 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
         rental_return_location: '',
         rental_total_cost: 0,
         status: 'available',
-        rental_notes: ''
+        rental_notes: '',
+        nick: ''
       })
     }
   }, [vehicle])
@@ -776,6 +781,19 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">닉네임 (달력 표시용)</label>
+                    <input
+                      type="text"
+                      name="nick"
+                      value={formData.nick ?? ''}
+                      onChange={handleInputChange}
+                      placeholder="예: 1번차, 빨간버스"
+                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">입력 시 달력/일정 뷰에 이 이름으로 표시됩니다. 비워두면 차량 번호가 표시됩니다.</p>
                   </div>
 
                   <div>

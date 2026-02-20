@@ -13,6 +13,7 @@ import TipsShareModal from '@/components/TipsShareModal'
 import BonusCalculatorModal from '@/components/BonusCalculatorModal'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { useParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 
 const ReservationFormAny = ReservationForm as React.ComponentType<any>
 
@@ -47,6 +48,7 @@ export default function AttendancePage() {
   const isSuper = userPosition === 'super'
   const params = useParams()
   const locale = params.locale as string
+  const t = useTranslations('attendancePage')
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStats[]>([])
   const [loading, setLoading] = useState(true)
@@ -611,7 +613,7 @@ export default function AttendancePage() {
       <div className="flex items-center justify-center min-h-[50vh] sm:min-h-screen px-4">
         <div className="text-center">
           <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
-          <p className="text-sm sm:text-base text-gray-600">데이터를 불러오는 중...</p>
+          <p className="text-sm sm:text-base text-gray-600">{t('loading')}</p>
         </div>
       </div>
     )
@@ -623,8 +625,8 @@ export default function AttendancePage() {
       <div className="flex items-center justify-center min-h-[50vh] sm:min-h-screen px-4">
         <div className="text-center max-w-sm">
           <User className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-4 text-gray-400" />
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">로그인이 필요합니다</h2>
-          <p className="text-sm sm:text-base text-gray-600">출퇴근 관리를 위해 먼저 로그인해주세요.</p>
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">{t('loginRequired')}</h2>
+          <p className="text-sm sm:text-base text-gray-600">{t('loginRequiredDesc')}</p>
         </div>
       </div>
     )
@@ -636,12 +638,12 @@ export default function AttendancePage() {
       <div className="flex items-center justify-center min-h-[50vh] sm:min-h-screen px-4">
         <div className="text-center max-w-sm">
           <User className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-4 text-gray-400" />
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">직원 정보를 찾을 수 없습니다</h2>
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2">{t('employeeNotFound')}</h2>
           <p className="text-sm sm:text-base text-gray-600 mb-4 break-words">
-            현재 로그인한 이메일({authUser.email})로 등록된 직원 정보가 없습니다.
+            {t('employeeNotFoundDesc', { email: authUser.email })}
           </p>
           <p className="text-xs sm:text-sm text-gray-500">
-            관리자에게 문의하여 직원 등록을 요청해주세요.
+            {t('contactAdmin')}
           </p>
         </div>
       </div>
@@ -656,10 +658,10 @@ export default function AttendancePage() {
           <div className="min-w-0 flex-1">
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
               <Clock className="w-6 h-6 sm:w-7 sm:h-7 text-blue-600 shrink-0" />
-              <span className="truncate">출퇴근 관리</span>
+              <span className="truncate">{t('title')}</span>
             </h1>
             <p className="text-gray-600 mt-1 text-sm sm:text-base">
-              {isAdmin ? '직원 출퇴근 기록을 관리합니다.' : `${authUser?.name || authUser?.email?.split('@')[0]}님의 출퇴근 기록을 관리합니다.`}
+              {isAdmin ? t('descAdmin') : t('descUser', { name: authUser?.name || authUser?.email?.split('@')[0] || '' })}
             </p>
             
             {/* 어드민인 경우 직원 선택 드롭다운 */}
@@ -667,7 +669,7 @@ export default function AttendancePage() {
               <div className="mt-3">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   <Users className="w-4 h-4 inline mr-1" />
-                  직원 선택
+                  {t('selectEmployee')}
                 </label>
                 <select
                   value={selectedEmployee}
@@ -683,11 +685,11 @@ export default function AttendancePage() {
               </div>
             )}
             <div className="text-xs sm:text-sm text-gray-500 mt-1 break-words">
-              현재 시간: {new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} (한국) | 
-              {new Date().toLocaleString('ko-KR', { timeZone: 'America/Los_Angeles' })} (라스베가스)
+              {t('currentTime')}: {new Date().toLocaleString(locale === 'en' ? 'en-US' : 'ko-KR', { timeZone: 'Asia/Seoul' })} ({t('korea')}) | 
+              {new Date().toLocaleString(locale === 'en' ? 'en-US' : 'ko-KR', { timeZone: 'America/Los_Angeles' })} ({t('lasVegas')})
             </div>
             <div className="text-xs text-blue-600 mt-1 hidden sm:block">
-              💡 하루를 넘나드는 근무 (오후 12시~다음날 오전 1시)를 고려하여 최근 2일간의 미체크아웃 기록을 조회합니다.
+              💡 {t('crossDayHint')}
             </div>
           </div>
           <div className="flex flex-wrap gap-2 sm:gap-3 shrink-0">
@@ -698,28 +700,28 @@ export default function AttendancePage() {
                   className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors min-w-[3rem]"
                 >
                   <Plus className="w-4 h-4 shrink-0" />
-                  <span className="text-[8px] leading-tight font-medium whitespace-nowrap">기록 추가</span>
+                  <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('addRecord')}</span>
                 </button>
                 <button
                   onClick={() => setIsBiweeklyCalculatorOpen(true)}
                   className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-green-600 border border-green-600 rounded-lg hover:bg-green-700 transition-colors min-w-[3rem]"
                 >
                   <Calculator className="w-4 h-4 shrink-0" />
-                  <span className="text-[8px] leading-tight font-medium whitespace-nowrap">2주급</span>
+                  <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('biweekly')}</span>
                 </button>
                 <button
                   onClick={() => setIsBonusCalculatorOpen(true)}
                   className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-orange-600 border border-orange-600 rounded-lg hover:bg-orange-700 transition-colors min-w-[3rem]"
                 >
                   <Calculator className="w-4 h-4 shrink-0" />
-                  <span className="text-[8px] leading-tight font-medium whitespace-nowrap">보너스</span>
+                  <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('bonus')}</span>
                 </button>
                 <button
                   onClick={() => setIsTotalEmployeesModalOpen(true)}
                   className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors min-w-[3rem]"
                 >
                   <Users className="w-4 h-4 shrink-0" />
-                  <span className="text-[8px] leading-tight font-medium whitespace-nowrap">전체 총합</span>
+                  <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('totalAll')}</span>
                 </button>
               </>
             )}
@@ -729,7 +731,7 @@ export default function AttendancePage() {
                 className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-purple-600 border border-purple-600 rounded-lg hover:bg-purple-700 transition-colors min-w-[3rem]"
               >
                 <DollarSign className="w-4 h-4 shrink-0" />
-                <span className="text-[8px] leading-tight font-medium whitespace-nowrap">Tips 쉐어</span>
+                <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('tipsShare')}</span>
               </button>
             )}
             <button
@@ -737,7 +739,7 @@ export default function AttendancePage() {
               className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors min-w-[3rem]"
             >
               <RefreshCw className="w-4 h-4 shrink-0" />
-              <span className="text-[8px] leading-tight font-medium whitespace-nowrap">새로고침</span>
+              <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('refresh')}</span>
             </button>
           </div>
         </div>
@@ -747,21 +749,21 @@ export default function AttendancePage() {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
         <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-4 flex items-center">
           <Calendar className="w-5 h-5 mr-2 text-green-600 shrink-0" />
-          <span className="truncate">{isAdmin ? `${teamMembers.find(m => m.email === selectedEmployee)?.name_ko || '선택된 직원'}의 출퇴근 상태` : '오늘의 출퇴근 상태'}</span>
+          <span className="truncate">{isAdmin ? t('selectedEmployeeStatus', { name: teamMembers.find(m => m.email === selectedEmployee)?.name_ko || t('selectedEmployeeLabel') }) : t('todayStatus')}</span>
         </h2>
         
         <div className="grid grid-cols-3 gap-2 sm:gap-4">
           <div className="text-center p-3 sm:p-4 bg-gray-50 rounded-lg min-w-0">
-            <div className="text-xs sm:text-sm text-gray-600 mb-1">현재 세션</div>
+            <div className="text-xs sm:text-sm text-gray-600 mb-1">{t('currentSession')}</div>
             <div className="text-sm sm:text-lg font-semibold text-gray-900 truncate">
               {isAdmin ? 
-                (currentSessionForSelectedEmployee ? `${currentSessionForSelectedEmployee.session_number}번째` : '없음') :
-                (currentSession ? `${currentSession.session_number}번째` : '없음')
+                (currentSessionForSelectedEmployee ? `${currentSessionForSelectedEmployee.session_number}${t('nth')}` : t('none')) :
+                (currentSession ? `${currentSession.session_number}${t('nth')}` : t('none'))
               }
             </div>
           </div>
           <div className="text-center p-3 sm:p-4 bg-gray-50 rounded-lg min-w-0">
-            <div className="text-xs sm:text-sm text-gray-600 mb-1">출근 시간</div>
+            <div className="text-xs sm:text-sm text-gray-600 mb-1">{t('checkInTime')}</div>
             <div className="text-sm sm:text-lg font-semibold text-gray-900">
               {isAdmin ? 
                 (currentSessionForSelectedEmployee?.check_in_time ? formatTime(currentSessionForSelectedEmployee.check_in_time) : '-') :
@@ -770,7 +772,7 @@ export default function AttendancePage() {
             </div>
           </div>
           <div className="text-center p-3 sm:p-4 bg-gray-50 rounded-lg min-w-0">
-            <div className="text-xs sm:text-sm text-gray-600 mb-1">총 근무 시간</div>
+            <div className="text-xs sm:text-sm text-gray-600 mb-1">{t('totalWorkHours')}</div>
             <div className="text-sm sm:text-lg font-semibold text-gray-900">
               {formatWorkHours(todayRecords.reduce((total, record) => total + (record.work_hours || 0), 0))}
             </div>
@@ -780,22 +782,22 @@ export default function AttendancePage() {
         {/* 현재 진행 중인 세션 */}
         {(isAdmin ? currentSessionForSelectedEmployee : currentSession) && (
           <div className="mt-4 sm:mt-6">
-            <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3">현재 진행 중인 세션</h3>
+            <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3">{t('currentSessionTitle')}</h3>
             <div className="p-3 sm:p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-4 min-w-0">
                   <div className="text-sm font-medium text-gray-600">
-                    {(isAdmin ? currentSessionForSelectedEmployee : currentSession)?.session_number}번째 세션
+                    {t('nthSession', { n: (isAdmin ? currentSessionForSelectedEmployee : currentSession)?.session_number })}
                   </div>
                   <div className="text-sm text-gray-900 break-words">
-                    출근: {formatTime((isAdmin ? currentSessionForSelectedEmployee?.check_in_time : currentSession?.check_in_time) || null)} (라스베가스)
+                    {t('checkIn')}: {formatTime((isAdmin ? currentSessionForSelectedEmployee?.check_in_time : currentSession?.check_in_time) || null)} ({t('lasVegas')})
                   </div>
                   <div className="text-sm text-gray-900">
-                    날짜: {(isAdmin ? currentSessionForSelectedEmployee : currentSession)?.date || ''}
+                    {t('date')}: {(isAdmin ? currentSessionForSelectedEmployee : currentSession)?.date || ''}
                   </div>
                 </div>
                 <div className="px-3 py-1 text-sm bg-yellow-100 text-yellow-800 rounded-full w-fit shrink-0">
-                  진행중
+                  {t('inProgress')}
                 </div>
               </div>
             </div>
@@ -805,22 +807,22 @@ export default function AttendancePage() {
         {/* 오늘의 출퇴근 기록 목록 */}
         {todayRecords.length > 0 && (
           <div className="mt-4 sm:mt-6">
-            <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3">오늘의 출퇴근 기록</h3>
+            <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3">{t('todayRecords')}</h3>
             <div className="space-y-2">
               {todayRecords.map((record) => (
                 <div key={record.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between p-3 bg-gray-50 rounded-lg">
                   <div className="flex flex-wrap gap-x-3 gap-y-1 sm:items-center sm:gap-4 min-w-0">
-                    <span className="text-sm font-medium text-gray-600">{record.session_number}번째</span>
-                    <span className="text-sm text-gray-900">출근: {formatTime(record.check_in_time)}</span>
-                    <span className="text-sm text-gray-900">퇴근: {formatTime(record.check_out_time)}</span>
-                    <span className="text-sm text-gray-900">근무: {formatWorkHours(record.work_hours)}</span>
+                    <span className="text-sm font-medium text-gray-600">{record.session_number}{t('nth')}</span>
+                    <span className="text-sm text-gray-900">{t('checkIn')}: {formatTime(record.check_in_time)}</span>
+                    <span className="text-sm text-gray-900">{t('checkOut')}: {formatTime(record.check_out_time)}</span>
+                    <span className="text-sm text-gray-900">{t('workHours')}: {formatWorkHours(record.work_hours)}</span>
                   </div>
                   <div className={`px-2 py-1 text-xs rounded-full w-fit ${
                     record.check_out_time 
                       ? 'bg-green-100 text-green-800' 
                       : 'bg-yellow-100 text-yellow-800'
                   }`}>
-                    {record.check_out_time ? '완료' : '진행중'}
+                    {record.check_out_time ? t('completed') : t('inProgress')}
                   </div>
                 </div>
               ))}
@@ -836,7 +838,7 @@ export default function AttendancePage() {
               className="flex items-center justify-center px-5 py-3 sm:px-6 bg-green-600 text-white text-sm sm:text-base font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto"
             >
               <CheckCircle className="w-5 h-5 mr-2 shrink-0" />
-              {isCheckingIn ? '체크인 중...' : '출근 체크인'}
+              {isCheckingIn ? t('checkingIn') : t('checkInButton')}
             </button>
           ) : (
             <button
@@ -844,7 +846,7 @@ export default function AttendancePage() {
               className="flex items-center justify-center px-5 py-3 sm:px-6 bg-red-600 text-white text-sm sm:text-base font-medium rounded-lg hover:bg-red-700 transition-colors w-full sm:w-auto"
             >
               <XCircle className="w-5 h-5 mr-2 shrink-0" />
-              퇴근 체크아웃
+              {t('checkOutButton')}
             </button>
           )}
         </div>
@@ -854,45 +856,45 @@ export default function AttendancePage() {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
         <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-4 flex items-center min-w-0">
           <BarChart3 className="w-5 h-5 mr-2 text-blue-600 shrink-0" />
-          <span className="truncate">{isAdmin ? `${teamMembers.find(m => m.email === selectedEmployee)?.name_ko || '선택된 직원'}의 ${selectedMonth} 월별 근무 통계` : `${selectedMonth} 월별 근무 통계`}</span>
+          <span className="truncate">{isAdmin ? t('monthlyStatsAdmin', { name: teamMembers.find(m => m.email === selectedEmployee)?.name_ko || t('selectedEmployeeLabel'), month: selectedMonth }) : t('monthlyStatsUser', { month: selectedMonth })}</span>
         </h2>
         
         {monthlyStats.length > 0 ? (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
             <div className="text-center p-3 sm:p-4 bg-blue-50 rounded-lg min-w-0">
               <div className="text-lg sm:text-2xl font-bold text-blue-600">
-                {monthlyStats[0]?.total_work_hours?.toFixed(1) || 0}시간
+                {monthlyStats[0]?.total_work_hours?.toFixed(1) || 0}{t('hoursUnit')}
               </div>
-              <div className="text-xs sm:text-sm text-blue-800">총 근무시간</div>
+              <div className="text-xs sm:text-sm text-blue-800">{t('totalWorkHoursLabel')}</div>
             </div>
             <div className="text-center p-3 sm:p-4 bg-green-50 rounded-lg min-w-0">
               <div className="text-lg sm:text-2xl font-bold text-green-600">
-                {monthlyStats[0]?.present_days || 0}일
+                {monthlyStats[0]?.present_days || 0}{t('daysUnit')}
               </div>
-              <div className="text-xs sm:text-sm text-green-800">출근일수</div>
+              <div className="text-xs sm:text-sm text-green-800">{t('presentDays')}</div>
             </div>
             <div className="text-center p-3 sm:p-4 bg-purple-50 rounded-lg min-w-0">
               <div className="text-lg sm:text-2xl font-bold text-purple-600">
-                {monthlyStats[0]?.first_half_hours?.toFixed(1) || 0}시간
+                {monthlyStats[0]?.first_half_hours?.toFixed(1) || 0}{t('hoursUnit')}
               </div>
-              <div className="text-xs sm:text-sm text-purple-800">상반기 (1~15일)</div>
+              <div className="text-xs sm:text-sm text-purple-800">{t('firstHalf')}</div>
             </div>
             <div className="text-center p-3 sm:p-4 bg-orange-50 rounded-lg min-w-0">
               <div className="text-lg sm:text-2xl font-bold text-orange-600">
-                {monthlyStats[0]?.second_half_hours?.toFixed(1) || 0}시간
+                {monthlyStats[0]?.second_half_hours?.toFixed(1) || 0}{t('hoursUnit')}
               </div>
-              <div className="text-xs sm:text-sm text-orange-800">하반기 (16일~말일)</div>
+              <div className="text-xs sm:text-sm text-orange-800">{t('secondHalf')}</div>
             </div>
           </div>
         ) : (
           <div className="text-center py-8 text-gray-500">
             <BarChart3 className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-            <p className="text-lg font-medium mb-2">월별 통계가 없습니다</p>
+            <p className="text-lg font-medium mb-2">{t('noMonthlyStats')}</p>
             <p className="text-sm">
-              {selectedMonth}월의 출퇴근 기록이 없거나 아직 통계가 생성되지 않았습니다.
+              {t('noMonthlyStatsDesc', { month: selectedMonth.split('-')[1] || selectedMonth })}
             </p>
             <p className="text-xs text-gray-400 mt-2">
-              출근 체크인을 하시면 자동으로 통계가 생성됩니다.
+              {t('checkInCreatesStats')}
             </p>
           </div>
         )}
@@ -903,7 +905,7 @@ export default function AttendancePage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
           <h2 className="text-base sm:text-lg font-semibold text-gray-900 flex items-center">
             <User className="w-5 h-5 mr-2 text-gray-600 shrink-0" />
-            출퇴근 기록
+            {t('attendanceRecords')}
           </h2>
           <input
             type="month"
@@ -916,12 +918,12 @@ export default function AttendancePage() {
         {attendanceRecords.length === 0 ? (
           <div className="text-center py-6 sm:py-8 text-gray-500">
             <Calendar className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-4 text-gray-300" />
-            <p className="text-base sm:text-lg font-medium mb-2">출퇴근 기록이 없습니다</p>
+            <p className="text-base sm:text-lg font-medium mb-2">{t('noRecords')}</p>
             <p className="text-sm mb-2">
-              {selectedMonth}월의 출퇴근 기록이 없습니다.
+              {t('noRecordsDesc', { month: selectedMonth.split('-')[1] || selectedMonth })}
             </p>
             <p className="text-xs text-gray-400">
-              출근 체크인을 하시면 기록이 생성됩니다.
+              {t('checkInCreatesRecord')}
             </p>
           </div>
         ) : (
@@ -941,15 +943,15 @@ export default function AttendancePage() {
                       record.status === 'present' ? 'bg-green-100 text-green-800' :
                       record.status === 'late' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
                     }`}>
-                      {record.status === 'present' ? '정상' : record.status === 'late' ? '지각' : '결근'}
+                      {record.status === 'present' ? t('statusPresent') : record.status === 'late' ? t('statusLate') : t('statusAbsent')}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-gray-700">
-                    <span>출근</span>
+                    <span>{t('checkIn')}</span>
                     <span>{formatTime(record.check_in_time)}</span>
-                    <span>퇴근</span>
+                    <span>{t('checkOut')}</span>
                     <span>{formatTime(record.check_out_time)}</span>
-                    <span>근무</span>
+                    <span>{t('workHours')}</span>
                     <span>{formatWorkHours(record.work_hours)}</span>
                   </div>
                   {isAdmin && (
@@ -963,7 +965,7 @@ export default function AttendancePage() {
                       className="mt-3 flex items-center text-sm font-medium text-blue-600 hover:text-blue-800"
                     >
                       <Edit className="w-4 h-4 mr-1 shrink-0" />
-                      수정
+                      {t('edit')}
                     </button>
                   )}
                 </div>
@@ -981,26 +983,26 @@ export default function AttendancePage() {
                       </th>
                     )}
                     <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      출근 날짜
+                      {t('checkInDate')}
                     </th>
                     <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      출근 시간 (라스베가스)
+                      {t('checkInTimeLv')}
                     </th>
                     <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      퇴근 날짜
+                      {t('checkOutDate')}
                     </th>
                     <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      퇴근 시간 (라스베가스)
+                      {t('checkOutTimeLv')}
                     </th>
                     <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      근무 시간
+                      {t('workHoursLabel')}
                     </th>
                     <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      상태
+                      {t('status')}
                     </th>
                     {canEditAttendance && (
                       <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        작업
+                        {t('action')}
                       </th>
                     )}
                   </tr>
@@ -1036,8 +1038,8 @@ export default function AttendancePage() {
                             ? 'bg-yellow-100 text-yellow-800'
                             : 'bg-red-100 text-red-800'
                         }`}>
-                          {record.status === 'present' ? '정상' : 
-                           record.status === 'late' ? '지각' : '결근'}
+                          {record.status === 'present' ? t('statusPresent') : 
+                           record.status === 'late' ? t('statusLate') : t('statusAbsent')}
                         </span>
                       </td>
                       {canEditAttendance && (
@@ -1047,7 +1049,7 @@ export default function AttendancePage() {
                             className="text-blue-600 hover:text-blue-900 flex items-center"
                           >
                             <Edit className="w-4 h-4 mr-1" />
-                            수정
+                            {t('edit')}
                           </button>
                         </td>
                       )}
@@ -1102,7 +1104,7 @@ export default function AttendancePage() {
       {/* Tips 쉐어에서 예약 클릭 시 예약 수정 모달 (Tips 모달 위에 표시) */}
       {loadingReservationForEdit && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[60]" aria-hidden>
-          <div className="text-white font-medium">예약 데이터 로딩 중…</div>
+          <div className="text-white font-medium">{t('reservationLoading')}</div>
         </div>
       )}
       {editingReservation && reservationFormData && (
@@ -1147,7 +1149,7 @@ export default function AttendancePage() {
                   .update(dbReservationData)
                   .eq('id', editingReservation.id)
                 if (error) {
-                  alert('예약 수정 중 오류가 발생했습니다: ' + error.message)
+                  alert(t('reservationUpdateError') + error.message)
                   return
                 }
                 if (reservationData.choices?.required && Array.isArray(reservationData.choices.required)) {
@@ -1166,24 +1168,24 @@ export default function AttendancePage() {
                   }
                 }
                 handleCloseReservationEditModal()
-                alert('예약이 수정되었습니다.')
+                alert(t('reservationUpdated'))
               } catch (e) {
                 console.error('예약 수정 오류:', e)
-                alert('예약 수정 중 오류가 발생했습니다.')
+                alert(t('reservationUpdateFailed'))
               }
             }}
             onCancel={handleCloseReservationEditModal}
             onRefreshCustomers={async () => {}}
             onDelete={async () => {
-              if (!confirm('정말 이 예약을 삭제하시겠습니까?')) return
+              if (!confirm(t('reservationDeleteConfirm'))) return
               try {
                 const { error } = await supabase.from('reservations').delete().eq('id', editingReservation.id)
                 if (error) {
-                  alert('예약 삭제 중 오류가 발생했습니다: ' + error.message)
+                  alert(t('reservationDeleteError') + error.message)
                   return
                 }
                 handleCloseReservationEditModal()
-                alert('예약이 삭제되었습니다.')
+                alert(t('reservationDeleted'))
               } catch (e) {
                 console.error('예약 삭제 오류:', e)
               }

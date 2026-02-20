@@ -46,61 +46,65 @@ interface DailyData {
 
 // 상품 색상 프리셋 (id로 저장, 다른 상품에서 사용 중인 프리셋은 선택 목록에서 숨김)
 const COLOR_PRESETS: { id: string; groupLabel: string; name: string; bgHex: string; textHex: string }[] = [
-  // 🔵 밝은 바탕 + 진한 글자
-  { id: 'preset_0', groupLabel: '밝은 바탕 + 진한 글자', name: '클래식 블랙 앤 화이트', bgHex: '#FFFFFF', textHex: '#111111' },
-  { id: 'preset_1', groupLabel: '밝은 바탕 + 진한 글자', name: '소프트 그레이', bgHex: '#F9FAFB', textHex: '#1F2937' },
-  { id: 'preset_2', groupLabel: '밝은 바탕 + 진한 글자', name: '웜 오렌지', bgHex: '#FFF7ED', textHex: '#9A3412' },
-  { id: 'preset_3', groupLabel: '밝은 바탕 + 진한 글자', name: '민트', bgHex: '#ECFEFF', textHex: '#0F766E' },
-  { id: 'preset_4', groupLabel: '밝은 바탕 + 진한 글자', name: '그린', bgHex: '#F0FDF4', textHex: '#166534' },
-  { id: 'preset_5', groupLabel: '밝은 바탕 + 진한 글자', name: '블루', bgHex: '#EFF6FF', textHex: '#1E3A8A' },
-  { id: 'preset_6', groupLabel: '밝은 바탕 + 진한 글자', name: '퍼플', bgHex: '#FDF4FF', textHex: '#86198F' },
-  { id: 'preset_7', groupLabel: '밝은 바탕 + 진한 글자', name: '로즈', bgHex: '#FFF1F2', textHex: '#9F1239' },
-  { id: 'preset_8', groupLabel: '밝은 바탕 + 진한 글자', name: '앰버', bgHex: '#FFFBEB', textHex: '#92400E' },
-  { id: 'preset_9', groupLabel: '밝은 바탕 + 진한 글자', name: '쿨 다크', bgHex: '#F8FAFC', textHex: '#0F172A' },
-  // ⚫ 어두운 바탕 + 밝은 글자
-  { id: 'preset_10', groupLabel: '어두운 바탕 + 밝은 글자', name: '다크 네이비', bgHex: '#0F172A', textHex: '#F8FAFC' },
-  { id: 'preset_11', groupLabel: '어두운 바탕 + 밝은 글자', name: '차콜', bgHex: '#111827', textHex: '#E5E7EB' },
-  { id: 'preset_12', groupLabel: '어두운 바탕 + 밝은 글자', name: '퓨어 다크', bgHex: '#020617', textHex: '#FFFFFF' },
-  { id: 'preset_13', groupLabel: '어두운 바탕 + 밝은 글자', name: '웜 블랙', bgHex: '#1C1917', textHex: '#FAFAF9' },
-  { id: 'preset_14', groupLabel: '어두운 바탕 + 밝은 글자', name: '다크 + 옐로 포인트', bgHex: '#1F2933', textHex: '#FBBF24' },
-  { id: 'preset_15', groupLabel: '어두운 바탕 + 밝은 글자', name: '다크 틸', bgHex: '#042F2E', textHex: '#5EEAD4' },
-  { id: 'preset_16', groupLabel: '어두운 바탕 + 밝은 글자', name: '다크 인디고', bgHex: '#312E81', textHex: '#E0E7FF' },
-  { id: 'preset_17', groupLabel: '어두운 바탕 + 밝은 글자', name: '다크 핑크', bgHex: '#3F1D38', textHex: '#FCE7F3' },
-  { id: 'preset_18', groupLabel: '어두운 바탕 + 밝은 글자', name: '브라운', bgHex: '#4A1D06', textHex: '#FED7AA' },
-  { id: 'preset_19', groupLabel: '어두운 바탕 + 밝은 글자', name: '다크 그린', bgHex: '#052E16', textHex: '#BBF7D0' },
-  // 🔴 고대비 강조용
-  { id: 'preset_20', groupLabel: '고대비 강조용', name: '레드 CTA', bgHex: '#DC2626', textHex: '#FFFFFF' },
-  { id: 'preset_21', groupLabel: '고대비 강조용', name: '블루 CTA', bgHex: '#2563EB', textHex: '#FFFFFF' },
-  { id: 'preset_22', groupLabel: '고대비 강조용', name: '그린 CTA', bgHex: '#16A34A', textHex: '#FFFFFF' },
-  { id: 'preset_23', groupLabel: '고대비 강조용', name: '옐로 경고', bgHex: '#F59E0B', textHex: '#1F2937' },
-  { id: 'preset_24', groupLabel: '고대비 강조용', name: '퍼플 액션', bgHex: '#7C3AED', textHex: '#FFFFFF' },
-  { id: 'preset_25', groupLabel: '고대비 강조용', name: '스카이', bgHex: '#0EA5E9', textHex: '#FFFFFF' },
-  { id: 'preset_26', groupLabel: '고대비 강조용', name: '티얼', bgHex: '#14B8A6', textHex: '#042F2E' },
-  { id: 'preset_27', groupLabel: '고대비 강조용', name: '핑크', bgHex: '#EC4899', textHex: '#FFFFFF' },
-  { id: 'preset_28', groupLabel: '고대비 강조용', name: '라임', bgHex: '#84CC16', textHex: '#1A2E05' },
-  { id: 'preset_29', groupLabel: '고대비 강조용', name: '오렌지', bgHex: '#F97316', textHex: '#FFFFFF' },
-  // 🧠 감성·브랜드
-  { id: 'preset_30', groupLabel: '감성·브랜드', name: '미니멀', bgHex: '#FAFAFA', textHex: '#3F3F46' },
-  { id: 'preset_31', groupLabel: '감성·브랜드', name: '카페 감성', bgHex: '#FFF8F1', textHex: '#3B2F2F' },
-  { id: 'preset_32', groupLabel: '감성·브랜드', name: '기업·B2B', bgHex: '#F0F4F8', textHex: '#102A43' },
-  { id: 'preset_33', groupLabel: '감성·브랜드', name: '테크', bgHex: '#F5F3FF', textHex: '#4C1D95' },
-  { id: 'preset_34', groupLabel: '감성·브랜드', name: '친환경', bgHex: '#ECFDF3', textHex: '#065F46' },
-  { id: 'preset_35', groupLabel: '감성·브랜드', name: '웜 레드', bgHex: '#FFF5F5', textHex: '#742A2A' },
-  { id: 'preset_36', groupLabel: '감성·브랜드', name: '내추럴', bgHex: '#F7FEE7', textHex: '#365314' },
-  { id: 'preset_37', groupLabel: '감성·브랜드', name: '트래블', bgHex: '#E0F2FE', textHex: '#075985' },
-  { id: 'preset_38', groupLabel: '감성·브랜드', name: '럭셔리', bgHex: '#FEFCE8', textHex: '#713F12' },
-  { id: 'preset_39', groupLabel: '감성·브랜드', name: '뷰티', bgHex: '#FDF2F8', textHex: '#831843' },
-  // 🟡 포인트 섹션
-  { id: 'preset_40', groupLabel: '포인트 섹션', name: '네이비+스카이', bgHex: '#1E293B', textHex: '#38BDF8' },
-  { id: 'preset_41', groupLabel: '포인트 섹션', name: '슬레이트+옐로', bgHex: '#334155', textHex: '#FACC15' },
-  { id: 'preset_42', groupLabel: '포인트 섹션', name: '다크+시안', bgHex: '#27272A', textHex: '#A5F3FC' },
-  { id: 'preset_43', groupLabel: '포인트 섹션', name: '브라운+앰버', bgHex: '#422006', textHex: '#FDE68A' },
-  { id: 'preset_44', groupLabel: '포인트 섹션', name: '다크틸+민트', bgHex: '#022C22', textHex: '#99F6E4' },
-  { id: 'preset_45', groupLabel: '포인트 섹션', name: '인디고+라벤더', bgHex: '#2E1065', textHex: '#DDD6FE' },
-  { id: 'preset_46', groupLabel: '포인트 섹션', name: '다크+시안라이트', bgHex: '#083344', textHex: '#67E8F9' },
-  { id: 'preset_47', groupLabel: '포인트 섹션', name: '그린+라임', bgHex: '#3F6212', textHex: '#ECFCCB' },
-  { id: 'preset_48', groupLabel: '포인트 섹션', name: '로즈다크+핑크', bgHex: '#4C0519', textHex: '#FFE4E6' },
-  { id: 'preset_49', groupLabel: '포인트 섹션', name: '퓨어다크+시안', bgHex: '#020617', textHex: '#22D3EE' }
+  // 🔴 RED 계열
+  { id: 'preset_0', groupLabel: 'RED 계열', name: '빨강+흰색', bgHex: '#FF0000', textHex: '#FFFFFF' },
+  { id: 'preset_1', groupLabel: 'RED 계열', name: '빨강+노랑', bgHex: '#FF0000', textHex: '#FFFF00' },
+  { id: 'preset_2', groupLabel: 'RED 계열', name: '빨강+검정', bgHex: '#FF0000', textHex: '#000000' },
+  { id: 'preset_3', groupLabel: 'RED 계열', name: '다크레드+형광민트', bgHex: '#8B0000', textHex: '#00FFCC' },
+  { id: 'preset_4', groupLabel: 'RED 계열', name: '네온레드+네온그린', bgHex: '#FF1744', textHex: '#00FF00' },
+  // 🟢 GREEN 계열
+  { id: 'preset_5', groupLabel: 'GREEN 계열', name: '초록+검정', bgHex: '#00C853', textHex: '#000000' },
+  { id: 'preset_6', groupLabel: 'GREEN 계열', name: '초록+흰색', bgHex: '#00C853', textHex: '#FFFFFF' },
+  { id: 'preset_7', groupLabel: 'GREEN 계열', name: '네온그린+검정', bgHex: '#39FF14', textHex: '#000000' },
+  { id: 'preset_8', groupLabel: 'GREEN 계열', name: '다크그린+형광노랑', bgHex: '#003300', textHex: '#EEFF00' },
+  { id: 'preset_9', groupLabel: 'GREEN 계열', name: '민트+다크네이비', bgHex: '#00FFC6', textHex: '#001F3F' },
+  // 🔵 BLUE 계열
+  { id: 'preset_10', groupLabel: 'BLUE 계열', name: '파랑+흰색', bgHex: '#0057FF', textHex: '#FFFFFF' },
+  { id: 'preset_11', groupLabel: 'BLUE 계열', name: '파랑+노랑', bgHex: '#0057FF', textHex: '#FFFF00' },
+  { id: 'preset_12', groupLabel: 'BLUE 계열', name: '네이비+형광시안', bgHex: '#001F54', textHex: '#00FFFF' },
+  { id: 'preset_13', groupLabel: 'BLUE 계열', name: '네온블루+검정', bgHex: '#2979FF', textHex: '#000000' },
+  { id: 'preset_14', groupLabel: 'BLUE 계열', name: '하늘색+다크브라운', bgHex: '#00BFFF', textHex: '#3A1F00' },
+  // 🟡 YELLOW 계열
+  { id: 'preset_15', groupLabel: 'YELLOW 계열', name: '노랑+검정', bgHex: '#FFD600', textHex: '#000000' },
+  { id: 'preset_16', groupLabel: 'YELLOW 계열', name: '형광노랑+다크그레이', bgHex: '#EEFF00', textHex: '#1A1A1A' },
+  { id: 'preset_17', groupLabel: 'YELLOW 계열', name: '머스터드+네이비', bgHex: '#FFB300', textHex: '#001F3F' },
+  { id: 'preset_18', groupLabel: 'YELLOW 계열', name: '레몬+딥퍼플', bgHex: '#FFF700', textHex: '#2E003E' },
+  { id: 'preset_19', groupLabel: 'YELLOW 계열', name: '골드+블랙', bgHex: '#FFC107', textHex: '#000000' },
+  // 🟣 PURPLE / PINK 계열
+  { id: 'preset_20', groupLabel: 'PURPLE / PINK 계열', name: '보라+흰색', bgHex: '#7C4DFF', textHex: '#FFFFFF' },
+  { id: 'preset_21', groupLabel: 'PURPLE / PINK 계열', name: '다크퍼플+형광핑크', bgHex: '#2E003E', textHex: '#FF2FD1' },
+  { id: 'preset_22', groupLabel: 'PURPLE / PINK 계열', name: '핑크+검정', bgHex: '#FF4081', textHex: '#000000' },
+  { id: 'preset_23', groupLabel: 'PURPLE / PINK 계열', name: '네온핑크+흰색', bgHex: '#FF00FF', textHex: '#FFFFFF' },
+  { id: 'preset_24', groupLabel: 'PURPLE / PINK 계열', name: '라벤더+다크블루', bgHex: '#B388FF', textHex: '#001F3F' },
+  // 🟠 ORANGE 계열
+  { id: 'preset_25', groupLabel: 'ORANGE 계열', name: '오렌지+흰색', bgHex: '#FF6D00', textHex: '#FFFFFF' },
+  { id: 'preset_26', groupLabel: 'ORANGE 계열', name: '오렌지+검정', bgHex: '#FF6D00', textHex: '#000000' },
+  { id: 'preset_27', groupLabel: 'ORANGE 계열', name: '네온오렌지+네이비', bgHex: '#FF9100', textHex: '#001F3F' },
+  { id: 'preset_28', groupLabel: 'ORANGE 계열', name: '코랄+다크그린', bgHex: '#FF5252', textHex: '#013220' },
+  { id: 'preset_29', groupLabel: 'ORANGE 계열', name: '탠저린+퍼플', bgHex: '#FF8F00', textHex: '#7C4DFF' },
+  // ⚫ BLACK / DARK 계열
+  { id: 'preset_30', groupLabel: 'BLACK / DARK 계열', name: '검정+형광그린', bgHex: '#000000', textHex: '#00FF00' },
+  { id: 'preset_31', groupLabel: 'BLACK / DARK 계열', name: '검정+형광핑크', bgHex: '#000000', textHex: '#FF2FD1' },
+  { id: 'preset_32', groupLabel: 'BLACK / DARK 계열', name: '검정+형광블루', bgHex: '#000000', textHex: '#00FFFF' },
+  { id: 'preset_33', groupLabel: 'BLACK / DARK 계열', name: '차콜+노랑', bgHex: '#1C1C1C', textHex: '#FFFF00' },
+  { id: 'preset_34', groupLabel: 'BLACK / DARK 계열', name: '다크브라운+민트', bgHex: '#2B1B0E', textHex: '#00FFC6' },
+  // 🌈 시선 강탈 / 경고·CTA 특화
+  { id: 'preset_35', groupLabel: '시선 강탈 / CTA 특화', name: '형광시안+검정', bgHex: '#00FFFF', textHex: '#000000' },
+  { id: 'preset_36', groupLabel: '시선 강탈 / CTA 특화', name: '형광그린+보라', bgHex: '#00FF00', textHex: '#5E2B97' },
+  { id: 'preset_37', groupLabel: '시선 강탈 / CTA 특화', name: '형광핑크+네이비', bgHex: '#FF2FD1', textHex: '#001F3F' },
+  { id: 'preset_38', groupLabel: '시선 강탈 / CTA 특화', name: '형광옐로+레드', bgHex: '#F6FF00', textHex: '#FF0000' },
+  { id: 'preset_39', groupLabel: '시선 강탈 / CTA 특화', name: '형광레드+블랙', bgHex: '#FF1744', textHex: '#000000' },
+  // 🧨 끝판왕 조합
+  { id: 'preset_40', groupLabel: '끝판왕 조합', name: '보라+라임', bgHex: '#5E2B97', textHex: '#C6FF00' },
+  { id: 'preset_41', groupLabel: '끝판왕 조합', name: '네이비+오렌지', bgHex: '#001F3F', textHex: '#FF851B' },
+  { id: 'preset_42', groupLabel: '끝판왕 조합', name: '다크그린+핑크', bgHex: '#013220', textHex: '#FF6EC7' },
+  { id: 'preset_43', groupLabel: '끝판왕 조합', name: '브라운+시안', bgHex: '#4E342E', textHex: '#00FFFF' },
+  { id: 'preset_44', groupLabel: '끝판왕 조합', name: '그레이+형광옐로', bgHex: '#424242', textHex: '#EEFF00' },
+  { id: 'preset_45', groupLabel: '끝판왕 조합', name: '레드브라운+아이보리', bgHex: '#7F0000', textHex: '#FFFFF0' },
+  { id: 'preset_46', groupLabel: '끝판왕 조합', name: '청록+코랄', bgHex: '#00796B', textHex: '#FF5252' },
+  { id: 'preset_47', groupLabel: '끝판왕 조합', name: '인디고+라임', bgHex: '#1A237E', textHex: '#C6FF00' },
+  { id: 'preset_48', groupLabel: '끝판왕 조합', name: '오프화이트+네온레드', bgHex: '#FAFAFA', textHex: '#FF1744' },
+  { id: 'preset_49', groupLabel: '끝판왕 조합', name: '실버그레이+딥블루', bgHex: '#BDBDBD', textHex: '#001F3F' }
 ]
 
 export default function ScheduleView() {
@@ -173,6 +177,8 @@ export default function ScheduleView() {
   // 차량·날짜 셀 클릭 시 투어 배정 모달
   const [showVehicleAssignModal, setShowVehicleAssignModal] = useState(false)
   const [vehicleAssignTarget, setVehicleAssignTarget] = useState<{ vehicleId: string; dateString: string } | null>(null)
+  // 상품 색상 프리셋 선택 모달 (상품별로 클릭 시 열림)
+  const [colorPresetModal, setColorPresetModal] = useState<{ productId: string; productName: string } | null>(null)
 
   // 예약별 초이스 (상품별 스케줄 툴팁·투어 상세 모달용, 인원(quantity) 합산)
   const [reservationChoices, setReservationChoices] = useState<Array<{
@@ -875,9 +881,9 @@ export default function ScheduleView() {
       if (vehicleIds.length > 0) {
         const { data: vehiclesData } = await supabase
           .from('vehicles')
-          .select('id, vehicle_number')
+          .select('id, vehicle_number, nick')
           .in('id', vehicleIds)
-        vehicleMap = new Map((vehiclesData || []).map((v: { id: string; vehicle_number: string | null }) => [v.id, v.vehicle_number]))
+        vehicleMap = new Map((vehiclesData || []).map((v: { id: string; vehicle_number: string | null; nick?: string | null }) => [v.id, (v.nick && v.nick.trim()) || v.vehicle_number || null]))
       }
       const toursWithVehicles = (toursData || []).map((t: Tour) => ({
         ...t,
@@ -889,7 +895,7 @@ export default function ScheduleView() {
       const monthEnd = lastDayOfMonth.format('YYYY-MM-DD')
       const { data: allVehiclesData } = await supabase
         .from('vehicles')
-        .select('id, vehicle_number, vehicle_category, status, rental_start_date, rental_end_date')
+        .select('id, vehicle_number, nick, vehicle_category, status, rental_start_date, rental_end_date')
       const isCancelled = (s: string | null | undefined) => {
         if (!s) return false
         const lower = String(s).toLowerCase().trim()
@@ -904,17 +910,17 @@ export default function ScheduleView() {
         if (!start || !end) return true
         return start <= monthEnd && end >= monthStart
       })
-      const sorted = availableInMonth.sort((a: { vehicle_category?: string | null; vehicle_number?: string | null; id: string }, b: typeof a) => {
+      const sorted = availableInMonth.sort((a: { vehicle_category?: string | null; vehicle_number?: string | null; nick?: string | null; id: string }, b: typeof a) => {
         const aRental = (a.vehicle_category || '').toString().toLowerCase() === 'rental' ? 1 : 0
         const bRental = (b.vehicle_category || '').toString().toLowerCase() === 'rental' ? 1 : 0
         if (aRental !== bRental) return aRental - bRental
-        const an = (a.vehicle_number || a.id).toString()
-        const bn = (b.vehicle_number || b.id).toString()
-        return an.localeCompare(bn)
+        const aLabel = (a.nick && a.nick.trim()) || a.vehicle_number || a.id
+        const bLabel = (b.nick && b.nick.trim()) || b.vehicle_number || b.id
+        return String(aLabel).localeCompare(String(bLabel))
       })
-      setScheduleVehicles(sorted.map((v: { id: string; vehicle_number?: string | null; vehicle_category?: string | null; rental_start_date?: string | null; rental_end_date?: string | null }) => ({
+      setScheduleVehicles(sorted.map((v: { id: string; vehicle_number?: string | null; nick?: string | null; vehicle_category?: string | null; rental_start_date?: string | null; rental_end_date?: string | null }) => ({
         id: v.id,
-        label: (v.vehicle_number || v.id).toString().trim() || v.id,
+        label: ((v.nick && v.nick.trim()) || v.vehicle_number || v.id).toString().trim() || v.id,
         vehicle_category: v.vehicle_category ?? null,
         rental_start_date: v.rental_start_date ?? null,
         rental_end_date: v.rental_end_date ?? null
@@ -3360,6 +3366,9 @@ export default function ScheduleView() {
                                               backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
                                                 ? getColorFromClass(Object.values(dayData.productColors)[0])
                                                 : undefined,
+                                              color: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
+                                                ? getProductDisplayProps(Object.values(dayData.productColors)[0]).style?.color
+                                                : undefined,
                                               boxShadow: borderColor ? `0 0 0 2px ${getBorderColorValue(borderColor)}` : undefined
                                             }}
                                             title={guide.team_member_name}
@@ -3407,6 +3416,9 @@ export default function ScheduleView() {
                                           style={{
                                             backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
                                               ? getColorFromClass(Object.values(dayData.productColors)[0])
+                                              : undefined,
+                                            color: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
+                                              ? getProductDisplayProps(Object.values(dayData.productColors)[0]).style?.color
                                               : undefined
                                           }}
                                           title={guide.team_member_name}
@@ -3492,6 +3504,9 @@ export default function ScheduleView() {
                                               backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
                                                 ? getColorFromClass(Object.values(dayData.productColors)[0])
                                                 : undefined,
+                                              color: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
+                                                ? getProductDisplayProps(Object.values(dayData.productColors)[0]).style?.color
+                                                : undefined,
                                               boxShadow: borderColor ? `0 0 0 2px ${getBorderColorValue(borderColor)}` : undefined
                                             }}
                                           title={guide.team_member_name}
@@ -3539,6 +3554,9 @@ export default function ScheduleView() {
                                           style={{
                                             backgroundColor: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
                                               ? getColorFromClass(Object.values(dayData.productColors)[0])
+                                              : undefined,
+                                            color: dayData.assignedPeople > 0 && Object.keys(dayData.productColors).length > 0
+                                              ? getProductDisplayProps(Object.values(dayData.productColors)[0]).style?.color
                                               : undefined
                                           }}
                                           title={guide.team_member_name}
@@ -3674,7 +3692,10 @@ export default function ScheduleView() {
                                         : tourItem.assistant_id === teamMemberId)
                                     )
                                     const hasUnassignedVehicle = guideTours.some(t => !t.tour_car_id || String(t.tour_car_id).trim().length === 0)
-                                    return hasUnassignedVehicle ? '#dc2626' : undefined
+                                    if (hasUnassignedVehicle) return '#dc2626'
+                                    if (tour.dayData.assignedPeople > 0 && hasColors && colorValues[0])
+                                      return getProductDisplayProps(colorValues[0]).style?.color
+                                    return undefined
                                   })()
                                 }}
                                 draggable
@@ -4096,70 +4117,41 @@ export default function ScheduleView() {
                         </div>
                         
                         {isSelected && (
-                          <div className="flex flex-col gap-3">
+                          <div className="flex items-center gap-2">
                             {/* 순서 변경 버튼들 */}
-                            <div className="flex items-center gap-2">
-                              <div className="flex flex-col space-y-1">
-                                <button
-                                  onClick={() => selectedIndex > 0 && moveProduct(selectedIndex, selectedIndex - 1)}
-                                  disabled={selectedIndex === 0}
-                                  className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                                  title="위로 이동"
-                                >
-                                  <ArrowUp className="w-3 h-3" />
-                                </button>
-                                <button
-                                  onClick={() => selectedIndex < selectedProducts.length - 1 && moveProduct(selectedIndex, selectedIndex + 1)}
-                                  disabled={selectedIndex === selectedProducts.length - 1}
-                                  className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                                  title="아래로 이동"
-                                >
-                                  <ArrowDown className="w-3 h-3" />
-                                </button>
-                              </div>
-                              <span className="text-xs text-gray-500">색상 프리셋 (다른 상품에서 사용 중인 색은 숨김)</span>
+                            <div className="flex flex-col space-y-1">
+                              <button
+                                onClick={() => selectedIndex > 0 && moveProduct(selectedIndex, selectedIndex - 1)}
+                                disabled={selectedIndex === 0}
+                                className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                                title="위로 이동"
+                              >
+                                <ArrowUp className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={() => selectedIndex < selectedProducts.length - 1 && moveProduct(selectedIndex, selectedIndex + 1)}
+                                disabled={selectedIndex === selectedProducts.length - 1}
+                                className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                                title="아래로 이동"
+                              >
+                                <ArrowDown className="w-3 h-3" />
+                              </button>
                             </div>
-                            {/* 프리셋 버튼: 그룹별로 표시, 다른 상품에서 사용 중인 프리셋은 숨김 */}
-                            <div className="flex flex-col gap-2 max-h-[40vh] overflow-y-auto">
-                              {(() => {
-                                const usedByOthers = new Set(
-                                  products
-                                    .filter(p => p.id !== product.id && selectedProducts.includes(p.id))
-                                    .map(p => productColors[p.id])
-                                    .filter(Boolean)
-                                )
-                                const groups = Array.from(new Set(COLOR_PRESETS.map(p => p.groupLabel)))
-                                return groups.map(groupLabel => {
-                                  const presetsInGroup = COLOR_PRESETS.filter(p => p.groupLabel === groupLabel)
-                                  const visible = presetsInGroup.filter(p => !usedByOthers.has(p.id))
-                                  if (visible.length === 0) return null
-                                  return (
-                                    <div key={groupLabel}>
-                                      <div className="text-[11px] font-medium text-gray-500 mb-1">{groupLabel}</div>
-                                      <div className="flex flex-wrap gap-1.5">
-                                        {visible.map(preset => {
-                                          const isSelected = productColors[product.id] === preset.id
-                                          return (
-                                            <button
-                                              key={preset.id}
-                                              type="button"
-                                              onClick={() => changeProductColor(product.id, preset.id)}
-                                              className={`min-w-[4.5rem] px-2 py-1.5 rounded border-2 text-xs font-medium ${
-                                                isSelected ? 'ring-2 ring-gray-800 ring-offset-1 font-bold border-gray-800' : 'border-gray-300 hover:opacity-90'
-                                              }`}
-                                              style={{ backgroundColor: preset.bgHex, color: preset.textHex }}
-                                              title={preset.name}
-                                            >
-                                              {preset.name}
-                                            </button>
-                                          )
-                                        })}
-                                      </div>
-                                    </div>
-                                  )
-                                })
-                              })()}
-                            </div>
+                            {/* 색상 선택 버튼 → 클릭 시 프리셋 모달 */}
+                            {(() => {
+                              const dp = getProductDisplayProps(productColors[product.id] || defaultPresetIds[0])
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => setColorPresetModal({ productId: product.id, productName: product.name })}
+                                  className={`px-3 py-1.5 rounded border-2 border-gray-300 text-sm font-medium hover:ring-2 hover:ring-gray-400 ring-offset-1 ${dp.className ?? ''}`.trim()}
+                                  style={dp.style}
+                                  title="색상 프리셋 선택"
+                                >
+                                  색상 선택
+                                </button>
+                              )
+                            })()}
                           </div>
                         )}
                       </div>
@@ -4218,6 +4210,72 @@ export default function ScheduleView() {
                   확인
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 색상 프리셋 선택 모달 */}
+      {colorPresetModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">
+                색상 프리셋 선택
+                <span className="text-sm font-normal text-gray-500 ml-2">({colorPresetModal.productName})</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setColorPresetModal(null)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                aria-label="닫기"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">다른 상품에서 사용 중인 색은 표시되지 않습니다.</p>
+            <div className="flex flex-col gap-3 max-h-[65vh] overflow-y-auto">
+              {(() => {
+                const usedByOthers = new Set(
+                  products
+                    .filter(p => p.id !== colorPresetModal.productId && selectedProducts.includes(p.id))
+                    .map(p => productColors[p.id])
+                    .filter(Boolean)
+                )
+                const groups = Array.from(new Set(COLOR_PRESETS.map(p => p.groupLabel)))
+                return groups.map(groupLabel => {
+                  const presetsInGroup = COLOR_PRESETS.filter(p => p.groupLabel === groupLabel)
+                  const visible = presetsInGroup.filter(p => !usedByOthers.has(p.id))
+                  if (visible.length === 0) return null
+                  return (
+                    <div key={groupLabel}>
+                      <div className="text-xs font-medium text-gray-600 mb-1.5">{groupLabel}</div>
+                      <div className="flex flex-wrap gap-2">
+                        {visible.map(preset => {
+                          const isSelected = productColors[colorPresetModal.productId] === preset.id
+                          return (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              onClick={() => {
+                                changeProductColor(colorPresetModal.productId, preset.id)
+                                setColorPresetModal(null)
+                              }}
+                              className={`min-w-[5rem] px-3 py-2 rounded-lg border-2 text-xs font-medium ${
+                                isSelected ? 'ring-2 ring-gray-800 ring-offset-2 font-bold border-gray-800' : 'border-gray-300 hover:opacity-90'
+                              }`}
+                              style={{ backgroundColor: preset.bgHex, color: preset.textHex }}
+                              title={preset.name}
+                            >
+                              {preset.name}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })
+              })()}
             </div>
           </div>
         </div>

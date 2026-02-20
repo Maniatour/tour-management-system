@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 interface Vehicle {
   id: string
   vehicle_number: string
+  nick?: string | null
   vehicle_type: string
   capacity: number
   status: string
@@ -257,7 +258,7 @@ export default function VehicleAssignmentModal({
                     .map((vehicle) => (
                       <option key={vehicle.id} value={vehicle.id}>
                         {vehicle.vehicle_category === 'company' 
-                          ? `${vehicle.vehicle_number} - ${vehicle.vehicle_type} (${vehicle.capacity}인승)`
+                          ? `${vehicle.nick?.trim() || vehicle.vehicle_number} - ${vehicle.vehicle_type} (${vehicle.capacity}인승)`
                           : `${vehicle.rental_company} - ${vehicle.vehicle_type} (${vehicle.capacity}인승) - ${vehicle.rental_start_date} ~ ${vehicle.rental_end_date}`
                         }
                       </option>
@@ -273,7 +274,7 @@ export default function VehicleAssignmentModal({
                     선택된 차량 정보
                   </h4>
                   <div className="grid grid-cols-2 gap-2 text-sm">
-                    <p><span className="font-medium">차량 번호:</span> {selectedVehicleData.vehicle_number}</p>
+                    <p><span className="font-medium">차량 번호:</span> {selectedVehicleData.nick?.trim() || selectedVehicleData.vehicle_number}</p>
                     <p><span className="font-medium">차종:</span> {selectedVehicleData.vehicle_type}</p>
                     <p><span className="font-medium">탑승인원:</span> {selectedVehicleData.capacity}인승</p>
                     <p><span className="font-medium">현재 마일리지:</span> {selectedVehicleData.current_mileage?.toLocaleString() || 'N/A'} miles</p>

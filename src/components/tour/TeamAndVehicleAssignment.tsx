@@ -15,6 +15,7 @@ interface TeamMember {
 interface Vehicle {
   id: string
   vehicle_number: string | null
+  nick?: string | null
   vehicle_type: string | null
   status: string | null
 }
@@ -433,7 +434,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                   <option value="">{t('selectVehicle')}</option>
                   {vehicles.map((vehicle) => (
                     <option key={vehicle.id} value={vehicle.id}>
-                      {vehicle.vehicle_number || '번호 없음'} - {vehicle.vehicle_type || '타입 없음'}
+                      {(vehicle.nick && vehicle.nick.trim()) || vehicle.vehicle_number || '번호 없음'} - {vehicle.vehicle_type || '타입 없음'}
                     </option>
                   ))}
                 </select>

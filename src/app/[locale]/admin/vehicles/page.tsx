@@ -69,6 +69,8 @@ interface Vehicle {
   rental_return_location?: string
   rental_total_cost?: number
   rental_notes?: string
+  /** 달력/일정 뷰 표시용 닉네임 (미입력 시 vehicle_number 사용) */
+  nick?: string | null
 }
 
 export default function VehiclesPage() {
@@ -129,6 +131,7 @@ export default function VehiclesPage() {
           rental_return_location,
           rental_total_cost,
           rental_notes,
+          nick,
           created_at,
           updated_at
         `)
@@ -218,12 +221,10 @@ export default function VehiclesPage() {
         const vehicleIds = vehiclesWithoutLegacyPhotos.map(v => v.id)
         
         try {
-          // 배치 크기 제한: 한 번에 너무 많은 ID를 조회하면 URL이 너무 길어져 500 에러 발생
-          // Supabase PostgREST 제한을 고려하여 배치 크기를 20개로 제한 (더 안전)
-          const BATCH_SIZE = 20
+          // 배치 크기: URL 길이 제한으로 500 방지 (UUID 1개당 ~36자, 8개면 쿼리스트링이 안전한 수준)
+          const BATCH_SIZE = 8
           const photosByVehicleId = new Map<string, any[]>()
           
-          // 배치로 나눠서 조회
           for (let i = 0; i < vehicleIds.length; i += BATCH_SIZE) {
             const batchIds = vehicleIds.slice(i, i + BATCH_SIZE)
             
@@ -232,9 +233,7 @@ export default function VehiclesPage() {
                 .from('vehicle_photos')
                 .select('id, vehicle_id, photo_url, photo_name, is_primary, display_order')
                 .in('vehicle_id', batchIds)
-                // 주의: order by는 URL을 더 길게 만들어 500 에러를 유발할 수 있으므로 제거
-                // 클라이언트 사이드에서 정렬 처리
-                .limit(1000) // 각 배치당 충분한 제한
+                .limit(500)
 
               if (!photosError && batchPhotos && batchPhotos.length > 0) {
                 // vehicle_id별로 그룹화 및 정렬 (클라이언트 사이드)
@@ -386,7 +385,8 @@ export default function VehiclesPage() {
         (vehicle.id && vehicle.id.toLowerCase().includes(term)) ||
         vehicle.vehicle_number.toLowerCase().includes(term) ||
         vehicle.vehicle_type.toLowerCase().includes(term) ||
-        (vehicle.rental_company && vehicle.rental_company.toLowerCase().includes(term))
+        (vehicle.rental_company && vehicle.rental_company.toLowerCase().includes(term)) ||
+        (vehicle.nick && vehicle.nick.toLowerCase().includes(term))
       
       // 탭별 필터링: vehicle_category(company=회사차, rental=렌터카), rental은 status로 종료 여부 구분
       let matchesTab = true
@@ -450,8 +450,8 @@ export default function VehiclesPage() {
         'interest_rate', 'monthly_payment', 'additional_payment', 'payment_due_date',
         'installment_start_date', 'installment_end_date', 'vehicle_image_url',
         'vehicle_category', 'rental_company', 'daily_rate', 'rental_start_date',
-        'rental_end_date', 'rental_pickup_location', 'rental_return_location',
-        'rental_total_cost', 'rental_notes'
+        'rental_end_date',         'rental_pickup_location', 'rental_return_location',
+        'rental_total_cost', 'rental_notes', 'nick'
       ]
       
       // 날짜 필드 정리
@@ -730,7 +730,7 @@ export default function VehiclesPage() {
                   <div className="flex-1">
                     <div className="flex items-center space-x-2">
                       <h3 className="text-base font-semibold text-gray-900 truncate">
-                        {vehicle.vehicle_number}
+                        {vehicle.nick ? `${vehicle.nick} (${vehicle.vehicle_number})` : vehicle.vehicle_number}
                       </h3>
                   <div className="flex items-center space-x-2">
                     <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(vehicle.status || '운행 가능')}`}>

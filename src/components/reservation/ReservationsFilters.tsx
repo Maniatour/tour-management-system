@@ -69,7 +69,7 @@ export default function ReservationsFilters({
       {/* 상태, 채널, 시작일, 종료일 */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">상태</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">{t('filtersStatusLabel')}</label>
           <select
             value={selectedStatus}
             onChange={(e) => onStatusChange(e.target.value)}
@@ -84,7 +84,7 @@ export default function ReservationsFilters({
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">채널</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">{t('filtersChannelLabel')}</label>
           <select
             value={selectedChannel}
             onChange={(e) => onChannelChange(e.target.value)}
@@ -106,7 +106,7 @@ export default function ReservationsFilters({
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">종료일</label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">{t('filtersEndDate')}</label>
           <input
             type="date"
             value={dateRange.end}
@@ -185,7 +185,7 @@ export default function ReservationsFilters({
             className="bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 flex items-center gap-1.5 text-sm font-medium flex-shrink-0"
           >
             <SlidersHorizontal className="w-4 h-4" />
-            <span>필터</span>
+            <span>{t('filter')}</span>
           </button>
         </div>
       )}
@@ -193,7 +193,7 @@ export default function ReservationsFilters({
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>필터</DialogTitle>
+            <DialogTitle>{t('filter')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             {filterContent}
@@ -204,7 +204,7 @@ export default function ReservationsFilters({
               onClick={closeModal}
               className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm font-medium"
             >
-              적용
+              {t('apply')}
             </button>
           </DialogFooter>
         </DialogContent>

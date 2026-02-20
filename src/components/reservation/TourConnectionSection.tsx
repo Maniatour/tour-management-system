@@ -36,6 +36,7 @@ interface Tour {
   // 차량 정보
   vehicle?: {
     vehicle_number: string
+    nick?: string | null
   }
 }
 
@@ -90,7 +91,7 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
     try {
       const { data, error } = await supabase
         .from('vehicles')
-        .select('vehicle_number')
+        .select('vehicle_number, nick')
         .eq('id', vehicleId)
         .maybeSingle()
       
@@ -453,7 +454,7 @@ export default function TourConnectionSection({ reservation, onTourCreated }: To
                       <div className="flex items-center">
                         <MapPin className="w-3 h-3 mr-1 text-gray-400" />
                         <span className="font-medium">차량:</span>
-                        <span className="ml-1">{tour.vehicle.vehicle_number}</span>
+                        <span className="ml-1">{tour.vehicle.nick?.trim() || tour.vehicle.vehicle_number}</span>
                       </div>
                     )}
                   </div>

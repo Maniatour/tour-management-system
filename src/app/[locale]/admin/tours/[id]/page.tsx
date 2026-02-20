@@ -1040,17 +1040,17 @@ export default function TourDetailPage() {
       }
 
       if (successCount > 0) {
-        alert(`픽업 스케줄 알림이 ${successCount}건 발송되었습니다.${failCount > 0 ? ` (${failCount}건 실패)` : ''}`)
+        alert(t('pickupSchedule.notificationSent', { count: successCount }) + (failCount > 0 ? t('pickupSchedule.notificationSentPartial', { failed: failCount }) : ''))
         // 데이터 새로고침
         if (tourData.refreshReservations) {
           await tourData.refreshReservations()
         }
       } else {
-        alert('알림 발송에 실패했습니다.')
+        alert(t('pickupSchedule.notificationSendFailed'))
       }
     } catch (error) {
       console.error('일괄 알림 발송 오류:', error)
-      alert('일괄 알림 발송 중 오류가 발생했습니다.')
+      alert(t('pickupSchedule.notificationBatchError'))
     }
   }
 

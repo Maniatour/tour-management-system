@@ -113,10 +113,10 @@ export default function TourReportModal({ isOpen, onClose, locale }: TourReportM
       if (vehicleIds.length > 0) {
         const { data: vehiclesData } = await supabase
           .from('vehicles')
-          .select('id, vehicle_number')
+          .select('id, vehicle_number, nick')
           .in('id', vehicleIds)
         
-        vehicleMap = new Map((vehiclesData || []).map(vehicle => [vehicle.id, vehicle.vehicle_number]))
+        vehicleMap = new Map((vehiclesData || []).map((vehicle: { id: string; vehicle_number: string | null; nick?: string | null }) => [vehicle.id, (vehicle.nick && vehicle.nick.trim()) || vehicle.vehicle_number || null]))
       }
 
       // 예약 정보로 인원 계산

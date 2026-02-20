@@ -10,7 +10,7 @@ import ReactCountryFlag from 'react-country-flag'
 import { 
   getPickupHotelDisplay, 
   getCustomerName, 
-  getProductName, 
+  getProductNameForLocale, 
   getChannelName, 
   getStatusLabel, 
   getStatusColor, 
@@ -320,9 +320,9 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               return (
                 <span className="flex items-center space-x-1 text-xs text-gray-600 ml-2">
                   <Users className="h-3 w-3" />
-                  <span>{reservation.adults}명</span>
-                  {hasChild && <span className="text-orange-600">{reservation.child}아</span>}
-                  {hasInfant && <span className="text-blue-600">{reservation.infant}유</span>}
+                  <span>{reservation.adults}{t('card.peopleShort')}</span>
+                  {hasChild && <span className="text-orange-600">{reservation.child}{t('card.childShort')}</span>}
+                  {hasInfant && <span className="text-blue-600">{reservation.infant}{t('card.infantShort')}</span>}
                 </span>
               )
             })()}
@@ -361,7 +361,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
         {/* 상품 정보 */}
         <div>
           <div className="flex items-center space-x-2 mb-2">
-            <div className="text-sm font-medium text-gray-900">{getProductName(reservation.productId, products as any || [])}</div>
+            <div className="text-sm font-medium text-gray-900">{getProductNameForLocale(reservation.productId, products as any || [], locale)}</div>
             
             {/* 새로운 초이스 시스템 뱃지 표시 */}
             <ChoicesDisplay 
@@ -404,7 +404,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           {(() => {
             const pickupTime = reservation.pickUpTime || ''
             if (!pickupTime) {
-              return <span className="text-sm text-gray-500 italic">픽업 미정</span>
+              return <span className="text-sm text-gray-500 italic">{t('card.pickupTbd')}</span>
             }
             let pickupDate = reservation.tourDate || ''
             const timeMatch = pickupTime.match(/(\d{1,2}):(\d{2})/)
@@ -440,7 +440,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           >
             {reservation.pickUpHotel 
               ? getPickupHotelDisplay(reservation.pickUpHotel, pickupHotels as any || [])
-              : '픽업 호텔 미정'
+              : t('card.pickupHotelTbd')
             }
           </span>
         </div>
@@ -521,12 +521,12 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               >
                 <div className="flex items-center justify-between mb-1">
                   <div className="text-xs font-semibold text-gray-900">
-                    배정된 투어 ({assignedTourTotalPeople}명) / 총 {finalAllDateTotalPeople}명
+                    {t('card.assignedTour', { n: assignedTourTotalPeople, total: finalAllDateTotalPeople })}
                   </div>
                   <div className="flex items-center space-x-2">
                     {tourInfo.isAssigned && (
                       <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                        배정됨
+                        {t('card.assigned')}
                       </span>
                     )}
                     <span className={`px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(tourInfo.status)}`}>
@@ -589,7 +589,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                       onCreateTour(reservation)
                     }}
                     className="px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md hover:bg-green-100 transition-colors flex items-center space-x-1 border border-green-200"
-                    title="투어 생성"
+                    title={t('card.createTourTitle')}
                   >
                     <Plus className="w-3 h-3" />
                     <span>{t('actions.tour')}</span>
@@ -606,7 +606,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 onPaymentClick(reservation)
               }}
               className="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 transition-colors flex items-center space-x-1 border border-blue-200"
-              title="입금 내역 관리"
+              title={t('card.paymentHistoryTitle')}
             >
               <DollarSign className="w-3 h-3" />
               <span>{t('actions.deposit')}</span>
@@ -619,10 +619,10 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 onDetailClick(reservation)
               }}
               className="px-2 py-1 text-xs bg-purple-50 text-purple-600 rounded-md hover:bg-purple-100 transition-colors flex items-center space-x-1 border border-purple-200"
-              title="고객 보기"
+              title={t('card.viewCustomerTitle')}
             >
               <Eye className="w-3 h-3" />
-              <span>고객 보기</span>
+              <span>{t('card.viewCustomer')}</span>
             </button>
 
             {/* Follow up 버튼 - 모든 상태에서 표시 */}
@@ -645,10 +645,10 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 onReviewClick(reservation)
               }}
               className="px-2 py-1 text-xs bg-pink-50 text-pink-600 rounded-md hover:bg-pink-100 transition-colors flex items-center space-x-1 border border-pink-200"
-              title="후기 관리"
+              title={t('card.reviewManagementTitle')}
             >
               <MessageSquare className="w-3 h-3" />
-              <span>후기</span>
+              <span>{t('card.reviews')}</span>
             </button>
 
             {/* 이메일 발송 드롭다운 */}
@@ -660,10 +660,10 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 }}
                 disabled={sendingEmail === reservation.id}
                 className="px-2 py-1 text-xs bg-green-50 text-green-600 rounded-md hover:bg-green-100 transition-colors flex items-center space-x-1 border border-green-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="이메일 발송"
+                title={t('card.emailTitle')}
               >
                 <Mail className="w-3 h-3" />
-                <span>{sendingEmail === reservation.id ? '발송 중...' : '이메일'}</span>
+                <span>{sendingEmail === reservation.id ? t('card.sending') : t('card.email')}</span>
                 <ChevronDown className="w-3 h-3" />
               </button>
 
@@ -677,14 +677,14 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                     className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
                   >
                     <Mail className="w-3 h-3" />
-                    <span>예약 확인 이메일</span>
+                    <span>{t('card.emailConfirmation')}</span>
                   </button>
                   <button
                     onClick={() => onEmailPreview(reservation, 'departure')}
                     className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
                   >
                     <Mail className="w-3 h-3" />
-                    <span>투어 출발 확정 이메일</span>
+                    <span>{t('card.emailDeparture')}</span>
                   </button>
                   <button
                     onClick={() => onEmailPreview(reservation, 'pickup')}
@@ -692,7 +692,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                     className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Mail className="w-3 h-3" />
-                    <span>픽업 notification 이메일</span>
+                    <span>{t('card.emailPickup')}</span>
                   </button>
                   <div className="border-t border-gray-200 my-1"></div>
                   <button
@@ -703,7 +703,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                     className="w-full text-left px-3 py-2 text-xs text-blue-600 hover:bg-blue-50 flex items-center space-x-2"
                   >
                     <Clock className="w-3 h-3" />
-                    <span>이메일 발송 내역</span>
+                    <span>{t('card.emailLogs')}</span>
                   </button>
                 </div>
               )}
@@ -716,10 +716,10 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 onEditClick(reservation.id)
               }}
               className="px-2 py-1 text-xs bg-orange-50 text-orange-600 rounded-md hover:bg-orange-100 transition-colors flex items-center space-x-1 border border-orange-200"
-              title="예약 수정"
+              title={t('card.editReservationTitle')}
             >
               <Edit className="w-3 h-3" />
-              <span>수정</span>
+              <span>{t('actions.edit')}</span>
             </button>
           </div>
         </div>
@@ -744,7 +744,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 type="button"
                 onClick={() => setFollowUpModalOpen(false)}
                 className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-                aria-label="닫기"
+                aria-label={t('card.close')}
               >
                 <X className="w-5 h-5" />
               </button>

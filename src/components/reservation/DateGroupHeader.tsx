@@ -85,7 +85,7 @@ export function DateGroupHeader({
               {reservations.length}{t('stats.reservations')}
             </span>
             <span className="px-1 sm:px-2 py-0.5 sm:py-1 bg-green-100 text-green-800 text-xs sm:text-sm font-medium rounded-full whitespace-nowrap">
-              Total {reservations.reduce((total, reservation) => total + reservation.totalPeople, 0)} {t('stats.people')}
+              {reservations.reduce((total, reservation) => total + reservation.totalPeople, 0)} {t('stats.people')}
             </span>
           </div>
         </div>
@@ -110,7 +110,7 @@ export function DateGroupHeader({
               <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
               </svg>
-              {t('stats.byProduct')} 인원
+              {t('stats.byProduct')} {t('peopleLabel')}
             </h4>
             <div className="space-y-2">
               {Object.entries(productGroups)
@@ -132,7 +132,7 @@ export function DateGroupHeader({
               <svg className="w-4 h-4 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
               </svg>
-              {t('stats.byChannel')} 인원
+              {t('stats.byChannel')} {t('peopleLabel')}
             </h4>
             <div className="space-y-2">
               {Object.entries(channelGroups)
@@ -184,7 +184,7 @@ export function DateGroupHeader({
               <svg className="w-4 h-4 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              {t('stats.byStatus')} 인원
+              {t('stats.byStatus')} {t('peopleLabel')}
             </h4>
             <div className="space-y-2">
               {Object.entries(statusGroups)
