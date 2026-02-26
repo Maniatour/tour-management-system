@@ -1,20 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 
+/** 단일: ?reservation_id=xxx → { pricing }. 복수: ?reservation_ids=id1,id2 또는 getAll → { items: [{ reservation_id, pricing }] } (예약 카드/봉투와 동일 소스) */
 export async function GET(request: NextRequest) {
   try {
-    // URL에서 reservation_id 파라미터 가져오기
     const { searchParams } = new URL(request.url)
     const reservationId = searchParams.get('reservation_id')
+    const reservationIdsParam = searchParams.get('reservation_ids')
+    const ids = reservationIdsParam ? reservationIdsParam.split(',').map((s) => s.trim()).filter(Boolean) : null
+
+    if (ids && ids.length > 0) {
+      const { data: pricingList, error } = await supabase
+        .from('reservation_pricing')
+        .select('*')
+        .in('reservation_id', ids)
+
+      if (error) {
+        console.error('reservation_pricing 배치 조회 오류:', error)
+        return NextResponse.json({ error: '예약 가격 정보를 불러올 수 없습니다.' }, { status: 500 })
+      }
+
+      const byResId = new Map<string, unknown>()
+      ;(pricingList || []).forEach((row: { reservation_id: string }) => {
+        byResId.set(row.reservation_id, row)
+      })
+      const items = ids.map((id) => ({ reservation_id: id, pricing: byResId.get(id) ?? null }))
+      return NextResponse.json({ items })
+    }
 
     if (!reservationId) {
       return NextResponse.json(
-        { error: 'reservation_id 파라미터가 필요합니다.' },
+        { error: 'reservation_id 또는 reservation_ids 파라미터가 필요합니다.' },
         { status: 400 }
       )
     }
 
-    // Supabase에서 reservation_pricing 데이터 조회
     const { data: pricing, error } = await supabase
       .from('reservation_pricing')
       .select('*')
@@ -23,8 +43,7 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('reservation_pricing 조회 오류:', error)
-      // 데이터가 없는 경우에도 200 응답으로 빈 데이터 반환
-      if (error.code === 'PGRST116') { // PGRST116은 "no rows found" 오류
+      if (error.code === 'PGRST116') {
         return NextResponse.json({ pricing: null })
       }
       return NextResponse.json(

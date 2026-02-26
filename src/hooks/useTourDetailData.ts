@@ -13,7 +13,8 @@ type PickupHotel = Database['public']['Tables']['pickup_hotels']['Row']
 type Vehicle = Database['public']['Tables']['vehicles']['Row']
 type ProductRow = { id: string; name_ko?: string | null; name_en?: string | null; [k: string]: unknown }
 type CustomerRow = { id: string; name?: string | null; email?: string | null; language?: string | null; [k: string]: unknown }
-type TeamMember = { email: string; name_ko: string; name_en?: string | null; nick_name?: string | null }
+/** team 테이블의 email, name_ko, name_en, display_name (가이드/어시스턴트 표시명 참조용) */
+type TeamMember = { email: string; name_ko: string; name_en?: string | null; display_name?: string | null }
 
 // 확장된 예약 타입 (고객 정보 포함)
 type ExtendedReservationRow = ReservationRow & {
@@ -301,18 +302,18 @@ export function useTourDetailData() {
         setChannels(channelsData || [])
       }
 
-      // 전체 팀 멤버 목록 가져오기
+      // 전체 팀 멤버 목록 가져오기 (team 테이블의 name_ko, name_en 참조)
       console.log('전체 팀 멤버 목록 가져오기 시작')
       const { data: allTeamMembers, error: teamMembersError } = await supabase
         .from('team')
-        .select('*')
+        .select('email, name_ko, name_en, display_name')
         .order('name_ko')
 
       if (teamMembersError) {
         console.error('팀 멤버 목록 가져오기 오류:', teamMembersError)
       } else {
         console.log('팀 멤버 목록 가져오기 성공:', allTeamMembers?.length || 0)
-        setTeamMembers(allTeamMembers || [])
+        setTeamMembers((allTeamMembers || []) as TeamMember[])
       }
 
       // 팀 구성 정보 가져오기
@@ -320,11 +321,11 @@ export function useTourDetailData() {
       if (tour.tour_guide_id || tour.assistant_id) {
         console.log('팀 구성 정보 가져오기 시작')
         
-        // 가이드 정보 가져오기 (tour_guide_id는 team 테이블의 email 값)
+        // 가이드 정보 가져오기 (tour_guide_id는 team 테이블의 email, name_ko, name_en 참조)
         if (tour.tour_guide_id) {
           const { data: guideData, error: guideError } = await supabase
             .from('team')
-            .select('*')
+            .select('email, name_ko, name_en, display_name')
             .eq('email', tour.tour_guide_id)
             .maybeSingle()
           
@@ -350,11 +351,11 @@ export function useTourDetailData() {
           }
         }
         
-        // 어시스턴트/드라이버 정보 가져오기 (assistant_id는 team 테이블의 email 값)
+        // 어시스턴트/드라이버 정보 가져오기 (assistant_id는 team 테이블의 email, name_ko, name_en 참조)
         if (tour.assistant_id) {
           const { data: assistantData, error: assistantError } = await supabase
             .from('team')
-            .select('*')
+            .select('email, name_ko, name_en, display_name')
             .eq('email', tour.assistant_id)
             .maybeSingle()
           
@@ -1123,23 +1124,18 @@ export function useTourDetailData() {
 
   const getTeamMemberName = (email: string) => {
     if (!email) return '직원 미선택'
-    
     const member = teamMembers.find((member) => member.email === email)
-    if (!member) {
-      return email
-    }
-    
-    // nick_name이 있으면 우선 사용 (간단한 표시용)
-    if (member.nick_name) {
-      return member.nick_name
-    }
-    
-    const locale = window.location.pathname.split('/')[1] || 'ko'
-    if (locale === 'ko') {
-      return member.name_ko || member.name_en || email
-    } else {
-      return member.name_en || member.name_ko || email
-    }
+    if (!member) return email
+    // 고객 언어 무관 team.display_name 사용
+    return (member.display_name && member.display_name.trim()) || member.name_ko || member.name_en || email
+  }
+
+  /** team 테이블의 display_name 사용 (고객 언어 무관 통일 표시, 봉투 인쇄 등) */
+  const getTeamMemberNameForLocale = (email: string, _lang: 'ko' | 'en') => {
+    if (!email) return ''
+    const member = teamMembers.find((m) => m.email === email)
+    if (!member) return email
+    return (member.display_name && member.display_name.trim()) || member.name_ko || member.name_en || email
   }
 
   return {
@@ -1247,6 +1243,7 @@ export function useTourDetailData() {
     getChannelInfo,
     getCountryCode,
     getTeamMemberName,
+    getTeamMemberNameForLocale,
     refreshReservations: async () => {
       if (!tour || !tour.product_id || !tour.tour_date) return
       const { data: reservationsData, error: reservationsError } = await supabase

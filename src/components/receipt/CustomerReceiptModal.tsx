@@ -88,6 +88,9 @@ const labels = {
     tip20: '20%',
     print: '인쇄',
     close: '닫기',
+    selectCustomers: '인쇄할 고객 선택',
+    selectAll: '전체 선택',
+    deselectAll: '전체 해제',
     adult: '성인',
     child: '아동',
     infant: '유아',
@@ -136,6 +139,9 @@ const labels = {
     tip20: '20%',
     print: 'Print',
     close: 'Close',
+    selectCustomers: 'Select customers to print',
+    selectAll: 'Select all',
+    deselectAll: 'Deselect all',
     adult: 'Adult',
     child: 'Child',
     infant: 'Infant',
@@ -205,6 +211,8 @@ export default function CustomerReceiptModal({
   const [batchData, setBatchData] = useState<ReceiptData[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** 배치 모드에서 인쇄할 예약 ID 집합 (기본: 전체) */
+  const [selectedReservationIds, setSelectedReservationIds] = useState<Set<string>>(new Set())
   const isBatch = Boolean(reservationIds && reservationIds.length > 0)
   const ids = isBatch ? reservationIds! : [reservationId]
 
@@ -360,6 +368,7 @@ export default function CustomerReceiptModal({
         }
         if (results.length === 1) setData(results[0])
         else setBatchData(results)
+        if (results.length > 0) setSelectedReservationIds(new Set(results.map((r) => r.reservation.id)))
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load')
       } finally {
@@ -499,6 +508,9 @@ export default function CustomerReceiptModal({
   if (!isOpen) return null
 
   const list = isBatch ? batchData : data ? [data] : []
+  const listToShow = isBatch && list.length > 0
+    ? list.filter((d) => selectedReservationIds.has(d.reservation.id))
+    : list
   const headerLabel = list.length > 0
     ? ((list[0].customer.language || 'ko').toString().toLowerCase().startsWith('en') ? labels.en : labels.ko)
     : labels.en
@@ -520,8 +532,44 @@ export default function CustomerReceiptModal({
           {error && <p className="text-red-600 py-8">{error}</p>}
           {!loading && !error && list.length === 0 && <p className="text-gray-500 py-8">데이터 없음</p>}
           {!loading && !error && list.length > 0 && (
+            <div className="w-full flex flex-col items-center">
+              {isBatch && list.length > 0 && (
+                <div className="w-full mb-4 space-y-2">
+                  <span className="text-sm font-medium text-gray-700">{labels.ko.selectCustomers}</span>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setSelectedReservationIds(new Set(list.map((d) => d.reservation.id)))} className="text-xs text-blue-600 hover:underline">
+                      {labels.ko.selectAll}
+                    </button>
+                    <span className="text-gray-300">|</span>
+                    <button type="button" onClick={() => setSelectedReservationIds(new Set())} className="text-xs text-gray-500 hover:underline">
+                      {labels.ko.deselectAll}
+                    </button>
+                  </div>
+                  <div className="max-h-28 overflow-y-auto border border-gray-200 rounded p-2 space-y-1">
+                    {list.map((d) => (
+                      <label key={d.reservation.id} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5">
+                        <input
+                          type="checkbox"
+                          checked={selectedReservationIds.has(d.reservation.id)}
+                          onChange={(e) => {
+                            const next = new Set(selectedReservationIds)
+                            if (e.target.checked) next.add(d.reservation.id)
+                            else next.delete(d.reservation.id)
+                            setSelectedReservationIds(next)
+                          }}
+                          className="rounded text-blue-600"
+                        />
+                        <span className="text-sm truncate">{d.customer.name || '—'}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {selectedReservationIds.size > 0 ? `${selectedReservationIds.size}장 인쇄` : '인쇄할 고객을 선택하세요'}
+                  </p>
+                </div>
+              )}
             <div id="receipt-batch-print" className="space-y-6 w-full flex flex-col items-center">
-              {list.map((d) => {
+              {listToShow.map((d) => {
                 const lang = (d.customer.language || 'ko').toString().toLowerCase()
                 const isEn = lang === 'en' || lang === 'english' || lang === 'en-us'
                 const L = isEn ? labels.en : labels.ko
@@ -723,6 +771,7 @@ export default function CustomerReceiptModal({
                 )
               })}
             </div>
+            </div>
           )}
         </div>
         {!loading && !error && list.length > 0 && (
@@ -730,7 +779,8 @@ export default function CustomerReceiptModal({
             <button
               type="button"
               onClick={() => (list.length === 1 ? handlePrint(list[0]) : handlePrint())}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              disabled={isBatch && selectedReservationIds.size === 0}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               <Printer className="w-4 h-4" />
               {labels.ko.print}

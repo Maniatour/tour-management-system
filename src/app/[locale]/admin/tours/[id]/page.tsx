@@ -34,6 +34,7 @@ import PickupScheduleAutoGenerateModal from '@/components/tour/modals/PickupSche
 import PickupScheduleEmailPreviewModal from '@/components/tour/modals/PickupScheduleEmailPreviewModal'
 import TourEditModal from '@/components/tour/modals/TourEditModal'
 import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
+import TourEnvelopeModal from '@/components/receipt/TourEnvelopeModal'
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
 import { 
@@ -131,6 +132,7 @@ export default function TourDetailPage() {
   const [showEmailPreviewModal, setShowEmailPreviewModal] = useState<boolean>(false)
   const [showTourEditModal, setShowTourEditModal] = useState<boolean>(false)
   const [showBatchReceiptModal, setShowBatchReceiptModal] = useState<boolean>(false)
+  const [showBatchEnvelopeModal, setShowBatchEnvelopeModal] = useState<boolean>(false)
   const [activeSection, setActiveSection] = useState<string>('')
   const [showFloatingMenu, setShowFloatingMenu] = useState<boolean>(false)
   
@@ -1451,6 +1453,7 @@ export default function TourDetailPage() {
         getAssignmentStatusText={getAssignmentStatusText}
         onEditClick={() => setShowTourEditModal(true)}
         onPrintReceipts={() => setShowBatchReceiptModal(true)}
+        onPrintEnvelopes={() => setShowBatchEnvelopeModal(true)}
       />
 
       {/* 영수증 일괄 인쇄 모달 */}
@@ -1459,6 +1462,25 @@ export default function TourDetailPage() {
         onClose={() => setShowBatchReceiptModal(false)}
         reservationId={tourData.tour?.reservation_ids?.[0] || ''}
         reservationIds={(tourData.tour?.reservation_ids || []).filter(Boolean)}
+      />
+
+      {/* 투어 봉투 일괄 인쇄 모달 */}
+      <TourEnvelopeModal
+        isOpen={showBatchEnvelopeModal}
+        onClose={() => setShowBatchEnvelopeModal(false)}
+        reservationIds={(tourData.tour?.reservation_ids || []).filter(Boolean)}
+        tourDate={tourData.tour?.tour_date || ''}
+        productNameKo={tourData.product?.name_ko || tourData.product?.name_en || ''}
+        productNameEn={tourData.product?.name_en || tourData.product?.name_ko || ''}
+        guideAndAssistantKo={[
+          tourData.selectedGuide ? tourData.getTeamMemberNameForLocale(tourData.selectedGuide, 'ko') : null,
+          tourData.selectedAssistant ? tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'ko') : null,
+        ].filter(Boolean).join(' & ') || '—'}
+        guideAndAssistantEn={[
+          tourData.selectedGuide ? tourData.getTeamMemberNameForLocale(tourData.selectedGuide, 'en') : null,
+          tourData.selectedAssistant ? tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'en') : null,
+        ].filter(Boolean).join(' & ') || '—'}
+        locale={locale}
       />
 
       <div className="px-0 py-6 pb-24 lg:pb-6">
