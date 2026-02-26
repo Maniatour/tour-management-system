@@ -80,6 +80,8 @@ interface ReservationFormProps {
   initialCustomerId?: string
   /** true이면 지난 날짜 예약도 수정 가능 (super 계정용) */
   allowPastDateEdit?: boolean
+  /** 제목줄 오른쪽에 표시할 액션 (예: 영수증 인쇄 버튼) */
+  titleAction?: React.ReactNode
 }
 
 type RezLike = Partial<Reservation> & {
@@ -117,7 +119,8 @@ export default function ReservationForm({
   layout = 'modal',
   onViewCustomer,
   initialCustomerId,
-  allowPastDateEdit = false
+  allowPastDateEdit = false,
+  titleAction
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
@@ -3583,7 +3586,9 @@ export default function ReservationForm({
                 </span>
               )}
             </h2>
-            <div className="flex items-center gap-2 flex-shrink-0 min-w-0 max-sm:flex sm:hidden">
+            <div className="flex items-center gap-2 flex-shrink-0 min-w-0">
+              {layout === 'page' && reservation && titleAction}
+              <div className="flex items-center gap-2 max-sm:flex sm:hidden">
               <label className="sr-only" htmlFor="reservation-status-mobile">{t('form.status')}</label>
               <select
                 id="reservation-status-mobile"
@@ -3604,6 +3609,7 @@ export default function ReservationForm({
               >
                 <X className="w-5 h-5" />
               </button>
+              </div>
             </div>
           </div>
           <div className="hidden sm:flex w-full sm:w-auto items-center space-x-2">

@@ -224,6 +224,14 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
     return category
   }
 
+  /** 로케일에 따라 옵션명(고객 한글) 또는 옵션명(고객 영어) 반환 */
+  const getOptionDisplayName = (option: Option & { name_ko?: string | null; name_en?: string | null }) => {
+    const nameKo = option.name_ko ?? (option as any).name_ko
+    const nameEn = option.name_en ?? (option as any).name_en
+    if (locale === 'ko') return (nameKo && nameKo.trim()) ? nameKo : (nameEn && nameEn.trim()) ? nameEn : option.name
+    return (nameEn && nameEn.trim()) ? nameEn : (nameKo && nameKo.trim()) ? nameKo : option.name
+  }
+
   const getPriceTypeLabel = (priceType: string) => {
     // 빈 값이나 null/undefined 처리
     if (!priceType || priceType.trim() === '') {
@@ -395,7 +403,7 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
                     <Settings className="h-5 w-5 text-blue-600" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="text-sm font-semibold text-gray-900 truncate">{option.name}</h3>
+                    <h3 className="text-sm font-semibold text-gray-900 truncate">{getOptionDisplayName(option)}</h3>
                   </div>
                 </div>
                 <div className="flex space-x-1" onClick={(e) => e.stopPropagation()}>
@@ -445,7 +453,7 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
                   <div className="relative w-full bg-gray-100 rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
                     <img
                       src={(option as any).thumbnail_url || (option as any).image_url}
-                      alt={(option as any).image_alt || option.name}
+                      alt={(option as any).image_alt || getOptionDisplayName(option)}
                       className="w-full h-full object-cover"
                       onError={(e) => {
                         e.currentTarget.style.display = 'none'
@@ -454,13 +462,14 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
                   </div>
                 )}
 
-                {/* 옵션명(고객 한글), 옵션명(고객 영어), ID */}
+                {/* 옵션명 - 로케일에 따라 고객 한글/영어 표시 */}
                 <div className="space-y-1">
-                  {(option as any).name_ko && (
-                    <p className="text-sm text-gray-900 font-medium">{(option as any).name_ko}</p>
+                  <p className="text-sm text-gray-900 font-medium">{getOptionDisplayName(option)}</p>
+                  {locale === 'ko' && (option as any).name_en && (
+                    <p className="text-xs text-gray-500">(EN: {(option as any).name_en})</p>
                   )}
-                  {(option as any).name_en && (
-                    <p className="text-xs text-gray-600">{(option as any).name_en}</p>
+                  {locale === 'en' && (option as any).name_ko && (
+                    <p className="text-xs text-gray-500">(KO: {(option as any).name_ko})</p>
                   )}
                   <p className="text-xs text-gray-500">ID: {option.id}</p>
                 </div>
@@ -695,7 +704,7 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* 옵션명 - 내부용 */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">옵션명(내부)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.name')}</label>
             <input
               type="text"
               value={formData.name}
@@ -705,26 +714,26 @@ function OptionForm({ option, isCopying = false, onSubmit, onCancel }: OptionFor
             />
           </div>
 
-          {/* 옵션명 - 고객용 */}
+          {/* 옵션명 - 고객용 (한글/영어) */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">옵션명(고객 한글)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.nameCustomerKo')}</label>
               <input
                 type="text"
                 value={formData.name_ko}
                 onChange={(e) => setFormData({ ...formData, name_ko: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="한글 옵션명"
+                placeholder={locale === 'ko' ? '한글 옵션명' : 'Korean option name'}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">옵션명(고객 영어)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('form.nameCustomerEn')}</label>
               <input
                 type="text"
                 value={formData.name_en}
                 onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="English option name"
+                placeholder={locale === 'ko' ? '영어 옵션명' : 'English option name'}
               />
             </div>
           </div>

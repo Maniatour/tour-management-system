@@ -33,6 +33,7 @@ import BookingModal from '@/components/tour/modals/BookingModal'
 import PickupScheduleAutoGenerateModal from '@/components/tour/modals/PickupScheduleAutoGenerateModal'
 import PickupScheduleEmailPreviewModal from '@/components/tour/modals/PickupScheduleEmailPreviewModal'
 import TourEditModal from '@/components/tour/modals/TourEditModal'
+import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
 import { 
@@ -129,6 +130,7 @@ export default function TourDetailPage() {
   const [showPickupScheduleModal, setShowPickupScheduleModal] = useState<boolean>(false)
   const [showEmailPreviewModal, setShowEmailPreviewModal] = useState<boolean>(false)
   const [showTourEditModal, setShowTourEditModal] = useState<boolean>(false)
+  const [showBatchReceiptModal, setShowBatchReceiptModal] = useState<boolean>(false)
   const [activeSection, setActiveSection] = useState<string>('')
   const [showFloatingMenu, setShowFloatingMenu] = useState<boolean>(false)
   
@@ -1448,6 +1450,15 @@ export default function TourDetailPage() {
         getAssignmentStatusColor={getAssignmentStatusColor}
         getAssignmentStatusText={getAssignmentStatusText}
         onEditClick={() => setShowTourEditModal(true)}
+        onPrintReceipts={() => setShowBatchReceiptModal(true)}
+      />
+
+      {/* 영수증 일괄 인쇄 모달 */}
+      <CustomerReceiptModal
+        isOpen={showBatchReceiptModal}
+        onClose={() => setShowBatchReceiptModal(false)}
+        reservationId={tourData.tour?.reservation_ids?.[0] || ''}
+        reservationIds={(tourData.tour?.reservation_ids || []).filter(Boolean)}
       />
 
       <div className="px-0 py-6 pb-24 lg:pb-6">

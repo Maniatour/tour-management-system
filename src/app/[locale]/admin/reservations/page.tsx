@@ -29,6 +29,7 @@ import ReservationsEmptyState from '@/components/reservation/ReservationsEmptySt
 import ReservationsPagination from '@/components/reservation/ReservationsPagination'
 import { ReservationCardItem } from '@/components/reservation/ReservationCardItem'
 import ReservationActionRequiredModal from '@/components/reservation/ReservationActionRequiredModal'
+import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
 import { useAuth } from '@/contexts/AuthContext'
 import { 
   getPickupHotelDisplay, 
@@ -276,6 +277,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   // 예약 상세 모달 관련 상태
   const [showReservationDetailModal, setShowReservationDetailModal] = useState(false)
   const [selectedReservationForDetail, setSelectedReservationForDetail] = useState<Reservation | null>(null)
+  const [receiptModalReservationId, setReceiptModalReservationId] = useState<string | null>(null)
 
   // 예약 처리 필요 모달 및 입금 데이터(배지 카운트용)
   const [showActionRequiredModal, setShowActionRequiredModal] = useState(false)
@@ -2172,6 +2174,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     setShowReservationDetailModal(true)
   }, [])
 
+  const handleReceiptClick = useCallback((reservation: Reservation) => {
+    setReceiptModalReservationId(reservation.id)
+  }, [])
+
   const handleReviewClick = useCallback((reservation: Reservation) => {
     setSelectedReservationForReview(reservation)
     setShowReviewModal(true)
@@ -2546,6 +2552,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         onPickupHotelClick={handlePickupHotelClick}
                         onPaymentClick={handlePaymentClick}
                         onDetailClick={handleDetailClick}
+                        onReceiptClick={handleReceiptClick}
                         onReviewClick={handleReviewClick}
                         onEmailPreview={handleOpenEmailPreview}
                         onEmailLogsClick={handleEmailLogsClick}
@@ -2608,6 +2615,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                     onPickupHotelClick={handlePickupHotelClick}
                     onPaymentClick={handlePaymentClick}
                     onDetailClick={handleDetailClick}
+                    onReceiptClick={handleReceiptClick}
                     onReviewClick={handleReviewClick}
                     onEmailPreview={handleOpenEmailPreview}
                     onEmailLogsClick={handleEmailLogsClick}
@@ -2769,6 +2777,15 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* 영수증 인쇄 모달 (예약 카드에서 열기) */}
+      {receiptModalReservationId && (
+        <CustomerReceiptModal
+          isOpen={!!receiptModalReservationId}
+          onClose={() => setReceiptModalReservationId(null)}
+          reservationId={receiptModalReservationId}
+        />
       )}
 
       {/* 예약 처리 필요 모달 */}

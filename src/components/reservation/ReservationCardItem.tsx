@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Calendar, MapPin, Users, DollarSign, Eye, Clock, Mail, ChevronDown, Edit, MessageSquare, X, FileText } from 'lucide-react'
+import { Plus, Calendar, MapPin, Users, DollarSign, Eye, Clock, Mail, ChevronDown, Edit, MessageSquare, X, FileText, Printer } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
 // @ts-expect-error - react-country-flag 라이브러리의 타입 정의가 없음
@@ -66,6 +66,7 @@ interface ReservationCardItemProps {
   onPickupHotelClick: (reservation: Reservation, e: React.MouseEvent) => void
   onPaymentClick: (reservation: Reservation) => void
   onDetailClick: (reservation: Reservation) => void
+  onReceiptClick?: (reservation: Reservation) => void
   onReviewClick: (reservation: Reservation) => void
   onEmailPreview: (reservation: Reservation, emailType: 'confirmation' | 'departure' | 'pickup') => void
   onEmailLogsClick: (reservationId: string) => void
@@ -124,6 +125,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   onPickupHotelClick,
   onPaymentClick,
   onDetailClick,
+  onReceiptClick,
   onReviewClick,
   onEmailPreview,
   onEmailLogsClick,
@@ -624,6 +626,21 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               <Eye className="w-3 h-3" />
               <span>{t('card.viewCustomer')}</span>
             </button>
+
+            {/* 영수증 인쇄 버튼 */}
+            {onReceiptClick && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onReceiptClick(reservation)
+                }}
+                className="px-2 py-1 text-xs bg-slate-50 text-slate-600 rounded-md hover:bg-slate-100 transition-colors flex items-center space-x-1 border border-slate-200"
+                title={t('print')}
+              >
+                <Printer className="w-3 h-3" />
+                <span>{t('print')}</span>
+              </button>
+            )}
 
             {/* Follow up 버튼 - 모든 상태에서 표시 */}
             <button

@@ -1781,6 +1781,7 @@
       "infants": "유아",
       "people": "명"
     },
+    "print": "영수증 인쇄",
     "form": {
       "title": "새 예약 추가",
       "editTitle": "예약 정보 수정",
@@ -3012,6 +3013,7 @@
       "Meals": "식사",
       "insurance": "보험",
       "entrance fee": "입장료",
+      "Entrance Fee": "입장료",
       "accommodation": "숙박",
       "activity": "액티비티",
       "equipment": "장비",
@@ -3045,7 +3047,9 @@
     "form": {
       "title": "새 옵션 추가",
       "editTitle": "옵션 정보 편집",
-      "name": "옵션명",
+      "name": "옵션명(내부)",
+      "nameCustomerKo": "옵션명(고객 한글)",
+      "nameCustomerEn": "옵션명(고객 영어)",
       "category": "카테고리",
       "description": "설명",
       "priceType": "가격 유형",

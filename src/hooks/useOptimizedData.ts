@@ -93,11 +93,17 @@ export function useOptimizedData<T>({
     cache.clear()
   }, [])
 
+  // refetch: 캐시를 무시하고 항상 서버에서 새로 불러옴 (추가/수정/삭제 후 목록 갱신용)
+  const refetch = useCallback(async () => {
+    invalidateCache()
+    return fetchData()
+  }, [invalidateCache, fetchData])
+
   return {
     data,
     loading,
     error,
-    refetch: fetchData,
+    refetch,
     invalidateCache,
     clearCache
   }

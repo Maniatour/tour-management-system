@@ -8,7 +8,8 @@ import ReservationForm from '@/components/reservation/ReservationForm'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { Reservation, Customer } from '@/types/reservation'
 import { useAuth } from '@/contexts/AuthContext'
-import { Eye, X, GripVertical, Menu, User, Calendar, Users, DollarSign, Settings, CreditCard, Receipt, Star, MessageSquare } from 'lucide-react'
+import { Eye, X, GripVertical, Menu, User, Calendar, Users, DollarSign, Settings, CreditCard, Receipt, Star, MessageSquare, Printer } from 'lucide-react'
+import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
 import { getCustomerName } from '@/utils/reservationUtils'
 
 // 리사이즈 가능한 모달 컴포넌트
@@ -143,6 +144,7 @@ export default function ReservationDetailsPage() {
   // 플로팅 메뉴 상태
   const [showFloatingMenu, setShowFloatingMenu] = useState(false)
   const [activeSection, setActiveSection] = useState<string>('')
+  const [showReceiptModal, setShowReceiptModal] = useState(false)
 
   // 인증 로딩 중이거나 권한이 없는 경우 로딩 표시
   // useMemo로 안정적으로 계산하여 불필요한 재계산 방지
@@ -454,6 +456,16 @@ export default function ReservationDetailsPage() {
           layout="page"
           onViewCustomer={() => setShowReservationDetailModal(true)}
           allowPastDateEdit={isSuper || !!reservation}
+          titleAction={
+            <button
+              type="button"
+              onClick={() => setShowReceiptModal(true)}
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+              title={t('print') || '영수증 인쇄'}
+            >
+              <Printer className="w-5 h-5" />
+            </button>
+          }
         />
       </div>
     )
@@ -473,7 +485,16 @@ export default function ReservationDetailsPage() {
         <>
           {/* 권한이 있을 때만 실제 콘텐츠 표시 */}
           {content}
-          
+
+          {/* 영수증 인쇄 모달 */}
+          {reservation && (
+            <CustomerReceiptModal
+              isOpen={showReceiptModal}
+              onClose={() => setShowReceiptModal(false)}
+              reservationId={reservation.id}
+            />
+          )}
+
           {/* 모바일 플로팅 메뉴 */}
           <div className="lg:hidden fixed bottom-20 right-4 z-50">
             {/* 플로팅 메뉴 버튼 */}

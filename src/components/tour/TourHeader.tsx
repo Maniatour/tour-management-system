@@ -1,4 +1,4 @@
-import { ArrowLeft, Edit, Trash2, Copy } from 'lucide-react'
+import { ArrowLeft, Edit, Trash2, Copy, Printer } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import TourSunriseTime from '@/components/TourSunriseTime'
@@ -26,6 +26,7 @@ interface TourHeaderProps {
   getAssignmentStatusColor: (tour: any) => string
   getAssignmentStatusText: (tour: any, locale: string) => string
   onEditClick?: () => void
+  onPrintReceipts?: () => void
 }
 
 export default function TourHeader({
@@ -47,7 +48,8 @@ export default function TourHeader({
   getStatusText,
   getAssignmentStatusColor,
   getAssignmentStatusText,
-  onEditClick
+  onEditClick,
+  onPrintReceipts
 }: TourHeaderProps) {
   const router = useRouter()
   const t = useTranslations('tours.tourHeader')
@@ -78,6 +80,16 @@ export default function TourHeader({
                 <div className="flex-shrink-0 min-w-0 max-w-[80px] sm:max-w-none">
                   <TourSunriseTime tourDate={tour.tour_date} />
                 </div>
+                {onPrintReceipts && (
+                  <button
+                    type="button"
+                    onClick={onPrintReceipts}
+                    className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 flex-shrink-0"
+                    title={params.locale === 'ko' ? '영수증 일괄 인쇄' : 'Print receipts'}
+                  >
+                    <Printer className="w-5 h-5" />
+                  </button>
+                )}
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-600 mt-1">
                 <span>{params.locale === 'ko' ? '투어 ID' : 'Tour ID'}: {tour.id}</span>

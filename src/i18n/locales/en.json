@@ -1772,6 +1772,7 @@
       "infants": "Infants",
       "people": "people"
     },
+    "print": "Print Receipt",
     "form": {
       "title": "Add New Reservation",
       "editTitle": "Edit Reservation",
@@ -2965,6 +2966,7 @@
       "Meals": "Meals",
       "insurance": "Insurance",
       "entrance fee": "Entrance Fee",
+      "Entrance Fee": "Entrance Fee",
       "accommodation": "Accommodation",
       "activity": "Activity",
       "equipment": "Equipment",
@@ -2998,7 +3000,9 @@
     "form": {
       "title": "Add New Option",
       "editTitle": "Edit Option",
-      "name": "Option Name",
+      "name": "Option Name (Internal)",
+      "nameCustomerKo": "Option Name (Customer Korean)",
+      "nameCustomerEn": "Option Name (Customer English)",
       "category": "Category",
       "description": "Description",
       "priceType": "Price Type",
