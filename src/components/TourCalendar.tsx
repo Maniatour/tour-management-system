@@ -11,6 +11,7 @@ type Tour = Database['public']['Tables']['tours']['Row']
 
 interface ExtendedTour extends Omit<Tour, 'assignment_status'> {
   product_name?: string | null | undefined;
+  name?: string | null | undefined;
   name_ko?: string | null | undefined;
   name_en?: string | null | undefined;
   assignment_status?: string | null | undefined;
@@ -61,25 +62,22 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
     y: number
   } | null>(null)
   
-  // 투어 이름 매핑 함수 (상품명 사용)
+  // 투어 이름 매핑 함수 — 상품 name을 처음부터 사용(name_ko 별도 로드 없음)
   const getTourDisplayName = (tour: ExtendedTour) => {
-    // 영어 모드에서는 product_id의 name_en을 우선 사용
-    if (locale === 'en') {
-      // name_en (productInternalEnMap에서 가져온 product의 name_en)을 최우선 사용
-      // 없으면 product_id만 표시 (한글 이름이나 customer_name_en은 표시하지 않음)
-      if (tour.name_en) {
-        return tour.name_en
-      }
-      return tour.product_id || ''
+    // 상품 name이 processToursData에서 이미 채워져 있음 → 별도 로드 없이 사용
+    const primaryName = tour.name || tour.product_name
+    if (primaryName) {
+      return primaryName
     }
-    
-    // 한국어 모드에서는 name_ko 우선 사용
+    // locale별 fallback
+    if (locale === 'en' && tour.name_en) {
+      return tour.name_en
+    }
     if (tour.name_ko || tour.name_en) {
-      return tour.name_ko || tour.name_en || tour.product_name || tour.product_id
+      return tour.name_ko || tour.name_en || tour.product_id || ''
     }
     
-    // 기존 방식 (fallback)
-    const tourName = tour.product_name || tour.product_id
+    const tourName = tour.product_id || ''
     try {
       // 번역 키 존재 여부 확인
       const translationKey = `tourNameMapping.${tourName}`
@@ -918,7 +916,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                           {tourHasBalance && <span className="inline-block mr-0.5" title="밸런스 남음">💲</span>}
                           {tourStatusIcon && <span className="inline-block mr-0.5">{tourStatusIcon}</span>}
                           {assignmentIcon && <span className="inline-block mr-0.5">{assignmentIcon}</span>}
-                          {isPrivateTour ? '🔒 ' : ''}{getProductDisplayName(productMetaById[tour.product_id ?? '']) || getTourDisplayName(tour)}
+                          {isPrivateTour ? '🔒 ' : ''}{getTourDisplayName(tour) || getProductDisplayName(productMetaById[tour.product_id ?? ''])}
                         </span>
                         <span className="ml-0.5 sm:ml-1">
                           {(() => {
@@ -1185,7 +1183,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
               <div className="font-semibold text-gray-900 mb-2 border-b border-gray-200 pb-1 flex items-center gap-1">
                 {tourStatusIcon && <span>{tourStatusIcon}</span>}
                 {assignmentIcon && <span>{assignmentIcon}</span>}
-                <span>{getProductDisplayName(productMetaById[hoveredTour.product_id ?? '']) || getTourDisplayName(hoveredTour)}</span>
+                <span>{getTourDisplayName(hoveredTour) || getProductDisplayName(productMetaById[hoveredTour.product_id ?? ''])}</span>
               </div>
               
               {/* 상태 정보 */}

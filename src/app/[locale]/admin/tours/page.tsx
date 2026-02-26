@@ -16,6 +16,7 @@ type Tour = Database['public']['Tables']['tours']['Row']
 
 type ExtendedTour = Omit<Tour, 'assignment_status'> & {
   product_name?: string | null | undefined;
+  name?: string | null | undefined;
   name_ko?: string | null | undefined;
   name_en?: string | null | undefined;
   assignment_status?: string | null | undefined;
@@ -131,6 +132,13 @@ export default function AdminTours() {
 
   // 통합 로딩 상태
   const loading = toursLoading || employeesLoading || productsLoading
+
+  // 달력 뷰: processToursData가 끝나기 전에는 빈 달력이 깜빡이지 않도록, 데이터 준비됐을 때만 렌더
+  const calendarDataReady = !loading && (
+    toursData == null ||
+    toursData.length === 0 ||
+    tours.length > 0
+  )
 
   // month key helper was unused; removed to satisfy linter
 
@@ -398,6 +406,9 @@ export default function AdminTours() {
           ...tour,
           assignment_status: assignmentStatus,
           product_name: tour.product_id ? productMap.get(tour.product_id) : null,
+          // 상품 name을 처음부터 넣어서 달력에서 name_ko 로드 없이 표시
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          name: (product as any)?.name ?? null,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           name_ko: (product as any)?.name_ko || null,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -825,23 +836,35 @@ export default function AdminTours() {
       {/* 달력 보기 */}
       {viewMode === 'calendar' && (
         <div className="relative">
-          {navigatingToTour && (
-            <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10 rounded-lg">
+          {!calendarDataReady && (
+            <div className="flex items-center justify-center min-h-[400px] bg-gray-50 rounded-lg">
               <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                <p className="text-sm text-gray-600">투어 상세 페이지로 이동 중...</p>
+                <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-600 border-t-transparent mx-auto mb-3"></div>
+                <p className="text-sm text-gray-600">{t('calendar.loading') || '달력 로딩 중...'}</p>
               </div>
             </div>
           )}
-          <TourCalendar 
-            tours={filteredTours} 
-            onTourClick={handleTourClick} 
-            allReservations={allReservations}
-            reservationPricingMap={reservationPricingMap}
-            onTourStatusUpdate={handleTourStatusUpdate}
-            userRole={userRole ? String(userRole) : undefined}
-            userPosition={userPosition || undefined}
-          />
+          {calendarDataReady && (
+            <>
+              {navigatingToTour && (
+                <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10 rounded-lg">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                    <p className="text-sm text-gray-600">투어 상세 페이지로 이동 중...</p>
+                  </div>
+                </div>
+              )}
+              <TourCalendar 
+                tours={filteredTours} 
+                onTourClick={handleTourClick} 
+                allReservations={allReservations}
+                reservationPricingMap={reservationPricingMap}
+                onTourStatusUpdate={handleTourStatusUpdate}
+                userRole={userRole ? String(userRole) : undefined}
+                userPosition={userPosition || undefined}
+              />
+            </>
+          )}
         </div>
       )}
 
