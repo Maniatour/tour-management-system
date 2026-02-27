@@ -769,9 +769,9 @@ export default function CustomerReceiptModal({
                       <p className="receipt-tips-intro text-gray-600 text-sm leading-relaxed">{L.tipNotIncluded}</p>
                       <p className="text-gray-700 text-sm font-medium mt-2">{L.tipSuggestedPerPerson}</p>
                       <ul className="list-none space-y-1 text-sm text-gray-700">
-                        <li>• {L.tipBasic} → {isEn ? <>{formatMoney(tip10PerPerson, cur)} per person ({formatMoney(tip10Total, cur)} total)</> : <>1인당 {formatMoney(tip10PerPerson, cur)} (총 {formatMoney(tip10Total, cur)})</>}</li>
-                        <li>• {L.tipStandard} → {isEn ? <>{formatMoney(tip15PerPerson, cur)} per person ({formatMoney(tip15Total, cur)} total)</> : <>1인당 {formatMoney(tip15PerPerson, cur)} (총 {formatMoney(tip15Total, cur)})</>}</li>
-                        <li>• {L.tipExcellent} → {isEn ? <>{formatMoney(tip20PerPerson, cur)} per person ({formatMoney(tip20Total, cur)} total)</> : <>1인당 {formatMoney(tip20PerPerson, cur)} (총 {formatMoney(tip20Total, cur)})</>}</li>
+                        <li>• {L.tipBasic} → {isEn ? <><span className="font-bold">{formatMoney(tip10PerPerson, cur)}</span> per person (<span className="font-bold">{formatMoney(tip10Total, cur)}</span> total)</> : <>1인당 <span className="font-bold">{formatMoney(tip10PerPerson, cur)}</span> (총 <span className="font-bold">{formatMoney(tip10Total, cur)}</span>)</>}</li>
+                        <li>• {L.tipStandard} → {isEn ? <><span className="font-bold">{formatMoney(tip15PerPerson, cur)}</span> per person (<span className="font-bold">{formatMoney(tip15Total, cur)}</span> total)</> : <>1인당 <span className="font-bold">{formatMoney(tip15PerPerson, cur)}</span> (총 <span className="font-bold">{formatMoney(tip15Total, cur)}</span>)</>}</li>
+                        <li>• {L.tipExcellent} → {isEn ? <><span className="font-bold">{formatMoney(tip20PerPerson, cur)}</span> per person (<span className="font-bold">{formatMoney(tip20Total, cur)}</span> total)</> : <>1인당 <span className="font-bold">{formatMoney(tip20PerPerson, cur)}</span> (총 <span className="font-bold">{formatMoney(tip20Total, cur)}</span>)</>}</li>
                       </ul>
                       <p className="receipt-tips-thankyou text-gray-600 text-sm italic mt-8 mb-0 text-center block">{L.tipThankYou}</p>
                     </div>
