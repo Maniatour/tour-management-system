@@ -21,6 +21,7 @@ interface CourseTreeItemProps {
   onSelect: (course: TourCourse) => void
   onDeselect: (courseId: string) => void
   onEdit: (course: TourCourse) => void
+  locale?: string
 }
 
 const CourseTreeItem: React.FC<CourseTreeItemProps> = ({
@@ -31,7 +32,8 @@ const CourseTreeItem: React.FC<CourseTreeItemProps> = ({
   onToggle,
   onSelect,
   onDeselect,
-  onEdit
+  onEdit,
+  locale = 'ko'
 }) => {
   const hasChildren = course.children && course.children.length > 0
   const isExpanded = expandedNodes.has(course.id)
@@ -114,7 +116,9 @@ const CourseTreeItem: React.FC<CourseTreeItemProps> = ({
         {/* 이름 및 정보 */}
         <div className="flex-1 min-w-0 flex items-center gap-2">
           <div className="flex-1 min-w-0 flex items-center gap-2">
-            <div className="text-xs font-medium truncate">{course.name_ko || course.name_en}</div>
+            <div className="text-xs font-medium truncate">
+              {locale === 'en' ? (course.name_en || course.name_ko) : (course.name_ko || course.name_en)}
+            </div>
             {/* 위치 정보 아이콘 */}
             {(course.location || course.start_latitude || course.google_maps_url) ? (
               <MapPin className="w-3 h-3 text-green-500 flex-shrink-0" />
@@ -161,6 +165,7 @@ const CourseTreeItem: React.FC<CourseTreeItemProps> = ({
               onSelect={onSelect}
               onDeselect={onDeselect}
               onEdit={onEdit}
+              locale={locale}
             />
           ))}
         </div>

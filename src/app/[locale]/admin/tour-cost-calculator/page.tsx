@@ -1852,7 +1852,7 @@ export default function TourCostCalculatorPage() {
                   <option value="">{t('selectProductPlaceholder')}</option>
                   {products.map(product => (
                     <option key={product.id} value={product.id}>
-                      {product.name || product.name_en}
+                      {locale === 'en' ? (product.name_en || product.name_ko || product.name) : (product.name_ko || product.name_en || product.name)}
                     </option>
                   ))}
                 </select>
@@ -1926,6 +1926,7 @@ export default function TourCostCalculatorPage() {
                     expandedNodes={expandedCourseNodes}
                     selectedCourses={selectedCourses}
                     onToggle={toggleCourseNode}
+                    locale={locale}
                     onSelect={(course) => {
                       const newSet = new Set(selectedCourses)
                       newSet.add(course.id)
@@ -2039,15 +2040,14 @@ export default function TourCostCalculatorPage() {
                           return []
                         }
 
-                        // 부모 경로 가져오기
+                        const courseName = locale === 'en' ? (course.name_en || course.name_ko) : (course.name_ko || course.name_en)
                         const parentIds = getParentPath(courseId)
                         const parentNames = parentIds.map(id => {
                           const parentCourse = tourCourses.find(c => c.id === id)
-                          return parentCourse ? (parentCourse.name_ko || parentCourse.name_en) : ''
+                          if (!parentCourse) return ''
+                          return locale === 'en' ? (parentCourse.name_en || parentCourse.name_ko) : (parentCourse.name_ko || parentCourse.name_en)
                         }).filter(Boolean)
-                        
-                        // 전체 경로 텍스트 생성
-                        const fullPath = [...parentNames, course.name_ko || course.name_en].join(' > ')
+                        const fullPath = [...parentNames, courseName].join(' > ')
 
                         return (
                           <Draggable key={courseId} draggableId={courseId} index={index}>
