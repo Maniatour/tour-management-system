@@ -1604,6 +1604,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
             }
             
             // 2. 소계 - 할인/추가비용 = grand total (이전 결과를 이어서)
+            // grandTotal < subtotal이면 total_price가 넷가격으로 저장된 경우이므로 " = grandTotal" 추가하지 않음 (수수료 이중 차감 방지)
+            const skipMiddleGrandTotal = subtotal > 0 && grandTotal < subtotal - 0.01
             if (adjustmentTotal !== 0 && calculationString) {
               if (adjustmentTotal > 0) {
                 // 추가비용이 있는 경우
@@ -1612,15 +1614,19 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                 // 할인이 있는 경우
                 calculationString += ` - ${currencySymbol}${Math.abs(adjustmentTotal).toFixed(2)} = ${currencySymbol}${grandTotal.toFixed(2)}`
               }
-            } else if (calculationString && subtotal > 0 && Math.abs(subtotal - grandTotal) > 0.01) {
+            } else if (calculationString && subtotal > 0 && Math.abs(subtotal - grandTotal) > 0.01 && !skipMiddleGrandTotal) {
               calculationString += ` = ${currencySymbol}${grandTotal.toFixed(2)}`
             } else if (!calculationString) {
               calculationString = `${currencySymbol}${grandTotal.toFixed(2)}`
             }
             
-            // 3. grand total - commission = Net price (이전 결과를 이어서)
+            // 3. (소계 또는 grand total) - commission = Net price
+            // skipMiddleGrandTotal인 경우 표시용 넷가격 = subtotal - commission (수수료 1회만 차감)
+            const displayNetPrice = skipMiddleGrandTotal && calculatedCommission > 0
+              ? subtotal - calculatedCommission
+              : netPrice
             if (calculatedCommission > 0 && calculationString) {
-              calculationString += ` - ${currencySymbol}${calculatedCommission.toFixed(2)} = ${currencySymbol}${netPrice.toFixed(2)}`
+              calculationString += ` - ${currencySymbol}${calculatedCommission.toFixed(2)} = ${currencySymbol}${displayNetPrice.toFixed(2)}`
             } else if (calculationString && Math.abs(grandTotal - netPrice) > 0.01) {
               calculationString += ` = ${currencySymbol}${netPrice.toFixed(2)}`
             } else if (!calculationString) {

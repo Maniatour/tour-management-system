@@ -75,6 +75,9 @@ interface TourExpenseManagerProps {
   reservationIds?: string[] // 투어에 배정된 예약 ID들
   userRole?: string // 사용자 역할 (admin, manager, team_member 등)
   onExpenseUpdated?: () => void
+  /** 팀 구성 & 차량 배정에서 설정한 수수료 (전달 시 총 지출에 반영, 부모 tour 업데이트 시 즉시 반영) */
+  tourGuideFee?: number | null
+  tourAssistantFee?: number | null
 }
 
 export default function TourExpenseManager({ 
@@ -84,7 +87,9 @@ export default function TourExpenseManager({
   submittedBy, 
   reservationIds,
   userRole = 'team_member',
-  onExpenseUpdated 
+  onExpenseUpdated,
+  tourGuideFee,
+  tourAssistantFee
 }: TourExpenseManagerProps) {
   const t = useTranslations('tours.tourExpense')
   const [expenses, setExpenses] = useState<TourExpense[]>([])
@@ -1127,8 +1132,11 @@ export default function TourExpenseManager({
     }, 0)
     
     // 총 지출 계산 (기존 지출 + 가이드/드라이버 수수료 + 부킹 비용)
+    // 팀 구성 & 차량 배정에서 전달된 수수료가 있으면 우선 사용 (저장 후 즉시 반영)
     const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0)
-    const totalFees = guideFee + assistantFee
+    const effectiveGuideFee = tourGuideFee !== undefined && tourGuideFee !== null ? tourGuideFee : guideFee
+    const effectiveAssistantFee = tourAssistantFee !== undefined && tourAssistantFee !== null ? tourAssistantFee : assistantFee
+    const totalFees = effectiveGuideFee + effectiveAssistantFee
     
     // 부킹 비용 계산
     const totalTicketCosts = ticketBookings.reduce((sum, booking) => sum + (booking.expense || 0), 0)
@@ -1150,8 +1158,8 @@ export default function TourExpenseManager({
       totalBookingCosts,
       totalExpensesWithFeesAndBookings,
       profit,
-      guideFee,
-      assistantFee
+      effectiveGuideFee,
+      effectiveAssistantFee
     })
     
     return {
@@ -1163,7 +1171,9 @@ export default function TourExpenseManager({
       totalHotelCosts,
       totalBookingCosts,
       totalExpensesWithFeesAndBookings,
-      profit
+      profit,
+      effectiveGuideFee,
+      effectiveAssistantFee
     }
   }
 
@@ -1303,7 +1313,7 @@ export default function TourExpenseManager({
             <div className="border-t p-4 bg-gray-50">
               <div className="space-y-3">
                 {/* 가이드/드라이버 수수료 */}
-                {(guideFee > 0 || assistantFee > 0) && (
+                {(financialStats.effectiveGuideFee > 0 || financialStats.effectiveAssistantFee > 0) && (
                   <div className="bg-white rounded p-3">
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-medium text-gray-900">{t('guideDriverFee')}</span>
@@ -1312,16 +1322,16 @@ export default function TourExpenseManager({
                       </span>
                     </div>
                     <div className="space-y-1 text-sm text-gray-600">
-                      {guideFee > 0 && (
+                      {financialStats.effectiveGuideFee > 0 && (
                         <div className="flex items-center justify-between">
                           <span>{t('guideFee')}</span>
-                          <span>{formatCurrency(guideFee)}</span>
+                          <span>{formatCurrency(financialStats.effectiveGuideFee)}</span>
                         </div>
                       )}
-                      {assistantFee > 0 && (
+                      {financialStats.effectiveAssistantFee > 0 && (
                         <div className="flex items-center justify-between">
                           <span>{t('assistantDriverFee')}</span>
-                          <span>{formatCurrency(assistantFee)}</span>
+                          <span>{formatCurrency(financialStats.effectiveAssistantFee)}</span>
                         </div>
                       )}
                     </div>

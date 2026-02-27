@@ -94,6 +94,8 @@ export const TourFinance: React.FC<TourFinanceProps> = ({
           reservationIds={tour.reservation_ids || []}
           userRole={userRole}
           onExpenseUpdated={onExpenseUpdated}
+          tourGuideFee={tour.guide_fee}
+          tourAssistantFee={tour.assistant_fee}
         />
       </div>
 

@@ -517,12 +517,11 @@ export default function PricingSection({
         const statusLower = status.toLowerCase()
         const amount = Number(record.amount) || 0
 
-        // 보증금 관련 상태
+        // 보증금 수령만 합산 (요청 금액 제외) - 고객 실제 지불액(보증금)에 반영
         if (
           statusLower.includes('partner received') ||
           statusLower.includes('deposit received') ||
-          statusLower.includes("customer's cc charged") ||
-          statusLower.includes('deposit requested')
+          statusLower.includes("customer's cc charged")
         ) {
           depositTotal += amount
         }

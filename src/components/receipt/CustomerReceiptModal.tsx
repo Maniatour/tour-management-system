@@ -445,20 +445,29 @@ export default function CustomerReceiptModal({
     const printStyles = isTwoPerPage
       ? `
       *, *::before, *::after { box-sizing: border-box; }
-      html { font-size: 10px !important; min-height: 0 !important; height: auto !important; }
+      html { font-size: 12px !important; min-height: 0 !important; height: auto !important; }
       html, body { margin: 0 !important; padding: 0 !important; width: 279mm !important; background: white !important; min-height: 0 !important; height: auto !important; }
-      #receipt-print-root { display: block !important; min-height: 0 !important; height: auto !important; margin: 0 !important; padding: 6mm !important; }
+      #receipt-print-root { display: block !important; min-height: 0 !important; height: auto !important; margin: 0 !important; padding: 2mm 3mm !important; }
       .receipt-print-two-per-page { display: block !important; width: 100% !important; max-width: 279mm !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; }
       .receipt-print-two-per-page > * { margin: 0 !important; padding: 0 !important; }
-      .receipt-print-row { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 8mm !important; width: 100% !important; height: 198mm !important; max-height: 198mm !important; margin: 0 !important; padding: 0 !important; page-break-inside: avoid !important; }
+      .receipt-print-row { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 6mm !important; width: 100% !important; height: 198mm !important; max-height: 198mm !important; margin: 0 !important; padding: 0 !important; page-break-inside: avoid !important; }
       .receipt-print-row:not(:first-child) { page-break-before: always !important; break-before: page !important; margin-top: 0 !important; }
       .receipt-two-up-cell { height: 198mm !important; max-height: 198mm !important; min-height: 198mm !important; page-break-inside: avoid !important; display: flex !important; flex-direction: column !important; overflow: hidden !important; }
-      .receipt-two-up-cell .receipt-letter { width: 100% !important; max-width: 100% !important; min-height: auto !important; flex: 1 1 auto !important; max-height: 198mm !important; break-inside: avoid !important; page-break-inside: avoid !important; border: none !important; box-shadow: none !important; padding: 3mm !important; overflow: hidden !important; font-size: 1rem !important; }
+      .receipt-two-up-cell .receipt-letter { width: 100% !important; max-width: 100% !important; min-height: auto !important; flex: 1 1 auto !important; max-height: 198mm !important; break-inside: avoid !important; page-break-inside: avoid !important; border: none !important; box-shadow: none !important; padding: 2mm !important; overflow: hidden !important; font-size: 1rem !important; }
+      .receipt-two-up-cell .receipt-letter h2 { font-size: 1.15rem !important; }
+      .receipt-two-up-cell .receipt-letter h3 { font-size: 1.1rem !important; }
+      .receipt-two-up-cell .receipt-letter h4 { font-size: 1.05rem !important; }
+      .receipt-two-up-cell .receipt-letter table { font-size: 1rem !important; }
+      .receipt-two-up-cell .receipt-letter .text-sm { font-size: 0.95rem !important; }
       .receipt-letter .receipt-tips-section { margin-top: 2mm !important; padding-top: 2mm !important; padding-bottom: 0 !important; font-size: 1rem !important; line-height: 1.45 !important; }
       .receipt-letter .receipt-tips-section p { margin: 0 0 1.5mm 0 !important; line-height: 1.45 !important; }
+      .receipt-letter .receipt-tips-section .receipt-tips-thankyou { margin-top: 1em !important; margin-bottom: 0 !important; text-align: center !important; }
       .receipt-letter .receipt-tips-section ul { margin: 0 0 1mm 0 !important; padding-left: 4mm !important; line-height: 1.45 !important; }
       .receipt-letter .receipt-tips-section li { margin: 0 0 1.2mm 0 !important; line-height: 1.45 !important; }
-      @page { size: 279mm 216mm; margin: 6mm !important; }
+      .receipt-letter .receipt-summary-email { white-space: nowrap !important; min-width: 0 !important; overflow: visible !important; }
+      .receipt-letter .grid > div.min-w-0 { min-width: 0 !important; }
+      .receipt-letter .receipt-balance-amount { color: #dc2626 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      @page { size: 279mm 216mm; margin: 4mm 3mm !important; }
       @media print {
         html, body { min-height: 0 !important; height: auto !important; overflow: visible !important; }
         .receipt-print-two-per-page { min-height: 0 !important; }
@@ -472,6 +481,9 @@ export default function CustomerReceiptModal({
       .receipt-letter { border: none !important; box-shadow: none !important; font-size: 1rem !important; }
       .receipt-letter { page-break-after: always; page-break-inside: avoid; }
       .receipt-letter:last-child { page-break-after: auto; }
+      .receipt-letter .receipt-summary-email { white-space: nowrap !important; min-width: 0 !important; overflow: visible !important; }
+      .receipt-letter .grid > div.min-w-0 { min-width: 0 !important; }
+      .receipt-letter .receipt-balance-amount { color: #dc2626 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
       @page { size: 216mm 279mm; margin: 10mm; }
     `
     const links = Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'))
@@ -479,7 +491,7 @@ export default function CustomerReceiptModal({
       .filter(Boolean)
     iframeDoc.open()
     const bodyContent = isTwoPerPage
-      ? `<div id="receipt-print-root" style="min-height:0!important;height:auto!important;margin:0!important;padding:6mm!important">${clone.outerHTML}</div>`
+      ? `<div id="receipt-print-root" style="min-height:0!important;height:auto!important;margin:0!important;padding:2mm 3mm!important">${clone.outerHTML}</div>`
       : clone.outerHTML
     const bodyAttrs = isTwoPerPage
       ? ' class="receipt-print-two-up" style="min-height:0!important;height:auto!important;margin:0!important;padding:0!important"'
@@ -622,13 +634,11 @@ export default function CustomerReceiptModal({
                       {L.title}
                     </h3>
 
-                    {/* Reservation Summary */}
                     <div className="mb-4">
-                      <h4 className="text-sm font-bold text-gray-700 uppercase mb-2">{L.reservationSummary}</h4>
-                      <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-                        <div>
+                      <div className="grid grid-cols-[2fr_1fr] gap-x-6 gap-y-1 text-sm">
+                        <div className="min-w-0">
                           <p><span className="text-gray-600">{L.guest}:</span> {d.customer.name}</p>
-                          <p><span className="text-gray-600">{L.email}:</span> {d.customer.email || '—'}</p>
+                          <p className="receipt-summary-email" title={d.customer.email || undefined}><span className="text-gray-600">{L.email}:</span> {d.customer.email || '—'}</p>
                           <p><span className="text-gray-600">{L.tel}:</span> {d.customer.phone || '—'}</p>
                           <p><span className="text-gray-600">{L.hotel}:</span> {d.pickupHotelName || '—'}</p>
                         </div>
@@ -747,11 +757,9 @@ export default function CustomerReceiptModal({
                         </tbody>
                       </table>
 
-                      {/* 금액 요약: Sub Total = 고객 총 결제 금액(예약 수정 가격 계산과 동일), Paid Amount, Balance */}
                       <div className="mt-4 flex flex-col items-end gap-1 text-sm">
-                        <p className="flex justify-end gap-4 w-full max-w-[220px]"><span className="text-gray-600">{L.subTotal}:</span> <span className="font-medium">{formatMoney(customerTotalPayment, cur)}</span></p>
                         <p className="flex justify-end gap-4 w-full max-w-[220px]"><span className="text-gray-600">{L.paidAmount}:</span> <span>{formatMoney(d.pricing.deposit_amount, cur)}</span></p>
-                        <p className="flex justify-end gap-4 w-full max-w-[220px]"><span className="text-gray-600">{L.balance}:</span> <span className="font-medium">{formatMoney(d.pricing.balance_amount, cur)}</span></p>
+                        <p className="flex justify-end gap-4 w-full max-w-[220px]"><span className="text-gray-600">{L.balance}:</span> <span className="receipt-balance-amount font-medium text-red-600">{formatMoney(d.pricing.balance_amount, cur)}</span></p>
                       </div>
                     </div>
 
@@ -761,11 +769,11 @@ export default function CustomerReceiptModal({
                       <p className="receipt-tips-intro text-gray-600 text-sm leading-relaxed">{L.tipNotIncluded}</p>
                       <p className="text-gray-700 text-sm font-medium mt-2">{L.tipSuggestedPerPerson}</p>
                       <ul className="list-none space-y-1 text-sm text-gray-700">
-                        <li>• {L.tipBasic} → {formatMoney(tip10PerPerson, cur)} {isEn ? 'per person' : '1인당'} ({formatMoney(tip10Total, cur)} {isEn ? 'total' : '총액'})</li>
-                        <li>• {L.tipStandard} → {formatMoney(tip15PerPerson, cur)} {isEn ? 'per person' : '1인당'} ({formatMoney(tip15Total, cur)} {isEn ? 'total' : '총액'})</li>
-                        <li>• {L.tipExcellent} → {formatMoney(tip20PerPerson, cur)} {isEn ? 'per person' : '1인당'} ({formatMoney(tip20Total, cur)} {isEn ? 'total' : '총액'})</li>
+                        <li>• {L.tipBasic} → {isEn ? <>{formatMoney(tip10PerPerson, cur)} per person ({formatMoney(tip10Total, cur)} total)</> : <>1인당 {formatMoney(tip10PerPerson, cur)} (총 {formatMoney(tip10Total, cur)})</>}</li>
+                        <li>• {L.tipStandard} → {isEn ? <>{formatMoney(tip15PerPerson, cur)} per person ({formatMoney(tip15Total, cur)} total)</> : <>1인당 {formatMoney(tip15PerPerson, cur)} (총 {formatMoney(tip15Total, cur)})</>}</li>
+                        <li>• {L.tipExcellent} → {isEn ? <>{formatMoney(tip20PerPerson, cur)} per person ({formatMoney(tip20Total, cur)} total)</> : <>1인당 {formatMoney(tip20PerPerson, cur)} (총 {formatMoney(tip20Total, cur)})</>}</li>
                       </ul>
-                      <p className="receipt-tips-thankyou text-gray-600 text-sm italic mt-2">{L.tipThankYou}</p>
+                      <p className="receipt-tips-thankyou text-gray-600 text-sm italic mt-8 mb-0 text-center block">{L.tipThankYou}</p>
                     </div>
                   </div>
                 )
