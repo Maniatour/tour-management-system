@@ -1,4 +1,4 @@
-import { ArrowLeft, Edit, Trash2, Copy, Printer, Mail } from 'lucide-react'
+import { ArrowLeft, Edit, Trash2, Copy, Printer, Mail, DollarSign } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import TourSunriseTime from '@/components/TourSunriseTime'
@@ -27,7 +27,8 @@ interface TourHeaderProps {
   getAssignmentStatusText: (tour: any, locale: string) => string
   onEditClick?: () => void
   onPrintReceipts?: () => void
-  onPrintEnvelopes?: () => void
+  onPrintTipEnvelopes?: () => void
+  onPrintBalanceEnvelopes?: () => void
 }
 
 export default function TourHeader({
@@ -51,7 +52,8 @@ export default function TourHeader({
   getAssignmentStatusText,
   onEditClick,
   onPrintReceipts,
-  onPrintEnvelopes
+  onPrintTipEnvelopes,
+  onPrintBalanceEnvelopes
 }: TourHeaderProps) {
   const router = useRouter()
   const t = useTranslations('tours.tourHeader')
@@ -92,14 +94,24 @@ export default function TourHeader({
                     <Printer className="w-5 h-5" />
                   </button>
                 )}
-                {onPrintEnvelopes && (
+                {onPrintTipEnvelopes && (
                   <button
                     type="button"
-                    onClick={onPrintEnvelopes}
+                    onClick={onPrintTipEnvelopes}
                     className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 flex-shrink-0"
-                    title={params.locale === 'ko' ? '투어 봉투 인쇄' : 'Print tour envelopes'}
+                    title={params.locale === 'ko' ? '팁 봉투 인쇄' : 'Print tip envelopes'}
                   >
                     <Mail className="w-5 h-5" />
+                  </button>
+                )}
+                {onPrintBalanceEnvelopes && (
+                  <button
+                    type="button"
+                    onClick={onPrintBalanceEnvelopes}
+                    className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 flex-shrink-0"
+                    title={params.locale === 'ko' ? 'Balance 봉투 인쇄' : 'Print balance envelopes'}
+                  >
+                    <DollarSign className="w-5 h-5" />
                   </button>
                 )}
               </div>

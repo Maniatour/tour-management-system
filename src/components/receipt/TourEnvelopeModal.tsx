@@ -1,35 +1,33 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { X, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
-/** 봉투 1장당 데이터 (고객명, 잔금, 고객 언어 등) */
-export type EnvelopeRow = {
-  reservationId: string
-  customerName: string
-  customerLanguage: string | null
-  balanceAmount: number
-  currency: string
-}
-
-function formatMoney(amount: number, currency: string): string {
-  if (currency === 'KRW') return `₩${Math.round(amount).toLocaleString()}`
-  return `$${amount.toFixed(2)}`
-}
+// ---------------------------------------------------------------------------
+// 상수
+// ---------------------------------------------------------------------------
 
 /** 봉투 크기: 3 5/8" x 6 1/2" (인치) → mm */
-const ENVELOPE_WIDTH_MM = 3.625 * 25.4   // 92.075
+const ENVELOPE_WIDTH_MM = 3.625 * 25.4  // 92.075
 const ENVELOPE_HEIGHT_MM = 6.5 * 25.4   // 165.1
 
-/** 봉투 인쇄용 이미지 URL: .env.local에 NEXT_PUBLIC_ENVELOPE_IMAGE_URL 설정 또는 public/envelope-image.png 사용 */
-const ENVELOPE_IMAGE_URL =
-  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_ENVELOPE_IMAGE_URL) ||
-  '/envelope-image.png'
+/** Balance 봉투: 정보 블록이 들어가는 영역(빨간 박스) = 왼쪽 상단, mm */
+const BALANCE_BLOCK_LEFT_MM = 42
+const BALANCE_BLOCK_TOP_MM = 10
+const BALANCE_BLOCK_WIDTH_MM = 176
 
-const labels = {
+const ENVELOPE_IMAGE_URL = {
+  tip: (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_TIP_ENVELOPE_IMAGE_URL) || '/tip-envelope-image.png',
+  balance: (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_BALANCE_ENVELOPE_IMAGE_URL) || '/balance-envelope-image.png',
+}
+
+const LABELS = {
   ko: {
-    title: '투어 봉투 인쇄',
+    titleTip: '팁 봉투 인쇄',
+    titleBalance: 'Balance 봉투 인쇄',
+    tourLabel: '투어 :',
+    tourGuideLabel: '투어 가이드 :',
     print: '인쇄',
     close: '닫기',
     printMode: '인쇄 방식',
@@ -38,9 +36,14 @@ const labels = {
     selectCustomers: '인쇄할 고객 선택',
     selectAll: '전체 선택',
     deselectAll: '전체 해제',
+    noBalanceCustomers: '잔금이 있는 고객이 없습니다.',
+    preview: '미리보기',
   },
   en: {
-    title: 'Tour Envelope Print',
+    titleTip: 'Tip Envelope Print',
+    titleBalance: 'Balance Envelope Print',
+    tourLabel: 'TOUR :',
+    tourGuideLabel: 'TOUR GUIDE :',
     print: 'Print',
     close: 'Close',
     printMode: 'Print mode',
@@ -49,31 +52,50 @@ const labels = {
     selectCustomers: 'Select customers to print',
     selectAll: 'Select all',
     deselectAll: 'Deselect all',
+    noBalanceCustomers: 'No customers with balance.',
+    preview: 'Preview',
   },
+} as const
+
+// ---------------------------------------------------------------------------
+// 타입
+// ---------------------------------------------------------------------------
+
+export type EnvelopeRow = {
+  reservationId: string
+  customerName: string
+  customerLanguage: string | null
+  balanceAmount: number
+  currency: string
 }
 
-/** 날짜를 YYYY.MM.DD 형식으로 (봉투 표기용) */
+export type EnvelopeVariant = 'tip' | 'balance'
+
+export interface TourEnvelopeModalProps {
+  isOpen: boolean
+  onClose: () => void
+  variant: EnvelopeVariant
+  reservationIds: string[]
+  tourDate: string
+  productNameKo: string
+  productNameEn: string
+  guideAndAssistantKo: string
+  guideAndAssistantEn: string
+  locale?: string
+}
+
+// ---------------------------------------------------------------------------
+// 유틸
+// ---------------------------------------------------------------------------
+
+function formatMoney(amount: number, currency: string): string {
+  if (currency === 'KRW') return `₩${Math.round(amount).toLocaleString()}`
+  return `$${amount.toFixed(2)}`
+}
+
 function formatDateForEnvelope(dateStr: string): string {
   if (!dateStr) return ''
   return dateStr.replace(/-/g, '.')
-}
-
-interface TourEnvelopeModalProps {
-  isOpen: boolean
-  onClose: () => void
-  /** 예약 ID 목록 (봉투는 예약별 1장) */
-  reservationIds: string[]
-  /** 투어 날짜 */
-  tourDate: string
-  /** 투어(상품) 이름 - 한글 (고객 언어가 한글일 때 사용) */
-  productNameKo: string
-  /** 투어(상품) 이름 - 영문 (고객 언어가 영문일 때 사용) */
-  productNameEn: string
-  /** 가이드 & 어시스턴트 표시 - 한글 */
-  guideAndAssistantKo: string
-  /** 가이드 & 어시스턴트 표시 - 영문 */
-  guideAndAssistantEn: string
-  locale?: string
 }
 
 function isCustomerEnglish(lang: string | null | undefined): boolean {
@@ -82,9 +104,53 @@ function isCustomerEnglish(lang: string | null | undefined): boolean {
   return l === 'en' || l.startsWith('en-') || l === 'english'
 }
 
+// ---------------------------------------------------------------------------
+// 인쇄용 스타일 (Balance 블록 = 봉투 왼쪽 상단 빨간 박스 영역에 고정)
+// ---------------------------------------------------------------------------
+
+function getPrintStyles(): string {
+  return `
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0 !important; padding: 0 !important; background: white !important; font-family: Arial, Helvetica, sans-serif !important; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+    body * { font-family: Arial, Helvetica, sans-serif !important; }
+    .absolute { position: absolute !important; }
+    .relative { position: relative !important; }
+    .flex { display: flex !important; }
+    .flex-col { flex-direction: column !important; }
+    .flex-shrink-0 { flex-shrink: 0 !important; }
+    .z-0 { z-index: 0 !important; }
+    .z-10 { z-index: 10 !important; }
+    .inset-0 { top:0!important;right:0!important;bottom:0!important;left:0!important; }
+    .w-full { width: 100% !important; }
+    .h-full { height: 100% !important; }
+    .object-contain { object-fit: contain !important; }
+    .object-center { object-position: center !important; }
+    .pointer-events-none { pointer-events: none !important; }
+    .break-words { overflow-wrap: break-word !important; word-break: break-word !important; }
+    .text-gray-900 { color: #111827 !important; }
+    .space-y-0 > * + * { margin-top: 0 !important; }
+    .bg-white { background-color: #fff !important; }
+    .overflow-visible { overflow: visible !important; }
+    .envelope-sheet, .envelope-sheet * { font-family: Arial, Helvetica, sans-serif !important; }
+    .envelope-sheet { width: ${ENVELOPE_WIDTH_MM}mm !important; height: ${ENVELOPE_HEIGHT_MM}mm !important; margin: 0 !important; padding: 0 !important; page-break-after: always !important; page-break-inside: avoid !important; }
+    .envelope-sheet:last-child { page-break-after: auto !important; }
+    @page { size: ${ENVELOPE_WIDTH_MM}mm ${ENVELOPE_HEIGHT_MM}mm; margin: 0 !important; }
+    @media print {
+      html, body { width: ${ENVELOPE_WIDTH_MM}mm !important; margin: 0 !important; padding: 0 !important; }
+      body, body *, .envelope-sheet, .envelope-sheet * { font-family: Arial, Helvetica, sans-serif !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+      .envelope-balance-block { left: ${BALANCE_BLOCK_LEFT_MM}mm !important; top: ${BALANCE_BLOCK_TOP_MM}mm !important; width: ${BALANCE_BLOCK_WIDTH_MM}mm !important; min-width: ${BALANCE_BLOCK_WIDTH_MM}mm !important; transform: rotate(90deg) !important; transform-origin: left top !important; }
+    }
+  `
+}
+
+// ---------------------------------------------------------------------------
+// 컴포넌트
+// ---------------------------------------------------------------------------
+
 export default function TourEnvelopeModal({
   isOpen,
   onClose,
+  variant,
   reservationIds,
   tourDate,
   productNameKo,
@@ -96,11 +162,13 @@ export default function TourEnvelopeModal({
   const [rows, setRows] = useState<EnvelopeRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  /** true: 이미지+글자, false: 글자만(이미 인쇄된 봉투용) */
   const [printWithImage, setPrintWithImage] = useState(true)
-  /** 인쇄할 예약 ID 집합 (기본: 전체) */
   const [selectedReservationIds, setSelectedReservationIds] = useState<Set<string>>(new Set())
-  const L = locale === 'ko' ? labels.ko : labels.en
+
+  const L = locale === 'ko' ? LABELS.ko : LABELS.en
+  const envelopeImageUrl = ENVELOPE_IMAGE_URL[variant]
+  const displayRows = variant === 'balance' ? rows.filter((r) => r.balanceAmount > 0) : rows
+  const hasBalanceRows = variant === 'balance' && displayRows.length === 0 && !loading && !error && rows.length > 0
 
   useEffect(() => {
     if (!isOpen || !reservationIds.length) {
@@ -164,11 +232,8 @@ export default function TourEnvelopeModal({
 
         const results: EnvelopeRow[] = ids.map((id) => {
           const rez = rezById.get(id)
-          if (!rez) {
-            return { reservationId: id, customerName: '', customerLanguage: null, balanceAmount: 0, currency: 'USD' }
-          }
-          const customerId = rez.customer_id
-          const customer = customerId ? customerById.get(customerId) : null
+          if (!rez) return { reservationId: id, customerName: '', customerLanguage: null, balanceAmount: 0, currency: 'USD' }
+          const customer = rez.customer_id ? customerById.get(rez.customer_id) : null
           const pricing = pricingByResId.get(id)
           const balanceAmount = pricing?.balance_amount ?? 0
           const currency = pricing?.currency ?? 'USD'
@@ -181,7 +246,11 @@ export default function TourEnvelopeModal({
           }
         })
         setRows(results)
-        setSelectedReservationIds(new Set(results.map((r) => r.reservationId)))
+        if (variant === 'balance') {
+          setSelectedReservationIds(new Set(results.filter((r) => r.balanceAmount > 0).map((r) => r.reservationId)))
+        } else {
+          setSelectedReservationIds(new Set(results.map((r) => r.reservationId)))
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load')
       } finally {
@@ -189,7 +258,7 @@ export default function TourEnvelopeModal({
       }
     }
     load()
-  }, [isOpen, reservationIds.join(',')])
+  }, [isOpen, reservationIds.join(','), variant])
 
   const handlePrint = () => {
     const target = document.getElementById('envelope-batch-print')
@@ -209,47 +278,10 @@ export default function TourEnvelopeModal({
       document.body.removeChild(iframe)
       return
     }
-
-    const printStyles = `
-      *, *::before, *::after { box-sizing: border-box; }
-      html, body { margin: 0 !important; padding: 0 !important; background: white !important; font-family: Arial, Helvetica, sans-serif !important; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
-      body * { font-family: Arial, Helvetica, sans-serif !important; }
-      .absolute { position: absolute !important; }
-      .relative { position: relative !important; }
-      .flex { display: flex !important; }
-      .flex-col { flex-direction: column !important; }
-      .items-center { align-items: center !important; }
-      .justify-center { justify-content: center !important; }
-      .flex-shrink-0 { flex-shrink: 0 !important; }
-      .z-0 { z-index: 0 !important; }
-      .z-10 { z-index: 10 !important; }
-      .inset-0 { top:0!important;right:0!important;bottom:0!important;left:0!important; }
-      .w-full { width: 100% !important; }
-      .h-full { height: 100% !important; }
-      .object-contain { object-fit: contain !important; }
-      .object-center { object-position: center !important; }
-      .pointer-events-none { pointer-events: none !important; }
-      .text-center { text-align: center !important; }
-      .font-semibold { font-weight: 600 !important; }
-      .text-xl { font-size: 1.25rem !important; }
-      .leading-tight { line-height: 1.25 !important; }
-      .break-words { overflow-wrap: break-word !important; word-break: break-word !important; }
-      .text-gray-900 { color: #111827 !important; }
-      .space-y-0 > * + * { margin-top: 0 !important; }
-      .bg-white { background-color: #fff !important; }
-      .overflow-visible { overflow: visible !important; }
-      .envelope-sheet, .envelope-sheet * { font-family: Arial, Helvetica, sans-serif !important; }
-      .envelope-sheet { width: ${ENVELOPE_WIDTH_MM}mm !important; height: ${ENVELOPE_HEIGHT_MM}mm !important; margin: 0 !important; padding: 0 !important; page-break-after: always !important; page-break-inside: avoid !important; }
-      .envelope-sheet:last-child { page-break-after: auto !important; }
-      @page { size: ${ENVELOPE_WIDTH_MM}mm ${ENVELOPE_HEIGHT_MM}mm; margin: 0 !important; }
-      @media print {
-        body, body *, .envelope-sheet, .envelope-sheet * { font-family: Arial, Helvetica, sans-serif !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
-      }
-    `
     iframeDoc.open()
     iframeDoc.write(`
       <!DOCTYPE html><html><head><meta charset="utf-8"><title>Tour Envelope</title>
-      <style>${printStyles}</style>
+      <style>${getPrintStyles()}</style>
       </head><body>${clone.outerHTML}</body></html>`)
     iframeDoc.close()
 
@@ -269,28 +301,48 @@ export default function TourEnvelopeModal({
 
   if (!isOpen) return null
 
+  const balanceBlockStyle = {
+    pointerEvents: 'none' as const,
+    left: `${BALANCE_BLOCK_LEFT_MM}mm`,
+    top: `${BALANCE_BLOCK_TOP_MM}mm`,
+    width: `${BALANCE_BLOCK_WIDTH_MM}mm`,
+    minWidth: `${BALANCE_BLOCK_WIDTH_MM}mm`,
+    transform: 'rotate(90deg)',
+    transformOrigin: 'left top',
+    fontFamily: 'Arial, Helvetica, sans-serif',
+    fontSize: '18px',
+    lineHeight: 2,
+    color: '#111827',
+    paddingLeft: '4mm',
+    paddingRight: '4mm',
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-[min(95vw,520px)] max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
-          <h2 className="text-lg font-bold text-gray-900">{L.title}</h2>
+        <header className="flex items-center justify-between p-4 border-b flex-shrink-0">
+          <h2 className="text-lg font-bold text-gray-900">{variant === 'tip' ? L.titleTip : L.titleBalance}</h2>
           <button type="button" onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 transition-colors">
             <X className="w-5 h-5" />
           </button>
-        </div>
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 min-w-0">
+        </header>
+
+        <div className={`flex-1 overflow-y-auto p-4 min-w-0 ${variant === 'balance' ? 'overflow-x-auto' : 'overflow-x-hidden'}`}>
           {loading && <p className="text-gray-500 py-4">로딩 중...</p>}
           {error && <p className="text-red-600 py-4">{error}</p>}
           {!loading && !error && rows.length === 0 && <p className="text-gray-500 py-4">예약이 없습니다.</p>}
-          {!loading && !error && rows.length > 0 && (
+          {hasBalanceRows && <p className="text-gray-500 py-4">{L.noBalanceCustomers}</p>}
+
+          {!loading && !error && rows.length > 0 && !hasBalanceRows && (
             <>
               <p className="text-sm text-gray-600 mb-3">
                 {selectedReservationIds.size > 0 ? `${selectedReservationIds.size}장 인쇄` : '인쇄할 고객을 선택하세요'} (3 5/8" × 6 1/2" 봉투)
               </p>
+
               <div className="flex flex-col gap-2 mb-3">
                 <span className="text-sm font-medium text-gray-700">{L.selectCustomers}</span>
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => setSelectedReservationIds(new Set(rows.map((r) => r.reservationId)))} className="text-xs text-blue-600 hover:underline">
+                  <button type="button" onClick={() => setSelectedReservationIds(new Set(displayRows.map((r) => r.reservationId)))} className="text-xs text-blue-600 hover:underline">
                     {L.selectAll}
                   </button>
                   <span className="text-gray-300">|</span>
@@ -299,7 +351,7 @@ export default function TourEnvelopeModal({
                   </button>
                 </div>
                 <div className="max-h-32 overflow-y-auto border border-gray-200 rounded p-2 space-y-1">
-                  {rows.map((row) => (
+                  {displayRows.map((row) => (
                     <label key={row.reservationId} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5">
                       <input
                         type="checkbox"
@@ -317,99 +369,119 @@ export default function TourEnvelopeModal({
                   ))}
                 </div>
               </div>
+
               <div className="flex flex-col gap-2 mb-3">
                 <span className="text-sm font-medium text-gray-700">{L.printMode}</span>
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="envelope-print-mode"
-                    checked={printWithImage}
-                    onChange={() => setPrintWithImage(true)}
-                    className="text-blue-600"
-                  />
+                  <input type="radio" name="envelope-print-mode" checked={printWithImage} onChange={() => setPrintWithImage(true)} className="text-blue-600" />
                   <span className="text-sm">{L.withImage}</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="envelope-print-mode"
-                    checked={!printWithImage}
-                    onChange={() => setPrintWithImage(false)}
-                    className="text-blue-600"
-                  />
+                  <input type="radio" name="envelope-print-mode" checked={!printWithImage} onChange={() => setPrintWithImage(false)} className="text-blue-600" />
                   <span className="text-sm">{L.textOnly}</span>
                 </label>
               </div>
-              <div id="envelope-batch-print" className="space-y-0">
-                {rows.filter((row) => selectedReservationIds.has(row.reservationId)).map((row) => (
-                  <div
-                    key={row.reservationId}
-                    className="envelope-sheet bg-white overflow-visible relative"
-                    style={{
-                      width: `${ENVELOPE_WIDTH_MM}mm`,
-                      height: `${ENVELOPE_HEIGHT_MM}mm`,
-                      minWidth: `${ENVELOPE_WIDTH_MM}mm`,
-                      minHeight: `${ENVELOPE_HEIGHT_MM}mm`,
-                    }}
-                  >
-                    {/* 전체 봉투 배경 이미지 (fit) - '글자만' 선택 시 미표시 */}
-                    {printWithImage && (
-                      <img
-                        src={ENVELOPE_IMAGE_URL}
-                        alt=""
-                        className="absolute inset-0 w-full h-full object-contain object-center z-0 pointer-events-none"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                      />
-                    )}
-                    {/* 고객명: 고정 크기·위치로 모든 봉투 동일 배치, 시계 방향 90도 회전 */}
+
+              <div className="border-t border-gray-200 pt-6 mt-8 flex flex-col gap-2">
+                <span className="text-sm font-medium text-gray-600">{L.preview}</span>
+                <div className={variant === 'balance' ? 'flex justify-center overflow-x-auto overflow-visible' : ''}>
+                  <div id="envelope-batch-print" className="space-y-0">
+                  {rows.filter((row) => selectedReservationIds.has(row.reservationId)).map((row) => (
                     <div
-                      className="absolute z-10 flex items-center justify-center flex-shrink-0"
+                      key={row.reservationId}
+                      className="envelope-sheet bg-white overflow-visible relative"
                       style={{
-                        pointerEvents: 'none',
-                        right: '-13mm',
-                        top: '28%',
-                        width: '50mm',
-                        height: '23mm',
-                        minWidth: '38mm',
-                        minHeight: '23mm',
-                        transform: 'translateY(-50%) rotate(90deg)',
-                        transformOrigin: 'center center',
-                        fontFamily: 'Arial, Helvetica, sans-serif',
+                        width: `${ENVELOPE_WIDTH_MM}mm`,
+                        height: `${ENVELOPE_HEIGHT_MM}mm`,
+                        minWidth: `${ENVELOPE_WIDTH_MM}mm`,
+                        minHeight: `${ENVELOPE_HEIGHT_MM}mm`,
                       }}
                     >
-                      <div className="font-semibold text-xl text-center leading-tight break-words" style={{ maxWidth: '100%', paddingTop: '1.2em' }}>
-                        {row.customerName || '—'}
-                      </div>
+                      {printWithImage && (
+                        <img
+                          src={envelopeImageUrl}
+                          alt=""
+                          className="absolute inset-0 w-full h-full object-contain object-center z-0 pointer-events-none"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                        />
+                      )}
+                      {variant === 'balance' ? (
+                        <div className="envelope-balance-block absolute z-10 flex flex-col flex-shrink-0" style={balanceBlockStyle}>
+                          <div style={{ display: 'flex', gap: '6px', minHeight: '2em' }}>
+                            <span style={{ flexShrink: 0, fontWeight: 600 }}>NAME :</span>
+                            <span className="break-words">{row.customerName || '—'}</span>
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px', minHeight: '2em', alignItems: 'flex-start' }}>
+                            <span style={{ flexShrink: 0, fontWeight: 600 }}>TOUR :</span>
+                            <span className="break-words" style={{ minWidth: 0 }}>{formatDateForEnvelope(tourDate)} {(isCustomerEnglish(row.customerLanguage) ? productNameEn : productNameKo) || '—'}</span>
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px', minHeight: '2em' }}>
+                            <span style={{ flexShrink: 0, fontWeight: 600 }}>TOUR GUIDE :</span>
+                            <span className="break-words">{(isCustomerEnglish(row.customerLanguage) ? guideAndAssistantEn : guideAndAssistantKo) || '—'}</span>
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px', minHeight: '2em' }}>
+                            <span style={{ flexShrink: 0, fontWeight: 600 }}>BALANCE :</span>
+                            <span className="break-words">{formatMoney(row.balanceAmount, row.currency)}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div
+                            className="absolute z-10 flex items-center justify-center flex-shrink-0"
+                            style={{
+                              pointerEvents: 'none',
+                              right: '-4mm',
+                              top: '32%',
+                              width: '50mm',
+                              height: '23mm',
+                              minWidth: '38mm',
+                              minHeight: '23mm',
+                              transform: 'translateY(-50%) rotate(90deg)',
+                              transformOrigin: 'center center',
+                              fontFamily: 'Arial, Helvetica, sans-serif',
+                            }}
+                          >
+                            <div className="font-semibold text-xl text-center leading-tight break-words" style={{ maxWidth: '100%', paddingTop: '1.2em' }}>
+                              {row.customerName || '—'}
+                            </div>
+                          </div>
+                          <div
+                            className="absolute z-10 flex flex-col flex-shrink-0"
+                            style={{
+                              pointerEvents: 'none',
+                              left: '-16mm',
+                              top: '28%',
+                              width: '75mm',
+                              minWidth: '75mm',
+                              transform: 'translateY(-50%) rotate(90deg)',
+                              transformOrigin: 'center center',
+                              fontFamily: 'Arial, Helvetica, sans-serif',
+                              fontSize: '14px',
+                              lineHeight: 1.9,
+                            }}
+                          >
+                            <div style={{ display: 'flex', gap: '4px', minHeight: '1.9em', alignItems: 'flex-start' }}>
+                              <span style={{ flexShrink: 0, fontWeight: 600 }}>{isCustomerEnglish(row.customerLanguage) ? LABELS.en.tourLabel : LABELS.ko.tourLabel}</span>
+                              <span style={{ whiteSpace: 'nowrap', overflow: 'visible' }}>{formatDateForEnvelope(tourDate)} {(isCustomerEnglish(row.customerLanguage) ? productNameEn : productNameKo) || '—'}</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '4px', minHeight: '1.9em', alignItems: 'flex-start' }}>
+                              <span style={{ flexShrink: 0, fontWeight: 600 }}>{isCustomerEnglish(row.customerLanguage) ? LABELS.en.tourGuideLabel : LABELS.ko.tourGuideLabel}</span>
+                              <span>{(isCustomerEnglish(row.customerLanguage) ? guideAndAssistantEn : guideAndAssistantKo) || '—'}</span>
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
-                    {/* Tour / Tour guide / Balance: 봉투 왼쪽, 라벨 옆에 값 배치, 시계 방향 90도 회전 */}
-                    <div
-                      className="absolute z-10 flex items-center flex-shrink-0"
-                      style={{
-                        pointerEvents: 'none',
-                        left: '-16mm',
-                        top: '49%',
-                        width: '75mm',
-                        minWidth: '75mm',
-                        transform: 'translateY(-50%) rotate(90deg)',
-                        transformOrigin: 'center center',
-                        fontFamily: 'Arial, Helvetica, sans-serif',
-                        fontSize: '11px',
-                      }}
-                    >
-                      <div className="flex flex-col text-gray-900 text-xl flex-shrink-0" style={{ lineHeight: 1.8, width: '100%' }}>
-                        <div style={{ minHeight: '1.8em', whiteSpace: 'nowrap', overflow: 'visible' }}>{formatDateForEnvelope(tourDate)} {(isCustomerEnglish(row.customerLanguage) ? productNameEn : productNameKo) || '—'}</div>
-                        <div style={{ minHeight: '1.8em' }}>{(isCustomerEnglish(row.customerLanguage) ? guideAndAssistantEn : guideAndAssistantKo) || '—'}</div>
-                        <div style={{ minHeight: '1.8em' }}>{formatMoney(row.balanceAmount, row.currency)}</div>
-                      </div>
-                    </div>
+                  ))}
                   </div>
-                ))}
+                </div>
               </div>
             </>
           )}
         </div>
-        {!loading && !error && rows.length > 0 && (
-          <div className="p-4 border-t flex justify-end gap-2 flex-shrink-0">
+
+        {!loading && !error && rows.length > 0 && !hasBalanceRows && (
+          <footer className="p-4 border-t flex justify-end gap-2 flex-shrink-0">
             <button
               type="button"
               onClick={handlePrint}
@@ -422,7 +494,7 @@ export default function TourEnvelopeModal({
             <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
               {L.close}
             </button>
-          </div>
+          </footer>
         )}
       </div>
     </div>

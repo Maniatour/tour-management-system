@@ -132,7 +132,7 @@ export default function TourDetailPage() {
   const [showEmailPreviewModal, setShowEmailPreviewModal] = useState<boolean>(false)
   const [showTourEditModal, setShowTourEditModal] = useState<boolean>(false)
   const [showBatchReceiptModal, setShowBatchReceiptModal] = useState<boolean>(false)
-  const [showBatchEnvelopeModal, setShowBatchEnvelopeModal] = useState<boolean>(false)
+  const [envelopeModalVariant, setEnvelopeModalVariant] = useState<'tip' | 'balance' | null>(null)
   const [activeSection, setActiveSection] = useState<string>('')
   const [showFloatingMenu, setShowFloatingMenu] = useState<boolean>(false)
   
@@ -1453,7 +1453,8 @@ export default function TourDetailPage() {
         getAssignmentStatusText={getAssignmentStatusText}
         onEditClick={() => setShowTourEditModal(true)}
         onPrintReceipts={() => setShowBatchReceiptModal(true)}
-        onPrintEnvelopes={() => setShowBatchEnvelopeModal(true)}
+        onPrintTipEnvelopes={() => setEnvelopeModalVariant('tip')}
+        onPrintBalanceEnvelopes={() => setEnvelopeModalVariant('balance')}
       />
 
       {/* 영수증 일괄 인쇄 모달 */}
@@ -1464,10 +1465,11 @@ export default function TourDetailPage() {
         reservationIds={(tourData.tour?.reservation_ids || []).filter(Boolean)}
       />
 
-      {/* 투어 봉투 일괄 인쇄 모달 */}
+      {/* 투어 봉투 일괄 인쇄 모달 (팁 봉투 / Balance 봉투) */}
       <TourEnvelopeModal
-        isOpen={showBatchEnvelopeModal}
-        onClose={() => setShowBatchEnvelopeModal(false)}
+        isOpen={envelopeModalVariant !== null}
+        onClose={() => setEnvelopeModalVariant(null)}
+        variant={envelopeModalVariant ?? 'tip'}
         reservationIds={(tourData.tour?.reservation_ids || []).filter(Boolean)}
         tourDate={tourData.tour?.tour_date || ''}
         productNameKo={tourData.product?.name_ko || tourData.product?.name_en || ''}
