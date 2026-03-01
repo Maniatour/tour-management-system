@@ -98,10 +98,15 @@ function formatDateForEnvelope(dateStr: string): string {
   return dateStr.replace(/-/g, '.')
 }
 
-function isCustomerEnglish(lang: string | null | undefined): boolean {
+/** 고객 언어가 한국어이면 true (한국어가 아니면 봉투는 모두 영어로 표시) */
+function isCustomerKorean(lang: string | null | undefined): boolean {
   if (!lang) return false
   const l = lang.toString().toLowerCase()
-  return l === 'en' || l.startsWith('en-') || l === 'english'
+  return l === 'ko' || l.startsWith('ko-') || l === 'korean' || l === 'kr'
+}
+
+function useEnvelopeEnglish(lang: string | null | undefined): boolean {
+  return !isCustomerKorean(lang)
 }
 
 // ---------------------------------------------------------------------------
@@ -180,7 +185,7 @@ export default function TourEnvelopeModal({
       setLoading(true)
       setError(null)
       try {
-        const ids = reservationIds.filter(Boolean)
+        const ids = [...new Set(reservationIds.filter(Boolean))]
         if (ids.length === 0) {
           setRows([])
           setLoading(false)
@@ -188,7 +193,7 @@ export default function TourEnvelopeModal({
         }
         const { data: rezList, error: rezErr } = await supabase
           .from('reservations')
-          .select('id, customer_id')
+          .select('id, customer_id, adults, child, infant, total_people')
           .in('id', ids)
         if (rezErr || !rezList?.length) {
           setError('Reservation not found')
@@ -206,25 +211,33 @@ export default function TourEnvelopeModal({
             customerById.set(c.id, { name: c.name ?? '', language: c.language ?? null })
           })
         }
-        const rezById = new Map<string, { id: string; customer_id?: string }>()
-        rezList.forEach((r) => rezById.set((r as { id: string }).id, r as { id: string; customer_id?: string }))
+        type RezRow = { id: string; customer_id?: string; adults?: number; child?: number; infant?: number; total_people?: number }
+        const rezById = new Map<string, RezRow>()
+        rezList.forEach((r) => rezById.set((r as RezRow).id, r as RezRow))
 
         const { data: sessionData } = await supabase.auth.getSession()
         const token = sessionData?.session?.access_token
-        const pricingByResId = new Map<string, { balance_amount: number; currency: string }>()
+        const pricingByResId = new Map<string, { balance_amount: number; not_included_price: number; currency: string }>()
         if (token) {
           const res = await fetch(`/api/reservation-pricing?reservation_ids=${encodeURIComponent(ids.join(','))}`, {
             headers: { Authorization: `Bearer ${token}` },
           })
           if (res.ok) {
             const json = await res.json()
-            const items = json.items as Array<{ reservation_id: string; pricing: { balance_amount?: unknown; currency?: string } | null }> | undefined
+            const items = json.items as Array<{ reservation_id: string; pricing: { balance_amount?: unknown; not_included_price?: unknown; currency?: string } | null }> | undefined
             if (Array.isArray(items)) {
               items.forEach(({ reservation_id, pricing }) => {
                 const balanceAmount = pricing != null && (pricing.balance_amount !== null && pricing.balance_amount !== undefined)
                   ? (typeof pricing.balance_amount === 'string' ? parseFloat(pricing.balance_amount) || 0 : Number(pricing.balance_amount) || 0)
                   : 0
-                pricingByResId.set(reservation_id, { balance_amount: balanceAmount, currency: pricing?.currency ?? 'USD' })
+                const notIncludedPrice = pricing != null && (pricing.not_included_price !== null && pricing.not_included_price !== undefined)
+                  ? (typeof pricing.not_included_price === 'string' ? parseFloat(pricing.not_included_price) || 0 : Number(pricing.not_included_price) || 0)
+                  : 0
+                pricingByResId.set(reservation_id, {
+                  balance_amount: balanceAmount,
+                  not_included_price: notIncludedPrice,
+                  currency: pricing?.currency ?? 'USD',
+                })
               })
             }
           }
@@ -235,7 +248,15 @@ export default function TourEnvelopeModal({
           if (!rez) return { reservationId: id, customerName: '', customerLanguage: null, balanceAmount: 0, currency: 'USD' }
           const customer = rez.customer_id ? customerById.get(rez.customer_id) : null
           const pricing = pricingByResId.get(id)
-          const balanceAmount = pricing?.balance_amount ?? 0
+          const totalPeople = (rez.total_people != null && rez.total_people > 0)
+            ? rez.total_people
+            : ((rez.adults ?? 0) + (rez.child ?? 0) + (rez.infant ?? 0)) || 1
+          const notIncludedTotal = (pricing?.not_included_price ?? 0) * totalPeople
+          const balanceAmount = (pricing?.balance_amount ?? 0) > 0
+            ? (pricing?.balance_amount ?? 0)
+            : notIncludedTotal > 0
+              ? notIncludedTotal
+              : 0
           const currency = pricing?.currency ?? 'USD'
           return {
             reservationId: id,
@@ -351,8 +372,8 @@ export default function TourEnvelopeModal({
                   </button>
                 </div>
                 <div className="max-h-32 overflow-y-auto border border-gray-200 rounded p-2 space-y-1">
-                  {displayRows.map((row) => (
-                    <label key={row.reservationId} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5">
+                  {displayRows.map((row, idx) => (
+                    <label key={`${row.reservationId}-${idx}`} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5">
                       <input
                         type="checkbox"
                         checked={selectedReservationIds.has(row.reservationId)}
@@ -386,9 +407,9 @@ export default function TourEnvelopeModal({
                 <span className="text-sm font-medium text-gray-600">{L.preview}</span>
                 <div className={variant === 'balance' ? 'flex justify-center overflow-x-auto overflow-visible' : ''}>
                   <div id="envelope-batch-print" className="space-y-0">
-                  {rows.filter((row) => selectedReservationIds.has(row.reservationId)).map((row) => (
+                  {rows.filter((row) => selectedReservationIds.has(row.reservationId)).map((row, idx) => (
                     <div
-                      key={row.reservationId}
+                      key={`${row.reservationId}-${idx}`}
                       className="envelope-sheet bg-white overflow-visible relative"
                       style={{
                         width: `${ENVELOPE_WIDTH_MM}mm`,
@@ -413,11 +434,11 @@ export default function TourEnvelopeModal({
                           </div>
                           <div style={{ display: 'flex', gap: '6px', minHeight: '2em', alignItems: 'flex-start' }}>
                             <span style={{ flexShrink: 0, fontWeight: 600 }}>TOUR :</span>
-                            <span className="break-words" style={{ minWidth: 0 }}>{formatDateForEnvelope(tourDate)} {(isCustomerEnglish(row.customerLanguage) ? productNameEn : productNameKo) || '—'}</span>
+                            <span className="break-words" style={{ minWidth: 0 }}>{formatDateForEnvelope(tourDate)} {(useEnvelopeEnglish(row.customerLanguage) ? productNameEn : productNameKo) || '—'}</span>
                           </div>
                           <div style={{ display: 'flex', gap: '6px', minHeight: '2em' }}>
                             <span style={{ flexShrink: 0, fontWeight: 600 }}>TOUR GUIDE :</span>
-                            <span className="break-words">{(isCustomerEnglish(row.customerLanguage) ? guideAndAssistantEn : guideAndAssistantKo) || '—'}</span>
+                            <span className="break-words">{(useEnvelopeEnglish(row.customerLanguage) ? guideAndAssistantEn : guideAndAssistantKo) || '—'}</span>
                           </div>
                           <div style={{ display: 'flex', gap: '6px', minHeight: '2em' }}>
                             <span style={{ flexShrink: 0, fontWeight: 600 }}>BALANCE :</span>
@@ -461,12 +482,12 @@ export default function TourEnvelopeModal({
                             }}
                           >
                             <div style={{ display: 'flex', gap: '4px', minHeight: '1.9em', alignItems: 'flex-start' }}>
-                              <span style={{ flexShrink: 0, fontWeight: 600 }}>{isCustomerEnglish(row.customerLanguage) ? LABELS.en.tourLabel : LABELS.ko.tourLabel}</span>
-                              <span style={{ whiteSpace: 'nowrap', overflow: 'visible' }}>{formatDateForEnvelope(tourDate)} {(isCustomerEnglish(row.customerLanguage) ? productNameEn : productNameKo) || '—'}</span>
+                              <span style={{ flexShrink: 0, fontWeight: 600 }}>{useEnvelopeEnglish(row.customerLanguage) ? LABELS.en.tourLabel : LABELS.ko.tourLabel}</span>
+                              <span style={{ whiteSpace: 'nowrap', overflow: 'visible' }}>{formatDateForEnvelope(tourDate)} {(useEnvelopeEnglish(row.customerLanguage) ? productNameEn : productNameKo) || '—'}</span>
                             </div>
                             <div style={{ display: 'flex', gap: '4px', minHeight: '1.9em', alignItems: 'flex-start' }}>
-                              <span style={{ flexShrink: 0, fontWeight: 600 }}>{isCustomerEnglish(row.customerLanguage) ? LABELS.en.tourGuideLabel : LABELS.ko.tourGuideLabel}</span>
-                              <span>{(isCustomerEnglish(row.customerLanguage) ? guideAndAssistantEn : guideAndAssistantKo) || '—'}</span>
+                              <span style={{ flexShrink: 0, fontWeight: 600 }}>{useEnvelopeEnglish(row.customerLanguage) ? LABELS.en.tourGuideLabel : LABELS.ko.tourGuideLabel}</span>
+                              <span>{(useEnvelopeEnglish(row.customerLanguage) ? guideAndAssistantEn : guideAndAssistantKo) || '—'}</span>
                             </div>
                           </div>
                         </>

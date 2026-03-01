@@ -81,15 +81,23 @@ export async function POST(
 
     const { option_id, ea, price, total_price, status, note } = body
 
+    if (!option_id) {
+      return NextResponse.json({ error: 'option_id is required' }, { status: 400 })
+    }
+
+    // id는 TEXT PRIMARY KEY라 반드시 지정 (테이블에 DEFAULT 없음)
+    const id = crypto.randomUUID()
+
     // 새 reservation_option 생성
     const { data, error } = await supabase
       .from('reservation_options')
       .insert({
+        id,
         reservation_id: reservationId,
         option_id,
-        ea: ea || 1,
-        price: price || 0,
-        total_price: total_price || (price || 0) * (ea || 1),
+        ea: ea ?? 1,
+        price: price ?? 0,
+        total_price: total_price ?? (Number(price) || 0) * (ea ?? 1),
         status: status || 'active',
         note: note || null
       })

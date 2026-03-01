@@ -168,6 +168,13 @@ function toNum(v: unknown): number {
   return Number(v) || 0
 }
 
+/** 고객 언어가 한국어이면 true (한국어가 아니면 영수증은 영어로 표시) */
+function isCustomerKorean(lang: string | null | undefined): boolean {
+  if (!lang) return false
+  const l = lang.toString().toLowerCase()
+  return l === 'ko' || l.startsWith('ko-') || l === 'korean' || l === 'kr'
+}
+
 function formatMoney(amount: number, currency: string): string {
   if (currency === 'KRW') return `₩${Math.round(amount).toLocaleString()}`
   return `$${amount.toFixed(2)}`
@@ -284,7 +291,7 @@ export default function CustomerReceiptModal({
               })
             }
           }
-          const isEnCustomer = (customer?.language || 'ko').toString().toLowerCase().startsWith('en')
+          const isEnCustomer = !isCustomerKorean(customer?.language)
           const receiptOptionLabelEn: Record<string, string> = {
             '비거주자 비용': 'Non-resident fee',
             '비거주자 (패스 보유)': 'Non-resident (with pass)',
@@ -524,7 +531,7 @@ export default function CustomerReceiptModal({
     ? list.filter((d) => selectedReservationIds.has(d.reservation.id))
     : list
   const headerLabel = list.length > 0
-    ? ((list[0].customer.language || 'ko').toString().toLowerCase().startsWith('en') ? labels.en : labels.ko)
+    ? (isCustomerKorean(list[0].customer.language) ? labels.ko : labels.en)
     : labels.en
 
   return (
@@ -582,8 +589,7 @@ export default function CustomerReceiptModal({
               )}
             <div id="receipt-batch-print" className="space-y-6 w-full flex flex-col items-center">
               {listToShow.map((d) => {
-                const lang = (d.customer.language || 'ko').toString().toLowerCase()
-                const isEn = lang === 'en' || lang === 'english' || lang === 'en-us'
+                const isEn = !isCustomerKorean(d.customer.language)
                 const L = isEn ? labels.en : labels.ko
                 const cur = d.pricing.currency || 'USD'
                 const productName = isEn
@@ -591,6 +597,9 @@ export default function CustomerReceiptModal({
                   : (d.product.customer_name_ko || d.product.name_ko || d.product.customer_name_en || d.product.name_en || '')
                 const customerTotalPayment = getCustomerTotalPayment(d.pricing, d.reservation.total_people ?? 0)
                 const totalPeople = Math.max(1, d.reservation.total_people ?? 1)
+                const notIncludedPerPerson = d.pricing.not_included_price ?? 0
+                const unitPriceWithNotIncluded = d.pricing.adult_product_price + notIncludedPerPerson
+                const productRowTotal = d.pricing.product_price_total + notIncludedPerPerson * totalPeople
                 const tip10PerPerson = (customerTotalPayment * 0.10) / totalPeople
                 const tip15PerPerson = (customerTotalPayment * 0.15) / totalPeople
                 const tip20PerPerson = (customerTotalPayment * 0.20) / totalPeople
@@ -668,9 +677,9 @@ export default function CustomerReceiptModal({
                           <tr className="border-b border-gray-100">
                             <td className="px-2 py-2 text-gray-900 whitespace-nowrap min-w-[7rem] w-[7rem]">{d.reservation.tour_date}</td>
                             <td className="px-2 py-2 text-gray-900 break-words">{productName}</td>
-                            <td className="px-2 py-2 text-right text-gray-900 whitespace-nowrap min-w-[5.5rem] w-[5.5rem]">{formatMoney(d.pricing.adult_product_price, cur)}</td>
+                            <td className="px-2 py-2 text-right text-gray-900 whitespace-nowrap min-w-[5.5rem] w-[5.5rem]">{formatMoney(unitPriceWithNotIncluded, cur)}</td>
                             <td className="px-2 py-2 text-right text-gray-900">{d.reservation.total_people}</td>
-                            <td className="px-2 py-2 text-right text-gray-900">{formatMoney(d.pricing.product_price_total, cur)}</td>
+                            <td className="px-2 py-2 text-right text-gray-900">{formatMoney(productRowTotal, cur)}</td>
                           </tr>
                           {/* 할인 (상품 바로 아래) */}
                           {(d.pricing.coupon_discount + d.pricing.additional_discount) > 0 && (
@@ -682,12 +691,12 @@ export default function CustomerReceiptModal({
                               </td>
                             </tr>
                           )}
-                          {/* Product Total */}
+                          {/* Product Total (상품+불포함 기준 합계 - 할인) */}
                           <tr className="border-b border-gray-200 bg-gray-50/50">
                             <td className="px-2 py-2" />
                             <td className="px-2 py-2 font-medium text-gray-900">{L.productTotal}</td>
                             <td className="px-2 py-2 text-right font-medium text-gray-900 whitespace-nowrap" colSpan={3}>
-                              {formatMoney(d.pricing.product_price_total - d.pricing.coupon_discount - d.pricing.additional_discount, cur)}
+                              {formatMoney(productRowTotal - d.pricing.coupon_discount - d.pricing.additional_discount, cur)}
                             </td>
                           </tr>
                           {/* 옵션 */}

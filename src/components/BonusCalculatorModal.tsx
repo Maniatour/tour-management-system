@@ -1309,7 +1309,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                                       </thead>
                                       <tbody>
                                         {guideToursDetailMap[row.guide_email].map((t, idx) => (
-                                          <tr key={idx} className="border-t border-gray-100">
+                                          <tr key={`${row.guide_email}-${idx}-${t.tour_date}-${t.role}`} className="border-t border-gray-100">
                                             <td className="px-3 py-1.5 text-gray-900">{t.tour_date}</td>
                                             <td className="px-3 py-1.5 text-gray-900">{t.tour_name}</td>
                                             <td className="px-3 py-1.5 text-gray-900">{t.guide_name ?? '-'}</td>
@@ -1452,8 +1452,8 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {tourBonuses.map((tour) => (
-                      <React.Fragment key={tour.id}>
+                    {tourBonuses.map((tour, tourIndex) => (
+                      <React.Fragment key={`tour-${tour.tour_id}-${tourIndex}`}>
                         <tr
                           className="hover:bg-gray-50 cursor-pointer"
                           onClick={() => toggleTourRowExpand(tour)}

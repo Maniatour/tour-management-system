@@ -1,9 +1,18 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Plus, Edit2, Trash2, Save, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useReservationOptions, type ReservationOption, type CreateReservationOptionData } from '@/hooks/useReservationOptions'
+
+/** 기존 옵션 목록(options 테이블) 항목 */
+type OptionListItem = {
+  id: string
+  name: string
+  name_ko?: string | null
+  name_en?: string | null
+  adult_price?: number | null
+}
 
 interface ReservationOptionsSectionProps {
   reservationId: string
@@ -11,6 +20,15 @@ interface ReservationOptionsSectionProps {
   hideTitle?: boolean
   title?: string
   itemVariant?: 'card' | 'line'
+}
+
+const defaultFormData: CreateReservationOptionData = {
+  option_id: '',
+  ea: 1,
+  price: 0,
+  total_price: 0,
+  status: 'active',
+  note: ''
 }
 
 export default function ReservationOptionsSection({ reservationId, onTotalPriceChange, hideTitle, title: titleProp, itemVariant = 'card' }: ReservationOptionsSectionProps) {
@@ -28,28 +46,69 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
   } = useReservationOptions(reservationId)
 
   const [editingOption, setEditingOption] = useState<string | null>(null)
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [formData, setFormData] = useState<CreateReservationOptionData>({
-    option_id: '',
-    ea: 1,
-    price: 0,
-    total_price: 0,
-    status: 'active',
-    note: ''
-  })
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [optionsList, setOptionsList] = useState<OptionListItem[]>([])
+  const [optionsLoading, setOptionsLoading] = useState(false)
+  const [formData, setFormData] = useState<CreateReservationOptionData>({ ...defaultFormData })
+
+  const fetchOptionsList = useCallback(async () => {
+    setOptionsLoading(true)
+    try {
+      const res = await fetch('/api/options/with-usage')
+      if (!res.ok) throw new Error('Failed to fetch options')
+      const json = await res.json()
+      setOptionsList(json.options || [])
+    } catch (e) {
+      console.error('Error fetching options list:', e)
+      setOptionsList([])
+    } finally {
+      setOptionsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (showAddModal && optionsList.length === 0) {
+      fetchOptionsList()
+    }
+  }, [showAddModal, optionsList.length, fetchOptionsList])
+
+  const handleOpenAddModal = () => {
+    setFormData({ ...defaultFormData })
+    setShowAddModal(true)
+  }
+
+  const handleCloseAddModal = () => {
+    setShowAddModal(false)
+    setFormData({ ...defaultFormData })
+  }
+
+  const handleSelectOption = (optionId: string) => {
+    const opt = optionsList.find((o) => o.id === optionId)
+    const price = opt?.adult_price != null ? Number(opt.adult_price) : 0
+    const ea = formData.ea ?? 1
+    setFormData((prev) => ({
+      ...prev,
+      option_id: optionId,
+      price,
+      total_price: price * ea,
+    }))
+  }
 
   const handleAddOption = async () => {
+    if (!formData.option_id) {
+      alert(t('optionId') ? `${t('optionId')}을(를) 선택해주세요.` : '옵션을 선택해주세요.')
+      return
+    }
     try {
-      await createReservationOption(formData)
-      setFormData({
-        option_id: '',
-        ea: 1,
-        price: 0,
-        total_price: 0,
-        status: 'active',
-        note: ''
+      const ea = formData.ea ?? 1
+      const price = formData.price ?? 0
+      await createReservationOption({
+        ...formData,
+        ea,
+        price,
+        total_price: price * ea,
       })
-      setShowAddForm(false)
+      handleCloseAddModal()
     } catch (error) {
       console.error('Error adding reservation option:', error)
       alert('옵션 추가 중 오류가 발생했습니다.')
@@ -129,7 +188,7 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
         {showTitle && <h3 className="text-xs font-semibold text-gray-900">{titleText}</h3>}
         <button
           type="button"
-          onClick={() => setShowAddForm(true)}
+          onClick={handleOpenAddModal}
           className="inline-flex items-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium transition-colors flex-shrink-0 ml-auto"
         >
           <Plus size={14} />
@@ -137,107 +196,120 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
         </button>
       </div>
 
-      {/* 옵션 추가 폼 */}
-      {showAddForm && (
-        <div className="mb-3 p-3 bg-gray-50 rounded-lg border">
-          <h4 className="text-xs font-medium mb-2">{t('addNewOption')}</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('optionId')}</label>
-              <input
-                type="text"
-                value={formData.option_id || ''}
-                onChange={(e) => setFormData(prev => ({ ...prev, option_id: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder={t('optionId')}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('quantity')}</label>
-              <input
-                type="number"
-                min="1"
-                value={formData.ea || 1}
-                onChange={(e) => {
-                  const ea = parseInt(e.target.value) || 1
-                  setFormData(prev => ({ 
-                    ...prev, 
-                    ea,
-                    total_price: calculateTotalPrice(prev.price || 0, ea)
-                  }))
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('unitPrice')}</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={formData.price || 0}
-                onChange={(e) => {
-                  const price = parseFloat(e.target.value) || 0
-                  setFormData(prev => ({ 
-                    ...prev, 
-                    price,
-                    total_price: calculateTotalPrice(price, prev.ea || 1)
-                  }))
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('totalPrice')}</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={formData.total_price || 0}
-                onChange={(e) => setFormData(prev => ({ ...prev, total_price: parseFloat(e.target.value) || 0 }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('status')}</label>
-              <select
-                value={formData.status || 'active'}
-                onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as 'active' | 'cancelled' | 'refunded' }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      {/* 옵션 추가 모달 */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-sm font-semibold text-gray-900">{t('addNewOption')}</h4>
+              <button
+                type="button"
+                onClick={handleCloseAddModal}
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="닫기"
               >
-                <option value="active">{t('statusActive')}</option>
-                <option value="cancelled">{t('statusCancelled')}</option>
-                <option value="refunded">{t('statusRefunded')}</option>
-              </select>
+                <X size={18} />
+              </button>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('note')}</label>
-              <input
-                type="text"
-                value={formData.note || ''}
-                onChange={(e) => setFormData(prev => ({ ...prev, note: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="메모 입력"
-              />
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('optionId')}</label>
+                <select
+                  value={formData.option_id || ''}
+                  onChange={(e) => handleSelectOption(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={optionsLoading}
+                >
+                  <option value="">{optionsLoading ? '로딩 중...' : '— 옵션 선택 —'}</option>
+                  {optionsList.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {(opt.name_ko && opt.name_ko.trim()) || opt.name_en || opt.name || opt.id}
+                      {opt.adult_price != null ? ` ($${Number(opt.adult_price).toFixed(2)})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('quantity')}</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={formData.ea ?? 1}
+                  onChange={(e) => {
+                    const ea = Math.max(1, parseInt(e.target.value, 10) || 1)
+                    setFormData((prev) => ({
+                      ...prev,
+                      ea,
+                      total_price: (prev.price ?? 0) * ea,
+                    }))
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('unitPrice')}</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={formData.price ?? 0}
+                  onChange={(e) => {
+                    const price = parseFloat(e.target.value) || 0
+                    setFormData((prev) => ({
+                      ...prev,
+                      price,
+                      total_price: price * (prev.ea ?? 1),
+                    }))
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('totalPrice')}</label>
+                <div className="px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-900">
+                  ${((formData.price ?? 0) * (formData.ea ?? 1)).toFixed(2)}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('status')}</label>
+                <select
+                  value={formData.status || 'active'}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, status: e.target.value as 'active' | 'cancelled' | 'refunded' }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="active">{t('statusActive')}</option>
+                  <option value="cancelled">{t('statusCancelled')}</option>
+                  <option value="refunded">{t('statusRefunded')}</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('note')}</label>
+                <input
+                  type="text"
+                  value={formData.note || ''}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, note: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="메모 입력"
+                />
+              </div>
             </div>
-          </div>
-          <div className="flex space-x-2 mt-4">
-            <button
-              type="button"
-              onClick={handleAddOption}
-              className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-            >
-              <Save size={16} className="mr-1" />
-              {tCommon('save')}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowAddForm(false)}
-              className="flex items-center px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
-            >
-              <X size={16} className="mr-1" />
-              {tCommon('cancel')}
-            </button>
+            <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-gray-200">
+              <button
+                type="button"
+                onClick={handleCloseAddModal}
+                className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium transition-colors"
+              >
+                {tCommon('cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={handleAddOption}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors"
+              >
+                <Plus size={16} className="mr-1.5" />
+                {t('addOption')}
+              </button>
+            </div>
           </div>
         </div>
       )}

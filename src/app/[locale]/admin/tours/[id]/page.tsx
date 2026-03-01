@@ -95,7 +95,6 @@ const TicketBookingFormAny = TicketBookingForm as any
 const TourHotelBookingFormAny = TourHotelBookingForm as any
 
 export default function TourDetailPage() {
-  console.log('TourDetailPage 렌더링 시작')
   const router = useRouter()
   const params = useParams()
   const locale = params.locale as string
@@ -104,20 +103,9 @@ export default function TourDetailPage() {
   const { hasPermission, loading } = useAuth()
   const { openChat } = useFloatingChat()
 
-  console.log('Auth 상태:', { hasPermission, loading })
-
   // 커스텀 훅으로 데이터와 상태 관리
-  console.log('useTourDetailData 호출 시작')
   const tourData = useTourDetailData()
-  console.log('useTourDetailData 완료:', { 
-    tour: tourData.tour, 
-    pageLoading: tourData.pageLoading,
-    isStaff: tourData.isStaff 
-  })
-  
-  console.log('useTourHandlers 호출 시작')
   const tourHandlers = useTourHandlers()
-  console.log('useTourHandlers 완료')
   
   // 부킹 관련 상태 (로컬 상태로 유지)
   const [ticketBookings, setTicketBookings] = useState<LocalTicketBooking[]>([])
@@ -183,7 +171,7 @@ export default function TourDetailPage() {
     handleScroll() // 초기 실행
 
     return () => window.removeEventListener('scroll', handleScroll)
-  }, [hasPermission])
+  }, [])
   
   // 외부 클릭 감지 로직 제거 - backdrop에서 직접 처리
   
