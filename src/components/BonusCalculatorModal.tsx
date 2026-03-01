@@ -25,6 +25,8 @@ interface GuideTourDetailRow {
   tour_name: string
   guide_name: string | null
   driver_name: string | null
+  /** 해당 투어의 총 예약 인원 합계 */
+  total_tour_people: number
   non_resident_option_total: number
   /** 해당 직원이 이 투어에서 받는 보너스 (가이드 또는 드라이버) */
   bonus_amount: number
@@ -313,12 +315,13 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
 
           const nonResidentCount = reservationCustomers?.length || 0
 
-          // reservation_options에서 비거주자 비용 옵션(option_id 6941b5d0) 총합
+          // reservation_options에서 비거주자 비용 옵션(option_id 6941b5d0) 총합 (cancelled/refunded 제외)
           const { data: optionsData } = await supabase
             .from('reservation_options')
             .select('total_price, ea, price')
             .in('reservation_id', reservationIds)
             .eq('option_id', NON_RESIDENT_OPTION_ID)
+            .not('status', 'in', '(cancelled,refunded)')
 
           const rawTotal = (optionsData || []).reduce((sum, row) => {
             const amount = (row as { total_price?: number; ea?: number; price?: number }).total_price
@@ -451,6 +454,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
         .select('reservation_id, ea, price, total_price')
         .in('reservation_id', reservationIds)
         .eq('option_id', NON_RESIDENT_OPTION_ID)
+        .not('status', 'in', '(cancelled,refunded)')
       if (!optionsData?.length) {
         setTourOptionDetails(prev => ({ ...prev, [tourId]: [] }))
         return
@@ -604,6 +608,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
             .select('total_price, ea, price')
             .in('reservation_id', reservationIds)
             .eq('option_id', NON_RESIDENT_OPTION_ID)
+            .not('status', 'in', '(cancelled,refunded)')
           const rawTotal = (optionsData || []).reduce((sum, row) => {
             const amount = (row as { total_price?: number; ea?: number; price?: number }).total_price
               ?? ((row as { ea?: number; price?: number }).ea ?? 1) * ((row as { ea?: number; price?: number }).price ?? 0)
@@ -645,13 +650,34 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
       const allEmails = [...new Set(toursData.flatMap(t => [t.tour_guide_id, t.assistant_id].filter(Boolean) as string[]))]
       const { data: nameData } = await supabase.from('team').select('email, name_ko').in('email', allEmails)
       const nameMap: Record<string, string> = Object.fromEntries((nameData || []).map(n => [n.email, n.name_ko || '']))
-      const tourDetailBase = toursData.map((tour, i) => ({
-        tour_date: tour.tour_date,
-        tour_name: (tour.products as { name_ko?: string })?.name_ko || '투어명 없음',
-        guide_name: tour.tour_guide_id ? (nameMap[tour.tour_guide_id] || null) : null,
-        driver_name: tour.assistant_id ? (nameMap[tour.assistant_id] || null) : null,
-        non_resident_option_total: withSaved[i].non_resident_option_total
-      }))
+
+      const allReservationIds = [...new Set(toursData.flatMap(t => t.reservation_ids || []))]
+      let peopleMap: Record<string, number> = {}
+      if (allReservationIds.length > 0) {
+        const { data: resData } = await supabase
+          .from('reservations')
+          .select('id, total_people, adults, child, infant')
+          .in('id', allReservationIds)
+        peopleMap = Object.fromEntries(
+          (resData || []).map(r => {
+            const people = (r as { total_people?: number }).total_people
+              ?? ((r as { adults?: number }).adults ?? 0) + ((r as { child?: number }).child ?? 0) + ((r as { infant?: number }).infant ?? 0)
+            return [r.id, people]
+          })
+        )
+      }
+
+      const tourDetailBase = toursData.map((tour, i) => {
+        const total_tour_people = (tour.reservation_ids || []).reduce((s, rid) => s + (peopleMap[rid] ?? 0), 0)
+        return {
+          tour_date: tour.tour_date,
+          tour_name: (tour.products as { name_ko?: string })?.name_ko || '투어명 없음',
+          guide_name: tour.tour_guide_id ? (nameMap[tour.tour_guide_id] || null) : null,
+          driver_name: tour.assistant_id ? (nameMap[tour.assistant_id] || null) : null,
+          total_tour_people,
+          non_resident_option_total: withSaved[i].non_resident_option_total
+        }
+      })
       const detailMap: Record<string, GuideTourDetailRow[]> = {}
       for (const g of activeGuides) {
         detailMap[g.email] = []
@@ -695,6 +721,8 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
           const cur = byGuide.get(row.driver_email)
           if (cur) {
             cur.driver_bonus += row.driver_bonus
+            cur.non_resident_count += row.non_resident_count
+            cur.non_resident_option_total += row.non_resident_option_total
           }
         }
       }
@@ -1203,22 +1231,22 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             가이드 이름
                           </th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             비거주자 인원
                           </th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             비거주자 옵션
                           </th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             가이드 보너스
                           </th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             드라이버 보너스
                           </th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             보너스 총합
                           </th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             후기 포인트
                           </th>
                         </tr>
@@ -1236,22 +1264,22 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                               <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
                                 {row.guide_name}
                               </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-right">
+                              <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-left">
                                 {row.non_resident_count}명
                               </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-right">
+                              <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-left">
                                 ${formatCurrency(row.non_resident_option_total)}
                               </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-sm text-green-600 text-right font-medium">
+                              <td className="px-3 py-2 whitespace-nowrap text-sm text-green-600 text-left font-medium">
                                 ${formatCurrency(row.guide_bonus)}
                               </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-sm text-purple-600 text-right font-medium">
+                              <td className="px-3 py-2 whitespace-nowrap text-sm text-purple-600 text-left font-medium">
                                 ${formatCurrency(row.driver_bonus)}
                               </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-sm text-blue-600 text-right font-bold">
+                              <td className="px-3 py-2 whitespace-nowrap text-sm text-blue-600 text-left font-bold">
                                 ${formatCurrency(row.guide_bonus + row.driver_bonus)}
                               </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-sm text-right">
+                              <td className="px-3 py-2 whitespace-nowrap text-sm text-left">
                                 <span className={`font-medium ${
                                   row.review_bonus_points > 0 ? 'text-green-600' : 
                                   row.review_bonus_points < 0 ? 'text-red-600' : 
@@ -1274,8 +1302,9 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                                           <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">가이드</th>
                                           <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">어시스턴트/드라이버</th>
                                           <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">역할</th>
-                                          <th className="px-3 py-1.5 text-right text-xs font-medium text-gray-600">비거주자 옵션 총합</th>
-                                          <th className="px-3 py-1.5 text-right text-xs font-medium text-gray-600">보너스 금액</th>
+                                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">총 투어 인원</th>
+                                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">비거주자 옵션 총합</th>
+                                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">보너스 금액</th>
                                         </tr>
                                       </thead>
                                       <tbody>
@@ -1286,18 +1315,32 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                                             <td className="px-3 py-1.5 text-gray-900">{t.guide_name ?? '-'}</td>
                                             <td className="px-3 py-1.5 text-gray-900">{t.driver_name ?? '-'}</td>
                                             <td className="px-3 py-1.5 text-gray-900">{t.role}</td>
-                                            <td className="px-3 py-1.5 text-right text-gray-900">${formatCurrency(t.non_resident_option_total)}</td>
-                                            <td className="px-3 py-1.5 text-right text-green-600 font-medium">${formatCurrency(t.bonus_amount)}</td>
+                                            <td className="px-3 py-1.5 text-left text-gray-900">{t.total_tour_people}명</td>
+                                            <td className="px-3 py-1.5 text-left text-gray-900">${formatCurrency(t.non_resident_option_total)}</td>
+                                            <td className="px-3 py-1.5 text-left text-green-600 font-medium">${formatCurrency(t.bonus_amount)}</td>
                                           </tr>
                                         ))}
                                       </tbody>
                                       <tfoot>
                                         <tr className="border-t-2 border-gray-200 bg-gray-50 font-medium">
-                                          <td colSpan={5} className="px-3 py-1.5 text-gray-700">총합</td>
-                                          <td className="px-3 py-1.5 text-right text-gray-900">
+                                          <td className="px-3 py-1.5 text-gray-700">총합</td>
+                                          <td className="px-3 py-1.5 text-gray-500">—</td>
+                                          <td className="px-3 py-1.5 text-left text-gray-900">
+                                            {guideToursDetailMap[row.guide_email].filter(t => t.role === '가이드').length}회
+                                          </td>
+                                          <td className="px-3 py-1.5 text-left text-gray-900">
+                                            {guideToursDetailMap[row.guide_email].filter(t => t.role === '어시스턴트/드라이버').length}회
+                                          </td>
+                                          <td className="px-3 py-1.5 text-left text-gray-900">
+                                            {guideToursDetailMap[row.guide_email].length}회
+                                          </td>
+                                          <td className="px-3 py-1.5 text-left text-gray-900">
+                                            {guideToursDetailMap[row.guide_email].reduce((s, t) => s + t.total_tour_people, 0)}명
+                                          </td>
+                                          <td className="px-3 py-1.5 text-left text-gray-900">
                                             ${formatCurrency(guideToursDetailMap[row.guide_email].reduce((s, t) => s + t.non_resident_option_total, 0))}
                                           </td>
-                                          <td className="px-3 py-1.5 text-right text-green-600 font-medium">
+                                          <td className="px-3 py-1.5 text-left text-green-600 font-medium">
                                             ${formatCurrency(guideToursDetailMap[row.guide_email].reduce((s, t) => s + t.bonus_amount, 0))}
                                           </td>
                                         </tr>
@@ -1319,22 +1362,22 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                       <tfoot className="bg-gray-50">
                         <tr>
                           <td className="px-3 py-2 text-sm font-bold text-gray-900" colSpan={2}>총합</td>
-                          <td className="px-3 py-2 text-sm font-bold text-gray-900 text-right">
+                          <td className="px-3 py-2 text-sm font-bold text-gray-900 text-left">
                             {allBonusSummary.reduce((s, r) => s + r.non_resident_count, 0)}명
                           </td>
-                          <td className="px-3 py-2 text-sm font-bold text-gray-900 text-right">
+                          <td className="px-3 py-2 text-sm font-bold text-gray-900 text-left">
                             ${formatCurrency(allBonusSummary.reduce((s, r) => s + r.non_resident_option_total, 0))}
                           </td>
-                          <td className="px-3 py-2 text-sm font-bold text-green-600 text-right">
+                          <td className="px-3 py-2 text-sm font-bold text-green-600 text-left">
                             ${formatCurrency(allBonusSummary.reduce((s, r) => s + r.guide_bonus, 0))}
                           </td>
-                          <td className="px-3 py-2 text-sm font-bold text-purple-600 text-right">
+                          <td className="px-3 py-2 text-sm font-bold text-purple-600 text-left">
                             ${formatCurrency(allBonusSummary.reduce((s, r) => s + r.driver_bonus, 0))}
                           </td>
-                          <td className="px-3 py-2 text-sm font-bold text-blue-600 text-right">
+                          <td className="px-3 py-2 text-sm font-bold text-blue-600 text-left">
                             ${formatCurrency(allBonusSummary.reduce((s, r) => s + r.guide_bonus + r.driver_bonus, 0))}
                           </td>
-                          <td className="px-3 py-2 text-sm font-bold text-right">
+                          <td className="px-3 py-2 text-sm font-bold text-left">
                             <span className={`${
                               allBonusSummary.reduce((s, r) => s + r.review_bonus_points, 0) > 0 ? 'text-green-600' : 
                               allBonusSummary.reduce((s, r) => s + r.review_bonus_points, 0) < 0 ? 'text-red-600' : 
@@ -1538,31 +1581,31 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                                   <thead>
                                     <tr className="bg-gray-100">
                                       <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">예약자 이름</th>
-                                      <th className="px-3 py-1.5 text-right text-xs font-medium text-gray-600">투어 인원</th>
-                                      <th className="px-3 py-1.5 text-right text-xs font-medium text-gray-600">옵션 갯수</th>
-                                      <th className="px-3 py-1.5 text-right text-xs font-medium text-gray-600">옵션 총합 가격</th>
+                                      <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">투어 인원</th>
+                                      <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">옵션 갯수</th>
+                                      <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">옵션 총합 가격</th>
                                     </tr>
                                   </thead>
                                   <tbody>
                                     {tourOptionDetails[tour.tour_id].map((row, idx) => (
                                       <tr key={idx} className="border-t border-gray-100">
                                         <td className="px-3 py-1.5 text-gray-900">{row.customer_name}</td>
-                                        <td className="px-3 py-1.5 text-right text-gray-900">{row.headcount}명</td>
-                                        <td className="px-3 py-1.5 text-right text-gray-900">{row.option_count}</td>
-                                        <td className="px-3 py-1.5 text-right text-gray-900">${formatCurrency(row.option_total)}</td>
+                                        <td className="px-3 py-1.5 text-left text-gray-900">{row.headcount}명</td>
+                                        <td className="px-3 py-1.5 text-left text-gray-900">{row.option_count}</td>
+                                        <td className="px-3 py-1.5 text-left text-gray-900">${formatCurrency(row.option_total)}</td>
                                       </tr>
                                     ))}
                                   </tbody>
                                   <tfoot>
                                     <tr className="border-t-2 border-gray-200 bg-gray-50 font-medium">
                                       <td className="px-3 py-1.5 text-gray-700">총합</td>
-                                      <td className="px-3 py-1.5 text-right text-gray-900">
+                                      <td className="px-3 py-1.5 text-left text-gray-900">
                                         {tourOptionDetails[tour.tour_id].reduce((s, r) => s + r.headcount, 0)}명
                                       </td>
-                                      <td className="px-3 py-1.5 text-right text-gray-900">
+                                      <td className="px-3 py-1.5 text-left text-gray-900">
                                         {tourOptionDetails[tour.tour_id].reduce((s, r) => s + r.option_count, 0)}
                                       </td>
-                                      <td className="px-3 py-1.5 text-right text-gray-900">
+                                      <td className="px-3 py-1.5 text-left text-gray-900">
                                         ${formatCurrency(roundNonResidentOptionTo100(tourOptionDetails[tour.tour_id].reduce((s, r) => s + r.option_total, 0)))}
                                       </td>
                                     </tr>
@@ -1580,7 +1623,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                   </tbody>
                   <tfoot className="bg-gray-50">
                     <tr>
-                      <td colSpan={6} className="px-3 py-2 text-right text-sm font-medium text-gray-900">
+                      <td colSpan={6} className="px-3 py-2 text-left text-sm font-medium text-gray-900">
                         총합:
                       </td>
                       <td className="px-3 py-2 text-sm font-bold text-gray-900">
