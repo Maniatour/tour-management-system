@@ -453,27 +453,33 @@ export default function PricingSection({
     return undefined
   }, [expenseUpdateTrigger, fetchReservationExpenses])
 
-  // 고객 총 결제금액 계산 (상품 합계 + 초이스 총액 + 세금 + 선결제 지출)
+  // 고객 총 결제금액 계산 (화면 "고객 총 결제 금액" 표시와 동일한 식: 잔액 = 이 값 - 보증금 - 잔금 수령)
   const calculateTotalCustomerPayment = useCallback(() => {
-    // 상품 합계
-    const productSubtotal = (
-      (formData.productPriceTotal - formData.couponDiscount) + 
-      reservationOptionsTotalPrice + 
-      (formData.additionalCost - formData.additionalDiscount)
-    )
-    // 초이스 총액
+    const discountedProductPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
+    const optionsTotal = reservationOptionsTotalPrice || 0
     const choicesTotal = formData.choiceTotal || formData.choicesTotal || 0
-    // 고객 총 결제 금액 = 상품 합계 + 초이스 총액 + 세금 + 선결제 지출
-    return productSubtotal + choicesTotal + (formData.tax || 0) + (formData.prepaymentCost || 0)
+    const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+    const additionalCost = formData.additionalCost || 0
+    const tax = formData.tax || 0
+    const cardFee = formData.cardFee || 0
+    const prepaymentCost = formData.prepaymentCost || 0
+    const prepaymentTip = formData.prepaymentTip || 0
+    return discountedProductPrice + optionsTotal + choicesTotal + notIncludedPrice + additionalCost + tax + cardFee + prepaymentCost + prepaymentTip
   }, [
     formData.productPriceTotal,
     formData.couponDiscount,
-    formData.additionalCost,
     formData.additionalDiscount,
     formData.choiceTotal,
     formData.choicesTotal,
+    formData.not_included_price,
+    formData.adults,
+    formData.child,
+    formData.infant,
+    formData.additionalCost,
     formData.tax,
+    formData.cardFee,
     formData.prepaymentCost,
+    formData.prepaymentTip,
     reservationOptionsTotalPrice
   ])
   calculateTotalCustomerPaymentRef.current = calculateTotalCustomerPayment
@@ -691,12 +697,17 @@ export default function PricingSection({
         prevBalanceDepsRef.current = { ...currentDeps, onSiteBalanceAmount: newBalance }
       } else if (balanceDifference > 0.01) {
         // 초이스 변경 등으로 재계산이 필요한 경우
-        setFormData((prev: typeof formData) => ({
-          ...prev,
-          onSiteBalanceAmount: calculatedBalance,
-          balanceAmount: calculatedBalance
-        }))
-        prevBalanceDepsRef.current = { ...currentDeps, onSiteBalanceAmount: calculatedBalance }
+        // 저장된 잔액(또는 사용자 입력)이 있고 계산값이 0이면 덮어쓰지 않음 (페이지 로드 시 $195 → $0 리셋 방지)
+        if (calculatedBalance === 0 && currentBalance > 0) {
+          prevBalanceDepsRef.current = { ...currentDeps, onSiteBalanceAmount: currentBalance }
+        } else {
+          setFormData((prev: typeof formData) => ({
+            ...prev,
+            onSiteBalanceAmount: calculatedBalance,
+            balanceAmount: calculatedBalance
+          }))
+          prevBalanceDepsRef.current = { ...currentDeps, onSiteBalanceAmount: calculatedBalance }
+        }
       } else {
         // 의존성은 변경되었지만 잔액 차이가 작으면 의존성만 업데이트
         prevBalanceDepsRef.current = { ...currentDeps, onSiteBalanceAmount: currentBalance }
@@ -757,14 +768,16 @@ export default function PricingSection({
               ? adjustedBasePrice * (commissionPercent / 100)
               : currentCommissionAmount
             
+            const existingBalance = formData.onSiteBalanceAmount ?? 0
+            const balanceToUse = (calculatedBalance === 0 && existingBalance > 0) ? existingBalance : calculatedBalance
             setFormData((prev: typeof formData) => ({
               ...prev,
               depositAmount: discountedPrice,
               onlinePaymentAmount: discountedPrice,
               commission_base_price: discountedPrice,
               commission_amount: calculatedCommission,
-              onSiteBalanceAmount: calculatedBalance,
-              balanceAmount: calculatedBalance
+              onSiteBalanceAmount: balanceToUse,
+              balanceAmount: balanceToUse
             }))
           }
         } else {
@@ -779,12 +792,13 @@ export default function PricingSection({
             const totalCustomerPayment = calculateTotalCustomerPayment()
             const totalPaid = discountedPrice + calculatedBalanceReceivedTotal
             const calculatedBalance = Math.max(0, totalCustomerPayment - totalPaid)
-            
+            const existingBalance = formData.onSiteBalanceAmount ?? 0
+            const balanceToUse = (calculatedBalance === 0 && existingBalance > 0) ? existingBalance : calculatedBalance
             setFormData((prev: typeof formData) => ({
               ...prev,
               depositAmount: discountedPrice,
-              onSiteBalanceAmount: calculatedBalance,
-              balanceAmount: calculatedBalance
+              onSiteBalanceAmount: balanceToUse,
+              balanceAmount: balanceToUse
             }))
           }
         }
