@@ -113,9 +113,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     try {
       return await run()
     } catch (error) {
+      // AbortError 감지: Error 인스턴스 또는 Supabase가 반환하는 { message, code, details } 객체 모두 처리
+      const msg = typeof (error as { message?: string })?.message === 'string' ? (error as { message: string }).message : (error instanceof Error ? error.message : '')
       const isAbortError =
-        error instanceof Error &&
-        (error.name === 'AbortError' || error.message.includes('aborted') || error.message.includes('signal is aborted'))
+        (error instanceof Error && (error.name === 'AbortError' || error.message.includes('aborted') || error.message.includes('signal is aborted'))) ||
+        (msg && (msg.includes('AbortError') || msg.includes('aborted') || msg.includes('signal is aborted')))
 
       if (isAbortError && !isRetry) {
         // 동시 다수 요청 시 발생하는 AbortError는 한 번만 재시도
@@ -130,12 +132,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
       // 의미 있는 에러 정보가 있을 때만 로그 (빈 객체 로그 방지)
       const err = error as { message?: string; code?: string; details?: string; hint?: string }
-      const msg = (err?.message && err.message.trim()) || (error instanceof Error ? error.message : '')
+      const errMsg = (err?.message && err.message.trim()) || (error instanceof Error ? error.message : '')
       const code = err?.code?.trim?.()
       const details = (err?.details && err.details.trim()) || (err?.hint && err.hint.trim())
-      if (msg || code || details) {
+      if (errMsg || code || details) {
         console.error('Error fetching reservation choices:', {
-          message: msg || undefined,
+          message: errMsg || undefined,
           code: code || undefined,
           details: details || undefined,
           reservationId
@@ -1265,6 +1267,34 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         }
       }
 
+      // 새 예약 시 폼에서 추가한 예약 옵션(reservation_options) 함께 저장
+      const pendingOptions = (reservation as any).pendingReservationOptions as Array<{ option_id: string; ea?: number; price?: number; total_price?: number; status?: string; note?: string }> | undefined
+      if (reservationId && Array.isArray(pendingOptions) && pendingOptions.length > 0) {
+        try {
+          for (const opt of pendingOptions) {
+            if (!opt?.option_id) continue
+            const resOpt = await fetch(`/api/reservation-options/${reservationId}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                option_id: opt.option_id,
+                ea: opt.ea ?? 1,
+                price: opt.price ?? 0,
+                total_price: opt.total_price ?? (Number(opt.price) || 0) * (opt.ea ?? 1),
+                status: opt.status || 'active',
+                note: opt.note || null
+              })
+            })
+            if (!resOpt.ok) {
+              const errData = await resOpt.json().catch(() => ({}))
+              console.error('Error saving reservation option:', errData?.error || resOpt.statusText)
+            }
+          }
+        } catch (roError) {
+          console.error('Error saving reservation_options:', roError)
+        }
+      }
+
       // 투어 자동 생성 또는 업데이트
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (newReservation && (newReservation as any).id) {
@@ -1415,20 +1445,23 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         const pricingInfo = (reservation as any).pricingInfo || {}
         try {
           const pricingId = crypto.randomUUID()
-          
+          // 불포함 가격 합계(인원별) = 상품 가격 합계·subtotal·total_price에 포함하여 저장
+          const totalPeople = (reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)
+          const notIncludedTotal = (pricingInfo.not_included_price || 0) * (totalPeople || 1)
+
           const pricingData = {
             id: pricingId,
             reservation_id: reservationId,
             adult_product_price: pricingInfo.adultProductPrice || 0,
             child_product_price: pricingInfo.childProductPrice || 0,
             infant_product_price: pricingInfo.infantProductPrice || 0,
-            product_price_total: pricingInfo.productPriceTotal || 0,
+            product_price_total: (pricingInfo.productPriceTotal || 0) + notIncludedTotal,
             not_included_price: pricingInfo.not_included_price || 0,
             required_options: pricingInfo.requiredOptions || {},
             required_option_total: pricingInfo.requiredOptionTotal || 0,
             choices: pricingInfo.choices || {},
             choices_total: pricingInfo.choicesTotal || 0,
-            subtotal: pricingInfo.subtotal || 0,
+            subtotal: (pricingInfo.subtotal || 0) + notIncludedTotal,
             coupon_code: pricingInfo.couponCode || null,
             coupon_discount: pricingInfo.couponDiscount || 0,
             additional_discount: pricingInfo.additionalDiscount || 0,
@@ -1439,7 +1472,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             prepayment_tip: pricingInfo.prepaymentTip || 0,
             selected_options: pricingInfo.selectedOptionalOptions || {},
             option_total: pricingInfo.optionTotal || 0,
-            total_price: pricingInfo.totalPrice || 0,
+            total_price: (pricingInfo.totalPrice || 0) + notIncludedTotal,
             deposit_amount: pricingInfo.depositAmount || 0,
             balance_amount: pricingInfo.balanceAmount || 0,
             private_tour_additional_cost: pricingInfo.privateTourAdditionalCost || 0,
@@ -1517,12 +1550,12 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         }
       }
 
-      // 성공 시 예약 목록 새로고침
-      console.log('handleAddReservation: 모든 저장 완료, 예약 목록 새로고침 시작')
-      await refreshReservations()
-      console.log('handleAddReservation: 예약 목록 새로고침 완료')
+      // 성공 시 모달 먼저 닫고(리셋된 수정 모달이 보이지 않도록), 그 다음 목록 새로고침 후 성공 메시지
+      console.log('handleAddReservation: 모든 저장 완료')
       setShowAddForm(false)
       setNewReservationId(null)
+      await refreshReservations()
+      console.log('handleAddReservation: 예약 목록 새로고침 완료')
       alert(t('messages.reservationAdded'))
     } catch (error) {
       console.error('handleAddReservation: 예약 추가 중 오류:', error)
@@ -1774,18 +1807,21 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         if (reservation.pricingInfo) {
           try {
             const pricingInfo = reservation.pricingInfo as any
+            const totalPeople = (reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)
+            const notIncludedTotal = (pricingInfo.not_included_price || 0) * (totalPeople || 1)
+
             const pricingData = {
               reservation_id: editingReservation.id,
               adult_product_price: pricingInfo.adultProductPrice,
               child_product_price: pricingInfo.childProductPrice,
               infant_product_price: pricingInfo.infantProductPrice,
-              product_price_total: pricingInfo.productPriceTotal,
+              product_price_total: (pricingInfo.productPriceTotal || 0) + notIncludedTotal,
               not_included_price: pricingInfo.not_included_price || 0,
               required_options: pricingInfo.requiredOptions,
               required_option_total: pricingInfo.requiredOptionTotal,
               choices: pricingInfo.choices || {},
               choices_total: pricingInfo.choicesTotal || 0,
-              subtotal: pricingInfo.subtotal,
+              subtotal: (pricingInfo.subtotal || 0) + notIncludedTotal,
               coupon_code: pricingInfo.couponCode,
               coupon_discount: pricingInfo.couponDiscount,
               additional_discount: pricingInfo.additionalDiscount,
@@ -1796,7 +1832,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               prepayment_tip: pricingInfo.prepaymentTip,
               selected_options: pricingInfo.selectedOptionalOptions,
               option_total: pricingInfo.optionTotal,
-              total_price: pricingInfo.totalPrice,
+              total_price: (pricingInfo.totalPrice || 0) + notIncludedTotal,
               deposit_amount: pricingInfo.depositAmount,
               balance_amount: pricingInfo.balanceAmount,
               private_tour_additional_cost: pricingInfo.privateTourAdditionalCost,
@@ -2662,6 +2698,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           pickupHotels={(pickupHotels || []) as PickupHotel[]}
           coupons={(coupons || []) as { id: string; coupon_code: string; discount_type: 'percentage' | 'fixed'; [key: string]: unknown }[]}
           onSubmit={editingReservation ? handleEditReservation : handleAddReservation}
+          isNewReservation={showAddForm && !editingReservation}
           onCancel={() => {
             setShowAddForm(false)
             setNewReservationId(null)

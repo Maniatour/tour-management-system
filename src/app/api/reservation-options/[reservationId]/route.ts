@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin } from '@/lib/supabase'
+
+// 서버에서는 RLS 우회용 admin 사용 (없으면 anon fallback)
+const db = supabaseAdmin ?? supabase
 
 export async function GET(
   request: NextRequest,
@@ -13,7 +16,7 @@ export async function GET(
     }
 
     // reservation_options 테이블에서 해당 예약의 옵션들을 가져오기
-    const { data: reservationOptions, error } = await supabase
+    const { data: reservationOptions, error } = await db
       .from('reservation_options')
       .select(`
         id,
@@ -32,7 +35,8 @@ export async function GET(
 
     if (error) {
       console.error('Error fetching reservation options:', error)
-      return NextResponse.json({ error: 'Failed to fetch reservation options' }, { status: 500 })
+      const message = process.env.NODE_ENV === 'development' ? error.message : 'Failed to fetch reservation options'
+      return NextResponse.json({ error: message }, { status: 500 })
     }
 
     // 옵션 이름을 별도로 조회
@@ -40,7 +44,7 @@ export async function GET(
     let optionNames: Record<string, string> = {}
     
     if (optionIds.length > 0) {
-      const { data: options, error: optionsError } = await supabase
+      const { data: options, error: optionsError } = await db
         .from('options')
         .select('id, name')
         .in('id', optionIds)
@@ -88,8 +92,11 @@ export async function POST(
     // id는 TEXT PRIMARY KEY라 반드시 지정 (테이블에 DEFAULT 없음)
     const id = crypto.randomUUID()
 
+    // status: DB CHECK는 'active'|'inactive'|'cancelled' 만 허용
+    const allowedStatus = ['active', 'inactive', 'cancelled'].includes(status) ? status : 'active'
+
     // 새 reservation_option 생성
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('reservation_options')
       .insert({
         id,
@@ -98,14 +105,15 @@ export async function POST(
         ea: ea ?? 1,
         price: price ?? 0,
         total_price: total_price ?? (Number(price) || 0) * (ea ?? 1),
-        status: status || 'active',
-        note: note || null
+        status: allowedStatus,
+        note: note ?? null
       })
       .select()
 
     if (error) {
       console.error('Error creating reservation option:', error)
-      return NextResponse.json({ error: 'Failed to create reservation option' }, { status: 500 })
+      const message = process.env.NODE_ENV === 'development' ? error.message : 'Failed to create reservation option'
+      return NextResponse.json({ error: message }, { status: 500 })
     }
 
     return NextResponse.json({ reservationOption: data[0] })
@@ -133,16 +141,18 @@ export async function PUT(
       return NextResponse.json({ error: 'Option ID is required for update' }, { status: 400 })
     }
 
+    const allowedStatus = ['active', 'inactive', 'cancelled'].includes(status) ? status : 'active'
+
     // reservation_option 업데이트
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('reservation_options')
       .update({
         option_id,
         ea: ea || 1,
         price: price || 0,
-        total_price: total_price || (price || 0) * (ea || 1),
-        status: status || 'active',
-        note: note || null,
+        total_price: total_price ?? (price || 0) * (ea || 1),
+        status: allowedStatus,
+        note: note ?? null,
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
@@ -151,7 +161,8 @@ export async function PUT(
 
     if (error) {
       console.error('Error updating reservation option:', error)
-      return NextResponse.json({ error: 'Failed to update reservation option' }, { status: 500 })
+      const message = process.env.NODE_ENV === 'development' ? error.message : 'Failed to update reservation option'
+      return NextResponse.json({ error: message }, { status: 500 })
     }
 
     return NextResponse.json({ reservationOption: data[0] })
@@ -175,7 +186,7 @@ export async function DELETE(
     }
 
     // reservation_option 삭제
-    const { error } = await supabase
+    const { error } = await db
       .from('reservation_options')
       .delete()
       .eq('id', optionId)
@@ -183,7 +194,8 @@ export async function DELETE(
 
     if (error) {
       console.error('Error deleting reservation option:', error)
-      return NextResponse.json({ error: 'Failed to delete reservation option' }, { status: 500 })
+      const message = process.env.NODE_ENV === 'development' ? error.message : 'Failed to delete reservation option'
+      return NextResponse.json({ error: message }, { status: 500 })
     }
 
     return NextResponse.json({ success: true })

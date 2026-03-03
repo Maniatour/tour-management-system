@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
+import type { Database } from '@/lib/supabase'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import VehicleAssignmentModal from '@/components/VehicleAssignmentModal'
 import TicketBookingForm from '@/components/booking/TicketBookingForm'
@@ -37,6 +38,7 @@ import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
 import TourEnvelopeModal from '@/components/receipt/TourEnvelopeModal'
 import { useTourDetailData } from '@/hooks/useTourDetailData'
 import { useTourHandlers } from '@/hooks/useTourHandlers'
+import { normalizeReservationIds } from '@/utils/tourUtils'
 import { 
   getStatusColor,
   getStatusText,
@@ -61,8 +63,12 @@ import {
   DollarSign, 
   FileText,
   Menu,
-  X
+  X,
+  Printer
 } from 'lucide-react'
+
+// setTour 콜백용 투어 타입
+type TourRow = Database['public']['Tables']['tours']['Row']
 
 // 로컬 폼 전달용 간략 타입
 type LocalTicketBooking = {
@@ -120,6 +126,7 @@ export default function TourDetailPage() {
   const [showEmailPreviewModal, setShowEmailPreviewModal] = useState<boolean>(false)
   const [showTourEditModal, setShowTourEditModal] = useState<boolean>(false)
   const [showBatchReceiptModal, setShowBatchReceiptModal] = useState<boolean>(false)
+  const [showEditReceiptModal, setShowEditReceiptModal] = useState<boolean>(false)
   const [envelopeModalVariant, setEnvelopeModalVariant] = useState<'tip' | 'balance' | null>(null)
   const [activeSection, setActiveSection] = useState<string>('')
   const [showFloatingMenu, setShowFloatingMenu] = useState<boolean>(false)
@@ -199,7 +206,7 @@ export default function TourDetailPage() {
     const success = await tourHandlers.updatePrivateTourStatus(tourData.tour, tourData.pendingPrivateTourValue)
     if (success) {
       tourData.setIsPrivateTour(tourData.pendingPrivateTourValue)
-      tourData.setTour(prev => prev ? { ...prev, is_private_tour: tourData.pendingPrivateTourValue } : null)
+      tourData.setTour((prev: TourRow | null) => prev ? { ...prev, is_private_tour: tourData.pendingPrivateTourValue } : null)
       tourData.setShowPrivateTourModal(false)
     }
   }
@@ -237,7 +244,7 @@ export default function TourDetailPage() {
     const previousTour = { ...tourData.tour }
     
     // 먼저 로컬 상태를 즉시 업데이트 (낙관적 업데이트)
-    tourData.setTour(prev => {
+    tourData.setTour((prev: TourRow | null) => {
       if (!prev) return null
       console.log('로컬 상태 업데이트:', { 이전: prev.tour_status, 새: status })
       return { ...prev, tour_status: status }
@@ -305,7 +312,7 @@ export default function TourDetailPage() {
     const previousTour = tourData.tour
     
     // 먼저 로컬 상태를 즉시 업데이트 (낙관적 업데이트)
-    tourData.setTour(prev => {
+    tourData.setTour((prev: TourRow | null) => {
       if (!prev) return null
       return { ...prev, assignment_status: status }
     })
@@ -363,7 +370,7 @@ export default function TourDetailPage() {
         tourData.setSelectedAssistant('')
       }
       // 투어 데이터도 업데이트
-      tourData.setTour(prev => prev ? { ...prev, team_type: type } : null)
+      tourData.setTour((prev: TourRow | null) => prev ? { ...prev, team_type: type } : null)
       
       // 팀 타입 변경 시에는 수수료 상태를 초기화하지 않음
       // 저장된 수수료가 있으면 그대로 유지
@@ -428,7 +435,7 @@ export default function TourDetailPage() {
       }
 
       // 투어 데이터 업데이트
-      tourData.setTour(prev => prev ? { ...prev, tour_date: date } : null)
+      tourData.setTour((prev: TourRow | null) => prev ? { ...prev, tour_date: date } : null)
     } catch (error) {
       console.error('투어 날짜 업데이트 오류:', error)
       alert(locale === 'ko' ? '투어 날짜 업데이트 중 오류가 발생했습니다.' : 'Error updating tour date.')
@@ -452,7 +459,7 @@ export default function TourDetailPage() {
       }
 
       // 투어 데이터 업데이트
-      tourData.setTour(prev => prev ? { ...prev, tour_start_datetime: datetime } : null)
+      tourData.setTour((prev: TourRow | null) => prev ? { ...prev, tour_start_datetime: datetime } : null)
     } catch (error) {
       console.error('투어 시작 시간 업데이트 오류:', error)
       alert(locale === 'ko' ? '투어 시작 시간 업데이트 중 오류가 발생했습니다.' : 'Error updating tour start time.')
@@ -711,7 +718,7 @@ export default function TourDetailPage() {
       setIsAssistantFeeFromDefault(false)
 
       // 투어 데이터 업데이트
-      tourData.setTour(prev => prev ? { ...prev, ...updateData } : null)
+      tourData.setTour((prev: TourRow | null) => prev ? { ...prev, ...updateData } : null)
 
       console.log('팀 구성 및 차량 배정 저장 완료:', updateData)
       alert(t('detail.saveSuccess'))
@@ -873,7 +880,7 @@ export default function TourDetailPage() {
       if (reservation) {
         tourData.setAssignedReservations([...tourData.assignedReservations, reservation])
         tourData.setPendingReservations(tourData.pendingReservations.filter((r: any) => r.id !== reservationId))
-        tourData.setTour(prev => prev ? { ...prev, reservation_ids: updatedReservationIds } : null)
+        tourData.setTour((prev: TourRow | null) => prev ? { ...prev, reservation_ids: updatedReservationIds } : null)
         // 예약 목록 새로고침
         if (tourData.refreshReservations) {
           await tourData.refreshReservations()
@@ -893,7 +900,7 @@ export default function TourDetailPage() {
       if (reservation) {
         tourData.setPendingReservations([...tourData.pendingReservations, reservation])
         tourData.setAssignedReservations(tourData.assignedReservations.filter((r: any) => r.id !== reservationId))
-        tourData.setTour(prev => prev ? { ...prev, reservation_ids: updatedReservationIds } : null)
+        tourData.setTour((prev: TourRow | null) => prev ? { ...prev, reservation_ids: updatedReservationIds } : null)
       }
     }
   }
@@ -907,7 +914,7 @@ export default function TourDetailPage() {
     if (updatedReservationIds) {
       tourData.setAssignedReservations([...tourData.assignedReservations, ...tourData.pendingReservations])
       tourData.setPendingReservations([])
-      tourData.setTour(prev => prev ? { ...prev, reservation_ids: updatedReservationIds } : null)
+      tourData.setTour((prev: TourRow | null) => prev ? { ...prev, reservation_ids: updatedReservationIds } : null)
     }
   }
 
@@ -917,7 +924,7 @@ export default function TourDetailPage() {
     if (updatedReservationIds) {
       tourData.setPendingReservations([...tourData.pendingReservations, ...tourData.assignedReservations])
       tourData.setAssignedReservations([])
-      tourData.setTour(prev => prev ? { ...prev, reservation_ids: updatedReservationIds } : null)
+      tourData.setTour((prev: TourRow | null) => prev ? { ...prev, reservation_ids: updatedReservationIds } : null)
     }
   }
 
@@ -1198,6 +1205,7 @@ export default function TourDetailPage() {
   // 예약 편집 모달 닫기
   const handleCloseEditModal = async () => {
     setEditingReservation(null)
+    setShowEditReceiptModal(false)
   }
 
   // 예약 ID로 수정 모달 열기 (Tips 쉐어 등에서 예약 클릭 시)
@@ -1445,33 +1453,47 @@ export default function TourDetailPage() {
         onPrintBalanceEnvelopes={() => setEnvelopeModalVariant('balance')}
       />
 
-      {/* 영수증 일괄 인쇄 모달 */}
-      <CustomerReceiptModal
-        isOpen={showBatchReceiptModal}
-        onClose={() => setShowBatchReceiptModal(false)}
-        reservationId={tourData.tour?.reservation_ids?.[0] || ''}
-        reservationIds={(tourData.tour?.reservation_ids || []).filter(Boolean)}
-      />
+      {/* 영수증 일괄 인쇄: 픽업 스케줄/배정 관리와 동일한 목록 사용(assignedReservations 우선) */}
+      {(() => {
+        const fromAssigned = (tourData.assignedReservations || []).map((r: { id: string }) => r.id).filter(Boolean)
+        const fromTour = normalizeReservationIds(tourData.tour?.reservation_ids)
+        const receiptReservationIds = fromAssigned.length > 0 ? fromAssigned : fromTour
+        return (
+          <CustomerReceiptModal
+            isOpen={showBatchReceiptModal}
+            onClose={() => setShowBatchReceiptModal(false)}
+            reservationId={receiptReservationIds[0] || ''}
+            reservationIds={receiptReservationIds}
+          />
+        )
+      })()}
 
-      {/* 투어 봉투 일괄 인쇄 모달 (팁 봉투 / Balance 봉투) */}
-      <TourEnvelopeModal
-        isOpen={envelopeModalVariant !== null}
-        onClose={() => setEnvelopeModalVariant(null)}
-        variant={envelopeModalVariant ?? 'tip'}
-        reservationIds={(tourData.tour?.reservation_ids || []).filter(Boolean)}
-        tourDate={tourData.tour?.tour_date || ''}
-        productNameKo={tourData.product?.name_ko || tourData.product?.name_en || ''}
-        productNameEn={tourData.product?.name_en || tourData.product?.name_ko || ''}
-        guideAndAssistantKo={[
-          tourData.selectedGuide ? tourData.getTeamMemberNameForLocale(tourData.selectedGuide, 'ko') : null,
-          tourData.selectedAssistant ? tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'ko') : null,
-        ].filter(Boolean).join(' & ') || '—'}
-        guideAndAssistantEn={[
-          tourData.selectedGuide ? tourData.getTeamMemberNameForLocale(tourData.selectedGuide, 'en') : null,
-          tourData.selectedAssistant ? tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'en') : null,
-        ].filter(Boolean).join(' & ') || '—'}
-        locale={locale}
-      />
+      {/* 투어 봉투 일괄 인쇄 모달: 배정된 예약 목록 우선 사용 */}
+      {(() => {
+        const fromAssigned = (tourData.assignedReservations || []).map((r: { id: string }) => r.id).filter(Boolean)
+        const fromTour = normalizeReservationIds(tourData.tour?.reservation_ids)
+        const envelopeReservationIds = fromAssigned.length > 0 ? fromAssigned : fromTour
+        return (
+          <TourEnvelopeModal
+            isOpen={envelopeModalVariant !== null}
+            onClose={() => setEnvelopeModalVariant(null)}
+            variant={envelopeModalVariant ?? 'tip'}
+            reservationIds={envelopeReservationIds}
+            tourDate={tourData.tour?.tour_date || ''}
+            productNameKo={tourData.product?.name_ko || tourData.product?.name_en || ''}
+            productNameEn={tourData.product?.name_en || tourData.product?.name_ko || ''}
+            guideAndAssistantKo={[
+              tourData.selectedGuide ? tourData.getTeamMemberNameForLocale(tourData.selectedGuide, 'ko') : null,
+              tourData.selectedAssistant ? tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'ko') : null,
+            ].filter(Boolean).join(' & ') || '—'}
+            guideAndAssistantEn={[
+              tourData.selectedGuide ? tourData.getTeamMemberNameForLocale(tourData.selectedGuide, 'en') : null,
+              tourData.selectedAssistant ? tourData.getTeamMemberNameForLocale(tourData.selectedAssistant, 'en') : null,
+            ].filter(Boolean).join(' & ') || '—'}
+            locale={locale}
+          />
+        )
+      })()}
 
       <div className="px-0 py-6 pb-24 lg:pb-6">
         {/* 4열 그리드 레이아웃 */}
@@ -1837,6 +1859,16 @@ export default function TourDetailPage() {
           options={reservationFormData.options}
           pickupHotels={tourData.pickupHotels}
           coupons={reservationFormData.coupons}
+          titleAction={
+            <button
+              type="button"
+              onClick={() => setShowEditReceiptModal(true)}
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+              title={locale === 'ko' ? '영수증 인쇄' : 'Print receipt'}
+            >
+              <Printer className="w-5 h-5" />
+            </button>
+          }
           onSubmit={async (reservationData: any) => {
             try {
               // camelCase를 snake_case로 변환
@@ -1970,6 +2002,15 @@ export default function TourDetailPage() {
             }
           }}
           />
+      )}
+
+      {/* 예약 편집 모달에서 열리는 영수증 인쇄 모달 */}
+      {editingReservation && (
+        <CustomerReceiptModal
+          isOpen={showEditReceiptModal}
+          onClose={() => setShowEditReceiptModal(false)}
+          reservationId={editingReservation.id}
+        />
       )}
 
       {/* 차량 배정 모달 */}

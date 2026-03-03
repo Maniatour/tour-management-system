@@ -309,16 +309,26 @@ export default function PricingInfoModal({ reservation, isOpen, onClose }: Prici
       [field]: value
     }
     
-    // 자동 계산 로직: 상품 단가 변경 시 상품 가격 합계 = 단가 × 인원
+    // 자동 계산 로직: 상품 단가 변경 시 상품 가격 합계 = (단가 × 인원) + 불포함 가격 합계
+    const adults = reservation?.adults || 0
+    const child = reservation?.child || 0
+    const infant = reservation?.infant || 0
+    const totalPeople = adults + child + infant
     if (field === 'adult_product_price' || field === 'child_product_price' || field === 'infant_product_price') {
-      const adults = reservation?.adults || 0
-      const child = reservation?.child || 0
-      const infant = reservation?.infant || 0
       const productTotal =
         (updatedData.adult_product_price || 0) * adults +
         (updatedData.child_product_price || 0) * child +
         (updatedData.infant_product_price || 0) * infant
-      updatedData.product_price_total = productTotal
+      const notIncludedTotal = (updatedData.not_included_price || 0) * (totalPeople || 1)
+      updatedData.product_price_total = productTotal + notIncludedTotal
+    }
+    if (field === 'not_included_price') {
+      const productTotal =
+        (updatedData.adult_product_price || 0) * adults +
+        (updatedData.child_product_price || 0) * child +
+        (updatedData.infant_product_price || 0) * infant
+      const notIncludedTotal = (updatedData.not_included_price || 0) * (totalPeople || 1)
+      updatedData.product_price_total = productTotal + notIncludedTotal
     }
     
     // 소계 계산 (상품 가격 + 옵션 가격)

@@ -1,5 +1,31 @@
 // 투어 관련 유틸리티 함수들
 
+/** tours.reservation_ids를 string[]로 정규화 (배열/JSON 문자열/콤마 구분 문자열/단일 UUID 지원) */
+export function normalizeReservationIds(reservationIds: unknown): string[] {
+  if (reservationIds == null) return []
+  if (Array.isArray(reservationIds)) {
+    return reservationIds.map((id) => String(id).trim()).filter((id) => id.length > 0)
+  }
+  if (typeof reservationIds === 'string') {
+    const trimmed = reservationIds.trim()
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        return Array.isArray(parsed)
+          ? parsed.map((v: unknown) => String(v).trim()).filter((v: string) => v.length > 0)
+          : []
+      } catch {
+        return []
+      }
+    }
+    if (trimmed.includes(',')) {
+      return trimmed.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+    }
+    return trimmed.length > 0 ? [trimmed] : []
+  }
+  return []
+}
+
 // 투어에 배정된 사람 수 계산
 export const calculateAssignedPeople = (tour: any, reservations: any[]) => {
   if (!tour || !reservations || reservations.length === 0) return 0

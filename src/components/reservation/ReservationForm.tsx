@@ -82,6 +82,8 @@ interface ReservationFormProps {
   allowPastDateEdit?: boolean
   /** 제목줄 오른쪽에 표시할 액션 (예: 영수증 인쇄 버튼) */
   titleAction?: React.ReactNode
+  /** 새 예약 추가 모드(아직 DB에 저장 전). true이면 예약 옵션 추가는 저장 후에만 가능 */
+  isNewReservation?: boolean
 }
 
 type RezLike = Partial<Reservation> & {
@@ -120,7 +122,8 @@ export default function ReservationForm({
   onViewCustomer,
   initialCustomerId,
   allowPastDateEdit = false,
-  titleAction
+  titleAction,
+  isNewReservation = false
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
@@ -139,6 +142,8 @@ export default function ReservationForm({
   const [reservationOptionsTotalPrice, setReservationOptionsTotalPrice] = useState(0)
   const [expenseUpdateTrigger, setExpenseUpdateTrigger] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  /** 새 예약 시 저장 전에 추가한 옵션 목록. 예약 저장 시 함께 전달됨 */
+  const [pendingReservationOptions, setPendingReservationOptions] = useState<Array<{ option_id: string; ea?: number; price?: number; total_price?: number; status?: string; note?: string }>>([])
   
   // 중복 고객 확인 모달 상태
   const [showDuplicateModal, setShowDuplicateModal] = useState(false)
@@ -3083,19 +3088,23 @@ export default function ReservationForm({
         pricingId = crypto.randomUUID()
       }
 
+      // 불포함 가격 합계(인원별) = product_price_total·subtotal·total_price에 포함하여 저장
+      const totalPeople = formData.adults + formData.child + formData.infant
+      const notIncludedTotal = (formData.not_included_price || 0) * (totalPeople || 1)
+
       const pricingData: Database['public']['Tables']['reservation_pricing']['Insert'] = {
         id: pricingId,
         reservation_id: reservationId,
         adult_product_price: formData.adultProductPrice,
         child_product_price: formData.childProductPrice,
         infant_product_price: formData.infantProductPrice,
-        product_price_total: formData.productPriceTotal,
+        product_price_total: formData.productPriceTotal + notIncludedTotal,
         not_included_price: formData.not_included_price || 0,
         required_options: formData.requiredOptions,
         required_option_total: formData.requiredOptionTotal,
         choices: formData.choices,
         choices_total: formData.choicesTotal,
-        subtotal: formData.subtotal,
+        subtotal: formData.subtotal + notIncludedTotal,
         coupon_code: formData.couponCode,
         coupon_discount: formData.couponDiscount,
         additional_discount: formData.additionalDiscount,
@@ -3106,7 +3115,7 @@ export default function ReservationForm({
         prepayment_tip: formData.prepaymentTip,
         selected_options: formData.selectedOptionalOptions,
         option_total: formData.optionTotal,
-        total_price: formData.totalPrice,
+        total_price: formData.totalPrice + notIncludedTotal,
         deposit_amount: formData.depositAmount,
         balance_amount: formData.balanceAmount,
         private_tour_additional_cost: formData.privateTourAdditionalCost,
@@ -3292,8 +3301,8 @@ export default function ReservationForm({
         finalCustomerId = newCustomer.id
         setFormData(prev => ({ ...prev, customerId: finalCustomerId }))
         
-        // 고객 목록 새로고침
-        await onRefreshCustomers()
+        // 고객 목록 새로고침은 비동기로 실행 (실패/지연 시에도 예약 저장이 진행되도록 await 하지 않음)
+        void onRefreshCustomers().catch(() => {})
       } else if (formData.customerId) {
         // 기존 고객 업데이트
         const customerData = {
@@ -3319,8 +3328,8 @@ export default function ReservationForm({
           return
         }
         
-        // 고객 목록 새로고침
-        await onRefreshCustomers()
+        // 고객 목록 새로고침은 비동기로 실행 (실패/지연 시에도 예약 저장이 진행되도록 await 하지 않음)
+        void onRefreshCustomers().catch(() => {})
       }
       
       // 고객 ID 최종 검증 (새 고객 생성 후에도 고객 ID가 없으면 오류)
@@ -3383,6 +3392,8 @@ export default function ReservationForm({
         totalPeople,
         choices: choicesData,
         selectedChoices: formData.selectedChoices as any,
+        // 새 예약 시 저장 전에 추가한 옵션 목록 (예약 저장 시 함께 저장)
+        pendingReservationOptions: isNewReservation ? pendingReservationOptions : undefined,
         // 가격 정보를 포함하여 전달
         pricingInfo: {
           adultProductPrice: formData.adultProductPrice,
@@ -3579,15 +3590,15 @@ export default function ReservationForm({
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center flex-shrink-0 p-3 sm:p-0 sm:mb-2 sm:space-y-0 space-y-3 border-b border-gray-200 max-lg:bg-white max-lg:sticky max-lg:top-0 max-lg:z-10 max-lg:shadow-sm">
           <div className="flex items-center justify-between gap-2 min-w-0">
             <h2 className="text-base sm:text-base font-semibold text-gray-900 truncate">
-              {reservation ? t('form.editTitle') : t('form.title')}
-              {reservation && (
+              {isNewReservation ? t('form.title') : (reservation ? t('form.editTitle') : t('form.title'))}
+              {reservation && !isNewReservation && (
                 <span className="ml-2 text-xs font-normal text-gray-500 hidden sm:inline">
                   (ID: {reservation.id})
                 </span>
               )}
             </h2>
             <div className="flex items-center gap-2 flex-shrink-0 min-w-0">
-              {layout === 'page' && reservation && titleAction}
+              {reservation && titleAction}
               <div className="flex items-center gap-2 max-sm:flex sm:hidden">
               <label className="sr-only" htmlFor="reservation-status-mobile">{t('form.status')}</label>
               <select
@@ -4038,6 +4049,8 @@ export default function ReservationForm({
                       onTotalPriceChange={setReservationOptionsTotalPrice}
                       title="예약 옵션"
                       itemVariant="line"
+                      isPersisted={!isNewReservation}
+                      onPendingOptionsChange={setPendingReservationOptions}
                     />
                   </div>
                   <div id="payment-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">

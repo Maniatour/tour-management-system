@@ -432,7 +432,10 @@ export function useReservationData() {
             .in('reservation_id', chunk)
 
           if (pricingError) {
-            console.warn('reservation_pricing 조회 오류:', pricingError)
+            const msg = typeof (pricingError as { message?: string })?.message === 'string' ? (pricingError as { message: string }).message : ''
+            if (!msg.includes('AbortError') && !msg.includes('aborted')) {
+              console.warn('reservation_pricing 조회 오류:', pricingError)
+            }
             continue
           }
 

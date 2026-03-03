@@ -26,7 +26,7 @@ export default function StripeErrorHandler() {
       }
     }
 
-    // 콘솔 경고 필터링 (Stripe.js 관련 경고 무시)
+    // 콘솔 경고 필터링 (Stripe.js 관련 경고, AbortError 무시)
     const originalWarn = console.warn
     console.warn = (...args: any[]) => {
       const message = args.join(' ')
@@ -38,10 +38,12 @@ export default function StripeErrorHandler() {
         message.includes('Blocked aria-hidden on an element') ||
         message.includes('because its descendant retained focus')
       ) {
-        // 개발 환경에서도 이 경고는 무시
         return
       }
-      // 다른 경고는 정상적으로 표시
+      // AbortError / signal aborted: 동시 요청·페이지 전환 등으로 인한 정상적 취소 → 로그 생략
+      if (message.includes('AbortError') || message.includes('signal is aborted')) {
+        return
+      }
       originalWarn.apply(console, args)
     }
 

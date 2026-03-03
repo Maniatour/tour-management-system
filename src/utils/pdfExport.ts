@@ -232,3 +232,185 @@ export function generateChartPDF(chartElementId: string, fileName: string = 'cha
     console.error('Error generating chart PDF:', error)
   })
 }
+
+// --- 채널 인보이스 PDF (KK DAY Invoice 스타일) ---
+export interface ChannelInvoiceItem {
+  reservationDate: string
+  tourDate: string
+  bookingNumber: string
+  description: string
+  guestName: string
+  quantity: number
+  commissionPercent: number
+  originalPrice: number
+  commission: number
+  price: number
+}
+
+const DEFAULT_TO_LINES = [
+  'Taiwanmania.com International Travel Service Co., Ltd. KKDAY',
+  '11F., No. 18, Aly. 1, Ln. 768, Sec. 4, Bade Rd.,',
+  'Nangang Dist., Taipei City 115, Taiwan (R.O.C.)',
+  'Taiwan'
+]
+
+const DEFAULT_COMPANY = {
+  name: 'Las Vegas Mania',
+  address: '4525 Spring Mountain Rd #108, Las Vegas, Nevada 89102, United States',
+  license: '2002495.056-121',
+  email: 'vegasmaniatour@gmail.com',
+  website: 'www.lasvegas-mania.com',
+  phone: '1-702-444-5531'
+}
+
+const DEFAULT_PAYMENT = {
+  name: 'TRIP MANIA LLC',
+  address: '4525 Spring Mountain Rd #108, Las Vegas, NV 89102',
+  swiftCode: 'WFBIUS6SLAS',
+  abaNo: '321270742',
+  accountNo: '7830554007',
+  bankName: 'Wells Fargo Bank',
+  bankAddress: '4425 Spring Mountain Rd, Las Vegas, NV 89102'
+}
+
+export interface ChannelInvoiceOptions {
+  channelName: string
+  dateRange: { start: string; end: string }
+  items: ChannelInvoiceItem[]
+  company?: typeof DEFAULT_COMPANY
+  payment?: typeof DEFAULT_PAYMENT
+  toAddress?: string
+}
+
+export function generateChannelInvoicePDF({ channelName, dateRange, items, company = DEFAULT_COMPANY, payment = DEFAULT_PAYMENT, toAddress = '' }: ChannelInvoiceOptions) {
+  const doc = new jsPDF()
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const pageHeight = doc.internal.pageSize.getHeight()
+  const margin = 14
+  let y = margin
+
+  // Title
+  doc.setFontSize(18)
+  doc.setFont('helvetica', 'bold')
+  doc.text(`${channelName} Invoice`, pageWidth / 2, y, { align: 'center' })
+  y += 12
+
+  // From / To block
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.setFont('helvetica', 'bold')
+  doc.text('From:', margin, y)
+  doc.setFont('helvetica', 'normal')
+  y += 5
+  doc.text(company.name, margin, y)
+  y += 4
+  doc.text(company.address, margin, y)
+  y += 4
+  doc.text(`License No: ${company.license}`, margin, y)
+  y += 4
+  doc.text(company.email, margin, y)
+  y += 4
+  doc.text(company.website, margin, y)
+  y += 4
+  doc.text(company.phone, margin, y)
+  y += 8
+
+  doc.setFont('helvetica', 'bold')
+  doc.text('To:', margin, y)
+  doc.setFont('helvetica', 'normal')
+  y += 5
+  const toLines = toAddress ? toAddress.split('\n').filter(Boolean) : DEFAULT_TO_LINES
+  toLines.forEach((line) => {
+    doc.text(line, margin, y)
+    y += 4
+  })
+  y += 10
+
+  // Table header (purple background) — Reservation DATE, Tour Date만 (Tour Date (Actual) 제외)
+  const colWidths = [26, 26, 30, 44, 34, 12, 14, 24, 20, 20]
+  const headers = ['Reservation DATE', 'Tour Date', 'Booking #', 'DESCRIPTION', 'Guest Name', 'QUANTITY', 'COMMISION %', 'ORIGINAL PRICE', 'COMMISION', 'PRICE']
+  let x = margin
+  doc.setFillColor(128, 0, 128) // purple
+  doc.rect(margin, y - 4, pageWidth - 2 * margin, 7, 'F')
+  doc.setTextColor(255, 255, 255)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(8)
+  headers.forEach((h, i) => {
+    const w = colWidths[i]
+    doc.text(h, x + 2, y + 1)
+    x += w
+  })
+  doc.setTextColor(0, 0, 0)
+  y += 8
+  doc.setFont('helvetica', 'normal')
+
+  const fmt = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  items.forEach((row) => {
+    if (y > pageHeight - 25) {
+      doc.addPage()
+      y = margin
+      doc.setFontSize(8)
+    }
+    x = margin
+    const cells = [
+      row.reservationDate,
+      row.tourDate,
+      row.bookingNumber,
+      row.description.length > 28 ? row.description.slice(0, 27) + '…' : row.description,
+      row.guestName.length > 22 ? row.guestName.slice(0, 21) + '…' : row.guestName,
+      String(row.quantity),
+      `${row.commissionPercent}%`,
+      fmt(row.originalPrice),
+      fmt(row.commission),
+      fmt(row.price)
+    ]
+    cells.forEach((cell, i) => {
+      doc.text(cell, x + 2, y + 1)
+      x += colWidths[i]
+    })
+    y += 5
+  })
+
+  // SUBTOTAL (align with ORIGINAL PRICE, COMMISION, PRICE columns)
+  const subtotalOriginal = items.reduce((s, i) => s + i.originalPrice, 0)
+  const subtotalCommission = items.reduce((s, i) => s + i.commission, 0)
+  const subtotalPrice = items.reduce((s, i) => s + i.price, 0)
+  y += 4
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9)
+  doc.text('SUBTOTAL', margin + 2, y + 1)
+  let xCol = margin
+  for (let i = 0; i < 7; i++) xCol += colWidths[i]
+  doc.text(fmt(subtotalOriginal), xCol + 2, y + 1)
+  xCol += colWidths[7]
+  doc.text(fmt(subtotalCommission), xCol + 2, y + 1)
+  xCol += colWidths[8]
+  doc.text(fmt(subtotalPrice), xCol + 2, y + 1)
+  doc.setFont('helvetica', 'normal')
+  y += 14
+
+  // Payment Info
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(10)
+  doc.text('Payment Info', margin, y)
+  y += 6
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.text(`Name: ${payment.name}`, margin, y)
+  y += 5
+  doc.text(`Address: ${payment.address}`, margin, y)
+  y += 5
+  doc.text(`Swift Code: ${payment.swiftCode}`, margin, y)
+  y += 5
+  doc.text(`ABA NO: ${payment.abaNo}`, margin, y)
+  y += 5
+  doc.text(`Account #: ${payment.accountNo}`, margin, y)
+  y += 5
+  doc.text(`Bank Name: ${payment.bankName}`, margin, y)
+  y += 5
+  doc.text(`Bank Address: ${payment.bankAddress}`, margin, y)
+
+  const safeName = channelName.replace(/[^a-zA-Z0-9-_]/g, '_').slice(0, 30)
+  const fileName = `${safeName}_Invoice_${dateRange.start}_${dateRange.end}.pdf`
+  doc.save(fileName)
+}

@@ -20,6 +20,10 @@ interface ReservationOptionsSectionProps {
   hideTitle?: boolean
   title?: string
   itemVariant?: 'card' | 'line'
+  /** 예약이 DB에 저장된 경우 true. false면 옵션을 로컬에만 두고 예약 저장 시 함께 전달 */
+  isPersisted?: boolean
+  /** 새 예약 시 옵션 목록을 부모에게 전달 (예약 저장 시 함께 저장용) */
+  onPendingOptionsChange?: (options: CreateReservationOptionData[]) => void
 }
 
 const defaultFormData: CreateReservationOptionData = {
@@ -31,7 +35,10 @@ const defaultFormData: CreateReservationOptionData = {
   note: ''
 }
 
-export default function ReservationOptionsSection({ reservationId, onTotalPriceChange, hideTitle, title: titleProp, itemVariant = 'card' }: ReservationOptionsSectionProps) {
+/** 로컬 대기 옵션 (목록 key/삭제용 임시 id 포함) */
+type PendingOptionItem = CreateReservationOptionData & { _tempId?: string }
+
+export default function ReservationOptionsSection({ reservationId, onTotalPriceChange, hideTitle, title: titleProp, itemVariant = 'card', isPersisted = true, onPendingOptionsChange }: ReservationOptionsSectionProps) {
   const t = useTranslations('reservations.reservationOptions')
   const tCommon = useTranslations('common')
   
@@ -50,6 +57,8 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
   const [optionsList, setOptionsList] = useState<OptionListItem[]>([])
   const [optionsLoading, setOptionsLoading] = useState(false)
   const [formData, setFormData] = useState<CreateReservationOptionData>({ ...defaultFormData })
+  /** 새 예약 시 저장 전에만 사용. 예약 저장 시 payload에 포함됨 */
+  const [pendingOptions, setPendingOptions] = useState<PendingOptionItem[]>([])
 
   const fetchOptionsList = useCallback(async () => {
     setOptionsLoading(true)
@@ -71,6 +80,26 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
       fetchOptionsList()
     }
   }, [showAddModal, optionsList.length, fetchOptionsList])
+
+  // 새 예약 시 옵션 목록 로드 (대기 옵션 표시용 이름)
+  useEffect(() => {
+    if (!isPersisted && optionsList.length === 0) {
+      fetchOptionsList()
+    }
+  }, [isPersisted, optionsList.length, fetchOptionsList])
+
+  // 예약이 저장되면 대기 옵션 비우기
+  useEffect(() => {
+    if (isPersisted && pendingOptions.length > 0) {
+      setPendingOptions([])
+      onPendingOptionsChange?.([])
+    }
+  }, [isPersisted])
+
+  const notifyPendingOptions = useCallback((list: PendingOptionItem[]) => {
+    const toSend = list.map(({ _tempId, ...rest }) => rest)
+    onPendingOptionsChange?.(toSend)
+  }, [onPendingOptionsChange])
 
   const handleOpenAddModal = () => {
     setFormData({ ...defaultFormData })
@@ -99,21 +128,40 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
       alert(t('optionId') ? `${t('optionId')}을(를) 선택해주세요.` : '옵션을 선택해주세요.')
       return
     }
-    try {
-      const ea = formData.ea ?? 1
-      const price = formData.price ?? 0
-      await createReservationOption({
-        ...formData,
-        ea,
-        price,
-        total_price: price * ea,
+    const ea = formData.ea ?? 1
+    const price = formData.price ?? 0
+    const newItem: CreateReservationOptionData = {
+      ...formData,
+      ea,
+      price,
+      total_price: price * ea,
+    }
+    if (!isPersisted) {
+      const withTempId: PendingOptionItem = { ...newItem, _tempId: `pending-${Date.now()}-${Math.random().toString(36).slice(2)}` }
+      setPendingOptions(prev => {
+        const next = [...prev, withTempId]
+        notifyPendingOptions(next)
+        return next
       })
+      handleCloseAddModal()
+      return
+    }
+    try {
+      await createReservationOption(newItem)
       handleCloseAddModal()
     } catch (error) {
       console.error('Error adding reservation option:', error)
       alert('옵션 추가 중 오류가 발생했습니다.')
     }
   }
+
+  const handleRemovePendingOption = useCallback((tempId: string) => {
+    setPendingOptions(prev => {
+      const next = prev.filter(o => o._tempId !== tempId)
+      notifyPendingOptions(next)
+      return next
+    })
+  }, [notifyPendingOptions])
 
   const handleUpdateOption = async (option: ReservationOption) => {
     try {
@@ -148,18 +196,19 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
     return price * ea
   }
 
-  // 예약 옵션 총 가격을 부모 컴포넌트로 전달
+  // 예약 옵션 총 가격을 부모 컴포넌트로 전달 (저장된 목록 또는 대기 목록)
+  const optionsForTotal = isPersisted ? reservationOptions : pendingOptions
   useEffect(() => {
     if (onTotalPriceChange) {
-      const totalPrice = reservationOptions.reduce((sum, option) => sum + (option.total_price || 0), 0)
+      const totalPrice = optionsForTotal.reduce((sum, option) => sum + (option.total_price || 0), 0)
       onTotalPriceChange(totalPrice)
     }
-  }, [reservationOptions, onTotalPriceChange])
+  }, [optionsForTotal, onTotalPriceChange, isPersisted])
 
   const isLine = itemVariant === 'line'
   const wrapperClass = isLine ? 'space-y-2' : 'bg-white rounded-lg shadow-sm border border-gray-200 p-3'
 
-  if (loading) {
+  if (isPersisted && loading) {
     return (
       <div className={wrapperClass || 'p-3'}>
         <div className="flex items-center justify-center py-4">
@@ -170,7 +219,7 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
     )
   }
 
-  if (error) {
+  if (isPersisted && error) {
     return (
       <div className={wrapperClass || 'p-3'}>
         <div className="text-red-600 text-center py-3 text-xs">
@@ -314,13 +363,13 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
         </div>
       )}
 
-      {/* 옵션 목록 */}
+      {/* 옵션 목록 (저장된 목록 또는 대기 목록) */}
       <div className={isLine ? 'divide-y divide-gray-200' : 'space-y-3'}>
-        {reservationOptions.length === 0 ? (
+        {(isPersisted ? reservationOptions : pendingOptions).length === 0 ? (
           <div className="text-center py-6 text-gray-500 text-xs">
             {t('noOptions')}
           </div>
-        ) : (
+        ) : isPersisted ? (
           reservationOptions.map((option) => (
             <div key={option.id} className={isLine ? 'py-3 first:pt-0' : 'border border-gray-200 rounded-lg p-4'}>
               {editingOption === option.id ? (
@@ -492,15 +541,37 @@ export default function ReservationOptionsSection({ reservationId, onTotalPriceC
               )}
             </div>
           ))
+        ) : (
+          pendingOptions.map((opt, idx) => {
+            const optionName = optionsList.find(o => o.id === opt.option_id)?.name_ko || optionsList.find(o => o.id === opt.option_id)?.name || opt.option_id
+            return (
+              <div key={opt._tempId ?? `pending-${idx}`} className={isLine ? 'py-3 first:pt-0' : 'border border-gray-200 rounded-lg p-4'}>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-900">{optionName}</span>
+                    <span className="text-gray-600 ml-2">${(opt.price ?? 0).toFixed(2)} × {opt.ea ?? 1} = ${(opt.total_price ?? 0).toFixed(2)}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => opt._tempId && handleRemovePendingOption(opt._tempId)}
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                    title="삭제"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            )
+          })
         )}
       </div>
 
       {/* 총합계 */}
-      {reservationOptions.length > 0 && (
+      {optionsForTotal.length > 0 && (
         <div className="mt-4 pt-4 border-t border-gray-200">
             <div className="flex justify-end">
               <div className="text-lg font-semibold">
-                {t('totalOptionPrice')}: ${reservationOptions.reduce((sum, option) => sum + option.total_price, 0).toFixed(2)}
+                {t('totalOptionPrice')}: ${optionsForTotal.reduce((sum, option) => sum + (option.total_price ?? 0), 0).toFixed(2)}
               </div>
             </div>
         </div>

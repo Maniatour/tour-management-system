@@ -88,6 +88,9 @@ const labels = {
     tip20: '20%',
     print: '인쇄',
     close: '닫기',
+    printLayout: '인쇄 형식',
+    printOptionLetter: 'Letter (1장당 1매)',
+    printOptionHalf: '가로 절반 (1장당 2매)',
     selectCustomers: '인쇄할 고객 선택',
     selectAll: '전체 선택',
     deselectAll: '전체 해제',
@@ -139,6 +142,9 @@ const labels = {
     tip20: '20%',
     print: 'Print',
     close: 'Close',
+    printLayout: 'Print layout',
+    printOptionLetter: 'Letter (1 per page)',
+    printOptionHalf: 'Half width (2 per page)',
     selectCustomers: 'Select customers to print',
     selectAll: 'Select all',
     deselectAll: 'Deselect all',
@@ -220,8 +226,11 @@ export default function CustomerReceiptModal({
   const [error, setError] = useState<string | null>(null)
   /** 배치 모드에서 인쇄할 예약 ID 집합 (기본: 전체) */
   const [selectedReservationIds, setSelectedReservationIds] = useState<Set<string>>(new Set())
+  /** 인쇄 형식: 'letter' = Letter 1장당 1매, 'half' = 가로 Letter 절반(1장당 2매) */
+  const [printLayout, setPrintLayout] = useState<'letter' | 'half'>('letter')
   const isBatch = Boolean(reservationIds && reservationIds.length > 0)
-  const ids = isBatch ? reservationIds! : [reservationId]
+  const rawIds = isBatch ? reservationIds! : [reservationId]
+  const ids = rawIds.map((id) => String(id).trim()).filter((id) => id.length > 0)
 
   useEffect(() => {
     if (!isOpen) return
@@ -386,43 +395,24 @@ export default function CustomerReceiptModal({
   }, [isOpen, reservationId, isBatch, ids.join(',')])
 
   const handlePrint = (singleData?: ReceiptData) => {
-    const isTwoPerPage = !singleData && isBatch
+    const useHalfLayout = printLayout === 'half'
     const target = document.getElementById(singleData ? `receipt-${singleData.reservation.id}` : 'receipt-batch-print')
     if (!target) return
     const clone = target.cloneNode(true) as HTMLElement
-    if (isTwoPerPage) {
-      clone.classList.add('receipt-print-two-per-page')
-      clone.style.width = '279mm'
-      clone.style.maxWidth = '279mm'
-      clone.style.padding = '0'
-      clone.style.background = 'white'
-      clone.style.border = 'none'
-      clone.style.boxShadow = 'none'
-      clone.style.display = 'block'
-      const cells: HTMLElement[] = []
-      clone.querySelectorAll('.receipt-letter').forEach((el) => {
-        const letter = el as HTMLElement
-        const wrapper = document.createElement('div')
-        wrapper.className = 'receipt-two-up-cell'
-        letter.style.border = 'none'
-        letter.style.boxShadow = 'none'
-        letter.style.width = '100%'
-        letter.style.maxWidth = '100%'
-        letter.style.minHeight = 'auto'
-        letter.parentNode?.insertBefore(wrapper, letter)
-        wrapper.appendChild(letter)
-        cells.push(wrapper)
-      })
-      clone.innerHTML = ''
-      for (let i = 0; i < cells.length; i += 2) {
-        const row = document.createElement('div')
-        row.className = 'receipt-print-row'
-        row.appendChild(cells[i])
-        if (cells[i + 1]) row.appendChild(cells[i + 1])
-        clone.appendChild(row)
-      }
-      clone.className = 'receipt-print-two-per-page'
+    let printRoot: HTMLElement = clone
+    if (useHalfLayout) {
       clone.removeAttribute('id')
+      clone.querySelectorAll('.receipt-letter').forEach((el) => {
+        const elHtml = el as HTMLElement
+        elHtml.style.border = 'none'
+        elHtml.style.boxShadow = 'none'
+        elHtml.style.minHeight = ''
+        elHtml.style.height = 'auto'
+      })
+      const wrapper = document.createElement('div')
+      wrapper.className = 'receipt-half-container ' + (singleData ? 'receipt-half-single' : 'receipt-half-batch')
+      wrapper.appendChild(clone)
+      printRoot = wrapper
     } else {
       clone.style.width = '216mm'
       clone.style.maxWidth = '216mm'
@@ -449,35 +439,24 @@ export default function CustomerReceiptModal({
       return
     }
 
-    const printStyles = isTwoPerPage
+    const printStyles = useHalfLayout
       ? `
       *, *::before, *::after { box-sizing: border-box; }
-      html { font-size: 12px !important; min-height: 0 !important; height: auto !important; }
-      html, body { margin: 0 !important; padding: 0 !important; width: 279mm !important; background: white !important; min-height: 0 !important; height: auto !important; }
-      #receipt-print-root { display: block !important; min-height: 0 !important; height: auto !important; margin: 0 !important; padding: 2mm 3mm !important; }
-      .receipt-print-two-per-page { display: block !important; width: 100% !important; max-width: 279mm !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; }
-      .receipt-print-two-per-page > * { margin: 0 !important; padding: 0 !important; }
-      .receipt-print-row { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 6mm !important; width: 100% !important; height: 198mm !important; max-height: 198mm !important; margin: 0 !important; padding: 0 !important; page-break-inside: avoid !important; }
-      .receipt-print-row:not(:first-child) { page-break-before: always !important; break-before: page !important; margin-top: 0 !important; }
-      .receipt-two-up-cell { height: 198mm !important; max-height: 198mm !important; min-height: 198mm !important; page-break-inside: avoid !important; display: flex !important; flex-direction: column !important; overflow: hidden !important; }
-      .receipt-two-up-cell .receipt-letter { width: 100% !important; max-width: 100% !important; min-height: auto !important; flex: 1 1 auto !important; max-height: 198mm !important; break-inside: avoid !important; page-break-inside: avoid !important; border: none !important; box-shadow: none !important; padding: 2mm !important; overflow: hidden !important; font-size: 1rem !important; }
-      .receipt-two-up-cell .receipt-letter h2 { font-size: 1.15rem !important; }
-      .receipt-two-up-cell .receipt-letter h3 { font-size: 1.1rem !important; }
-      .receipt-two-up-cell .receipt-letter h4 { font-size: 1.05rem !important; }
-      .receipt-two-up-cell .receipt-letter table { font-size: 1rem !important; }
-      .receipt-two-up-cell .receipt-letter .text-sm { font-size: 0.95rem !important; }
-      .receipt-letter .receipt-tips-section { margin-top: 2mm !important; padding-top: 2mm !important; padding-bottom: 0 !important; font-size: 1rem !important; line-height: 1.45 !important; }
-      .receipt-letter .receipt-tips-section p { margin: 0 0 1.5mm 0 !important; line-height: 1.45 !important; }
-      .receipt-letter .receipt-tips-section .receipt-tips-thankyou { margin-top: 1em !important; margin-bottom: 0 !important; text-align: center !important; }
-      .receipt-letter .receipt-tips-section ul { margin: 0 0 1mm 0 !important; padding-left: 4mm !important; line-height: 1.45 !important; }
-      .receipt-letter .receipt-tips-section li { margin: 0 0 1.2mm 0 !important; line-height: 1.45 !important; }
-      .receipt-letter .receipt-summary-email { white-space: nowrap !important; min-width: 0 !important; overflow: visible !important; }
-      .receipt-letter .grid > div.min-w-0 { min-width: 0 !important; }
-      .receipt-letter .receipt-balance-amount { color: #dc2626 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-      @page { size: 279mm 216mm; margin: 4mm 3mm !important; }
+      html, body { margin: 0 !important; padding: 0 !important; width: 279mm !important; min-height: 0 !important; height: auto !important; background: #fff !important; color: #111 !important; font-size: 12px !important; }
+      .receipt-half-container { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 6mm !important; width: 100% !important; padding: 2mm 3mm !important; min-height: 0 !important; height: auto !important; }
+      .receipt-half-container.receipt-half-batch > * { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 6mm !important; width: 100% !important; min-height: 0 !important; height: auto !important; align-content: start !important; }
+      .receipt-letter { page-break-inside: avoid !important; break-inside: avoid !important; border: none !important; box-shadow: none !important; padding: 2mm !important; font-size: 1rem !important; background: #fff !important; color: #111 !important; max-width: 100% !important; min-height: 0 !important; height: auto !important; }
+      .receipt-letter:last-child { page-break-after: auto !important; }
+      .receipt-letter * { color: #111 !important; }
+      .receipt-letter .receipt-balance-amount { color: #dc2626 !important; }
+      .receipt-letter .receipt-items-table { border-collapse: collapse !important; width: 100% !important; }
+      .receipt-letter .receipt-items-table th,
+      .receipt-letter .receipt-items-table td { padding: 4px 8px !important; border: none !important; border-bottom: 1px solid #e5e7eb !important; }
+      .receipt-letter .receipt-items-table thead th { background: #f3f4f6 !important; }
+      .receipt-letter .receipt-items-table tbody tr:last-child td { border-bottom: none !important; border-top: 2px solid #d1d5db !important; }
+      @page { size: 279mm 216mm; margin: 4mm 3mm; }
       @media print {
-        html, body { min-height: 0 !important; height: auto !important; overflow: visible !important; }
-        .receipt-print-two-per-page { min-height: 0 !important; }
+        html, body { height: auto !important; min-height: 0 !important; }
       }
     `
       : `
@@ -497,12 +476,8 @@ export default function CustomerReceiptModal({
       .map((l) => l.href)
       .filter(Boolean)
     iframeDoc.open()
-    const bodyContent = isTwoPerPage
-      ? `<div id="receipt-print-root" style="min-height:0!important;height:auto!important;margin:0!important;padding:2mm 3mm!important">${clone.outerHTML}</div>`
-      : clone.outerHTML
-    const bodyAttrs = isTwoPerPage
-      ? ' class="receipt-print-two-up" style="min-height:0!important;height:auto!important;margin:0!important;padding:0!important"'
-      : ''
+    const bodyContent = printRoot.outerHTML
+    const bodyAttrs = useHalfLayout ? ' class="receipt-half-body" style="margin:0;padding:0;background:#fff"' : ''
     iframeDoc.write(`
       <!DOCTYPE html><html><head><meta charset="utf-8"><title>Receipt</title>
       ${links.map((href) => `<link rel="stylesheet" href="${href}">`).join('')}
@@ -512,12 +487,18 @@ export default function CustomerReceiptModal({
 
     const printWin = iframe.contentWindow
     if (printWin) {
-      printWin.onload = () => {
+      let printed = false
+      const doPrint = () => {
+        if (printed) return
+        printed = true
         printWin.focus()
-        setTimeout(() => {
-          printWin.print()
-          document.body.removeChild(iframe)
-        }, 250)
+        printWin.print()
+        document.body.removeChild(iframe)
+      }
+      if (useHalfLayout) {
+        setTimeout(doPrint, 600)
+      } else {
+        printWin.onload = () => setTimeout(doPrint, 250)
       }
     } else {
       document.body.removeChild(iframe)
@@ -661,10 +642,10 @@ export default function CustomerReceiptModal({
                     </div>
 
                     {/* 항목 테이블: DATE | DESCRIPTION | UNIT PRICE | QUANTITY | PRICE */}
-                    <div className="border-t border-blue-200 pt-2">
-                      <table className="w-full text-sm border-collapse">
+                    <div className="border-t border-gray-200 pt-2">
+                      <table className="w-full text-sm border-collapse receipt-items-table">
                         <thead>
-                          <tr className="bg-gray-100 border-b border-gray-200">
+                          <tr className="bg-gray-100 border-b border-gray-300">
                             <th className="px-2 py-2 text-left text-sm font-medium text-gray-700 uppercase whitespace-nowrap min-w-[7rem] w-[7rem]">{L.date}</th>
                             <th className="px-2 py-2 text-left text-sm font-medium text-gray-700 uppercase">{L.description}</th>
                             <th className="px-2 py-2 text-right text-sm font-medium text-gray-700 uppercase whitespace-nowrap min-w-[5.5rem] w-[5.5rem]">{L.unitPrice}</th>
@@ -692,7 +673,7 @@ export default function CustomerReceiptModal({
                             </tr>
                           )}
                           {/* Product Total (상품+불포함 기준 합계 - 할인) */}
-                          <tr className="border-b border-gray-200 bg-gray-50/50">
+                          <tr className="border-b border-gray-100 bg-gray-50/50">
                             <td className="px-2 py-2" />
                             <td className="px-2 py-2 font-medium text-gray-900">{L.productTotal}</td>
                             <td className="px-2 py-2 text-right font-medium text-gray-900 whitespace-nowrap" colSpan={3}>
@@ -792,19 +773,46 @@ export default function CustomerReceiptModal({
           )}
         </div>
         {!loading && !error && list.length > 0 && (
-          <div className="p-6 border-t flex justify-end gap-2 flex-shrink-0 bg-white">
-            <button
-              type="button"
-              onClick={() => (list.length === 1 ? handlePrint(list[0]) : handlePrint())}
-              disabled={isBatch && selectedReservationIds.size === 0}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              <Printer className="w-4 h-4" />
-              {labels.ko.print}
-            </button>
-            <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
-              {labels.ko.close}
-            </button>
+          <div className="p-6 border-t flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 flex-shrink-0 bg-white">
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium text-gray-700">{headerLabel.printLayout}</span>
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="print-layout"
+                    checked={printLayout === 'letter'}
+                    onChange={() => setPrintLayout('letter')}
+                    className="w-4 h-4 text-blue-600"
+                  />
+                  <span className="text-sm">{headerLabel.printOptionLetter}</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="print-layout"
+                    checked={printLayout === 'half'}
+                    onChange={() => setPrintLayout('half')}
+                    className="w-4 h-4 text-blue-600"
+                  />
+                  <span className="text-sm">{headerLabel.printOptionHalf}</span>
+                </label>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => (list.length === 1 ? handlePrint(list[0]) : handlePrint())}
+                disabled={isBatch && selectedReservationIds.size === 0}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                {headerLabel.print}
+              </button>
+              <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
+                {headerLabel.close}
+              </button>
+            </div>
           </div>
         )}
       </div>

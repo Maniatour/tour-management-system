@@ -366,14 +366,23 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
       return
     }
 
-    // 예약 옵션 데이터 가져오기
-    const { data: options, error: optionsError } = await supabase
-      .from('reservation_options')
-      .select('*')
-
-    if (optionsError) {
-      console.error('Error fetching reservation options:', optionsError)
-      return
+    // 예약 옵션 데이터 배치 조회 (1000+ 행 대응)
+    const PAGE_SIZE = 500
+    let options: any[] = []
+    let optionsOffset = 0
+    while (true) {
+      const { data: optionsPage, error: optionsError } = await supabase
+        .from('reservation_options')
+        .select('*')
+        .range(optionsOffset, optionsOffset + PAGE_SIZE - 1)
+      if (optionsError) {
+        console.error('Error fetching reservation options:', optionsError)
+        return
+      }
+      if (!optionsPage?.length) break
+      options = options.concat(optionsPage)
+      if (optionsPage.length < PAGE_SIZE) break
+      optionsOffset += PAGE_SIZE
     }
 
     // 결제 데이터 가져오기
@@ -661,13 +670,22 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
   }
 
   const checkTicketBookings = async () => {
-    const { data: tickets, error } = await supabase
-      .from('ticket_bookings')
-      .select('*')
-
-    if (error) {
-      console.error('Error fetching ticket bookings:', error)
-      return
+    const PAGE_SIZE = 500
+    let tickets: any[] = []
+    let offset = 0
+    while (true) {
+      const { data: page, error } = await supabase
+        .from('ticket_bookings')
+        .select('*')
+        .range(offset, offset + PAGE_SIZE - 1)
+      if (error) {
+        console.error('Error fetching ticket bookings:', error)
+        return
+      }
+      if (!page?.length) break
+      tickets = tickets.concat(page)
+      if (page.length < PAGE_SIZE) break
+      offset += PAGE_SIZE
     }
 
     const ticketIssues: ReviewIssue[] = []

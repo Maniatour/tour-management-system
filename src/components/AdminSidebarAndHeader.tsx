@@ -47,25 +47,26 @@ import SimulationModal from './SimulationModal'
 import CustomerSimulationModal from './CustomerSimulationModal'
 import AdminWeatherWidget from './AdminWeatherWidget'
 
-/** Supabase/Error 객체를 로깅 가능한 형태로 변환 (빈 {} 방지) */
+/** Supabase/Error 객체를 로깅 가능한 형태로 변환 (비열거형 속성·빈 {} 방지) */
 function serializeError(err: unknown): Record<string, unknown> {
   if (err == null) return { _raw: null }
-  if (err instanceof Error) {
-    return { message: err.message, name: err.name, stack: err.stack }
-  }
-  if (typeof err === 'object') {
-    const o = err as Record<string, unknown>
-    return {
-      message: o.message,
-      code: o.code ?? o.status,
-      details: o.details,
-      hint: o.hint,
-      ...Object.fromEntries(
-        Object.entries(o).filter(([k]) => !['message', 'code', 'details', 'hint', 'status'].includes(k))
-      )
-    }
-  }
-  return { _raw: String(err) }
+  const o = err as Record<string, unknown>
+  // Error 인스턴스 또는 message가 있는 객체: 명시적 속성 접근 (비열거형도 읽기)
+  const message = err instanceof Error ? err.message : (o?.message != null ? String(o.message) : undefined)
+  const name = err instanceof Error ? err.name : (o?.name != null ? String(o.name) : undefined)
+  const code = o?.code != null ? o.code : o?.status
+  const details = o?.details
+  const hint = o?.hint
+  const stack = err instanceof Error ? err.stack : (o?.stack != null ? String(o.stack) : undefined)
+  const out: Record<string, unknown> = {}
+  if (message !== undefined) out.message = message
+  if (name !== undefined) out.name = name
+  if (code !== undefined) out.code = code
+  if (details !== undefined) out.details = details
+  if (hint !== undefined) out.hint = hint
+  if (stack !== undefined) out.stack = stack
+  if (Object.keys(out).length === 0) out._raw = String(err)
+  return out
 }
 
 interface AdminSidebarAndHeaderProps {

@@ -13,10 +13,140 @@ interface BonusCalculatorModalProps {
 }
 
 const NON_RESIDENT_OPTION_ID = '6941b5d0' // 비거주자 비용 옵션
+/** reservation_choices fallback용 (option_key) */
+const NON_RESIDENT_OPTION_KEY = 'non_resident'
 
 /** 카드 수수료 등이 포함된 금액을 순수 비거주자 비용 기준으로 $100 단위 내림 (예: $105 → $100) */
 function roundNonResidentOptionTo100(amount: number): number {
   return Math.floor(Number(amount) / 100) * 100
+}
+
+/** options 테이블(name, category)에서 비거주자/입장료(Entrance Fee) 옵션인지 판별 — 옵션 관리와 동일 기준 */
+function isNonResidentOrEntranceOptionLegacy(o: { name?: string | null; category?: string | null }): boolean {
+  const name = (o.name || '').toLowerCase().trim()
+  const category = (o.category || '').toLowerCase().trim()
+  return name.includes('entrance') || name.includes('비거주자') || name.includes('non-resident') || name.includes('입장료') || name.includes('입장') ||
+    category.includes('entrance') || category.includes('비거주자') || category.includes('fee')
+}
+
+/** choice_options에서 비거주자/입장료(Entrance Fee) 옵션인지 판별 */
+function isNonResidentOrEntranceOption(o: { option_key?: string | null; option_name_ko?: string | null; option_name?: string | null }): boolean {
+  const key = (o.option_key || '').toLowerCase()
+  const ko = (o.option_name_ko || '').toLowerCase()
+  const en = (o.option_name || '').toLowerCase()
+  return key === 'non_resident' || ko.includes('비거주자') || ko.includes('입장료') || en.includes('entrance') || en.includes('non-resident')
+}
+
+/**
+ * reservation_choices에 있는 option_id 중 비거주자/입장료(Entrance Fee) 타입인 option_id 집합 반환.
+ * (투어 상세에서 "비거주자 인원 8개"·"Entrance Fee"로 보이는 옵션과 동일 기준)
+ */
+const BATCH_RESERVATION_IDS = 100
+async function getNonResidentChoiceOptionIds(reservationIds: string[]): Promise<Set<string>> {
+  if (reservationIds.length === 0) return new Set()
+  let choicesData: any[] = []
+  for (let i = 0; i < reservationIds.length; i += BATCH_RESERVATION_IDS) {
+    const batch = reservationIds.slice(i, i + BATCH_RESERVATION_IDS)
+    const { data } = await supabase
+      .from('reservation_choices')
+      .select('option_id')
+      .in('reservation_id', batch)
+    if (data?.length) choicesData = choicesData.concat(data)
+  }
+  const optionIds = [...new Set(choicesData.map((r: { option_id?: string | null }) => r.option_id).filter(Boolean))] as string[]
+  if (optionIds.length === 0) return new Set()
+  let optData: any[] = []
+  for (let i = 0; i < optionIds.length; i += BATCH_RESERVATION_IDS) {
+    const batch = optionIds.slice(i, i + BATCH_RESERVATION_IDS)
+    const { data } = await supabase
+      .from('choice_options')
+      .select('id, option_key, option_name_ko, option_name')
+      .in('id', batch)
+    if (data?.length) optData = optData.concat(data)
+  }
+  const ids = optData.filter(isNonResidentOrEntranceOption).map((o: { id: string }) => o.id)
+  return new Set(ids)
+}
+
+/**
+ * 투어의 reservation_ids에 있는 예약 ID로 reservation_options 테이블의 reservation_id 컬럼에서
+ * 비거주자 옵션 합계 반환. 옵션 관리와 동일하게:
+ * 1) option_id = 6941b5d0 인 행
+ * 2) 없으면 reservation_options 전체 중 options 테이블 name/category가 비거주자·Entrance Fee인 옵션 행
+ * 3) 없으면 reservation_choices + choice_options 비거주자/입장료 옵션
+ */
+async function getNonResidentOptionTotal(
+  reservationIds: string[],
+  roundTo100: (n: number) => number
+): Promise<number> {
+  if (reservationIds.length === 0) return 0
+  const BATCH_SIZE = 100
+  // 1) reservation_options: option_id = 고정 비거주자 ID (6941b5d0), status 무관 — 배치 조회
+  let optionsDataFixed: any[] = []
+  for (let i = 0; i < reservationIds.length; i += BATCH_SIZE) {
+    const batch = reservationIds.slice(i, i + BATCH_SIZE)
+    const { data } = await supabase
+      .from('reservation_options')
+      .select('reservation_id, total_price, ea, price')
+      .in('reservation_id', batch)
+      .eq('option_id', NON_RESIDENT_OPTION_ID)
+    if (data?.length) optionsDataFixed = optionsDataFixed.concat(data)
+  }
+  const fromFixed = (optionsDataFixed || []).reduce((sum, row) => {
+    const amount = (row as { total_price?: number; ea?: number; price?: number }).total_price
+      ?? ((row as { ea?: number; price?: number }).ea ?? 1) * ((row as { ea?: number; price?: number }).price ?? 0)
+    return sum + Number(amount || 0)
+  }, 0)
+  if (fromFixed > 0) return roundTo100(fromFixed)
+  // 2) reservation_options 전체 조회(상태 무관) — 배치 조회 후 options 테이블에서 비거주자·Entrance Fee만 합산
+  let optionsDataAll: any[] = []
+  for (let i = 0; i < reservationIds.length; i += BATCH_SIZE) {
+    const batch = reservationIds.slice(i, i + BATCH_SIZE)
+    const { data } = await supabase
+      .from('reservation_options')
+      .select('reservation_id, option_id, total_price, ea, price')
+      .in('reservation_id', batch)
+    if (data?.length) optionsDataAll = optionsDataAll.concat(data)
+  }
+  if (optionsDataAll?.length) {
+    const uniqueOptionIds = [...new Set((optionsDataAll as { option_id: string }[]).map(r => String(r.option_id).trim()).filter(Boolean))]
+    const nonResidentIds = new Set<string>()
+    if (uniqueOptionIds.length > 0) {
+      const { data: optRows } = await supabase
+        .from('options')
+        .select('id, name, category')
+        .in('id', uniqueOptionIds)
+      ;(optRows || []).forEach((o: { id: string; name?: string | null; category?: string | null }) => {
+        if (isNonResidentOrEntranceOptionLegacy(o)) nonResidentIds.add(String(o.id).trim())
+      })
+    }
+    const fromOptionsTable = (optionsDataAll || []).reduce((sum, row) => {
+      const oid = String((row as { option_id?: string }).option_id || '').trim()
+      if (!nonResidentIds.has(oid)) return sum
+      const amount = (row as { total_price?: number; ea?: number; price?: number }).total_price
+        ?? ((row as { ea?: number; price?: number }).ea ?? 1) * ((row as { ea?: number; price?: number }).price ?? 0)
+      return sum + Number(amount || 0)
+    }, 0)
+    if (fromOptionsTable > 0) return roundTo100(fromOptionsTable)
+  }
+  // 3) fallback: reservation_choices + choice_options — 배치 조회
+  const nonResidentOptionIds = await getNonResidentChoiceOptionIds(reservationIds)
+  if (nonResidentOptionIds.size === 0) return 0
+  let choicesData: any[] = []
+  for (let i = 0; i < reservationIds.length; i += BATCH_SIZE) {
+    const batch = reservationIds.slice(i, i + BATCH_SIZE)
+    const { data } = await supabase
+      .from('reservation_choices')
+      .select('reservation_id, option_id, quantity, total_price')
+      .in('reservation_id', batch)
+    if (data?.length) choicesData = choicesData.concat(data)
+  }
+  const fromChoices = (choicesData || []).reduce((sum, row) => {
+    if (!nonResidentOptionIds.has((row as { option_id?: string }).option_id || '')) return sum
+    const total = (row as { total_price?: number }).total_price ?? (row as { quantity?: number }).quantity * 0
+    return sum + Number(total || 0)
+  }, 0)
+  return roundTo100(fromChoices)
 }
 
 /** 전체 보너스: 가이드별 투어 상세 (row 확장 시, 가이드/드라이버 참여 모두 포함) */
@@ -315,20 +445,8 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
 
           const nonResidentCount = reservationCustomers?.length || 0
 
-          // reservation_options에서 비거주자 비용 옵션(option_id 6941b5d0) 총합 (cancelled/refunded 제외)
-          const { data: optionsData } = await supabase
-            .from('reservation_options')
-            .select('total_price, ea, price')
-            .in('reservation_id', reservationIds)
-            .eq('option_id', NON_RESIDENT_OPTION_ID)
-            .not('status', 'in', '(cancelled,refunded)')
-
-          const rawTotal = (optionsData || []).reduce((sum, row) => {
-            const amount = (row as { total_price?: number; ea?: number; price?: number }).total_price
-              ?? ((row as { ea?: number; price?: number }).ea ?? 1) * ((row as { ea?: number; price?: number }).price ?? 0)
-            return sum + Number(amount || 0)
-          }, 0)
-          const nonResidentOptionTotal = roundNonResidentOptionTo100(rawTotal)
+          // reservation_ids에 있는 예약 ID로 reservation_options.reservation_id에서 비거주자 옵션 합계 조회 후 표시
+          const nonResidentOptionTotal = await getNonResidentOptionTotal(reservationIds, roundNonResidentOptionTo100)
 
           // 후기 조회 및 보너스 포인트 계산
           const { data: reviewsData, error: reviewsError } = await supabase
@@ -441,7 +559,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
     }
   }
 
-  // 개인 보너스: 해당 투어의 비거주자 옵션 예약별 상세 조회
+  // 개인 보너스: 해당 투어의 비거주자 옵션 예약별 상세 조회 (reservation_options 우선, 없으면 reservation_choices)
   const fetchTourNonResidentOptionDetails = async (tourId: string, reservationIds: string[]) => {
     if (reservationIds.length === 0) {
       setTourOptionDetails(prev => ({ ...prev, [tourId]: [] }))
@@ -449,17 +567,91 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
     }
     setLoadingTourDetails(tourId)
     try {
-      const { data: optionsData } = await supabase
-        .from('reservation_options')
-        .select('reservation_id, ea, price, total_price')
-        .in('reservation_id', reservationIds)
-        .eq('option_id', NON_RESIDENT_OPTION_ID)
-        .not('status', 'in', '(cancelled,refunded)')
-      if (!optionsData?.length) {
+      const BATCH = 100
+      // 옵션 관리와 동일: reservation_options에서 비거주자 옵션 조회 (status 무관) — 배치
+      let optionsDataFixed: any[] = []
+      for (let i = 0; i < reservationIds.length; i += BATCH) {
+        const batch = reservationIds.slice(i, i + BATCH)
+        const { data } = await supabase
+          .from('reservation_options')
+          .select('reservation_id, ea, price, total_price')
+          .in('reservation_id', batch)
+          .eq('option_id', NON_RESIDENT_OPTION_ID)
+        if (data?.length) optionsDataFixed = optionsDataFixed.concat(data)
+      }
+      let byRes: Record<string, { option_count: number; option_total: number }> = {}
+      if (optionsDataFixed?.length) {
+        for (const row of optionsDataFixed) {
+          const rid = row.reservation_id
+          const total = (row as { total_price?: number }).total_price ?? (row as { ea?: number }).ea * (row as { price?: number }).price
+          if (!byRes[rid]) byRes[rid] = { option_count: 0, option_total: 0 }
+          byRes[rid].option_count += (row as { ea?: number }).ea ?? 1
+          byRes[rid].option_total += Number(total || 0)
+        }
+      }
+      if (Object.keys(byRes).length === 0) {
+        let optionsDataAll: any[] = []
+        for (let i = 0; i < reservationIds.length; i += BATCH) {
+          const batch = reservationIds.slice(i, i + BATCH)
+          const { data } = await supabase
+            .from('reservation_options')
+            .select('reservation_id, option_id, ea, price, total_price')
+            .in('reservation_id', batch)
+          if (data?.length) optionsDataAll = optionsDataAll.concat(data)
+        }
+        if (optionsDataAll?.length) {
+          const uniqueOptionIds = [...new Set((optionsDataAll as { option_id: string }[]).map(r => String(r.option_id).trim()).filter(Boolean))]
+          let nonResidentIds = new Set<string>()
+          if (uniqueOptionIds.length > 0) {
+            const { data: optRows } = await supabase
+              .from('options')
+              .select('id, name, category')
+              .in('id', uniqueOptionIds)
+            ;(optRows || []).forEach((o: { id: string; name?: string | null; category?: string | null }) => {
+              if (isNonResidentOrEntranceOptionLegacy(o)) nonResidentIds.add(String(o.id).trim())
+            })
+          }
+          for (const row of optionsDataAll) {
+            const oid = String((row as { option_id?: string }).option_id || '').trim()
+            if (!nonResidentIds.has(oid)) continue
+            const rid = row.reservation_id
+            const total = (row as { total_price?: number }).total_price ?? (row as { ea?: number }).ea * (row as { price?: number }).price
+            if (!byRes[rid]) byRes[rid] = { option_count: 0, option_total: 0 }
+            byRes[rid].option_count += (row as { ea?: number }).ea ?? 1
+            byRes[rid].option_total += Number(total || 0)
+          }
+        }
+      }
+      if (Object.keys(byRes).length === 0) {
+        const nonResidentOptionIds = await getNonResidentChoiceOptionIds(reservationIds)
+        if (nonResidentOptionIds.size > 0) {
+          let choicesData: any[] = []
+          for (let i = 0; i < reservationIds.length; i += BATCH) {
+            const batch = reservationIds.slice(i, i + BATCH)
+            const { data } = await supabase
+              .from('reservation_choices')
+              .select('reservation_id, option_id, quantity, total_price')
+              .in('reservation_id', batch)
+            if (data?.length) choicesData = choicesData.concat(data)
+          }
+          if (choicesData?.length) {
+            for (const row of choicesData) {
+              if (!nonResidentOptionIds.has((row as { option_id?: string }).option_id || '')) continue
+              const rid = row.reservation_id
+              const total = Number((row as { total_price?: number }).total_price ?? 0)
+              const qty = (row as { quantity?: number }).quantity ?? 1
+              if (!byRes[rid]) byRes[rid] = { option_count: 0, option_total: 0 }
+              byRes[rid].option_count += qty
+              byRes[rid].option_total += total
+            }
+          }
+        }
+      }
+      const resIds = Object.keys(byRes)
+      if (resIds.length === 0) {
         setTourOptionDetails(prev => ({ ...prev, [tourId]: [] }))
         return
       }
-      const resIds = [...new Set(optionsData.map(r => r.reservation_id))]
       const { data: resData } = await supabase
         .from('reservations')
         .select('id, customer_id, adults, child, infant, total_people')
@@ -474,14 +666,6 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
         r.id,
         { customer_id: r.customer_id, headcount: (r as { total_people?: number }).total_people ?? ((r as { adults?: number }).adults ?? 0) + ((r as { child?: number }).child ?? 0) + ((r as { infant?: number }).infant ?? 0) }
       ]))
-      const byRes: Record<string, { option_count: number; option_total: number }> = {}
-      for (const row of optionsData) {
-        const rid = row.reservation_id
-        const total = (row as { total_price?: number }).total_price ?? (row as { ea?: number }).ea * (row as { price?: number }).price
-        if (!byRes[rid]) byRes[rid] = { option_count: 0, option_total: 0 }
-        byRes[rid].option_count += (row as { ea?: number }).ea ?? 1
-        byRes[rid].option_total += Number(total || 0)
-      }
       const rows: NonResidentOptionDetailRow[] = Object.entries(byRes).map(([reservationId, agg]) => {
         const res = resMap[reservationId]
         const customer_name = res?.customer_id ? (custMap[res.customer_id] || '-') : '-'
@@ -603,18 +787,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
             .eq('resident_status', 'non_resident')
           const nonResidentCount = rcData?.length || 0
 
-          const { data: optionsData } = await supabase
-            .from('reservation_options')
-            .select('total_price, ea, price')
-            .in('reservation_id', reservationIds)
-            .eq('option_id', NON_RESIDENT_OPTION_ID)
-            .not('status', 'in', '(cancelled,refunded)')
-          const rawTotal = (optionsData || []).reduce((sum, row) => {
-            const amount = (row as { total_price?: number; ea?: number; price?: number }).total_price
-              ?? ((row as { ea?: number; price?: number }).ea ?? 1) * ((row as { ea?: number; price?: number }).price ?? 0)
-            return sum + Number(amount || 0)
-          }, 0)
-          const nonResidentOptionTotal = roundNonResidentOptionTo100(rawTotal)
+          const nonResidentOptionTotal = await getNonResidentOptionTotal(reservationIds, roundNonResidentOptionTo100)
 
           const { data: reviewsData } = await supabase
             .from('reservation_reviews')

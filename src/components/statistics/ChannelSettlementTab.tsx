@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
-import { DollarSign, Users, Calendar, Search, ChevronDown, ChevronRight, X, Filter } from 'lucide-react'
+import { DollarSign, Users, Calendar, Search, ChevronDown, ChevronRight, X, Filter, FileText } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useReservationData } from '@/hooks/useReservationData'
 import { getChannelName, getProductName, getCustomerName, getStatusColor } from '@/utils/reservationUtils'
@@ -9,6 +9,8 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
+import { type ChannelInvoiceItem } from '@/utils/pdfExport'
+import ChannelInvoicePreviewModal from '@/components/statistics/ChannelInvoicePreviewModal'
 import type { Reservation } from '@/types/reservation'
 
 interface ChannelSettlementTabProps {
@@ -118,6 +120,11 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
   const channelFilter = selectedChannelId ?? ''
   const [partnerReceivedByReservation, setPartnerReceivedByReservation] = useState<Record<string, number>>({})
   const [reservationAudit, setReservationAudit] = useState<Record<string, { amount_audited: boolean; amount_audited_at: string | null; amount_audited_by: string | null }>>({})
+  const [channelInvoicePreview, setChannelInvoicePreview] = useState<{
+    channelName: string
+    dateRange: { start: string; end: string }
+    items: ChannelInvoiceItem[]
+  } | null>(null)
 
   // 예약 클릭 시 수정 모달 열기
   const openReservationEditModal = useCallback((reservationId: string) => {
@@ -1749,7 +1756,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                             </tbody>
                             <tfoot className="bg-gray-50">
                               <tr>
-                                <td colSpan={7} className="px-2 py-2 text-xs font-medium text-gray-900">
+                                <td colSpan={6} className="px-2 py-2 text-xs font-medium text-gray-900">
                                   합계
                                 </td>
                                 <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-center w-16">
@@ -1856,34 +1863,84 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                             }
                           }, { grandTotal: 0, commission: 0, totalPrice: 0, netPrice: 0 })
 
+                          const formatDateForInvoice = (d: string) => {
+                            if (!d) return '-'
+                            const dt = new Date(d)
+                            const m = (dt.getMonth() + 1).toString().padStart(2, '0')
+                            const day = dt.getDate().toString().padStart(2, '0')
+                            const y = dt.getFullYear()
+                            return `${m}/${day}/${y}`
+                          }
+                          const buildInvoiceItems = (): ChannelInvoiceItem[] => {
+                            return sortedChannelItems.map((item) => {
+                              const originalPrice = item.productPriceTotal ?? 0
+                              const commission = item.commissionAmount ?? 0
+                              const commissionPercent = originalPrice > 0 ? Math.round((commission / originalPrice) * 100) : 0
+                              const price = originalPrice - commission
+                              return {
+                                reservationDate: formatDateForInvoice(item.registrationDate),
+                                tourDate: formatDateForInvoice(item.tourDate),
+                                bookingNumber: item.channelRN || '-',
+                                description: item.productName || '',
+                                guestName: item.customerName || '',
+                                quantity: item.totalPeople ?? 0,
+                                commissionPercent,
+                                originalPrice,
+                                commission,
+                                price
+                              }
+                            })
+                          }
+                          const handleChannelInvoice = (e: React.MouseEvent) => {
+                            e.stopPropagation()
+                            const items = buildInvoiceItems()
+                            setChannelInvoicePreview({
+                              channelName: channel.name,
+                              dateRange: { start: dateRange.start, end: dateRange.end },
+                              items
+                            })
+                          }
+
                           return (
                             <div key={channel.id} className="border-t border-gray-200">
-                              {/* 채널 헤더 */}
-                              <button
-                                onClick={() => toggleChannel(channel.id)}
-                                className="w-full px-3 sm:px-8 py-2.5 sm:py-3 flex flex-wrap items-center justify-between gap-2 hover:bg-gray-100 transition-colors text-left"
-                              >
-                                <div className="flex items-center space-x-3">
-                                  {isChannelExpanded ? (
-                                    <ChevronDown className="w-4 h-4 text-gray-500" />
-                                  ) : (
-                                    <ChevronRight className="w-4 h-4 text-gray-500" />
-                                  )}
-                                  <span className="font-medium text-gray-800">{channel.name}</span>
-                                  <span className="text-xs text-gray-500">({sortedChannelItems.length}건)</span>
-                                  <div className="flex items-center space-x-4 text-xs">
-                                    <span className="font-medium text-green-600">
-                                      Grand Total: ${channelStats.grandTotal.toLocaleString()}
-                                    </span>
-                                    <span className="font-medium text-blue-600">
-                                      Commission: ${channelStats.commission.toLocaleString()}
-                                    </span>
-                                    <span className="font-medium text-purple-600">
-                                      총 가격: ${channelStats.totalPrice.toLocaleString()}
-                                    </span>
+                              {/* 채널 헤더: 왼쪽 토글 + 오른쪽 인보이스 버튼 */}
+                              <div className="flex items-stretch">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleChannel(channel.id)}
+                                  className="flex-1 px-3 sm:px-8 py-2.5 sm:py-3 flex flex-wrap items-center justify-between gap-2 hover:bg-gray-100 transition-colors text-left min-w-0"
+                                >
+                                  <div className="flex items-center space-x-3">
+                                    {isChannelExpanded ? (
+                                      <ChevronDown className="w-4 h-4 text-gray-500" />
+                                    ) : (
+                                      <ChevronRight className="w-4 h-4 text-gray-500" />
+                                    )}
+                                    <span className="font-medium text-gray-800">{channel.name}</span>
+                                    <span className="text-xs text-gray-500">({sortedChannelItems.length}건)</span>
+                                    <div className="flex items-center space-x-4 text-xs">
+                                      <span className="font-medium text-green-600">
+                                        Grand Total: ${channelStats.grandTotal.toLocaleString()}
+                                      </span>
+                                      <span className="font-medium text-blue-600">
+                                        Commission: ${channelStats.commission.toLocaleString()}
+                                      </span>
+                                      <span className="font-medium text-purple-600">
+                                        총 가격: ${channelStats.totalPrice.toLocaleString()}
+                                      </span>
+                                    </div>
                                   </div>
-                                </div>
-                              </button>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleChannelInvoice}
+                                  title="인보이스 다운로드 (PDF)"
+                                  className="shrink-0 px-3 sm:px-4 py-2.5 sm:py-3 flex items-center gap-1.5 text-xs font-medium text-white bg-violet-600 hover:bg-violet-700 transition-colors border-l border-gray-200"
+                                >
+                                  <FileText className="w-4 h-4 shrink-0" />
+                                  <span className="hidden sm:inline">인보이스</span>
+                                </button>
+                              </div>
 
                               {/* 채널 투어 진행 내역 테이블 */}
                               {isChannelExpanded && (
@@ -2014,7 +2071,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                   </tbody>
                   <tfoot className="bg-gray-50">
                     <tr>
-                                        <td colSpan={6} className="px-2 py-2 text-xs font-medium text-gray-900">
+                                        <td colSpan={5} className="px-2 py-2 text-xs font-medium text-gray-900">
                         합계
                       </td>
                                         <td className="px-2 py-2 text-xs font-semibold text-gray-700 text-center w-16">
@@ -2078,6 +2135,16 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
           </div>
         )}
       </div>
+
+      {/* 채널 인보이스 미리보기 모달 */}
+      {channelInvoicePreview && (
+        <ChannelInvoicePreviewModal
+          channelName={channelInvoicePreview.channelName}
+          dateRange={channelInvoicePreview.dateRange}
+          items={channelInvoicePreview.items}
+          onClose={() => setChannelInvoicePreview(null)}
+        />
+      )}
 
       {/* 채널 선택 모달 */}
       {isChannelModalOpen && (

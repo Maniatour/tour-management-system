@@ -1248,7 +1248,10 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         .single() as { data: { id: string; deposit_amount?: number | string | null } | null; error: any }
 
       if (pricingFetchError && pricingFetchError.code !== 'PGRST116') {
-        console.error('reservation_pricing 조회 오류:', pricingFetchError)
+        const msg = typeof pricingFetchError?.message === 'string' ? pricingFetchError.message : ''
+        if (!msg.includes('AbortError') && !msg.includes('aborted')) {
+          console.error('reservation_pricing 조회 오류:', pricingFetchError)
+        }
         // 에러가 발생해도 계속 진행 (레코드가 없을 수도 있음)
       }
 

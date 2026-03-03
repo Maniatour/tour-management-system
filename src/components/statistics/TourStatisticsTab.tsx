@@ -43,9 +43,11 @@ interface TourStatisticsData {
     vehicleType?: string
     gasCost?: number
     ticketBookingsCost?: number
+    ticketBookingsEa?: number
     hotelBookingsCost?: number
     guideFee?: number
     assistantFee?: number
+    notIncludedPrice?: number
     hasValidTourId?: boolean
   }>
   expenseBreakdown: Array<{
@@ -181,34 +183,38 @@ async function getTourFinancialStats(tourId: string) {
       
       // 배치 크기 제한: URL 길이 제한을 피하기 위해 작은 배치로 나눠서 조회
       const BATCH_SIZE = 20
-      
-      // reservation_pricing과 reservation_expenses는 한 번에 조회
-      const [{ data: pricingData, error: pricingError }, { data: expensesData, error: expensesError }] = await Promise.all([
-        supabase
+
+      // reservation_pricing 배치 조회 (예약 많은 투어에서 URL/응답 제한 방지)
+      for (let i = 0; i < reservationIds.length; i += BATCH_SIZE) {
+        const batchIds = reservationIds.slice(i, i + BATCH_SIZE)
+        const { data: batchPricing, error: batchPricingError } = await supabase
           .from('reservation_pricing')
-          .select('reservation_id, total_price, product_price_total, option_total, choices_total, coupon_discount, additional_discount, additional_cost, card_fee, prepayment_tip, commission_amount, commission_percent')
-          .in('reservation_id', reservationIds),
-        supabase
+          .select('reservation_id, total_price, product_price_total, option_total, choices_total, coupon_discount, additional_discount, additional_cost, not_included_price, card_fee, prepayment_tip, commission_amount, commission_percent')
+          .in('reservation_id', batchIds)
+        if (batchPricingError) {
+          console.error(`예약 가격 정보 조회 오류 (배치 ${Math.floor(i / BATCH_SIZE) + 1}):`, batchPricingError)
+        } else if (batchPricing?.length) {
+          reservationPricing.push(...batchPricing)
+        }
+      }
+
+      // reservation_expenses 배치 조회
+      for (let i = 0; i < reservationIds.length; i += BATCH_SIZE) {
+        const batchIds = reservationIds.slice(i, i + BATCH_SIZE)
+        const { data: batchExpenses, error: batchExpensesError } = await supabase
           .from('reservation_expenses')
           .select('reservation_id, amount')
-          .in('reservation_id', reservationIds)
-      ])
-
-      if (pricingError) {
-        console.error('예약 가격 정보 조회 오류:', pricingError)
-      } else {
-        reservationPricing = pricingData || []
-      }
-      if (expensesError) {
-        console.error('예약 지출 정보 조회 오류:', expensesError)
-      } else {
-        // 예약별 지출 합산
-        expensesData?.forEach((expense: any) => {
-          if (!reservationExpenses[expense.reservation_id]) {
-            reservationExpenses[expense.reservation_id] = 0
-          }
-          reservationExpenses[expense.reservation_id] += expense.amount || 0
-        })
+          .in('reservation_id', batchIds)
+        if (batchExpensesError) {
+          console.error(`예약 지출 정보 조회 오류 (배치 ${Math.floor(i / BATCH_SIZE) + 1}):`, batchExpensesError)
+        } else if (batchExpenses?.length) {
+          batchExpenses.forEach((expense: any) => {
+            if (!reservationExpenses[expense.reservation_id]) {
+              reservationExpenses[expense.reservation_id] = 0
+            }
+            reservationExpenses[expense.reservation_id] += expense.amount || 0
+          })
+        }
       }
 
       // payment_records는 배치로 나눠서 조회 (URL 길이 제한 방지)
@@ -318,19 +324,16 @@ async function getTourFinancialStats(tourId: string) {
     console.log(`투어 ${tourId}의 모든 지출 데이터:`, expenses)
     console.log(`투어 ${tourId}의 지출 개수:`, expenses?.length || 0)
 
-    // 입장권 부킹 가져오기
-    const { data: ticketBookings, error: ticketError } = await supabase
+    // 입장권 부킹: tour_id(text)로만 연결
+    const TICKET_STATUSES = ['confirmed', 'paid', 'Confirmed', 'Confirm', 'completed']
+    const { data: ticketBookingsData, error: ticketError } = await supabase
       .from('ticket_bookings')
-      .select('expense')
+      .select('id, expense, ea')
       .eq('tour_id', tourId)
-      .eq('status', 'confirmed')
-
-    if (ticketError) {
-      console.error('입장권 부킹 조회 오류:', ticketError)
-      // 부킹 정보가 없어도 계속 진행
-    }
-
-    console.log('입장권 부킹:', ticketBookings)
+      .in('status', TICKET_STATUSES)
+    const ticketBookings = ticketBookingsData || []
+    if (ticketError) console.error('입장권 부킹 조회 오류:', ticketError)
+    if (ticketBookings.length > 0) console.log('입장권 부킹:', ticketBookings.length, '건')
 
     // 호텔 부킹 가져오기
     const { data: hotelBookings, error: hotelError } = await supabase
@@ -368,10 +371,67 @@ async function getTourFinancialStats(tourId: string) {
       return sum + rounded
     }, 0)
     
+    // 비거주자 옵션 비용: reservation_options 기준, status가 cancelled/refunded가 아닌 것만 합산
+    const NON_RESIDENT_OPTION_ID = '6941b5d0'
+    const excludeStatus = (s: string) => {
+      const lower = (s || '').toLowerCase().trim()
+      return lower === 'cancelled' || lower === 'refunded'
+    }
+    const OPTIONS_BATCH = 100
+    let totalNotIncludedPriceFromOptions = 0
+    if (reservationIdsArray.length > 0) {
+      let optionsRows: any[] = []
+      for (let i = 0; i < reservationIdsArray.length; i += OPTIONS_BATCH) {
+        const batch = reservationIdsArray.slice(i, i + OPTIONS_BATCH)
+        const { data: batchOpts } = await supabase
+          .from('reservation_options')
+          .select('reservation_id, option_id, total_price, ea, price, status')
+          .in('reservation_id', batch)
+        if (batchOpts?.length) optionsRows = optionsRows.concat(batchOpts)
+      }
+      const validRows = optionsRows.filter((r: any) => !excludeStatus(r?.status))
+      const fromFixedId = validRows
+        .filter((r: any) => String(r?.option_id || '').trim() === NON_RESIDENT_OPTION_ID)
+        .reduce((sum, r) => sum + (Number(r.total_price) || (Number(r.ea ?? 1) * Number(r.price ?? 0))), 0)
+      if (fromFixedId > 0) {
+        totalNotIncludedPriceFromOptions = fromFixedId
+      } else if (validRows.length > 0) {
+        const uniqueOptionIds = [...new Set(validRows.map((r: any) => String(r.option_id || '').trim()).filter(Boolean))]
+        if (uniqueOptionIds.length > 0) {
+          let optRows: any[] = []
+          for (let i = 0; i < uniqueOptionIds.length; i += OPTIONS_BATCH) {
+            const batch = uniqueOptionIds.slice(i, i + OPTIONS_BATCH)
+            const { data: opts } = await supabase.from('options').select('id, name, category').in('id', batch)
+            if (opts?.length) optRows = optRows.concat(opts)
+          }
+          const nonResidentIds = new Set(
+            optRows
+              .filter((o: any) => {
+                const name = (o.name || '').toLowerCase()
+                const cat = (o.category || '').toLowerCase()
+                return name.includes('entrance') || name.includes('비거주자') || name.includes('입장료') || cat.includes('entrance') || cat.includes('fee')
+              })
+              .map((o: any) => String(o.id).trim())
+          )
+          totalNotIncludedPriceFromOptions = validRows
+            .filter((r: any) => nonResidentIds.has(String(r.option_id || '').trim()))
+            .reduce((sum, r) => sum + (Number(r.total_price) || (Number(r.ea ?? 1) * Number(r.price ?? 0))), 0)
+        }
+      }
+    }
+    const reservationPeopleMap: Record<string, number> = {}
+    reservations?.forEach((r: any) => { reservationPeopleMap[r.id] = r.total_people || 0 })
+    const totalNotIncludedPriceFromPricing = filteredReservationPricing.reduce((sum, pricing) => {
+      const people = reservationPeopleMap[pricing.reservation_id] || 0
+      return sum + (pricing.not_included_price || 0) * people
+    }, 0)
+    const totalNotIncludedPrice = totalNotIncludedPriceFromOptions > 0 ? totalNotIncludedPriceFromOptions : totalNotIncludedPriceFromPricing
+    
     const totalPayments = filteredReservationPricing?.reduce((sum, pricing) => sum + (pricing.total_price || 0), 0) || 0
     const totalExpenses = expenses?.reduce((sum, expense) => sum + (expense.amount || 0), 0) || 0
     const totalFees = (tour?.guide_fee || 0) + (tour?.assistant_fee || 0)
     const totalTicketCosts = ticketBookings?.reduce((sum, booking) => sum + (booking.expense || 0), 0) || 0
+    const totalTicketEa = ticketBookings?.reduce((sum, booking) => sum + (booking.ea ?? 0), 0) || 0
     const totalHotelCosts = hotelBookings?.reduce((sum, booking) => sum + (booking.total_price || 0), 0) || 0
     const totalBookingCosts = totalTicketCosts + totalHotelCosts
     const totalExpensesWithFeesAndBookings = totalExpenses + totalFees + totalBookingCosts
@@ -403,9 +463,11 @@ async function getTourFinancialStats(tourId: string) {
       totalPayments,
       totalOperatingProfit,
       totalAdditionalCostRounded,
+      totalNotIncludedPrice,
       totalExpenses,
       totalFees,
       totalTicketCosts,
+      totalTicketEa,
       totalHotelCosts,
       totalBookingCosts,
       totalExpensesWithFeesAndBookings,
@@ -429,9 +491,11 @@ async function getTourFinancialStats(tourId: string) {
       totalPayments: 0,
       totalOperatingProfit: 0,
       totalAdditionalCostRounded: 0,
+      totalNotIncludedPrice: 0,
       totalExpenses: 0,
       totalFees: 0,
       totalTicketCosts: 0,
+      totalTicketEa: 0,
       totalHotelCosts: 0,
       totalBookingCosts: 0,
       totalExpensesWithFeesAndBookings: 0,
@@ -568,26 +632,17 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
           reservationPricing: [],
           paymentRecords: [],
           reservationExpenses: [],
+          reservationNonResidentOptions: [],
           reservationIds: []
         }
       }
-
-      let reservationsQuery = supabase
-        .from('reservations')
-        .select('id, customer_id, total_people, adults, child, infant')
-        .in('id', tourForReservations.reservation_ids)
 
       // 날짜 필터링이 있는 경우 적용
       if (tourDate) {
         const reservationDate = new Date(tourDate)
         const startDate = new Date(dateRange.start)
         const endDate = new Date(dateRange.end)
-        
-        // 투어 날짜가 선택된 기간 내에 있는지 확인
-        if (reservationDate >= startDate && reservationDate <= endDate) {
-          // 날짜 필터링이 적용된 상태에서 조회
-        } else {
-          // 날짜 범위 밖이면 빈 결과 반환
+        if (reservationDate < startDate || reservationDate > endDate) {
           return {
             expenses: [],
             ticketBookings: [],
@@ -597,12 +652,28 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
             customers: [],
             reservationPricing: [],
             reservationExpenses: [],
+            reservationNonResidentOptions: [],
             reservationIds: []
           }
         }
       }
 
-      const { data: reservations, error: reservationsError } = await reservationsQuery
+      // reservations 배치 조회 (예약 많은 투어 대응)
+      const resIds = tourForReservations.reservation_ids || []
+      let reservations: any[] = []
+      const RES_BATCH = 100
+      for (let i = 0; i < resIds.length; i += RES_BATCH) {
+        const batch = resIds.slice(i, i + RES_BATCH)
+        const { data: batchRes, error: reservationsError } = await supabase
+          .from('reservations')
+          .select('id, customer_id, total_people, adults, child, infant')
+          .in('id', batch)
+        if (reservationsError) {
+          console.error('예약 조회 오류:', reservationsError)
+          break
+        }
+        if (batchRes?.length) reservations = reservations.concat(batchRes)
+      }
 
       // 고객 정보 조회
       let customers: any[] = []
@@ -622,36 +693,20 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
       let reservationPricing: any[] = []
       let paymentRecords: any[] = []
       let reservationExpenses: any[] = []
+      let reservationNonResidentOptions: any[] = []
       if (reservations && reservations.length > 0) {
         const reservationIds = reservations.map(r => r.id).filter(Boolean)
         
         if (reservationIds.length > 0) {
-          // 배치 크기 제한: URL 길이 제한을 피하기 위해 작은 배치로 나눠서 조회
           const BATCH_SIZE = 20
-          
-          // reservation_pricing과 reservation_expenses는 한 번에 조회
-          const queries = [
-            supabase
-              .from('reservation_pricing')
-              .select('reservation_id, total_price, additional_cost')
-              .in('reservation_id', reservationIds),
-            supabase
-              .from('reservation_expenses')
-              .select('reservation_id, amount, paid_for')
-              .in('reservation_id', reservationIds)
-          ]
-          
-          const results = await Promise.all(queries)
-          const [pricingResult, expensesResult] = results
-
-          reservationPricing = pricingResult.data || []
-          
-          // reservation_expenses 조회 에러 처리
-          if (expensesResult.error) {
-            console.error('예약 지출 정보 조회 오류:', expensesResult.error)
-            reservationExpenses = []
-          } else {
-            reservationExpenses = expensesResult.data || []
+          for (let i = 0; i < reservationIds.length; i += BATCH_SIZE) {
+            const batchIds = reservationIds.slice(i, i + BATCH_SIZE)
+            const [pricingRes, expensesRes] = await Promise.all([
+              supabase.from('reservation_pricing').select('reservation_id, total_price, additional_cost').in('reservation_id', batchIds),
+              supabase.from('reservation_expenses').select('reservation_id, amount, paid_for').in('reservation_id', batchIds)
+            ])
+            if (pricingRes.data?.length) reservationPricing.push(...pricingRes.data)
+            if (!expensesRes.error && expensesRes.data?.length) reservationExpenses.push(...expensesRes.data)
           }
 
           // payment_records는 배치로 나눠서 조회 (URL 길이 제한 방지)
@@ -674,6 +729,37 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
             }
           }
           paymentRecords = allPaymentRecords
+
+          // 옵션 (비거주자 비용): reservation_options에서 비거주자 옵션만, status가 cancelled/refunded 아닌 것
+          const NON_RESIDENT_OPTION_ID = '6941b5d0'
+          const excludeStatus = (s: string) => { const lower = (s || '').toLowerCase().trim(); return lower === 'cancelled' || lower === 'refunded' }
+          for (let i = 0; i < reservationIds.length; i += BATCH_SIZE) {
+            const batchIds = reservationIds.slice(i, i + BATCH_SIZE)
+            const { data: opts } = await supabase
+              .from('reservation_options')
+              .select('reservation_id, option_id, ea, price, total_price, status')
+              .in('reservation_id', batchIds)
+            if (opts?.length) {
+              const valid = opts.filter((r: any) => !excludeStatus(r?.status))
+              const fixedId = valid.filter((r: any) => String(r?.option_id || '').trim() === NON_RESIDENT_OPTION_ID)
+              if (fixedId.length > 0) {
+                reservationNonResidentOptions = reservationNonResidentOptions.concat(fixedId)
+              } else {
+                const uniqueIds = [...new Set(valid.map((r: any) => String(r.option_id || '').trim()).filter(Boolean))]
+                if (uniqueIds.length > 0) {
+                  const { data: optionRows } = await supabase.from('options').select('id, name, category').in('id', uniqueIds)
+                  const nonResidentIds = new Set(
+                    (optionRows || []).filter((o: any) => {
+                      const n = (o.name || '').toLowerCase()
+                      const c = (o.category || '').toLowerCase()
+                      return n.includes('entrance') || n.includes('비거주자') || n.includes('입장료') || c.includes('entrance') || c.includes('fee')
+                    }).map((o: any) => String(o.id).trim())
+                  )
+                  reservationNonResidentOptions = reservationNonResidentOptions.concat(valid.filter((r: any) => nonResidentIds.has(String(r.option_id || '').trim())))
+                }
+              }
+            }
+          }
         }
       }
 
@@ -692,6 +778,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
         reservationPricing: reservationPricing || [],
         paymentRecords: paymentRecords || [],
         reservationExpenses: reservationExpenses || [],
+        reservationNonResidentOptions: reservationNonResidentOptions || [],
         reservationIds: tourForReservations?.reservation_ids || []
       }
     } catch (error) {
@@ -712,6 +799,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
         customers: [],
         reservationPricing: [],
         reservationExpenses: [],
+        reservationNonResidentOptions: [],
         reservationIds: []
       }
     }
@@ -812,9 +900,11 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
             vehicleType: financialStats.totalPeople > 10 ? '대형버스' : '소형버스',
             gasCost: financialStats.totalExpenses,
             ticketBookingsCost: financialStats.totalTicketCosts,
+            ticketBookingsEa: financialStats.totalTicketEa ?? 0,
             hotelBookingsCost: financialStats.totalHotelCosts,
             guideFee: financialStats.totalFees,
             assistantFee: 0, // 별도로 계산됨
+            notIncludedPrice: financialStats.totalNotIncludedPrice ?? 0,
             hasValidTourId: true
           }
         })
@@ -1495,10 +1585,10 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                   1인 순수익
                   <div className="text-[9px] text-gray-400 mt-0.5 font-normal">avg ${perPersonAverages.overall.profitPer.toFixed(2)}</div>
                 </th>
-                <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">
-                  추가비용
-                  <div className="text-[9px] text-gray-400 mt-0.5 font-normal">$100단위</div>
-                </th>
+                <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">가이드비</th>
+                <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">투어 지출</th>
+                <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">티켓</th>
+                <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">비거주자</th>
                 <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight w-14">상세</th>
               </tr>
             </thead>
@@ -1569,8 +1659,17 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                               ${profitPer.toFixed(2)}
                             </span>
                           </td>
+                          <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-red-600 font-medium">
+                            ${(tour.guideFee || 0).toLocaleString()}
+                          </td>
+                          <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-red-600 font-medium">
+                            ${(tour.gasCost || 0).toLocaleString()}
+                          </td>
+                          <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-red-600 font-medium">
+                            ${(tour.ticketBookingsCost || 0).toLocaleString()} ({(tour.ticketBookingsEa ?? 0)}ea)
+                          </td>
                           <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-purple-600 font-medium">
-                            ${(tour.additionalCostRounded || 0).toLocaleString()}
+                            ${(tour.notIncludedPrice || 0).toLocaleString()}
                           </td>
                         </>
                       )
@@ -1590,7 +1689,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                   {/* 지출 상세 내역 */}
                   {expandedExpenses[tour.tourId] && (
                     <tr>
-                      <td colSpan={12} className="px-2 sm:px-4 py-2 sm:py-3 bg-gray-50">
+                      <td colSpan={15} className="px-2 sm:px-4 py-2 sm:py-3 bg-gray-50">
                         <div className="space-y-4">
                           <h4 className="font-semibold text-gray-900">상세 내역</h4>
                           
@@ -1829,39 +1928,39 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                                 </div>
                               )}
                               
-                              {/* 추가 비용 - reservation_ids로 필터링하고 additional_cost가 있는 예약만 표시 */}
-                              {expenseDetails[tour.tourId].reservations.length > 0 && expenseDetails[tour.tourId].reservationIds && (() => {
-                                const reservationsWithAdditionalCost = expenseDetails[tour.tourId].reservations
-                                  .filter((reservation: any) => {
-                                    if (!expenseDetails[tour.tourId].reservationIds?.includes(reservation.id)) return false
-                                    const pricing = expenseDetails[tour.tourId].reservationPricing.find((p: any) => p.reservation_id === reservation.id)
-                                    return pricing && pricing.additional_cost && pricing.additional_cost > 0
-                                  })
-                                
-                                if (reservationsWithAdditionalCost.length === 0) return null
-                                
+                              {/* 옵션 (비거주자 비용) - reservation_options 비거주자 옵션만 표시 */}
+                              {expenseDetails[tour.tourId].reservationNonResidentOptions?.length > 0 && (() => {
+                                const opts = expenseDetails[tour.tourId].reservationNonResidentOptions || []
+                                const byRes = opts.reduce((acc: Record<string, { ea: number; total: number }>, r: any) => {
+                                  const rid = r.reservation_id
+                                  if (!acc[rid]) acc[rid] = { ea: 0, total: 0 }
+                                  acc[rid].ea += Number(r.ea ?? 1)
+                                  acc[rid].total += Number(r.total_price) || (Number(r.ea ?? 1) * Number(r.price ?? 0))
+                                  return acc
+                                }, {})
+                                const reservationIdsWithOpt = Object.keys(byRes).filter(rid => expenseDetails[tour.tourId].reservationIds?.includes(rid))
+                                if (reservationIdsWithOpt.length === 0) return null
                                 return (
                                   <div className="bg-white p-3 rounded border">
-                                    <h5 className="font-medium text-gray-900 mb-2">추가 비용</h5>
+                                    <h5 className="font-medium text-gray-900 mb-2">옵션 (비거주자 비용)</h5>
                                     <div className="space-y-1">
-                                      {reservationsWithAdditionalCost.map((reservation: any, idx: number) => {
-                                        const customer = expenseDetails[tour.tourId].customers.find((c: any) => c.id === reservation.customer_id)
-                                        const pricing = expenseDetails[tour.tourId].reservationPricing.find((p: any) => p.reservation_id === reservation.id)
-                                        const totalPeople = reservation.adults + reservation.child + reservation.infant
-                                        const additionalCost = pricing?.additional_cost || 0
-                                        const perPersonAdditionalCost = totalPeople > 0 ? additionalCost / totalPeople : 0
-                                        
+                                      {reservationIdsWithOpt.map((reservationId: string) => {
+                                        const reservation = expenseDetails[tour.tourId].reservations.find((r: any) => r.id === reservationId)
+                                        const customer = expenseDetails[tour.tourId].customers.find((c: any) => c.id === reservation?.customer_id)
+                                        const { ea, total } = byRes[reservationId]
+                                        const totalPeople = reservation ? (reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0) : 0
+                                        const perPerson = totalPeople > 0 ? total / totalPeople : 0
                                         return (
-                                          <div key={idx} className="flex justify-between text-sm">
+                                          <div key={reservationId} className="flex justify-between text-sm">
                                             <div className="flex flex-col">
                                               <span className="text-gray-600 font-medium">{customer?.name || '고객'}</span>
                                               <span className="text-xs text-gray-500">
-                                                성인 {reservation.adults}명, 아동 {reservation.child}명, 유아 {reservation.infant}명
+                                                {reservation ? `성인 ${reservation.adults || 0}명, 아동 ${reservation.child || 0}명, 유아 ${reservation.infant || 0}명` : ''} · {ea}개
                                               </span>
                                             </div>
                                             <div className="flex flex-col text-right">
-                                              <span className="font-medium text-purple-600">${additionalCost.toLocaleString()}</span>
-                                              <span className="text-xs text-gray-500">1인당: ${perPersonAdditionalCost.toFixed(2)}</span>
+                                              <span className="font-medium text-purple-600">${total.toLocaleString()}</span>
+                                              {totalPeople > 0 && <span className="text-xs text-gray-500">1인당: ${perPerson.toFixed(2)}</span>}
                                             </div>
                                           </div>
                                         )
@@ -1933,6 +2032,42 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                   )}
                 </React.Fragment>
               ))}
+              {/* 총합 행 */}
+              {visibleTourStats.length > 0 && (
+                <tr className="bg-gray-100 font-semibold border-t-2 border-gray-300">
+                  <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-gray-900">총합</td>
+                  <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-gray-900">-</td>
+                  <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-gray-900">
+                    {visibleTourStats.reduce((sum, t) => sum + (t.totalPeople || 0), 0)}명
+                  </td>
+                  <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-green-600">
+                    ${visibleTourStats.reduce((sum, t) => sum + (t.revenue || 0), 0).toLocaleString()}
+                  </td>
+                  <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-red-600">
+                    ${visibleTourStats.reduce((sum, t) => sum + (t.expenses || 0), 0).toLocaleString()}
+                  </td>
+                  <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap font-semibold text-gray-900">
+                    ${visibleTourStats.reduce((sum, t) => sum + (t.netProfit || 0), 0).toLocaleString()}
+                  </td>
+                  <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-gray-500">-</td>
+                  <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-gray-500">-</td>
+                  <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-gray-500">-</td>
+                  <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-gray-500">-</td>
+                  <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-red-600">
+                    ${visibleTourStats.reduce((sum, t) => sum + (t.guideFee || 0), 0).toLocaleString()}
+                  </td>
+                  <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-red-600">
+                    ${visibleTourStats.reduce((sum, t) => sum + (t.gasCost || 0), 0).toLocaleString()}
+                  </td>
+                  <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-red-600">
+                    ${visibleTourStats.reduce((sum, t) => sum + (t.ticketBookingsCost || 0), 0).toLocaleString()} ({visibleTourStats.reduce((sum, t) => sum + (t.ticketBookingsEa ?? 0), 0)}ea)
+                  </td>
+                  <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-purple-600">
+                    ${visibleTourStats.reduce((sum, t) => sum + (t.notIncludedPrice || 0), 0).toLocaleString()}
+                  </td>
+                  <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-gray-500">-</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

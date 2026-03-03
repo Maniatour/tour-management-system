@@ -137,29 +137,44 @@ export default function TicketBookingList() {
     try {
       setLoading(true);
       
-      // 먼저 ticket_bookings만 조회
-      const { data: bookingsData, error: bookingsError } = await supabase
-        .from('ticket_bookings')
-        .select('*')
-        .order('submit_on', { ascending: false });
+      // ticket_bookings 배치 조회 (1000+ 행 대응)
+      const PAGE_SIZE = 500
+      let bookingsData: TicketBooking[] | null = []
+      let offset = 0
+      while (true) {
+        const { data: page, error: pageError } = await supabase
+          .from('ticket_bookings')
+          .select('*')
+          .order('submit_on', { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1)
+        if (pageError) throw pageError
+        if (!page?.length) break
+        bookingsData = (bookingsData || []).concat(page)
+        if (page.length < PAGE_SIZE) break
+        offset += PAGE_SIZE
+      }
 
-      if (bookingsError) throw bookingsError;
-
-      // supplier_ticket_purchases를 통해 supplier_product 정보 조회
+      // supplier_ticket_purchases를 통해 supplier_product 정보 조회 (배치)
       if (bookingsData && bookingsData.length > 0) {
         try {
           const bookingIds = bookingsData.map((b: TicketBooking) => b.id);
-          const { data: purchasesData } = await supabase
-            .from('supplier_ticket_purchases')
-            .select(`
-              booking_id,
-              supplier_product_id,
-              supplier_products (
-                id,
-                season_dates
-              )
-            `)
-            .in('booking_id', bookingIds);
+          const BATCH_SIZE = 100
+          let purchasesData: any[] = []
+          for (let i = 0; i < bookingIds.length; i += BATCH_SIZE) {
+            const batch = bookingIds.slice(i, i + BATCH_SIZE)
+            const { data: batchPurchases } = await supabase
+              .from('supplier_ticket_purchases')
+              .select(`
+                booking_id,
+                supplier_product_id,
+                supplier_products (
+                  id,
+                  season_dates
+                )
+              `)
+              .in('booking_id', batch)
+            if (batchPurchases?.length) purchasesData = purchasesData.concat(batchPurchases)
+          }
 
           if (purchasesData) {
             const productMap = new Map<string, { season_dates: SeasonDate[] | null }>();
@@ -195,22 +210,31 @@ export default function TicketBookingList() {
         return;
       }
 
-      // 모든 tour_id를 한 번에 조회
+      // tour_id 목록 배치 조회
       const tourIds = [...new Set(bookingsWithTourId.map((booking: TicketBooking) => booking.tour_id))];
-      
-      console.log('조회할 투어 ID들:', tourIds);
-      
-      const { data: toursData, error: toursError } = await supabase
-        .from('tours')
-        .select(`
-          id,
-          tour_date,
-          products (
-            name,
-            name_en
-          )
-        `)
-        .in('id', tourIds as string[]);
+      console.log('조회할 투어 ID들:', tourIds.length);
+      let toursData: any[] = []
+      const TOUR_BATCH = 100
+      for (let i = 0; i < tourIds.length; i += TOUR_BATCH) {
+        const batch = tourIds.slice(i, i + TOUR_BATCH) as string[]
+        const { data: batchTours, error: batchError } = await supabase
+          .from('tours')
+          .select(`
+            id,
+            tour_date,
+            products (
+              name,
+              name_en
+            )
+          `)
+          .in('id', batch)
+        if (batchError) {
+          console.warn('투어 정보 조회 오류:', batchError)
+          break
+        }
+        if (batchTours?.length) toursData = toursData.concat(batchTours)
+      }
+      const toursError = null
 
       console.log('투어 데이터:', toursData);
       console.log('투어 조회 오류:', toursError);

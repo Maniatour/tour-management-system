@@ -900,6 +900,26 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
                   )}
                 </tr>
               ))}
+              {/* 총합 행 */}
+              {chartData.length > 0 && (
+                <tr className="bg-gray-50 font-semibold border-t-2 border-gray-300">
+                  <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-900">총합</td>
+                  <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-900">
+                    {chartData.reduce((sum, item) => sum + item.value, 0).toLocaleString()}
+                  </td>
+                  <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-900">
+                    {chartData.reduce((sum, item) => sum + item.people, 0).toLocaleString()}명
+                  </td>
+                  <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-900">
+                    {selectedChart === 'trend' ? '-' : '100%'}
+                  </td>
+                  {selectedChart !== 'trend' && (
+                    <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-900">
+                      ${chartData.reduce((sum, item) => sum + item.revenue, 0).toLocaleString()}
+                    </td>
+                  )}
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

@@ -814,20 +814,22 @@ export default function AdminCustomers() {
         const pricingInfo = (reservationData as any).pricingInfo || {}
         try {
           const pricingId = crypto.randomUUID()
-          
+          const totalPeople = (reservationData.adults || 0) + (reservationData.child || 0) + (reservationData.infant || 0)
+          const notIncludedTotal = (pricingInfo.not_included_price || 0) * (totalPeople || 1)
+
           const pricingData = {
             id: pricingId,
             reservation_id: reservationId,
             adult_product_price: pricingInfo.adultProductPrice || 0,
             child_product_price: pricingInfo.childProductPrice || 0,
             infant_product_price: pricingInfo.infantProductPrice || 0,
-            product_price_total: pricingInfo.productPriceTotal || 0,
+            product_price_total: (pricingInfo.productPriceTotal || 0) + notIncludedTotal,
             not_included_price: pricingInfo.not_included_price || 0,
             required_options: pricingInfo.requiredOptions || {},
             required_option_total: pricingInfo.requiredOptionTotal || 0,
             choices: pricingInfo.choices || {},
             choices_total: pricingInfo.choicesTotal || 0,
-            subtotal: pricingInfo.subtotal || 0,
+            subtotal: (pricingInfo.subtotal || 0) + notIncludedTotal,
             coupon_code: pricingInfo.couponCode || null,
             coupon_discount: pricingInfo.couponDiscount || 0,
             additional_discount: pricingInfo.additionalDiscount || 0,
@@ -838,7 +840,7 @@ export default function AdminCustomers() {
             prepayment_tip: pricingInfo.prepaymentTip || 0,
             selected_options: pricingInfo.selectedOptionalOptions || {},
             option_total: pricingInfo.optionTotal || 0,
-            total_price: pricingInfo.totalPrice || 0,
+            total_price: (pricingInfo.totalPrice || 0) + notIncludedTotal,
             deposit_amount: pricingInfo.depositAmount || 0,
             balance_amount: pricingInfo.balanceAmount || 0,
             private_tour_additional_cost: pricingInfo.privateTourAdditionalCost || 0,

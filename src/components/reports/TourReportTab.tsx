@@ -51,37 +51,57 @@ export default function TourReportTab({ dateRange, period }: TourReportTabProps)
         )
       ] as string[]
 
+      const BATCH_SIZE = 100
+
       const [
         { data: products },
-        { data: team },
-        { data: reservations },
-        { data: pricing },
-        { data: tourExpensesRows },
-        { data: ticketBookingsRows },
-        { data: hotelBookingsRows }
+        { data: team }
       ] = await Promise.all([
         productIds.length > 0
           ? supabase.from('products').select('id, name, name_en').in('id', productIds)
           : Promise.resolve({ data: [] as any[] } as any),
         teamEmails.length > 0
           ? supabase.from('team').select('email, name_ko, name_en, nick_name').in('email', teamEmails)
-          : Promise.resolve({ data: [] as any[] } as any),
-        allReservationIds.length > 0
-          ? supabase.from('reservations').select('id, total_people').in('id', allReservationIds)
-          : Promise.resolve({ data: [] as any[] } as any),
-        allReservationIds.length > 0
-          ? supabase.from('reservation_pricing').select('reservation_id, total_price').in('reservation_id', allReservationIds)
-          : Promise.resolve({ data: [] as any[] } as any),
-        tourIds.length > 0
-          ? supabase.from('tour_expenses').select('tour_id, amount').in('tour_id', tourIds)
-          : Promise.resolve({ data: [] as any[] } as any),
-        tourIds.length > 0
-          ? supabase.from('ticket_bookings').select('tour_id, expense').in('tour_id', tourIds).in('status', ['confirmed', 'paid'])
-          : Promise.resolve({ data: [] as any[] } as any),
-        tourIds.length > 0
-          ? supabase.from('tour_hotel_bookings').select('tour_id, total_price').in('tour_id', tourIds).in('status', ['confirmed', 'paid'])
           : Promise.resolve({ data: [] as any[] } as any)
       ])
+
+      let reservations: any[] = []
+      let pricing: any[] = []
+      let tourExpensesRows: any[] = []
+      let ticketBookingsRows: any[] = []
+      let hotelBookingsRows: any[] = []
+
+      if (tourIds.length > 0) {
+        for (let i = 0; i < tourIds.length; i += BATCH_SIZE) {
+          const batch = tourIds.slice(i, i + BATCH_SIZE)
+          const { data: exp } = await supabase.from('tour_expenses').select('tour_id, amount').in('tour_id', batch)
+          if (exp?.length) tourExpensesRows.push(...exp)
+        }
+      }
+
+      if (allReservationIds.length > 0) {
+        for (let i = 0; i < allReservationIds.length; i += BATCH_SIZE) {
+          const batch = allReservationIds.slice(i, i + BATCH_SIZE)
+          const [res, pr] = await Promise.all([
+            supabase.from('reservations').select('id, total_people').in('id', batch),
+            supabase.from('reservation_pricing').select('reservation_id, total_price').in('reservation_id', batch)
+          ])
+          if (res.data?.length) reservations.push(...res.data)
+          if (pr.data?.length) pricing.push(...pr.data)
+        }
+      }
+
+      if (tourIds.length > 0) {
+        for (let i = 0; i < tourIds.length; i += BATCH_SIZE) {
+          const batch = tourIds.slice(i, i + BATCH_SIZE)
+          const [tickets, hotels] = await Promise.all([
+            supabase.from('ticket_bookings').select('tour_id, expense').in('tour_id', batch).in('status', ['confirmed', 'paid']),
+            supabase.from('tour_hotel_bookings').select('tour_id, total_price').in('tour_id', batch).in('status', ['confirmed', 'paid'])
+          ])
+          if (tickets.data?.length) ticketBookingsRows.push(...tickets.data)
+          if (hotels.data?.length) hotelBookingsRows.push(...hotels.data)
+        }
+      }
 
       const productNameMap = new Map<string, string>()
       ;(products || []).forEach((p: any) => {

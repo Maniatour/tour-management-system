@@ -218,35 +218,23 @@ export default function ComprehensiveReportTab({
         tourExpensesResult,
         reservationExpensesResult,
         companyExpensesResult,
-        ticketBookingsResult,
         toursForFeesResult
       ] = await Promise.all([
-        // 지출 통계 - tour_expenses는 submit_on 기준으로 필터링
         supabase
           .from('tour_expenses')
           .select('amount, paid_for')
           .gte('submit_on', startISO)
           .lte('submit_on', endISO),
-        // reservation_expenses는 submit_on 기준
         supabase
           .from('reservation_expenses')
           .select('amount, paid_for')
           .gte('submit_on', startISO)
           .lte('submit_on', endISO),
-        // company_expenses는 submit_on 기준
         supabase
           .from('company_expenses')
           .select('amount, category')
           .gte('submit_on', startISO)
           .lte('submit_on', endISO),
-        // ticket_bookings - submit_on 기준
-        supabase
-          .from('ticket_bookings')
-          .select('expense, category')
-          .gte('submit_on', startISO)
-          .lte('submit_on', endISO)
-          .in('status', ['confirmed', 'paid']),
-        // tours 테이블의 guide_fee, assistant_fee
         supabase
           .from('tours')
           .select('guide_fee, assistant_fee')
@@ -257,13 +245,30 @@ export default function ComprehensiveReportTab({
       const allExpenses = tourExpensesResult.data
       const reservationExpenses = reservationExpensesResult.data
       const companyExpenses = companyExpensesResult.data
-      const ticketBookings = ticketBookingsResult.data
       const toursForFees = toursForFeesResult.data
+
+      // ticket_bookings 배치 조회 (1000+ 행 대응)
+      let ticketBookings: any[] = []
+      const TICKET_PAGE = 500
+      let ticketOffset = 0
+      while (true) {
+        const { data: page, error: ticketBookingsResult } = await supabase
+          .from('ticket_bookings')
+          .select('expense, category')
+          .gte('submit_on', startISO)
+          .lte('submit_on', endISO)
+          .in('status', ['confirmed', 'paid'])
+          .range(ticketOffset, ticketOffset + TICKET_PAGE - 1)
+        if (ticketBookingsResult) console.error('입장권 부킹 조회 오류:', ticketBookingsResult)
+        if (!page?.length) break
+        ticketBookings = ticketBookings.concat(page)
+        if (page.length < TICKET_PAGE) break
+        ticketOffset += TICKET_PAGE
+      }
 
       if (tourExpensesResult.error) console.error('투어 지출 조회 오류:', tourExpensesResult.error)
       if (reservationExpensesResult.error) console.error('예약 지출 조회 오류:', reservationExpensesResult.error)
       if (companyExpensesResult.error) console.error('회사 지출 조회 오류:', companyExpensesResult.error)
-      if (ticketBookingsResult.error) console.error('입장권 부킹 조회 오류:', ticketBookingsResult.error)
       if (toursForFeesResult.error) console.error('투어 수수료 조회 오류:', toursForFeesResult.error)
 
       const expenseMap = new Map<string, number>()

@@ -68,9 +68,12 @@ export async function getCachedSunriseSunsetData(locationName: string, date: str
       .limit(1)
     
     if (error || !data || data.length === 0) {
-      // Only log if there's an actual error, not just missing cache
+      // Only log if there's an actual error, not just missing cache. AbortError는 로그 생략.
       if (error) {
-        console.warn(`Error fetching cached sunrise/sunset data for ${locationName} on ${date}:`, error.message)
+        const msg = typeof (error as { message?: string })?.message === 'string' ? (error as { message: string }).message : ''
+        if (!msg || (!msg.includes('AbortError') && !msg.includes('aborted'))) {
+          console.warn(`Error fetching cached sunrise/sunset data for ${locationName} on ${date}:`, error.message)
+        }
       }
       return null
     }
@@ -84,7 +87,10 @@ export async function getCachedSunriseSunsetData(locationName: string, date: str
       sunset: record.sunset_time
     }
   } catch (error) {
-    console.warn(`Error fetching sunrise/sunset data for ${locationName}:`, error)
+    const msg = error instanceof Error ? error.message : String(error)
+    if (!msg.includes('AbortError') && !msg.includes('aborted')) {
+      console.warn(`Error fetching sunrise/sunset data for ${locationName}:`, error)
+    }
     return null
   }
 }
