@@ -1213,6 +1213,7 @@
     "customerLabelKo": "Customer (KO)",
     "customerLabelEn": "Customer",
     "point": "Point",
+    "subPoint": "Sub-point",
     "startCoords": "Start coordinates",
     "endCoords": "End coordinates",
     "teamDescKo": "Team description (Korean)",

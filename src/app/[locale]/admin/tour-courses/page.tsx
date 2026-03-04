@@ -137,6 +137,14 @@ export default function TourCoursesPage() {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
   const [coursePhotos, setCoursePhotos] = useState<TourCoursePhoto[]>([])
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [isDesktop, setIsDesktop] = useState(false)
+  useEffect(() => {
+    const m = window.matchMedia('(min-width: 640px)')
+    const update = () => setIsDesktop(m.matches)
+    update()
+    m.addEventListener('change', update)
+    return () => m.removeEventListener('change', update)
+  }, [])
 
   // 데이터 로드
   const { 
@@ -422,24 +430,27 @@ export default function TourCoursesPage() {
   }
 
   // 트리 아이템 렌더링 컴포넌트
-  const TreeItem = ({ course, level = 0 }: { course: TourCourse, level?: number }) => {
+  const TreeItem = ({ course, level = 0, groupIndex = 0 }: { course: TourCourse, level?: number, groupIndex?: number }) => {
     const hasChildren = course.children && course.children.length > 0
     const isExpanded = expandedNodes.has(course.id)
-    // 모바일 컴팩트: 레벨당 6px + 기본 2px, sm 이상 12px + 4px
-    const indentPx = level * 6 + 2
-    const indentSmPx = level * 12 + 4
+    const isSubPoint = level > 0
+    // 3단 구조(그랜드캐년→웨스트림→구아노 포인트) 확실한 들여쓰기: 인라인 스타일로 직접 적용
+    const indentPx = 12 + level * 28
+    const indentSmPx = 28 + level * 48
+    const paddingLeftPx = isDesktop ? indentSmPx : indentPx
+    const isSelected = selectedCourse?.id === course.id
 
     return (
       <div className="select-none">
         <div 
-          className={`flex flex-col min-w-0 pr-1 py-1 sm:px-2 sm:py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 tour-course-item-indent ${
-            selectedCourse?.id === course.id ? 'bg-blue-50 border-blue-200' : ''
+          className={`flex flex-col min-w-0 pr-1 py-1 sm:px-2 sm:py-2 cursor-pointer border-b border-gray-100/80 bg-white hover:bg-gray-50/70 transition-colors duration-150 ${
+            isSelected ? 'bg-gray-50 border-l-2 border-l-blue-500 border-b-gray-200' : 'border-l-2 border-l-transparent'
           }`}
-          style={{ '--indent-px': indentPx, '--indent-sm-px': indentSmPx } as React.CSSProperties}
+          style={{ paddingLeft: paddingLeftPx }}
           onClick={() => setSelectedCourse(course)}
         >
-          {/* 제목 줄: 화살표/아이콘 최소 폭, 제목 공간 최대화 */}
-          <div className="flex items-center gap-0.5 sm:gap-1 min-h-[1.5rem] sm:min-h-[1.75rem] flex-shrink-0 flex-nowrap min-w-0">
+          {/* 1줄(데스크탑): 코스명(한글+영문) + 뱃지 / 모바일: 기존 제목만 */}
+          <div className="flex items-center gap-0.5 sm:gap-1 min-h-[1.5rem] sm:min-h-[1.75rem] flex-shrink-0 flex-wrap min-w-0">
             {hasChildren ? (
               <button
                 onClick={(e) => {
@@ -461,9 +472,42 @@ export default function TourCoursesPage() {
             ) : (
               <div className="w-3 sm:w-4 flex-shrink-0" aria-hidden />
             )}
-            <MapPin className="w-3 h-3 sm:w-4 sm:h-4 text-gray-400 flex-shrink-0" />
-            <div className="font-medium text-gray-900 text-sm sm:text-base flex-1 min-w-0 truncate" title={getCourseDisplayName(course, locale)}>
-              {getCourseDisplayName(course, locale)}
+            <MapPin className={`text-gray-400 flex-shrink-0 ${isSubPoint ? 'w-3 h-3 sm:w-3.5 sm:h-3.5' : 'w-3 h-3 sm:w-4 sm:h-4'}`} />
+            <div className="flex-1 min-w-0 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 sm:gap-x-2">
+              <span
+                className={`text-gray-900 truncate ${level <= 1 ? 'font-semibold text-sm sm:text-base' : 'font-normal text-xs sm:text-sm'}`}
+                title={getCourseDisplayName(course, locale)}
+              >
+                {getCourseDisplayName(course, locale)}
+              </span>
+              {getCourseSecondaryName(course, locale) && (
+                <span className="hidden sm:inline text-gray-500 text-sm truncate">
+                  ({getCourseSecondaryName(course, locale)})
+                </span>
+              )}
+              {/* 데스크탑 1줄: 뱃지 */}
+              <div className="hidden sm:flex items-center gap-1.5 flex-wrap">
+                {course.category && (
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getCategoryBadgeColor(course.category)}`}>
+                    {getCategoryDisplayName(course.category, categories ?? undefined, locale)}
+                  </span>
+                )}
+                {course.price_type && course.price_type !== 'none' && (
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${course.price_type === 'per_person' ? 'bg-green-100 text-green-800' : 'bg-purple-100 text-purple-800'}`}>
+                    {course.price_type === 'per_person' ? t('pricePerPerson') : t('pricePerVehicle')}
+                  </span>
+                )}
+                {(!course.price_type || course.price_type === 'none') && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                    {t('noPrice')}
+                  </span>
+                )}
+                {course.duration_hours !== null && course.duration_hours !== undefined && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                    {t('minutes', { count: course.duration_hours })}
+                  </span>
+                )}
+              </div>
             </div>
             <div className="flex items-center gap-0 flex-shrink-0 ml-0.5" onClick={(e) => e.stopPropagation()}>
               <button
@@ -510,8 +554,8 @@ export default function TourCoursesPage() {
             </div>
           </div>
 
-          {/* 뱃지 · 설명 · 좌표 — 카드 끝까지 이어지게 (전체 너비) */}
-          <div className="flex flex-col gap-0.5 mt-0.5 min-w-0 w-full flex-1 overflow-hidden">
+          {/* 모바일 전용: 뱃지 · 영문명 · 위치 (기존 그대로) */}
+          <div className="sm:hidden flex flex-col gap-0.5 mt-0.5 min-w-0 w-full flex-1 overflow-hidden">
             <div className="flex items-center gap-1.5 flex-wrap min-w-0">
               {course.category && (
                 <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getCategoryBadgeColor(course.category)}`}>
@@ -539,22 +583,29 @@ export default function TourCoursesPage() {
               )}
             </div>
             {getCourseSecondaryName(course, locale) && (
-              <div className="text-xs sm:text-sm text-gray-500 break-words min-w-0 leading-tight">
+              <div className="text-xs text-gray-500 break-words min-w-0 leading-tight">
                 {getCourseSecondaryName(course, locale)}
               </div>
             )}
             {course.location && (
-              <div className="text-[11px] sm:text-xs text-gray-400 break-words min-w-0 leading-tight">
+              <div className="text-[11px] text-gray-400 break-words min-w-0 leading-tight pl-7">
                 📍 {course.location}
               </div>
             )}
           </div>
+
+          {/* 데스크탑 2줄: 위치만 — 코스명(그랜드캐년) 텍스트 아래로 정렬 */}
+          {course.location && (
+            <div className="hidden sm:block mt-0.5 pl-10 text-xs text-gray-400 break-words min-w-0 leading-tight">
+              📍 {course.location}
+            </div>
+          )}
         </div>
         
         {hasChildren && isExpanded && (
           <div>
             {course.children!.map((child) => (
-              <TreeItem key={child.id} course={child} level={level + 1} />
+              <TreeItem key={child.id} course={child} level={level + 1} groupIndex={groupIndex} />
             ))}
           </div>
         )}
@@ -659,8 +710,8 @@ export default function TourCoursesPage() {
             <div ref={scrollContainerRef} className="p-3 sm:p-4 max-h-[800px] overflow-y-auto">
               {hierarchicalCourses.length > 0 ? (
                 <div className="space-y-0">
-                  {hierarchicalCourses.map((course) => (
-                    <TreeItem key={course.id} course={course} />
+                  {hierarchicalCourses.map((course, groupIndex) => (
+                    <TreeItem key={course.id} course={course} groupIndex={groupIndex} />
                   ))}
                 </div>
               ) : (

@@ -1222,6 +1222,7 @@
     "customerLabelKo": "고객용",
     "customerLabelEn": "Customer",
     "point": "포인트",
+    "subPoint": "하위 포인트",
     "startCoords": "시작 좌표",
     "endCoords": "종료 좌표",
     "teamDescKo": "팀원용 설명 (한국어)",
