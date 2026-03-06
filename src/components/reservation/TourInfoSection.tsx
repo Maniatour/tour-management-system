@@ -23,8 +23,6 @@ interface TourInfoSectionProps {
   pickupHotels: PickupHotel[]
   sanitizeTimeInput: (value: string) => string
   t: (key: string) => string
-  /** true이면 지난 날짜도 선택 가능 (super 계정용) */
-  allowPastDate?: boolean
   /** 3번째 줄 채널 영역 (예: 채널 선택 버튼) */
   channelSlot?: ReactNode
 }
@@ -35,18 +33,9 @@ export default function TourInfoSection({
   pickupHotels,
   sanitizeTimeInput,
   t,
-  allowPastDate = false,
   channelSlot
 }: TourInfoSectionProps) {
-  // 날짜 범위: allowPastDate면 3년 전~3년 후, 아니면 오늘~3년 후
-  const today = new Date()
-  const todayString = today.toISOString().split('T')[0] // YYYY-MM-DD 형식
-  const threeYearsLater = new Date(today)
-  threeYearsLater.setFullYear(today.getFullYear() + 3)
-  const maxDateString = threeYearsLater.toISOString().split('T')[0] // YYYY-MM-DD 형식
-  const threeYearsAgo = new Date(today)
-  threeYearsAgo.setFullYear(today.getFullYear() - 3)
-  const minDateString = allowPastDate ? threeYearsAgo.toISOString().split('T')[0] : todayString
+  
 
   return (
     <>
@@ -58,8 +47,6 @@ export default function TourInfoSection({
             type="date"
             value={formData.tourDate}
             onChange={(e) => setFormData((prev: any) => ({ ...prev, tourDate: e.target.value }))}
-            min={minDateString}
-            max={maxDateString}
             className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
             required
           />

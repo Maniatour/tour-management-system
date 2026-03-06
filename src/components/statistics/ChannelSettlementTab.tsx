@@ -293,16 +293,16 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
   }, [authUser?.email])
 
   const handleDeleteReservation = useCallback(async (id: string) => {
-    if (!confirm(t('deleteConfirm'))) return
+    if (!confirm('이 예약을 삭제하시겠습니까? 데이터는 삭제되지 않고 상태만 \'삭제됨\'으로 변경됩니다.')) return
     try {
-      const { error } = await supabase.from('reservations').delete().eq('id', id)
+      const { error } = await supabase.from('reservations').update({ status: 'deleted' }).eq('id', id)
       if (error) {
         alert('예약 삭제 중 오류가 발생했습니다: ' + error.message)
         return
       }
       await refreshReservations()
       setEditingReservation(null)
-      alert('예약이 성공적으로 삭제되었습니다!')
+      alert('예약이 삭제됨 상태로 변경되었습니다.')
     } catch (error) {
       console.error('Error deleting reservation:', error)
       alert('예약 삭제 중 오류가 발생했습니다.')

@@ -47,6 +47,14 @@ import SimulationModal from './SimulationModal'
 import CustomerSimulationModal from './CustomerSimulationModal'
 import AdminWeatherWidget from './AdminWeatherWidget'
 
+/** 요청 중단(AbortError) 여부 확인 — 로그 생략용 */
+function isAbortError(err: unknown): boolean {
+  if (err instanceof Error)
+    return err.name === 'AbortError' || err.message?.includes('aborted') || err.message?.includes('signal is aborted')
+  const msg = typeof (err as { message?: string })?.message === 'string' ? (err as { message: string }).message : ''
+  return msg.includes('AbortError') || msg.includes('aborted') || msg.includes('signal is aborted')
+}
+
 /** Supabase/Error 객체를 로깅 가능한 형태로 변환 (비열거형 속성·빈 {} 방지) */
 function serializeError(err: unknown): Record<string, unknown> {
   if (err == null) return { _raw: null }
@@ -187,12 +195,14 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
       const { data, error } = await executeQuery()
 
       if (error) {
+        if (isAbortError(error)) return
         console.error('만료 예정 문서 수 조회 오류:', serializeError(error))
         setExpiringDocumentsCount(0)
         return
       }
       setExpiringDocumentsCount(data?.length || 0)
     } catch (error) {
+      if (isAbortError(error)) return
       console.error('만료 예정 문서 수 조회 오류:', serializeError(error))
       setExpiringDocumentsCount(0)
     }
@@ -271,8 +281,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
           .maybeSingle()
       )
       
-      // 에러 로깅 (앱 중단 방지)
-      if (meError) {
+      // 에러 로깅 (앱 중단 방지) — AbortError는 로그 생략
+      if (meError && !isAbortError(meError)) {
         console.error('Error fetching team position:', {
           email: authUser.email,
           ...serializeError(meError)

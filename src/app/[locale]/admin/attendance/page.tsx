@@ -1177,9 +1177,9 @@ export default function AttendancePage() {
             onCancel={handleCloseReservationEditModal}
             onRefreshCustomers={async () => {}}
             onDelete={async () => {
-              if (!confirm(t('reservationDeleteConfirm'))) return
+              if (!confirm(t('reservationDeleteConfirmSoft'))) return
               try {
-                const { error } = await supabase.from('reservations').delete().eq('id', editingReservation.id)
+                const { error } = await supabase.from('reservations').update({ status: 'deleted' }).eq('id', editingReservation.id)
                 if (error) {
                   alert(t('reservationDeleteError') + error.message)
                   return
@@ -1187,7 +1187,7 @@ export default function AttendancePage() {
                 handleCloseReservationEditModal()
                 alert(t('reservationDeleted'))
               } catch (e) {
-                console.error('예약 삭제 오류:', e)
+                console.error('예약 삭제 처리 오류:', e)
               }
             }}
           />

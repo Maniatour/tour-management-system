@@ -1200,8 +1200,9 @@
     "reservationUpdated": "예약이 수정되었습니다.",
     "reservationUpdateFailed": "예약 수정 중 오류가 발생했습니다.",
     "reservationDeleteConfirm": "정말 이 예약을 삭제하시겠습니까?",
+    "reservationDeleteConfirmSoft": "이 예약을 삭제하시겠습니까? 데이터는 삭제되지 않고 상태만 '삭제됨'으로 변경됩니다.",
     "reservationDeleteError": "예약 삭제 중 오류가 발생했습니다: ",
-    "reservationDeleted": "예약이 삭제되었습니다."
+    "reservationDeleted": "예약이 삭제됨 상태로 변경되었습니다."
   },
   "tourCourses": {
     "title": "투어 코스 관리",
@@ -1747,6 +1748,7 @@
     "reservationsLoading": "예약 로딩 중",
     "completed": "완료됨",
     "deleteConfirm": "정말로 이 예약을 삭제하시겠습니까?",
+    "deleteConfirmSoft": "이 예약을 삭제하시겠습니까? 데이터는 삭제되지 않고 상태만 '삭제됨'으로 변경됩니다.",
     "cardDeluxe": "카드 딜럭",
     "filters": {
       "allStatus": "모든 상태",
@@ -1756,6 +1758,7 @@
       "completed": "완료",
       "cancelled": "취소",
       "recruiting": "모집중",
+      "deleted": "삭제됨",
       "paymentRequested": "입금요청"
     },
     "sorting": {
@@ -1857,7 +1860,8 @@
       "pickupTimeSaveError": "픽업 시간 저장 중 오류가 발생했습니다.",
       "pickupHotelUpdateError": "픽업 호텔 업데이트 중 오류가 발생했습니다.",
       "pickupHotelSaveError": "픽업 호텔 저장 중 오류가 발생했습니다.",
-      "reservationDeleted": "예약이 성공적으로 삭제되었습니다!",
+      "reservationDeleted": "예약이 삭제됨 상태로 변경되었습니다.",
+      "reservationDeleteConfirmSoft": "이 예약을 삭제하시겠습니까? 데이터는 삭제되지 않고 상태만 '삭제됨'으로 변경됩니다.",
       "reservationDeleteError": "예약 삭제 중 오류가 발생했습니다: ",
       "reservationDeleteErrorGeneric": "예약 삭제 중 오류가 발생했습니다.",
       "customerDeleted": "고객이 성공적으로 삭제되었습니다!",
@@ -1910,7 +1914,8 @@
       "pending": "대기 중",
       "confirmed": "확정됨",
       "completed": "완료됨",
-      "cancelled": "취소됨"
+      "cancelled": "취소됨",
+      "deleted": "삭제됨"
     },
     "reservationOptions": {
       "title": "예약 옵션",

@@ -54,6 +54,7 @@ interface AssignmentManagementProps {
   onAssignReservation?: (reservationId: string) => void
   onUnassignReservation: (reservationId: string) => void
   onReassignFromOtherTour: (reservationId: string, fromTourId: string) => void
+  onStatusChange?: (reservationId: string, newStatus: string) => Promise<void>
   onNavigateToTour?: (tourId: string) => void
   onEditPickupTime?: (reservation: Reservation) => void
   onEditPickupHotel?: (reservation: Reservation) => void
@@ -85,6 +86,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
   onAssignReservation,
   onUnassignReservation,
   onReassignFromOtherTour,
+  onStatusChange,
   onNavigateToTour,
   onEditPickupTime,
   onEditPickupHotel,
@@ -313,6 +315,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               emptyMessage={t('noAssignedReservations')}
               onEditReservation={onEditReservationClick}
               onUnassignReservation={onUnassignReservation}
+              {...(onStatusChange && { onStatusChange })}
               {...(onEditPickupTime && { onEditPickupTime })}
               {...(onEditPickupHotel && { onEditPickupHotel })}
               getCustomerName={getCustomerName}
@@ -333,6 +336,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               emptyMessage={t('noPendingReservations')}
               onEditReservation={onEditReservationClick}
               {...(onAssignReservation && { onAssignReservation })}
+              {...(onStatusChange && { onStatusChange })}
               {...(onEditPickupTime && { onEditPickupTime })}
               {...(onEditPickupHotel && { onEditPickupHotel })}
               getCustomerName={getCustomerName}
@@ -464,6 +468,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
                            emptyMessage=""
                            onEditReservation={onEditReservationClick}
                            onReassignFromOtherTour={onReassignFromOtherTour}
+                           {...(onStatusChange && { onStatusChange })}
                            {...(onEditPickupTime && { onEditPickupTime })}
                            {...(onEditPickupHotel && { onEditPickupHotel })}
                            getCustomerName={getCustomerName}
@@ -489,6 +494,7 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
               showStatus={true}
               emptyMessage={t('noOtherStatusReservations')}
               onEditReservation={onEditReservationClick}
+              {...(onStatusChange && { onStatusChange })}
               {...(onEditPickupTime && { onEditPickupTime })}
               {...(onEditPickupHotel && { onEditPickupHotel })}
               getCustomerName={getCustomerName}

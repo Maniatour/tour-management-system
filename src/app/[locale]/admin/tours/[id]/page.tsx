@@ -928,6 +928,75 @@ export default function TourDetailPage() {
     }
   }
 
+  const handleReservationStatusChange = async (reservationId: string, newStatus: string) => {
+    const { error } = await supabase
+      .from('reservations')
+      .update({ status: newStatus })
+      .eq('id', reservationId)
+    if (error) {
+      console.error('예약 상태 변경 오류:', error)
+      throw error
+    }
+    await tourData.refreshReservations()
+  }
+
+  const handleCopyTour = async () => {
+    if (!tourData.tour) return
+    const tour = tourData.tour
+    if (!confirm('같은 상품/날짜로 새 투어를 생성하시겠습니까?')) return
+
+    try {
+      const tourId = `tour_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      const { data: newTour, error } = await supabase
+        .from('tours')
+        .insert({
+          id: tourId,
+          product_id: tour.product_id,
+          tour_date: tour.tour_date,
+          reservation_ids: [],
+          tour_status: 'scheduled',
+          is_private_tour: false
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.error('투어 복사 오류:', error)
+        alert('투어 복사 중 오류가 발생했습니다: ' + error.message)
+        return
+      }
+
+      alert('새 투어가 생성되었습니다.')
+      router.push(`/${locale}/admin/tours/${newTour.id}`)
+    } catch (err) {
+      console.error('투어 복사 오류:', err)
+      alert('투어 복사 중 오류가 발생했습니다.')
+    }
+  }
+
+  const handleDeleteTour = async () => {
+    if (!tourData.tour) return
+    if (!confirm('이 투어를 삭제하시겠습니까? 데이터는 삭제되지 않고 투어 상태만 "삭제됨"으로 변경됩니다.')) return
+
+    try {
+      const { error } = await supabase
+        .from('tours')
+        .update({ tour_status: 'Deleted' })
+        .eq('id', tourData.tour.id)
+
+      if (error) {
+        console.error('투어 삭제(상태 변경) 오류:', error)
+        alert('투어 삭제 처리 중 오류가 발생했습니다: ' + error.message)
+        return
+      }
+
+      alert('투어가 삭제됨 상태로 변경되었습니다.')
+      router.push(`/${locale}/admin/tours`)
+    } catch (err) {
+      console.error('투어 삭제 처리 오류:', err)
+      alert('투어 삭제 처리 중 오류가 발생했습니다.')
+    }
+  }
 
   const handleSavePickupTime = async () => {
     if (!tourData.selectedReservation) return
@@ -1448,6 +1517,8 @@ export default function TourDetailPage() {
         getAssignmentStatusColor={getAssignmentStatusColor}
         getAssignmentStatusText={getAssignmentStatusText}
         onEditClick={() => setShowTourEditModal(true)}
+        onCopyTour={handleCopyTour}
+        onDeleteTour={handleDeleteTour}
         onPrintReceipts={() => setShowBatchReceiptModal(true)}
         onPrintTipEnvelopes={() => setEnvelopeModalVariant('tip')}
         onPrintBalanceEnvelopes={() => setEnvelopeModalVariant('balance')}
@@ -1644,6 +1715,7 @@ export default function TourDetailPage() {
               onEditReservationClick={handleEditReservationClick}
               onAssignReservation={handleAssignReservation}
               onUnassignReservation={handleUnassignReservation}
+              onStatusChange={handleReservationStatusChange}
               onReassignFromOtherTour={() => {}}
               onNavigateToTour={(tourId: string) => {
                 router.push(`/${locale}/admin/tours/${tourId}`)

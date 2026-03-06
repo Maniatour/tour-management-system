@@ -30,6 +30,7 @@ interface ReservationSectionProps {
   onAssignReservation?: (reservationId: string) => void
   onUnassignReservation?: (reservationId: string) => void
   onReassignFromOtherTour?: (reservationId: string, fromTourId: string) => void
+  onStatusChange?: (reservationId: string, newStatus: string) => Promise<void>
   onEditPickupTime?: (reservation: Reservation) => void
   onEditPickupHotel?: (reservation: Reservation) => void
   getCustomerName: (customerId: string) => string
@@ -52,6 +53,7 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
   onAssignReservation,
   onUnassignReservation,
   onReassignFromOtherTour,
+  onStatusChange,
   onEditPickupTime,
   onEditPickupHotel,
   getCustomerName,
@@ -115,6 +117,7 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
               onAssign={onAssignReservation}
               onUnassign={onUnassignReservation}
               onReassign={onReassignFromOtherTour}
+              onStatusChange={onStatusChange}
               onEditPickupTime={onEditPickupTime}
               onEditPickupHotel={onEditPickupHotel}
               getCustomerName={getCustomerName}

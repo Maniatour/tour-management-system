@@ -804,8 +804,11 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       reservation.addedBy.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
       customerSpecialRequests.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
     
-      // 상태 필터
-    const matchesStatus = selectedStatus === 'all' || reservation.status === selectedStatus
+      // 상태 필터 (기본 '전체'에서는 삭제된 예약 제외, 'deleted' 선택 시 삭제된 것만 표시)
+      const matchesStatus =
+        selectedStatus === 'all'
+          ? reservation.status !== 'deleted'
+          : reservation.status === selectedStatus
       
       // 채널 필터
       const matchesChannel = selectedChannel === 'all' || reservation.channelId === selectedChannel
@@ -2253,26 +2256,24 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   }, [])
 
   const handleDeleteReservation = useCallback(async (id: string) => {
-    if (confirm(t('deleteConfirm'))) {
-      try {
-        const { error } = await supabase
-          .from('reservations')
-          .delete()
-          .eq('id', id)
+    if (!confirm(t('messages.reservationDeleteConfirmSoft'))) return
+    try {
+      const { error } = await supabase
+        .from('reservations')
+        .update({ status: 'deleted' })
+        .eq('id', id)
 
-        if (error) {
-          console.error('Error deleting reservation:', error)
-          alert(t('messages.reservationDeleteError') + error.message)
-          return
-        }
-
-        // 성공 시 예약 목록 새로고침
-        await refreshReservations()
-        alert(t('messages.reservationDeleted'))
-      } catch (error) {
+      if (error) {
         console.error('Error deleting reservation:', error)
-        alert(t('messages.reservationDeleteErrorGeneric'))
+        alert(t('messages.reservationDeleteError') + error.message)
+        return
       }
+
+      await refreshReservations()
+      alert(t('messages.reservationDeleted'))
+    } catch (error) {
+      console.error('Error deleting reservation:', error)
+      alert(t('messages.reservationDeleteErrorGeneric'))
     }
   }, [t, refreshReservations])
 

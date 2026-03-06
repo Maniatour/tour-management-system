@@ -21,6 +21,8 @@ interface StatusManagementProps {
   getAssignmentStatusText: (tour: any, locale: string) => string
   locale: string
   onEditClick?: () => void
+  onCopyTour?: () => void
+  onDeleteTour?: () => void | Promise<void>
 }
 
 export const StatusManagement: React.FC<StatusManagementProps> = ({
@@ -41,7 +43,9 @@ export const StatusManagement: React.FC<StatusManagementProps> = ({
   getAssignmentStatusColor,
   getAssignmentStatusText,
   locale,
-  onEditClick
+  onEditClick,
+  onCopyTour,
+  onDeleteTour
 }) => {
   const [showStatusModal, setShowStatusModal] = useState(false)
   
@@ -74,10 +78,10 @@ export const StatusManagement: React.FC<StatusManagementProps> = ({
           {getTotalAssignedPeople} / {getTotalPeopleFiltered} ({Math.max(getTotalPeopleAll - getTotalPeopleFiltered, 0)})
         </div>
         <div className="flex items-center space-x-1">
-          <button className="p-1.5 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
+          <button onClick={onCopyTour} className="p-1.5 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
             <Copy size={16} />
           </button>
-          <button className="p-1.5 text-red-700 bg-red-100 rounded-lg hover:bg-red-200">
+          <button onClick={onDeleteTour} className="p-1.5 text-red-700 bg-red-100 rounded-lg hover:bg-red-200">
             <Trash2 size={16} />
           </button>
           <button 

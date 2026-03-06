@@ -73,7 +73,7 @@ export interface Reservation {
   addedBy: string
   addedTime: string
   tourId: string
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled'
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'deleted'
   /** DB updated_at (상태 변경 순 정렬 등에 사용) */
   updated_at?: string | null
   selectedOptions?: { [optionId: string]: string[] }

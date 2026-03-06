@@ -395,23 +395,23 @@ export default function ReservationDetailsPage() {
   }, [reservation, refreshReservations, tourCreated])
 
   const handleDelete = useCallback(async (id: string) => {
-    if (!confirm(t('deleteConfirm'))) return
+    if (!confirm(t('deleteConfirmSoft'))) return
     try {
       const { error } = await supabase
         .from('reservations')
-        .delete()
+        .update({ status: 'deleted' })
         .eq('id', id)
 
       if (error) {
-        alert('삭제 실패: ' + error.message)
+        alert('삭제 처리 실패: ' + error.message)
         return
       }
       await refreshReservations()
-      alert('삭제되었습니다.')
+      alert('예약이 삭제됨 상태로 변경되었습니다.')
       router.push(`/${params?.locale || 'ko'}/admin/reservations`)
     } catch (e) {
       console.error(e)
-      alert('삭제 중 오류가 발생했습니다.')
+      alert('삭제 처리 중 오류가 발생했습니다.')
     }
   }, [t, refreshReservations, router, params?.locale])
 

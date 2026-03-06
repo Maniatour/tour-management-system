@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
+import AbortErrorHandler from "@/components/AbortErrorHandler";
 
 const inter = Inter({ 
   subsets: ["latin"],
@@ -23,6 +24,7 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body className={inter.className}>
+        <AbortErrorHandler />
         <AuthProvider>
           {children}
         </AuthProvider>

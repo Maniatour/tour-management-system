@@ -4006,7 +4006,6 @@ export default function ReservationForm({
                     pickupHotels={pickupHotels}
                     sanitizeTimeInput={sanitizeTimeInput}
                     t={t}
-                    allowPastDate={allowPastDateEdit}
                     channelSlot={
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">채널</label>

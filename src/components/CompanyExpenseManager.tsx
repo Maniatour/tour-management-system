@@ -53,6 +53,7 @@ export default function CompanyExpenseManager() {
   const [expenses, setExpenses] = useState<CompanyExpense[]>([])
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [teamMembers, setTeamMembers] = useState<Map<string, TeamMember>>(new Map())
+  const [teamList, setTeamList] = useState<Array<{ email: string; name_ko: string | null; display_name: string | null }>>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -83,6 +84,13 @@ export default function CompanyExpenseManager() {
     uploaded_files: []
   })
 
+  const isAbortError = (err: unknown) => {
+    if (err instanceof Error)
+      return err.name === 'AbortError' || err.message?.includes('aborted') || err.message?.includes('signal is aborted')
+    const msg = typeof (err as { message?: string })?.message === 'string' ? (err as { message: string }).message : ''
+    return msg.includes('AbortError') || msg.includes('aborted') || msg.includes('signal is aborted')
+  }
+
   const loadExpenses = useCallback(async () => {
     try {
       setLoading(true)
@@ -102,6 +110,7 @@ export default function CompanyExpenseManager() {
         toast.error(result.error || '지출 목록을 불러올 수 없습니다.')
       }
     } catch (error) {
+      if (isAbortError(error)) return
       console.error('지출 목록 로드 오류:', error)
       toast.error('지출 목록을 불러오는 중 오류가 발생했습니다.')
     } finally {
@@ -119,6 +128,7 @@ export default function CompanyExpenseManager() {
       if (error) throw error
       setVehicles(data || [])
     } catch (error) {
+      if (isAbortError(error)) return
       console.error('차량 목록 로드 오류:', error)
     }
   }, [supabase])
@@ -127,17 +137,26 @@ export default function CompanyExpenseManager() {
     try {
       const { data, error } = await supabase
         .from('team')
-        .select('email, name_ko, name_en')
+        .select('email, name_ko, name_en, display_name')
+        .eq('is_active', true)
+        .order('name_ko')
       
       if (error) {
+        if (isAbortError(error)) return
         console.error('팀 멤버 조회 오류:', error)
         return
       }
       
-      // 이메일을 키로 하는 Map 생성
+      const list = (data || []).map((m: any) => ({
+        email: m.email,
+        name_ko: m.name_ko ?? null,
+        display_name: m.display_name ?? null
+      }))
+      setTeamList(list)
+      
       const memberMap = new Map<string, TeamMember>()
       if (data) {
-        data.forEach(member => {
+        data.forEach((member: any) => {
           if (member && member.email) {
             memberMap.set(member.email.toLowerCase(), member)
           }
@@ -145,9 +164,10 @@ export default function CompanyExpenseManager() {
       }
       setTeamMembers(memberMap)
     } catch (error) {
+      if (isAbortError(error)) return
       console.error('팀 멤버 목록 로드 오류:', error)
-      // 에러가 발생해도 빈 Map으로 설정하여 앱이 계속 작동하도록 함
       setTeamMembers(new Map())
+      setTeamList([])
     }
   }, [])
 
@@ -361,6 +381,24 @@ export default function CompanyExpenseManager() {
     } catch (error) {
       console.error('지출 삭제 오류:', error)
       toast.error('지출 삭제 중 오류가 발생했습니다.')
+    }
+  }
+
+  const updatePaidToEmployeeEmail = async (expenseId: string, email: string | null) => {
+    try {
+      const { error } = await supabase
+        .from('company_expenses')
+        .update({ paid_to_employee_email: email || null, updated_at: new Date().toISOString() })
+        .eq('id', expenseId)
+      if (error) throw error
+      setExpenses(prev =>
+        prev.map((e) => (e.id === expenseId ? { ...e, paid_to_employee_email: email || null } as CompanyExpense : e))
+      )
+      toast.success('직원(이메일)이 저장되었습니다.')
+    } catch (err) {
+      if (isAbortError(err)) return
+      console.error('직원 이메일 수정 오류:', err)
+      toast.error('직원(이메일) 저장에 실패했습니다.')
     }
   }
 
@@ -899,6 +937,15 @@ export default function CompanyExpenseManager() {
                       <span>{expense.submit_on ? new Date(expense.submit_on).toLocaleDateString() : '-'}</span>
                       <span className="text-gray-400">결제처</span>
                       <span className="truncate">{expense.paid_to}</span>
+                      <span className="text-gray-400">직원(이메일)</span>
+                      <span className="truncate">
+                        {(() => {
+                          const email = (expense as { paid_to_employee_email?: string | null }).paid_to_employee_email
+                          if (!email) return '미지정'
+                          const m = teamList.find((x) => x.email === email)
+                          return (m?.display_name || m?.name_ko) || email
+                        })()}
+                      </span>
                       {expense.category && (
                         <>
                           <span className="text-gray-400">카테고리</span>
@@ -924,6 +971,7 @@ export default function CompanyExpenseManager() {
                     <TableHead className="py-2">결제방법</TableHead>
                     <TableHead className="w-32 py-2">카테고리</TableHead>
                     <TableHead className="w-28 py-2">상태</TableHead>
+                    <TableHead className="w-40 py-2">직원(이메일)</TableHead>
                     <TableHead className="py-2">제출자</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -952,6 +1000,24 @@ export default function CompanyExpenseManager() {
                         )}
                       </TableCell>
                       <TableCell className="w-28 py-2">{getStatusBadge(expense.status || 'pending')}</TableCell>
+                      <TableCell className="w-40 py-2" onClick={(e) => e.stopPropagation()}>
+                        <Select
+                          value={(expense as { paid_to_employee_email?: string | null }).paid_to_employee_email || '__none__'}
+                          onValueChange={(value) => updatePaidToEmployeeEmail(expense.id, value === '__none__' ? null : value)}
+                        >
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue placeholder="미지정" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">미지정</SelectItem>
+                            {teamList.map((m) => (
+                              <SelectItem key={m.email} value={m.email}>
+                                {(m.display_name || m.name_ko) || m.email}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
                       <TableCell className="py-2">
                         {(() => {
                           if (!expense.submit_by) return '-'

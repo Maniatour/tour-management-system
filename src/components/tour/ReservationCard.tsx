@@ -66,6 +66,7 @@ interface ReservationCardProps {
   onAssign?: (reservationId: string) => void
   onUnassign?: (reservationId: string) => void
   onReassign?: (reservationId: string, fromTourId: string) => void
+  onStatusChange?: (reservationId: string, newStatus: string) => Promise<void>
   getCustomerName: (customerId: string) => string
   getCustomerLanguage: (customerId: string) => string
   getChannelInfo?: (channelId: string) => Promise<{ name: string; favicon?: string } | null | undefined>
@@ -85,6 +86,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   onAssign,
   onUnassign,
   onReassign,
+  onStatusChange,
   getCustomerName,
   getCustomerLanguage,
   getChannelInfo,
@@ -107,6 +109,8 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   // setResidentStatusDropdownOpen는 사용되지만 residentStatusDropdownOpen은 현재 읽히지 않음
   const [_residentStatusDropdownOpen, setResidentStatusDropdownOpen] = useState<string | null>(null)
   const [showResidentStatusModal, setShowResidentStatusModal] = useState(false)
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false)
+  const [statusUpdating, setStatusUpdating] = useState(false)
   const [residentStatusCounts, setResidentStatusCounts] = useState({
     usResident: 0,
     nonResident: 0,
@@ -1395,19 +1399,68 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
 
         {/* 오른쪽 상단 - 상태 뱃지 */}
         <div className="flex items-center space-x-2">
-          {/* 상태 뱃지 - 아이콘으로 표시하고 호버시 텍스트 */}
           {showStatus && reservation.status && (
-            <div className="relative group">
-              <div className="p-1 rounded-full hover:bg-gray-100 transition-colors">
-                {getStatusIcon(reservation.status)}
-              </div>
-              <div className="absolute bottom-full right-0 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
-                {getReservationStatusText(reservation.status)}
-                <div className="absolute top-full right-2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
-              </div>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (onStatusChange && isStaff) {
+                    setShowStatusDropdown(prev => !prev)
+                  }
+                }}
+                className={`p-1 rounded-full transition-colors ${onStatusChange && isStaff ? 'hover:bg-gray-200 cursor-pointer' : 'cursor-default hover:bg-gray-100'}`}
+                title={getReservationStatusText(reservation.status)}
+              >
+                {statusUpdating ? (
+                  <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
+                ) : (
+                  getStatusIcon(reservation.status)
+                )}
+              </button>
+              {showStatusDropdown && onStatusChange && isStaff && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={(e) => { e.stopPropagation(); setShowStatusDropdown(false) }} />
+                  <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-30 py-1 min-w-[120px]">
+                    {[
+                      { value: 'confirmed', label: '확인됨', icon: <CheckCircle2 className="w-3.5 h-3.5 text-green-600" /> },
+                      { value: 'pending', label: '대기 중', icon: <AlertCircle className="w-3.5 h-3.5 text-yellow-600" /> },
+                      { value: 'completed', label: '완료됨', icon: <CheckCircle2 className="w-3.5 h-3.5 text-gray-600" /> },
+                      { value: 'cancelled', label: '취소됨', icon: <XCircle className="w-3.5 h-3.5 text-red-600" /> },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={async (e) => {
+                          e.stopPropagation()
+                          if (option.value === reservation.status) {
+                            setShowStatusDropdown(false)
+                            return
+                          }
+                          setStatusUpdating(true)
+                          setShowStatusDropdown(false)
+                          try {
+                            await onStatusChange(reservation.id, option.value)
+                          } catch (err) {
+                            console.error('상태 변경 실패:', err)
+                          } finally {
+                            setStatusUpdating(false)
+                          }
+                        }}
+                        className={`w-full flex items-center space-x-2 px-3 py-1.5 text-xs hover:bg-gray-50 transition-colors ${
+                          option.value === reservation.status ? 'bg-blue-50 font-semibold' : ''
+                        }`}
+                      >
+                        {option.icon}
+                        <span>{option.label}</span>
+                        {option.value === reservation.status && <Check className="w-3 h-3 text-blue-600 ml-auto" />}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
-          
         </div>
       </div>
 

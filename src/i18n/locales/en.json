@@ -1191,8 +1191,9 @@
     "reservationUpdated": "Reservation updated.",
     "reservationUpdateFailed": "Failed to update reservation.",
     "reservationDeleteConfirm": "Are you sure you want to delete this reservation?",
+    "reservationDeleteConfirmSoft": "Delete this reservation? Data will not be removed; only the status will be changed to 'Deleted'.",
     "reservationDeleteError": "Error deleting reservation: ",
-    "reservationDeleted": "Reservation deleted."
+    "reservationDeleted": "Reservation status has been changed to Deleted."
   },
   "tourCourses": {
     "title": "Tour Course Management",
@@ -1738,6 +1739,7 @@
     "reservationsLoading": "reservations loading",
     "completed": "completed",
     "deleteConfirm": "Are you sure you want to delete this reservation?",
+    "deleteConfirmSoft": "Delete this reservation? Data will not be removed; only the status will be changed to 'Deleted'.",
     "cardDeluxe": "Card Deluxe",
     "filters": {
       "allStatus": "All Status",
@@ -1746,6 +1748,7 @@
       "confirmed": "Confirmed",
       "completed": "Completed",
       "cancelled": "Cancelled",
+      "deleted": "Deleted",
       "recruiting": "Recruiting",
       "paymentRequested": "Payment Requested"
     },
@@ -1848,7 +1851,8 @@
       "pickupTimeSaveError": "Error saving pickup time.",
       "pickupHotelUpdateError": "Error updating pickup hotel.",
       "pickupHotelSaveError": "Error saving pickup hotel.",
-      "reservationDeleted": "Reservation has been successfully deleted!",
+      "reservationDeleted": "Reservation status has been changed to Deleted.",
+      "reservationDeleteConfirmSoft": "Delete this reservation? Data will not be removed; only the status will be changed to 'Deleted'.",
       "reservationDeleteError": "Error deleting reservation: ",
       "reservationDeleteErrorGeneric": "Error deleting reservation.",
       "customerDeleted": "Customer has been successfully deleted!",
@@ -1901,7 +1905,8 @@
       "pending": "Pending",
       "confirmed": "Confirmed",
       "completed": "Completed",
-      "cancelled": "Cancelled"
+      "cancelled": "Cancelled",
+      "deleted": "Deleted"
     },
     "reservationOptions": {
       "title": "Reservation Options",

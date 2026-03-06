@@ -26,6 +26,8 @@ interface TourHeaderProps {
   getAssignmentStatusColor: (tour: any) => string
   getAssignmentStatusText: (tour: any, locale: string) => string
   onEditClick?: () => void
+  onCopyTour?: () => void
+  onDeleteTour?: () => void | Promise<void>
   onPrintReceipts?: () => void
   onPrintTipEnvelopes?: () => void
   onPrintBalanceEnvelopes?: () => void
@@ -51,6 +53,8 @@ export default function TourHeader({
   getAssignmentStatusColor,
   getAssignmentStatusText,
   onEditClick,
+  onCopyTour,
+  onDeleteTour,
   onPrintReceipts,
   onPrintTipEnvelopes,
   onPrintBalanceEnvelopes
@@ -147,6 +151,8 @@ export default function TourHeader({
             getAssignmentStatusText={getAssignmentStatusText}
             locale={params.locale}
             onEditClick={onEditClick}
+            onCopyTour={onCopyTour}
+            onDeleteTour={onDeleteTour}
           />
 
           {/* 데스크톱 요약/액션 */}
@@ -183,11 +189,17 @@ export default function TourHeader({
             </div>
             
             <div className="flex space-x-2">
-              <button className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 flex items-center space-x-2">
+              <button 
+                onClick={onCopyTour}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 flex items-center space-x-2"
+              >
                 <Copy size={16} />
                 <span>{t('copy')}</span>
               </button>
-              <button className="px-4 py-2 text-red-700 bg-red-100 rounded-lg hover:bg-red-200 flex items-center space-x-2">
+              <button 
+                onClick={onDeleteTour}
+                className="px-4 py-2 text-red-700 bg-red-100 rounded-lg hover:bg-red-200 flex items-center space-x-2"
+              >
                 <Trash2 size={16} />
                 <span>{t('delete')}</span>
               </button>
