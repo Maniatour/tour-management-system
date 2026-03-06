@@ -82,10 +82,10 @@ async function getReservationFinancialStats(reservationId: string) {
   try {
     console.log('예약 정산 통계 조회 시작:', reservationId)
 
-    // 예약 정보 조회
+    // 예약 정보 조회 (tour_id: 티켓 비용 배분용)
     const { data: reservation, error: reservationError } = await supabase
       .from('reservations')
-      .select('id, customer_id, adults, child, infant, product_id, channel_id, tour_date')
+      .select('id, customer_id, adults, child, infant, product_id, channel_id, tour_date, tour_id')
       .eq('id', reservationId)
       .single()
 
@@ -147,6 +147,7 @@ async function getReservationFinancialStats(reservationId: string) {
 
     const result = {
       reservationId,
+      tourId: (reservation as { tour_id?: string })?.tour_id || '',
       totalRevenue,
       totalExpenses,
       netProfit,
@@ -161,6 +162,7 @@ async function getReservationFinancialStats(reservationId: string) {
     console.error('예약 정산 통계 조회 오류:', error)
     return {
       reservationId,
+      tourId: '',
       totalRevenue: 0,
       totalExpenses: 0,
       netProfit: 0,
@@ -345,6 +347,7 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
           
            return {
              reservationId: reservation.id,
+             tourId: financialStats.tourId || '',
              reservationDate: reservation.tourDate,
              productName: product?.name_ko || 'Unknown',
              subCategory: product?.sub_category || 'Unknown',
@@ -358,7 +361,34 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
         })
 
         // Promise.all로 비동기 처리
-        const resolvedReservationStats = await Promise.all(reservationStatsPromises)
+        let resolvedReservationStats = await Promise.all(reservationStatsPromises)
+
+        // 투어별 티켓 비용 조회 후 예약 수만큼 배분하여 지출에 반영
+        const TICKET_STATUSES = ['confirmed', 'paid', 'Confirmed', 'Confirm', 'completed']
+        const tourIds = [...new Set(resolvedReservationStats.map((r: { tourId?: string }) => r.tourId).filter(Boolean))] as string[]
+        const ticketCostByTour = new Map<string, number>()
+        for (const tourId of tourIds) {
+          const { data: tickets } = await supabase
+            .from('ticket_bookings')
+            .select('expense')
+            .eq('tour_id', tourId)
+            .in('status', TICKET_STATUSES)
+          const sum = (tickets || []).reduce((s: number, t: { expense?: number }) => s + (t.expense || 0), 0)
+          ticketCostByTour.set(tourId, sum)
+        }
+        const reservationCountByTour = tourIds.reduce((acc, tid) => {
+          acc[tid] = resolvedReservationStats.filter((r: { tourId?: string }) => r.tourId === tid).length
+          return acc
+        }, {} as Record<string, number>)
+        resolvedReservationStats = resolvedReservationStats.map((r: { tourId?: string; revenue: number; expenses: number; netProfit: number }) => {
+          const tourId = r.tourId || ''
+          const ticketTotal = tourId ? ticketCostByTour.get(tourId) || 0 : 0
+          const count = tourId ? reservationCountByTour[tourId] || 1 : 1
+          const allocatedTicket = count > 0 ? ticketTotal / count : 0
+          const expenses = r.expenses + allocatedTicket
+          const netProfit = r.revenue - expenses
+          return { ...r, expenses, netProfit }
+        })
 
         // 전체 통계 계산
         const totalReservations = resolvedReservationStats.length
@@ -367,17 +397,21 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
         const netProfit = totalRevenue - totalExpenses
         const averageProfitPerReservation = totalReservations > 0 ? netProfit / totalReservations : 0
 
-        // 지출 분석 (실제 데이터 기반)
+        // 지출 분석 (예약 지출 + 배분된 입장권 비용)
+        const totalAllocatedTicket = Array.from(ticketCostByTour.values()).reduce((a, b) => a + b, 0)
         const expenseCategories = resolvedReservationStats.reduce((categories, reservation) => {
-          // 예약별 지출을 카테고리별로 분류
-          if (reservation.expenses > 0) {
-            if (!categories['예약 지출']) {
-              categories['예약 지출'] = 0
-            }
-            categories['예약 지출'] += reservation.expenses
+          const ticketShare = reservation.tourId && reservationCountByTour[reservation.tourId]
+            ? (ticketCostByTour.get(reservation.tourId) || 0) / reservationCountByTour[reservation.tourId]
+            : 0
+          const otherExpenses = reservation.expenses - ticketShare
+          if (otherExpenses > 0) {
+            categories['예약 지출'] = (categories['예약 지출'] || 0) + otherExpenses
           }
           return categories
         }, {} as Record<string, number>)
+        if (totalAllocatedTicket > 0) {
+          expenseCategories['입장권'] = totalAllocatedTicket
+        }
 
         const expenseBreakdown = Object.entries(expenseCategories).map(([category, amount]) => ({
           category,

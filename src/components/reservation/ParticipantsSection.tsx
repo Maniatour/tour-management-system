@@ -1,5 +1,7 @@
 'use client'
 
+import ReservationEvidenceUpload from '@/components/reservation/ReservationEvidenceUpload'
+
 interface ParticipantsSectionProps {
   formData: {
     adults: number
@@ -19,12 +21,18 @@ interface ParticipantsSectionProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setFormData: (data: any) => void
   t: (key: string) => string
+  /** 예약 ID (있으면 증거 이미지 업로드 섹션 표시) */
+  reservationId?: string | null
+  /** locale for evidence section */
+  locale?: string
 }
 
 export default function ParticipantsSection({
   formData,
   setFormData,
-  t
+  t,
+  reservationId,
+  locale = 'ko'
 }: ParticipantsSectionProps) {
   // 패스 장수에 따라 실제 커버되는 인원 수 계산 (패스 1장 = 4인)
   // 실제 예약 인원을 초과할 수 없음
@@ -224,6 +232,7 @@ export default function ParticipantsSection({
             <span className="block mt-1 text-orange-600">⚠️ 인원 수가 일치하지 않습니다</span>
           )}
         </div>
+        <ReservationEvidenceUpload reservationId={reservationId} compact locale={locale} />
       </div>
 
       {/* 다섯 번째 행: 이벤트 노트 */}

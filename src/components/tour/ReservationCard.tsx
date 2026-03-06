@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
 import { SimplePickupEditModal } from './modals/SimplePickupEditModal'
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
+import ReservationEvidenceUpload from '@/components/reservation/ReservationEvidenceUpload'
 
 interface Reservation {
   id: string
@@ -2067,6 +2068,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
                  >
                    저장
                  </button>
+               </div>
+               <div className="mt-4 pt-4 border-t border-gray-200">
+                 <ReservationEvidenceUpload reservationId={reservation.id} compact />
                </div>
              </div>
           </div>

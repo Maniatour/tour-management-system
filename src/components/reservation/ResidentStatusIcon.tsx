@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { Home, Plane, PlaneTakeoff, HelpCircle, X } from 'lucide-react'
 import { useTranslations, useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
+import ReservationEvidenceUpload from '@/components/reservation/ReservationEvidenceUpload'
 
 interface ResidentStatusIconProps {
   reservationId: string
@@ -464,6 +465,9 @@ export const ResidentStatusIcon: React.FC<ResidentStatusIconProps> = ({
                 >
                   {locale === 'ko' ? '저장' : 'Save'}
                 </button>
+              </div>
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <ReservationEvidenceUpload reservationId={reservationId} compact locale={locale} />
               </div>
             </div>
           </div>

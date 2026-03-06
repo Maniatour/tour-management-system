@@ -3459,6 +3459,16 @@
     "goToDashboard": "Go to Dashboard",
     "currentStatus": "Current Status:"
   },
+  "reservationEvidence": {
+    "hint": "Add images via file upload or paste from clipboard (e.g. US resident / pass proof).",
+    "addAfterSave": "You can add evidence photos after saving the reservation.",
+    "chooseFile": "Choose file",
+    "orPaste": "or paste here",
+    "uploading": "Uploading…",
+    "view": "View",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this attachment?"
+  },
   "teamBoard": {
     "tasks": "Tasks",
     "newTodo": "New Todo",

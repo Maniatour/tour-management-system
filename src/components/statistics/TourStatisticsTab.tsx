@@ -565,12 +565,13 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
         .select('*')
         .eq('tour_id', tourId)
 
-      // 입장권 부킹 상세 조회
+      // 입장권 부킹 상세 조회 (통계와 동일하게 paid·confirmed 등 모두 포함)
+      const TICKET_STATUSES = ['confirmed', 'paid', 'Confirmed', 'Confirm', 'completed']
       const { data: ticketBookings, error: ticketError } = await supabase
         .from('ticket_bookings')
         .select('*')
         .eq('tour_id', tourId)
-        .eq('status', 'confirmed')
+        .in('status', TICKET_STATUSES)
 
       // 호텔 부킹 상세 조회
       const { data: hotelBookings, error: hotelError } = await supabase
@@ -805,184 +806,56 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
     }
   }
 
-  // 투어 통계 데이터 계산 (TourExpenseManager 로직 재사용)
+  // 투어 통계: 서버 API로 일괄 조회 (DB VIEW/인덱스 활용, 클라이언트 N회 조회 제거)
   useEffect(() => {
-    const calculateTourStatistics = async () => {
+    const fetchTourStatistics = async () => {
       setIsCalculating(true)
-
       try {
-        // tours 테이블에서 직접 투어 조회 (날짜 범위 필터링)
-        const { data: toursData, error: toursError } = await supabase
-          .from('tours')
-          .select('id, tour_date, tour_status, reservation_ids, product_id')
-          .gte('tour_date', dateRange.start)
-          .lte('tour_date', dateRange.end)
-
-        if (toursError) {
-          console.error('투어 조회 오류:', toursError)
-          setTourStatisticsData({
-            totalTours: 0,
-            totalRevenue: 0,
-            totalExpenses: 0,
-            netProfit: 0,
-            averageProfitPerTour: 0,
-            totalAdditionalCostRounded: 0,
-            tourStats: [],
-            expenseBreakdown: [],
-            vehicleStats: []
-          })
-          return
-        }
-
-        if (!toursData || toursData.length === 0) {
-          setTourStatisticsData({
-            totalTours: 0,
-            totalRevenue: 0,
-            totalExpenses: 0,
-            netProfit: 0,
-            averageProfitPerTour: 0,
-            totalAdditionalCostRounded: 0,
-            tourStats: [],
-            expenseBreakdown: [],
-            vehicleStats: []
-          })
-          return
-        }
-
-        // 통계 포함 상태: Recruiting, Confirmed, Completed
-        const validTours = toursData.filter(tour => 
-          tour.tour_status === 'Recruiting' || tour.tour_status === 'Confirmed' || tour.tour_status === 'Completed'
-        )
-
-        console.log('유효한 투어:', validTours.length, '개')
-
-        // 상품 정보 조회 (products가 없을 경우를 대비해 직접 조회)
-        const productIds = [...new Set(validTours.map(t => t.product_id).filter(Boolean))] as string[]
-        let productMap = new Map<string, string>()
-        
-        if (products && Array.isArray(products) && products.length > 0) {
-          products.forEach((p: any) => {
-            productMap.set(p.id, p.name_ko || p.name_en || p.name || 'Unknown')
-          })
-        }
-        
-        // products에 없는 상품이 있으면 직접 조회
-        if (productIds.length > 0) {
-          const missingProductIds = productIds.filter(id => !productMap.has(id))
-          if (missingProductIds.length > 0) {
-            const { data: missingProducts } = await supabase
-              .from('products')
-              .select('id, name_ko, name_en, name')
-              .in('id', missingProductIds)
-            
-            if (missingProducts) {
-              missingProducts.forEach((p: any) => {
-                productMap.set(p.id, p.name_ko || p.name_en || p.name || 'Unknown')
-              })
-            }
-          }
-        }
-
-        // 각 투어별로 TourExpenseManager와 동일한 정산 통계 계산
-        const tourStatsPromises = validTours.map(async (tour: any) => {
-          console.log('투어 ID로 정산 통계 조회 시작:', tour.id)
-          const financialStats = await getTourFinancialStats(tour.id)
-          
-          return {
-            tourId: tour.id,
-            tourDate: tour.tour_date,
-            productName: productMap.get(tour.product_id) || 'Unknown',
-            totalPeople: financialStats.totalPeople, // reservation_ids의 예약들의 total_people 합산
-            revenue: financialStats.totalOperatingProfit, // reservation_ids의 예약들의 수익 합산
-            expenses: financialStats.totalExpensesWithFeesAndBookings,
-            netProfit: financialStats.profit,
-            additionalCostRounded: financialStats.totalAdditionalCostRounded,
-            vehicleType: financialStats.totalPeople > 10 ? '대형버스' : '소형버스',
-            gasCost: financialStats.totalExpenses,
-            ticketBookingsCost: financialStats.totalTicketCosts,
-            ticketBookingsEa: financialStats.totalTicketEa ?? 0,
-            hotelBookingsCost: financialStats.totalHotelCosts,
-            guideFee: financialStats.totalFees,
-            assistantFee: 0, // 별도로 계산됨
-            notIncludedPrice: financialStats.totalNotIncludedPrice ?? 0,
-            hasValidTourId: true
-          }
+        const { data: { session } } = await supabase.auth.getSession()
+        const params = new URLSearchParams({
+          start: dateRange.start,
+          end: dateRange.end
         })
-
-        // Promise.all로 비동기 처리
-        const resolvedTourStats = await Promise.all(tourStatsPromises)
-
-        // 전체 통계 계산
-        const totalTours = resolvedTourStats.length
-        const totalRevenue = resolvedTourStats.reduce((sum, tour) => sum + tour.revenue, 0)
-        const totalExpenses = resolvedTourStats.reduce((sum, tour) => sum + tour.expenses, 0)
-        const netProfit = totalRevenue - totalExpenses
-        const averageProfitPerTour = totalTours > 0 ? netProfit / totalTours : 0
-        const totalAdditionalCostRounded = resolvedTourStats.reduce((sum, tour) => sum + (tour.additionalCostRounded || 0), 0)
-
-        // 지출 분석 (실제 데이터 기반)
-        const totalTourExpenses = resolvedTourStats.reduce((sum, tour) => sum + tour.gasCost, 0)
-        const totalTicketBookings = resolvedTourStats.reduce((sum, tour) => sum + tour.ticketBookingsCost, 0)
-        const totalHotelBookings = resolvedTourStats.reduce((sum, tour) => sum + tour.hotelBookingsCost, 0)
-        const totalGuideFees = resolvedTourStats.reduce((sum, tour) => sum + tour.guideFee, 0)
-
-        const expenseBreakdown = [
-          { category: '투어 지출', amount: totalTourExpenses, percentage: 0 },
-          { category: '입장권 부킹', amount: totalTicketBookings, percentage: 0 },
-          { category: '호텔 부킹', amount: totalHotelBookings, percentage: 0 },
-          { category: '가이드/어시스턴트비', amount: totalGuideFees, percentage: 0 }
-        ]
-
-        // 비율 계산
-        expenseBreakdown.forEach(item => {
-          item.percentage = totalExpenses > 0 ? (item.amount / totalExpenses) * 100 : 0
+        const res = await fetch(`/api/statistics/tour-stats?${params}`, {
+          headers: session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : undefined
         })
-
-        // 차량별 통계
-        const vehicleGroups = resolvedTourStats.reduce((groups, tour) => {
-          const vehicleType = tour.vehicleType || '소형버스'
-          
-          if (!groups[vehicleType]) {
-            groups[vehicleType] = {
-              vehicleType,
-              totalTours: 0,
-              totalPeople: 0,
-              totalGasCost: 0
-            }
-          }
-          
-          groups[vehicleType].totalTours++
-          groups[vehicleType].totalPeople += tour.totalPeople
-          groups[vehicleType].totalGasCost += tour.gasCost
-          
-          return groups
-        }, {} as Record<string, any>)
-
-        const vehicleStats = Object.values(vehicleGroups).map((vehicle: any) => ({
-          ...vehicle,
-          averageGasCost: vehicle.totalTours > 0 ? vehicle.totalGasCost / vehicle.totalTours : 0
-        }))
-
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          throw new Error(err?.error || `HTTP ${res.status}`)
+        }
+        const data = await res.json()
         setTourStatisticsData({
-          totalTours,
-          totalRevenue,
-          totalExpenses,
-          netProfit,
-          averageProfitPerTour,
-          totalAdditionalCostRounded,
-          tourStats: resolvedTourStats,
-          expenseBreakdown,
-          vehicleStats
+          totalTours: data.totalTours ?? 0,
+          totalRevenue: data.totalRevenue ?? 0,
+          totalExpenses: data.totalExpenses ?? 0,
+          netProfit: data.netProfit ?? 0,
+          averageProfitPerTour: data.averageProfitPerTour ?? 0,
+          totalAdditionalCostRounded: data.totalAdditionalCostRounded ?? 0,
+          tourStats: data.tourStats ?? [],
+          expenseBreakdown: data.expenseBreakdown ?? [],
+          vehicleStats: data.vehicleStats ?? []
         })
       } catch (error) {
         console.error('투어 통계 계산 오류:', error)
+        setTourStatisticsData({
+          totalTours: 0,
+          totalRevenue: 0,
+          totalExpenses: 0,
+          netProfit: 0,
+          averageProfitPerTour: 0,
+          totalAdditionalCostRounded: 0,
+          tourStats: [],
+          expenseBreakdown: [],
+          vehicleStats: []
+        })
       } finally {
         setIsCalculating(false)
       }
     }
-
-    calculateTourStatistics()
-  }, [reservations, products, dateRange])
+    fetchTourStatistics()
+  }, [dateRange])
 
   // 차량별 가스비 비교 데이터
   const vehicleGasComparison = useMemo(() => {

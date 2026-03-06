@@ -466,6 +466,7 @@ export default function ReservationFormNew({
           if (data.isPrivateTour !== undefined) handleInputChange('is_private_tour', data.isPrivateTour)
         }}
         t={t}
+        reservationId={reservation?.id}
       />
 
       {/* 채널 섹션 */}

@@ -4,7 +4,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { Trash2, Eye, AlertTriangle, X, Mail, Phone, ChevronDown } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
-import { useTranslations } from 'next-intl'
+import { useTranslations, useLocale } from 'next-intl'
 import { sanitizeTimeInput } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -134,6 +134,7 @@ export default function ReservationForm({
   const languageDropdownRef = useRef<HTMLDivElement | null>(null)
   const t = useTranslations('reservations')
   const tCommon = useTranslations('common')
+  const locale = useLocale()
   const customerSearchRef = useRef<HTMLDivElement | null>(null)
   const reservationFormRef = useRef<HTMLFormElement>(null)
   const rez: RezLike = (reservation as unknown as RezLike) || ({} as RezLike)
@@ -149,7 +150,7 @@ export default function ReservationForm({
   const [showDuplicateModal, setShowDuplicateModal] = useState(false)
   const [similarCustomers, setSimilarCustomers] = useState<Customer[]>([])
   const [pendingCustomerData, setPendingCustomerData] = useState<any>(null)
-  const [pendingFormDataState, setPendingFormDataState] = useState<any>(null)
+  const resolvedCustomerIdRef = useRef<string | null>(null)
   
   // 비슷한 이름을 찾는 함수
   const findSimilarCustomers = useCallback((name: string, email?: string, phone?: string): Customer[] => {
@@ -3235,7 +3236,11 @@ export default function ReservationForm({
       // 고객 정보 저장/업데이트 또는 생성 (새 고객 생성 로직을 먼저 처리)
       let finalCustomerId = formData.customerId
       
-      if (!formData.customerId || showNewCustomerForm) {
+      // 중복 고객 모달에서 이미 고객을 생성/선택한 경우, ref에 저장된 ID를 사용
+      if (resolvedCustomerIdRef.current) {
+        finalCustomerId = resolvedCustomerIdRef.current
+        resolvedCustomerIdRef.current = null
+      } else if (!formData.customerId || showNewCustomerForm) {
         // 새 고객 생성
         if (!formData.customerSearch || !formData.customerSearch.trim()) {
           alert('고객 이름을 입력해주세요.')
@@ -3263,7 +3268,6 @@ export default function ReservationForm({
             channel_id: formData.channelId || null,
             status: formData.customerStatus || 'active'
           })
-          setPendingFormDataState(formData)
           setShowDuplicateModal(true)
           return
         }
@@ -3275,14 +3279,14 @@ export default function ReservationForm({
         
         const customerData = {
           id: newCustomerId,
-          name: formData.customerSearch.trim(), // 고객 검색 입력칸의 값을 이름으로 사용
+          name: formData.customerSearch.trim(),
           phone: formData.customerPhone || null,
           email: formData.customerEmail || null,
           address: formData.customerAddress || null,
           language: formData.customerLanguage || 'KR',
           emergency_contact: formData.customerEmergencyContact || null,
           special_requests: formData.customerSpecialRequests || null,
-          channel_id: formData.channelId || null, // 오른쪽 채널 선택기에서 선택한 값 사용
+          channel_id: formData.channelId || null,
           status: formData.customerStatus || 'active'
         }
         
@@ -4024,6 +4028,8 @@ export default function ReservationForm({
                     formData={formData}
                     setFormData={setFormData}
                     t={t}
+                    reservationId={reservation?.id}
+                    locale={locale}
                   />
                 </div>
               </div>
@@ -4236,7 +4242,6 @@ export default function ReservationForm({
                   setShowDuplicateModal(false)
                   setSimilarCustomers([])
                   setPendingCustomerData(null)
-                  setPendingFormDataState(null)
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -4266,21 +4271,17 @@ export default function ReservationForm({
                     key={similarCustomer.id}
                     className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
                     onClick={async () => {
-                      // 기존 고객 선택
+                      // 기존 고객 선택 - ref에 ID를 저장하여 handleSubmit에서 즉시 사용
+                      resolvedCustomerIdRef.current = similarCustomer.id
                       setFormData(prev => ({ ...prev, customerId: similarCustomer.id }))
                       setShowNewCustomerForm(false)
                       setShowDuplicateModal(false)
                       setSimilarCustomers([])
                       setPendingCustomerData(null)
-                      setPendingFormDataState(null)
-                      // 고객 목록 새로고침
-                      await onRefreshCustomers()
-                      // 폼 제출 계속 진행
-                      if (pendingFormDataState) {
-                        const form = document.querySelector('form') as HTMLFormElement
-                        if (form) {
-                          form.requestSubmit()
-                        }
+                      void onRefreshCustomers().catch(() => {})
+                      const form = document.querySelector('form') as HTMLFormElement
+                      if (form) {
+                        form.requestSubmit()
                       }
                     }}
                   >
@@ -4323,7 +4324,6 @@ export default function ReservationForm({
                   setShowDuplicateModal(false)
                   setSimilarCustomers([])
                   setPendingCustomerData(null)
-                  setPendingFormDataState(null)
                 }}
                 className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
               >
@@ -4334,7 +4334,6 @@ export default function ReservationForm({
                 onClick={async () => {
                   // 새로 추가하기
                   if (pendingCustomerData) {
-                    // 랜덤 ID 생성
                     const timestamp = Date.now().toString(36)
                     const randomStr = Math.random().toString(36).substring(2, 8)
                     const newCustomerId = `CUST_${timestamp}_${randomStr}`.toUpperCase()
@@ -4356,22 +4355,24 @@ export default function ReservationForm({
                       return
                     }
                     
+                    // ref에 생성된 고객 ID를 저장하여 handleSubmit에서 즉시 사용
+                    resolvedCustomerIdRef.current = newCustomer.id
                     setFormData(prev => ({ ...prev, customerId: newCustomer.id }))
                     setShowNewCustomerForm(false)
-                    await onRefreshCustomers()
+                    setShowDuplicateModal(false)
+                    setSimilarCustomers([])
+                    setPendingCustomerData(null)
+                    void onRefreshCustomers().catch(() => {})
                     
-                    // 폼 제출 계속 진행
-                    if (pendingFormDataState) {
-                      const form = document.querySelector('form') as HTMLFormElement
-                      if (form) {
-                        form.requestSubmit()
-                      }
+                    const form = document.querySelector('form') as HTMLFormElement
+                    if (form) {
+                      form.requestSubmit()
                     }
+                  } else {
+                    setShowDuplicateModal(false)
+                    setSimilarCustomers([])
+                    setPendingCustomerData(null)
                   }
-                  setShowDuplicateModal(false)
-                  setSimilarCustomers([])
-                  setPendingCustomerData(null)
-                  setPendingFormDataState(null)
                 }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
