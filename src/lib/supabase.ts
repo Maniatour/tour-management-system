@@ -155,6 +155,8 @@ export const updateSupabaseToken = (accessToken: string) => {
       access_token: accessToken,
       refresh_token: localStorage.getItem('sb-refresh-token') || ''
     }).catch(error => {
+      const msg = error?.message ?? String(error)
+      if (msg.includes('AbortError') || msg.includes('aborted') || msg.includes('signal is aborted')) return
       console.error('Failed to update Supabase token:', error)
     })
   }

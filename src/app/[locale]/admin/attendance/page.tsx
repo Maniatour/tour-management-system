@@ -67,6 +67,7 @@ export default function AttendancePage() {
   const [isAddFormOpen, setIsAddFormOpen] = useState(false)
   const [isBiweeklyCalculatorOpen, setIsBiweeklyCalculatorOpen] = useState(false)
   const [isTotalEmployeesModalOpen, setIsTotalEmployeesModalOpen] = useState(false)
+  const [totalEmployeesOverdueCount, setTotalEmployeesOverdueCount] = useState(0)
   const [isTipsShareModalOpen, setIsTipsShareModalOpen] = useState(false)
   const [isBonusCalculatorOpen, setIsBonusCalculatorOpen] = useState(false)
   /** Tips 쉐어 모달에서 예약 클릭 시 예약 수정 모달용 */
@@ -718,8 +719,13 @@ export default function AttendancePage() {
                 </button>
                 <button
                   onClick={() => setIsTotalEmployeesModalOpen(true)}
-                  className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors min-w-[3rem]"
+                  className="relative flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors min-w-[3rem]"
                 >
+                  {totalEmployeesOverdueCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-[10px] font-bold text-white bg-red-500 rounded-full">
+                      {totalEmployeesOverdueCount}
+                    </span>
+                  )}
                   <Users className="w-4 h-4 shrink-0" />
                   <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('totalAll')}</span>
                 </button>
@@ -1091,6 +1097,7 @@ export default function AttendancePage() {
         isOpen={isTotalEmployeesModalOpen}
         onClose={() => setIsTotalEmployeesModalOpen(false)}
         locale={locale}
+        onOverdueCountChange={setTotalEmployeesOverdueCount}
       />
 
       {/* Tips 쉐어 모달 */}

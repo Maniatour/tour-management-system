@@ -16,12 +16,17 @@ export async function GET(request: NextRequest) {
     const category = searchParams.get('category')
     const status = searchParams.get('status')
     const vehicleId = searchParams.get('vehicle_id')
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
+    const limit = Math.min(100, Math.max(10, parseInt(searchParams.get('limit') || '20', 10)))
+    const from = (page - 1) * limit
+    const to = from + limit - 1
     
-    // 기본 쿼리 생성
+    // 기본 쿼리 생성 (count 포함)
     let query = supabase
       .from('company_expenses')
-      .select('*')
+      .select('*', { count: 'exact' })
       .order('submit_on', { ascending: false })
+      .range(from, to)
     
     // 검색 필터 적용
     if (search) {
@@ -43,20 +48,23 @@ export async function GET(request: NextRequest) {
       query = query.eq('vehicle_id', vehicleId)
     }
     
-    const { data, error } = await query
+    const { data, error, count } = await query
     
     if (error) {
       console.error('회사 지출 조회 오류:', error)
       return NextResponse.json({ error: '회사 지출을 조회할 수 없습니다.' }, { status: 500 })
     }
     
+    const total = count ?? 0
+    const totalPages = Math.max(1, Math.ceil(total / limit))
+    
     return NextResponse.json({
       data: data || [],
       pagination: {
-        page: 1,
-        limit: 50,
-        total: data?.length || 0,
-        totalPages: 1
+        page,
+        limit,
+        total,
+        totalPages
       }
     })
   } catch (error) {

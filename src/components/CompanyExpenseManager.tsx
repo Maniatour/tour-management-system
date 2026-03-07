@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Plus, Search, Filter, Edit, Trash2, Eye, CheckCircle, XCircle, Clock, DollarSign } from 'lucide-react'
+import { Plus, Search, Filter, Edit, Trash2, Eye, CheckCircle, XCircle, Clock, DollarSign, ChevronLeft, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 
 type CompanyExpense = Database['public']['Tables']['company_expenses']['Row']
@@ -53,7 +53,8 @@ export default function CompanyExpenseManager() {
   const [expenses, setExpenses] = useState<CompanyExpense[]>([])
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [teamMembers, setTeamMembers] = useState<Map<string, TeamMember>>(new Map())
-  const [teamList, setTeamList] = useState<Array<{ email: string; name_ko: string | null; display_name: string | null }>>([])
+  const [teamList, setTeamList] = useState<Array<{ email: string; name_ko: string | null; display_name: string | null; is_active: boolean }>>([])
+  const [employeeEmailTab, setEmployeeEmailTab] = useState<'active' | 'inactive'>('active')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -62,6 +63,8 @@ export default function CompanyExpenseManager() {
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [vehicleFilter, setVehicleFilter] = useState('all')
+  const [page, setPage] = useState(1)
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 })
   const [isDragOver, setIsDragOver] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   
@@ -91,11 +94,13 @@ export default function CompanyExpenseManager() {
     return msg.includes('AbortError') || msg.includes('aborted') || msg.includes('signal is aborted')
   }
 
+  const limit = 20
   const loadExpenses = useCallback(async () => {
     try {
       setLoading(true)
       const params = new URLSearchParams()
-      
+      params.set('page', String(page))
+      params.set('limit', String(limit))
       if (searchTerm) params.append('search', searchTerm)
       if (categoryFilter && categoryFilter !== 'all') params.append('category', categoryFilter)
       if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter)
@@ -106,6 +111,7 @@ export default function CompanyExpenseManager() {
       
       if (response.ok) {
         setExpenses(result.data || [])
+        setPagination(result.pagination || { page: 1, limit, total: 0, totalPages: 1 })
       } else {
         toast.error(result.error || '지출 목록을 불러올 수 없습니다.')
       }
@@ -116,7 +122,7 @@ export default function CompanyExpenseManager() {
     } finally {
       setLoading(false)
     }
-  }, [searchTerm, categoryFilter, statusFilter, vehicleFilter])
+  }, [searchTerm, categoryFilter, statusFilter, vehicleFilter, page])
 
   const loadVehicles = useCallback(async () => {
     try {
@@ -137,8 +143,8 @@ export default function CompanyExpenseManager() {
     try {
       const { data, error } = await supabase
         .from('team')
-        .select('email, name_ko, name_en, display_name')
-        .eq('is_active', true)
+        .select('email, name_ko, name_en, display_name, is_active')
+        .order('is_active', { ascending: false })
         .order('name_ko')
       
       if (error) {
@@ -150,7 +156,8 @@ export default function CompanyExpenseManager() {
       const list = (data || []).map((m: any) => ({
         email: m.email,
         name_ko: m.name_ko ?? null,
-        display_name: m.display_name ?? null
+        display_name: m.display_name ?? null,
+        is_active: m.is_active !== false
       }))
       setTeamList(list)
       
@@ -170,6 +177,11 @@ export default function CompanyExpenseManager() {
       setTeamList([])
     }
   }, [])
+
+  // 필터 변경 시 1페이지로
+  useEffect(() => {
+    setPage(1)
+  }, [searchTerm, categoryFilter, statusFilter, vehicleFilter])
 
   useEffect(() => {
     loadExpenses()
@@ -906,7 +918,7 @@ export default function CompanyExpenseManager() {
         <CardHeader className="p-3 sm:p-4 lg:p-6 pb-0">
           <CardTitle className="text-base sm:text-lg">{t('expenseList')}</CardTitle>
           <CardDescription className="text-xs sm:text-sm">
-            총 {expenses.length}개의 지출이 등록되어 있습니다.
+            총 {pagination.total}건 {pagination.totalPages > 1 ? `· ${page} / ${pagination.totalPages}페이지` : ''}
           </CardDescription>
         </CardHeader>
         <CardContent className="p-3 sm:p-4 lg:p-6">
@@ -943,7 +955,8 @@ export default function CompanyExpenseManager() {
                           const email = (expense as { paid_to_employee_email?: string | null }).paid_to_employee_email
                           if (!email) return '미지정'
                           const m = teamList.find((x) => x.email === email)
-                          return (m?.display_name || m?.name_ko) || email
+                          const name = (m?.display_name || m?.name_ko) || email
+                          return m && !m.is_active ? `${name} (Inactive)` : name
                         })()}
                       </span>
                       {expense.category && (
@@ -971,7 +984,7 @@ export default function CompanyExpenseManager() {
                     <TableHead className="py-2">결제방법</TableHead>
                     <TableHead className="w-32 py-2">카테고리</TableHead>
                     <TableHead className="w-28 py-2">상태</TableHead>
-                    <TableHead className="w-40 py-2">직원(이메일)</TableHead>
+                    <TableHead className="w-48 py-2">직원(이메일)</TableHead>
                     <TableHead className="py-2">제출자</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1000,23 +1013,49 @@ export default function CompanyExpenseManager() {
                         )}
                       </TableCell>
                       <TableCell className="w-28 py-2">{getStatusBadge(expense.status || 'pending')}</TableCell>
-                      <TableCell className="w-40 py-2" onClick={(e) => e.stopPropagation()}>
-                        <Select
-                          value={(expense as { paid_to_employee_email?: string | null }).paid_to_employee_email || '__none__'}
-                          onValueChange={(value) => updatePaidToEmployeeEmail(expense.id, value === '__none__' ? null : value)}
-                        >
-                          <SelectTrigger className="h-8 text-xs">
-                            <SelectValue placeholder="미지정" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">미지정</SelectItem>
-                            {teamList.map((m) => (
-                              <SelectItem key={m.email} value={m.email}>
-                                {(m.display_name || m.name_ko) || m.email}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                      <TableCell className="w-48 py-2" onClick={(e) => e.stopPropagation()}>
+                        {(() => {
+                          const currentEmail = (expense as { paid_to_employee_email?: string | null }).paid_to_employee_email || null
+                          const filtered = employeeEmailTab === 'active' ? teamList.filter((m) => m.is_active) : teamList.filter((m) => !m.is_active)
+                          const currentInFiltered = currentEmail ? filtered.find((m) => m.email === currentEmail) : null
+                          const currentMember = currentEmail ? teamList.find((m) => m.email === currentEmail) : null
+                          const options = currentInFiltered ? filtered : (currentMember ? [currentMember, ...filtered] : filtered)
+                          return (
+                            <Select
+                              value={currentEmail || '__none__'}
+                              onValueChange={(value) => updatePaidToEmployeeEmail(expense.id, value === '__none__' ? null : value)}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="미지정" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <div className="flex rounded border border-gray-200 p-0.5 bg-gray-100 mb-2 sticky top-0 z-10" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEmployeeEmailTab('active') }}
+                                    className={`flex-1 px-2 py-1 text-xs rounded ${employeeEmailTab === 'active' ? 'bg-white shadow text-gray-900' : 'text-gray-600 hover:text-gray-900'}`}
+                                  >
+                                    Active
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEmployeeEmailTab('inactive') }}
+                                    className={`flex-1 px-2 py-1 text-xs rounded ${employeeEmailTab === 'inactive' ? 'bg-white shadow text-gray-900' : 'text-gray-600 hover:text-gray-900'}`}
+                                  >
+                                    Inactive
+                                  </button>
+                                </div>
+                                <SelectItem value="__none__">미지정</SelectItem>
+                                {options.map((m) => (
+                                  <SelectItem key={m.email} value={m.email}>
+                                    {(m.display_name || m.name_ko) || m.email}
+                                    {!m.is_active ? ' (Inactive)' : ''}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )
+                        })()}
                       </TableCell>
                       <TableCell className="py-2">
                         {(() => {
@@ -1037,6 +1076,39 @@ export default function CompanyExpenseManager() {
                 </TableBody>
               </Table>
               </div>
+              {/* 페이지 네비게이션 */}
+              {pagination.totalPages > 1 && (
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 pt-4">
+                  <p className="text-xs text-muted-foreground">
+                    {pagination.total}건 중 {(page - 1) * pagination.limit + 1}–{Math.min(page * pagination.limit, pagination.total)} 표시
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={page <= 1 || loading}
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      className="h-8"
+                    >
+                      <ChevronLeft className="w-4 h-4 mr-0.5" />
+                      이전
+                    </Button>
+                    <span className="text-sm text-gray-600 px-2">
+                      {page} / {pagination.totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={page >= pagination.totalPages || loading}
+                      onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
+                      className="h-8"
+                    >
+                      다음
+                      <ChevronRight className="w-4 h-4 ml-0.5" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </CardContent>

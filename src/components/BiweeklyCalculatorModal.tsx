@@ -83,15 +83,22 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   } | null>(null)
   const printContentRef = useRef<HTMLDivElement>(null)
 
+  // 로컬 날짜를 YYYY-MM-DD로 (toISOString은 UTC라 타임존에서 하루 어긋날 수 있음)
+  const toLocalDateString = (d: Date) => {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+
   // 현재 날짜 기준으로 기본값 설정
   const getDefaultDates = () => {
     const today = new Date()
     const twoWeeksAgo = new Date(today)
     twoWeeksAgo.setDate(today.getDate() - 13) // 14일 전이 아닌 13일 전으로 설정 (오늘 포함)
-    
     return {
-      start: twoWeeksAgo.toISOString().split('T')[0],
-      end: today.toISOString().split('T')[0]
+      start: toLocalDateString(twoWeeksAgo),
+      end: toLocalDateString(today)
     }
   }
 
@@ -99,44 +106,32 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   const setCurrentPeriod = () => {
     const today = new Date()
     const day = today.getDate()
-    
-    let startDate, endDate
-    
+    let startDate: Date, endDate: Date
     if (day >= 1 && day <= 15) {
-      // 1~15일: 이번 달 1일~15일
       startDate = new Date(today.getFullYear(), today.getMonth(), 1)
       endDate = new Date(today.getFullYear(), today.getMonth(), 15)
     } else {
-      // 16일~말일: 이번 달 16일~말일
       startDate = new Date(today.getFullYear(), today.getMonth(), 16)
-      endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0) // 다음 달 0일 = 이번 달 말일
+      endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0)
     }
-    
-    setStartDate(startDate.toISOString().split('T')[0])
-    setEndDate(endDate.toISOString().split('T')[0])
+    setStartDate(toLocalDateString(startDate))
+    setEndDate(toLocalDateString(endDate))
   }
 
   // 지난 기간 설정 함수
   const setPreviousPeriod = () => {
     const today = new Date()
     const day = today.getDate()
-    
-    let startDate, endDate
-    
+    let startDate: Date, endDate: Date
     if (day >= 1 && day <= 15) {
-      // 현재가 1~15일이면 지난 달 16일~말일
-      const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 16)
-      const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0) // 이번 달 0일 = 지난 달 말일
-      startDate = lastMonth
-      endDate = lastMonthEnd
+      startDate = new Date(today.getFullYear(), today.getMonth() - 1, 16)
+      endDate = new Date(today.getFullYear(), today.getMonth(), 0)
     } else {
-      // 현재가 16일~말일이면 이번 달 1일~15일
       startDate = new Date(today.getFullYear(), today.getMonth(), 1)
       endDate = new Date(today.getFullYear(), today.getMonth(), 15)
     }
-    
-    setStartDate(startDate.toISOString().split('T')[0])
-    setEndDate(endDate.toISOString().split('T')[0])
+    setStartDate(toLocalDateString(startDate))
+    setEndDate(toLocalDateString(endDate))
   }
 
   // 팀 멤버 목록 조회 (op와 office manager만)
@@ -420,7 +415,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               .from('tour_tip_shares')
               .select('total_tip, guide_amount, assistant_amount')
               .eq('tour_id', tour.id)
-              .single()
+              .maybeSingle()
 
             if (!tipShareError && tipShareData) {
               // tour_tip_shares에 값이 있으면 그것을 사용
@@ -846,9 +841,9 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
           .from('tour_tip_shares')
           .select('id, total_tip, guide_amount, assistant_amount')
           .eq('tour_id', tourId)
-          .single()
+          .maybeSingle()
 
-        if (tipShareError && tipShareError.code !== 'PGRST116') {
+        if (tipShareError) {
           console.error('팁 쉐어 조회 오류:', tipShareError)
           fetchTourFees()
           return
