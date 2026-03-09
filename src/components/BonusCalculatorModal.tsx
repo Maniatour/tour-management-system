@@ -16,6 +16,19 @@ const NON_RESIDENT_OPTION_ID = '6941b5d0' // 비거주자 비용 옵션
 /** reservation_choices fallback용 (option_key) */
 const NON_RESIDENT_OPTION_KEY = 'non_resident'
 
+const BONUS_CALC_STORAGE_KEY_START = 'bonusCalculator_startDate'
+const BONUS_CALC_STORAGE_KEY_END = 'bonusCalculator_endDate'
+
+/** 계산법 2: 밤도깨비 투어 또는 그랜드서클 당일 투어 여부 (products.name_ko 기준) */
+function isEligibleTourForMethod2(tourNameKo: string | null | undefined): boolean {
+  const name = (tourNameKo || '').trim()
+  if (!name) return false
+  if (name.includes('밤도깨비')) return true
+  if (name.includes('그랜드서클') && name.includes('당일')) return true
+  if (name.includes('그랜드 서클') && name.includes('당일')) return true
+  return false
+}
+
 /** 카드 수수료 등이 포함된 금액을 순수 비거주자 비용 기준으로 $100 단위 내림 (예: $105 → $100) */
 function roundNonResidentOptionTo100(amount: number): number {
   return Math.floor(Number(amount) / 100) * 100
@@ -207,10 +220,19 @@ interface TourBonus {
   }>
 }
 
+function getStoredStartDate(): string {
+  if (typeof window === 'undefined') return ''
+  return localStorage.getItem(BONUS_CALC_STORAGE_KEY_START) || ''
+}
+function getStoredEndDate(): string {
+  if (typeof window === 'undefined') return ''
+  return localStorage.getItem(BONUS_CALC_STORAGE_KEY_END) || ''
+}
+
 export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }: BonusCalculatorModalProps) {
   const { authUser } = useAuth()
-  const [startDate, setStartDate] = useState<string>('')
-  const [endDate, setEndDate] = useState<string>('')
+  const [startDate, setStartDate] = useState<string>(getStoredStartDate)
+  const [endDate, setEndDate] = useState<string>(getStoredEndDate)
   const [selectedEmployee, setSelectedEmployee] = useState<string>('')
   const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string}>>([])
   const [tourBonuses, setTourBonuses] = useState<TourBonus[]>([])
@@ -226,6 +248,38 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
   const [viewMode, setViewMode] = useState<'individual' | 'all'>('individual')
   const [allBonusSummary, setAllBonusSummary] = useState<GuideBonusSummary[]>([])
   const [loadingAllBonus, setLoadingAllBonus] = useState(false)
+  /** 계산법 1 = 기존(비거주자 옵션의 %를 가이드/드라이버 각각), 계산법 2 = 비거주자 총합의 %를 투어 횟수로 배분 */
+  const [calculationMethod, setCalculationMethod] = useState<1 | 2>(1)
+  /** 계산법 2 전용: 밤도깨비·그랜드서클 당일 투어 기준 배분 결과 */
+  const [method2Data, setMethod2Data] = useState<{
+    totalNonResidentOption: number
+    totalEligibleTours: number
+    bonusPool: number
+    perTourAmount: number
+    guideSummaries: Array<{
+      guide_email: string
+      guide_name: string
+      eligibleTourCount: number
+      guide_bonus: number
+      tours: Array<{
+        tour_date: string
+        tour_name: string
+        tour_id: string
+        total_tour_people: number
+        guide_name: string | null
+        driver_name: string | null
+        non_resident_option_total: number
+      }>
+    }>
+  } | null>(null)
+  /** 계산법 2 가이드 행 펼침 (상세 투어 목록) */
+  const [expandedGuideEmailMethod2, setExpandedGuideEmailMethod2] = useState<string | null>(null)
+  /** 계산법 2: 직원별 보너스 입력(조정) 값 — 없으면 계산값 사용 */
+  const [method2BonusOverrides, setMethod2BonusOverrides] = useState<Record<string, number>>({})
+  /** 계산법 2: 행별 지불 진행 중 (email 기준) */
+  const [payingMethod2Email, setPayingMethod2Email] = useState<string | null>(null)
+  /** 계산법 2: 1참여당 금액 수정값 — null이면 계산값(보너스풀÷참여수) 사용 */
+  const [method2PerParticipationOverride, setMethod2PerParticipationOverride] = useState<number | null>(null)
   /** 비거주자 옵션 총합 대비 보너스 지급률(%) — 가이드/드라이버 각각 적용 */
   const [bonusPercent, setBonusPercent] = useState<number>(10)
   /** 개인 보너스: 확장된 투어 row (비거주자 옵션 예약 상세) */
@@ -288,6 +342,13 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
     setEndDate(endDate.toISOString().split('T')[0])
   }
 
+  // 시작일·종료일 변경 시 로컬 스토리지에 저장 (새로고침 후에도 유지)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (startDate) localStorage.setItem(BONUS_CALC_STORAGE_KEY_START, startDate)
+    if (endDate) localStorage.setItem(BONUS_CALC_STORAGE_KEY_END, endDate)
+  }, [startDate, endDate])
+
   // 팀 멤버 목록 조회 (가이드와 드라이버만)
   const fetchTeamMembers = async () => {
     try {
@@ -318,10 +379,10 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
         setSelectedEmployee(filteredMembers[0].email)
       }
 
-      // 기본 날짜 설정
+      // 저장된 날짜가 없을 때만 기본 날짜 설정
       const defaultDates = getDefaultDates()
-      setStartDate(defaultDates.start)
-      setEndDate(defaultDates.end)
+      setStartDate(prev => prev || defaultDates.start)
+      setEndDate(prev => prev || defaultDates.end)
     } catch (error) {
       console.error('팀 멤버 조회 오류:', error)
     }
@@ -725,6 +786,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
           driver_bonus: 0,
           review_bonus_points: 0
         })))
+        setMethod2Data({ totalNonResidentOption: 0, totalEligibleTours: 0, bonusPool: 0, perTourAmount: 0, guideSummaries: [] })
         return
       }
 
@@ -752,6 +814,19 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
           driver_bonus: 0,
           review_bonus_points: 0
         })))
+        setMethod2Data({
+          totalNonResidentOption: 0,
+          totalEligibleTours: 0,
+          bonusPool: 0,
+          perTourAmount: 0,
+          guideSummaries: activeGuides.map(g => ({
+            guide_email: g.email,
+            guide_name: g.name_ko || g.email,
+            eligibleTourCount: 0,
+            guide_bonus: 0,
+            tours: []
+          }))
+        })
         return
       }
 
@@ -900,9 +975,60 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
         }
       }
       setAllBonusSummary(Array.from(byGuide.values()).sort((a, b) => (a.guide_name || '').localeCompare(b.guide_name || '')))
+
+      // 계산법 2: 비거주자 총합의 %를 밤도깨비/그랜드서클 당일 투어 참여(가이드+드라이버/어시스턴트) 횟수로 배분
+      const totalNonResidentAll = withSaved.reduce((s, r) => s + r.non_resident_option_total, 0)
+      const eligibleTours = toursData.filter(t =>
+        isEligibleTourForMethod2((t.products as { name_ko?: string })?.name_ko)
+      )
+      const totalParticipations = eligibleTours.reduce(
+        (s, t) => s + (t.tour_guide_id ? 1 : 0) + (t.assistant_id ? 1 : 0),
+        0
+      )
+      const rate = Math.max(0, Math.min(100, bonusPercent)) / 100
+      const bonusPool = totalNonResidentAll * rate
+      const perParticipationAmount = totalParticipations > 0 ? bonusPool / totalParticipations : 0
+      const participantEmails = [...new Set(eligibleTours.flatMap(t => [t.tour_guide_id, t.assistant_id].filter(Boolean) as string[]))]
+      const guideSummaries = participantEmails.map(email => {
+        const asGuide = eligibleTours.filter(t => t.tour_guide_id === email)
+        const asDriver = eligibleTours.filter(t => t.assistant_id === email)
+        const count = asGuide.length + asDriver.length
+        const toTourRow = (t: (typeof eligibleTours)[0]) => {
+          const i = toursData.findIndex(tour => tour.id === t.id)
+          const base = i >= 0 ? tourDetailBase[i] : null
+          return {
+            tour_date: t.tour_date,
+            tour_name: (t.products as { name_ko?: string })?.name_ko || '투어명 없음',
+            tour_id: t.id,
+            total_tour_people: base?.total_tour_people ?? 0,
+            guide_name: base?.guide_name ?? null,
+            driver_name: base?.driver_name ?? null,
+            non_resident_option_total: base?.non_resident_option_total ?? 0
+          }
+        }
+        const tours = [
+          ...asGuide.map(t => toTourRow(t)),
+          ...asDriver.map(t => toTourRow(t))
+        ].sort((a, b) => a.tour_date.localeCompare(b.tour_date))
+        return {
+          guide_email: email,
+          guide_name: nameMap[email] || email,
+          eligibleTourCount: count,
+          guide_bonus: Math.round(perParticipationAmount * count * 100) / 100,
+          tours
+        }
+      }).sort((a, b) => (a.guide_name || '').localeCompare(b.guide_name || ''))
+      setMethod2Data({
+        totalNonResidentOption: totalNonResidentAll,
+        totalEligibleTours: totalParticipations,
+        bonusPool,
+        perTourAmount: perParticipationAmount,
+        guideSummaries
+      })
     } catch (error) {
       console.error('전체 보너스 조회 오류:', error)
       setAllBonusSummary([])
+      setMethod2Data(null)
     } finally {
       setLoadingAllBonus(false)
     }
@@ -1112,6 +1238,54 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
     }
   }
 
+  // 계산법 2: 해당 직원만 회사 지출에 추가 (보너스 입력값 또는 1참여당금액×참여횟수 사용)
+  const handleMethod2PaymentSingle = async (guideEmail: string) => {
+    if (!method2Data) return
+    if (!authUser?.email) {
+      alert('로그인이 필요합니다.')
+      return
+    }
+    const row = method2Data.guideSummaries.find(r => r.guide_email === guideEmail)
+    if (!row) return
+    const effectivePerParticipation = method2PerParticipationOverride ?? method2Data.perTourAmount
+    const rowBonus = Math.round(effectivePerParticipation * row.eligibleTourCount * 100) / 100
+    const amount = method2BonusOverrides[guideEmail] ?? rowBonus
+    if (amount <= 0) {
+      alert('지불할 보너스 금액이 0 이하입니다. 보너스 입력을 조정해주세요.')
+      return
+    }
+    if (!confirm(`${row.guide_name}님에게 ${formatCurrency(amount)} 보너스를 지불하고 회사 지출에 추가하시겠습니까?`)) return
+
+    setPayingMethod2Email(guideEmail)
+    try {
+      const expenseId = `BONUS_M2_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+      const { error } = await supabase
+        .from('company_expenses')
+        .insert({
+          id: expenseId,
+          paid_to: row.guide_name,
+          paid_to_employee_email: guideEmail,
+          paid_for: `보너스(계산법2) - ${row.guide_name}`,
+          description: `${startDate} ~ ${endDate} 기간 밤도깨비·그랜드서클 당일 투어 참여 보너스`,
+          amount,
+          payment_method: 'cash',
+          submit_by: authUser.email,
+          category: 'payroll',
+          subcategory: 'bonus',
+          status: 'approved',
+          expense_type: 'operating',
+          tax_deductible: true
+        })
+      if (error) throw error
+      alert(`${row.guide_name}님 보너스가 회사 지출에 추가되었습니다.`)
+    } catch (error: any) {
+      console.error('계산법2 개별 지불 오류:', error)
+      alert('지불 처리 중 오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'))
+    } finally {
+      setPayingMethod2Email(null)
+    }
+  }
+
   // 날짜·직원·보너스% 변경 시 투어 보너스 조회
   useEffect(() => {
     if (viewMode === 'individual' && selectedEmployee && startDate && endDate) {
@@ -1149,10 +1323,8 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
     })
   }
 
-  // 모달 닫기
+  // 모달 닫기 (시작일·종료일은 로컬 저장되어 유지)
   const handleClose = () => {
-    setStartDate('')
-    setEndDate('')
     setSelectedEmployee('')
     setTourBonuses([])
     setTotalNonResidentOption(0)
@@ -1160,6 +1332,12 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
     setTotalDriverBonus(0)
     setViewMode('individual')
     setAllBonusSummary([])
+    setCalculationMethod(1)
+    setMethod2Data(null)
+    setMethod2BonusOverrides({})
+    setMethod2PerParticipationOverride(null)
+    setExpandedGuideEmailMethod2(null)
+    setPayingMethod2Email(null)
     setExpandedTourId(null)
     setTourOptionDetails({})
     setExpandedGuideEmail(null)
@@ -1170,25 +1348,25 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-[1400px] w-full mx-4 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-lg shadow-xl max-w-[1400px] w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto flex flex-col">
         {/* 헤더 */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <div className="flex items-center gap-3">
-            <Calculator className="w-6 h-6 text-blue-600 mr-2" />
-            <h2 className="text-xl font-bold text-gray-900">보너스 계산기</h2>
-            <div className="flex rounded-lg border border-gray-300 p-0.5 bg-gray-50">
+        <div className="flex items-center justify-between gap-2 p-4 sm:p-6 border-b border-gray-200 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
+            <Calculator className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 shrink-0" />
+            <h2 className="text-base sm:text-xl font-bold text-gray-900 truncate">보너스 계산기</h2>
+            <div className="flex rounded-lg border border-gray-300 p-0.5 bg-gray-50 shrink-0">
               <button
                 type="button"
                 onClick={() => setViewMode('individual')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${viewMode === 'individual' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                className={`px-2.5 py-2 sm:px-3 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors min-h-[44px] sm:min-h-0 ${viewMode === 'individual' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
               >
                 개인 보너스
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode('all')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${viewMode === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                className={`px-2.5 py-2 sm:px-3 sm:py-1.5 text-xs sm:text-sm font-medium rounded-md transition-colors min-h-[44px] sm:min-h-0 ${viewMode === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
               >
                 전체 보너스
               </button>
@@ -1196,15 +1374,16 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
           </div>
           <button
             onClick={handleClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="p-2 -m-2 text-gray-400 hover:text-gray-600 transition-colors shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center sm:min-w-0 sm:min-h-0"
+            aria-label="닫기"
           >
             <X className="w-6 h-6" />
           </button>
         </div>
 
         {/* 내용 */}
-        <div className="p-6">
-          <div className={`grid gap-8 mb-6 ${viewMode === 'all' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+        <div className="p-4 sm:p-6 overflow-auto">
+          <div className={`grid gap-6 sm:gap-8 mb-6 ${viewMode === 'all' ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'}`}>
             {/* 왼쪽: 입력 필드들 */}
             <div className="space-y-4">
               {viewMode === 'individual' && (
@@ -1215,11 +1394,11 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                       <User className="w-4 h-4 mr-1" />
                       담당 직원 선택
                     </label>
-                    <div className="flex space-x-2">
+                    <div className="flex flex-col sm:flex-row gap-2 sm:space-x-2 sm:gap-0">
                       <select
                         value={selectedEmployee}
                         onChange={(e) => setSelectedEmployee(e.target.value)}
-                        className="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="flex-1 min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       >
                         <option value="">직원을 선택하세요</option>
                         {teamMembers.map((member) => (
@@ -1228,38 +1407,66 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                           </option>
                         ))}
                       </select>
-                      <button
-                        onClick={setCurrentPeriod}
-                        className="px-2 py-1.5 text-xs font-medium text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700 transition-colors"
-                      >
-                        이번
-                      </button>
-                      <button
-                        onClick={setPreviousPeriod}
-                        className="px-2 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-                      >
-                        지난
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={setCurrentPeriod}
+                          className="flex-1 sm:flex-none min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-xs sm:text-xs font-medium text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+                        >
+                          이번
+                        </button>
+                        <button
+                          onClick={setPreviousPeriod}
+                          className="flex-1 sm:flex-none min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                        >
+                          지난
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </>
               )}
               {viewMode === 'all' && (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-medium text-gray-700">기간 선택 후 가이드별 합계가 표시됩니다.</span>
-                  <button
-                    onClick={setCurrentPeriod}
-                    className="px-2 py-1.5 text-xs font-medium text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700 transition-colors"
-                  >
-                    이번
-                  </button>
-                  <button
-                    onClick={setPreviousPeriod}
-                    className="px-2 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-                  >
-                    지난
-                  </button>
-                </div>
+                <>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-gray-700">기간 선택 후 가이드별 합계가 표시됩니다.</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={setCurrentPeriod}
+                        className="min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-xs font-medium text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+                      >
+                        이번
+                      </button>
+                      <button
+                        onClick={setPreviousPeriod}
+                        className="min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                      >
+                        지난
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 flex-wrap">
+                    <span className="text-sm font-medium text-gray-700">계산법</span>
+                    <div className="flex rounded-lg border border-gray-300 p-0.5 bg-gray-50 w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => setCalculationMethod(1)}
+                        className={`flex-1 sm:flex-none min-h-[44px] sm:min-h-0 px-3 py-2 sm:py-1.5 text-sm font-medium rounded-md transition-colors ${calculationMethod === 1 ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                      >
+                        계산법 1
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCalculationMethod(2)}
+                        className={`flex-1 sm:flex-none min-h-[44px] sm:min-h-0 px-3 py-2 sm:py-1.5 text-sm font-medium rounded-md transition-colors ${calculationMethod === 2 ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                      >
+                        계산법 2
+                      </button>
+                    </div>
+                    <span className="text-xs text-gray-500 hidden sm:inline">
+                      {calculationMethod === 1 ? '비거주자 옵션의 %를 투어별 가이드/드라이버에게 각각 지급' : '비거주자 총합의 %를 밤도깨비·그랜드서클 당일 투어 횟수로 배분'}
+                    </span>
+                  </div>
+                </>
               )}
 
               {/* 날짜 입력 */}
@@ -1273,7 +1480,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
                 <div>
@@ -1285,7 +1492,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                     type="date"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
               </div>
@@ -1296,7 +1503,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                   <DollarSign className="w-4 h-4 inline mr-1" />
                   보너스 지급률 (%)
                 </label>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                   <input
                     type="number"
                     min={0}
@@ -1312,9 +1519,9 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                       if (Number.isNaN(v) || v < 0) setBonusPercent(0)
                       else if (v > 100) setBonusPercent(100)
                     }}
-                    className="w-24 px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full sm:w-24 min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
-                  <span className="text-sm text-gray-600">% (비거주자 옵션 총합 대비, 가이드·드라이버 각각)</span>
+                  <span className="text-xs sm:text-sm text-gray-600">% (비거주자 옵션 총합 대비, 가이드·드라이버 각각)</span>
                 </div>
               </div>
             </div>
@@ -1389,37 +1596,222 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                   <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                   <p className="mt-2 text-gray-600">전체 보너스 집계 중...</p>
                 </div>
-              ) : (
+              ) : calculationMethod === 2 && method2Data ? (
                 <div className="mt-6">
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                    전체 보너스 — 가이드별 합계 ({startDate} ~ {endDate})
+                    전체 보너스 — 계산법 2 ({startDate} ~ {endDate})
                   </h3>
-                  <div className="overflow-x-auto">
+                  {(() => {
+                    const effectivePerParticipation = method2PerParticipationOverride ?? method2Data.perTourAmount
+                    return (
+                      <div className="mb-6 p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200 text-xs sm:text-sm space-y-2 overflow-x-auto">
+                        <p className="font-medium text-gray-800">계산식</p>
+                        <ol className="list-decimal list-inside space-y-1 text-gray-700 min-w-0">
+                          <li>기간 내 비거주자 옵션 총합: <span className="font-bold text-gray-900 bg-amber-100/80 px-1.5 py-0.5 rounded">${formatCurrency(method2Data.totalNonResidentOption)}</span></li>
+                          <li>기간 내 밤도깨비·그랜드서클 당일 투어 참여 횟수(가이드+드라이버/어시스턴트) 합계: <span className="font-bold text-gray-900 bg-amber-100/80 px-1.5 py-0.5 rounded">{method2Data.totalEligibleTours} 참여</span></li>
+                          <li>보너스 풀 = 비거주자 총합 × {bonusPercent}% = ${formatCurrency(method2Data.bonusPool)}</li>
+                          <li className="flex flex-wrap items-center gap-1">
+                            1참여당 금액 = {method2Data.totalEligibleTours > 0 ? (
+                              <>
+                                ${formatCurrency(method2Data.bonusPool)} ÷ {method2Data.totalEligibleTours} ={' '}
+                                <div className="inline-flex items-center min-h-[44px] sm:min-h-0 border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 bg-white">
+                                  <span className="pl-2 text-gray-500 shrink-0">$</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={0.01}
+                                    value={Math.round(effectivePerParticipation * 100) / 100}
+                                    onChange={(e) => {
+                                      const v = parseFloat(e.target.value)
+                                      if (Number.isNaN(v) || v < 0) {
+                                        setMethod2PerParticipationOverride(null)
+                                      } else {
+                                        setMethod2PerParticipationOverride(Math.round(v * 100) / 100)
+                                      }
+                                    }}
+                                    className="w-20 min-w-0 py-2 sm:py-1 pr-2 text-sm border-0 rounded bg-transparent text-gray-900 focus:ring-0 focus:outline-none"
+                                  />
+                                </div>
+                              </>
+                            ) : '참여 0건이라 배분 없음'}
+                          </li>
+                          <li>각 직원 보너스 = 1참여당 금액 × 해당 직원 참여 횟수(가이드 또는 드라이버/어시스턴트)</li>
+                        </ol>
+                      </div>
+                    )
+                  })()}
+                  {(() => {
+                    const effectivePerParticipation = method2PerParticipationOverride ?? method2Data.perTourAmount
+                    return (
+                  <div className="overflow-x-auto -mx-4 sm:mx-0">
+                    <div className="min-w-[640px] px-4 sm:px-0">
                     <table className="min-w-full bg-white border border-gray-200 rounded-lg">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10">
+                          <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10"><span className="sr-only">상세</span></th>
+                          <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">이름</th>
+                          <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">참여 횟수</th>
+                          <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">보너스 계산</th>
+                          <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">보너스 입력</th>
+                          <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">지불</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {method2Data.guideSummaries.map((row) => {
+                          const rowBonus = Math.round(effectivePerParticipation * row.eligibleTourCount * 100) / 100
+                          const rowInputValue = method2BonusOverrides[row.guide_email] !== undefined ? method2BonusOverrides[row.guide_email] : rowBonus
+                          return (
+                          <React.Fragment key={row.guide_email}>
+                            <tr
+                              className="hover:bg-gray-50 cursor-pointer"
+                              onClick={() => setExpandedGuideEmailMethod2(prev => prev === row.guide_email ? null : row.guide_email)}
+                            >
+                              <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-gray-500">
+                                {row.tours.length > 0 ? (expandedGuideEmailMethod2 === row.guide_email ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />) : null}
+                              </td>
+                              <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm font-medium text-gray-900">{row.guide_name}</td>
+                              <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-gray-900 text-left">{row.eligibleTourCount}회</td>
+                              <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-green-600 text-left font-medium">${formatCurrency(rowBonus)}</td>
+                              <td className="px-2 py-2 sm:px-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                                <div className="flex items-center w-24 sm:w-28 min-h-[44px] sm:min-h-0 border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 bg-white">
+                                  <span className="pl-2 text-sm text-gray-500 shrink-0">$</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={0.01}
+                                    value={rowInputValue}
+                                    onChange={(e) => {
+                                      const v = parseFloat(e.target.value)
+                                      setMethod2BonusOverrides(prev => ({
+                                        ...prev,
+                                        [row.guide_email]: Number.isNaN(v) ? 0 : Math.max(0, v)
+                                      }))
+                                    }}
+                                    onBlur={(e) => {
+                                      const v = parseFloat(e.target.value)
+                                      if (Number.isNaN(v) || v < 0) {
+                                        setMethod2BonusOverrides(prev => {
+                                          const next = { ...prev }
+                                          delete next[row.guide_email]
+                                          return next
+                                        })
+                                      }
+                                    }}
+                                    className="w-full min-w-0 py-2 sm:py-1 pr-2 text-sm border-0 rounded bg-transparent text-gray-900 focus:ring-0 focus:outline-none"
+                                  />
+                                </div>
+                              </td>
+                              <td className="px-2 py-2 sm:px-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMethod2PaymentSingle(row.guide_email)}
+                                  disabled={payingMethod2Email !== null}
+                                  className="min-h-[44px] sm:min-h-0 px-3 py-2 sm:py-1.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {payingMethod2Email === row.guide_email ? '처리 중...' : '지불'}
+                                </button>
+                              </td>
+                            </tr>
+                            {expandedGuideEmailMethod2 === row.guide_email && row.tours.length > 0 && (
+                              <tr className="bg-gray-50">
+                                <td colSpan={6} className="px-3 sm:px-4 py-3">
+                                  <div className="text-sm">
+                                    <p className="font-medium text-gray-700 mb-2">해당 직원 밤도깨비·그랜드서클 당일 투어 참여 목록</p>
+                                    <div className="overflow-x-auto -mx-2 sm:mx-0">
+                                    <table className="min-w-full border border-gray-200 rounded bg-white">
+                                      <thead>
+                                        <tr className="bg-gray-100">
+                                          <th className="px-2 sm:px-3 py-1.5 text-left text-xs font-medium text-gray-600">투어 날짜</th>
+                                          <th className="px-2 sm:px-3 py-1.5 text-left text-xs font-medium text-gray-600">투어명</th>
+                                          <th className="px-2 sm:px-3 py-1.5 text-left text-xs font-medium text-gray-600">인원</th>
+                                          <th className="px-2 sm:px-3 py-1.5 text-left text-xs font-medium text-gray-600">동행자</th>
+                                          <th className="px-2 sm:px-3 py-1.5 text-left text-xs font-medium text-gray-600">비거주자 비용</th>
+                                          <th className="px-2 sm:px-3 py-1.5 text-left text-xs font-medium text-gray-600">링크</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {row.tours.map((t) => {
+                                          const companion = [t.guide_name, t.driver_name].filter(n => n && n !== row.guide_name).join(', ') || '-'
+                                          return (
+                                            <tr key={t.tour_id} className="border-t border-gray-100">
+                                              <td className="px-3 py-1.5 text-gray-900">{formatDate(t.tour_date)}</td>
+                                              <td className="px-3 py-1.5 text-gray-900">{t.tour_name}</td>
+                                              <td className="px-3 py-1.5 text-gray-900 text-left">{t.total_tour_people}명</td>
+                                              <td className="px-3 py-1.5 text-gray-900">{companion}</td>
+                                              <td className="px-3 py-1.5 text-gray-900 text-left">${formatCurrency(t.non_resident_option_total)}</td>
+                                              <td className="px-3 py-1.5">
+                                                <Link href={`/${locale}/admin/tours/${t.tour_id}`} className="text-blue-600 hover:underline flex items-center gap-1">
+                                                  <LinkIcon className="w-3 h-3" /> 투어 보기
+                                                </Link>
+                                              </td>
+                                            </tr>
+                                          )
+                                        })}
+                                      </tbody>
+                                    </table>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                          )
+                        })}
+                      </tbody>
+                      <tfoot className="bg-gray-50">
+                        <tr>
+                          <td className="px-2 sm:px-3 py-2 text-sm font-bold text-gray-900" colSpan={2}>총합</td>
+                          <td className="px-2 sm:px-3 py-2 text-sm font-bold text-gray-900 text-left">{method2Data.totalEligibleTours}참여</td>
+                          <td className="px-2 sm:px-3 py-2 text-sm font-bold text-green-600 text-left">
+                            ${formatCurrency(method2Data.guideSummaries.reduce((s, r) => s + Math.round(effectivePerParticipation * r.eligibleTourCount * 100) / 100, 0))}
+                          </td>
+                          <td className="px-2 sm:px-3 py-2 text-sm font-bold text-green-600 text-left">
+                            ${formatCurrency(method2Data.guideSummaries.reduce((s, r) => s + (method2BonusOverrides[r.guide_email] ?? Math.round(effectivePerParticipation * r.eligibleTourCount * 100) / 100), 0))}
+                          </td>
+                          <td className="px-2 sm:px-3 py-2"></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                    </div>
+                  </div>
+                    )
+                  })()}
+                  {method2Data.totalEligibleTours === 0 && (
+                    <p className="mt-4 text-center text-gray-500 text-sm">해당 기간에 밤도깨비 투어 또는 그랜드서클 당일 투어가 없습니다.</p>
+                  )}
+                </div>
+              ) : (
+                <div className="mt-6">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">
+                    전체 보너스 — 계산법 1 가이드별 합계 ({startDate} ~ {endDate})
+                  </h3>
+                  <div className="overflow-x-auto -mx-4 sm:mx-0">
+                    <div className="min-w-[720px] px-4 sm:px-0">
+                    <table className="min-w-full bg-white border border-gray-200 rounded-lg">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10">
                             <span className="sr-only">확장</span>
                           </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             가이드 이름
                           </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             비거주자 인원
                           </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             비거주자 옵션
                           </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             가이드 보너스
                           </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             드라이버 보너스
                           </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             보너스 총합
                           </th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             후기 포인트
                           </th>
                         </tr>
@@ -1431,28 +1823,28 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                               className="hover:bg-gray-50 cursor-pointer"
                               onClick={() => setExpandedGuideEmail(prev => prev === row.guide_email ? null : row.guide_email)}
                             >
-                              <td className="px-2 py-2 whitespace-nowrap text-gray-500">
+                              <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-gray-500">
                                 {expandedGuideEmail === row.guide_email ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                               </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+                              <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm font-medium text-gray-900">
                                 {row.guide_name}
                               </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-left">
+                              <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-gray-900 text-left">
                                 {row.non_resident_count}명
                               </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-left">
+                              <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-gray-900 text-left">
                                 ${formatCurrency(row.non_resident_option_total)}
                               </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-sm text-green-600 text-left font-medium">
+                              <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-green-600 text-left font-medium">
                                 ${formatCurrency(row.guide_bonus)}
                               </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-sm text-purple-600 text-left font-medium">
+                              <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-purple-600 text-left font-medium">
                                 ${formatCurrency(row.driver_bonus)}
                               </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-sm text-blue-600 text-left font-bold">
+                              <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-blue-600 text-left font-bold">
                                 ${formatCurrency(row.guide_bonus + row.driver_bonus)}
                               </td>
-                              <td className="px-3 py-2 whitespace-nowrap text-sm text-left">
+                              <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-left">
                                 <span className={`font-medium ${
                                   row.review_bonus_points > 0 ? 'text-green-600' : 
                                   row.review_bonus_points < 0 ? 'text-red-600' : 
@@ -1464,61 +1856,63 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                             </tr>
                             {expandedGuideEmail === row.guide_email && (guideToursDetailMap[row.guide_email]?.length ? (
                               <tr className="bg-gray-50">
-                                <td colSpan={8} className="px-4 py-3">
+                                <td colSpan={8} className="px-3 sm:px-4 py-3">
                                   <div className="text-sm">
                                     <p className="font-medium text-gray-700 mb-2">해당 직원 투어별 비거주자 옵션 총합 (가이드·어시스턴트/드라이버 참여 모두 포함)</p>
+                                    <div className="overflow-x-auto -mx-2 sm:mx-0">
                                     <table className="min-w-full border border-gray-200 rounded bg-white">
                                       <thead>
                                         <tr className="bg-gray-100">
-                                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">투어 날짜</th>
-                                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">투어 이름</th>
-                                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">가이드</th>
-                                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">어시스턴트/드라이버</th>
-                                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">역할</th>
-                                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">총 투어 인원</th>
-                                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">비거주자 옵션 총합</th>
-                                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">보너스 금액</th>
+                                          <th className="px-2 sm:px-3 py-1.5 text-left text-xs font-medium text-gray-600">투어 날짜</th>
+                                          <th className="px-2 sm:px-3 py-1.5 text-left text-xs font-medium text-gray-600">투어 이름</th>
+                                          <th className="px-2 sm:px-3 py-1.5 text-left text-xs font-medium text-gray-600">가이드</th>
+                                          <th className="px-2 sm:px-3 py-1.5 text-left text-xs font-medium text-gray-600">어시/드라이버</th>
+                                          <th className="px-2 sm:px-3 py-1.5 text-left text-xs font-medium text-gray-600">역할</th>
+                                          <th className="px-2 sm:px-3 py-1.5 text-left text-xs font-medium text-gray-600">인원</th>
+                                          <th className="px-2 sm:px-3 py-1.5 text-left text-xs font-medium text-gray-600">옵션 총합</th>
+                                          <th className="px-2 sm:px-3 py-1.5 text-left text-xs font-medium text-gray-600">보너스</th>
                                         </tr>
                                       </thead>
                                       <tbody>
                                         {guideToursDetailMap[row.guide_email].map((t, idx) => (
                                           <tr key={`${row.guide_email}-${idx}-${t.tour_date}-${t.role}`} className="border-t border-gray-100">
-                                            <td className="px-3 py-1.5 text-gray-900">{t.tour_date}</td>
-                                            <td className="px-3 py-1.5 text-gray-900">{t.tour_name}</td>
-                                            <td className="px-3 py-1.5 text-gray-900">{t.guide_name ?? '-'}</td>
-                                            <td className="px-3 py-1.5 text-gray-900">{t.driver_name ?? '-'}</td>
-                                            <td className="px-3 py-1.5 text-gray-900">{t.role}</td>
-                                            <td className="px-3 py-1.5 text-left text-gray-900">{t.total_tour_people}명</td>
-                                            <td className="px-3 py-1.5 text-left text-gray-900">${formatCurrency(t.non_resident_option_total)}</td>
-                                            <td className="px-3 py-1.5 text-left text-green-600 font-medium">${formatCurrency(t.bonus_amount)}</td>
+                                            <td className="px-2 sm:px-3 py-1.5 text-gray-900">{t.tour_date}</td>
+                                            <td className="px-2 sm:px-3 py-1.5 text-gray-900">{t.tour_name}</td>
+                                            <td className="px-2 sm:px-3 py-1.5 text-gray-900">{t.guide_name ?? '-'}</td>
+                                            <td className="px-2 sm:px-3 py-1.5 text-gray-900">{t.driver_name ?? '-'}</td>
+                                            <td className="px-2 sm:px-3 py-1.5 text-gray-900">{t.role}</td>
+                                            <td className="px-2 sm:px-3 py-1.5 text-left text-gray-900">{t.total_tour_people}명</td>
+                                            <td className="px-2 sm:px-3 py-1.5 text-left text-gray-900">${formatCurrency(t.non_resident_option_total)}</td>
+                                            <td className="px-2 sm:px-3 py-1.5 text-left text-green-600 font-medium">${formatCurrency(t.bonus_amount)}</td>
                                           </tr>
                                         ))}
                                       </tbody>
                                       <tfoot>
                                         <tr className="border-t-2 border-gray-200 bg-gray-50 font-medium">
-                                          <td className="px-3 py-1.5 text-gray-700">총합</td>
-                                          <td className="px-3 py-1.5 text-gray-500">—</td>
-                                          <td className="px-3 py-1.5 text-left text-gray-900">
+                                          <td className="px-2 sm:px-3 py-1.5 text-gray-700">총합</td>
+                                          <td className="px-2 sm:px-3 py-1.5 text-gray-500">—</td>
+                                          <td className="px-2 sm:px-3 py-1.5 text-left text-gray-900">
                                             {guideToursDetailMap[row.guide_email].filter(t => t.role === '가이드').length}회
                                           </td>
-                                          <td className="px-3 py-1.5 text-left text-gray-900">
+                                          <td className="px-2 sm:px-3 py-1.5 text-left text-gray-900">
                                             {guideToursDetailMap[row.guide_email].filter(t => t.role === '어시스턴트/드라이버').length}회
                                           </td>
-                                          <td className="px-3 py-1.5 text-left text-gray-900">
+                                          <td className="px-2 sm:px-3 py-1.5 text-left text-gray-900">
                                             {guideToursDetailMap[row.guide_email].length}회
                                           </td>
-                                          <td className="px-3 py-1.5 text-left text-gray-900">
+                                          <td className="px-2 sm:px-3 py-1.5 text-left text-gray-900">
                                             {guideToursDetailMap[row.guide_email].reduce((s, t) => s + t.total_tour_people, 0)}명
                                           </td>
-                                          <td className="px-3 py-1.5 text-left text-gray-900">
+                                          <td className="px-2 sm:px-3 py-1.5 text-left text-gray-900">
                                             ${formatCurrency(guideToursDetailMap[row.guide_email].reduce((s, t) => s + t.non_resident_option_total, 0))}
                                           </td>
-                                          <td className="px-3 py-1.5 text-left text-green-600 font-medium">
+                                          <td className="px-2 sm:px-3 py-1.5 text-left text-green-600 font-medium">
                                             ${formatCurrency(guideToursDetailMap[row.guide_email].reduce((s, t) => s + t.bonus_amount, 0))}
                                           </td>
                                         </tr>
                                       </tfoot>
                                     </table>
+                                    </div>
                                   </div>
                                 </td>
                               </tr>
@@ -1534,23 +1928,23 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                       </tbody>
                       <tfoot className="bg-gray-50">
                         <tr>
-                          <td className="px-3 py-2 text-sm font-bold text-gray-900" colSpan={2}>총합</td>
-                          <td className="px-3 py-2 text-sm font-bold text-gray-900 text-left">
+                          <td className="px-2 sm:px-3 py-2 text-sm font-bold text-gray-900" colSpan={2}>총합</td>
+                          <td className="px-2 sm:px-3 py-2 text-sm font-bold text-gray-900 text-left">
                             {allBonusSummary.reduce((s, r) => s + r.non_resident_count, 0)}명
                           </td>
-                          <td className="px-3 py-2 text-sm font-bold text-gray-900 text-left">
+                          <td className="px-2 sm:px-3 py-2 text-sm font-bold text-gray-900 text-left">
                             ${formatCurrency(allBonusSummary.reduce((s, r) => s + r.non_resident_option_total, 0))}
                           </td>
-                          <td className="px-3 py-2 text-sm font-bold text-green-600 text-left">
+                          <td className="px-2 sm:px-3 py-2 text-sm font-bold text-green-600 text-left">
                             ${formatCurrency(allBonusSummary.reduce((s, r) => s + r.guide_bonus, 0))}
                           </td>
-                          <td className="px-3 py-2 text-sm font-bold text-purple-600 text-left">
+                          <td className="px-2 sm:px-3 py-2 text-sm font-bold text-purple-600 text-left">
                             ${formatCurrency(allBonusSummary.reduce((s, r) => s + r.driver_bonus, 0))}
                           </td>
-                          <td className="px-3 py-2 text-sm font-bold text-blue-600 text-left">
+                          <td className="px-2 sm:px-3 py-2 text-sm font-bold text-blue-600 text-left">
                             ${formatCurrency(allBonusSummary.reduce((s, r) => s + r.guide_bonus + r.driver_bonus, 0))}
                           </td>
-                          <td className="px-3 py-2 text-sm font-bold text-left">
+                          <td className="px-2 sm:px-3 py-2 text-sm font-bold text-left">
                             <span className={`${
                               allBonusSummary.reduce((s, r) => s + r.review_bonus_points, 0) > 0 ? 'text-green-600' : 
                               allBonusSummary.reduce((s, r) => s + r.review_bonus_points, 0) < 0 ? 'text-red-600' : 
@@ -1565,6 +1959,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                         </tr>
                       </tfoot>
                     </table>
+                    </div>
                   </div>
                   {allBonusSummary.length === 0 && startDate && endDate && !loadingAllBonus && (
                     <p className="mt-4 text-center text-gray-500 text-sm">활성 가이드가 없거나 해당 기간 투어가 없습니다.</p>
@@ -1581,45 +1976,46 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
               <p className="mt-2 text-gray-600">데이터를 불러오는 중...</p>
             </div>
           ) : viewMode === 'individual' && tourBonuses.length > 0 ? (
-            <div className="mt-8">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            <div className="mt-6 sm:mt-8">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">
                 투어 목록 ({tourBonuses.length}개 투어)
               </h3>
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <div className="min-w-[640px] px-4 sm:px-0">
                 <table className="min-w-full bg-white border border-gray-200 rounded-lg">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10">
+                      <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10">
                         <span className="sr-only">확장</span>
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         투어 날짜
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         투어명
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         가이드
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         드라이버
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         비거주자 인원
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         비거주자 옵션
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         가이드 보너스
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         드라이버 보너스
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         후기 포인트
                       </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-2 py-2 sm:px-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         작업
                       </th>
                     </tr>
@@ -1631,7 +2027,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                           className="hover:bg-gray-50 cursor-pointer"
                           onClick={() => toggleTourRowExpand(tour)}
                         >
-                          <td className="px-2 py-2 whitespace-nowrap text-gray-500" onClick={e => e.stopPropagation()}>
+                          <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-gray-500" onClick={e => e.stopPropagation()}>
                             <button
                               type="button"
                               onClick={() => toggleTourRowExpand(tour)}
@@ -1641,10 +2037,10 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                               {expandedTourId === tour.tour_id ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                             </button>
                           </td>
-                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                          <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-gray-900">
                             {formatDate(tour.tour_date)}
                           </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900" onClick={e => e.stopPropagation()}>
+                        <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-gray-900" onClick={e => e.stopPropagation()}>
                           <Link 
                             href={`/${locale}/admin/tours/${tour.tour_id}`}
                             className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer flex items-center"
@@ -1653,20 +2049,20 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                             {tour.tour_name}
                           </Link>
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-gray-900">
                           {tour.guide_name || '-'}
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-gray-900">
                           {tour.driver_name || '-'}
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900 text-center">
+                        <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-gray-900 text-center">
                           {tour.non_resident_count}명
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-gray-900">
                           ${formatCurrency(tour.non_resident_option_total)}
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm" onClick={e => e.stopPropagation()}>
-                          <div className="flex items-center">
+                        <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center min-h-[44px] sm:min-h-0">
                             <span className="text-green-600 font-medium mr-1">$</span>
                             <input
                               type="text"
@@ -1679,13 +2075,13 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                                 const val = parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0
                                 updateBonus(tour.tour_id, 'guide', Math.round(val * 100) / 100)
                               }}
-                              className="w-24 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-green-600 font-medium"
+                              className="w-20 sm:w-24 min-h-[44px] sm:min-h-0 px-2 py-2 sm:py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-green-600 font-medium"
                               placeholder="0.00"
                             />
                           </div>
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm" onClick={e => e.stopPropagation()}>
-                          <div className="flex items-center">
+                        <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center min-h-[44px] sm:min-h-0">
                             <span className="text-purple-600 font-medium mr-1">$</span>
                             <input
                               type="text"
@@ -1698,12 +2094,12 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                                 const val = parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0
                                 updateBonus(tour.tour_id, 'driver', Math.round(val * 100) / 100)
                               }}
-                              className="w-24 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-purple-600 font-medium"
+                              className="w-20 sm:w-24 min-h-[44px] sm:min-h-0 px-2 py-2 sm:py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-purple-600 font-medium"
                               placeholder="0.00"
                             />
                           </div>
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm text-center" onClick={e => e.stopPropagation()}>
+                        <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-center" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center justify-center">
                             <span className={`font-medium ${
                               tour.review_bonus_points > 0 ? 'text-green-600' : 
@@ -1723,7 +2119,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                             )}
                           </div>
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm" onClick={e => e.stopPropagation()}>
+                        <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm" onClick={e => e.stopPropagation()}>
                           <button
                             onClick={() => {
                               const tourBonus = tourBonuses.find(t => t.tour_id === tour.tour_id)
@@ -1732,7 +2128,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                                 updateBonus(tour.tour_id, 'driver', tourBonus.driver_bonus)
                               }
                             }}
-                            className="text-xs text-blue-600 hover:text-blue-800"
+                            className="min-h-[44px] sm:min-h-0 text-xs text-blue-600 hover:text-blue-800 px-2"
                             disabled
                           >
                             -
@@ -1741,7 +2137,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                       </tr>
                       {expandedTourId === tour.tour_id && (
                         <tr className="bg-gray-50">
-                          <td colSpan={11} className="px-4 py-3">
+                          <td colSpan={11} className="px-3 sm:px-4 py-3">
                             {loadingTourDetails === tour.tour_id ? (
                               <div className="flex items-center gap-2 text-sm text-gray-500">
                                 <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent" />
@@ -1750,40 +2146,42 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                             ) : (tourOptionDetails[tour.tour_id]?.length ? (
                               <div className="text-sm">
                                 <p className="font-medium text-gray-700 mb-2">비거주자 옵션 예약별 상세</p>
+                                <div className="overflow-x-auto -mx-2 sm:mx-0">
                                 <table className="min-w-full border border-gray-200 rounded bg-white">
                                   <thead>
                                     <tr className="bg-gray-100">
-                                      <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">예약자 이름</th>
-                                      <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">투어 인원</th>
-                                      <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">옵션 갯수</th>
-                                      <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-600">옵션 총합 가격</th>
+                                      <th className="px-2 sm:px-3 py-1.5 text-left text-xs font-medium text-gray-600">예약자 이름</th>
+                                      <th className="px-2 sm:px-3 py-1.5 text-left text-xs font-medium text-gray-600">투어 인원</th>
+                                      <th className="px-2 sm:px-3 py-1.5 text-left text-xs font-medium text-gray-600">옵션 갯수</th>
+                                      <th className="px-2 sm:px-3 py-1.5 text-left text-xs font-medium text-gray-600">옵션 총합 가격</th>
                                     </tr>
                                   </thead>
                                   <tbody>
                                     {tourOptionDetails[tour.tour_id].map((row, idx) => (
                                       <tr key={idx} className="border-t border-gray-100">
-                                        <td className="px-3 py-1.5 text-gray-900">{row.customer_name}</td>
-                                        <td className="px-3 py-1.5 text-left text-gray-900">{row.headcount}명</td>
-                                        <td className="px-3 py-1.5 text-left text-gray-900">{row.option_count}</td>
-                                        <td className="px-3 py-1.5 text-left text-gray-900">${formatCurrency(row.option_total)}</td>
+                                        <td className="px-2 sm:px-3 py-1.5 text-gray-900">{row.customer_name}</td>
+                                        <td className="px-2 sm:px-3 py-1.5 text-left text-gray-900">{row.headcount}명</td>
+                                        <td className="px-2 sm:px-3 py-1.5 text-left text-gray-900">{row.option_count}</td>
+                                        <td className="px-2 sm:px-3 py-1.5 text-left text-gray-900">${formatCurrency(row.option_total)}</td>
                                       </tr>
                                     ))}
                                   </tbody>
                                   <tfoot>
                                     <tr className="border-t-2 border-gray-200 bg-gray-50 font-medium">
-                                      <td className="px-3 py-1.5 text-gray-700">총합</td>
-                                      <td className="px-3 py-1.5 text-left text-gray-900">
+                                      <td className="px-2 sm:px-3 py-1.5 text-gray-700">총합</td>
+                                      <td className="px-2 sm:px-3 py-1.5 text-left text-gray-900">
                                         {tourOptionDetails[tour.tour_id].reduce((s, r) => s + r.headcount, 0)}명
                                       </td>
-                                      <td className="px-3 py-1.5 text-left text-gray-900">
+                                      <td className="px-2 sm:px-3 py-1.5 text-left text-gray-900">
                                         {tourOptionDetails[tour.tour_id].reduce((s, r) => s + r.option_count, 0)}
                                       </td>
-                                      <td className="px-3 py-1.5 text-left text-gray-900">
+                                      <td className="px-2 sm:px-3 py-1.5 text-left text-gray-900">
                                         ${formatCurrency(roundNonResidentOptionTo100(tourOptionDetails[tour.tour_id].reduce((s, r) => s + r.option_total, 0)))}
                                       </td>
                                     </tr>
                                   </tfoot>
                                 </table>
+                                </div>
                               </div>
                             ) : (
                               <p className="text-sm text-gray-500">비거주자 옵션 예약이 없습니다.</p>
@@ -1796,19 +2194,19 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                   </tbody>
                   <tfoot className="bg-gray-50">
                     <tr>
-                      <td colSpan={6} className="px-3 py-2 text-left text-sm font-medium text-gray-900">
+                      <td colSpan={6} className="px-2 sm:px-3 py-2 text-left text-sm font-medium text-gray-900">
                         총합:
                       </td>
-                      <td className="px-3 py-2 text-sm font-bold text-gray-900">
+                      <td className="px-2 sm:px-3 py-2 text-sm font-bold text-gray-900">
                         ${formatCurrency(totalNonResidentOption)}
                       </td>
-                      <td className="px-3 py-2 text-sm font-bold text-green-600">
+                      <td className="px-2 sm:px-3 py-2 text-sm font-bold text-green-600">
                         ${formatCurrency(totalGuideBonus)}
                       </td>
-                      <td className="px-3 py-2 text-sm font-bold text-purple-600">
+                      <td className="px-2 sm:px-3 py-2 text-sm font-bold text-purple-600">
                         ${formatCurrency(totalDriverBonus)}
                       </td>
-                      <td className="px-3 py-2 text-sm font-bold text-center">
+                      <td className="px-2 sm:px-3 py-2 text-sm font-bold text-center">
                         <span className={`${
                           totalReviewBonusPoints > 0 ? 'text-green-600' : 
                           totalReviewBonusPoints < 0 ? 'text-red-600' : 
@@ -1817,10 +2215,11 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                           {totalReviewBonusPoints > 0 ? '+' : ''}{totalReviewBonusPoints}점
                         </span>
                       </td>
-                      <td className="px-3 py-2"></td>
+                      <td className="px-2 sm:px-3 py-2"></td>
                     </tr>
                   </tfoot>
                 </table>
+                </div>
               </div>
             </div>
           ) : viewMode === 'individual' && selectedEmployee && startDate && endDate ? (

@@ -58,8 +58,11 @@ const labels = {
     date: '날짜',
     description: '설명',
     unitPrice: '단가',
+    unitPriceShort: '단가',
     quantity: '수량',
+    quantityShort: '수량',
     price: '합계',
+    priceShort: '합계',
     subTotal: '소계',
     paidAmount: '입금액',
     deposit: '선입금',
@@ -112,8 +115,11 @@ const labels = {
     date: 'Date',
     description: 'Description',
     unitPrice: 'Unit Price',
+    unitPriceShort: 'Unit',
     quantity: 'Quantity',
+    quantityShort: 'Qty',
     price: 'Price',
+    priceShort: 'Amount',
     subTotal: 'Sub Total',
     paidAmount: 'Paid Amount',
     deposit: 'Deposit',
@@ -186,16 +192,18 @@ function formatMoney(amount: number, currency: string): string {
   return `$${amount.toFixed(2)}`
 }
 
-/** 예약 수정 - 가격 계산의 "고객 총 결제 금액"과 동일한 계산 */
+/** 예약 수정 - 가격 계산의 "고객 총 결제 금액"과 동일한 계산. 옵션 합계를 넘기면 pricing.option_total 대신 사용(영수증 표시 옵션과 일치) */
 function getCustomerTotalPayment(
   pricing: ReceiptData['pricing'],
-  totalPeople: number
+  totalPeople: number,
+  optionsTotal?: number
 ): number {
   const discounted = pricing.product_price_total - pricing.coupon_discount - pricing.additional_discount
   const notIncluded = (pricing.not_included_price ?? 0) * totalPeople
+  const optionSum = optionsTotal !== undefined ? optionsTotal : (pricing.option_total ?? 0)
   return (
     discounted +
-    (pricing.option_total ?? 0) +
+    optionSum +
     (pricing.choices_total ?? 0) +
     notIncluded +
     (pricing.additional_cost ?? 0) +
@@ -442,21 +450,25 @@ export default function CustomerReceiptModal({
     const printStyles = useHalfLayout
       ? `
       *, *::before, *::after { box-sizing: border-box; }
-      html, body { margin: 0 !important; padding: 0 !important; width: 279mm !important; min-height: 0 !important; height: auto !important; background: #fff !important; color: #111 !important; font-size: 12px !important; }
-      .receipt-half-container { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 6mm !important; width: 100% !important; padding: 2mm 3mm !important; min-height: 0 !important; height: auto !important; }
-      .receipt-half-container.receipt-half-batch > * { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 6mm !important; width: 100% !important; min-height: 0 !important; height: auto !important; align-content: start !important; }
+      html { margin: 0 !important; padding: 0 !important; width: 100% !important; min-height: 0 !important; background: #fff !important; }
+      body { margin: 0 !important; padding: 0 !important; width: 100% !important; max-width: 100% !important; min-height: 0 !important; height: auto !important; background: #fff !important; color: #111 !important; font-size: 12px !important; overflow: visible !important; }
+      .receipt-half-container { display: block !important; width: 100% !important; max-width: 100% !important; padding: 0 !important; margin: 0 !important; min-height: 0 !important; height: auto !important; }
+      .receipt-half-container.receipt-half-batch > * { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 6mm !important; width: 100% !important; max-width: 100% !important; min-width: 0 !important; min-height: 0 !important; height: auto !important; align-content: start !important; }
+      .receipt-half-container .receipt-letter { width: 100% !important; max-width: 100% !important; min-width: 0 !important; box-sizing: border-box !important; }
+      .receipt-letter .receipt-logo { width: 7rem !important; height: 2rem !important; min-width: 7rem !important; min-height: 2rem !important; object-fit: contain !important; }
       .receipt-letter { page-break-inside: avoid !important; break-inside: avoid !important; border: none !important; box-shadow: none !important; padding: 2mm !important; font-size: 1rem !important; background: #fff !important; color: #111 !important; max-width: 100% !important; min-height: 0 !important; height: auto !important; }
       .receipt-letter:last-child { page-break-after: auto !important; }
       .receipt-letter * { color: #111 !important; }
       .receipt-letter .receipt-balance-amount { color: #dc2626 !important; }
-      .receipt-letter .receipt-items-table { border-collapse: collapse !important; width: 100% !important; }
+      .receipt-letter .receipt-items-table { border-collapse: collapse !important; width: 100% !important; table-layout: fixed !important; }
       .receipt-letter .receipt-items-table th,
       .receipt-letter .receipt-items-table td { padding: 4px 8px !important; border: none !important; border-bottom: 1px solid #e5e7eb !important; }
       .receipt-letter .receipt-items-table thead th { background: #f3f4f6 !important; }
       .receipt-letter .receipt-items-table tbody tr:last-child td { border-bottom: none !important; border-top: 2px solid #d1d5db !important; }
-      @page { size: 279mm 216mm; margin: 4mm 3mm; }
+      @page { size: 279mm 216mm; margin: 5mm; }
       @media print {
-        html, body { height: auto !important; min-height: 0 !important; }
+        html, body { width: 100% !important; max-width: 100% !important; height: auto !important; min-height: 0 !important; }
+        .receipt-half-container { width: 100% !important; max-width: 100% !important; }
       }
     `
       : `
@@ -467,6 +479,7 @@ export default function CustomerReceiptModal({
       .receipt-letter { border: none !important; box-shadow: none !important; font-size: 1rem !important; }
       .receipt-letter { page-break-after: always; page-break-inside: avoid; }
       .receipt-letter:last-child { page-break-after: auto; }
+      .receipt-letter .receipt-logo { width: 7rem !important; height: 2rem !important; min-width: 7rem !important; min-height: 2rem !important; object-fit: contain !important; }
       .receipt-letter .receipt-summary-email { white-space: nowrap !important; min-width: 0 !important; overflow: visible !important; }
       .receipt-letter .grid > div.min-w-0 { min-width: 0 !important; }
       .receipt-letter .receipt-balance-amount { color: #dc2626 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
@@ -477,7 +490,7 @@ export default function CustomerReceiptModal({
       .filter(Boolean)
     iframeDoc.open()
     const bodyContent = printRoot.outerHTML
-    const bodyAttrs = useHalfLayout ? ' class="receipt-half-body" style="margin:0;padding:0;background:#fff"' : ''
+    const bodyAttrs = useHalfLayout ? ' class="receipt-half-body" style="margin:0;padding:0;background:#fff;width:100%;max-width:100%;box-sizing:border-box"' : ''
     iframeDoc.write(`
       <!DOCTYPE html><html><head><meta charset="utf-8"><title>Receipt</title>
       ${links.map((href) => `<link rel="stylesheet" href="${href}">`).join('')}
@@ -576,7 +589,9 @@ export default function CustomerReceiptModal({
                 const productName = isEn
                   ? (d.product.customer_name_en || d.product.name_en || d.product.customer_name_ko || d.product.name_ko || '')
                   : (d.product.customer_name_ko || d.product.name_ko || d.product.customer_name_en || d.product.name_en || '')
-                const customerTotalPayment = getCustomerTotalPayment(d.pricing, d.reservation.total_people ?? 0)
+                const optionsTotal = (d.reservationOptions || []).reduce((s, o) => s + o.total_price, 0)
+                const customerTotalPayment = getCustomerTotalPayment(d.pricing, d.reservation.total_people ?? 0, optionsTotal)
+                const balanceAmount = customerTotalPayment - (d.pricing.deposit_amount ?? 0)
                 const totalPeople = Math.max(1, d.reservation.total_people ?? 1)
                 const notIncludedPerPerson = d.pricing.not_included_price ?? 0
                 const unitPriceWithNotIncluded = d.pricing.adult_product_price + notIncludedPerPerson
@@ -593,24 +608,19 @@ export default function CustomerReceiptModal({
                   <div
                     key={d.reservation.id}
                     id={`receipt-${d.reservation.id}`}
-                    className="receipt-letter bg-white p-6 w-full max-w-[216mm] box-border"
+                    className="receipt-letter bg-white p-4 w-full max-w-[216mm] box-border"
                     style={{ minHeight: '279mm' }}
                   >
-                    {/* 회사 헤더 */}
-                    <div className="border-b border-gray-200 pb-3 mb-3">
-                      <div className="flex justify-between items-start gap-4">
-                        <div className="flex items-center gap-2">
-                          <img src={COMPANY.logoUrl} alt="" className="w-8 h-8 shrink-0 object-contain" />
-                          <div>
-                            <h2 className="text-lg font-bold text-gray-900">{COMPANY.name}</h2>
-                            <p className="text-sm text-gray-600 mt-1">
-                              {COMPANY.address[0]}
-                              <br />
-                              {COMPANY.address.slice(1).join(', ')}
-                            </p>
-                          </div>
+                    {/* 회사 헤더: 로고(Lic#와 같은 줄) + 주소 2줄 / 연락처 */}
+                    <div className="border-b border-gray-200 pb-2 mb-2">
+                      <div className="flex justify-between items-start gap-3">
+                        <div className="flex flex-col gap-0 min-h-0">
+                          <img src={COMPANY.logoUrl} alt="" className="w-28 h-8 shrink-0 object-contain receipt-logo" />
+                          <p className="text-xs text-gray-600 leading-tight mt-0">
+                            {COMPANY.address.join(', ')}
+                          </p>
                         </div>
-                        <div className="text-right text-sm text-gray-600">
+                        <div className="text-right text-xs text-gray-600">
                           <p>{COMPANY.lic}</p>
                           <p>{COMPANY.email}</p>
                           <p className="text-blue-600 underline">{COMPANY.website}</p>
@@ -620,12 +630,12 @@ export default function CustomerReceiptModal({
                     </div>
 
                     {/* 영수증 제목 */}
-                    <h3 className="text-center font-bold text-gray-900 py-2 mb-3 border-b border-gray-100 text-lg uppercase tracking-wide">
+                    <h3 className="text-center font-bold text-gray-900 py-1.5 mb-2 border-b border-gray-100 text-base uppercase tracking-wide">
                       {L.title}
                     </h3>
 
-                    <div className="mb-4">
-                      <div className="grid grid-cols-[2fr_1fr] gap-x-6 gap-y-1 text-sm">
+                    <div className="mb-2">
+                      <div className="grid grid-cols-[2fr_1fr] gap-x-4 gap-y-0.5 text-xs">
                         <div className="min-w-0">
                           <p><span className="text-gray-600">{L.guest}:</span> {d.customer.name}</p>
                           <p className="receipt-summary-email" title={d.customer.email || undefined}><span className="text-gray-600">{L.email}:</span> {d.customer.email || '—'}</p>
@@ -642,128 +652,128 @@ export default function CustomerReceiptModal({
                     </div>
 
                     {/* 항목 테이블: DATE | DESCRIPTION | UNIT PRICE | QUANTITY | PRICE */}
-                    <div className="border-t border-gray-200 pt-2">
-                      <table className="w-full text-sm border-collapse receipt-items-table">
+                    <div className="border-t border-gray-200 pt-1.5">
+                      <table className="w-full text-xs border-collapse receipt-items-table">
                         <thead>
                           <tr className="bg-gray-100 border-b border-gray-300">
-                            <th className="px-2 py-2 text-left text-sm font-medium text-gray-700 uppercase whitespace-nowrap min-w-[7rem] w-[7rem]">{L.date}</th>
-                            <th className="px-2 py-2 text-left text-sm font-medium text-gray-700 uppercase">{L.description}</th>
-                            <th className="px-2 py-2 text-right text-sm font-medium text-gray-700 uppercase whitespace-nowrap min-w-[5.5rem] w-[5.5rem]">{L.unitPrice}</th>
-                            <th className="px-2 py-2 text-right text-sm font-medium text-gray-700 uppercase">{L.quantity}</th>
-                            <th className="px-2 py-2 text-right text-sm font-medium text-gray-700 uppercase">{L.price}</th>
+                            <th className="px-1.5 py-1.5 text-left text-[10px] font-medium text-gray-700 uppercase whitespace-nowrap min-w-[6rem] w-[6rem]">{L.date}</th>
+                            <th className="px-1.5 py-1.5 text-left text-[10px] font-medium text-gray-700 uppercase">{L.description}</th>
+                            <th className="px-1.5 py-1.5 text-right text-[10px] font-medium text-gray-700 uppercase whitespace-nowrap w-14 min-w-0">{L.unitPriceShort}</th>
+                            <th className="px-1.5 py-1.5 text-right text-[10px] font-medium text-gray-700 uppercase whitespace-nowrap w-8 min-w-0">{L.quantityShort}</th>
+                            <th className="px-1.5 py-1.5 text-right text-[10px] font-medium text-gray-700 uppercase whitespace-nowrap w-14 min-w-0">{L.priceShort}</th>
                           </tr>
                         </thead>
                         <tbody>
                           {/* 상품 */}
                           <tr className="border-b border-gray-100">
-                            <td className="px-2 py-2 text-gray-900 whitespace-nowrap min-w-[7rem] w-[7rem]">{d.reservation.tour_date}</td>
-                            <td className="px-2 py-2 text-gray-900 break-words">{productName}</td>
-                            <td className="px-2 py-2 text-right text-gray-900 whitespace-nowrap min-w-[5.5rem] w-[5.5rem]">{formatMoney(unitPriceWithNotIncluded, cur)}</td>
-                            <td className="px-2 py-2 text-right text-gray-900">{d.reservation.total_people}</td>
-                            <td className="px-2 py-2 text-right text-gray-900">{formatMoney(productRowTotal, cur)}</td>
+                            <td className="px-1.5 py-1 text-gray-900 whitespace-nowrap min-w-[6rem] w-[6rem]">{d.reservation.tour_date}</td>
+                            <td className="px-1.5 py-1 text-gray-900 break-words">{productName}</td>
+                            <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(unitPriceWithNotIncluded, cur)}</td>
+                            <td className="px-1.5 py-1 text-right text-gray-900 w-8 min-w-0">{d.reservation.total_people}</td>
+                            <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(productRowTotal, cur)}</td>
                           </tr>
                           {/* 할인 (상품 바로 아래) */}
                           {(d.pricing.coupon_discount + d.pricing.additional_discount) > 0 && (
                             <tr className="border-b border-gray-100 bg-red-50/30">
-                              <td className="px-2 py-2" />
-                              <td className="px-2 py-2 text-gray-900"><span className="text-gray-500">└ </span>{L.discount}</td>
-                              <td className="px-2 py-2 text-right text-red-600 whitespace-nowrap" colSpan={3}>
+                              <td className="px-1.5 py-1" />
+                              <td className="px-1.5 py-1 text-gray-900"><span className="text-gray-500">└ </span>{L.discount}</td>
+                              <td className="px-1.5 py-1 text-right text-red-600 whitespace-nowrap" colSpan={3}>
                                 -{formatMoney(d.pricing.coupon_discount + d.pricing.additional_discount, cur)}
                               </td>
                             </tr>
                           )}
                           {/* Product Total (상품+불포함 기준 합계 - 할인) */}
                           <tr className="border-b border-gray-100 bg-gray-50/50">
-                            <td className="px-2 py-2" />
-                            <td className="px-2 py-2 font-medium text-gray-900">{L.productTotal}</td>
-                            <td className="px-2 py-2 text-right font-medium text-gray-900 whitespace-nowrap" colSpan={3}>
+                            <td className="px-1.5 py-1" />
+                            <td className="px-1.5 py-1 font-medium text-gray-900">{L.productTotal}</td>
+                            <td className="px-1.5 py-1 text-right font-medium text-gray-900 whitespace-nowrap" colSpan={3}>
                               {formatMoney(productRowTotal - d.pricing.coupon_discount - d.pricing.additional_discount, cur)}
                             </td>
                           </tr>
                           {/* 옵션 */}
                           {(d.reservationOptions || []).map((opt, idx) => (
                             <tr key={idx} className="border-b border-gray-100">
-                              <td className="px-2 py-2 text-gray-900 whitespace-nowrap min-w-[7rem] w-[7rem]">{d.reservation.tour_date}</td>
-                              <td className="px-2 py-2 text-gray-900 break-words"><span className="text-gray-500">└ </span>{opt.option_name}</td>
-                              <td className="px-2 py-2 text-right text-gray-900 whitespace-nowrap min-w-[5.5rem] w-[5.5rem]">{formatMoney(opt.price, cur)}</td>
-                              <td className="px-2 py-2 text-right text-gray-900">{opt.ea}</td>
-                              <td className="px-2 py-2 text-right text-gray-900">{formatMoney(opt.total_price, cur)}</td>
+                              <td className="px-1.5 py-1 text-gray-900 whitespace-nowrap min-w-[6rem] w-[6rem]">{d.reservation.tour_date}</td>
+                              <td className="px-1.5 py-1 text-gray-900 break-words"><span className="text-gray-500">└ </span>{opt.option_name}</td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(opt.price, cur)}</td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 w-8 min-w-0">{opt.ea}</td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(opt.total_price, cur)}</td>
                             </tr>
                           ))}
                           {/* 기타 비용 (세금, 추가비용 등) */}
                           {d.pricing.tax > 0 && (
                             <tr className="border-b border-gray-100">
-                              <td className="px-2 py-2" />
-                              <td className="px-2 py-2 text-gray-900"><span className="text-gray-500">└ </span>{L.tax}</td>
-                              <td className="px-2 py-2 text-right text-gray-900 whitespace-nowrap min-w-[5.5rem] w-[5.5rem]" colSpan={3}>
+                              <td className="px-1.5 py-1" />
+                              <td className="px-1.5 py-1 text-gray-900"><span className="text-gray-500">└ </span>{L.tax}</td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap" colSpan={3}>
                                 {formatMoney(d.pricing.tax, cur)}
                               </td>
                             </tr>
                           )}
                           {d.pricing.additional_cost > 0 && (
                             <tr className="border-b border-gray-100">
-                              <td className="px-2 py-2" />
-                              <td className="px-2 py-2 text-gray-900"><span className="text-gray-500">└ </span>{L.additionalCost}</td>
-                              <td className="px-2 py-2 text-right text-gray-900 whitespace-nowrap min-w-[5.5rem] w-[5.5rem]" colSpan={3}>
+                              <td className="px-1.5 py-1" />
+                              <td className="px-1.5 py-1 text-gray-900"><span className="text-gray-500">└ </span>{L.additionalCost}</td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap" colSpan={3}>
                                 {formatMoney(d.pricing.additional_cost, cur)}
                               </td>
                             </tr>
                           )}
                           {d.pricing.card_fee > 0 && (
                             <tr className="border-b border-gray-100">
-                              <td className="px-2 py-2" />
-                              <td className="px-2 py-2 text-gray-900"><span className="text-gray-500">└ </span>{L.cardFee}</td>
-                              <td className="px-2 py-2 text-right text-gray-900 whitespace-nowrap min-w-[5.5rem] w-[5.5rem]" colSpan={3}>
+                              <td className="px-1.5 py-1" />
+                              <td className="px-1.5 py-1 text-gray-900"><span className="text-gray-500">└ </span>{L.cardFee}</td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap" colSpan={3}>
                                 {formatMoney(d.pricing.card_fee, cur)}
                               </td>
                             </tr>
                           )}
                           {d.pricing.prepayment_cost > 0 && (
                             <tr className="border-b border-gray-100">
-                              <td className="px-2 py-2" />
-                              <td className="px-2 py-2 text-gray-900"><span className="text-gray-500">└ </span>{L.prepaymentCost}</td>
-                              <td className="px-2 py-2 text-right text-gray-900 whitespace-nowrap min-w-[5.5rem] w-[5.5rem]" colSpan={3}>
+                              <td className="px-1.5 py-1" />
+                              <td className="px-1.5 py-1 text-gray-900"><span className="text-gray-500">└ </span>{L.prepaymentCost}</td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap" colSpan={3}>
                                 {formatMoney(d.pricing.prepayment_cost, cur)}
                               </td>
                             </tr>
                           )}
                           {d.pricing.prepayment_tip > 0 && (
                             <tr className="border-b border-gray-100">
-                              <td className="px-2 py-2" />
-                              <td className="px-2 py-2 text-gray-900"><span className="text-gray-500">└ </span>{L.prepaymentTip}</td>
-                              <td className="px-2 py-2 text-right text-gray-900 whitespace-nowrap min-w-[5.5rem] w-[5.5rem]" colSpan={3}>
+                              <td className="px-1.5 py-1" />
+                              <td className="px-1.5 py-1 text-gray-900"><span className="text-gray-500">└ </span>{L.prepaymentTip}</td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap" colSpan={3}>
                                 {formatMoney(d.pricing.prepayment_tip, cur)}
                               </td>
                             </tr>
                           )}
                           {/* Grand Total */}
                           <tr className="border-t-2 border-gray-300 bg-gray-100/80">
-                            <td className="px-2 py-3" />
-                            <td className="px-2 py-3 font-bold text-gray-900">{L.grandTotal}</td>
-                            <td className="px-2 py-3 text-right font-bold text-gray-900 whitespace-nowrap" colSpan={3}>
+                            <td className="px-1.5 py-2" />
+                            <td className="px-1.5 py-2 font-bold text-gray-900">{L.grandTotal}</td>
+                            <td className="px-1.5 py-2 text-right font-bold text-gray-900 whitespace-nowrap" colSpan={3}>
                               {formatMoney(customerTotalPayment, cur)}
                             </td>
                           </tr>
                         </tbody>
                       </table>
 
-                      <div className="mt-4 flex flex-col items-end gap-1 text-sm">
-                        <p className="flex justify-end gap-4 w-full max-w-[220px]"><span className="text-gray-600">{L.paidAmount}:</span> <span>{formatMoney(d.pricing.deposit_amount, cur)}</span></p>
-                        <p className="flex justify-end gap-4 w-full max-w-[220px]"><span className="text-gray-600">{L.balance}:</span> <span className="receipt-balance-amount font-medium text-red-600">{formatMoney(d.pricing.balance_amount, cur)}</span></p>
+                      <div className="mt-2 flex flex-col items-end gap-0.5 text-xs">
+                        <p className="flex justify-end gap-3 w-full max-w-[200px]"><span className="text-gray-600">{L.paidAmount}:</span> <span>{formatMoney(d.pricing.deposit_amount, cur)}</span></p>
+                        <p className="flex justify-end gap-3 w-full max-w-[200px]"><span className="text-gray-600">{L.balance}:</span> <span className="receipt-balance-amount font-medium text-red-600">{formatMoney(balanceAmount, cur)}</span></p>
                       </div>
                     </div>
 
-                    <div className="receipt-tips-section mt-6 pt-4 border-t border-gray-200 text-sm space-y-3">
-                      <p className="text-sm font-semibold text-gray-800">{L.tipSectionTitle}</p>
-                      <p className="receipt-tips-intro text-gray-600 text-sm leading-relaxed">{L.tipAboutUS}</p>
-                      <p className="receipt-tips-intro text-gray-600 text-sm leading-relaxed">{L.tipNotIncluded}</p>
-                      <p className="text-gray-700 text-sm font-medium mt-2">{L.tipSuggestedPerPerson}</p>
-                      <ul className="list-none space-y-1 text-sm text-gray-700">
+                    <div className="receipt-tips-section mt-3 pt-2 border-t border-gray-200 text-xs space-y-1.5">
+                      <p className="text-xs font-semibold text-gray-800">{L.tipSectionTitle}</p>
+                      <p className="receipt-tips-intro text-gray-600 text-xs leading-snug">{L.tipAboutUS}</p>
+                      <p className="receipt-tips-intro text-gray-600 text-xs leading-snug">{L.tipNotIncluded}</p>
+                      <p className="text-gray-700 text-xs font-medium mt-1">{L.tipSuggestedPerPerson}</p>
+                      <ul className="list-none space-y-0.5 text-xs text-gray-700">
                         <li>• {L.tipBasic} → {isEn ? <><span className="font-bold">{formatMoney(tip10PerPerson, cur)}</span> per person (<span className="font-bold">{formatMoney(tip10Total, cur)}</span> total)</> : <>1인당 <span className="font-bold">{formatMoney(tip10PerPerson, cur)}</span> (총 <span className="font-bold">{formatMoney(tip10Total, cur)}</span>)</>}</li>
                         <li>• {L.tipStandard} → {isEn ? <><span className="font-bold">{formatMoney(tip15PerPerson, cur)}</span> per person (<span className="font-bold">{formatMoney(tip15Total, cur)}</span> total)</> : <>1인당 <span className="font-bold">{formatMoney(tip15PerPerson, cur)}</span> (총 <span className="font-bold">{formatMoney(tip15Total, cur)}</span>)</>}</li>
                         <li>• {L.tipExcellent} → {isEn ? <><span className="font-bold">{formatMoney(tip20PerPerson, cur)}</span> per person (<span className="font-bold">{formatMoney(tip20Total, cur)}</span> total)</> : <>1인당 <span className="font-bold">{formatMoney(tip20PerPerson, cur)}</span> (총 <span className="font-bold">{formatMoney(tip20Total, cur)}</span>)</>}</li>
                       </ul>
-                      <p className="receipt-tips-thankyou text-gray-600 text-sm italic mt-8 mb-0 text-center block">{L.tipThankYou}</p>
+                      <p className="receipt-tips-thankyou text-gray-600 text-xs italic mt-4 mb-0 text-center block">{L.tipThankYou}</p>
                     </div>
                   </div>
                 )

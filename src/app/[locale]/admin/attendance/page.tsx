@@ -1,7 +1,16 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Clock, CheckCircle, XCircle, Calendar, User, BarChart3, RefreshCw, Edit, Users, Plus, Calculator, DollarSign } from 'lucide-react'
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer
+} from 'recharts'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import AddAttendanceForm from '@/components/AddAttendanceForm'
@@ -585,6 +594,64 @@ export default function AttendancePage() {
     return `${h}시간 ${m}분`
   }
 
+  // 출근 시각 기준 날짜(라스베가스) YYYY-MM-DD
+  const getCheckInDate = useCallback((r: AttendanceRecord): string => {
+    if (r.check_in_time) {
+      const utc = new Date(r.check_in_time)
+      const lv = new Date(utc.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }))
+      const y = lv.getFullYear()
+      const m = String(lv.getMonth() + 1).padStart(2, '0')
+      const d = String(lv.getDate()).padStart(2, '0')
+      return `${y}-${m}-${d}`
+    }
+    return r.date
+  }, [])
+
+  // 월별 그래프용: 해당 월 전체 날짜(1일~말일) + 출근 날짜 기준 근무시간(해당 일자 출근한 세션의 전체 시간만 그 날에 합산)
+  const monthlyChartData = useMemo(() => {
+    const [y, m] = selectedMonth.split('-').map(Number)
+    const lastDay = new Date(y, m, 0).getDate()
+    const byDate: Record<string, number> = {}
+    attendanceRecords.forEach((r) => {
+      const checkInDate = getCheckInDate(r)
+      byDate[checkInDate] = (byDate[checkInDate] || 0) + (r.work_hours || 0)
+    })
+    const result: { date: number; dateLabel: string; fullDate: string; hours: number }[] = []
+    for (let d = 1; d <= lastDay; d++) {
+      const dateLabel = d < 10 ? `0${d}` : String(d)
+      const fullDate = `${selectedMonth}-${dateLabel}`
+      result.push({
+        date: d,
+        dateLabel,
+        fullDate,
+        hours: Math.round((byDate[fullDate] || 0) * 100) / 100
+      })
+    }
+    return result
+  }, [attendanceRecords, selectedMonth, getCheckInDate])
+
+  // 출근 날짜 기준 월별 통계 (그래프와 동일 로직): 출근 일수, 총 근무시간, 일별 평균 근무시간
+  const monthlyStatsByCheckIn = useMemo(() => {
+    const monthStart = selectedMonth + '-01'
+    const [y, m] = selectedMonth.split('-').map(Number)
+    const monthEnd = `${selectedMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+    const byDate: Record<string, number> = {}
+    attendanceRecords.forEach((r) => {
+      const checkInDate = getCheckInDate(r)
+      byDate[checkInDate] = (byDate[checkInDate] || 0) + (r.work_hours || 0)
+    })
+    let totalWorkHours = 0
+    let presentDays = 0
+    for (const [d, hours] of Object.entries(byDate)) {
+      if (d >= monthStart && d <= monthEnd) {
+        presentDays += 1
+        totalWorkHours += hours
+      }
+    }
+    const avgHoursPerDay = presentDays > 0 ? Math.round((totalWorkHours / presentDays) * 100) / 100 : 0
+    return { presentDays, totalWorkHours, avgHoursPerDay }
+  }, [attendanceRecords, selectedMonth, getCheckInDate])
+
   // 날짜별 배경 색상 결정 함수
   const getDateBackgroundColor = (date: string) => {
     // 날짜별로 고유한 색상 배열 생성
@@ -865,29 +932,35 @@ export default function AttendancePage() {
           <span className="truncate">{isAdmin ? t('monthlyStatsAdmin', { name: teamMembers.find(m => m.email === selectedEmployee)?.name_ko || t('selectedEmployeeLabel'), month: selectedMonth }) : t('monthlyStatsUser', { month: selectedMonth })}</span>
         </h2>
         
-        {monthlyStats.length > 0 ? (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+        {(monthlyStats.length > 0 || monthlyStatsByCheckIn.presentDays > 0) ? (
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-4">
             <div className="text-center p-3 sm:p-4 bg-blue-50 rounded-lg min-w-0">
               <div className="text-lg sm:text-2xl font-bold text-blue-600">
-                {monthlyStats[0]?.total_work_hours?.toFixed(1) || 0}{t('hoursUnit')}
+                {monthlyStatsByCheckIn.totalWorkHours.toFixed(1)}{t('hoursUnit')}
               </div>
               <div className="text-xs sm:text-sm text-blue-800">{t('totalWorkHoursLabel')}</div>
             </div>
             <div className="text-center p-3 sm:p-4 bg-green-50 rounded-lg min-w-0">
               <div className="text-lg sm:text-2xl font-bold text-green-600">
-                {monthlyStats[0]?.present_days || 0}{t('daysUnit')}
+                {monthlyStatsByCheckIn.presentDays}{t('daysUnit')}
               </div>
               <div className="text-xs sm:text-sm text-green-800">{t('presentDays')}</div>
             </div>
+            <div className="text-center p-3 sm:p-4 bg-teal-50 rounded-lg min-w-0">
+              <div className="text-lg sm:text-2xl font-bold text-teal-600">
+                {monthlyStatsByCheckIn.presentDays > 0 ? formatWorkHours(monthlyStatsByCheckIn.avgHoursPerDay) : '0시간 0분'}
+              </div>
+              <div className="text-xs sm:text-sm text-teal-800">{t('avgHoursPerDay')}</div>
+            </div>
             <div className="text-center p-3 sm:p-4 bg-purple-50 rounded-lg min-w-0">
               <div className="text-lg sm:text-2xl font-bold text-purple-600">
-                {monthlyStats[0]?.first_half_hours?.toFixed(1) || 0}{t('hoursUnit')}
+                {monthlyStats[0]?.first_half_hours?.toFixed(1) ?? 0}{t('hoursUnit')}
               </div>
               <div className="text-xs sm:text-sm text-purple-800">{t('firstHalf')}</div>
             </div>
             <div className="text-center p-3 sm:p-4 bg-orange-50 rounded-lg min-w-0">
               <div className="text-lg sm:text-2xl font-bold text-orange-600">
-                {monthlyStats[0]?.second_half_hours?.toFixed(1) || 0}{t('hoursUnit')}
+                {monthlyStats[0]?.second_half_hours?.toFixed(1) ?? 0}{t('hoursUnit')}
               </div>
               <div className="text-xs sm:text-sm text-orange-800">{t('secondHalf')}</div>
             </div>
@@ -902,6 +975,47 @@ export default function AttendancePage() {
             <p className="text-xs text-gray-400 mt-2">
               {t('checkInCreatesStats')}
             </p>
+          </div>
+        )}
+
+        {/* 월별 그래프 (X: 날짜, Y: 시간) */}
+        {monthlyChartData.length > 0 && (
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">{t('monthlyChartTitle')}</h3>
+            <div className="h-[240px] w-full min-w-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyChartData} margin={{ top: 8, right: 8, left: 0, bottom: 24 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis
+                    dataKey="dateLabel"
+                    tick={{ fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={{ stroke: '#9ca3af' }}
+                    label={{ value: t('chartXLabel'), position: 'insideBottom', offset: -8, fontSize: 12 }}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={{ stroke: '#9ca3af' }}
+                    label={{ value: t('chartYLabel'), angle: -90, position: 'insideLeft', fontSize: 12 }}
+                    tickFormatter={(v) => (v === 0 ? '0시간' : formatWorkHours(v))}
+                  />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null
+                      const d = payload[0].payload as { fullDate: string; hours: number }
+                      return (
+                        <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-sm">
+                          <div className="text-gray-600">{d.fullDate}</div>
+                          <div className="font-medium text-blue-600">{t('chartYLabel')}: {d.hours === 0 ? '0시간 0분' : formatWorkHours(d.hours)}</div>
+                        </div>
+                      )
+                    }}
+                  />
+                  <Bar dataKey="hours" fill="#3b82f6" radius={[4, 4, 0, 0]} name={t('chartYLabel')} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         )}
       </div>

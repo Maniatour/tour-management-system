@@ -43,6 +43,7 @@ interface ReservationPricing {
   total_price?: number | string | null
   total_amount?: number | string | null
   paid_amount?: number | string | null
+  deposit_amount?: number | string | null
   currency?: string
   adult_product_price?: number | string | null
   child_product_price?: number | string | null
@@ -52,6 +53,12 @@ interface ReservationPricing {
   coupon_discount?: number | string | null
   additional_discount?: number | string | null
   additional_cost?: number | string | null
+  option_total?: number | string | null
+  choices_total?: number | string | null
+  tax?: number | string | null
+  card_fee?: number | string | null
+  prepayment_cost?: number | string | null
+  prepayment_tip?: number | string | null
   commission_percent?: number | string | null
   commission_amount?: number | string | null
 }
@@ -101,6 +108,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   const [showPaymentRecords, setShowPaymentRecords] = useState(false)
   const [loadingPayments, setLoadingPayments] = useState(false)
   const [reservationPricing, setReservationPricing] = useState<ReservationPricing | null>(null)
+  const [optionsTotalFromOptions, setOptionsTotalFromOptions] = useState<number | null>(null)
   const [showSimplePickupModal, setShowSimplePickupModal] = useState(false)
   const [showReviewModal, setShowReviewModal] = useState(false)
   const [channelInfo, setChannelInfo] = useState<{ name: string; favicon?: string; has_not_included_price?: boolean; commission_base_price_only?: boolean } | null>(null)
@@ -330,13 +338,21 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         // balance_amount를 숫자로 변환
         const pricing = {
           ...data.pricing,
-          balance_amount: typeof data.pricing.balance_amount === 'string' 
+          balance_amount: typeof data.pricing.balance_amount === 'string'
             ? parseFloat(data.pricing.balance_amount) || 0
             : (data.pricing.balance_amount || 0)
         }
         setReservationPricing(pricing)
+        // 옵션 합계 조회 (Grand Total / Balance 계산 시 DB option_total 대신 사용)
+        const { data: opts } = await supabase
+          .from('reservation_options')
+          .select('total_price')
+          .eq('reservation_id', reservation.id)
+        const sum = (opts || []).reduce((s: number, o: { total_price?: number | string | null }) => s + (typeof o.total_price === 'number' ? o.total_price : parseFloat(String(o.total_price || 0)) || 0), 0)
+        setOptionsTotalFromOptions(opts?.length ? sum : null)
       } else {
         setReservationPricing(null)
+        setOptionsTotalFromOptions(null)
       }
     } catch (error) {
       console.error('예약 가격 정보 조회 오류:', error)
@@ -1169,43 +1185,19 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     })
   }
 
-  // Balance 수령 핸들러
+  // Balance 수령 핸들러 (영수증과 동일: Grand Total - 입금액)
   const handleReceiveBalance = async (e: React.MouseEvent) => {
     e.stopPropagation()
     
     if (!reservationPricing || !isStaff) return
     
-    let balanceAmount = 0
-    
-    // reservation_pricing의 balance_amount가 0보다 크면 우선적으로 사용
-    if (reservationPricing.balance_amount) {
-      balanceAmount = typeof reservationPricing.balance_amount === 'string'
-        ? parseFloat(reservationPricing.balance_amount) || 0
-        : (reservationPricing.balance_amount || 0)
-    }
-    
-    // balance_amount가 없거나 0인 경우: 불포함 금액(잔금) 또는 계산된 잔금 사용
-    if (balanceAmount <= 0) {
-      const totalPeopleForReceive = (reservation.adults || 0) + ((reservation.children ?? (reservation as any).child) || 0) + ((reservation.infants ?? (reservation as any).infant) || 0) || 1
-      const notIncludedTotal = (Number(reservationPricing.not_included_price) || 0) * totalPeopleForReceive
-      if (notIncludedTotal > 0) {
-        balanceAmount = notIncludedTotal
-      } else {
-        const totalPrice = reservationPricing
-          ? (typeof reservationPricing.total_price === 'string'
-              ? parseFloat(reservationPricing.total_price) || 0
-              : (reservationPricing.total_price || 0))
-          : 0
-        const receivedStatuses = ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !']
-        const totalPaid = paymentRecords
-          .filter(record => receivedStatuses.includes(record.payment_status))
-          .reduce((sum, record) => {
-            const amount = typeof record.amount === 'string' ? parseFloat(record.amount) || 0 : (record.amount || 0)
-            return sum + amount
-          }, 0)
-        balanceAmount = totalPrice - totalPaid
-      }
-    }
+    const toN = (v: number | string | null | undefined) => (v == null ? 0 : typeof v === 'string' ? parseFloat(v) || 0 : v)
+    const totalPeopleForReceive = (reservation.adults || 0) + ((reservation.children ?? (reservation as any).child) || 0) + ((reservation.infants ?? (reservation as any).infant) || 0) || 1
+    const notIncludedTotal = toN(reservationPricing.not_included_price) * totalPeopleForReceive
+    const effectiveOpts = optionsTotalFromOptions !== null ? optionsTotalFromOptions : toN(reservationPricing.option_total)
+    const discounted = toN(reservationPricing.product_price_total) - toN(reservationPricing.coupon_discount) - toN(reservationPricing.additional_discount)
+    const customerTotal = discounted + effectiveOpts + toN(reservationPricing.choices_total) + notIncludedTotal + toN(reservationPricing.additional_cost) + toN(reservationPricing.tax) + toN(reservationPricing.card_fee) + toN(reservationPricing.prepayment_cost) + toN(reservationPricing.prepayment_tip)
+    const balanceAmount = Math.max(0, customerTotal - toN(reservationPricing.deposit_amount))
     
     if (balanceAmount <= 0) {
       alert('수령할 잔액이 없습니다.')
@@ -1565,15 +1557,22 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           const grandTotal = toNumber(reservationPricing.total_price) || 0
           const commissionPercent = toNumber(reservationPricing.commission_percent)
           const commissionAmount = toNumber(reservationPricing.commission_amount)
-          const balanceAmount = toNumber(reservationPricing.balance_amount)
-          
+          const depositAmount = toNumber(reservationPricing.deposit_amount)
+          const tax = toNumber(reservationPricing.tax)
+          const cardFee = toNumber(reservationPricing.card_fee)
+          const prepaymentCost = toNumber(reservationPricing.prepayment_cost)
+          const prepaymentTip = toNumber(reservationPricing.prepayment_tip)
+          const choicesTotal = toNumber(reservationPricing.choices_total)
+          const effectiveOptionsTotal = optionsTotalFromOptions !== null ? optionsTotalFromOptions : toNumber(reservationPricing.option_total)
           // 총 인원수
           const totalPeople = (reservation.adults || 0) + 
         ((reservation.children || (reservation as any).child || 0) as number) + 
         ((reservation.infants || (reservation as any).infant || 0) as number)
-          
-          // 불포함 금액 합산 (인원당 × 총 인원)
           const notIncludedTotal = notIncludedPricePerPerson * (totalPeople > 0 ? totalPeople : 1)
+          // 영수증과 동일: Grand Total = 할인 후 상품 + 옵션합계 + choices + 불포함 + 기타비용 → Balance = 그 금액 - 입금액
+          const discountedProduct = productPriceTotal - couponDiscount - additionalDiscount
+          const customerTotalPayment = discountedProduct + effectiveOptionsTotal + choicesTotal + notIncludedTotal + additionalCost + tax + cardFee + prepaymentCost + prepaymentTip
+          const displayBalance = Math.max(0, customerTotalPayment - depositAmount)
           // 고객 총 결제 = 상품 소계(total_price) + 불포함 금액
           const displayCustomerTotal = grandTotal + notIncludedTotal
           
@@ -1697,8 +1696,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           if (!calculationString || calculationString.trim() === '') {
             calculationString = `${currencySymbol}${netPrice.toFixed(2)}`
           }
-          // 잔금(Balance): balance_amount 우선, 없으면 불포함 금액(현장 수금) 표시
-          const displayBalance = balanceAmount > 0 ? balanceAmount : (notIncludedTotal > 0 ? notIncludedTotal : 0)
+          // 잔금(Balance): Grand Total - 입금액 (영수증과 동일 계산)
           if (displayBalance > 0) {
             calculationString += ` ${currencySymbol}${displayBalance.toFixed(2)} Balance`
           }
@@ -1720,16 +1718,15 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               {getPickupLocation() || ''}
             </div>
             
-            {/* 잔액 뱃지 및 수령 버튼 - balance_amount 또는 불포함 금액(잔금)이 있을 때 보라색 표시 */}
+            {/* 잔액 뱃지 및 수령 버튼 - Grand Total - 입금액 (영수증과 동일) */}
             {isStaff && (() => {
-              const balanceAmount = reservationPricing?.balance_amount != null
-                ? (typeof reservationPricing.balance_amount === 'string'
-                    ? parseFloat(reservationPricing.balance_amount) || 0
-                    : Number(reservationPricing.balance_amount) || 0)
-                : 0
+              const toN = (v: number | string | null | undefined) => (v == null ? 0 : typeof v === 'string' ? parseFloat(v) || 0 : v)
               const totalPeopleForBalance = (reservation.adults || 0) + ((reservation.children ?? (reservation as any).child) || 0) + ((reservation.infants ?? (reservation as any).infant) || 0) || 1
-              const notIncludedTotalForBadge = (Number(reservationPricing?.not_included_price) || 0) * totalPeopleForBalance
-              const displayBalanceBadge = balanceAmount > 0 ? balanceAmount : (notIncludedTotalForBadge > 0 ? notIncludedTotalForBadge : 0)
+              const notIncludedForBadge = (toN(reservationPricing?.not_included_price) || 0) * totalPeopleForBalance
+              const effectiveOpts = optionsTotalFromOptions !== null ? optionsTotalFromOptions : toN(reservationPricing?.option_total)
+              const discounted = toN(reservationPricing?.product_price_total) - toN(reservationPricing?.coupon_discount) - toN(reservationPricing?.additional_discount)
+              const customerTotal = discounted + effectiveOpts + toN(reservationPricing?.choices_total) + notIncludedForBadge + toN(reservationPricing?.additional_cost) + toN(reservationPricing?.tax) + toN(reservationPricing?.card_fee) + toN(reservationPricing?.prepayment_cost) + toN(reservationPricing?.prepayment_tip)
+              const displayBalanceBadge = Math.max(0, customerTotal - toN(reservationPricing?.deposit_amount))
               if (displayBalanceBadge > 0) {
                 return (
                   <div className="flex items-center space-x-2">
