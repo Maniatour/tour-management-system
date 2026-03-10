@@ -6,13 +6,13 @@ declare global {
   }
 }
 
-import React, { useState } from 'react'
+import React, { useState, useContext } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Calendar, LogIn, Home, Menu, X, Settings, LogOut, ChevronDown, UserCheck, FileText, Shield, User, ArrowLeft, Search } from 'lucide-react'
 import LanguageSwitcher from './LanguageSwitcher'
-import { useAuth } from '@/contexts/AuthContext'
+import { AuthContext } from '@/contexts/AuthContext'
 import { CartIcon, CartSidebar } from '@/components/cart/CartProvider'
 
 const NavigationContent = () => {
@@ -20,7 +20,9 @@ const NavigationContent = () => {
   const pathname = usePathname()
   const locale = useLocale()
   const router = useRouter()
-  const { userRole, userPosition, loading, signOut, authUser, simulatedUser, isSimulating, stopSimulation } = useAuth()
+  const context = useContext(AuthContext)
+  if (context === undefined) return null
+  const { userRole, userPosition, loading, signOut, authUser, simulatedUser, isSimulating, stopSimulation } = context
   
   // 시뮬레이션 상태에서 현재 사용자와 역할 결정
   const currentUser = isSimulating && simulatedUser ? simulatedUser : authUser

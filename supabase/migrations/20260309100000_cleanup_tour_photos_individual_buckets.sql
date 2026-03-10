@@ -1,0 +1,21 @@
+-- =============================================================================
+-- tour-photos-xxx 개별 버킷 정리 (안내 전용)
+-- =============================================================================
+-- Supabase는 storage.objects / storage.buckets 에 대한 직접 DELETE 를 허용하지 않습니다.
+-- 오류: Direct deletion from storage tables is not allowed. Use the Storage API instead.
+--
+-- ✅ 정리 방법: Storage API 를 사용하는 스크립트를 실행하세요.
+--
+--   터미널에서:
+--     node scripts/cleanup-tour-photos-buckets.js
+--
+--   필요: .env.local 에 NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+--
+--   스크립트는 다음을 수행합니다:
+--     1) tour-photos-19c6a24c, tour-photos-037a6644 등 개별 버킷 목록 조회
+--     2) 각 버킷 내 파일 삭제 (Storage API remove)
+--     3) 각 버킷 삭제 (Storage API deleteBucket)
+--   메인 버킷 'tour-photos' 는 건드리지 않습니다.
+-- =============================================================================
+
+-- (실행할 SQL 없음 — 위 안내대로 스크립트를 실행하세요.)

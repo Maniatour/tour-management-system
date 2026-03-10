@@ -84,6 +84,8 @@ interface ReservationFormProps {
   titleAction?: React.ReactNode
   /** 새 예약 추가 모드(아직 DB에 저장 전). true이면 예약 옵션 추가는 저장 후에만 가능 */
   isNewReservation?: boolean
+  /** 예약 가져오기(이메일)에서 넘긴 초기 고객 정보. reservation.id가 import- 로 시작할 때 사용 */
+  initialDataFromImport?: { customer_name?: string; customer_email?: string; customer_phone?: string }
 }
 
 type RezLike = Partial<Reservation> & {
@@ -123,7 +125,8 @@ export default function ReservationForm({
   initialCustomerId,
   allowPastDateEdit = false,
   titleAction,
-  isNewReservation = false
+  isNewReservation = false,
+  initialDataFromImport
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
@@ -138,6 +141,8 @@ export default function ReservationForm({
   const customerSearchRef = useRef<HTMLDivElement | null>(null)
   const reservationFormRef = useRef<HTMLFormElement>(null)
   const rez: RezLike = (reservation as unknown as RezLike) || ({} as RezLike)
+  const isImportMode = typeof (reservation as any)?.id === 'string' && (reservation as any).id.startsWith('import-')
+  const effectiveReservationId = isImportMode ? undefined : reservation?.id
   const [, setChannelAccordionExpanded] = useState(layout === 'modal')
   const [, setProductAccordionExpanded] = useState(layout === 'modal')
   const [reservationOptionsTotalPrice, setReservationOptionsTotalPrice] = useState(0)
@@ -314,6 +319,7 @@ export default function ReservationForm({
   }>({
     customerId: reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id || initialCustomerId || '',
     customerSearch: (() => {
+      if (initialDataFromImport?.customer_name && (reservation as any)?.id?.startsWith?.('import-')) return initialDataFromImport.customer_name
       const customerId = reservation?.customerId || (reservation as any)?.customer_id || initialCustomerId
       if (customerId && customers.length > 0) {
         const customer = customers.find(c => c.id === customerId)
@@ -328,6 +334,7 @@ export default function ReservationForm({
     showCustomerDropdown: false,
     // 고객 정보 초기값
     customerName: (() => {
+      if (initialDataFromImport?.customer_name && (reservation as any)?.id?.startsWith?.('import-')) return initialDataFromImport.customer_name
       const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id || initialCustomerId
       if (customerId && customers.length > 0) {
         const customer = customers.find(c => c.id === customerId)
@@ -336,6 +343,7 @@ export default function ReservationForm({
       return ''
     })(),
     customerPhone: (() => {
+      if (initialDataFromImport?.customer_phone && (reservation as any)?.id?.startsWith?.('import-')) return initialDataFromImport.customer_phone
       const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id || initialCustomerId
       if (customerId && customers.length > 0) {
         const customer = customers.find(c => c.id === customerId)
@@ -344,6 +352,7 @@ export default function ReservationForm({
       return ''
     })(),
     customerEmail: (() => {
+      if (initialDataFromImport?.customer_email && (reservation as any)?.id?.startsWith?.('import-')) return initialDataFromImport.customer_email
       const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id || initialCustomerId
       if (customerId && customers.length > 0) {
         const customer = customers.find(c => c.id === customerId)
@@ -500,6 +509,10 @@ export default function ReservationForm({
   // reservation_pricing 행 id (상세/폼 가격 섹션 표시용)
   const [reservationPricingId, setReservationPricingId] = useState<string | null>(null)
   
+  // savePricingInfo 등에서 항상 최신 formData 참조용
+  const formDataRef = useRef(formData)
+  formDataRef.current = formData
+
   // 무한 렌더링 방지를 위한 ref
   const prevPricingParams = useRef<{productId: string, tourDate: string, channelId: string, variantKey: string, selectedChoicesKey: string} | null>(null)
   const prevCouponParams = useRef<{productId: string, tourDate: string, channelId: string} | null>(null)
@@ -615,6 +628,11 @@ export default function ReservationForm({
       // 이미 로드된 reservation이면 스킵
       if (loadedReservationDataRef.current === reservation.id) {
         console.log('ReservationForm: 이미 로드된 reservation 데이터, 스킵:', reservation.id)
+        return
+      }
+      // 예약 가져오기(이메일)에서 열었을 때: DB 조회 없이 전달된 rez 초기값만 사용
+      if (typeof reservation.id === 'string' && reservation.id.startsWith('import-')) {
+        loadedReservationDataRef.current = reservation.id
         return
       }
       
@@ -1844,19 +1862,23 @@ export default function ReservationForm({
           setReservationPricingId((existingPricing as { id?: string }).id ?? null)
           console.log('기존 가격 정보 사용:', existingPricing)
 
-          // reservation_pricing에 채널 수수료 $ 가 있으면, 채널 수수료 % 를 역산 (기존 데이터는 $ 만 있음, channels 테이블 % 는 후순위)
+          // reservation_pricing에 commission_percent가 있으면 그대로 사용(계산하지 않음). 없을 때만 $ 기준 역산
           const commissionAmount = (existingPricing as any).commission_amount != null && (existingPricing as any).commission_amount !== ''
             ? Number((existingPricing as any).commission_amount)
             : 0
+          const dbCommissionPercent = (existingPricing as any).commission_percent != null && (existingPricing as any).commission_percent !== ''
+            ? Number((existingPricing as any).commission_percent)
+            : null
           let commissionPercentToUse: number
-          if (commissionAmount > 0) {
+          if (dbCommissionPercent !== null) {
+            // DB에 commission_percent가 있으면 그대로 사용 (절대 역산으로 덮어쓰지 않음)
+            commissionPercentToUse = dbCommissionPercent
+          } else if (commissionAmount > 0) {
             const base = Number((existingPricing as any).product_price_total) || Number((existingPricing as any).subtotal) || 0
             commissionPercentToUse = base > 0 ? (commissionAmount / base) * 100 : 0
-            console.log('ReservationForm: 채널 수수료 % 역산 (채널 수수료 $ 기준)', { commission_amount: commissionAmount, base, commission_percent: commissionPercentToUse })
+            console.log('ReservationForm: 채널 수수료 % 역산 (DB에 % 없음, $ 기준)', { commission_amount: commissionAmount, base, commission_percent: commissionPercentToUse })
           } else {
-            commissionPercentToUse = (existingPricing as any).commission_percent != null && (existingPricing as any).commission_percent !== ''
-              ? Number((existingPricing as any).commission_percent)
-              : 0
+            commissionPercentToUse = 0
           }
 
           console.log('쿠폰 정보 확인:', {
@@ -2865,6 +2887,8 @@ export default function ReservationForm({
         
         console.log('가격 자동 조회 트리거:', currentParams)
         prevPricingParams.current = currentParams
+        // 예약 편집 시 reservation_pricing 로드 전에 먼저 설정 → PricingSection에서 채널 수수료 %/$ 재계산으로 덮어쓰지 않도록
+        if (reservation?.id) setIsExistingPricingLoaded(true)
         loadPricingInfo(formData.productId, formData.tourDate, formData.channelId, reservation?.id, selectedChoicesArray)
       }
     }
@@ -3072,8 +3096,13 @@ export default function ReservationForm({
   }, [])
 
   // 가격 정보 저장 함수 (외부에서 호출 가능)
-  const savePricingInfo = useCallback(async (reservationId: string) => {
+  // overrides: 입금 내역 반영 등으로 보증금/잔액만 갱신할 때 사용. 항상 formDataRef에서 최신 formData 사용.
+  const savePricingInfo = useCallback(async (
+    reservationId: string,
+    overrides?: { depositAmount?: number; balanceAmount?: number }
+  ) => {
     try {
+      const fd = formDataRef.current
       // 기존 가격 정보가 있는지 확인하여 id를 가져오거나 새로 생성
       const { data: existingPricing, error: checkError } = await (supabase as any)
         .from('reservation_pricing')
@@ -3090,38 +3119,38 @@ export default function ReservationForm({
       }
 
       // 불포함 가격 합계(인원별) = product_price_total·subtotal·total_price에 포함하여 저장
-      const totalPeople = formData.adults + formData.child + formData.infant
-      const notIncludedTotal = (formData.not_included_price || 0) * (totalPeople || 1)
+      const totalPeople = fd.adults + fd.child + fd.infant
+      const notIncludedTotal = (Number(fd.not_included_price) || 0) * (totalPeople || 1)
 
       const pricingData: Database['public']['Tables']['reservation_pricing']['Insert'] = {
         id: pricingId,
         reservation_id: reservationId,
-        adult_product_price: formData.adultProductPrice,
-        child_product_price: formData.childProductPrice,
-        infant_product_price: formData.infantProductPrice,
-        product_price_total: formData.productPriceTotal + notIncludedTotal,
-        not_included_price: formData.not_included_price || 0,
-        required_options: formData.requiredOptions,
-        required_option_total: formData.requiredOptionTotal,
-        choices: formData.choices,
-        choices_total: formData.choicesTotal,
-        subtotal: formData.subtotal + notIncludedTotal,
-        coupon_code: formData.couponCode,
-        coupon_discount: formData.couponDiscount,
-        additional_discount: formData.additionalDiscount,
-        additional_cost: formData.additionalCost,
-        card_fee: formData.cardFee,
-        tax: formData.tax,
-        prepayment_cost: formData.prepaymentCost,
-        prepayment_tip: formData.prepaymentTip,
-        selected_options: formData.selectedOptionalOptions,
-        option_total: formData.optionTotal,
-        total_price: formData.totalPrice + notIncludedTotal,
-        deposit_amount: formData.depositAmount,
-        balance_amount: formData.balanceAmount,
-        private_tour_additional_cost: formData.privateTourAdditionalCost,
-        commission_percent: formData.commission_percent,
-        commission_amount: formData.commission_amount || 0
+        adult_product_price: Number(fd.adultProductPrice) || 0,
+        child_product_price: Number(fd.childProductPrice) || 0,
+        infant_product_price: Number(fd.infantProductPrice) || 0,
+        product_price_total: (Number(fd.productPriceTotal) || 0) + notIncludedTotal,
+        not_included_price: Number(fd.not_included_price) || 0,
+        required_options: fd.requiredOptions,
+        required_option_total: Number(fd.requiredOptionTotal) || 0,
+        choices: fd.choices,
+        choices_total: Number(fd.choicesTotal) || 0,
+        subtotal: (Number(fd.subtotal) || 0) + notIncludedTotal,
+        coupon_code: fd.couponCode ?? '',
+        coupon_discount: Number(fd.couponDiscount) || 0,
+        additional_discount: Number(fd.additionalDiscount) || 0,
+        additional_cost: Number(fd.additionalCost) || 0,
+        card_fee: Number(fd.cardFee) || 0,
+        tax: Number(fd.tax) || 0,
+        prepayment_cost: Number(fd.prepaymentCost) || 0,
+        prepayment_tip: Number(fd.prepaymentTip) || 0,
+        selected_options: fd.selectedOptionalOptions,
+        option_total: Number(fd.optionTotal) || 0,
+        total_price: (Number(fd.totalPrice) || 0) + notIncludedTotal,
+        deposit_amount: overrides?.depositAmount ?? (Number(fd.depositAmount) || 0),
+        balance_amount: overrides?.balanceAmount ?? (Number(fd.balanceAmount) || 0),
+        private_tour_additional_cost: Number(fd.privateTourAdditionalCost) || 0,
+        commission_percent: Number(fd.commission_percent) || 0,
+        commission_amount: Number(fd.commission_amount) || 0
       } as Database['public']['Tables']['reservation_pricing']['Insert'] & { commission_amount?: number; not_included_price?: number }
 
       let error: unknown
@@ -3398,37 +3427,37 @@ export default function ReservationForm({
         selectedChoices: formData.selectedChoices as any,
         // 새 예약 시 저장 전에 추가한 옵션 목록 (예약 저장 시 함께 저장)
         pendingReservationOptions: isNewReservation ? pendingReservationOptions : undefined,
-        // 가격 정보를 포함하여 전달
+        // 가격 정보를 포함하여 전달 (DB 저장 시 숫자로 쓰이도록 명시적 변환)
         pricingInfo: {
-          adultProductPrice: formData.adultProductPrice,
-          childProductPrice: formData.childProductPrice,
-          infantProductPrice: formData.infantProductPrice,
-          productPriceTotal: formData.productPriceTotal,
-          not_included_price: formData.not_included_price || 0,
+          adultProductPrice: Number(formData.adultProductPrice) || 0,
+          childProductPrice: Number(formData.childProductPrice) || 0,
+          infantProductPrice: Number(formData.infantProductPrice) || 0,
+          productPriceTotal: Number(formData.productPriceTotal) || 0,
+          not_included_price: Number(formData.not_included_price) || 0,
           requiredOptions: formData.requiredOptions,
-          requiredOptionTotal: formData.requiredOptionTotal,
+          requiredOptionTotal: Number(formData.requiredOptionTotal) || 0,
           choices: choicesData,
-          choicesTotal: formData.choicesTotal,
+          choicesTotal: Number(formData.choicesTotal) || 0,
           quantityBasedChoices: {},
           quantityBasedChoiceTotal: 0,
-          subtotal: formData.subtotal,
-          couponCode: formData.couponCode,
-          couponDiscount: formData.couponDiscount,
-          additionalDiscount: formData.additionalDiscount,
-          additionalCost: formData.additionalCost,
-          cardFee: formData.cardFee,
-          tax: formData.tax,
-          prepaymentCost: formData.prepaymentCost,
-          prepaymentTip: formData.prepaymentTip,
+          subtotal: Number(formData.subtotal) || 0,
+          couponCode: formData.couponCode ?? '',
+          couponDiscount: Number(formData.couponDiscount) || 0,
+          additionalDiscount: Number(formData.additionalDiscount) || 0,
+          additionalCost: Number(formData.additionalCost) || 0,
+          cardFee: Number(formData.cardFee) || 0,
+          tax: Number(formData.tax) || 0,
+          prepaymentCost: Number(formData.prepaymentCost) || 0,
+          prepaymentTip: Number(formData.prepaymentTip) || 0,
           selectedOptionalOptions: formData.selectedOptionalOptions,
-          optionTotal: formData.optionTotal,
-          totalPrice: formData.totalPrice,
-          depositAmount: formData.depositAmount,
-          balanceAmount: formData.balanceAmount,
+          optionTotal: Number(formData.optionTotal) || 0,
+          totalPrice: Number(formData.totalPrice) || 0,
+          depositAmount: Number(formData.depositAmount) || 0,
+          balanceAmount: Number(formData.balanceAmount) || 0,
           isPrivateTour: formData.isPrivateTour,
-          privateTourAdditionalCost: formData.privateTourAdditionalCost,
-          commission_percent: formData.commission_percent,
-          commission_amount: formData.commission_amount || 0
+          privateTourAdditionalCost: Number(formData.privateTourAdditionalCost) || 0,
+          commission_percent: Number(formData.commission_percent) || 0,
+          commission_amount: Number(formData.commission_amount) || 0
         }
       }
       
@@ -3891,9 +3920,9 @@ export default function ReservationForm({
             </div>
 
             {/* Follow up - 1열 고객 정보 아래 */}
-            {layout === 'page' && reservation && (
+            {layout === 'page' && reservation && effectiveReservationId && (
               <div id="follow-up-section" className="max-lg:order-9 max-lg:mt-4">
-                <ReservationFollowUpSection reservationId={reservation.id} status={formData.status as string} />
+                <ReservationFollowUpSection reservationId={effectiveReservationId} status={formData.status as string} />
               </div>
             )}
 
@@ -4027,14 +4056,14 @@ export default function ReservationForm({
                     formData={formData}
                     setFormData={setFormData}
                     t={t}
-                    reservationId={reservation?.id}
+                    reservationId={effectiveReservationId ?? null}
                     locale={locale}
                   />
                 </div>
               </div>
 
               {/* 연결된 투어 - 2열 하단 */}
-              {layout === 'page' && reservation && (
+              {layout === 'page' && reservation && !isImportMode && (
                 <div className="max-lg:mt-4 max-lg:order-5">
                   <TourConnectionSection
                     reservation={reservation}
@@ -4046,11 +4075,11 @@ export default function ReservationForm({
 
               {/* 3열: 예약 옵션 · 입금 · 지출 (각각 별도 박스, 타이틀 한 번, 내역은 가로줄 구분) */}
               <div className="lg:flex lg:flex-col lg:gap-4 lg:min-h-0 lg:overflow-y-auto max-lg:contents">
-              {reservation && (
+              {reservation && !isImportMode && effectiveReservationId && (
                 <>
                   <div id="options-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">
                     <ReservationOptionsSection
-                      reservationId={reservation.id}
+                      reservationId={effectiveReservationId}
                       onTotalPriceChange={setReservationOptionsTotalPrice}
                       title="예약 옵션"
                       itemVariant="line"
@@ -4060,16 +4089,17 @@ export default function ReservationForm({
                   </div>
                   <div id="payment-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">
                     <PaymentRecordsList
-                      reservationId={reservation.id}
-                      customerName={customers.find(c => c.id === reservation.customerId)?.name || 'Unknown'}
+                      reservationId={effectiveReservationId}
+                      customerName={customers.find(c => c.id === formData.customerId)?.name || 'Unknown'}
                       title="입금 내역"
                       itemVariant="line"
+                      onPaymentRecordsUpdated={() => setExpenseUpdateTrigger(prev => prev + 1)}
                     />
                   </div>
                   <div id="expense-section" className="border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-6 overflow-y-auto">
                     <ReservationExpenseManager
-                      reservationId={reservation.id}
-                      submittedBy={reservation.addedBy}
+                      reservationId={effectiveReservationId}
+                      submittedBy={formData.addedBy}
                       userRole="admin"
                       onExpenseUpdated={() => setExpenseUpdateTrigger(prev => prev + 1)}
                       title="예약 지출"
@@ -4077,9 +4107,9 @@ export default function ReservationForm({
                     />
                   </div>
                   {/* 후기 관리 - 3열 */}
-                  {layout === 'page' && reservation && (
+                  {layout === 'page' && (
                     <div id="review-section" className="max-lg:order-8 max-lg:mt-4">
-                      <ReviewManagementSection reservationId={reservation.id} compact={true} />
+                      <ReviewManagementSection reservationId={effectiveReservationId} compact={true} />
                     </div>
                   )}
                 </>

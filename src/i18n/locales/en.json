@@ -25,6 +25,8 @@
     "tourPhotoBuckets": "Tour Photo Buckets",
     "dataSync": "Data Sync",
     "dataReview": "Data Review",
+    "emailIntegration": "Email Integration",
+    "reservationImports": "Reservation Imports",
     "auditLogs": "Audit Logs",
     "developerTools": "Developer Tools",
     "addReservation": "Add New Reservation"

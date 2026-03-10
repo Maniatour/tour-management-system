@@ -348,6 +348,10 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     additional_cost?: number
     commission_percent?: number
     commission_amount?: number
+    deposit_amount?: number
+    option_total?: number
+    choices_total?: number
+    not_included_price?: number
     currency?: string
   }>>(new Map())
 
@@ -358,117 +362,49 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
   }, [hookReservationPricingMap])
 
-  // Net Price 계산식 생성 함수 - useCallback으로 메모이제이션
+  // 가격 계산식 생성 - 예약 상세/가격 정보 모달과 동일한 공식
+  // (판매가+불포함)×인원 = 상품가격합계 - 할인/추가비용 = 고객 총 결제 금액 - 채널 수수료 $ = 총매출 (Balance $x)
   const generatePriceCalculation = useCallback((reservation: any, pricing: any): string => {
-    if (!pricing || !pricing.total_price) {
-      // pricing이 없으면 기본값 반환
-      return ''
-    }
-    
-    const toNumber = (val: number | undefined): number => val || 0
-    
-    const adultPrice = toNumber(pricing.adult_product_price)
-    const childPrice = toNumber(pricing.child_product_price)
-    const infantPrice = toNumber(pricing.infant_product_price)
-    const productPriceTotal = toNumber(pricing.product_price_total)
-    const couponDiscount = toNumber(pricing.coupon_discount)
-    const additionalDiscount = toNumber(pricing.additional_discount)
-    const additionalCost = toNumber(pricing.additional_cost)
-    const grandTotal = pricing.total_price
-    const commissionPercent = toNumber(pricing.commission_percent)
-    const commissionAmount = toNumber(pricing.commission_amount)
-    
-    const totalPeople = (reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)
-    const discountTotal = couponDiscount + additionalDiscount
-    const adjustmentTotal = additionalCost - discountTotal
-    
-    let calculatedCommission = 0
-    if (commissionAmount > 0) {
-      calculatedCommission = commissionAmount
-    } else if (commissionPercent > 0 && grandTotal > 0) {
-      calculatedCommission = grandTotal * (commissionPercent / 100)
-    }
-    
-    const netPrice = grandTotal > 0 ? (grandTotal - calculatedCommission) : 0
-    const currency = pricing.currency || 'USD'
-    const currencySymbol = currency === 'KRW' ? '₩' : '$'
-    
-    // 계산식 구성 (항상 최소한 grandTotal - commission = Net Price는 표시)
-    let calculationString = ''
+    if (!pricing) return ''
+    const toN = (v: number | undefined): number => (v == null || v === undefined ? 0 : Number(v) || 0)
+    const productPriceTotal = toN(pricing.product_price_total)
+    const couponDiscount = toN(pricing.coupon_discount)
+    const additionalDiscount = toN(pricing.additional_discount)
+    const additionalCost = toN(pricing.additional_cost)
+    const commissionAmount = toN(pricing.commission_amount)
+    const optionTotal = toN(pricing.option_total)
+    const choicesTotal = toN(pricing.choices_total)
+    const notIncludedPrice = toN(pricing.not_included_price)
+    const totalPeople = Math.max(1, (reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0))
+    // product_price_total(상품 가격 합계)에는 이미 (판매가+불포함)×인원이 포함됨 → 불포함 중복 가산 금지
+    const adultPrice = toN(pricing.adult_product_price)
+    const childPrice = toN(pricing.child_product_price)
+    const infantPrice = toN(pricing.infant_product_price)
     let subtotal = productPriceTotal
-    
-    // subtotal 계산
-    if (subtotal === 0 && adultPrice > 0 && totalPeople > 0) {
+    if (subtotal <= 0 && adultPrice > 0) {
       subtotal = adultPrice * (reservation.adults || 0) + childPrice * (reservation.child || 0) + infantPrice * (reservation.infant || 0)
     }
-    
-    if (subtotal === 0) {
-      subtotal = grandTotal + discountTotal - additionalCost
-      if (subtotal <= 0) subtotal = grandTotal
-    }
-    
-    // 1. 상품가격 x 총인원 = 소계
-    if (subtotal > 0 && totalPeople > 0) {
-      if (adultPrice > 0 && totalPeople === (reservation.adults || 0) && (reservation.child || 0) === 0 && (reservation.infant || 0) === 0) {
-        calculationString = `${currencySymbol}${adultPrice.toFixed(2)} × ${totalPeople} = ${currencySymbol}${subtotal.toFixed(2)}`
-      } else if (totalPeople > 0 && (adultPrice > 0 || childPrice > 0 || infantPrice > 0)) {
-        const priceParts: string[] = []
-        if ((reservation.adults || 0) > 0 && adultPrice > 0) {
-          priceParts.push(`${currencySymbol}${adultPrice.toFixed(2)} × ${reservation.adults || 0}`)
-        }
-        if ((reservation.child || 0) > 0 && childPrice > 0) {
-          priceParts.push(`${currencySymbol}${childPrice.toFixed(2)} × ${reservation.child || 0}`)
-        }
-        if ((reservation.infant || 0) > 0 && infantPrice > 0) {
-          priceParts.push(`${currencySymbol}${infantPrice.toFixed(2)} × ${reservation.infant || 0}`)
-        }
-        if (priceParts.length > 0) {
-          calculationString = `${priceParts.join(' + ')} = ${currencySymbol}${subtotal.toFixed(2)}`
-        } else if (subtotal > 0) {
-          calculationString = `${currencySymbol}${subtotal.toFixed(2)}`
-        }
-      } else if (subtotal > 0) {
-        calculationString = `${currencySymbol}${subtotal.toFixed(2)}`
-      }
-    }
-    
-    // calculationString이 비어있으면 grandTotal부터 시작
-    if (!calculationString) {
-      calculationString = `${currencySymbol}${grandTotal.toFixed(2)}`
-    }
-    
-    // 2. 소계 - 할인/추가비용 = grand total
-    if (adjustmentTotal !== 0 && calculationString) {
-      const prevValue = subtotal > 0 ? subtotal : grandTotal
-      if (adjustmentTotal > 0) {
-        calculationString = `${currencySymbol}${prevValue.toFixed(2)} + ${currencySymbol}${adjustmentTotal.toFixed(2)} = ${currencySymbol}${grandTotal.toFixed(2)}`
-      } else {
-        calculationString = `${currencySymbol}${prevValue.toFixed(2)} - ${currencySymbol}${Math.abs(adjustmentTotal).toFixed(2)} = ${currencySymbol}${grandTotal.toFixed(2)}`
-      }
-    } else if (calculationString && subtotal > 0 && Math.abs(subtotal - grandTotal) > 0.01) {
-      calculationString += ` = ${currencySymbol}${grandTotal.toFixed(2)}`
-    }
-    
-    // 3. grand total - commission = Net price (항상 표시)
-    if (calculatedCommission > 0) {
-      calculationString += ` - ${currencySymbol}${calculatedCommission.toFixed(2)} = ${currencySymbol}${netPrice.toFixed(2)}`
-    } else if (Math.abs(grandTotal - netPrice) > 0.01) {
-      calculationString += ` = ${currencySymbol}${netPrice.toFixed(2)}`
+    if (subtotal <= 0) return ''
+    // 고객 총 결제 금액 = 상품가격합계 - 할인 + 옵션 + 초이스 + 추가비용 (불포함은 이미 상품가격합계에 포함되므로 더하지 않음)
+    const customerTotalPayment = subtotal - couponDiscount - additionalDiscount + optionTotal + choicesTotal + additionalCost
+    const totalRevenue = Math.max(0, customerTotalPayment - commissionAmount)
+    const currency = pricing.currency || 'USD'
+    const sym = currency === 'KRW' ? '₩' : '$'
+    // 표시: (판매가+불포함)=단가 × 인원 = 상품가격합계 또는 $945 × 3 = $945
+    const unitPrice = adultPrice + notIncludedPrice
+    let s: string
+    if (notIncludedPrice > 0 && adultPrice > 0 && totalPeople > 0) {
+      s = `(${sym}${adultPrice.toFixed(0)} + ${sym}${notIncludedPrice.toFixed(0)}) = ${sym}${unitPrice.toFixed(2)} × ${totalPeople} = ${sym}${subtotal.toFixed(2)}`
     } else {
-      // commission이 없어도 Net Price는 표시
-      calculationString += ` = ${currencySymbol}${netPrice.toFixed(2)}`
+      s = `${sym}${subtotal.toFixed(2)} × ${totalPeople} = ${sym}${subtotal.toFixed(2)}`
     }
-    
-    // 최종 fallback: 계산식이 비어있으면 최소한 grandTotal - commission = Net Price 표시
-    if (!calculationString || calculationString.trim() === '') {
-      if (calculatedCommission > 0) {
-        calculationString = `${currencySymbol}${grandTotal.toFixed(2)} - ${currencySymbol}${calculatedCommission.toFixed(2)} = ${currencySymbol}${netPrice.toFixed(2)}`
-      } else {
-        calculationString = `${currencySymbol}${grandTotal.toFixed(2)} = ${currencySymbol}${netPrice.toFixed(2)}`
-      }
+    if (couponDiscount > 0 || additionalDiscount > 0) {
+      s += ` - ${sym}${(couponDiscount + additionalDiscount).toFixed(2)} = ${sym}${customerTotalPayment.toFixed(2)}`
     }
-    
-    return calculationString
+    if (commissionAmount > 0) {
+      s += ` - ${sym}${commissionAmount.toFixed(2)} = ${sym}${totalRevenue.toFixed(2)}`
+    }
+    return s
   }, [])
 
   // 픽업 시간 수정 모달 상태
@@ -1806,57 +1742,72 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           console.error('Error saving reservation_customers:', rcError)
         }
 
-        // 가격 정보가 있으면 업데이트 또는 삽입
+        // 가격 정보가 있으면 업데이트 또는 삽입 (숫자 필드 명시적 변환, 기존 행이 있으면 id로 update)
         if (reservation.pricingInfo) {
           try {
             const pricingInfo = reservation.pricingInfo as any
             const totalPeople = (reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)
-            const notIncludedTotal = (pricingInfo.not_included_price || 0) * (totalPeople || 1)
+            const notIncludedTotal = (Number(pricingInfo.not_included_price) || 0) * (totalPeople || 1)
+            const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
 
             const pricingData = {
               reservation_id: editingReservation.id,
-              adult_product_price: pricingInfo.adultProductPrice,
-              child_product_price: pricingInfo.childProductPrice,
-              infant_product_price: pricingInfo.infantProductPrice,
-              product_price_total: (pricingInfo.productPriceTotal || 0) + notIncludedTotal,
-              not_included_price: pricingInfo.not_included_price || 0,
-              required_options: pricingInfo.requiredOptions,
-              required_option_total: pricingInfo.requiredOptionTotal,
-              choices: pricingInfo.choices || {},
-              choices_total: pricingInfo.choicesTotal || 0,
-              subtotal: (pricingInfo.subtotal || 0) + notIncludedTotal,
-              coupon_code: pricingInfo.couponCode,
-              coupon_discount: pricingInfo.couponDiscount,
-              additional_discount: pricingInfo.additionalDiscount,
-              additional_cost: pricingInfo.additionalCost,
-              card_fee: pricingInfo.cardFee,
-              tax: pricingInfo.tax,
-              prepayment_cost: pricingInfo.prepaymentCost,
-              prepayment_tip: pricingInfo.prepaymentTip,
-              selected_options: pricingInfo.selectedOptionalOptions,
-              option_total: pricingInfo.optionTotal,
-              total_price: (pricingInfo.totalPrice || 0) + notIncludedTotal,
-              deposit_amount: pricingInfo.depositAmount,
-              balance_amount: pricingInfo.balanceAmount,
-              private_tour_additional_cost: pricingInfo.privateTourAdditionalCost,
-              commission_percent: pricingInfo.commission_percent || 0,
-              commission_amount: pricingInfo.commission_amount || 0
+              adult_product_price: toNum(pricingInfo.adultProductPrice),
+              child_product_price: toNum(pricingInfo.childProductPrice),
+              infant_product_price: toNum(pricingInfo.infantProductPrice),
+              product_price_total: toNum(pricingInfo.productPriceTotal) + notIncludedTotal,
+              not_included_price: toNum(pricingInfo.not_included_price),
+              required_options: pricingInfo.requiredOptions ?? {},
+              required_option_total: toNum(pricingInfo.requiredOptionTotal),
+              choices: pricingInfo.choices ?? {},
+              choices_total: toNum(pricingInfo.choicesTotal),
+              subtotal: toNum(pricingInfo.subtotal) + notIncludedTotal,
+              coupon_code: pricingInfo.couponCode ?? '',
+              coupon_discount: toNum(pricingInfo.couponDiscount),
+              additional_discount: toNum(pricingInfo.additionalDiscount),
+              additional_cost: toNum(pricingInfo.additionalCost),
+              card_fee: toNum(pricingInfo.cardFee),
+              tax: toNum(pricingInfo.tax),
+              prepayment_cost: toNum(pricingInfo.prepaymentCost),
+              prepayment_tip: toNum(pricingInfo.prepaymentTip),
+              selected_options: pricingInfo.selectedOptionalOptions ?? {},
+              option_total: toNum(pricingInfo.optionTotal),
+              total_price: toNum(pricingInfo.totalPrice) + notIncludedTotal,
+              deposit_amount: toNum(pricingInfo.depositAmount),
+              balance_amount: toNum(pricingInfo.balanceAmount),
+              private_tour_additional_cost: toNum(pricingInfo.privateTourAdditionalCost),
+              commission_percent: toNum(pricingInfo.commission_percent),
+              commission_amount: toNum(pricingInfo.commission_amount)
             }
 
-            // upsert를 사용하여 기존 레코드가 있으면 업데이트, 없으면 삽입
-            const { error: pricingError } = await supabase
+            const { data: existingPricing } = await supabase
               .from('reservation_pricing')
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              .upsert(pricingData as any, { 
-                onConflict: 'reservation_id',
-                ignoreDuplicates: false 
-              })
+              .select('id')
+              .eq('reservation_id', editingReservation.id)
+              .maybeSingle()
 
-            if (pricingError) {
-              console.error('Error saving pricing info:', pricingError)
-              // 가격 정보 저장 실패는 예약 수정 성공에 영향을 주지 않음
+            if (existingPricing?.id) {
+              const { error: pricingError } = await supabase
+                .from('reservation_pricing')
+                .update(pricingData as any)
+                .eq('id', existingPricing.id)
+
+              if (pricingError) {
+                console.error('Error saving pricing info:', pricingError)
+              } else {
+                console.log('가격 정보가 성공적으로 저장되었습니다.')
+              }
             } else {
-              console.log('가격 정보가 성공적으로 저장되었습니다.')
+              const insertData = { ...pricingData, id: crypto.randomUUID() }
+              const { error: pricingError } = await supabase
+                .from('reservation_pricing')
+                .insert(insertData as any)
+
+              if (pricingError) {
+                console.error('Error saving pricing info:', pricingError)
+              } else {
+                console.log('가격 정보가 성공적으로 저장되었습니다.')
+              }
             }
           } catch (pricingError) {
             console.error('Error saving pricing info:', pricingError)

@@ -25,6 +25,8 @@
     "tourPhotoBuckets": "투어 사진 버킷",
     "dataSync": "데이터 동기화",
     "dataReview": "데이터 검토",
+    "emailIntegration": "이메일 연동",
+    "reservationImports": "예약 가져오기",
     "auditLogs": "감사 로그",
     "developerTools": "개발자 도구",
     "addReservation": "새 예약 추가"

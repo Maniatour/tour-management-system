@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl'
 import { Share2, Copy, Check, ExternalLink, Lock, Unlock } from 'lucide-react'
 import TourPhotoUpload from '@/components/TourPhotoUpload'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface TourPhotosProps {
   tour: any
@@ -15,6 +16,7 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
   tour,
   onPhotosUpdated
 }) => {
+  const { user } = useAuth()
   const t = useTranslations('tours.tourPhoto')
   const [photoCount, setPhotoCount] = useState(0)
   const [copied, setCopied] = useState(false)
@@ -219,7 +221,7 @@ export const TourPhotos: React.FC<TourPhotosProps> = ({
         
         <TourPhotoUpload
           tourId={tour.id}
-          uploadedBy="guide@tour.com" // 실제로는 현재 로그인한 가이드의 이메일
+          uploadedBy={user?.email ?? ''}
           onPhotosUpdated={() => {
             onPhotosUpdated()
             // 사진 개수 다시 확인

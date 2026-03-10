@@ -76,6 +76,7 @@ const labels = {
     prepaymentCost: '선결제 지출',
     prepaymentTip: '선결제 팁',
     productTotal: '상품 합계',
+    notIncludedPrice: '불포함 가격',
     grandTotal: '총 결제 금액',
     tipSuggest: '팁 안내',
     tipSectionTitle: '팁 안내',
@@ -133,6 +134,7 @@ const labels = {
     prepaymentCost: 'Prepayment',
     prepaymentTip: 'Prepayment tip',
     productTotal: 'Product Total',
+    notIncludedPrice: 'Not included price',
     grandTotal: 'Grand Total',
     tipSuggest: 'Tip guide',
     tipSectionTitle: 'Suggested Tips',
@@ -594,8 +596,15 @@ export default function CustomerReceiptModal({
                 const balanceAmount = customerTotalPayment - (d.pricing.deposit_amount ?? 0)
                 const totalPeople = Math.max(1, d.reservation.total_people ?? 1)
                 const notIncludedPerPerson = d.pricing.not_included_price ?? 0
-                const unitPriceWithNotIncluded = d.pricing.adult_product_price + notIncludedPerPerson
-                const productRowTotal = d.pricing.product_price_total + notIncludedPerPerson * totalPeople
+                const notIncludedTotal = notIncludedPerPerson * totalPeople
+                const productRowTotal = d.pricing.product_price_total + notIncludedTotal
+                // 상품 행 단가: adult_product_price가 있으면 사용, 0이면 (상품 총액/인원) 또는 (상품총액-불포함)/인원으로 계산 (판매가 $220, 불포함 $95가 있는데 단가가 $0으로 나오는 경우 방지)
+                const productTotalOnly = Math.max(0, (d.pricing.product_price_total ?? 0) - notIncludedTotal)
+                const productUnitPrice = (d.pricing.adult_product_price ?? 0) > 0
+                  ? (d.pricing.adult_product_price ?? 0)
+                  : totalPeople > 0
+                    ? (productTotalOnly > 0 ? productTotalOnly / totalPeople : (d.pricing.product_price_total ?? 0) / totalPeople)
+                    : 0
                 const tip10PerPerson = (customerTotalPayment * 0.10) / totalPeople
                 const tip15PerPerson = (customerTotalPayment * 0.15) / totalPeople
                 const tip20PerPerson = (customerTotalPayment * 0.20) / totalPeople
@@ -668,10 +677,20 @@ export default function CustomerReceiptModal({
                           <tr className="border-b border-gray-100">
                             <td className="px-1.5 py-1 text-gray-900 whitespace-nowrap min-w-[6rem] w-[6rem]">{d.reservation.tour_date}</td>
                             <td className="px-1.5 py-1 text-gray-900 break-words">{productName}</td>
-                            <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(unitPriceWithNotIncluded, cur)}</td>
+                            <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(productUnitPrice, cur)}</td>
                             <td className="px-1.5 py-1 text-right text-gray-900 w-8 min-w-0">{d.reservation.total_people}</td>
-                            <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(productRowTotal, cur)}</td>
+                            <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(d.pricing.product_price_total, cur)}</td>
                           </tr>
+                          {/* 불포함 가격 (있을 때만 별도 행 표시) */}
+                          {notIncludedTotal > 0 && (
+                            <tr className="border-b border-gray-100">
+                              <td className="px-1.5 py-1" />
+                              <td className="px-1.5 py-1 text-gray-900"><span className="text-gray-500">└ </span>{L.notIncludedPrice}</td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(notIncludedPerPerson, cur)}</td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 w-8 min-w-0">{d.reservation.total_people}</td>
+                              <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(notIncludedTotal, cur)}</td>
+                            </tr>
+                          )}
                           {/* 할인 (상품 바로 아래) */}
                           {(d.pricing.coupon_discount + d.pricing.additional_discount) > 0 && (
                             <tr className="border-b border-gray-100 bg-red-50/30">

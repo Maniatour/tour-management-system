@@ -240,6 +240,10 @@ export function useReservationData() {
     additional_cost?: number
     commission_percent?: number
     commission_amount?: number
+    deposit_amount?: number
+    option_total?: number
+    choices_total?: number
+    not_included_price?: number
     currency?: string
   }>>(new Map())
   const [toursMap, setToursMap] = useState<Map<string, {
@@ -319,13 +323,17 @@ export function useReservationData() {
       additional_cost?: number
       commission_percent?: number
       commission_amount?: number
+      deposit_amount?: number
+      option_total?: number
+      choices_total?: number
+      not_included_price?: number
       currency?: string
     }>()
     for (let i = 0; i < reservationIds.length; i += CHUNK_SIZE) {
       const chunk = reservationIds.slice(i, i + CHUNK_SIZE)
       const { data } = await supabase
         .from('reservation_pricing')
-        .select('reservation_id, total_price, balance_amount, adult_product_price, child_product_price, infant_product_price, product_price_total, coupon_discount, additional_discount, additional_cost, commission_percent, commission_amount')
+        .select('reservation_id, total_price, balance_amount, adult_product_price, child_product_price, infant_product_price, product_price_total, coupon_discount, additional_discount, additional_cost, commission_percent, commission_amount, deposit_amount, option_total, choices_total, not_included_price')
         .in('reservation_id', chunk)
       if (data) {
         data.forEach((p: Record<string, unknown>) => {
@@ -341,6 +349,10 @@ export function useReservationData() {
             additional_cost: toNumber(p.additional_cost),
             commission_percent: toNumber(p.commission_percent),
             commission_amount: toNumber(p.commission_amount),
+            deposit_amount: toNumber(p.deposit_amount),
+            option_total: toNumber(p.option_total),
+            choices_total: toNumber(p.choices_total),
+            not_included_price: toNumber(p.not_included_price),
             currency: 'USD'
           })
         })

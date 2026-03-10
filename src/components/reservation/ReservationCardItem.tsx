@@ -55,6 +55,10 @@ interface ReservationCardItemProps {
     additional_cost?: number
     commission_percent?: number
     commission_amount?: number
+    deposit_amount?: number
+    option_total?: number
+    choices_total?: number
+    not_included_price?: number
     currency?: string
   }>
   locale: string

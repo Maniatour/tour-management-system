@@ -44,7 +44,7 @@ export default function ReviewManagementSection({ reservationId, compact = false
   // 예약자의 채널 정보 조회
   useEffect(() => {
     const fetchReservationChannel = async () => {
-      if (!reservationId) return
+      if (!reservationId || (typeof reservationId === 'string' && reservationId.startsWith('import-'))) return
 
       try {
         const { data: reservation, error: reservationError } = await supabase

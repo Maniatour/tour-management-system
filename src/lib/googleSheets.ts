@@ -875,21 +875,11 @@ export const getSheetSampleData = async (spreadsheetId: string, sheetName: strin
 
     console.log(`📊 Reading sheet sample: ${sheetName}`)
     
-    // 단일 API 호출로 헤더와 샘플 데이터를 동시에 가져옴 (A1:Z6 - 최대 6행)
-    const sampleRange = `${sheetName}!A1:Z${Math.min(maxRows + 1, 6)}`
-    
     const auth = getAuthClient()
-    const sheets = google.sheets({ 
-      version: 'v4', 
+    const sheets = google.sheets({
+      version: 'v4',
       auth,
-      timeout: 30000 // 30초 타임아웃으로 증가
-    })
-    
-    // 20초 타임아웃으로 샘플 데이터 가져오기
-    const samplePromise = sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: sampleRange,
-      valueRenderOption: 'UNFORMATTED_VALUE'
+      timeout: 30000
     })
     
     let timeoutId: NodeJS.Timeout | null = null
@@ -897,13 +887,17 @@ export const getSheetSampleData = async (spreadsheetId: string, sheetName: strin
       timeoutId = setTimeout(() => reject(new Error('Sample data timeout after 20 seconds')), 20000)
     })
     
+    // 1) 헤더: 첫 번째 행 전체(1:1)로 읽어 시트에 있는 모든 컬럼을 가져옴 (컬럼 매핑 선택지에 전부 표시)
+    const headerPromise = sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!1:1`,
+      valueRenderOption: 'UNFORMATTED_VALUE'
+    })
     let response: { data: { values?: string[][] } }
     try {
-      response = await Promise.race([samplePromise, timeoutPromise]) as { data: { values?: string[][] } }
-      // 성공 시 타임아웃 정리
+      response = await Promise.race([headerPromise, timeoutPromise]) as { data: { values?: string[][] } }
       if (timeoutId) clearTimeout(timeoutId)
     } catch (raceError) {
-      // 타임아웃 정리
       if (timeoutId) clearTimeout(timeoutId)
       throw raceError
     }
@@ -913,20 +907,50 @@ export const getSheetSampleData = async (spreadsheetId: string, sheetName: strin
       return { columns: [], sampleData: [] }
     }
     
-    // 헤더 추출 (첫 번째 행)
     const headerRow = response.data.values[0]
-    const columns = headerRow.filter(col => col && col.toString().trim() !== '')
+    const columns = headerRow.filter(col => col != null && col.toString().trim() !== '')
+    const columnCount = headerRow.length
+    const lastCol = getColumnRange(columnCount)
     
-    // 샘플 데이터 추출 (나머지 행)
-    const sampleData: Record<string, unknown>[] = response.data.values.slice(1).map((row: string[]) => {
-      const obj: Record<string, unknown> = {}
-      headerRow.forEach((header, index) => {
-        if (header && header.toString().trim() !== '') {
-          obj[header] = row[index] || ''
-        }
+    // 2) 샘플 행: 헤더 기준 범위로 최대 5행 추가 조회
+    const sampleRows = Math.min(maxRows, 5)
+    if (sampleRows > 0 && columnCount > 0) {
+      const sampleRange = `${sheetName}!A2:${lastCol}${1 + sampleRows}`
+      timeoutId = null
+      const samplePromise = sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: sampleRange,
+        valueRenderOption: 'UNFORMATTED_VALUE'
       })
-      return obj
-    })
+      const sampleTimeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Sample rows timeout')), 15000)
+      })
+      let sampleResponse: { data: { values?: string[][] } } | null = null
+      try {
+        sampleResponse = await Promise.race([samplePromise, sampleTimeoutPromise]) as { data: { values?: string[][] } }
+        if (timeoutId) clearTimeout(timeoutId)
+      } catch {
+        if (timeoutId) clearTimeout(timeoutId)
+      }
+      if (sampleResponse?.data?.values && sampleResponse.data.values.length > 0) {
+        const sampleDataRows = sampleResponse.data.values
+        const sampleData: Record<string, unknown>[] = sampleDataRows.map((row: string[]) => {
+          const obj: Record<string, unknown> = {}
+          headerRow.forEach((header, index) => {
+            if (header != null && header.toString().trim() !== '') {
+              obj[header] = row[index] ?? ''
+            }
+          })
+          return obj
+        })
+        const result = { columns, sampleData }
+        sheetInfoCache.set(cacheKey, { data: result, timestamp: Date.now() })
+        console.log(`✅ Found ${columns.length} columns in ${sheetName}`)
+        return result
+      }
+    }
+    
+    const sampleData: Record<string, unknown>[] = []
     
     console.log(`✅ Found ${columns.length} columns in ${sheetName}`)
     

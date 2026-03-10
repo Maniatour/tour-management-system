@@ -14,7 +14,8 @@
     "clean": "rm -rf .next out dist",
     "clean:all": "rm -rf .next out dist node_modules package-lock.json && npm install",
     "generate-thumbnails": "node scripts/generate-thumbnails.js",
-    "generate-thumbnails:tour": "node scripts/generate-thumbnails.js"
+    "generate-thumbnails:tour": "node scripts/generate-thumbnails.js",
+    "cleanup-tour-photos-buckets": "node scripts/cleanup-tour-photos-buckets.js"
   },
   "dependencies": {
     "@formatjs/intl": "^3.1.6",

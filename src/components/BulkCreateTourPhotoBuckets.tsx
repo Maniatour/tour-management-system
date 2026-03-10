@@ -59,13 +59,13 @@ export default function BulkCreateTourPhotoBuckets() {
       if (success) {
         setResult({
           success: true,
-          message: '투어별 개별 버켓 생성이 완료되었습니다!',
-          details: '각 투어에 대해 개별 tour-photos-{tourId} 버켓이 생성되었습니다.'
+          message: '투어별 폴더 생성이 완료되었습니다!',
+          details: 'tour-photos 버킷 안에 각 투어 ID별 폴더가 생성되었습니다.'
         })
       } else {
         setResult({
           success: false,
-          message: '투어별 개별 버켓 생성 중 오류가 발생했습니다.',
+          message: '투어별 폴더 생성 중 오류가 발생했습니다.',
           details: '콘솔을 확인하여 자세한 오류 정보를 확인하세요.'
         })
       }
@@ -142,9 +142,9 @@ export default function BulkCreateTourPhotoBuckets() {
             </div>
 
             <div className="space-y-1.5 sm:space-y-2">
-              <h3 className="font-medium text-sm sm:text-base">투어별 개별 버켓 생성</h3>
+              <h3 className="font-medium text-sm sm:text-base">투어별 폴더 생성</h3>
               <p className="text-xs sm:text-sm text-gray-600">
-                각 투어에 대해 개별 tour-photos-{`{tourId}`} 버켓을 생성합니다.
+                tour-photos 버킷 안에 각 투어 ID(예: 19c6a24c) 폴더를 생성합니다.
               </p>
               <Button 
                 onClick={handleIndividualCreate} 
@@ -158,7 +158,7 @@ export default function BulkCreateTourPhotoBuckets() {
                     생성 중...
                   </>
                 ) : (
-                  '개별 버켓 생성'
+                  '투어별 폴더 생성'
                 )}
               </Button>
             </div>

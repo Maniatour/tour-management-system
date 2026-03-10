@@ -1533,174 +1533,55 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
           </div>
         </div>
         
-        {/* 금액 계산 섹션 - 별도 줄 */}
+        {/* 금액 계산 섹션 - 예약 상세/가격 정보와 동일 공식: (상품가격합계) - 할인 = 고객총결제 - 채널수수료$ = 총매출 (Balance) */}
         {isStaff && (() => {
-          // reservationPricing이 없으면 null 반환
-          if (!reservationPricing) {
-            return null
-          }
-          // 숫자로 변환하는 헬퍼 함수
+          if (!reservationPricing) return null
           const toNumber = (value: number | string | null | undefined): number => {
             if (value === null || value === undefined) return 0
             if (typeof value === 'string') return parseFloat(value) || 0
             return value
           }
-
-          const adultPrice = toNumber(reservationPricing.adult_product_price)
-          const childPrice = toNumber(reservationPricing.child_product_price)
-          const infantPrice = toNumber(reservationPricing.infant_product_price)
           const productPriceTotal = toNumber(reservationPricing.product_price_total)
-          const notIncludedPricePerPerson = toNumber(reservationPricing.not_included_price)
           const couponDiscount = toNumber(reservationPricing.coupon_discount)
           const additionalDiscount = toNumber(reservationPricing.additional_discount)
           const additionalCost = toNumber(reservationPricing.additional_cost)
-          const grandTotal = toNumber(reservationPricing.total_price) || 0
-          const commissionPercent = toNumber(reservationPricing.commission_percent)
           const commissionAmount = toNumber(reservationPricing.commission_amount)
-          const depositAmount = toNumber(reservationPricing.deposit_amount)
           const tax = toNumber(reservationPricing.tax)
           const cardFee = toNumber(reservationPricing.card_fee)
           const prepaymentCost = toNumber(reservationPricing.prepayment_cost)
           const prepaymentTip = toNumber(reservationPricing.prepayment_tip)
           const choicesTotal = toNumber(reservationPricing.choices_total)
           const effectiveOptionsTotal = optionsTotalFromOptions !== null ? optionsTotalFromOptions : toNumber(reservationPricing.option_total)
-          // 총 인원수
-          const totalPeople = (reservation.adults || 0) + 
-        ((reservation.children || (reservation as any).child || 0) as number) + 
-        ((reservation.infants || (reservation as any).infant || 0) as number)
-          const notIncludedTotal = notIncludedPricePerPerson * (totalPeople > 0 ? totalPeople : 1)
-          // 영수증과 동일: Grand Total = 할인 후 상품 + 옵션합계 + choices + 불포함 + 기타비용 → Balance = 그 금액 - 입금액
-          const discountedProduct = productPriceTotal - couponDiscount - additionalDiscount
-          const customerTotalPayment = discountedProduct + effectiveOptionsTotal + choicesTotal + notIncludedTotal + additionalCost + tax + cardFee + prepaymentCost + prepaymentTip
-          const displayBalance = Math.max(0, customerTotalPayment - depositAmount)
-          // 고객 총 결제 = 상품 소계(total_price) + 불포함 금액
-          const displayCustomerTotal = grandTotal + notIncludedTotal
-          
-          // 할인/추가비용 합계
-          const discountTotal = couponDiscount + additionalDiscount
-          const adjustmentTotal = additionalCost - discountTotal
-          
-          // 커미션 계산 (OTA는 상품가에만 수수료 적용, 고객 총 결제 - 수수료 = Net)
-          const commissionBasePriceOnly = channelInfo?.commission_base_price_only || false
-          
-          let calculatedCommission = 0
-          let netPrice = displayCustomerTotal
-          
-          if (commissionAmount > 0) {
-            calculatedCommission = commissionAmount
-            netPrice = displayCustomerTotal > 0 ? (displayCustomerTotal - calculatedCommission) : 0
-          } else if (commissionPercent > 0 && displayCustomerTotal > 0) {
-            if (commissionBasePriceOnly) {
-              const basePriceForCommission = productPriceTotal - couponDiscount - additionalDiscount + additionalCost
-              calculatedCommission = basePriceForCommission * (commissionPercent / 100)
-              netPrice = displayCustomerTotal > 0 ? (displayCustomerTotal - calculatedCommission) : 0
-            } else {
-              calculatedCommission = displayCustomerTotal * (commissionPercent / 100)
-              netPrice = displayCustomerTotal > 0 ? (displayCustomerTotal - calculatedCommission) : 0
-            }
-          } else {
-            netPrice = displayCustomerTotal
+          const adultPrice = toNumber(reservationPricing.adult_product_price)
+          const childPrice = toNumber(reservationPricing.child_product_price)
+          const infantPrice = toNumber(reservationPricing.infant_product_price)
+          const notIncludedPricePerPerson = toNumber(reservationPricing.not_included_price)
+          const totalPeople = Math.max(1, (reservation.adults || 0) + ((reservation.children ?? (reservation as any).child) || 0) + ((reservation.infants ?? (reservation as any).infant) || 0))
+          let subtotal = productPriceTotal
+          if (subtotal <= 0 && adultPrice > 0) {
+            const children = (reservation.children ?? (reservation as any).child) || 0
+            const infants = (reservation.infants ?? (reservation as any).infant) || 0
+            subtotal = adultPrice * (reservation.adults || 0) + childPrice * children + infantPrice * infants
           }
-          
-          // 통화
+          if (subtotal <= 0) return null
+          // 상품가격합계(product_price_total)에 이미 (판매가+불포함)×인원이 포함됨 → 불포함 중복 가산 금지
+          const customerTotalPayment = subtotal - couponDiscount - additionalDiscount + effectiveOptionsTotal + choicesTotal + additionalCost + tax + cardFee + prepaymentCost + prepaymentTip
+          const totalRevenue = Math.max(0, customerTotalPayment - commissionAmount)
           const currency = reservationPricing.currency || 'USD'
           const currencySymbol = currency === 'KRW' ? '₩' : '$'
-          
-          // 계산식 구성 (한 줄 형식: $384 x 1 = $384 - $34.56 = $349.44 - $87.36 = $262.08)
-          let calculationString = ''
-          
-          // grandTotal이 있거나 netPrice가 있으면 무조건 계산식 표시
-          if (grandTotal > 0 || netPrice > 0) {
-            let subtotal = productPriceTotal
-            if (subtotal === 0 && adultPrice > 0 && totalPeople > 0) {
-              const children = (reservation.children || (reservation as any).child || 0) as number
-              const infants = (reservation.infants || (reservation as any).infant || 0) as number
-              subtotal = adultPrice * (reservation.adults || 0) + childPrice * children + infantPrice * infants
-            }
-            if (subtotal === 0) {
-              subtotal = grandTotal + discountTotal - additionalCost
-              if (subtotal <= 0) subtotal = grandTotal
-            }
-            const skipMiddleGrandTotal = subtotal > 0 && grandTotal < subtotal - 0.01
-
-            // 불포함이 있으면 순서: $220 + $195 = $415 × 1 = $415 - $49.50 = $365.50
-            if (notIncludedTotal > 0 && grandTotal > 0) {
-              calculationString = `${currencySymbol}${grandTotal.toFixed(2)} + ${currencySymbol}${notIncludedTotal.toFixed(2)} = ${currencySymbol}${displayCustomerTotal.toFixed(2)} × ${totalPeople} = ${currencySymbol}${displayCustomerTotal.toFixed(2)}`
-              if (calculatedCommission > 0) {
-                calculationString += ` - ${currencySymbol}${calculatedCommission.toFixed(2)} = ${currencySymbol}${netPrice.toFixed(2)}`
-              }
-            } else {
-              // 1. 상품가격 x 총인원 = 소계 (불포함 없을 때)
-              if (subtotal > 0) {
-                const children = (reservation.children || (reservation as any).child || 0) as number
-                const infants = (reservation.infants || (reservation as any).infant || 0) as number
-                if (totalPeople > 0 && adultPrice > 0 && totalPeople === (reservation.adults || 0) && children === 0 && infants === 0) {
-                  calculationString = `${currencySymbol}${adultPrice.toFixed(2)} × ${totalPeople} = ${currencySymbol}${subtotal.toFixed(2)}`
-                } else if (totalPeople > 0 && (adultPrice > 0 || childPrice > 0 || infantPrice > 0)) {
-                  const priceParts: string[] = []
-                  if ((reservation.adults || 0) > 0 && adultPrice > 0) {
-                    priceParts.push(`${currencySymbol}${adultPrice.toFixed(2)} × ${reservation.adults || 0}`)
-                  }
-                  if (children > 0 && childPrice > 0) {
-                    priceParts.push(`${currencySymbol}${childPrice.toFixed(2)} × ${children}`)
-                  }
-                  if (infants > 0 && infantPrice > 0) {
-                    priceParts.push(`${currencySymbol}${infantPrice.toFixed(2)} × ${infants}`)
-                  }
-                  calculationString = priceParts.length > 0 ? `${priceParts.join(' + ')} = ${currencySymbol}${subtotal.toFixed(2)}` : `${currencySymbol}${subtotal.toFixed(2)}`
-                } else {
-                  calculationString = `${currencySymbol}${subtotal.toFixed(2)}`
-                }
-              } else {
-                calculationString = `${currencySymbol}${grandTotal.toFixed(2)}`
-              }
-              if (adjustmentTotal !== 0 && calculationString) {
-                if (adjustmentTotal > 0) {
-                  calculationString += ` + ${currencySymbol}${adjustmentTotal.toFixed(2)} = ${currencySymbol}${grandTotal.toFixed(2)}`
-                } else {
-                  calculationString += ` - ${currencySymbol}${Math.abs(adjustmentTotal).toFixed(2)} = ${currencySymbol}${grandTotal.toFixed(2)}`
-                }
-              } else if (calculationString && subtotal > 0 && Math.abs(subtotal - grandTotal) > 0.01 && !skipMiddleGrandTotal) {
-                calculationString += ` = ${currencySymbol}${grandTotal.toFixed(2)}`
-              } else if (!calculationString) {
-                calculationString = `${currencySymbol}${grandTotal.toFixed(2)}`
-              }
-              const displayNetPrice = skipMiddleGrandTotal && calculatedCommission > 0 ? subtotal - calculatedCommission : netPrice
-              if (calculatedCommission > 0 && calculationString) {
-                calculationString += ` - ${currencySymbol}${calculatedCommission.toFixed(2)} = ${currencySymbol}${displayNetPrice.toFixed(2)}`
-              } else if (calculationString && Math.abs(grandTotal - netPrice) > 0.01) {
-                calculationString += ` = ${currencySymbol}${netPrice.toFixed(2)}`
-              } else if (!calculationString) {
-                calculationString = `${currencySymbol}${netPrice.toFixed(2)}`
-              }
-            }
+          const unitPrice = adultPrice + notIncludedPricePerPerson
+          let calculationString: string
+          if (notIncludedPricePerPerson > 0 && adultPrice > 0 && totalPeople > 0) {
+            calculationString = `(${currencySymbol}${adultPrice.toFixed(0)} + ${currencySymbol}${notIncludedPricePerPerson.toFixed(0)}) = ${currencySymbol}${unitPrice.toFixed(2)} × ${totalPeople} = ${currencySymbol}${subtotal.toFixed(2)}`
+          } else {
+            calculationString = `${currencySymbol}${subtotal.toFixed(2)} × ${totalPeople} = ${currencySymbol}${subtotal.toFixed(2)}`
           }
-          
-          // 계산식이 비어있으면 grandTotal/고객총결제와 commission으로 기본 계산식 생성
-          if (!calculationString || calculationString.trim() === '') {
-            if (displayCustomerTotal > 0 || grandTotal > 0) {
-              if (notIncludedTotal > 0 && grandTotal > 0) {
-                calculationString = `${currencySymbol}${grandTotal.toFixed(2)} + ${currencySymbol}${notIncludedTotal.toFixed(2)} = ${currencySymbol}${displayCustomerTotal.toFixed(2)} × ${totalPeople} = ${currencySymbol}${displayCustomerTotal.toFixed(2)}`
-              } else {
-                calculationString = `${currencySymbol}${(grandTotal > 0 ? grandTotal : displayCustomerTotal).toFixed(2)}`
-              }
-              if (calculatedCommission > 0) {
-                calculationString += ` - ${currencySymbol}${calculatedCommission.toFixed(2)} = ${currencySymbol}${netPrice.toFixed(2)}`
-              }
-            } else if (netPrice > 0) {
-              calculationString = `${currencySymbol}${netPrice.toFixed(2)}`
-            }
+          if (couponDiscount > 0 || additionalDiscount > 0) {
+            calculationString += ` - ${currencySymbol}${(couponDiscount + additionalDiscount).toFixed(2)} = ${currencySymbol}${customerTotalPayment.toFixed(2)}`
           }
-          
-          // 계산식이 여전히 비어있으면 최소한 Net Price라도 표시
-          if (!calculationString || calculationString.trim() === '') {
-            calculationString = `${currencySymbol}${netPrice.toFixed(2)}`
+          if (commissionAmount > 0) {
+            calculationString += ` - ${currencySymbol}${commissionAmount.toFixed(2)} = ${currencySymbol}${totalRevenue.toFixed(2)}`
           }
-          // 잔금(Balance): Grand Total - 입금액 (영수증과 동일 계산)
-          if (displayBalance > 0) {
-            calculationString += ` ${currencySymbol}${displayBalance.toFixed(2)} Balance`
-          }
-          
           return (
             <div className="mt-1 text-xs text-gray-700">
               <div className="text-gray-600 break-words font-medium">

@@ -54,7 +54,8 @@ export async function bulkCreateFutureTourPhotoBuckets() {
     
     for (const tour of tours) {
       try {
-        const folderPath = `tours/${tour.id}`
+        // tour-photos 버킷 하위에 투어 ID로 폴더 (예: 19c6a24c, 037a6644)
+        const folderPath = tour.id
         
         // 폴더가 존재하는지 확인
         const { data: testFile, error: testError } = await supabase.storage
@@ -155,7 +156,8 @@ export async function bulkCreateTourPhotoBuckets() {
     
     for (const tour of tours) {
       try {
-        const folderPath = `tours/${tour.id}`
+        // tour-photos 버킷 하위에 투어 ID로 폴더 (예: 19c6a24c, 037a6644)
+        const folderPath = tour.id
         
         // 폴더가 존재하는지 확인
         const { data: testFile, error: testError } = await supabase.storage
@@ -209,13 +211,23 @@ export async function bulkCreateTourPhotoBuckets() {
 }
 
 /**
- * 투어별 개별 버켓을 생성하는 함수 (필요한 경우)
+ * 투어별 폴더를 tour-photos 메인 버킷 안에 생성하는 함수.
+ * (과거에는 tour-photos-{tourId} 개별 버킷을 만들었으나, 이제는 tour-photos/{tourId} 폴더 구조만 사용)
  */
 export async function createIndividualTourBuckets() {
   try {
-    console.log('🚀 Creating individual tour buckets...')
+    console.log('🚀 Creating tour folders in tour-photos bucket...')
     
-    // 기존 투어 데이터 조회
+    const mainBucketExists = await checkTourPhotosBucket()
+    if (!mainBucketExists) {
+      console.log('📦 Main tour-photos bucket not found. Creating...')
+      const created = await createTourPhotosBucket()
+      if (!created) {
+        console.error('❌ Failed to create main tour-photos bucket')
+        return false
+      }
+    }
+    
     const { data: tours, error: toursError } = await supabase
       .from('tours')
       .select('id, tour_date, product_id')
@@ -238,35 +250,27 @@ export async function createIndividualTourBuckets() {
     
     for (const tour of tours) {
       try {
-        const bucketName = `tour-photos-${tour.id}`
+        const folderPath = tour.id
         
-        // 기존 버켓 확인
-        const { data: buckets, error: listError } = await supabase.storage.listBuckets()
-        if (listError) {
-          console.error(`❌ Error listing buckets for tour ${tour.id}:`, listError)
-          errorCount++
-          continue
-        }
+        const { data: listData, error: listError } = await supabase.storage
+          .from('tour-photos')
+          .list(folderPath, { limit: 1 })
         
-        const existingBucket = buckets?.find(bucket => bucket.name === bucketName)
-        if (existingBucket) {
-          console.log(`✅ Bucket ${bucketName} already exists`)
-          successCount++
-          continue
-        }
-        
-        // 개별 투어 버켓 생성
-        const { data, error } = await supabase.storage.createBucket(bucketName, {
-          public: true,
-          fileSizeLimit: 50 * 1024 * 1024, // 50MB
-          allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
-        })
-        
-        if (error) {
-          console.error(`❌ Error creating bucket ${bucketName}:`, error)
-          errorCount++
+        if (listError && listError.message.includes('not found')) {
+          const { error: createError } = await supabase.storage
+            .from('tour-photos')
+            .upload(`${folderPath}/.gitkeep`, new Blob([''], { type: 'text/plain' }))
+          
+          if (createError) {
+            console.error(`❌ Error creating folder for tour ${tour.id}:`, createError)
+            errorCount++
+          } else {
+            await supabase.storage.from('tour-photos').remove([`${folderPath}/.gitkeep`])
+            console.log(`✅ Created folder tour-photos/${tour.id}`)
+            successCount++
+          }
         } else {
-          console.log(`✅ Created bucket ${bucketName}`)
+          console.log(`✅ Folder tour-photos/${tour.id} already exists`)
           successCount++
         }
       } catch (error) {
@@ -275,11 +279,10 @@ export async function createIndividualTourBuckets() {
       }
     }
     
-    console.log(`📈 Summary: ${successCount} buckets created, ${errorCount} errors`)
+    console.log(`📈 Summary: ${successCount} folders ensured, ${errorCount} errors`)
     return true
-    
   } catch (error) {
-    console.error('❌ Error in individual bucket creation:', error)
+    console.error('❌ Error in folder creation:', error)
     return false
   }
 }

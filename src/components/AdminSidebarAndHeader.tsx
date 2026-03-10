@@ -26,6 +26,7 @@ import {
   MessageCircle,
   FileSpreadsheet,
   Globe,
+  Mail,
   User,
   Camera,
   Calculator,
@@ -476,6 +477,8 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
     { name: tSidebar('tourPhotoBuckets'), href: `/${locale}/admin/tour-photo-buckets`, icon: Camera },
     { name: tSidebar('dataSync'), href: `/${locale}/admin/data-sync`, icon: FileSpreadsheet },
     { name: tSidebar('dataReview'), href: `/${locale}/admin/data-review`, icon: FileCheck },
+    { name: tSidebar('emailIntegration'), href: `/${locale}/admin/email-integration`, icon: Mail },
+    { name: tSidebar('reservationImports'), href: `/${locale}/admin/reservation-imports`, icon: Mail },
     { name: tSidebar('auditLogs'), href: `/${locale}/admin/audit-logs`, icon: History },
     // 개발자 도구 (관리자만 보이도록, 시뮬레이션 중일 때도 표시)
     ...((userRole === 'admin' || (userRole === 'team_member' && isSimulating)) ? [{ name: tSidebar('developerTools'), href: `/${locale}/admin/dev-tools`, icon: Settings }] : []),

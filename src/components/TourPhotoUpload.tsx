@@ -23,6 +23,7 @@ interface TourPhoto {
   share_token?: string
   created_at: string
   uploaded_by: string
+  uploaded_by_name?: string | null
   is_hidden?: boolean
   hide_requested_by?: string | null
   hide_requested_by_name?: string | null
@@ -153,31 +154,65 @@ export default function TourPhotoUpload({
         thumbnailMap.set(originalName, `${tourId}/${thumbFile.name}`)
       })
 
-      // 데이터베이스 썸네일 매핑 생성
+      // 데이터베이스 행 매핑: file_name -> { id, uploaded_by, share_token, thumbnail_path, created_at }
+      const dbPhotoByFileName = new Map<string, { id: string; uploaded_by: string; share_token?: string; thumbnail_path?: string; created_at?: string }>()
       const dbThumbnailMap = new Map<string, string>()
       if (dbPhotos && !dbError) {
         dbPhotos.forEach((photo: any) => {
-          if (photo.thumbnail_path && photo.file_name) {
-            dbThumbnailMap.set(photo.file_name, photo.thumbnail_path)
+          if (photo.file_name) {
+            dbPhotoByFileName.set(photo.file_name, {
+              id: photo.id,
+              uploaded_by: photo.uploaded_by || '',
+              share_token: photo.share_token,
+              thumbnail_path: photo.thumbnail_path,
+              created_at: photo.created_at
+            })
+            if (photo.thumbnail_path && photo.file_name) {
+              dbThumbnailMap.set(photo.file_name, photo.thumbnail_path)
+            }
           }
+        })
+      }
+
+      // 업로더 이메일 목록 수집 (uploaded_by가 이메일 형태인 경우 team에서 nick_name 조회)
+      const uploaderEmails = Array.from(new Set(
+        Array.from(dbPhotoByFileName.values())
+          .map((p) => p.uploaded_by)
+          .filter((v) => typeof v === 'string' && v.includes('@'))
+      )) as string[]
+      const teamMap = new Map<string, string>()
+      if (uploaderEmails.length > 0) {
+        const { data: teamRows } = await supabase
+          .from('team')
+          .select('email, nick_name, name_ko')
+          .in('email', uploaderEmails)
+        ;(teamRows || []).forEach((row: { email: string; nick_name?: string | null; name_ko?: string | null }) => {
+          const name = row.nick_name || row.name_ko || row.email
+          teamMap.set(row.email, name)
         })
       }
       
       // Storage 파일을 TourPhoto 형식으로 변환
       const photos: TourPhoto[] = photoFiles.map((file: { id?: string; name: string; metadata?: { size?: number; mimetype?: string }; created_at?: string }) => {
+        const dbRow = dbPhotoByFileName.get(file.name)
         // 데이터베이스에서 썸네일 경로를 찾거나, Storage에서 찾기
-        let thumbnailPath = dbThumbnailMap.get(file.name) || thumbnailMap.get(file.name) || null
-        
-        // 썸네일 경로가 상대 경로인 경우 전체 경로로 변환
+        let thumbnailPath = (dbRow?.thumbnail_path
+          ? (dbRow.thumbnail_path.includes('/') ? dbRow.thumbnail_path : `${tourId}/${dbRow.thumbnail_path}`)
+          : null) || thumbnailMap.get(file.name) || null
         if (thumbnailPath && !thumbnailPath.includes('/')) {
           thumbnailPath = `${tourId}/${thumbnailPath}`
         }
+        
+        const photoUploadedBy = dbRow?.uploaded_by ?? uploadedBy
+        const uploadedByName = photoUploadedBy && photoUploadedBy.includes('@')
+          ? (teamMap.get(photoUploadedBy) || photoUploadedBy)
+          : (photoUploadedBy ? '알 수 없음' : null)
         
         // 디버깅: 첫 번째 사진만 로그
         if (photoFiles.indexOf(file) === 0) {
           console.log('[TourPhotoUpload] Photo thumbnail mapping:', {
             fileName: file.name,
-            dbThumbnail: dbThumbnailMap.get(file.name),
+            dbThumbnail: dbRow?.thumbnail_path,
             storageThumbnail: thumbnailMap.get(file.name),
             finalThumbnail: thumbnailPath,
             thumbnailFilesCount: thumbnailFiles.length,
@@ -189,18 +224,18 @@ export default function TourPhotoUpload({
         const hideRequest = hideRequestMap.get(file.name)
         
         return {
-          id: file.id || file.name,
+          id: dbRow?.id || file.id || file.name,
           file_name: file.name,
           file_path: `${tourId}/${file.name}`,
           thumbnail_path: thumbnailPath,
           file_size: file.metadata?.size || 0,
           mime_type: file.metadata?.mimetype || 'image/jpeg',
           file_type: file.metadata?.mimetype || 'image/jpeg',
-          description: undefined,
           is_public: true,
-          share_token: undefined,
-          created_at: file.created_at || new Date().toISOString(),
-          uploaded_by: uploadedBy,
+          ...(dbRow?.share_token != null ? { share_token: dbRow.share_token } : {}),
+          created_at: dbRow?.created_at || file.created_at || new Date().toISOString(),
+          uploaded_by: photoUploadedBy,
+          ...(uploadedByName ? { uploaded_by_name: uploadedByName } : {}),
           is_hidden: !!hideRequest,
           hide_requested_by: hideRequest?.customer_id || null,
           hide_requested_by_name: hideRequest?.customer_name || null
@@ -522,7 +557,7 @@ export default function TourPhotoUpload({
                 file_name: file.name,
                 file_size: file.size,
                 mime_type: file.type,
-                uploaded_by: user?.id,
+                uploaded_by: (user?.email || uploadedBy || ''),
                 share_token: shareToken,
                 thumbnail_path: thumbnailPath // 썸네일 경로 저장
               })
@@ -1185,6 +1220,11 @@ export default function TourPhotoUpload({
                 <p className="truncate">{photo.file_name}</p>
                 <p>{formatFileSize(photo.file_size)}</p>
                 <p>{new Date(photo.created_at).toLocaleString()}</p>
+                {photo.uploaded_by_name && (
+                  <p className="text-blue-600 font-medium mt-0.5">
+                    업로드: {photo.uploaded_by_name}
+                  </p>
+                )}
                 {/* 숨김 요청자 정보 (관리자만) */}
                 {isAdmin && photo.is_hidden && photo.hide_requested_by_name && (
                   <p className="text-red-600 font-medium mt-1">
@@ -1332,6 +1372,11 @@ export default function TourPhotoUpload({
                   <p className="text-sm text-gray-300">
                     {formatFileSize(selectedPhoto.file_size)} • {selectedPhoto.file_type || selectedPhoto.mime_type}
                   </p>
+                  {selectedPhoto.uploaded_by_name && (
+                    <p className="text-sm text-blue-200 mt-1">
+                      업로드: {selectedPhoto.uploaded_by_name}
+                    </p>
+                  )}
                 </div>
                 <div className="flex space-x-2">
                   <button

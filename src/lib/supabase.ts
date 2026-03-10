@@ -125,6 +125,22 @@ export const supabaseAdmin = typeof window === 'undefined' && supabaseServiceRol
     })
   : undefined
 
+/**
+ * 서버 전용: 사용자 JWT로 Supabase 요청 (RLS가 해당 사용자로 적용됨)
+ * API 라우트에서 인증된 사용자 권한으로 DB 작업할 때 사용
+ */
+export function createSupabaseClientWithToken(accessToken: string) {
+  if (typeof window !== 'undefined') {
+    throw new Error('createSupabaseClientWithToken is for server only')
+  }
+  return createClient<Database>(supabaseUrl!, supabaseAnonKey!, {
+    global: {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      fetch: fetchWithRetry
+    }
+  })
+}
+
 // Supabase 연결 상태 확인 함수
 export const checkSupabaseConnection = async (): Promise<boolean> => {
   try {

@@ -35,9 +35,11 @@ interface PaymentRecordsListProps {
   hideTitle?: boolean
   title?: string
   itemVariant?: 'card' | 'line'
+  /** 입금 내역 추가/수정/삭제 시 호출 (가격 섹션의 고객 실제 지불액 등 재계산용) */
+  onPaymentRecordsUpdated?: () => void
 }
 
-export default function PaymentRecordsList({ reservationId, customerName, hideTitle, title: titleProp, itemVariant = 'card' }: PaymentRecordsListProps) {
+export default function PaymentRecordsList({ reservationId, customerName, hideTitle, title: titleProp, itemVariant = 'card', onPaymentRecordsUpdated }: PaymentRecordsListProps) {
   const [paymentRecords, setPaymentRecords] = useState<PaymentRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -120,6 +122,7 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
       }
 
       await fetchPaymentRecords()
+      onPaymentRecordsUpdated?.()
     } catch (error) {
       console.error('입금 내역 삭제 오류:', error)
       alert(error instanceof Error ? error.message : '입금 내역 삭제 중 오류가 발생했습니다.')
@@ -147,6 +150,7 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
       }
 
       await fetchPaymentRecords()
+      onPaymentRecordsUpdated?.()
     } catch (error) {
       console.error('상태 업데이트 오류:', error)
       alert(error instanceof Error ? error.message : '상태 업데이트 중 오류가 발생했습니다.')
@@ -377,6 +381,7 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
           onSuccess={() => {
             setShowForm(false)
             fetchPaymentRecords()
+            onPaymentRecordsUpdated?.()
           }}
           onCancel={() => setShowForm(false)}
         />
@@ -390,6 +395,7 @@ export default function PaymentRecordsList({ reservationId, customerName, hideTi
           onSuccess={() => {
             setEditingRecord(null)
             fetchPaymentRecords()
+            onPaymentRecordsUpdated?.()
           }}
           onCancel={() => setEditingRecord(null)}
         />

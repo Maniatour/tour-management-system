@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseAdmin, createSupabaseClientWithToken } from '@/lib/supabase'
 
 // 입금 내역 업데이트
 export async function PUT(
@@ -51,8 +51,11 @@ export async function PUT(
       updateData.confirmed_by = user.email!
     }
 
-    // 입금 내역 업데이트
-    const { data: updatedPaymentRecord, error } = await supabase
+    // 인증된 사용자 JWT로 요청 (RLS 적용) 또는 서비스 롤
+    const db = supabaseAdmin ?? createSupabaseClientWithToken(token)
+
+    // 입금 내역 업데이트 (reservation만 조인, customers 조인은 스키마 관계 오류 방지를 위해 제외)
+    const { data: updatedPaymentRecord, error } = await db
       .from('payment_records')
       .update(updateData)
       .eq('id', id)
@@ -60,18 +63,15 @@ export async function PUT(
         *,
         reservation:reservations(
           id,
-          customer_id,
-          customer:customers(
-            name,
-            email
-          )
+          customer_id
         )
       `)
       .maybeSingle()
 
     if (error) {
-      console.error('입금 내역 업데이트 오류:', error)
-      return NextResponse.json({ error: '입금 내역을 업데이트할 수 없습니다' }, { status: 500 })
+      console.error('입금 내역 업데이트 오류:', error?.message, error?.details, error?.hint)
+      const message = error?.message ?? '입금 내역을 업데이트할 수 없습니다'
+      return NextResponse.json({ error: message }, { status: 500 })
     }
 
     if (!updatedPaymentRecord) {
@@ -108,8 +108,10 @@ export async function DELETE(
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
+    const db = supabaseAdmin ?? createSupabaseClientWithToken(token)
+
     // 입금 내역 삭제
-    const { error } = await supabase
+    const { error } = await db
       .from('payment_records')
       .delete()
       .eq('id', id)

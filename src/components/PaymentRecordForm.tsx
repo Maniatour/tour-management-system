@@ -58,7 +58,8 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
         const { data: { session } } = await supabase.auth.getSession()
         const userEmail = session?.user?.email
         
-        const options = await paymentMethodIntegration.getPaymentMethodOptions(userEmail || undefined)
+        // 관리자 입금 내역 폼에서는 모든 활성 결제 방법 표시 (userEmail 미전달)
+        const options = await paymentMethodIntegration.getPaymentMethodOptions(undefined)
         
         if (!isMounted) return
         
@@ -66,20 +67,27 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
         
         // 수정 모드일 때 기존 데이터 로드
         if (editingRecord) {
-          // payment_method 문자열을 payment_method_id로 변환
+          // payment_method에 ID(예: PAYM033) 또는 표시명(예: CC 4052)이 저장될 수 있음
           let paymentMethodId = ''
+          let paymentMethodDisplay = editingRecord.payment_method
           if (editingRecord.payment_method) {
-            const matchedOption = options.find(opt => opt.method === editingRecord.payment_method)
-            if (matchedOption) {
-              paymentMethodId = matchedOption.id
+            const matchedById = options.find(opt => opt.id === editingRecord.payment_method)
+            const matchedByMethod = options.find(opt => opt.method === editingRecord.payment_method)
+            if (matchedById) {
+              paymentMethodId = matchedById.id
+              paymentMethodDisplay = matchedById.method
+            } else if (matchedByMethod) {
+              paymentMethodId = matchedByMethod.id
+              paymentMethodDisplay = matchedByMethod.method
             } else {
-              // 정확한 매치가 없으면 resolvePaymentMethodId 사용
               const resolvedId = await paymentMethodIntegration.resolvePaymentMethodId(
                 editingRecord.payment_method,
                 userEmail || undefined
               )
               if (resolvedId) {
                 paymentMethodId = resolvedId
+                const resolvedOption = options.find(opt => opt.id === resolvedId)
+                if (resolvedOption) paymentMethodDisplay = resolvedOption.method
               }
             }
           }
@@ -96,7 +104,7 @@ export default function PaymentRecordForm({ reservationId, customerName, onSucce
             return {
               payment_status: editingRecord.payment_status,
               amount: editingRecord.amount.toString(),
-              payment_method: editingRecord.payment_method,
+              payment_method: paymentMethodDisplay,
               payment_method_id: paymentMethodId,
               note: editingRecord.note || '',
               amount_krw: editingRecord.amount_krw?.toString() || ''
