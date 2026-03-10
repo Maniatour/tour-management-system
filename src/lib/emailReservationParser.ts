@@ -112,34 +112,71 @@ function extractCommonPatterns(text: string): Partial<ExtractedReservationData> 
   return out
 }
 
+/** GetYourGuide 제목에서 product_id 매핑 (S코드 → 우리 product_id) */
+const GYG_SUBJECT_PRODUCT_MAP: Record<string, string> = {
+  S382661: 'MDGCSUNRISE',
+}
+
 /** GetYourGuide 예약 메일 전용 추출 (라벨 기반) */
-function extractGetYourGuide(text: string): Partial<ExtractedReservationData> {
+function extractGetYourGuide(
+  text: string,
+  subject: string,
+  sourceEmail: string | null
+): Partial<ExtractedReservationData> {
   const out: Partial<ExtractedReservationData> = {}
   if (!text || text.length < 10) return out
 
-  // Reference number: 본문 "Reference number: GYGZGZ56LA5F" 또는 제목 "Booking - S382661 - GYGZGZ56LA5F" 마지막 코드
-  const refGyG = text.match(/(?:reference\s*number|reference\s*#?)\s*:?\s*([A-Z0-9]{8,20})/i)
-  if (refGyG) out.channel_rn = refGyG[1].trim()
+  // 예약 접수 이메일: 발신 GetYourGuide + 제목 "Booking -"로 시작
+  const fromGyG = (sourceEmail || '').toLowerCase().includes('getyourguide')
+  const subjectBooking = (subject || '').trimStart().toLowerCase().startsWith('booking -')
+  if (fromGyG && subjectBooking) out.is_booking_confirmed = true
+
+  // 제목 "Booking - S382661 - GYGZGZ56LA5F" → S382661 = product_id 매핑, GYGZGZ56LA5F = channel_rn
+  const subjectMatch = subject.match(/Booking\s*[-–]\s*([A-Z0-9]+)\s*[-–]\s*([A-Z0-9]{8,20})/i)
+  if (subjectMatch) {
+    const code = subjectMatch[1].trim()
+    const refCode = subjectMatch[2].trim()
+    out.channel_rn = refCode
+    if (GYG_SUBJECT_PRODUCT_MAP[code]) out.product_id = GYG_SUBJECT_PRODUCT_MAP[code]
+  }
+
+  // Reference number: 본문 "Reference number: GYGZGZ56LA5F"
+  if (!out.channel_rn) {
+    const refGyG = text.match(/(?:reference\s*number|reference\s*#?)\s*:?\s*([A-Z0-9]{8,20})/i)
+    if (refGyG) out.channel_rn = refGyG[1].trim()
+  }
   if (!out.channel_rn) {
     const subjectRef = text.match(/(?:booking|reservation)\s*[-–]\s*[A-Z0-9]+\s*[-–]\s*([A-Z0-9]{8,20})/i)
     if (subjectRef) out.channel_rn = subjectRef[1].trim()
   }
 
-  // Main customer 블록: Customer Name: Gaby Quintino 등
+  // Main customer: "Main customer   Gaby Quintino"
   const mainCustomerName = text.match(/(?:main\s*customer|customer\s*name)\s*:?\s*([A-Za-z\u00C0-\u024F\s'-]+?)(?:\s*(?:customer\s*email|email\s*:|\n|$))/im)
   if (mainCustomerName) out.customer_name = mainCustomerName[1].trim()
 
+  // 고객 이메일: customer-xxx@reply.getyourguide.com 등
   const customerEmailGyG = text.match(/(?:customer\s*email|email\s*:)\s*([^\s\n]+@[^\s\n]+)/i)
   if (customerEmailGyG) out.customer_email = customerEmailGyG[1].trim()
+  if (!out.customer_email) {
+    const replyEmail = text.match(/([a-z0-9_-]+@reply\.getyourguide\.com)/i)
+    if (replyEmail) out.customer_email = replyEmail[1].trim()
+  }
 
-  const customerPhoneGyG = text.match(/(?:customer\s*phone|phone\s*:)\s*([+\d\s.-]+?)(?:\s*(?:customer\s*language|tour\s*language|language\s*:|\n|$))/im)
+  // Phone: +525528999051
+  const customerPhoneGyG = text.match(/(?:phone\s*:)\s*([+\d\s.-]+?)(?:\s*(?:customer\s*language|tour\s*language|language\s*:|\n|$))/im)
   if (customerPhoneGyG) out.customer_phone = customerPhoneGyG[1].trim()
+  if (!out.customer_phone) {
+    const phoneAlt = text.match(/Phone:\s*([+\d\s.-]{10,})/i)
+    if (phoneAlt) out.customer_phone = phoneAlt[1].trim()
+  }
 
-  const customerLang = text.match(/(?:customer\s*language|language\s*:)\s*([A-Za-z\s()]+?)(?:\s*(?:tour\s*language|date|pickup|\n|$))/im)
-  if (customerLang) out.language = customerLang[1].trim()
-
+  // Tour language: "English (Live tour guide)" → 영어
   const tourLang = text.match(/(?:tour\s*language|tour\s*lang)\s*:?\s*([A-Za-z\s()]+?)(?:\s*(?:pickup|date|price|\n|$))/im)
-  if (tourLang && !out.language) out.language = tourLang[1].trim()
+  if (tourLang) out.language = tourLang[1].trim()
+  const customerLang = text.match(/(?:customer\s*language|language\s*:)\s*([A-Za-z\s()]+?)(?:\s*(?:tour\s*language|date|pickup|\n|$))/im)
+  if (customerLang && !out.language) out.language = customerLang[1].trim()
+  // "English (Live tour guide)" → EN
+  if (out.language && /english/i.test(out.language)) out.language = 'EN'
 
   // Pickup: Harrah's Las Vegas Hotel & Casino, ...
   const pickup = text.match(/(?:pickup\s*|pick-up\s*)\s*:?\s*([^\n]+?)(?:\s*open\s*in\s*google|price|date|\n\n|$)/im)
@@ -157,15 +194,23 @@ function extractGetYourGuide(text: string): Partial<ExtractedReservationData> {
     if (arrowProduct) out.product_name = arrowProduct[1].trim()
   }
 
-  // 초이스: "Group Tour with Lower Antelope Canyon"
-  const choices = text.match(/(?:group\s*tour\s+with\s+[^\n]+|with\s+lower\s+[^\n]+|option\s*:?\s*[^\n]+)/im)
-  if (choices) out.product_choices = choices[0].trim()
+  // 초이스: "Group Tour with Lower Antelope Canyon" → Lower Antelope Canyon 선택, 미국 거주자/기타 입장료는 미정
+  const choices = text.match(/(?:group\s*tour\s+with\s+([^\n]+?))|(?:with\s+lower\s+([^\n]+?))|(?:option\s*:?\s*([^\n]+?))(?:\s*number\s*of\s*participants|\n\n|$)/im)
+  if (choices) {
+    const raw = (choices[1] || choices[2] || choices[3] || '').trim()
+    out.product_choices = raw ? `Group Tour with ${raw}` : (choices[0] || '').trim()
+    if (/lower\s+antelope\s*canyon/i.test(raw) || /lower\s+antelope\s*canyon/i.test(text)) {
+      out.import_choice_option_names = ['Lower Antelope Canyon']
+    }
+  }
+  out.import_choice_undecided_groups = ['미국 거주자 구분', '기타 입장료']
 
-  // 인원: "2 x Adults (Age 0-99)" 또는 "Number of participants: 2"
+  // 인원: "Number of participants   2 x Adults (Age 0 - 99)"
   const participants = text.match(/(?:number\s*of\s*participants|participants?)\s*:?\s*(\d+)\s*x?\s*adults?/i)
   if (participants) out.adults = parseInt(participants[1], 10)
   const adultsOnly = text.match(/(\d+)\s*x?\s*adults?\s*\(/i)
   if (adultsOnly && out.adults === undefined) out.adults = parseInt(adultsOnly[1], 10)
+  if (out.adults !== undefined) out.total_people = out.adults + (out.children ?? 0) + (out.infants ?? 0)
 
   return out
 }
@@ -189,7 +234,7 @@ export function extractReservationFromEmail(options: {
 
   let merged: Partial<ExtractedReservationData> = { ...common, platform_key: platform_key ?? undefined }
   if (platform_key === 'getyourguide') {
-    const gyG = extractGetYourGuide(fullText)
+    const gyG = extractGetYourGuide(plainText, subject, sourceEmail || null)
     merged = { ...merged, ...gyG }
   }
 

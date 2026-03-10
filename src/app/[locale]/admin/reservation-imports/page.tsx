@@ -213,10 +213,15 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {items.map((row) => (
+              {items.map((row) => {
+                const isGyGBooking =
+                  (row.source_email || '').toLowerCase().includes('getyourguide') &&
+                  (row.subject || '').trimStart().toLowerCase().startsWith('booking -')
+                const isHighlight = isGyGBooking || row.extracted_data?.is_booking_confirmed === true
+                return (
                 <tr
                   key={row.id}
-                  className="hover:bg-gray-50 cursor-pointer"
+                  className={`hover:bg-gray-50 cursor-pointer ${isHighlight ? 'bg-amber-50/80 border-l-4 border-l-amber-500' : ''}`}
                   onClick={() => router.push(`/${locale}/admin/reservation-imports/${row.id}`)}
                 >
                   <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
@@ -233,7 +238,8 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                     <ChevronRight className="w-4 h-4 text-gray-400" />
                   </td>
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
           </table>
         </div>

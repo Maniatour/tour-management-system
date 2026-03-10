@@ -85,7 +85,13 @@ interface ReservationFormProps {
   /** 새 예약 추가 모드(아직 DB에 저장 전). true이면 예약 옵션 추가는 저장 후에만 가능 */
   isNewReservation?: boolean
   /** 예약 가져오기(이메일)에서 넘긴 초기 고객 정보. reservation.id가 import- 로 시작할 때 사용 */
-  initialDataFromImport?: { customer_name?: string; customer_email?: string; customer_phone?: string }
+  initialDataFromImport?: { customer_name?: string; customer_email?: string; customer_phone?: string; customer_language?: string }
+  /** 예약 가져오기 시 새 고객 추가 폼을 열어둘지 여부 (이메일에서 고객명이 있을 때 true) */
+  initialShowNewCustomerForm?: boolean
+  /** 예약 가져오기에서 파싱한 초이스 옵션명 (예: "Lower Antelope Canyon"). 상품 초이스 로드 시 해당 옵션으로 선택 */
+  initialChoiceOptionNamesFromImport?: string[]
+  /** "미정"으로 둘 초이스 그룹명 (예: "미국 거주자 구분", "기타 입장료"). option_id __undecided__ 로 설정 */
+  initialChoiceUndecidedGroupNamesFromImport?: string[]
 }
 
 type RezLike = Partial<Reservation> & {
@@ -126,13 +132,16 @@ export default function ReservationForm({
   allowPastDateEdit = false,
   titleAction,
   isNewReservation = false,
-  initialDataFromImport
+  initialDataFromImport,
+  initialShowNewCustomerForm = false,
+  initialChoiceOptionNamesFromImport,
+  initialChoiceUndecidedGroupNamesFromImport,
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
   const [showProductChoiceModal, setShowProductChoiceModal] = useState(false)
   const [showChannelModal, setShowChannelModal] = useState(false)
-  const [showNewCustomerForm, setShowNewCustomerForm] = useState(false)
+  const [showNewCustomerForm, setShowNewCustomerForm] = useState(initialShowNewCustomerForm)
   const [languageDropdownOpen, setLanguageDropdownOpen] = useState(false)
   const languageDropdownRef = useRef<HTMLDivElement | null>(null)
   const t = useTranslations('reservations')
@@ -369,6 +378,12 @@ export default function ReservationForm({
       return ''
     })(),
     customerLanguage: (() => {
+      if (initialDataFromImport?.customer_language && (reservation as any)?.id?.startsWith?.('import-')) {
+        const l = initialDataFromImport.customer_language
+        if (l === 'EN' || l === 'en' || l === 'English' || l === '영어') return 'EN'
+        if (l === 'KR' || l === 'ko' || l === '한국어') return 'KR'
+        return l || 'KR'
+      }
       const customerId = reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id
       if (customerId && customers.length > 0) {
         const customer = customers.find(c => c.id === customerId)
@@ -1764,16 +1779,41 @@ export default function ReservationForm({
       }> = [];
       
       const isEditMode = !!reservation?.id;
-      
+      const importOptionNames = initialChoiceOptionNamesFromImport?.length ? initialChoiceOptionNamesFromImport.map(n => n.toLowerCase().trim()) : [];
+      const importUndecidedGroups = initialChoiceUndecidedGroupNamesFromImport?.length ? new Set(initialChoiceUndecidedGroupNamesFromImport.map(g => g.trim())) : new Set<string>();
+
       if (!isEditMode) {
         data?.forEach((choice: any) => {
-          const defaultOption = choice.options?.find((opt: any) => opt.is_default);
-          if (defaultOption) {
+          const choiceGroupKo = (choice.choice_group_ko || choice.choice_group || '').trim();
+          if (importUndecidedGroups.has(choiceGroupKo)) {
             defaultChoices.push({
               choice_id: choice.id,
-              option_id: defaultOption.id,
+              option_id: '__undecided__',
               quantity: 1,
-              total_price: defaultOption.adult_price || 0
+              total_price: 0
+            });
+            return;
+          }
+          let selectedOption: any = null;
+          if (importOptionNames.length > 0 && choice.options?.length) {
+            for (const name of importOptionNames) {
+              selectedOption = choice.options.find((opt: any) => {
+                const on = (opt.option_name || '').toLowerCase();
+                const ok = (opt.option_name_ko || '').toLowerCase();
+                const okey = (opt.option_key || '').toLowerCase();
+                const n = name.toLowerCase();
+                return on.includes(n) || n.includes(on) || ok.includes(n) || n.includes(ok) || okey.includes(n) || n.includes(okey);
+              });
+              if (selectedOption) break;
+            }
+          }
+          if (!selectedOption) selectedOption = choice.options?.find((opt: any) => opt.is_default);
+          if (selectedOption && selectedOption.id !== '__undecided__') {
+            defaultChoices.push({
+              choice_id: choice.id,
+              option_id: selectedOption.id,
+              quantity: 1,
+              total_price: selectedOption.adult_price || 0
             });
           }
         });
@@ -1822,7 +1862,7 @@ export default function ReservationForm({
         loadedProductChoicesRef.current.delete(productId)
       }
     }
-  }, [reservation?.id]);
+  }, [reservation?.id, initialChoiceOptionNamesFromImport, initialChoiceUndecidedGroupNamesFromImport]);
 
   // 가격 정보 조회 함수 (reservation_pricing 우선, 없으면 dynamic_pricing에서 조회)
   const loadPricingInfo = useCallback(async (productId: string, tourDate: string, channelId: string, reservationId?: string, selectedChoices?: Array<{ choice_id?: string; option_id?: string; id?: string }>) => {

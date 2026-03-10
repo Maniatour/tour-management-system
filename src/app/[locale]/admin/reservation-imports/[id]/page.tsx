@@ -100,6 +100,7 @@ export default function ReservationImportDetailPage() {
       channel_rn: ext.channel_rn ?? prev.channel_rn,
       pickup_hotel: ext.pickup_hotel ?? prev.pickup_hotel,
       event_note: noteParts.join(' · ') || prev.event_note,
+      product_id: ext.product_id ?? prev.product_id,
     }))
   }, [id])
 
@@ -116,7 +117,12 @@ export default function ReservationImportDetailPage() {
   }, [row?.platform_key, channelsSafe, form.channel_id])
 
   const ext = row ? ((row as ImportRow).extracted_data || {}) as ExtractedReservationData : null
+  // product_id: 이메일 파서에서 직접 설정된 값(제목 S코드 매핑) 우선, 없으면 상품명으로 매칭
   useEffect(() => {
+    if (ext?.product_id && productsSafe.some((p: { id: string }) => p.id === ext.product_id)) {
+      setForm((f) => (f.product_id === ext.product_id ? f : { ...f, product_id: ext.product_id! }))
+      return
+    }
     if (!ext?.product_name || !productsSafe.length || form.product_id) return
     const nameLower = ext.product_name.toLowerCase()
     const matched = productsSafe.find(
@@ -171,6 +177,7 @@ export default function ReservationImportDetailPage() {
           pickup_time: (payload.pickUpTime as string) || null,
           added_by: user.email,
           status: 'confirmed',
+          selected_choices: payload.selectedChoices ?? undefined,
         }),
       })
       const data = await res.json()
@@ -493,7 +500,11 @@ export default function ReservationImportDetailPage() {
           customer_name: form.customer_name || undefined,
           customer_email: form.customer_email || undefined,
           customer_phone: form.customer_phone || undefined,
+          customer_language: ext?.language || undefined,
         }}
+        initialShowNewCustomerForm={Boolean(ext?.customer_name)}
+        initialChoiceOptionNamesFromImport={ext?.import_choice_option_names}
+        initialChoiceUndecidedGroupNamesFromImport={ext?.import_choice_undecided_groups}
       />
     </div>
   )

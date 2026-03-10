@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
 
+/** 선택된 초이스 (reservation_choices 저장용) */
+interface SelectedChoiceItem {
+  choice_id: string
+  option_id: string
+  quantity?: number
+  total_price?: number
+}
+
 /** confirm 요청 body: 예약 생성에 필요한 필드 */
 interface ConfirmBody {
   customer_id?: string
@@ -23,6 +31,7 @@ interface ConfirmBody {
   added_by: string
   status?: string
   variant_key?: string
+  selected_choices?: SelectedChoiceItem[]
 }
 
 export async function POST(
@@ -137,6 +146,28 @@ export async function POST(
     reservationId,
     false
   )
+
+  // reservation_choices 저장 (미정 __undecided__ 제외)
+  const selectedChoices = Array.isArray(body.selected_choices) ? body.selected_choices : []
+  const choicesToInsert = selectedChoices.filter(
+    (c) => c.choice_id && c.option_id && c.option_id !== '__undecided__'
+  )
+  if (choicesToInsert.length > 0) {
+    const { error: choicesError } = await client
+      .from('reservation_choices')
+      .insert(
+        choicesToInsert.map((c) => ({
+          reservation_id: reservationId,
+          choice_id: c.choice_id,
+          option_id: c.option_id,
+          quantity: c.quantity ?? 1,
+          total_price: c.total_price ?? 0,
+        }))
+      )
+    if (choicesError) {
+      console.error('[reservation-imports/confirm] reservation_choices insert error:', choicesError)
+    }
+  }
 
   const { error: updateImportError } = await client
     .from('reservation_imports')
