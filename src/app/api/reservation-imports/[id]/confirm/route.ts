@@ -10,6 +10,36 @@ interface SelectedChoiceItem {
   total_price?: number
 }
 
+/** 가격 정보 (reservation_pricing 저장용, 새 예약 추가와 동일) */
+interface PricingInfo {
+  adultProductPrice?: number
+  childProductPrice?: number
+  infantProductPrice?: number
+  productPriceTotal?: number
+  not_included_price?: number
+  requiredOptions?: Record<string, unknown>
+  requiredOptionTotal?: number
+  choices?: Record<string, unknown>
+  choicesTotal?: number
+  subtotal?: number
+  couponCode?: string | null
+  couponDiscount?: number
+  additionalDiscount?: number
+  additionalCost?: number
+  cardFee?: number
+  tax?: number
+  prepaymentCost?: number
+  prepaymentTip?: number
+  selectedOptionalOptions?: Record<string, unknown>
+  optionTotal?: number
+  totalPrice?: number
+  depositAmount?: number
+  balanceAmount?: number
+  privateTourAdditionalCost?: number
+  commission_percent?: number
+  commission_amount?: number
+}
+
 /** confirm 요청 body: 예약 생성에 필요한 필드 */
 interface ConfirmBody {
   customer_id?: string
@@ -32,6 +62,8 @@ interface ConfirmBody {
   status?: string
   variant_key?: string
   selected_choices?: SelectedChoiceItem[]
+  /** 가격 정보 (있으면 reservation_pricing + deposit 시 payment_record 저장) */
+  pricingInfo?: PricingInfo
 }
 
 export async function POST(
@@ -166,6 +198,69 @@ export async function POST(
       )
     if (choicesError) {
       console.error('[reservation-imports/confirm] reservation_choices insert error:', choicesError)
+    }
+  }
+
+  // reservation_pricing 저장 (pricingInfo 있으면 새 예약 추가와 동일하게)
+  const pricingInfo = body.pricingInfo
+  if (pricingInfo) {
+    const totalPeople = (body.adults || 0) + (body.child ?? 0) + (body.infant ?? 0)
+    const notIncludedTotal = (Number(pricingInfo.not_included_price) || 0) * (totalPeople || 1)
+    const pricingId = crypto.randomUUID()
+    const pricingData = {
+      id: pricingId,
+      reservation_id: reservationId,
+      adult_product_price: Number(pricingInfo.adultProductPrice) || 0,
+      child_product_price: Number(pricingInfo.childProductPrice) || 0,
+      infant_product_price: Number(pricingInfo.infantProductPrice) || 0,
+      product_price_total: (Number(pricingInfo.productPriceTotal) || 0) + notIncludedTotal,
+      not_included_price: Number(pricingInfo.not_included_price) || 0,
+      required_options: pricingInfo.requiredOptions ?? {},
+      required_option_total: Number(pricingInfo.requiredOptionTotal) || 0,
+      choices: pricingInfo.choices ?? {},
+      choices_total: Number(pricingInfo.choicesTotal) || 0,
+      subtotal: (Number(pricingInfo.subtotal) || 0) + notIncludedTotal,
+      coupon_code: pricingInfo.couponCode ?? null,
+      coupon_discount: Number(pricingInfo.couponDiscount) || 0,
+      additional_discount: Number(pricingInfo.additionalDiscount) || 0,
+      additional_cost: Number(pricingInfo.additionalCost) || 0,
+      card_fee: Number(pricingInfo.cardFee) || 0,
+      tax: Number(pricingInfo.tax) || 0,
+      prepayment_cost: Number(pricingInfo.prepaymentCost) || 0,
+      prepayment_tip: Number(pricingInfo.prepaymentTip) || 0,
+      selected_options: pricingInfo.selectedOptionalOptions ?? {},
+      option_total: Number(pricingInfo.optionTotal) || 0,
+      total_price: (Number(pricingInfo.totalPrice) || 0) + notIncludedTotal,
+      deposit_amount: Number(pricingInfo.depositAmount) || 0,
+      balance_amount: Number(pricingInfo.balanceAmount) || 0,
+      private_tour_additional_cost: Number(pricingInfo.privateTourAdditionalCost) || 0,
+      commission_percent: Number(pricingInfo.commission_percent) || 0,
+      commission_amount: Number(pricingInfo.commission_amount) || 0,
+    }
+    const { error: pricingError } = await client
+      .from('reservation_pricing')
+      .insert(pricingData as Record<string, unknown>)
+    if (pricingError) {
+      console.error('[reservation-imports/confirm] reservation_pricing insert error:', pricingError)
+    }
+  }
+
+  // payment_records 저장 (보증금 > 0 이면 Deposit Received, 새 예약 추가와 동일)
+  if (pricingInfo && Number(pricingInfo.depositAmount) > 0) {
+    const depositAmount = Number(pricingInfo.depositAmount)
+    const paymentId = `payment_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+    const { error: paymentError } = await client
+      .from('payment_records')
+      .insert({
+        id: paymentId,
+        reservation_id: reservationId,
+        payment_status: 'Deposit Received',
+        amount: depositAmount,
+        payment_method: 'PAYM033',
+        submit_by: body.added_by,
+      } as Record<string, unknown>)
+    if (paymentError) {
+      console.error('[reservation-imports/confirm] payment_records insert error:', paymentError)
     }
   }
 

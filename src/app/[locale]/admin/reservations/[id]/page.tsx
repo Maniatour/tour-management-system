@@ -301,7 +301,7 @@ export default function ReservationDetailsPage() {
         return
       }
 
-      // 새로운 초이스 시스템: reservation_choices 테이블에 저장
+      // 새로운 초이스 시스템: reservation_choices 테이블에 저장 (미정 __undecided__는 FK 제약으로 저장 불가 → reservations.choices에만 저장됨)
       if (payload.choices && payload.choices.required && Array.isArray(payload.choices.required)) {
         // 기존 reservation_choices 삭제
         await supabase
@@ -309,14 +309,16 @@ export default function ReservationDetailsPage() {
           .delete()
           .eq('reservation_id', reservation.id)
 
-        // 새로운 초이스 데이터 저장
-        const choicesToInsert = payload.choices.required.map((choice: any) => ({
-          reservation_id: reservation.id,
-          choice_id: choice.choice_id,
-          option_id: choice.option_id,
-          quantity: choice.quantity,
-          total_price: choice.total_price
-        }))
+        const UNDECIDED_OPTION_ID = '__undecided__'
+        const choicesToInsert = payload.choices.required
+          .filter((choice: any) => choice.choice_id && choice.option_id && choice.option_id !== UNDECIDED_OPTION_ID)
+          .map((choice: any) => ({
+            reservation_id: reservation.id,
+            choice_id: choice.choice_id,
+            option_id: choice.option_id,
+            quantity: choice.quantity ?? 1,
+            total_price: choice.total_price ?? 0
+          }))
 
         if (choicesToInsert.length > 0) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -329,6 +331,81 @@ export default function ReservationDetailsPage() {
             alert('초이스 저장 중 오류가 발생했습니다: ' + choicesError.message)
             return
           }
+        }
+      }
+
+      // 고객 언어 업데이트 (폼에서 변경한 언어 반영)
+      const payloadWithLang = payload as Omit<Reservation, 'id'> & { customerLanguage?: string }
+      if (payloadWithLang.customerLanguage != null && payloadWithLang.customerLanguage !== '' && payload.customerId) {
+        const { error: customerUpdateError } = await supabase
+          .from('customers')
+          .update({ language: payloadWithLang.customerLanguage })
+          .eq('id', payload.customerId)
+        if (customerUpdateError) {
+          console.error('고객 언어 업데이트 오류:', customerUpdateError)
+        }
+      }
+
+      // 가격 정보 업데이트 (reservation_pricing)
+      const payloadWithPricing = payload as Omit<Reservation, 'id'> & { pricingInfo?: Record<string, unknown> }
+      if (payloadWithPricing.pricingInfo) {
+        try {
+          const pricingInfo = payloadWithPricing.pricingInfo as any
+          const totalPeople = (payload.adults || 0) + (payload.child || 0) + (payload.infant || 0)
+          const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
+          const notIncludedTotal = (toNum(pricingInfo.not_included_price) || 0) * (totalPeople || 1)
+
+          const pricingData = {
+            reservation_id: reservation.id,
+            adult_product_price: toNum(pricingInfo.adultProductPrice),
+            child_product_price: toNum(pricingInfo.childProductPrice),
+            infant_product_price: toNum(pricingInfo.infantProductPrice),
+            product_price_total: toNum(pricingInfo.productPriceTotal) + notIncludedTotal,
+            not_included_price: toNum(pricingInfo.not_included_price),
+            required_options: pricingInfo.requiredOptions ?? {},
+            required_option_total: toNum(pricingInfo.requiredOptionTotal),
+            choices: pricingInfo.choices ?? {},
+            choices_total: toNum(pricingInfo.choicesTotal),
+            subtotal: toNum(pricingInfo.subtotal) + notIncludedTotal,
+            coupon_code: pricingInfo.couponCode ?? '',
+            coupon_discount: toNum(pricingInfo.couponDiscount),
+            additional_discount: toNum(pricingInfo.additionalDiscount),
+            additional_cost: toNum(pricingInfo.additionalCost),
+            card_fee: toNum(pricingInfo.cardFee),
+            tax: toNum(pricingInfo.tax),
+            prepayment_cost: toNum(pricingInfo.prepaymentCost),
+            prepayment_tip: toNum(pricingInfo.prepaymentTip),
+            selected_options: pricingInfo.selectedOptionalOptions ?? {},
+            option_total: toNum(pricingInfo.optionTotal),
+            total_price: toNum(pricingInfo.totalPrice) + notIncludedTotal,
+            deposit_amount: toNum(pricingInfo.depositAmount),
+            balance_amount: toNum(pricingInfo.balanceAmount),
+            private_tour_additional_cost: toNum(pricingInfo.privateTourAdditionalCost),
+            commission_percent: toNum(pricingInfo.commission_percent),
+            commission_amount: toNum(pricingInfo.commission_amount)
+          }
+
+          const { data: existingPricing } = await supabase
+            .from('reservation_pricing')
+            .select('id')
+            .eq('reservation_id', reservation.id)
+            .maybeSingle()
+
+          if (existingPricing?.id) {
+            const { error: pricingError } = await supabase
+              .from('reservation_pricing')
+              .update(pricingData as any)
+              .eq('id', existingPricing.id)
+            if (pricingError) console.error('가격 정보 업데이트 오류:', pricingError)
+          } else {
+            const insertData = { ...pricingData, id: crypto.randomUUID() }
+            const { error: pricingError } = await supabase
+              .from('reservation_pricing')
+              .insert(insertData as any)
+            if (pricingError) console.error('가격 정보 저장 오류:', pricingError)
+          }
+        } catch (pricingErr) {
+          console.error('가격 정보 저장 중 예외:', pricingErr)
         }
       }
 

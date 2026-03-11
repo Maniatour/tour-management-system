@@ -5,7 +5,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { Trash2, Eye, AlertTriangle, X, Mail, Phone, ChevronDown } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations, useLocale } from 'next-intl'
-import { sanitizeTimeInput } from '@/lib/utils'
+import { sanitizeTimeInput, timeToHHmm } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import CustomerForm from '@/components/CustomerForm'
@@ -92,6 +92,8 @@ interface ReservationFormProps {
   initialChoiceOptionNamesFromImport?: string[]
   /** "미정"으로 둘 초이스 그룹명 (예: "미국 거주자 구분", "기타 입장료"). option_id __undecided__ 로 설정 */
   initialChoiceUndecidedGroupNamesFromImport?: string[]
+  /** 예약 가져오기에서 파싱한 이메일 본문 금액 (예: "$698.88"). 할인 후 상품가와 다르면 해당 금액이 되도록 퍼센트 쿠폰 자동 선택 */
+  initialAmountFromImport?: string
 }
 
 type RezLike = Partial<Reservation> & {
@@ -136,6 +138,7 @@ export default function ReservationForm({
   initialShowNewCustomerForm = false,
   initialChoiceOptionNamesFromImport,
   initialChoiceUndecidedGroupNamesFromImport,
+  initialAmountFromImport,
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
@@ -431,7 +434,7 @@ export default function ReservationForm({
     selectedProductSubCategory: '',
     productSearch: '',
     tourDate: reservation?.tourDate || rez.tour_date || '',
-    tourTime: reservation?.tourTime || rez.tour_time || '',
+    tourTime: timeToHHmm(reservation?.tourTime || rez.tour_time || '') || '',
     eventNote: reservation?.eventNote || rez.event_note || '',
     pickUpHotel: reservation?.pickUpHotel || rez.pickup_hotel || '',
     pickUpHotelSearch: (() => {
@@ -444,7 +447,7 @@ export default function ReservationForm({
       return pickUpHotelId || ''
     })(),
     showPickupHotelDropdown: false,
-    pickUpTime: reservation?.pickUpTime || (rez.pickup_time ? String(rez.pickup_time).substring(0,5) : ''),
+    pickUpTime: timeToHHmm(reservation?.pickUpTime || (rez.pickup_time ? String(rez.pickup_time) : '') || '') || '',
     adults: reservation?.adults || rez.adults || 1,
     child: reservation?.child || rez.child || 0,
     infant: reservation?.infant || rez.infant || 0,
@@ -531,6 +534,7 @@ export default function ReservationForm({
   // 무한 렌더링 방지를 위한 ref
   const prevPricingParams = useRef<{productId: string, tourDate: string, channelId: string, variantKey: string, selectedChoicesKey: string} | null>(null)
   const prevCouponParams = useRef<{productId: string, tourDate: string, channelId: string} | null>(null)
+  const importAmountCouponAppliedRef = useRef(false)
   const prevProductId = useRef<string | null>(null)
   // 데이터베이스에서 불러온 commission_amount 값을 추적 (자동 계산에 의해 덮어쓰이지 않도록)
   const loadedCommissionAmount = useRef<number | null>(null)
@@ -602,6 +606,41 @@ export default function ReservationForm({
     
     getCurrentUser()
   }, [reservation])
+
+  // 예약 가져오기(import) 모드: initialDataFromImport가 들어오면 고객/언어 필드 동기화
+  useEffect(() => {
+    if (!isImportMode || !initialDataFromImport) return
+    const next: Partial<typeof formData> = {}
+    if (initialDataFromImport.customer_name != null && initialDataFromImport.customer_name !== '') next.customerName = initialDataFromImport.customer_name
+    if (initialDataFromImport.customer_email != null && initialDataFromImport.customer_email !== '') next.customerEmail = initialDataFromImport.customer_email
+    if (initialDataFromImport.customer_phone != null && initialDataFromImport.customer_phone !== '') next.customerPhone = initialDataFromImport.customer_phone
+    if (initialDataFromImport.customer_language != null && initialDataFromImport.customer_language !== '') {
+      const l = initialDataFromImport.customer_language
+      next.customerLanguage = (l === 'EN' || l === 'en' || l === 'English' || l === '영어') ? 'EN' : (l === 'KR' || l === 'ko' || l === '한국어') ? 'KR' : l
+    }
+    if (Object.keys(next).length === 0) return
+    setFormData(prev => ({ ...prev, ...next, customerSearch: next.customerName ?? prev.customerSearch }))
+  }, [isImportMode, initialDataFromImport?.customer_name, initialDataFromImport?.customer_email, initialDataFromImport?.customer_phone, initialDataFromImport?.customer_language])
+
+  // 예약 가져오기(import) 모드: 상위에서 전달한 reservation(tour_date, adults, product_id 등) 변경 시 폼 필드 동기화
+  useEffect(() => {
+    if (!isImportMode || !reservation) return
+    const rez = reservation as RezLike
+    const next: Partial<typeof formData> = {}
+    if (rez.tour_date) next.tourDate = rez.tour_date
+    if (rez.tour_time != null) next.tourTime = timeToHHmm(String(rez.tour_time)) || ''
+    if (rez.adults != null) next.adults = rez.adults
+    if (rez.child != null) next.child = rez.child
+    if (rez.infant != null) next.infant = rez.infant
+    if ((rez as any).total_people != null) next.totalPeople = (rez as any).total_people
+    if (rez.product_id) next.productId = rez.product_id
+    if (rez.channel_id) next.channelId = rez.channel_id
+    if (rez.channel_rn != null) next.channelRN = rez.channel_rn
+    if (rez.pickup_hotel != null) next.pickUpHotel = rez.pickup_hotel
+    if (rez.event_note != null) next.eventNote = rez.event_note
+    if (Object.keys(next).length === 0) return
+    setFormData(prev => ({ ...prev, ...next }))
+  }, [isImportMode, (reservation as any)?.tour_date, (reservation as any)?.tour_time, (reservation as any)?.adults, (reservation as any)?.child, (reservation as any)?.infant, (reservation as any)?.total_people, (reservation as any)?.product_id, (reservation as any)?.channel_id, (reservation as any)?.channel_rn, (reservation as any)?.pickup_hotel, (reservation as any)?.event_note])
 
   // initialCustomerId가 있고 reservation이 null일 때 고객 정보를 초기값으로 설정
   useEffect(() => {
@@ -1253,6 +1292,26 @@ export default function ReservationForm({
         })
       }
 
+      // 3-2. reservations.choices.required에 저장된 "미정"(__undecided__) 복원 (reservation_choices에는 FK로 저장되지 않음)
+      const UNDECIDED_OPTION_ID = '__undecided__'
+      if (reservation?.choices && typeof reservation.choices === 'object' && Array.isArray((reservation.choices as any).required)) {
+        const required = (reservation.choices as any).required as Array<{ choice_id: string; option_id: string; quantity?: number; total_price?: number }>
+        const existingChoiceIds = new Set(selectedChoices.map(c => c.choice_id))
+        required.forEach((item: any) => {
+          if (item.option_id === UNDECIDED_OPTION_ID && item.choice_id && !existingChoiceIds.has(item.choice_id)) {
+            selectedChoices.push({
+              choice_id: item.choice_id,
+              option_id: UNDECIDED_OPTION_ID,
+              quantity: item.quantity ?? 1,
+              total_price: item.total_price ?? 0,
+              option_key: UNDECIDED_OPTION_ID,
+              option_name_ko: '미정'
+            } as any)
+            existingChoiceIds.add(item.choice_id)
+          }
+        })
+      }
+
       const choicesTotal = selectedChoices.reduce((sum, choice) => sum + choice.total_price, 0)
 
       console.log('ReservationForm: 초이스 데이터 준비 완료:', {
@@ -1724,9 +1783,9 @@ export default function ReservationForm({
       return
     }
     
-    // 이미 로드된 productId면 스킵 (편집 모드에서만)
-    const isEditMode = !!reservation?.id
-    if (isEditMode && loadedProductChoicesRef.current.has(productId)) {
+    // 이미 로드된 productId면 스킵 (실제 편집 모드에서만, 예약 가져오기 import-xxx 는 제외)
+    const isEditModeForChoices = !!reservation?.id && !isImportMode
+    if (isEditModeForChoices && loadedProductChoicesRef.current.has(productId)) {
       console.log('ReservationForm: 이미 로드된 productChoices, 스킵:', productId)
       return
     }
@@ -1770,7 +1829,7 @@ export default function ReservationForm({
         await loadProductChoicesFromOldTable(productId);
         return;
       }
-      // 편집 모드가 아닌 경우에만 기본 초이스 설정
+      // 편집 모드가 아닌 경우에만 기본 초이스 설정 (예약 가져오기 import-xxx 는 새 예약처럼 초이스 기본값 적용)
       const defaultChoices: Array<{
         choice_id: string
         option_id: string
@@ -1778,14 +1837,17 @@ export default function ReservationForm({
         total_price: number
       }> = [];
       
-      const isEditMode = !!reservation?.id;
       const importOptionNames = initialChoiceOptionNamesFromImport?.length ? initialChoiceOptionNamesFromImport.map(n => n.toLowerCase().trim()) : [];
       const importUndecidedGroups = initialChoiceUndecidedGroupNamesFromImport?.length ? new Set(initialChoiceUndecidedGroupNamesFromImport.map(g => g.trim())) : new Set<string>();
 
-      if (!isEditMode) {
+      if (!isEditModeForChoices) {
         data?.forEach((choice: any) => {
           const choiceGroupKo = (choice.choice_group_ko || choice.choice_group || '').trim();
-          if (importUndecidedGroups.has(choiceGroupKo)) {
+          // 미국 거주자 구분·기타 입장료: 그룹명이 정확히 일치하거나 서로 포함하면 미정(__undecided__) 기본 선택
+          const isUndecidedGroup = importUndecidedGroups.size > 0 && Array.from(importUndecidedGroups).some(
+            (g) => choiceGroupKo === g || choiceGroupKo.includes(g) || g.includes(choiceGroupKo)
+          );
+          if (isUndecidedGroup) {
             defaultChoices.push({
               choice_id: choice.id,
               option_id: '__undecided__',
@@ -1821,14 +1883,14 @@ export default function ReservationForm({
 
       const choicesTotal = defaultChoices.reduce((sum, choice) => sum + choice.total_price, 0);
 
-      // 로드 완료 표시
-      if (isEditMode) {
+      // 로드 완료 표시 (실제 편집 모드에서만 ref에 추가)
+      if (isEditModeForChoices) {
         loadedProductChoicesRef.current.add(productId)
       }
       
       setFormData(prev => {
         // 편집 모드에서는 selectedChoices를 절대 덮어쓰지 않음 (loadReservationChoicesFromNewTable에서 로드될 수 있음)
-        if (isEditMode) {
+        if (isEditModeForChoices) {
           console.log('ReservationForm: 편집 모드 - productChoices만 업데이트, selectedChoices 유지:', {
             prevSelectedChoicesCount: prev.selectedChoices?.length || 0,
             prevSelectedChoices: prev.selectedChoices?.map(c => ({ choice_id: c.choice_id, option_id: c.option_id })) || [],
@@ -1843,7 +1905,7 @@ export default function ReservationForm({
         
         // 새 예약 모드인 경우에만 기본값 설정
         console.log('ReservationForm: 새 예약 모드 - 기본값 설정:', {
-          isEditMode,
+          isEditModeForChoices,
           defaultChoicesCount: defaultChoices.length,
           defaultChoices: defaultChoices.map(c => ({ choice_id: c.choice_id, option_id: c.option_id }))
         });
@@ -1858,11 +1920,11 @@ export default function ReservationForm({
       console.error('초이스 로드 오류:', error);
       setFormData(prev => ({ ...prev, productChoices: [], selectedChoices: [], choicesTotal: 0 }));
       // 에러 발생 시 로드 상태 제거
-      if (isEditMode) {
+      if (isEditModeForChoices) {
         loadedProductChoicesRef.current.delete(productId)
       }
     }
-  }, [reservation?.id, initialChoiceOptionNamesFromImport, initialChoiceUndecidedGroupNamesFromImport]);
+  }, [reservation?.id, isImportMode, initialChoiceOptionNamesFromImport, initialChoiceUndecidedGroupNamesFromImport]);
 
   // 가격 정보 조회 함수 (reservation_pricing 우선, 없으면 dynamic_pricing에서 조회)
   const loadPricingInfo = useCallback(async (productId: string, tourDate: string, channelId: string, reservationId?: string, selectedChoices?: Array<{ choice_id?: string; option_id?: string; id?: string }>) => {
@@ -2644,8 +2706,9 @@ export default function ReservationForm({
       // 사용자에게 알림 표시
       setTimeout(() => setPriceAutoFillMessage(''), 3000)
       
-      // 가격 정보가 로드된 경우 상태 설정 (쿠폰 자동 선택 방지)
-      setIsExistingPricingLoaded(true)
+      // dynamic_pricing에서만 로드한 경우(새 예약/가져오기)에는 isExistingPricingLoaded를 true로 두지 않음.
+      // 그러면 PricingSection에서 채널 수수료 %/$ 자동 계산이 동작함.
+      // (reservation_pricing에서 로드한 경우에만 위에서 이미 setIsExistingPricingLoaded(true) 호출됨)
     } catch (error) {
       console.error('Dynamic pricing 조회 중 오류:', error)
     }
@@ -2927,8 +2990,9 @@ export default function ReservationForm({
         
         console.log('가격 자동 조회 트리거:', currentParams)
         prevPricingParams.current = currentParams
-        // 예약 편집 시 reservation_pricing 로드 전에 먼저 설정 → PricingSection에서 채널 수수료 %/$ 재계산으로 덮어쓰지 않도록
-        if (reservation?.id) setIsExistingPricingLoaded(true)
+        // 실제 예약 편집 시에만 플래그 설정 (가져오기/새 예약은 reservation.id가 'import-xxx' 또는 없음 → 채널 수수료 자동 계산 허용)
+        const isRealReservationId = reservation?.id && !String(reservation.id).startsWith('import-')
+        if (isRealReservationId) setIsExistingPricingLoaded(true)
         loadPricingInfo(formData.productId, formData.tourDate, formData.channelId, reservation?.id, selectedChoicesArray)
       }
     }
@@ -2955,6 +3019,50 @@ export default function ReservationForm({
       }
     }
   }, [formData.productId, formData.tourDate, formData.channelId, isExistingPricingLoaded])
+
+  // 예약 가져오기: 이메일 본문 금액에 맞도록 퍼센트 쿠폰 자동 선택. 과할인 안 되는 쿠폰(9%) 우선, 없으면 가장 가까운 쿠폰(10% 등) 선택
+  useEffect(() => {
+    if (!isImportMode || !initialAmountFromImport?.trim() || importAmountCouponAppliedRef.current) return
+    const productPriceTotal = Number(formData.productPriceTotal) || 0
+    if (productPriceTotal <= 0) return
+    const raw = initialAmountFromImport.replace(/[$,\s]/g, '')
+    const targetAmount = parseFloat(raw)
+    if (!Number.isFinite(targetAmount) || targetAmount <= 0 || targetAmount >= productPriceTotal) return
+    const neededDiscount = productPriceTotal - targetAmount
+    const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+    const subtotal = calculateProductPriceTotal() + calculateRequiredOptionTotal() - notIncludedPrice
+    if (subtotal <= 0) return
+    const neededPercent = (neededDiscount / subtotal) * 100
+    const tourDate = formData.tourDate ? new Date(formData.tourDate) : null
+    const allMatching = coupons.filter(c => {
+      if (c.status !== 'active') return false
+      if (c.channel_id && c.channel_id !== formData.channelId) return false
+      if (c.product_id && c.product_id !== formData.productId) return false
+      if (c.start_date && tourDate && tourDate < new Date(c.start_date)) return false
+      if (c.end_date && tourDate && tourDate > new Date(c.end_date)) return false
+      return c.discount_type === 'percentage' && c.percentage_value != null
+    })
+    const pickClosest = (list: CouponRow[]) =>
+      list.reduce<CouponRow | null>((best, c) => {
+        const pct = Number(c.percentage_value) || 0
+        if (!best) return c
+        const bestDiff = Math.abs((Number(best.percentage_value) || 0) - neededPercent)
+        const currDiff = Math.abs(pct - neededPercent)
+        return currDiff < bestDiff ? c : best
+      }, null)
+    const noOverDiscount = allMatching.filter(c => {
+      const pct = Number(c.percentage_value) || 0
+      const discount = (subtotal * pct) / 100
+      const priceAfter = productPriceTotal - discount
+      return priceAfter >= targetAmount - 0.01
+    })
+    const best = pickClosest(noOverDiscount.length > 0 ? noOverDiscount : allMatching)
+    if (best) {
+      const discount = calculateCouponDiscount(best, subtotal)
+      setFormData(prev => ({ ...prev, couponCode: best.coupon_code || '', couponDiscount: discount }))
+      importAmountCouponAppliedRef.current = true
+    }
+  }, [isImportMode, initialAmountFromImport, formData.productPriceTotal, formData.productId, formData.channelId, formData.tourDate, formData.adults, formData.child, formData.infant, formData.not_included_price, coupons, calculateProductPriceTotal, calculateRequiredOptionTotal, calculateCouponDiscount, setFormData])
 
   // 가격 정보 자동 업데이트 (무한 렌더링 방지를 위해 useEffect 완전 제거)
   // 사용되지 않지만 향후 사용을 위해 주석 처리
@@ -3457,6 +3565,9 @@ export default function ReservationForm({
         choicesData: choicesData
       })
       
+      // 가격 정보는 formDataRef에서 읽어 최신 입력값(불포함·채널 수수료$ 등)이 반영되도록 함
+      const fd = formDataRef.current
+      const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
       // 예약 정보와 가격 정보를 함께 제출 (customerId 업데이트)
       const reservationPayload = {
         ...formData,
@@ -3467,37 +3578,37 @@ export default function ReservationForm({
         selectedChoices: formData.selectedChoices as any,
         // 새 예약 시 저장 전에 추가한 옵션 목록 (예약 저장 시 함께 저장)
         pendingReservationOptions: isNewReservation ? pendingReservationOptions : undefined,
-        // 가격 정보를 포함하여 전달 (DB 저장 시 숫자로 쓰이도록 명시적 변환)
+        // 가격 정보를 포함하여 전달 (DB 저장 시 숫자로 쓰이도록 명시적 변환, fd 사용으로 불포함/commission_amount 등 최신값 반영)
         pricingInfo: {
-          adultProductPrice: Number(formData.adultProductPrice) || 0,
-          childProductPrice: Number(formData.childProductPrice) || 0,
-          infantProductPrice: Number(formData.infantProductPrice) || 0,
-          productPriceTotal: Number(formData.productPriceTotal) || 0,
-          not_included_price: Number(formData.not_included_price) || 0,
-          requiredOptions: formData.requiredOptions,
-          requiredOptionTotal: Number(formData.requiredOptionTotal) || 0,
+          adultProductPrice: toNum(fd.adultProductPrice),
+          childProductPrice: toNum(fd.childProductPrice),
+          infantProductPrice: toNum(fd.infantProductPrice),
+          productPriceTotal: toNum(fd.productPriceTotal),
+          not_included_price: toNum(fd.not_included_price),
+          requiredOptions: fd.requiredOptions,
+          requiredOptionTotal: toNum(fd.requiredOptionTotal),
           choices: choicesData,
-          choicesTotal: Number(formData.choicesTotal) || 0,
+          choicesTotal: toNum(fd.choicesTotal),
           quantityBasedChoices: {},
           quantityBasedChoiceTotal: 0,
-          subtotal: Number(formData.subtotal) || 0,
-          couponCode: formData.couponCode ?? '',
-          couponDiscount: Number(formData.couponDiscount) || 0,
-          additionalDiscount: Number(formData.additionalDiscount) || 0,
-          additionalCost: Number(formData.additionalCost) || 0,
-          cardFee: Number(formData.cardFee) || 0,
-          tax: Number(formData.tax) || 0,
-          prepaymentCost: Number(formData.prepaymentCost) || 0,
-          prepaymentTip: Number(formData.prepaymentTip) || 0,
-          selectedOptionalOptions: formData.selectedOptionalOptions,
-          optionTotal: Number(formData.optionTotal) || 0,
-          totalPrice: Number(formData.totalPrice) || 0,
-          depositAmount: Number(formData.depositAmount) || 0,
-          balanceAmount: Number(formData.balanceAmount) || 0,
-          isPrivateTour: formData.isPrivateTour,
-          privateTourAdditionalCost: Number(formData.privateTourAdditionalCost) || 0,
-          commission_percent: Number(formData.commission_percent) || 0,
-          commission_amount: Number(formData.commission_amount) || 0
+          subtotal: toNum(fd.subtotal),
+          couponCode: fd.couponCode ?? '',
+          couponDiscount: toNum(fd.couponDiscount),
+          additionalDiscount: toNum(fd.additionalDiscount),
+          additionalCost: toNum(fd.additionalCost),
+          cardFee: toNum(fd.cardFee),
+          tax: toNum(fd.tax),
+          prepaymentCost: toNum(fd.prepaymentCost),
+          prepaymentTip: toNum(fd.prepaymentTip),
+          selectedOptionalOptions: fd.selectedOptionalOptions,
+          optionTotal: toNum(fd.optionTotal),
+          totalPrice: toNum(fd.totalPrice),
+          depositAmount: toNum(fd.depositAmount),
+          balanceAmount: toNum(fd.balanceAmount),
+          isPrivateTour: fd.isPrivateTour,
+          privateTourAdditionalCost: toNum(fd.privateTourAdditionalCost),
+          commission_percent: toNum(fd.commission_percent),
+          commission_amount: toNum(fd.commission_amount)
         }
       }
       
@@ -4048,13 +4159,15 @@ export default function ReservationForm({
                           })()}
                         </span>
                         {Array.isArray(formData.selectedChoices) && formData.selectedChoices.length > 0 && formData.selectedChoices.map((sc: { choice_id: string; option_id: string; option_name_ko?: string; option_key?: string }) => {
-                          const label = (sc as { option_name_ko?: string; option_key?: string }).option_name_ko
+                          const label = sc.option_id === '__undecided__'
+                            ? '미정'
+                            : ((sc as { option_name_ko?: string; option_key?: string }).option_name_ko
                             || (sc as { option_name_ko?: string; option_key?: string }).option_key
                             || (() => {
                               const choice = formData.productChoices?.find((c: { id: string }) => c.id === sc.choice_id)
                               const option = choice?.options?.find((o: { id: string }) => o.id === sc.option_id)
                               return (option as { option_name_ko?: string; option_key?: string })?.option_name_ko || (option as { option_key?: string })?.option_key || sc.option_id
-                            })()
+                            })())
                           return (
                             <span key={`${sc.choice_id}-${sc.option_id}`} className="inline-flex items-center px-3 py-1.5 rounded-lg bg-amber-100 text-amber-800 border border-amber-200 text-xs font-medium truncate max-w-[120px]" title={label}>
                               {label}

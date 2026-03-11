@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
+import { useLocale } from 'next-intl'
 import { X, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -160,6 +161,64 @@ const labels = {
     child: 'Child',
     infant: 'Infant',
   },
+  ja: {
+    title: '領収書',
+    reservationSummary: '予約概要',
+    guest: 'お客様',
+    email: 'メール',
+    tel: '電話',
+    hotel: 'ホテル',
+    receiptId: 'Receipt id',
+    status: '状態',
+    channel: 'チャネル',
+    tourDate: 'ツアー日付',
+    date: '日付',
+    description: '内容',
+    unitPrice: '単価',
+    unitPriceShort: '単価',
+    quantity: '数量',
+    quantityShort: '数量',
+    price: '合計',
+    priceShort: '合計',
+    subTotal: '小計',
+    paidAmount: 'お支払い済み',
+    deposit: '前払い',
+    balance: '残金',
+    discount: '割引',
+    couponDiscount: 'クーポン割引',
+    additionalDiscount: '追加割引',
+    tax: '税',
+    additionalCost: '追加費用',
+    cardFee: 'カード手数料',
+    prepaymentCost: '前払い費用',
+    prepaymentTip: '前払いチップ',
+    productTotal: '商品合計',
+    notIncludedPrice: '料金に含まれない項目',
+    grandTotal: 'ご請求合計',
+    tipSuggest: 'チップのご案内',
+    tipSectionTitle: 'チップのご案内',
+    tipAboutUS: 'アメリカでは、チップは良いサービスへの感謝の気持ちを表す慣習となっております。ツアーガイドへのチップはツアー料金に含まれておらず、お客様のご満足度に応じて任意でお渡しください。',
+    tipNotIncluded: '多くのツアーガイドはチップを収入の重要な一部としております。お渡しいただいたチップは、ご予約とツアーの手配に携わったチーム全員に分配されます。',
+    tipSuggestedPerPerson: 'お一人様の目安チップ（ツアー合計金額に基づく）：',
+    tipBasic: '10% — 基本サービス',
+    tipStandard: '15% — 標準サービス',
+    tipExcellent: '20% — 最高のサービス',
+    tipThankYou: 'ガイドへの温かいお心遣いとご支援を賜り、誠にありがとうございます。',
+    tip15: '15%',
+    tip18: '18%',
+    tip20: '20%',
+    print: '印刷',
+    close: '閉じる',
+    printLayout: '印刷レイアウト',
+    printOptionLetter: 'Letter（1ページ1枚）',
+    printOptionHalf: '横半分（1ページ2枚）',
+    selectCustomers: '印刷するお客様を選択',
+    selectAll: 'すべて選択',
+    deselectAll: 'すべて解除',
+    adult: '大人',
+    child: '子供',
+    infant: '幼児',
+  },
 }
 
 const COMPANY = {
@@ -187,6 +246,20 @@ function isCustomerKorean(lang: string | null | undefined): boolean {
   if (!lang) return false
   const l = lang.toString().toLowerCase()
   return l === 'ko' || l.startsWith('ko-') || l === 'korean' || l === 'kr'
+}
+
+/** 고객 언어가 일본어이면 true */
+function isCustomerJapanese(lang: string | null | undefined): boolean {
+  if (!lang) return false
+  const l = lang.toString().toLowerCase()
+  return l === 'ja' || l.startsWith('ja-') || l === 'japanese' || l === 'jp'
+}
+
+/** 고객 언어에 따라 영수증 라벨 반환 (한국어 → ko, 일본어 → ja, 그 외 → en) */
+function getReceiptLabels(lang: string | null | undefined): typeof labels.ko {
+  if (isCustomerKorean(lang)) return labels.ko
+  if (isCustomerJapanese(lang)) return labels.ja
+  return labels.en
 }
 
 function formatMoney(amount: number, currency: string): string {
@@ -241,6 +314,9 @@ export default function CustomerReceiptModal({
   const isBatch = Boolean(reservationIds && reservationIds.length > 0)
   const rawIds = isBatch ? reservationIds! : [reservationId]
   const ids = rawIds.map((id) => String(id).trim()).filter((id) => id.length > 0)
+  /** 모달 UI(제목·버튼·인쇄 형식 등)는 앱 언어(한/영)로만 표시. 인쇄되는 영수증 내용만 고객 언어(한/영/일 등) 사용 */
+  const locale = useLocale()
+  const modalLabels = locale === 'ko' ? labels.ko : labels.en
 
   useEffect(() => {
     if (!isOpen) return
@@ -457,7 +533,7 @@ export default function CustomerReceiptModal({
       .receipt-half-container { display: block !important; width: 100% !important; max-width: 100% !important; padding: 0 !important; margin: 0 !important; min-height: 0 !important; height: auto !important; }
       .receipt-half-container.receipt-half-batch > * { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 6mm !important; width: 100% !important; max-width: 100% !important; min-width: 0 !important; min-height: 0 !important; height: auto !important; align-content: start !important; }
       .receipt-half-container .receipt-letter { width: 100% !important; max-width: 100% !important; min-width: 0 !important; box-sizing: border-box !important; }
-      .receipt-letter .receipt-logo { width: 7rem !important; height: 2rem !important; min-width: 7rem !important; min-height: 2rem !important; object-fit: contain !important; }
+      .receipt-letter .receipt-logo { width: 10.5rem !important; height: 3rem !important; min-width: 10.5rem !important; min-height: 3rem !important; object-fit: contain !important; }
       .receipt-letter { page-break-inside: avoid !important; break-inside: avoid !important; border: none !important; box-shadow: none !important; padding: 2mm !important; font-size: 1rem !important; background: #fff !important; color: #111 !important; max-width: 100% !important; min-height: 0 !important; height: auto !important; }
       .receipt-letter:last-child { page-break-after: auto !important; }
       .receipt-letter * { color: #111 !important; }
@@ -481,7 +557,7 @@ export default function CustomerReceiptModal({
       .receipt-letter { border: none !important; box-shadow: none !important; font-size: 1rem !important; }
       .receipt-letter { page-break-after: always; page-break-inside: avoid; }
       .receipt-letter:last-child { page-break-after: auto; }
-      .receipt-letter .receipt-logo { width: 7rem !important; height: 2rem !important; min-width: 7rem !important; min-height: 2rem !important; object-fit: contain !important; }
+      .receipt-letter .receipt-logo { width: 10.5rem !important; height: 3rem !important; min-width: 10.5rem !important; min-height: 3rem !important; object-fit: contain !important; }
       .receipt-letter .receipt-summary-email { white-space: nowrap !important; min-width: 0 !important; overflow: visible !important; }
       .receipt-letter .grid > div.min-w-0 { min-width: 0 !important; }
       .receipt-letter .receipt-balance-amount { color: #dc2626 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
@@ -526,9 +602,7 @@ export default function CustomerReceiptModal({
   const listToShow = isBatch && list.length > 0
     ? list.filter((d) => selectedReservationIds.has(d.reservation.id))
     : list
-  const headerLabel = list.length > 0
-    ? (isCustomerKorean(list[0].customer.language) ? labels.ko : labels.en)
-    : labels.en
+  const headerLabel = modalLabels
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -543,21 +617,21 @@ export default function CustomerReceiptModal({
           </button>
         </div>
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 bg-white min-w-0 flex flex-col items-center">
-          {loading && <p className="text-gray-500 py-8">로딩 중...</p>}
+          {loading && <p className="text-gray-500 py-8">{locale === 'ko' ? '로딩 중...' : 'Loading...'}</p>}
           {error && <p className="text-red-600 py-8">{error}</p>}
-          {!loading && !error && list.length === 0 && <p className="text-gray-500 py-8">데이터 없음</p>}
+          {!loading && !error && list.length === 0 && <p className="text-gray-500 py-8">{locale === 'ko' ? '데이터 없음' : 'No data'}</p>}
           {!loading && !error && list.length > 0 && (
             <div className="w-full flex flex-col items-center">
               {isBatch && list.length > 0 && (
                 <div className="w-full mb-4 space-y-2">
-                  <span className="text-sm font-medium text-gray-700">{labels.ko.selectCustomers}</span>
+                  <span className="text-sm font-medium text-gray-700">{headerLabel.selectCustomers}</span>
                   <div className="flex gap-2">
                     <button type="button" onClick={() => setSelectedReservationIds(new Set(list.map((d) => d.reservation.id)))} className="text-xs text-blue-600 hover:underline">
-                      {labels.ko.selectAll}
+                      {headerLabel.selectAll}
                     </button>
                     <span className="text-gray-300">|</span>
                     <button type="button" onClick={() => setSelectedReservationIds(new Set())} className="text-xs text-gray-500 hover:underline">
-                      {labels.ko.deselectAll}
+                      {headerLabel.deselectAll}
                     </button>
                   </div>
                   <div className="max-h-28 overflow-y-auto border border-gray-200 rounded p-2 space-y-1">
@@ -579,16 +653,19 @@ export default function CustomerReceiptModal({
                     ))}
                   </div>
                   <p className="text-xs text-gray-500">
-                    {selectedReservationIds.size > 0 ? `${selectedReservationIds.size}장 인쇄` : '인쇄할 고객을 선택하세요'}
+                    {selectedReservationIds.size > 0
+                      ? (locale === 'ko' ? `${selectedReservationIds.size}장 인쇄` : `Print ${selectedReservationIds.size}`)
+                      : (locale === 'ko' ? '인쇄할 고객을 선택하세요' : 'Select customers to print')}
                   </p>
                 </div>
               )}
             <div id="receipt-batch-print" className="space-y-6 w-full flex flex-col items-center">
               {listToShow.map((d) => {
-                const isEn = !isCustomerKorean(d.customer.language)
-                const L = isEn ? labels.en : labels.ko
+                const L = getReceiptLabels(d.customer.language)
+                const isEn = L === labels.en
+                const isJa = L === labels.ja
                 const cur = d.pricing.currency || 'USD'
-                const productName = isEn
+                const productName = isEn || isJa
                   ? (d.product.customer_name_en || d.product.name_en || d.product.customer_name_ko || d.product.name_ko || '')
                   : (d.product.customer_name_ko || d.product.name_ko || d.product.customer_name_en || d.product.name_en || '')
                 const optionsTotal = (d.reservationOptions || []).reduce((s, o) => s + o.total_price, 0)
@@ -624,7 +701,7 @@ export default function CustomerReceiptModal({
                     <div className="border-b border-gray-200 pb-2 mb-2">
                       <div className="flex justify-between items-start gap-3">
                         <div className="flex flex-col gap-0 min-h-0">
-                          <img src={COMPANY.logoUrl} alt="" className="w-28 h-8 shrink-0 object-contain receipt-logo" />
+                          <img src={COMPANY.logoUrl} alt="" className="w-[10.5rem] h-[3rem] shrink-0 object-contain receipt-logo" />
                           <p className="text-xs text-gray-600 leading-tight mt-0">
                             {COMPANY.address.join(', ')}
                           </p>
@@ -788,9 +865,9 @@ export default function CustomerReceiptModal({
                       <p className="receipt-tips-intro text-gray-600 text-xs leading-snug">{L.tipNotIncluded}</p>
                       <p className="text-gray-700 text-xs font-medium mt-1">{L.tipSuggestedPerPerson}</p>
                       <ul className="list-none space-y-0.5 text-xs text-gray-700">
-                        <li>• {L.tipBasic} → {isEn ? <><span className="font-bold">{formatMoney(tip10PerPerson, cur)}</span> per person (<span className="font-bold">{formatMoney(tip10Total, cur)}</span> total)</> : <>1인당 <span className="font-bold">{formatMoney(tip10PerPerson, cur)}</span> (총 <span className="font-bold">{formatMoney(tip10Total, cur)}</span>)</>}</li>
-                        <li>• {L.tipStandard} → {isEn ? <><span className="font-bold">{formatMoney(tip15PerPerson, cur)}</span> per person (<span className="font-bold">{formatMoney(tip15Total, cur)}</span> total)</> : <>1인당 <span className="font-bold">{formatMoney(tip15PerPerson, cur)}</span> (총 <span className="font-bold">{formatMoney(tip15Total, cur)}</span>)</>}</li>
-                        <li>• {L.tipExcellent} → {isEn ? <><span className="font-bold">{formatMoney(tip20PerPerson, cur)}</span> per person (<span className="font-bold">{formatMoney(tip20Total, cur)}</span> total)</> : <>1인당 <span className="font-bold">{formatMoney(tip20PerPerson, cur)}</span> (총 <span className="font-bold">{formatMoney(tip20Total, cur)}</span>)</>}</li>
+                        <li>• {L.tipBasic} → {isJa ? <><span className="font-bold">{formatMoney(tip10PerPerson, cur)}</span> 1人あたり（<span className="font-bold">{formatMoney(tip10Total, cur)}</span> 合計）</> : isEn ? <><span className="font-bold">{formatMoney(tip10PerPerson, cur)}</span> per person (<span className="font-bold">{formatMoney(tip10Total, cur)}</span> total)</> : <>1인당 <span className="font-bold">{formatMoney(tip10PerPerson, cur)}</span> (총 <span className="font-bold">{formatMoney(tip10Total, cur)}</span>)</>}</li>
+                        <li>• {L.tipStandard} → {isJa ? <><span className="font-bold">{formatMoney(tip15PerPerson, cur)}</span> 1人あたり（<span className="font-bold">{formatMoney(tip15Total, cur)}</span> 合計）</> : isEn ? <><span className="font-bold">{formatMoney(tip15PerPerson, cur)}</span> per person (<span className="font-bold">{formatMoney(tip15Total, cur)}</span> total)</> : <>1인당 <span className="font-bold">{formatMoney(tip15PerPerson, cur)}</span> (총 <span className="font-bold">{formatMoney(tip15Total, cur)}</span>)</>}</li>
+                        <li>• {L.tipExcellent} → {isJa ? <><span className="font-bold">{formatMoney(tip20PerPerson, cur)}</span> 1人あたり（<span className="font-bold">{formatMoney(tip20Total, cur)}</span> 合計）</> : isEn ? <><span className="font-bold">{formatMoney(tip20PerPerson, cur)}</span> per person (<span className="font-bold">{formatMoney(tip20Total, cur)}</span> total)</> : <>1인당 <span className="font-bold">{formatMoney(tip20PerPerson, cur)}</span> (총 <span className="font-bold">{formatMoney(tip20Total, cur)}</span>)</>}</li>
                       </ul>
                       <p className="receipt-tips-thankyou text-gray-600 text-xs italic mt-4 mb-0 text-center block">{L.tipThankYou}</p>
                     </div>

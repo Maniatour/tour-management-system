@@ -281,11 +281,23 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               if (!customer?.language) return null
               
               const getLanguageFlag = (language: string): string => {
-                const lang = language.toLowerCase()
-                if (lang === 'kr' || lang === 'ko' || lang === '한국어') return 'KR'
-                if (lang === 'en' || lang === '영어') return 'US'
-                if (lang === 'jp' || lang === '일본어') return 'JP'
-                if (lang === 'cn' || lang === '중국어') return 'CN'
+                if (!language) return 'US'
+                const lang = language.toLowerCase().trim()
+                if (lang === 'kr' || lang === 'ko' || lang.startsWith('ko-') || lang === '한국어' || lang === 'korean') return 'KR'
+                if (lang === 'en' || lang === '영어' || lang.startsWith('en-') || lang === 'english') return 'US'
+                if (lang === 'ja' || lang === 'jp' || lang.startsWith('ja-') || lang === '일본어' || lang === 'japanese') return 'JP'
+                if (lang === 'zh' || lang === 'cn' || lang.startsWith('zh-') || lang === '중국어' || lang === 'chinese') return 'CN'
+                if (lang === 'es' || lang.startsWith('es-') || lang === '스페인어' || lang === 'spanish') return 'ES'
+                if (lang === 'fr' || lang.startsWith('fr-') || lang === '프랑스어' || lang === 'french') return 'FR'
+                if (lang === 'de' || lang.startsWith('de-') || lang === '독일어' || lang === 'german') return 'DE'
+                if (lang === 'it' || lang.startsWith('it-') || lang === '이탈리아어' || lang === 'italian') return 'IT'
+                if (lang === 'pt' || lang.startsWith('pt-') || lang === '포르투갈어' || lang === 'portuguese') return 'PT'
+                if (lang === 'ru' || lang.startsWith('ru-') || lang === '러시아어' || lang === 'russian') return 'RU'
+                if (lang === 'th' || lang === '태국어' || lang === 'thai') return 'TH'
+                if (lang === 'vi' || lang === '베트남어' || lang === 'vietnamese') return 'VN'
+                if (lang === 'id' || lang === '인도네시아어' || lang === 'indonesian') return 'ID'
+                if (lang === 'ms' || lang === '말레이어' || lang === 'malay') return 'MY'
+                if (lang === 'ph' || lang === '필리핀어' || lang === 'filipino') return 'PH'
                 return 'US'
               }
               

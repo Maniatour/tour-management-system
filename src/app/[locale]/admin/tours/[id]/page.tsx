@@ -2038,6 +2038,79 @@ export default function TourDetailPage() {
                 }
               }
 
+              // 고객 언어 업데이트 (폼에서 변경한 언어 반영)
+              if (reservationData.customerLanguage != null && reservationData.customerLanguage !== '' && reservationData.customerId) {
+                const { error: customerUpdateError } = await supabase
+                  .from('customers')
+                  .update({ language: reservationData.customerLanguage })
+                  .eq('id', reservationData.customerId)
+                if (customerUpdateError) {
+                  console.error('고객 언어 업데이트 오류:', customerUpdateError)
+                }
+              }
+
+              // 가격 정보 업데이트 (reservation_pricing)
+              if (reservationData.pricingInfo) {
+                try {
+                  const pricingInfo = reservationData.pricingInfo
+                  const totalPeople = (reservationData.adults || 0) + (reservationData.child || 0) + (reservationData.infant || 0)
+                  const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
+                  const notIncludedTotal = (toNum(pricingInfo.not_included_price) || 0) * (totalPeople || 1)
+
+                  const pricingData = {
+                    reservation_id: editingReservation.id,
+                    adult_product_price: toNum(pricingInfo.adultProductPrice),
+                    child_product_price: toNum(pricingInfo.childProductPrice),
+                    infant_product_price: toNum(pricingInfo.infantProductPrice),
+                    product_price_total: toNum(pricingInfo.productPriceTotal) + notIncludedTotal,
+                    not_included_price: toNum(pricingInfo.not_included_price),
+                    required_options: pricingInfo.requiredOptions ?? {},
+                    required_option_total: toNum(pricingInfo.requiredOptionTotal),
+                    choices: pricingInfo.choices ?? {},
+                    choices_total: toNum(pricingInfo.choicesTotal),
+                    subtotal: toNum(pricingInfo.subtotal) + notIncludedTotal,
+                    coupon_code: pricingInfo.couponCode ?? '',
+                    coupon_discount: toNum(pricingInfo.couponDiscount),
+                    additional_discount: toNum(pricingInfo.additionalDiscount),
+                    additional_cost: toNum(pricingInfo.additionalCost),
+                    card_fee: toNum(pricingInfo.cardFee),
+                    tax: toNum(pricingInfo.tax),
+                    prepayment_cost: toNum(pricingInfo.prepaymentCost),
+                    prepayment_tip: toNum(pricingInfo.prepaymentTip),
+                    selected_options: pricingInfo.selectedOptionalOptions ?? {},
+                    option_total: toNum(pricingInfo.optionTotal),
+                    total_price: toNum(pricingInfo.totalPrice) + notIncludedTotal,
+                    deposit_amount: toNum(pricingInfo.depositAmount),
+                    balance_amount: toNum(pricingInfo.balanceAmount),
+                    private_tour_additional_cost: toNum(pricingInfo.privateTourAdditionalCost),
+                    commission_percent: toNum(pricingInfo.commission_percent),
+                    commission_amount: toNum(pricingInfo.commission_amount)
+                  }
+
+                  const { data: existingPricing } = await supabase
+                    .from('reservation_pricing')
+                    .select('id')
+                    .eq('reservation_id', editingReservation.id)
+                    .maybeSingle()
+
+                  if (existingPricing?.id) {
+                    const { error: pricingError } = await supabase
+                      .from('reservation_pricing')
+                      .update(pricingData as any)
+                      .eq('id', existingPricing.id)
+                    if (pricingError) console.error('가격 정보 업데이트 오류:', pricingError)
+                  } else {
+                    const insertData = { ...pricingData, id: crypto.randomUUID() }
+                    const { error: pricingError } = await supabase
+                      .from('reservation_pricing')
+                      .insert(insertData as any)
+                    if (pricingError) console.error('가격 정보 저장 오류:', pricingError)
+                  }
+                } catch (pricingErr) {
+                  console.error('가격 정보 저장 중 예외:', pricingErr)
+                }
+              }
+
               // 예약 목록 새로고침
               await tourData.refreshReservations()
               handleCloseEditModal()

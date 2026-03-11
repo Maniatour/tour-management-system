@@ -775,11 +775,26 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
     }
   }
 
-  // 언어에 따른 국기 코드 결정
-  const getFlagCode = (language: string) => {
-    if (!language) return 'US' // 기본값은 미국 국기
-    const lang = language.toUpperCase()
-    return lang === 'KR' || lang === 'KO' ? 'KR' : 'US'
+  // 고객 언어에 따른 국기 코드 (한/영 외 일본·중국·스페인 등 모두 표시)
+  const getFlagCode = (language: string | null | undefined): string => {
+    if (!language) return 'US'
+    const lang = language.toLowerCase().trim()
+    if (lang === 'kr' || lang === 'ko' || lang.startsWith('ko-') || lang === 'korean') return 'KR'
+    if (lang === 'en' || lang === 'english' || lang.startsWith('en-')) return 'US'
+    if (lang === 'ja' || lang === 'jp' || lang.startsWith('ja-') || lang === 'japanese') return 'JP'
+    if (lang === 'zh' || lang === 'cn' || lang.startsWith('zh-') || lang === 'chinese') return 'CN'
+    if (lang === 'es' || lang.startsWith('es-') || lang === 'spanish') return 'ES'
+    if (lang === 'fr' || lang.startsWith('fr-') || lang === 'french') return 'FR'
+    if (lang === 'de' || lang.startsWith('de-') || lang === 'german') return 'DE'
+    if (lang === 'it' || lang.startsWith('it-') || lang === 'italian') return 'IT'
+    if (lang === 'pt' || lang.startsWith('pt-') || lang === 'portuguese') return 'PT'
+    if (lang === 'ru' || lang.startsWith('ru-') || lang === 'russian') return 'RU'
+    if (lang === 'th' || lang === 'thai') return 'TH'
+    if (lang === 'vi' || lang === 'vietnamese') return 'VN'
+    if (lang === 'id' || lang === 'indonesian') return 'ID'
+    if (lang === 'ms' || lang === 'malay') return 'MY'
+    if (lang === 'ph' || lang === 'filipino') return 'PH'
+    return 'US'
   }
   
   const flagCode = getFlagCode(customerLanguage)

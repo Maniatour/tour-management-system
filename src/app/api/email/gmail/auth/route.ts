@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
 
   const origin = new URL(request.url).origin
-  let redirectTo = `${origin}/admin/email-integration`
+  let redirectTo = `${origin}/ko/admin/reservation-imports`
   try {
     if (state) {
       const decoded = JSON.parse(Buffer.from(state, 'base64url').toString())

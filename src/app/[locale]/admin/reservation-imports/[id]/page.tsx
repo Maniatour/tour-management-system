@@ -6,6 +6,7 @@ import { ArrowLeft, Loader2, Hash, Calendar, Users, User, Mail, Phone, Globe, Ma
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { getChannelIdForPlatform } from '@/lib/platformChannelMapping'
+import { matchPickupHotelId, normalizeCustomerNameFromImport } from '@/utils/reservationUtils'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { ExtractedReservationData } from '@/types/reservationImport'
@@ -33,7 +34,7 @@ export default function ReservationImportDetailPage() {
   const [row, setRow] = useState<ImportRow | null>(null)
   const [loading, setLoading] = useState(true)
   const [rejecting, setRejecting] = useState(false)
-  const [showEmailBody, setShowEmailBody] = useState(false)
+  const [showEmailBody, setShowEmailBody] = useState(true)
   const [emailBodyView, setEmailBodyView] = useState<'preview' | 'code'>('preview')
   const isEmailHtml = Boolean(
     row?.raw_body_text &&
@@ -73,34 +74,44 @@ export default function ReservationImportDetailPage() {
 
   const loadImport = useCallback(async () => {
     if (!id) return
-    const res = await fetch(`/api/reservation-imports/${id}`)
-    const data = await res.json()
+    let res = await fetch(`/api/reservation-imports/${id}`)
+    let data = await res.json()
     if (!res.ok) throw new Error(data?.error || 'Failed to load')
-    setRow(data)
     const ext = (data.extracted_data || {}) as ExtractedReservationData
+    const hasBody = !!(data.raw_body_text || data.raw_body_html)
+    const looksIncomplete = hasBody && (data.platform_key === 'getyourguide') && (!ext.customer_name || ext.adults == null)
+    if (looksIncomplete) {
+      const reparseRes = await fetch(`/api/reservation-imports/${id}/reparse`, { method: 'POST' })
+      if (reparseRes.ok) {
+        const reparsed = await reparseRes.json()
+        data = reparsed
+      }
+    }
+    setRow(data)
+    const extFinal = (data.extracted_data || {}) as ExtractedReservationData
     const noteParts = [
-      ext.note,
-      ext.special_requests,
-      ext.amount ? `금액: ${ext.amount}` : '',
-      ext.language ? `언어: ${ext.language}` : '',
-      ext.product_choices ? `옵션: ${ext.product_choices}` : '',
-      ext.product_name ? `상품(이메일): ${ext.product_name}` : '',
+      extFinal.note,
+      extFinal.special_requests,
+      extFinal.amount ? `금액: ${extFinal.amount}` : '',
+      extFinal.language ? `언어: ${extFinal.language}` : '',
+      extFinal.product_choices ? `옵션: ${extFinal.product_choices}` : '',
+      extFinal.product_name ? `상품(이메일): ${extFinal.product_name}` : '',
     ].filter(Boolean)
     setForm((prev) => ({
       ...prev,
-      customer_name: ext.customer_name ?? prev.customer_name,
-      customer_email: ext.customer_email ?? prev.customer_email,
-      customer_phone: ext.customer_phone ?? prev.customer_phone,
-      tour_date: ext.tour_date ?? prev.tour_date,
-      tour_time: ext.tour_time ?? prev.tour_time,
-      adults: ext.adults ?? 1,
-      child: ext.children ?? 0,
-      infant: ext.infants ?? 0,
-      total_people: ext.total_people ?? ext.adults ?? 1,
-      channel_rn: ext.channel_rn ?? prev.channel_rn,
-      pickup_hotel: ext.pickup_hotel ?? prev.pickup_hotel,
+      customer_name: normalizeCustomerNameFromImport(extFinal.customer_name) || prev.customer_name,
+      customer_email: extFinal.customer_email ?? prev.customer_email,
+      customer_phone: extFinal.customer_phone ?? prev.customer_phone,
+      tour_date: extFinal.tour_date ?? prev.tour_date,
+      tour_time: extFinal.tour_time ?? prev.tour_time,
+      adults: extFinal.adults ?? 1,
+      child: extFinal.children ?? 0,
+      infant: extFinal.infants ?? 0,
+      total_people: extFinal.total_people ?? extFinal.adults ?? 1,
+      channel_rn: extFinal.channel_rn ?? prev.channel_rn,
+      pickup_hotel: extFinal.pickup_hotel ?? prev.pickup_hotel,
       event_note: noteParts.join(' · ') || prev.event_note,
-      product_id: ext.product_id ?? prev.product_id,
+      product_id: extFinal.product_id ?? prev.product_id,
     }))
   }, [id])
 
@@ -115,6 +126,16 @@ export default function ReservationImportDetailPage() {
       : channelsSafe.find((c: { id: string; name?: string }) => c.name?.toLowerCase().includes(row.platform_key!.toLowerCase()))
     if (channel) setForm((f) => ({ ...f, channel_id: channel.id }))
   }, [row?.platform_key, channelsSafe, form.channel_id])
+
+  // 이메일에서 추출한 픽업 호텔 문자열을 pickup_hotels 목록과 매칭해 드롭다운 id로 치환
+  useEffect(() => {
+    const raw = form.pickup_hotel
+    if (!raw || !pickupHotelsList?.length) return
+    const isAlreadyId = pickupHotelsList.some((h: PickupHotel) => h.id === raw)
+    if (isAlreadyId) return
+    const matchedId = matchPickupHotelId(raw, pickupHotelsList as Array<{ id: string; hotel?: string | null; pick_up_location?: string | null; address?: string | null }>)
+    if (matchedId) setForm((f) => ({ ...f, pickup_hotel: matchedId }))
+  }, [form.pickup_hotel, pickupHotelsList])
 
   const ext = row ? ((row as ImportRow).extracted_data || {}) as ExtractedReservationData : null
   // product_id: 이메일 파서에서 직접 설정된 값(제목 S코드 매핑) 우선, 없으면 상품명으로 매칭
@@ -178,6 +199,9 @@ export default function ReservationImportDetailPage() {
           added_by: user.email,
           status: 'confirmed',
           selected_choices: payload.selectedChoices ?? undefined,
+          variant_key: (payload.variantKey as string) || undefined,
+          // 새 예약 추가와 동일: 가격·입금 정보 전달 → reservation_pricing + payment_record 저장
+          pricingInfo: payload.pricingInfo ?? undefined,
         }),
       })
       const data = await res.json()
@@ -249,209 +273,216 @@ export default function ReservationImportDetailPage() {
         </button>
       </div>
 
-      {/* 이메일 요약 · 사용자 친화적 예약 카드 (GetYourGuide 스타일) */}
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-        {/* 상단: 플랫폼 · 제목 */}
-        <div className="px-4 py-2 border-b border-gray-100 bg-amber-50 flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-amber-800 uppercase tracking-wide">
-              {row.platform_key || '이메일'}
-            </span>
-            {row.subject && (
-              <span className="text-xs text-gray-500 truncate max-w-[280px]" title={row.subject}>
-                {row.subject}
+      {/* 2열 그리드: 왼쪽 1/3 = 예약 접수 카드, 오른쪽 2/3 = 이메일 본문 */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* 왼쪽(1/3): 예약 접수 요약 카드 */}
+        <div className="lg:col-span-1 rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+          {/* 상단: 플랫폼 · 제목 */}
+          <div className="px-4 py-2 border-b border-gray-100 bg-amber-50 flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-amber-800 uppercase tracking-wide">
+                {row.platform_key || '이메일'}
               </span>
-            )}
-          </div>
-          {row.source_email && (
-            <span className="text-xs text-gray-500">발신: {row.source_email}</span>
-          )}
-        </div>
-
-        {/* 카드 본문: Your offer has been booked 스타일 */}
-        <div className="p-4 sm:p-5">
-          <h2 className="text-base font-semibold text-gray-900 mb-4">
-            예약이 접수되었습니다
-          </h2>
-
-          {/* 상품 정보 */}
-          {(ext?.product_name || ext?.product_choices) && (
-            <div className="mb-4 pb-4 border-b border-gray-100">
-              {ext.product_name && (
-                <p className="text-sm font-medium text-gray-900">{ext.product_name}</p>
-              )}
-              {ext.product_choices && (
-                <p className="text-xs text-gray-600 mt-0.5">{ext.product_choices}</p>
+              {row.subject && (
+                <span className="text-xs text-gray-500 truncate max-w-[280px]" title={row.subject}>
+                  {row.subject}
+                </span>
               )}
             </div>
-          )}
+            {row.source_email && (
+              <span className="text-xs text-gray-500">발신: {row.source_email}</span>
+            )}
+          </div>
 
-          {/* 항목별 행: 아이콘 · 레이블 · 값 */}
-          <dl className="space-y-3">
-            {ext?.channel_rn && (
-              <div className="flex items-start gap-3">
-                <Hash className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" aria-hidden />
-                <div className="min-w-0 flex-1">
-                  <dt className="text-xs font-medium text-gray-500">Reference number</dt>
-                  <dd className="text-sm font-semibold text-gray-900 bg-amber-100/80 inline-block px-2 py-0.5 rounded mt-0.5">
-                    {ext.channel_rn}
-                  </dd>
-                </div>
+          {/* 카드 본문: Your offer has been booked 스타일 */}
+          <div className="p-4 sm:p-5">
+            <h2 className="text-base font-semibold text-gray-900 mb-4">
+              예약이 접수되었습니다
+            </h2>
+
+            {/* 상품 정보 */}
+            {(ext?.product_name || ext?.product_choices) && (
+              <div className="mb-4 pb-4 border-b border-gray-100">
+                {ext.product_name && (
+                  <p className="text-sm font-medium text-gray-900">{ext.product_name}</p>
+                )}
+                {ext.product_choices && (
+                  <p className="text-xs text-gray-600 mt-0.5">{ext.product_choices}</p>
+                )}
               </div>
             )}
-            {(ext?.tour_date || ext?.tour_time) && (
-              <div className="flex items-start gap-3">
-                <Calendar className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" aria-hidden />
-                <div className="min-w-0 flex-1">
-                  <dt className="text-xs font-medium text-gray-500">Date</dt>
-                  <dd className="text-sm text-gray-900 mt-0.5">
-                    {[ext.tour_date, ext.tour_time].filter(Boolean).join(' ') || '–'}
-                  </dd>
+
+            {/* 항목별 행: 아이콘 · 레이블 · 값 */}
+            <dl className="space-y-3">
+              {ext?.channel_rn && (
+                <div className="flex items-start gap-3">
+                  <Hash className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <dt className="text-xs font-medium text-gray-500">Reference number</dt>
+                    <dd className="text-sm font-semibold text-gray-900 bg-amber-100/80 inline-block px-2 py-0.5 rounded mt-0.5">
+                      {ext.channel_rn}
+                    </dd>
+                  </div>
                 </div>
-              </div>
-            )}
-            {((ext?.adults != null) || (ext?.children != null) || (ext?.infants != null)) && (
-              <div className="flex items-start gap-3">
-                <Users className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" aria-hidden />
-                <div className="min-w-0 flex-1">
-                  <dt className="text-xs font-medium text-gray-500">Number of participants</dt>
-                  <dd className="text-sm text-gray-900 mt-0.5">
-                    {[
-                      ext.adults != null && `${ext.adults} x Adults`,
-                      ext.children != null && `${ext.children} x Children`,
-                      ext.infants != null && `${ext.infants} x Infants`,
-                    ].filter(Boolean).join(', ') || '–'}
-                  </dd>
+              )}
+              {(ext?.tour_date || ext?.tour_time) && (
+                <div className="flex items-start gap-3">
+                  <Calendar className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <dt className="text-xs font-medium text-gray-500">Date</dt>
+                    <dd className="text-sm text-gray-900 mt-0.5">
+                      {[ext.tour_date, ext.tour_time].filter(Boolean).join(' ') || '–'}
+                    </dd>
+                  </div>
                 </div>
-              </div>
-            )}
-            {(ext?.customer_name || ext?.customer_email || ext?.customer_phone || ext?.language) && (
+              )}
+              {((ext?.adults != null) || (ext?.children != null) || (ext?.infants != null)) && (
+                <div className="flex items-start gap-3">
+                  <Users className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <dt className="text-xs font-medium text-gray-500">Number of participants</dt>
+                    <dd className="text-sm text-gray-900 mt-0.5">
+                      {[
+                        ext.adults != null && `${ext.adults} x Adults`,
+                        ext.children != null && `${ext.children} x Children`,
+                        ext.infants != null && `${ext.infants} x Infants`,
+                      ].filter(Boolean).join(', ') || '–'}
+                    </dd>
+                  </div>
+                </div>
+              )}
+              {(ext?.customer_name || ext?.customer_email || ext?.customer_phone || ext?.language) && (
+                <>
+                  {ext.customer_name && (
+                    <div className="flex items-start gap-3">
+                      <User className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" aria-hidden />
+                      <div className="min-w-0 flex-1">
+                        <dt className="text-xs font-medium text-gray-500">Main customer</dt>
+                        <dd className="text-sm font-medium text-gray-900 mt-0.5">{normalizeCustomerNameFromImport(ext.customer_name) || ext.customer_name}</dd>
+                      </div>
+                    </div>
+                  )}
+                  {ext.customer_email && (
+                    <div className="flex items-start gap-3 pl-7">
+                      <Mail className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-1" aria-hidden />
+                      <div className="min-w-0 flex-1">
+                        <dd className="text-sm text-gray-700 break-all">{ext.customer_email}</dd>
+                      </div>
+                    </div>
+                  )}
+                  {ext.customer_phone && (
+                    <div className="flex items-start gap-3 pl-7">
+                      <Phone className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-1" aria-hidden />
+                      <dd className="text-sm text-gray-700">Phone: {ext.customer_phone}</dd>
+                    </div>
+                  )}
+                  {ext.language && (
+                    <div className="flex items-start gap-3 pl-7">
+                      <Globe className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-1" aria-hidden />
+                      <dd className="text-sm text-gray-700">Language: {ext.language}</dd>
+                    </div>
+                  )}
+                </>
+              )}
+              {ext?.pickup_hotel && (
+                <div className="flex items-start gap-3">
+                  <MapPin className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <dt className="text-xs font-medium text-gray-500">Pickup</dt>
+                    <dd className="text-sm text-gray-900 mt-0.5">{ext.pickup_hotel}</dd>
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ext.pickup_hotel)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 hover:underline mt-1 inline-block"
+                    >
+                      Open in Google Maps
+                    </a>
+                  </div>
+                </div>
+              )}
+              {ext?.amount && (
+                <div className="flex items-start gap-3">
+                  <DollarSign className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <dt className="text-xs font-medium text-gray-500">Price</dt>
+                    <dd className="text-sm font-semibold text-gray-900 mt-0.5">{ext.amount}</dd>
+                  </div>
+                </div>
+              )}
+            </dl>
+
+            {/* 도움말 문구 */}
+            <p className="text-xs text-gray-500 mt-4 pt-4 border-t border-gray-100">
+              아래 입력 폼에서 내용을 확인·수정한 뒤 저장하면 예약으로 생성됩니다.
+            </p>
+          </div>
+        </div>
+
+        {/* 오른쪽(2/3): 이메일 본문 */}
+        {row.raw_body_text ? (
+          <div className="lg:col-span-2 rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col min-h-0">
+            <button
+              type="button"
+              onClick={() => setShowEmailBody((v) => !v)}
+              className="w-full px-4 py-3 flex items-center justify-between gap-2 text-left bg-gray-50 hover:bg-gray-100 border-b border-gray-200"
+            >
+              <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                <FileText className="w-4 h-4 text-gray-500" aria-hidden />
+                이메일 본문
+              </span>
+              {showEmailBody ? (
+                <ChevronUp className="w-4 h-4 text-gray-500 shrink-0" aria-hidden />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-gray-500 shrink-0" aria-hidden />
+              )}
+            </button>
+            {showEmailBody && (
               <>
-                {ext.customer_name && (
-                  <div className="flex items-start gap-3">
-                    <User className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" aria-hidden />
-                    <div className="min-w-0 flex-1">
-                      <dt className="text-xs font-medium text-gray-500">Main customer</dt>
-                      <dd className="text-sm font-medium text-gray-900 mt-0.5">{ext.customer_name}</dd>
-                    </div>
+                {isEmailHtml && (
+                  <div className="flex border-b border-gray-200 bg-gray-50">
+                    <button
+                      type="button"
+                      onClick={() => setEmailBodyView('preview')}
+                      className={`px-4 py-2 text-sm font-medium ${emailBodyView === 'preview' ? 'text-blue-600 border-b-2 border-blue-600 bg-white' : 'text-gray-600 hover:text-gray-900'}`}
+                    >
+                      미리보기
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEmailBodyView('code')}
+                      className={`px-4 py-2 text-sm font-medium ${emailBodyView === 'code' ? 'text-blue-600 border-b-2 border-blue-600 bg-white' : 'text-gray-600 hover:text-gray-900'}`}
+                    >
+                      코드
+                    </button>
                   </div>
                 )}
-                {ext.customer_email && (
-                  <div className="flex items-start gap-3 pl-7">
-                    <Mail className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-1" aria-hidden />
-                    <div className="min-w-0 flex-1">
-                      <dd className="text-sm text-gray-700 break-all">{ext.customer_email}</dd>
-                    </div>
+                {emailBodyView === 'preview' && isEmailHtml ? (
+                  <div className="bg-gray-100 p-4 flex-1 min-h-0 overflow-auto">
+                    <iframe
+                      title="이메일 미리보기"
+                      sandbox="allow-same-origin allow-popups allow-scripts"
+                      srcDoc={row.raw_body_text}
+                      className="w-full min-h-[520px] border-0 rounded-lg bg-white shadow-sm"
+                      style={{ height: '560px' }}
+                    />
                   </div>
-                )}
-                {ext.customer_phone && (
-                  <div className="flex items-start gap-3 pl-7">
-                    <Phone className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-1" aria-hidden />
-                    <dd className="text-sm text-gray-700">Phone: {ext.customer_phone}</dd>
-                  </div>
-                )}
-                {ext.language && (
-                  <div className="flex items-start gap-3 pl-7">
-                    <Globe className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-1" aria-hidden />
-                    <dd className="text-sm text-gray-700">Language: {ext.language}</dd>
+                ) : (
+                  <div className="p-0 flex-1 min-h-[520px] overflow-auto bg-[#1e1e1e]">
+                    <pre className="p-4 text-xs text-[#d4d4d4] whitespace-pre-wrap font-mono break-words leading-relaxed block m-0">
+                      <code className="text-[#d4d4d4]">{row.raw_body_text}</code>
+                    </pre>
                   </div>
                 )}
               </>
             )}
-            {ext?.pickup_hotel && (
-              <div className="flex items-start gap-3">
-                <MapPin className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" aria-hidden />
-                <div className="min-w-0 flex-1">
-                  <dt className="text-xs font-medium text-gray-500">Pickup</dt>
-                  <dd className="text-sm text-gray-900 mt-0.5">{ext.pickup_hotel}</dd>
-                  <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ext.pickup_hotel)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-blue-600 hover:underline mt-1 inline-block"
-                  >
-                    Open in Google Maps
-                  </a>
-                </div>
-              </div>
-            )}
-            {ext?.amount && (
-              <div className="flex items-start gap-3">
-                <DollarSign className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" aria-hidden />
-                <div className="min-w-0 flex-1">
-                  <dt className="text-xs font-medium text-gray-500">Price</dt>
-                  <dd className="text-sm font-semibold text-gray-900 mt-0.5">{ext.amount}</dd>
-                </div>
-              </div>
-            )}
-          </dl>
-
-          {/* 도움말 문구 */}
-          <p className="text-xs text-gray-500 mt-4 pt-4 border-t border-gray-100">
-            아래 입력 폼에서 내용을 확인·수정한 뒤 저장하면 예약으로 생성됩니다.
-          </p>
-        </div>
+          </div>
+        ) : (
+          <div className="lg:col-span-2 rounded-xl border border-gray-200 bg-gray-50 flex items-center justify-center min-h-[200px]">
+            <p className="text-sm text-gray-500">이메일 본문 없음</p>
+          </div>
+        )}
       </div>
-
-      {/* 이메일 본문: 미리보기(렌더) / 코드 전환 */}
-      {row.raw_body_text && (
-        <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setShowEmailBody((v) => !v)}
-            className="w-full px-4 py-3 flex items-center justify-between gap-2 text-left bg-gray-50 hover:bg-gray-100 border-b border-gray-200"
-          >
-            <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
-              <FileText className="w-4 h-4 text-gray-500" aria-hidden />
-              이메일 본문
-            </span>
-            {showEmailBody ? (
-              <ChevronUp className="w-4 h-4 text-gray-500 shrink-0" aria-hidden />
-            ) : (
-              <ChevronDown className="w-4 h-4 text-gray-500 shrink-0" aria-hidden />
-            )}
-          </button>
-          {showEmailBody && (
-            <>
-              {isEmailHtml && (
-                <div className="flex border-b border-gray-200 bg-gray-50">
-                  <button
-                    type="button"
-                    onClick={() => setEmailBodyView('preview')}
-                    className={`px-4 py-2 text-sm font-medium ${emailBodyView === 'preview' ? 'text-blue-600 border-b-2 border-blue-600 bg-white' : 'text-gray-600 hover:text-gray-900'}`}
-                  >
-                    미리보기
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEmailBodyView('code')}
-                    className={`px-4 py-2 text-sm font-medium ${emailBodyView === 'code' ? 'text-blue-600 border-b-2 border-blue-600 bg-white' : 'text-gray-600 hover:text-gray-900'}`}
-                  >
-                    코드
-                  </button>
-                </div>
-              )}
-              {emailBodyView === 'preview' && isEmailHtml ? (
-                <div className="bg-gray-100 p-4 max-h-[560px] overflow-auto">
-                  <iframe
-                    title="이메일 미리보기"
-                    sandbox="allow-same-origin allow-popups"
-                    srcDoc={row.raw_body_text}
-                    className="w-full min-h-[480px] border-0 rounded-lg bg-white shadow-sm"
-                    style={{ height: '520px' }}
-                  />
-                </div>
-              ) : (
-                <div className="p-0 max-h-[480px] overflow-auto bg-[#1e1e1e]">
-                  <pre className="p-4 text-xs text-[#d4d4d4] whitespace-pre-wrap font-mono break-words leading-relaxed block m-0">
-                    <code className="text-[#d4d4d4]">{row.raw_body_text}</code>
-                  </pre>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
 
       <div className="flex items-center justify-between gap-2 mb-2">
         <p className="text-sm text-gray-600">아래는 실제 &quot;새 예약 추가&quot;와 동일한 입력 폼입니다. 수정 후 저장하면 예약으로 생성됩니다.</p>
@@ -478,6 +509,7 @@ export default function ReservationImportDetailPage() {
                 adults: form.adults,
                 child: form.child,
                 infant: form.infant,
+                total_people: form.total_people || form.adults + form.child + form.infant,
                 pickup_hotel: form.pickup_hotel || undefined,
                 event_note: form.event_note || undefined,
               } as any)
@@ -502,9 +534,10 @@ export default function ReservationImportDetailPage() {
           customer_phone: form.customer_phone || undefined,
           customer_language: ext?.language || undefined,
         }}
-        initialShowNewCustomerForm={Boolean(ext?.customer_name)}
+        initialShowNewCustomerForm={Boolean(normalizeCustomerNameFromImport(ext?.customer_name) || ext?.customer_name)}
         initialChoiceOptionNamesFromImport={ext?.import_choice_option_names}
         initialChoiceUndecidedGroupNamesFromImport={ext?.import_choice_undecided_groups}
+        initialAmountFromImport={ext?.amount}
       />
     </div>
   )

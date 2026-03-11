@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   const locale = searchParams.get('locale') || 'ko'
   const origin = new URL(request.url).origin
   const redirectUri = `${origin}/api/email/gmail/auth`
-  const state = Buffer.from(JSON.stringify({ redirect: `${origin}/${locale}/admin/email-integration` })).toString('base64url')
+  const state = Buffer.from(JSON.stringify({ redirect: `${origin}/${locale}/admin/reservation-imports` })).toString('base64url')
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth')
   url.searchParams.set('client_id', clientId)
   url.searchParams.set('redirect_uri', redirectUri)

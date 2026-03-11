@@ -1,8 +1,9 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { useRouter, useParams } from 'next/navigation'
-import { Mail, ChevronRight, Loader2, FileText } from 'lucide-react'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
+import { Mail, ChevronRight, Loader2, FileText, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
+import { normalizeCustomerNameFromImport } from '@/utils/reservationUtils'
 import type { ExtractedReservationData } from '@/types/reservationImport'
 
 interface ImportItem {
@@ -22,9 +23,16 @@ interface AdminReservationImportsProps {
   params: Promise<{ locale: string }>
 }
 
+const emptyGmailStatus = { connected: false, email: null as string | null, updated_at: null as string | null }
+const normalizeGmailStatus = (data: unknown) =>
+  data && typeof (data as { connected?: boolean }).connected === 'boolean'
+    ? (data as { connected: boolean; email: string | null; updated_at: string | null })
+    : emptyGmailStatus
+
 export default function AdminReservationImportsPage({}: AdminReservationImportsProps) {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const locale = (params?.locale as string) || 'ko'
   const [items, setItems] = useState<ImportItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -34,10 +42,14 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const [pasteBody, setPasteBody] = useState('')
   const [pasteFrom, setPasteFrom] = useState('')
   const [pasteSubmitting, setPasteSubmitting] = useState(false)
+  const [gmailStatus, setGmailStatus] = useState<{ connected: boolean; email: string | null; updated_at: string | null }>(emptyGmailStatus)
+  const [gmailSyncing, setGmailSyncing] = useState(false)
+  const [gmailMessage, setGmailMessage] = useState<string | null>(null)
+  const [optimisticConnected, setOptimisticConnected] = useState(false)
 
   const summary = (extracted: ExtractedReservationData) => {
     const parts = []
-    if (extracted.customer_name) parts.push(extracted.customer_name)
+    if (extracted.customer_name) parts.push(normalizeCustomerNameFromImport(extracted.customer_name) || extracted.customer_name)
     if (extracted.customer_email) parts.push(extracted.customer_email)
     if (extracted.tour_date) parts.push(extracted.tour_date)
     if (extracted.adults != null) parts.push(`성인 ${extracted.adults}`)
@@ -53,9 +65,65 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
       .finally(() => setLoading(false))
   }, [statusFilter])
 
+  const fetchGmailStatus = useCallback(() => {
+    return fetch('/api/email/gmail/status')
+      .then((res) => res.json().catch(() => ({})).then((data) => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        const status = normalizeGmailStatus(data)
+        setGmailStatus(status)
+        if (ok) setOptimisticConnected(false)
+        return status
+      })
+      .catch(() => {
+        setGmailStatus(emptyGmailStatus)
+      })
+  }, [])
+
   useEffect(() => {
     loadList()
   }, [loadList])
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/email/gmail/status')
+      .then((res) => res.json().catch(() => ({})))
+      .then((data) => {
+        if (!cancelled) setGmailStatus(normalizeGmailStatus(data))
+      })
+      .catch(() => {
+        if (!cancelled) setGmailStatus(emptyGmailStatus)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    const success = searchParams.get('success')
+    const error = searchParams.get('error')
+    if (success === '1') {
+      setGmailMessage('Gmail 연결이 완료되었습니다.')
+      setOptimisticConnected(true)
+      fetchGmailStatus()
+    }
+    if (error) setGmailMessage(`연결 실패: ${decodeURIComponent(error)}`)
+  }, [searchParams, fetchGmailStatus])
+
+  const gmailStartAuthUrl = `/api/email/gmail/start?locale=${locale}`
+
+  const handleGmailSync = async () => {
+    setGmailSyncing(true)
+    setGmailMessage(null)
+    try {
+      const res = await fetch('/api/email/gmail/sync', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || res.statusText)
+      setGmailMessage(`동기화 완료: 새 메일 ${data.imported ?? 0}건이 예약 가져오기 목록에 추가되었습니다.`)
+      loadList()
+    } catch (e) {
+      setGmailMessage(e instanceof Error ? e.message : '동기화 실패')
+    } finally {
+      setGmailSyncing(false)
+    }
+  }
 
   const handlePasteSubmit = async () => {
     if (!pasteSubject.trim() && !pasteBody.trim()) {
@@ -102,6 +170,64 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
 
   return (
     <div className="space-y-4">
+      {/* 이메일 연동 (Gmail) 섹션 */}
+      <section className="rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="text-sm font-semibold text-gray-900 mb-1">이메일 연동 (Gmail)</h2>
+        <p className="text-xs text-gray-600 mb-4">
+          Gmail 받은편지함의 예약 알림 메일을 자동으로 읽어와 아래 목록에 넣습니다. 연결 후 &quot;지금 동기화&quot; 또는 Cron으로 주기 실행할 수 있습니다.
+        </p>
+        {gmailMessage && (
+          <div className={`rounded-lg border p-3 text-sm mb-4 ${gmailMessage.startsWith('연결 실패') || gmailMessage.startsWith('동기화 실패') ? 'border-red-200 bg-red-50 text-red-800' : 'border-green-200 bg-green-50 text-green-800'}`}>
+            {gmailMessage}
+          </div>
+        )}
+        {gmailStatus?.connected || optimisticConnected ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 text-gray-700">
+              <CheckCircle className="w-5 h-5 text-green-600 shrink-0" />
+              <span className="text-sm">연결됨: <strong>{gmailStatus?.email ?? '확인 중…'}</strong></span>
+            </div>
+            {gmailStatus?.updated_at && (
+              <span className="text-xs text-gray-500">
+                마지막 연결: {new Date(gmailStatus.updated_at).toLocaleString('ko-KR')}
+              </span>
+            )}
+            <div className="flex gap-2">
+              <a
+                href={gmailStartAuthUrl}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                <RefreshCw className="w-4 h-4" />
+                다시 연결
+              </a>
+              <button
+                type="button"
+                onClick={handleGmailSync}
+                disabled={gmailSyncing}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 disabled:opacity-50"
+              >
+                {gmailSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                지금 동기화
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 text-gray-600">
+              <XCircle className="w-5 h-5 text-gray-400 shrink-0" />
+              <span className="text-sm">Gmail이 연결되지 않았습니다.</span>
+            </div>
+            <a
+              href={gmailStartAuthUrl}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
+            >
+              <Mail className="w-4 h-4" />
+              Gmail 연결
+            </a>
+          </div>
+        )}
+      </section>
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold text-gray-900">예약 가져오기</h1>
         <div className="flex items-center gap-2">
@@ -217,7 +343,8 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                 const isGyGBooking =
                   (row.source_email || '').toLowerCase().includes('getyourguide') &&
                   (row.subject || '').trimStart().toLowerCase().startsWith('booking -')
-                const isHighlight = isGyGBooking || row.extracted_data?.is_booking_confirmed === true
+                const isKlookOrderReceived = (row.subject || '').trimStart().toLowerCase().startsWith('klook order received -')
+                const isHighlight = isGyGBooking || isKlookOrderReceived || row.extracted_data?.is_booking_confirmed === true
                 return (
                 <tr
                   key={row.id}

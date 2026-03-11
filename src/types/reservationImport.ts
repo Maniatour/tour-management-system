@@ -30,7 +30,7 @@ export interface ExtractedReservationData {
   special_requests?: string
   /** 플랫폼 식별용 (채널 매핑에 사용) */
   platform_key?: string
-  /** 예약 접수 이메일 여부 (GetYourGuide: 제목이 "Booking -"로 시작) */
+  /** 예약 접수 이메일 여부 (GetYourGuide: "Booking -", Klook: "Klook Order Received -"로 제목 시작 시 목록 강조) */
   is_booking_confirmed?: boolean
   /** 이메일에서 파싱한 초이스 옵션명 (상품 초이스 매칭용, 예: "Lower Antelope Canyon") */
   import_choice_option_names?: string[]

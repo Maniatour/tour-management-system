@@ -16,6 +16,36 @@ export const getPickupHotelDisplay = (hotelId: string, pickupHotels: Array<{ id:
   return hotel ? `${hotel.hotel ?? ''} - ${hotel.pick_up_location ?? ''}` : hotelId
 }
 
+/** 이메일 등에서 추출한 픽업 주소/호텔명 문자열을 pickup_hotels 목록과 매칭해 id 반환 (없으면 null) */
+export function matchPickupHotelId(
+  extractedText: string | null | undefined,
+  pickupHotels: Array<{ id: string; hotel?: string | null; pick_up_location?: string | null; address?: string | null }> | null
+): string | null {
+  if (!extractedText?.trim() || !pickupHotels?.length) return null
+  const query = extractedText.trim().toLowerCase()
+  // 호텔명으로 시작하는 경우(예: "Harrah's Las Vegas Hotel & Casino, 3475 S...") → 앞부분으로 매칭
+  const hotelNamePart = query.split(',')[0].trim()
+  const addressPart = query.includes(',') ? query.replace(/^[^,]+,?\s*/, '').trim() : ''
+  for (const h of pickupHotels) {
+    const hotel = (h.hotel ?? '').toLowerCase()
+    const location = (h.pick_up_location ?? '').toLowerCase()
+    const address = (h.address ?? '').toLowerCase()
+    if (!hotel && !location && !address) continue
+    if (hotel && hotelNamePart && (hotel.includes(hotelNamePart) || hotelNamePart.includes(hotel))) return h.id
+    if (hotel && query.includes(hotel)) return h.id
+    if (address && (address.includes(addressPart) || addressPart.includes(address) || query.includes(address))) return h.id
+    if (location && (location.includes(hotelNamePart) || hotelNamePart.includes(location))) return h.id
+  }
+  return null
+}
+
+/** 이메일 추출/DB에 저장된 고객명에서 "customer-" 앞에서 끊어 반환 (기존 저장 데이터 표시용) */
+export function normalizeCustomerNameFromImport(name: string | null | undefined): string {
+  if (name == null || typeof name !== 'string') return ''
+  const before = name.split(/\s*customer-/i)[0].trim()
+  return before !== '' ? before : name.trim()
+}
+
 // 고객 이름 가져오기
 export const getCustomerName = (customerId: string, customers: Customer[] | null) => {
   return customers?.find(c => c.id === customerId)?.name || 'Unknown'

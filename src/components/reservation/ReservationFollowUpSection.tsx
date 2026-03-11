@@ -130,7 +130,7 @@ function formatAuditValueWithLookups(
       if (!Array.isArray(required) || required.length === 0) return typeof value === 'string' ? value : JSON.stringify(value).slice(0, 60) + '…'
       const parts = required.map((item: { choice_id?: string; option_id?: string; quantity?: number }) => {
         const choiceName = (item.choice_id && lookups.choiceNameById[item.choice_id]) || item.choice_id || '?'
-        const optionName = (item.option_id && lookups.optionNameById[item.option_id]) || item.option_id || '?'
+        const optionName = item.option_id === '__undecided__' ? '미정' : (item.option_id && lookups.optionNameById[item.option_id]) || item.option_id || '?'
         const qty = item.quantity ?? 1
         return `${choiceName}: ${optionName} × ${qty}`
       })

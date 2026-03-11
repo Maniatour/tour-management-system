@@ -740,54 +740,39 @@ export default function PricingSection({
       (selectedChannel as any).name?.toLowerCase().includes('getyourguide')
     )
     
-    // 채널의 commission_percent 가져오기
-    const channelCommissionPercent = selectedChannel 
-      ? (() => {
-          const ch = selectedChannel as any
-          return ch.commission_percent || ch.commission_rate || ch.commission || 0
-        })()
+    // 채널의 commission_percent 가져오기 (숫자로 변환)
+    const channelCommissionPercent = selectedChannel
+      ? (Number((selectedChannel as any).commission_percent ?? (selectedChannel as any).commission_rate ?? (selectedChannel as any).commission) || 0)
       : 0
     
     if (formData.productPriceTotal > 0) {
-      // 할인 후 상품가 계산 (불포함 가격 제외)
-      // 할인 후 상품가 = OTA 판매가 - 쿠폰 할인 - 추가 할인
+      // 할인 후 상품가 계산 (불포함 가격 제외) = 채널 결제 금액 기준
       const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
       
       if (discountedPrice > 0) {
         const currentDeposit = formData.depositAmount || 0
         const priceDifference = Math.abs(currentDeposit - discountedPrice)
         
-        // OTA 채널의 경우: depositAmount, onlinePaymentAmount, commission_base_price 모두 업데이트
+        // OTA 채널: depositAmount = 고객 총 결제 금액(잔액 0), 채널 결제 금액 = 할인 후 상품가, 채널 수수료 $ = 채널 결제 금액 × 수수료 %
         if (isOTAChannel) {
-          // depositAmount가 0이거나, 현재 값이 할인 후 상품가와 차이가 0.01 이상이면 업데이트
+          const totalCustomerPayment = calculateTotalCustomerPayment()
           if (currentDeposit === 0 || priceDifference > 0.01) {
-            // 잔액도 함께 계산하여 업데이트
-            const totalCustomerPayment = calculateTotalCustomerPayment()
-            const totalPaid = discountedPrice + calculatedBalanceReceivedTotal
-            const calculatedBalance = Math.max(0, totalCustomerPayment - totalPaid)
-            
-            // 채널 결제 금액 계산 (Returned 차감)
-            const adjustedBasePrice = Math.max(0, discountedPrice - returnedAmount)
-            
-            // 채널 수수료 계산 (commission_amount가 0일 때만)
-            const currentCommissionAmount = formData.commission_amount || 0
-            const commissionPercent = (formData.commission_percent && formData.commission_percent > 0) 
-              ? formData.commission_percent 
-              : (channelCommissionPercent || 0)
-            const calculatedCommission = (currentCommissionAmount === 0 && commissionPercent > 0 && adjustedBasePrice > 0)
-              ? adjustedBasePrice * (commissionPercent / 100)
-              : currentCommissionAmount
-            
-            const existingBalance = formData.onSiteBalanceAmount ?? 0
-            const balanceToUse = (calculatedBalance === 0 && existingBalance > 0) ? existingBalance : calculatedBalance
+            const channelPaymentBase = Math.max(0, discountedPrice - returnedAmount)
+            const commissionPercent = (formData.commission_percent != null && formData.commission_percent > 0)
+              ? Number(formData.commission_percent)
+              : channelCommissionPercent
+            const calculatedCommission = (commissionPercent > 0 && channelPaymentBase > 0)
+              ? Math.round(channelPaymentBase * (commissionPercent / 100) * 100) / 100
+              : (formData.commission_amount ?? 0)
             setFormData((prev: typeof formData) => ({
               ...prev,
-              depositAmount: discountedPrice,
+              depositAmount: totalCustomerPayment,
               onlinePaymentAmount: discountedPrice,
               commission_base_price: discountedPrice,
+              commission_percent: (prev.commission_percent != null && prev.commission_percent > 0) ? prev.commission_percent : commissionPercent,
               commission_amount: isExistingPricingLoaded ? (prev.commission_amount ?? 0) : calculatedCommission,
-              onSiteBalanceAmount: balanceToUse,
-              balanceAmount: balanceToUse
+              onSiteBalanceAmount: 0,
+              balanceAmount: 0
             }))
           }
         } else {
@@ -896,7 +881,41 @@ export default function PricingSection({
       return { ...prev, commission_amount: calculatedCommission }
     })
   }, [formData.commission_base_price, formData.onlinePaymentAmount, isOTAChannel, returnedAmount, isExistingPricingLoaded, formData.commission_percent, formData.commission_amount, formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.subtotal, channelCommissionPercent, setFormData])
-  
+
+  // OTA + 채널 수수료: 채널이 로드된 뒤 수수료 %와 $를 한 번에 설정 (채널 수수료 %가 채널 수수료 $보다 나중에 로드되어도 동작)
+  useEffect(() => {
+    if (!formData.channelId || !channels?.length || isExistingPricingLoaded) return
+    const ch = channels.find((c: { id: string }) => c.id === formData.channelId)
+    const isOTA = ch && ((ch as any).type?.toLowerCase() === 'ota' || (ch as any).category === 'OTA')
+    if (!isOTA) return
+    const percentFromChannel = Number((ch as any).commission_percent ?? (ch as any).commission_rate ?? (ch as any).commission) || 0
+    if (percentFromChannel <= 0) return
+    const currentAmount = formData.commission_amount ?? 0
+    if (currentAmount > 0.01) return
+
+    const basePrice = formData.commission_base_price ?? formData.onlinePaymentAmount ?? (() => {
+      const discounted = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
+      return discounted > 0 ? discounted : formData.subtotal
+    })()
+    const adjustedBase = Math.max(0, basePrice - returnedAmount)
+    if (adjustedBase <= 0) return
+
+    const percent = (formData.commission_percent != null && formData.commission_percent > 0) ? formData.commission_percent : percentFromChannel
+    const calculated = Math.round(adjustedBase * (percent / 100) * 100) / 100
+    if (calculated <= 0) return
+
+    setFormData((prev: typeof formData) => {
+      const prevAmount = prev.commission_amount ?? 0
+      if (Math.abs(prevAmount - calculated) < 0.01) return prev
+      return {
+        ...prev,
+        commission_percent: (prev.commission_percent != null && prev.commission_percent > 0) ? prev.commission_percent : percent,
+        commission_amount: calculated,
+        ...(prev.commission_base_price == null && basePrice > 0 ? { commission_base_price: basePrice } : {})
+      }
+    })
+  }, [formData.channelId, channels, isExistingPricingLoaded, formData.commission_amount, formData.commission_percent, formData.commission_base_price, formData.onlinePaymentAmount, formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.subtotal, returnedAmount, setFormData])
+
   // 채널 변경 시 commission_percent 초기화 (채널이 변경되면 새로운 채널의 commission_percent를 사용)
   const prevChannelIdRef = useRef<string | undefined>(undefined)
   
