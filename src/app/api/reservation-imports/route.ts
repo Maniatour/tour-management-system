@@ -186,19 +186,30 @@ export async function POST(request: NextRequest) {
 
 /**
  * GET /api/reservation-imports
- * 목록 (status 쿼리: pending | confirmed | rejected, 기본 pending)
+ * 목록 (status, from_date, to_date 쿼리. from_date/to_date는 YYYY-MM-DD, 날짜별 페이지네이션용)
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const status = searchParams.get('status') || 'pending'
+  const fromDate = searchParams.get('from_date') // YYYY-MM-DD
+  const toDate = searchParams.get('to_date')   // YYYY-MM-DD
 
   const client = supabaseAdmin ?? (await import('@/lib/supabase')).supabase
-  const { data, error } = await client
+  let query = client
     .from('reservation_imports')
     .select('id, message_id, source_email, platform_key, subject, received_at, extracted_data, status, reservation_id, created_at')
     .eq('status', status)
     .order('received_at', { ascending: false })
-    .limit(100)
+    .limit(200)
+
+  if (fromDate && /^\d{4}-\d{2}-\d{2}$/.test(fromDate)) {
+    query = query.gte('received_at', `${fromDate}T00:00:00.000Z`)
+  }
+  if (toDate && /^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
+    query = query.lte('received_at', `${toDate}T23:59:59.999Z`)
+  }
+
+  const { data, error } = await query
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

@@ -29,6 +29,17 @@ const normalizeGmailStatus = (data: unknown) =>
     ? (data as { connected: boolean; email: string | null; updated_at: string | null })
     : emptyGmailStatus
 
+/** 오늘 날짜 YYYY-MM-DD (로컬) */
+function todayLocal(): string {
+  return new Date().toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')
+}
+/** 날짜 문자열에 일수 더하기 */
+function addDays(ymd: string, days: number): string {
+  const d = new Date(ymd + 'T12:00:00')
+  d.setDate(d.getDate() + days)
+  return d.toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-')
+}
+
 export default function AdminReservationImportsPage({}: AdminReservationImportsProps) {
   const params = useParams()
   const router = useRouter()
@@ -37,6 +48,8 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const [items, setItems] = useState<ImportItem[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<string>('pending')
+  // 날짜별 페이지: 표시 기간 끝날짜(7일 단위). 기본값 = 오늘
+  const [dateEnd, setDateEnd] = useState<string>(() => todayLocal())
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteSubject, setPasteSubject] = useState('')
   const [pasteBody, setPasteBody] = useState('')
@@ -56,14 +69,19 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     return parts.length ? parts.join(' · ') : '-'
   }
 
+  const dateStart = addDays(dateEnd, -6)
+
   const loadList = useCallback(() => {
     setLoading(true)
-    fetch(`/api/reservation-imports?status=${statusFilter}`)
+    const params = new URLSearchParams({ status: statusFilter })
+    params.set('from_date', dateStart)
+    params.set('to_date', dateEnd)
+    fetch(`/api/reservation-imports?${params}`)
       .then((res) => res.json())
       .then((json) => setItems(json.data ?? []))
       .catch(() => setItems([]))
       .finally(() => setLoading(false))
-  }, [statusFilter])
+  }, [statusFilter, dateStart, dateEnd])
 
   const fetchGmailStatus = useCallback(() => {
     return fetch('/api/email/gmail/status')
@@ -316,6 +334,36 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
       <p className="text-sm text-gray-600">
         플랫폼에서 수신된 이메일로 자동 추출된 예약 후보입니다. 항목을 클릭해 정보를 보완한 뒤 예약으로 생성하세요.
       </p>
+
+      <div className="flex items-center justify-between gap-4 py-3">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setDateEnd(addDays(dateStart, -1))}
+            className="inline-flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50 text-gray-700"
+          >
+            ◀ 이전 7일
+          </button>
+          <span className="text-sm text-gray-600 font-medium min-w-[180px] text-center">
+            {dateStart} ~ {dateEnd}
+          </span>
+          <button
+            type="button"
+            onClick={() => setDateEnd(addDays(dateEnd, 7))}
+            disabled={dateEnd >= todayLocal()}
+            className="inline-flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            다음 7일 ▶
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={() => setDateEnd(todayLocal())}
+          className="text-sm text-blue-600 hover:underline"
+        >
+          오늘 기준으로
+        </button>
+      </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-12">

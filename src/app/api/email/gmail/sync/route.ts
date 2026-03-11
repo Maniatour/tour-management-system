@@ -70,8 +70,9 @@ export async function POST() {
   }
 
   const accessToken = tokenData.access_token
+  // 최소 일주일치 메일을 볼 수 있도록 200건 조회 (기존 50 → 200)
   const listRes = await fetch(
-    `${GMAIL_API_BASE}/messages?maxResults=50&labelIds=INBOX`,
+    `${GMAIL_API_BASE}/messages?maxResults=200&labelIds=INBOX`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   )
   const listData = (await listRes.json()) as { messages?: Array<{ id: string }>; error?: { message?: string } }
@@ -90,6 +91,7 @@ export async function POST() {
     })
     const full = (await getRes.json()) as {
       id: string
+      internalDate?: string
       payload?: {
         headers?: Array<{ name?: string; value?: string }>
         body?: { data?: string }
@@ -116,12 +118,22 @@ export async function POST() {
       sourceEmail: from,
     })
 
+    // Gmail internalDate(epoch ms)를 실제 수신일시로 저장. 없으면 동기화 시각 사용
+    let receivedAt: string
+    if (full.internalDate) {
+      const ms = parseInt(full.internalDate, 10)
+      if (!isNaN(ms)) receivedAt = new Date(ms).toISOString()
+      else receivedAt = new Date().toISOString()
+    } else {
+      receivedAt = new Date().toISOString()
+    }
+
     const { error: insertErr } = await client.from('reservation_imports').insert({
       message_id: messageId,
       source_email: from,
       platform_key,
       subject,
-      received_at: new Date().toISOString(),
+      received_at: receivedAt,
       raw_body_text: body.slice(0, 50000),
       raw_body_html: null,
       extracted_data: extracted_data as object,

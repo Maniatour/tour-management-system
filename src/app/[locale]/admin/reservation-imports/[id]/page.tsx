@@ -79,7 +79,10 @@ export default function ReservationImportDetailPage() {
     if (!res.ok) throw new Error(data?.error || 'Failed to load')
     const ext = (data.extracted_data || {}) as ExtractedReservationData
     const hasBody = !!(data.raw_body_text || data.raw_body_html)
-    const looksIncomplete = hasBody && (data.platform_key === 'getyourguide') && (!ext.customer_name || ext.adults == null)
+    const looksIncomplete =
+      hasBody &&
+      ((data.platform_key === 'getyourguide' && (!ext.customer_name || ext.adults == null)) ||
+        (data.platform_key === 'klook' && (!ext.customer_name && !ext.customer_email && !ext.adults)))
     if (looksIncomplete) {
       const reparseRes = await fetch(`/api/reservation-imports/${id}/reparse`, { method: 'POST' })
       if (reparseRes.ok) {
@@ -505,7 +508,12 @@ export default function ReservationImportDetailPage() {
                 tour_date: form.tour_date,
                 tour_time: form.tour_time || undefined,
                 channel_id: form.channel_id,
-                channel_rn: form.channel_rn || undefined,
+                // 채널 RN: "ID" 단어만 있으면 잘못 파싱된 값이므로 제외, 실제 예약번호만 전달
+                channel_rn: (() => {
+                  const rn = ext?.channel_rn ?? form.channel_rn
+                  if (!rn || String(rn).trim().toLowerCase() === 'id') return undefined
+                  return String(rn).trim() || undefined
+                })(),
                 adults: form.adults,
                 child: form.child,
                 infant: form.infant,
@@ -529,9 +537,9 @@ export default function ReservationImportDetailPage() {
         layout="page"
         isNewReservation
         initialDataFromImport={{
-          customer_name: form.customer_name || undefined,
-          customer_email: form.customer_email || undefined,
-          customer_phone: form.customer_phone || undefined,
+          customer_name: (ext?.customer_name ?? form.customer_name) || undefined,
+          customer_email: (ext?.customer_email ?? form.customer_email) || undefined,
+          customer_phone: (ext?.customer_phone ?? form.customer_phone) || undefined,
           customer_language: ext?.language || undefined,
         }}
         initialShowNewCustomerForm={Boolean(normalizeCustomerNameFromImport(ext?.customer_name) || ext?.customer_name)}

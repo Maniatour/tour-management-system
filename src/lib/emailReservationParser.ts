@@ -1,5 +1,20 @@
 import type { ExtractedReservationData } from '@/types/reservationImport'
 
+/** 채널별 파서 설정: 전처리(HTML→텍스트) + 전용 추출 함수. 채널 추가 시 여기만 등록하면 됨. */
+export type ChannelParserExtract = (
+  text: string,
+  subject: string,
+  sourceEmail: string | null,
+  rawHtml?: string | null
+) => Partial<ExtractedReservationData>
+
+export type ChannelParserConfig = {
+  /** HTML 본문을 플랫폼에 맞는 평문으로 변환 (없으면 공통 toPlainText 사용) */
+  preprocess?: (html: string) => string
+  /** 채널 전용 필드 추출 */
+  extract: ChannelParserExtract
+}
+
 /** 발신 주소/도메인으로 플랫폼 키 추측 */
 const PLATFORM_FROM_PATTERNS: { pattern: RegExp | string; key: string }[] = [
   { pattern: /viator\.com/i, key: 'viator' },
@@ -56,6 +71,25 @@ function toPlainText(html: string): string {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .trim()
+}
+
+/** Klook 이메일용: 테이블/블록 태그를 줄바꿈으로 바꾼 뒤 텍스트 추출해 레이블-값 줄 구분이 되도록 함 */
+function toPlainTextKlook(html: string): string {
+  let s = html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+  s = s
+    .replace(/<\/(?:tr|td|div|p|th)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+  s = s
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+  s = s.replace(/[ \t]+/g, ' ').replace(/\n\s+/g, '\n').replace(/\s+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+  return s
 }
 
 /** 이메일 본문에서 공통 패턴 추출 (정규식 기반) */
@@ -309,54 +343,342 @@ function extractGetYourGuide(
   return out
 }
 
+/** Klook 이메일에서 사용 가능한 레이블 패턴 (다국어/변형 포함). ensureKlookLabelLineBreaks에서 줄바꿈 삽입용 */
+const KLOOK_LABEL_PATTERNS = [
+  'Booking reference ID',
+  'Booking reference',
+  'Order ID',
+  'Order number',
+  'Confirmation number',
+  'Reference number',
+  'Lead participant',
+  'Lead traveller',
+  'Guest name',
+  'Customer name',
+  'Traveller name',
+  'Participant name',
+  'Date Request',
+  'Date of experience',
+  'Tour date',
+  'Time Request',
+  'Time of experience',
+  'Tour time',
+  'No. of participants',
+  'Number of participants',
+  'Number of travellers',
+  'Participant',
+  'Participants',
+  'Preferred language',
+  'Language',
+  'Special requirements',
+  'Special requests',
+  'Departure location',
+  'Please insert your pickup',
+  'Pickup location',
+  'Phone number',
+  'Contact number',
+  'Email',
+  'Email address',
+  'WhatsApp',
+]
+
+/** toPlainText가 줄바꿈을 공백으로 묶어 한 줄이 된 경우, 알려진 Klook 레이블 앞에 줄바꿈을 넣어 세그먼트 분리 */
+function ensureKlookLabelLineBreaks(text: string): string {
+  const trimmed = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+  if (trimmed.includes('\n\n') || (trimmed.match(/\n/g)?.length ?? 0) > 5) return trimmed
+  const escaped = KLOOK_LABEL_PATTERNS.map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const labelPattern = new RegExp(
+    `(^|\\s+)(${escaped.join('|')})\\s*:`,
+    'gi'
+  )
+  return trimmed.replace(labelPattern, '$1\n$2')
+}
+
+/** Klook HTML에서 <th>Label</th><td>Value</td> 또는 <td>Label:</td><td>Value</td> 형태로 레이블-값 쌍 추출 */
+function extractKlookFromHtml(html: string): Map<string, string> {
+  const map = new Map<string, string>()
+  if (!html || html.length < 20) return map
+  const clean = (s: string) =>
+    s
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .trim()
+
+  // <th>Label</th>\s*<td>Value</td> (th/td 셀)
+  const thTd = html.matchAll(/<th[^>]*>([\s\S]*?)<\/th>\s*<td[^>]*>([\s\S]*?)<\/td>/gi)
+  for (const m of thTd) {
+    const key = clean(m[1]).replace(/\s*:\s*$/, '').trim().toLowerCase()
+    const value = clean(m[2]).trim()
+    if (key && value && value.length < 500) map.set(key, value)
+  }
+  // <td>Label:</td>\s*<td>Value</td>
+  const tdTd = html.matchAll(/<td[^>]*>([\s\S]*?)\s*:?\s*<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>/gi)
+  for (const m of tdTd) {
+    const key = clean(m[1]).replace(/\s*:\s*$/, '').trim().toLowerCase()
+    const value = clean(m[2]).trim()
+    if (key && value && value.length < 500 && !map.has(key)) map.set(key, value)
+  }
+  // <tr>...</tr> 한 행 안에 라벨:값 (한 셀에 "Label: Value")
+  const cellLabelValue = html.matchAll(/<t[dh][^>]*>([^<]*(?:Label|Reference|Participant|Date|Time|Email|Phone|Language|Pickup|Departure)[^<]*)\s*:\s*([^<]*)<\/t[dh]>/gi)
+  for (const m of cellLabelValue) {
+    const key = clean(m[1]).trim().toLowerCase()
+    const value = clean(m[2]).trim()
+    if (key.length > 2 && key.length < 80 && value && value.length < 300) {
+      const normKey = key.replace(/\s+/g, ' ')
+      if (!map.has(normKey)) map.set(normKey, value)
+    }
+  }
+  return map
+}
+
 /**
- * Klook 예약 이메일 본문 전용 추출 (레이블: 값 형식)
- * 예: Booking reference ID: VGP536908, Date Request: 2026-03-15, Lead participant: ()rica rockwell, Participant: 2 x Adult ...
+ * Klook 본문에서 "Label: Value" 쌍을 추출 (한 줄 또는 HTML 변환 후 한 덩어리 모두 지원).
+ * HTML에서 레이블과 값이 다른 요소에 있으면 "Booking reference ID:" / "VGP536908" 처럼 다음 줄에 올 수 있음.
  */
-function extractKlook(text: string): Partial<ExtractedReservationData> {
+function parseKlookLabelValuePairs(text: string): Map<string, string> {
+  const map = new Map<string, string>()
+  const withBreaks = ensureKlookLabelLineBreaks(text)
+  const normalized = withBreaks.trim()
+  // 줄 단위로 나누거나, 한 줄이면 2개 이상 공백으로 구분된 블록으로 나눔
+  const segments = normalized.includes('\n')
+    ? normalized.split(/\n+/).map(s => s.trim()).filter(Boolean)
+    : normalized.split(/\s{2,}/).map(s => s.trim()).filter(Boolean)
+  const used = new Set<number>()
+  for (let i = 0; i < segments.length; i++) {
+    if (used.has(i)) continue
+    const seg = segments[i]
+    const colonIdx = seg.indexOf(':')
+    if (colonIdx <= 0) continue
+    const key = seg.slice(0, colonIdx).trim().toLowerCase()
+    let value = seg.slice(colonIdx + 1).trim()
+    // 레이블만 있고 값이 비어 있으면 다음 줄이 값인 경우 (예: "Booking reference ID:" 다음 줄 "VGP536908")
+    if (!value && i + 1 < segments.length && !used.has(i + 1)) {
+      const next = segments[i + 1]
+      if (next && !next.includes(':') && next.length < 200) {
+        value = next.trim()
+        used.add(i + 1)
+      }
+    }
+    if (!value) continue
+    if (!map.has(key)) map.set(key, value)
+  }
+  return map
+}
+
+function getKlook(map: Map<string, string>, ...searchKeys: string[]): string | undefined {
+  for (const searchKey of searchKeys) {
+    const lower = searchKey.toLowerCase().replace(/\s+/g, ' ').trim()
+    for (const [key, value] of map) {
+      const normalizedKey = key.replace(/\s+/g, ' ').toLowerCase()
+      if (normalizedKey === lower || normalizedKey.startsWith(lower) || lower.startsWith(normalizedKey)) return value
+    }
+  }
+  return undefined
+}
+
+/**
+ * Klook 예약 이메일 본문 전용 추출 (레이블: 값 형식 + HTML 테이블).
+ * plainText 외에 rawHtml이 있으면 HTML에서 th/td 쌍을 먼저 추출해 활용.
+ */
+function extractKlook(
+  text: string,
+  _subject: string,
+  _sourceEmail: string | null,
+  rawHtml?: string | null
+): Partial<ExtractedReservationData> {
   const out: Partial<ExtractedReservationData> = {}
   if (!text || text.length < 10) return out
 
-  // Booking reference ID: VGP536908 → 채널 예약번호(channel_rn)
-  const refMatch = text.match(/Booking\s*reference\s*ID\s*:\s*([A-Za-z0-9_-]+)/i)
-  if (refMatch) out.channel_rn = refMatch[1].trim()
+  const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+
+  // HTML 테이블에서 추출한 맵과 plain text 레이블-값 맵 병합 (HTML 우선)
+  const pairMap = parseKlookLabelValuePairs(normalizedText)
+  const htmlMap = rawHtml ? extractKlookFromHtml(rawHtml) : new Map<string, string>()
+  const mergedMap = new Map<string, string>()
+  for (const [k, v] of pairMap) {
+    const key = k.replace(/\s+/g, ' ').toLowerCase().trim()
+    if (key && v) mergedMap.set(key, v)
+  }
+  for (const [k, v] of htmlMap) {
+    const key = k.replace(/\s+/g, ' ').toLowerCase().trim()
+    if (key && v) mergedMap.set(key, v)
+  }
+
+  const v = (key: string) => getKlook(mergedMap, key)
+
+  // 1차: 본문 전체에서 고객명·채널 RN 직접 검색 (레이블 파싱 실패 시에도 동작)
+  const directRef = normalizedText.match(/\b([A-Z]{2,4}[0-9][A-Za-z0-9]{4,10})\b/)
+  if (directRef) {
+    const r = directRef[1]
+    if (r.toLowerCase() !== 'id' && r.length >= 5) out.channel_rn = r
+  }
+  const directName = normalizedText.match(/\(\)\s*([A-Za-z][A-Za-z\s.-]{1,50}?)(?=\s{2,}|\s*(?:Booking reference|Date Request|Country|Participant|No\.|Preferred|Special|Departure|Phone|Email|WhatsApp)|\n|$)/im)
+  if (directName) {
+    const name = directName[1].trim()
+    if (name.length >= 2 && name.length <= 80) out.customer_name = name
+  }
+
+  if (!out.channel_rn) {
+    const ref =
+      v('booking reference id') ??
+      v('booking reference') ??
+      v('order id') ??
+      v('order number') ??
+      v('confirmation number') ??
+      v('reference number')
+    const refTrimmed = ref?.trim() ?? ''
+    // "ID" 단어만 있으면 레이블 일부로 잘못 파싱된 것 → 사용하지 않음. 실제 예약번호 형식(영문+숫자 5자 이상)만 허용
+    if (refTrimmed && refTrimmed.toLowerCase() !== 'id' && refTrimmed.length >= 5 && /^[A-Za-z0-9_-]+$/.test(refTrimmed)) {
+      out.channel_rn = refTrimmed
+    }
+  }
+  if (!out.tour_date) {
+    const dateRaw = v('date request') ?? v('date of experience') ?? v('tour date') ?? v('date')
+    if (dateRaw) {
+      const raw = dateRaw.trim()
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) out.tour_date = raw
+      else {
+        const iso = raw.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/)
+        if (iso) out.tour_date = `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`
+      }
+    }
+  }
+  if (!out.tour_time) {
+    const timeRaw = v('time request') ?? v('time of experience') ?? v('tour time') ?? v('time')
+    if (timeRaw && !/^NA$/i.test(timeRaw.trim()) && /\d{1,2}:\d{2}/.test(timeRaw)) out.tour_time = timeRaw.trim()
+  }
+  // Lead participant / Lead traveller / Guest name 등 (다국어·변형 대응)
+  if (!out.customer_name) {
+    const name =
+      v('lead participant') ??
+      v('lead traveller') ??
+      v('participant name') ??
+      v('guest name') ??
+      v('customer name') ??
+      v('traveller name') ??
+      v('lead participant name')
+    if (name) {
+      const trimmed = name.trim()
+      // Klook 형식: "()" 또는 "() " 뒤가 고객 이름 (예: "()rica rockwell" → "rica rockwell")
+      const cleaned = trimmed.replace(/^\(\)\s*/, '').replace(/^\([^)]*\)\s*/, '').trim()
+      if (cleaned) out.customer_name = cleaned
+    }
+  }
+  if (out.adults === undefined) {
+    const noPart =
+      v('no. of participants') ??
+      v('number of participants') ??
+      v('number of travellers') ??
+      v('no of participants')
+    if (noPart) {
+      const n = parseInt(noPart.trim(), 10)
+      if (!isNaN(n)) { out.adults = n; out.total_people = n }
+    }
+  }
+  if (out.adults === undefined) {
+    const part = v('participant')
+    const adultMatch = part?.match(/(\d+)\s*x\s*adult/i)
+    if (adultMatch) {
+      const n = parseInt(adultMatch[1], 10)
+      if (!isNaN(n)) { out.adults = n; out.total_people = n }
+    }
+  }
+  if (!out.language) {
+    const lang = v('preferred language') ?? v('language')
+    if (lang) out.language = normalizeLanguageToCode(lang.trim())
+  }
+  if (!out.special_requests) {
+    const special = v('special requirements') ?? v('special requests')
+    if (special?.trim()) out.special_requests = special.trim()
+  }
+  if (!out.pickup_hotel) {
+    const dep =
+      v('departure location') ??
+      v('please insert your pickup location') ??
+      v('pickup location') ??
+      v('pickup')
+    if (dep?.trim()) out.pickup_hotel = dep.trim()
+  }
+  if (!out.customer_phone) {
+    const phone = v('phone number') ?? v('contact number') ?? v('phone')
+    if (phone?.trim()) out.customer_phone = phone.trim()
+  }
+  if (!out.customer_email) {
+    const email = v('email') ?? v('email address')
+    if (email && /@/.test(email)) out.customer_email = email.trim()
+  }
+
+  // 기존 정규식으로 한 번 더 채우기 (라인/한 줄 모두). 레이블 다음 줄에 값만 있는 경우도 처리
+  if (!out.channel_rn) {
+    const refMatch = normalizedText.match(/Booking\s*reference\s*ID\s*:\s*([A-Za-z0-9_-]+)/i) ??
+      normalizedText.match(/Booking\s*reference\s*ID\s*[:\s]+([A-Za-z0-9_-]+)/i) ??
+      normalizedText.match(/Booking\s*reference\s*ID\s*[:\s]*\n\s*([A-Za-z0-9_-]+)/i)
+    const refVal = refMatch?.[1]?.trim() ?? ''
+    if (refVal && refVal.toLowerCase() !== 'id' && refVal.length >= 5) out.channel_rn = refVal
+  }
+  // 본문에서 예약번호 형식(영문 2자 이상 + 숫자, 예: VGP536908)만 단독으로 검색
+  if (!out.channel_rn) {
+    const refInBody = normalizedText.match(/\b([A-Z]{2,}[0-9][A-Za-z0-9_-]{4,})\b/)
+    if (refInBody) out.channel_rn = refInBody[1].trim()
+  }
 
   // Date Request: 2026-03-15 (또는 다른 날짜 형식)
-  const dateMatch = text.match(/Date\s*Request\s*:\s*(\d{4}-\d{2}-\d{2})/i) ||
-    text.match(/Date\s*Request\s*:\s*([^\n]+?)(?:\s*Time\s*Request|\n|$)/im)
-  if (dateMatch) {
-    const raw = dateMatch[1].trim()
-    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) out.tour_date = raw
-    else {
-      const iso = raw.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/)
-      if (iso) out.tour_date = `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`
+  if (!out.tour_date) {
+    const dateMatch = normalizedText.match(/Date\s*Request\s*:\s*(\d{4}-\d{2}-\d{2})/i) ||
+      normalizedText.match(/Date\s*Request\s*:\s*([^\n]+?)(?:\s*Time\s*Request|\n|$)/im)
+    if (dateMatch) {
+      const raw = dateMatch[1].trim()
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) out.tour_date = raw
+      else {
+        const iso = raw.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/)
+        if (iso) out.tour_date = `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`
+      }
     }
   }
 
-  // Time Request: NA 또는 10:00 등 — NA가 아니면 tour_time 설정
-  const timeMatch = text.match(/Time\s*Request\s*:\s*([^\n]+?)(?:\n|$)/im)
-  if (timeMatch) {
-    const raw = timeMatch[1].trim()
-    if (raw && !/^NA$/i.test(raw) && /\d{1,2}:\d{2}/.test(raw)) out.tour_time = raw
+  // Time Request: NA 또는 10:00 등
+  if (!out.tour_time) {
+    const timeMatch = normalizedText.match(/Time\s*Request\s*:\s*([^\n]+?)(?:\n|$)/im)
+    if (timeMatch) {
+      const raw = timeMatch[1].trim()
+      if (raw && !/^NA$/i.test(raw) && /\d{1,2}:\d{2}/.test(raw)) out.tour_time = raw
+    }
   }
 
-  // Lead participant: ()rica rockwell — 고객 이름은 "()" 다음에 오는 문자열(rica rockwell)
-  const leadMatch = text.match(/Lead\s*participant\s*:\s*\(\)\s*([^\n]+?)(?:\n|Country|Participant|$)/im)
-  if (leadMatch) {
-    const name = leadMatch[1].trim()
-    if (name) out.customer_name = name
+  // Lead participant: ()rica rockwell — 한 줄/다음 줄 모두. 레이블만 한 줄이고 다음 줄에 "()이름" 있는 경우도 처리
+  if (!out.customer_name) {
+    const leadMatch = normalizedText.match(/(?:Lead\s*participant|Participant\s*name|Guest\s*name)\s*:\s*(?:\(\)|\([^)]*\))?\s*([^\n]+?)(?=\s*\n|Country\s|Participant\s|No\.\s|Preferred\s|Special\s|Departure|Phone\s|Email\s|WhatsApp\s|$)/im) ||
+      normalizedText.match(/Lead\s*participant\s*:\s*\(\)\s*([^\n]+?)(?:\n|Country|Participant|$)/im) ||
+      normalizedText.match(/Lead\s*participant\s*[:\s]+\(\)\s*([A-Za-z\s.-]+?)(?=\s*(?:Booking reference|Date Request|Country|Participant\s|No\.|Preferred|Special|Departure|Phone|Email|WhatsApp)|$)/im) ||
+      normalizedText.match(/Lead\s*participant\s*[:\s]*\n\s*\(\)\s*([^\n]+?)(?=\n|$)/im)
+    if (leadMatch) {
+      const name = leadMatch[1].replace(/^\(\)\s*/, '').replace(/^\([^)]*\)\s*/, '').trim()
+      if (name && name.length < 120) out.customer_name = name
+    }
+  }
+  // Klook 본문에 "()이름"만 나오는 경우(레이블이 다른 줄/형식일 때) — 괄호 뒤 이름만 추출
+  if (!out.customer_name) {
+    const parenName = normalizedText.match(/\(\)\s*([A-Za-z][A-Za-z\s.-]{1,80}?)(?=\s{2,}|\s*(?:Booking reference|Date Request|Country|Participant|No\.|Preferred|Special|Departure|Phone|Email|WhatsApp)|\n\n|$)/im)
+    if (parenName) {
+      const name = parenName[1].trim()
+      if (name.length >= 2 && name.length < 100) out.customer_name = name
+    }
   }
 
-  // No. of participants: 2 — Klook에서는 이 숫자가 성인 수(adults)이자 총 인원(total_people)
-  const noParticipantsMatch = text.match(/No\.?\s*of\s*participants\s*:\s*(\d+)/i)
-  if (noParticipantsMatch) {
-    const n = parseInt(noParticipantsMatch[1], 10)
-    out.adults = n
-    out.total_people = n
-  }
-  // Participant: 2 x Adult (No. of participants 없을 때 대체)
+  // No. of participants / Number of participants
   if (out.adults === undefined) {
-    const participantMatch = text.match(/Participant\s*:\s*(\d+)\s*x\s*Adult/i)
+    const noParticipantsMatch = normalizedText.match(/(?:No\.?\s*of|Number\s*of)\s*participants\s*:\s*(\d+)/i)
+    if (noParticipantsMatch) {
+      const n = parseInt(noParticipantsMatch[1], 10)
+      out.adults = n
+      out.total_people = n
+    }
+  }
+  if (out.adults === undefined) {
+    const participantMatch = normalizedText.match(/Participant\s*:\s*(\d+)\s*x\s*Adult/i)
     if (participantMatch) {
       const n = parseInt(participantMatch[1], 10)
       out.adults = n
@@ -364,48 +686,71 @@ function extractKlook(text: string): Partial<ExtractedReservationData> {
     }
   }
 
-  // Preferred language: English
-  const langMatch = text.match(/Preferred\s*language\s*:\s*([^\n]+?)(?:\n|Special|$)/im)
-  if (langMatch) out.language = normalizeLanguageToCode(langMatch[1].trim())
+  // Preferred language
+  if (!out.language) {
+    const langMatch = normalizedText.match(/Preferred\s*language\s*:\s*([^\n]+?)(?:\n|Special|$)/im)
+    if (langMatch) out.language = normalizeLanguageToCode(langMatch[1].trim())
+  }
 
-  // Special requirements: (값)
-  const specialMatch = text.match(/Special\s*requirements\s*:\s*([^\n]*?)(?:\n\s*\n|No\.|Departure|Please|Phone|Email|WhatsApp|$)/im)
-  if (specialMatch && specialMatch[1].trim()) out.special_requests = specialMatch[1].trim()
+  // Special requirements
+  if (!out.special_requests) {
+    const specialMatch = normalizedText.match(/Special\s*requirements\s*:\s*([^\n]*?)(?:\n\s*\n|No\.|Departure|Please|Phone|Email|WhatsApp|$)/im)
+    if (specialMatch && specialMatch[1].trim()) out.special_requests = specialMatch[1].trim()
+  }
 
-  // Departure location: Bellagio Hotel & Casino → 픽업 호텔
-  const departureMatch = text.match(/Departure\s*location\s*:\s*([^\n]+?)(?:\n|Please|Phone|Email|$)/im)
-  if (departureMatch) out.pickup_hotel = departureMatch[1].trim()
-
-  // Please insert your pickup location: bellagio hotel (Departure 없을 때 대체)
+  // Departure location / Pickup location
   if (!out.pickup_hotel) {
-    const insertMatch = text.match(/Please\s*insert\s*your\s*pickup\s*location\s*:\s*([^\n]+?)(?:\n|Please\s*confirm|Phone|Email|$)/im)
+    const departureMatch = normalizedText.match(/Departure\s*location\s*:\s*([^\n]+?)(?:\n|Please|Phone|Email|$)/im)
+    if (departureMatch) out.pickup_hotel = departureMatch[1].trim()
+  }
+  if (!out.pickup_hotel) {
+    const insertMatch = normalizedText.match(/Please\s*insert\s*your\s*pickup\s*location\s*:\s*([^\n]+?)(?:\n|Please\s*confirm|Phone|Email|$)/im)
     if (insertMatch) out.pickup_hotel = insertMatch[1].trim()
   }
 
-  // Phone number: +1-9496003819 → 고객 전화번호
-  const phoneMatch = text.match(/Phone\s*number\s*:\s*([^\n]+?)(?:\n|Email|WhatsApp|$)/im)
-  if (phoneMatch) out.customer_phone = phoneMatch[1].trim()
+  // Phone number
+  if (!out.customer_phone) {
+    const phoneMatch = normalizedText.match(/Phone\s*number\s*:\s*([^\n]+?)(?:\n|Email|WhatsApp|$)/im)
+    if (phoneMatch) out.customer_phone = phoneMatch[1].trim()
+  }
 
-  // Email: ricarockwell@yahoo.com → 고객 이메일 주소
-  const emailMatch = text.match(/Email\s*:\s*([^\s\n]+@[^\s\n]+)/im)
-  if (emailMatch) out.customer_email = emailMatch[1].trim()
+  // Email
+  if (!out.customer_email) {
+    const emailMatch = normalizedText.match(/Email\s*:\s*([^\s\n]+@[^\s\n]+)/im)
+    if (emailMatch) out.customer_email = emailMatch[1].trim()
+  }
 
   // Activity URL → note에 포함 (상품 매칭 참고용)
-  const activityUrlMatch = text.match(/Activity\s*URL\s*:\s*([^\s\n]+)/i)
+  const activityUrlMatch = normalizedText.match(/Activity\s*URL\s*:\s*([^\s\n]+)/i)
   const noteParts: string[] = []
   if (out.special_requests) noteParts.push(`요청: ${out.special_requests}`)
   if (activityUrlMatch) noteParts.push(`Klook Activity: ${activityUrlMatch[1].trim()}`)
-  // WhatsApp: 9496003819 → 고객 비상연락처
-  const whatsappMatch = text.match(/WhatsApp\s*:\s*([^\n]+?)(?:\n|$)/im)
+  const whatsappMatch = normalizedText.match(/WhatsApp\s*:\s*([^\n]+?)(?:\n|$)/im)
   if (whatsappMatch && whatsappMatch[1].trim()) noteParts.push(`비상연락처(WhatsApp): ${whatsappMatch[1].trim()}`)
   if (noteParts.length) out.note = noteParts.join(' · ')
 
   return out
 }
 
+/** 채널별 파서 등록: 플랫폼 키 → 전처리 + 추출. 새 채널 추가 시 여기에 한 줄씩 등록. */
+const CHANNEL_PARSERS: Record<string, ChannelParserConfig> = {
+  getyourguide: {
+    preprocess: toPlainText,
+    extract: (text, subject, sourceEmail) =>
+      extractGetYourGuide(text, subject, sourceEmail),
+  },
+  klook: {
+    preprocess: toPlainTextKlook,
+    extract: (text, subject, sourceEmail, rawHtml) =>
+      extractKlook(text, subject, sourceEmail, rawHtml),
+  },
+  // viator, tripadvisor, booking, expedia, airbnb 등은 추후 동일 패턴으로 추가
+  // viator: { preprocess: toPlainText, extract: extractViator },
+}
+
 /**
  * 이메일 제목 + 본문에서 예약/고객 정보 추출.
- * 플랫폼별 파서는 필요 시 확장하고, 여기서는 공통 패턴 + 플랫폼 감지만 수행.
+ * 채널별 파서는 CHANNEL_PARSERS에 등록된 것만 사용하며, 없으면 공통 패턴만 적용.
  */
 export function extractReservationFromEmail(options: {
   subject: string
@@ -414,29 +759,43 @@ export function extractReservationFromEmail(options: {
   sourceEmail?: string | null
 }): { platform_key: string | null; extracted_data: ExtractedReservationData } {
   const { subject, text, html, sourceEmail } = options
-  // 붙여넣은 본문이 HTML이면 태그 제거 후 파싱 (정규식이 레이블/값을 제대로 잡도록)
+  const platform_key = detectPlatform(sourceEmail || null, subject)
+  const parser = platform_key ? CHANNEL_PARSERS[platform_key] : undefined
+
   let bodyRaw = (text && text.trim()) || ''
-  if (bodyRaw && bodyRaw.includes('<')) bodyRaw = toPlainText(bodyRaw)
+  const rawHtml = bodyRaw && bodyRaw.includes('<') ? bodyRaw : (html && html.trim()) || null
+  if (bodyRaw && bodyRaw.includes('<')) {
+    bodyRaw = parser?.preprocess ? parser.preprocess(bodyRaw) : toPlainText(bodyRaw)
+  } else if (!bodyRaw && html) {
+    bodyRaw = parser?.preprocess ? parser.preprocess(html) : toPlainText(html)
+  }
   const plainText = bodyRaw || (html ? toPlainText(html) : '')
   const fullText = [subject, plainText].filter(Boolean).join('\n')
-
-  const platform_key = detectPlatform(sourceEmail || null, subject)
   const common = extractCommonPatterns(fullText)
 
-  let merged: Partial<ExtractedReservationData> = { ...common, platform_key: platform_key ?? undefined }
-  if (platform_key === 'getyourguide') {
-    const gyG = extractGetYourGuide(plainText, subject, sourceEmail || null)
-    merged = { ...merged, ...gyG }
+  let merged: Partial<ExtractedReservationData> = {
+    ...common,
+    ...(platform_key ? { platform_key } : {}),
   }
-  if (platform_key === 'klook') {
-    const klook = extractKlook(plainText)
-    merged = { ...merged, ...klook }
-    // Klook 예약 접수: 제목이 "Klook Order Received -"로 시작 (목록 강조용)
-    if ((subject || '').trimStart().toLowerCase().startsWith('klook order received -')) {
-      merged.is_booking_confirmed = true
-    }
+  if (parser?.extract) {
+    const channelData = parser.extract(plainText, subject, sourceEmail || null, rawHtml ?? html ?? null)
+    merged = { ...merged, ...channelData }
+  }
+  if (platform_key === 'klook' && (subject || '').trimStart().toLowerCase().startsWith('klook order received -')) {
+    merged.is_booking_confirmed = true
   }
 
   const extracted_data: ExtractedReservationData = merged as ExtractedReservationData
   return { platform_key, extracted_data }
 }
+
+/** 등록된 채널 파서 목록 (UI/설정용). 새 채널 추가 시 CHANNEL_PARSERS와 여기 동기화 */
+export const SUPPORTED_EMAIL_CHANNELS = [
+  'getyourguide',
+  'klook',
+  'viator',
+  'tripadvisor',
+  'booking',
+  'expedia',
+  'airbnb',
+] as const

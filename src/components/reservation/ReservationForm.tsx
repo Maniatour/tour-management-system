@@ -471,7 +471,14 @@ export default function ReservationForm({
     })(),
     channelSearch: '',
     variantKey: (reservation as any)?.variant_key || (rez as any)?.variant_key || 'default',
-    channelRN: reservation?.channelRN || rez.channel_rn || '',
+    // 예약 가져오기(import) 시 채널 RN은 이메일에서 추출한 예약번호만. "ID" 단어만 있으면 빈칸
+    channelRN: (() => {
+      const rn = isImportMode ? (rez as any).channel_rn : (reservation?.channelRN ?? rez.channel_rn)
+      if (rn == null || rn === '') return ''
+      const s = String(rn).trim()
+      if (s.toLowerCase() === 'id') return ''
+      return s
+    })(),
     addedBy: reservation?.addedBy || rez.added_by || '',
     addedTime: reservation?.addedTime || rez.created_at || new Date().toISOString().slice(0, 16).replace('T', ' '),
     tourId: reservation?.tourId || rez.tour_id || '',
@@ -652,7 +659,10 @@ export default function ReservationForm({
     if ((rez as any).total_people != null) next.totalPeople = (rez as any).total_people
     if (rez.product_id) next.productId = rez.product_id
     if (rez.channel_id) next.channelId = rez.channel_id
-    if (rez.channel_rn != null) next.channelRN = rez.channel_rn
+    if (rez.channel_rn != null) {
+      const rn = String(rez.channel_rn).trim()
+      if (rn && rn.toLowerCase() !== 'id') next.channelRN = rn
+    }
     if (rez.pickup_hotel != null) next.pickUpHotel = rez.pickup_hotel
     if (rez.event_note != null) next.eventNote = rez.event_note
     if (Object.keys(next).length === 0) return
