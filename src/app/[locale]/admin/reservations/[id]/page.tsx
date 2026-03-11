@@ -4,11 +4,12 @@ import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { useTranslations } from 'next-intl'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { updateReservation, type ReservationUpdatePayload } from '@/lib/reservationUpdate'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { Reservation, Customer } from '@/types/reservation'
 import { useAuth } from '@/contexts/AuthContext'
-import { Eye, X, GripVertical, Menu, User, Calendar, Users, DollarSign, Settings, CreditCard, Receipt, Star, MessageSquare, Printer } from 'lucide-react'
+import { X, GripVertical, Menu, User, Calendar, Users, DollarSign, Settings, CreditCard, Receipt, Star, MessageSquare, Printer } from 'lucide-react'
 import CustomerReceiptModal from '@/components/receipt/CustomerReceiptModal'
 import { getCustomerName } from '@/utils/reservationUtils'
 
@@ -266,147 +267,23 @@ export default function ReservationDetailsPage() {
   const handleSubmit = useCallback(async (payload: Omit<Reservation, 'id'>) => {
     if (!reservation) return
     try {
-      const reservationData = {
-        customer_id: payload.customerId,
-        product_id: payload.productId,
-        tour_date: payload.tourDate,
-        tour_time: payload.tourTime || null,
-        event_note: payload.eventNote,
-        pickup_hotel: payload.pickUpHotel,
-        pickup_time: payload.pickUpTime || null,
-        adults: payload.adults,
-        child: payload.child,
-        infant: payload.infant,
-        total_people: payload.totalPeople,
-        channel_id: payload.channelId,
-        channel_rn: payload.channelRN,
-        added_by: payload.addedBy,
-        tour_id: payload.tourId,
-        status: payload.status,
-        selected_options: payload.selectedOptions,
-        selected_option_prices: payload.selectedOptionPrices,
-        is_private_tour: payload.isPrivateTour || false,
-        choices: payload.choices
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase as any)
-        .from('reservations')
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .update(reservationData as any)
-        .eq('id', reservation.id)
-
-      if (error) {
-        alert('예약 수정 중 오류: ' + (error as unknown as { message: string }).message)
+      const fullPayload = {
+        ...payload,
+        pricingInfo: (payload as ReservationUpdatePayload).pricingInfo,
+        customerLanguage: (payload as ReservationUpdatePayload).customerLanguage,
+        variantKey: (payload as ReservationUpdatePayload).variantKey,
+        selectedChoices: Array.isArray((payload as ReservationUpdatePayload).selectedChoices)
+          ? (payload as ReservationUpdatePayload).selectedChoices
+          : undefined,
+        usResidentCount: (payload as ReservationUpdatePayload).usResidentCount,
+        nonResidentCount: (payload as ReservationUpdatePayload).nonResidentCount,
+        nonResidentWithPassCount: (payload as ReservationUpdatePayload).nonResidentWithPassCount,
+        nonResidentUnder16Count: (payload as ReservationUpdatePayload).nonResidentUnder16Count,
+      } as ReservationUpdatePayload
+      const result = await updateReservation(reservation.id, fullPayload)
+      if (!result.success) {
+        alert(t('messages.reservationUpdateError') + (result.error ?? ''))
         return
-      }
-
-      // 새로운 초이스 시스템: reservation_choices 테이블에 저장 (미정 __undecided__는 FK 제약으로 저장 불가 → reservations.choices에만 저장됨)
-      if (payload.choices && payload.choices.required && Array.isArray(payload.choices.required)) {
-        // 기존 reservation_choices 삭제
-        await supabase
-          .from('reservation_choices')
-          .delete()
-          .eq('reservation_id', reservation.id)
-
-        const UNDECIDED_OPTION_ID = '__undecided__'
-        const choicesToInsert = payload.choices.required
-          .filter((choice: any) => choice.choice_id && choice.option_id && choice.option_id !== UNDECIDED_OPTION_ID)
-          .map((choice: any) => ({
-            reservation_id: reservation.id,
-            choice_id: choice.choice_id,
-            option_id: choice.option_id,
-            quantity: choice.quantity ?? 1,
-            total_price: choice.total_price ?? 0
-          }))
-
-        if (choicesToInsert.length > 0) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { error: choicesError } = await (supabase as any)
-            .from('reservation_choices')
-            .insert(choicesToInsert)
-
-          if (choicesError) {
-            console.error('초이스 저장 오류:', choicesError)
-            alert('초이스 저장 중 오류가 발생했습니다: ' + choicesError.message)
-            return
-          }
-        }
-      }
-
-      // 고객 언어 업데이트 (폼에서 변경한 언어 반영)
-      const payloadWithLang = payload as Omit<Reservation, 'id'> & { customerLanguage?: string }
-      if (payloadWithLang.customerLanguage != null && payloadWithLang.customerLanguage !== '' && payload.customerId) {
-        const { error: customerUpdateError } = await supabase
-          .from('customers')
-          .update({ language: payloadWithLang.customerLanguage })
-          .eq('id', payload.customerId)
-        if (customerUpdateError) {
-          console.error('고객 언어 업데이트 오류:', customerUpdateError)
-        }
-      }
-
-      // 가격 정보 업데이트 (reservation_pricing)
-      const payloadWithPricing = payload as Omit<Reservation, 'id'> & { pricingInfo?: Record<string, unknown> }
-      if (payloadWithPricing.pricingInfo) {
-        try {
-          const pricingInfo = payloadWithPricing.pricingInfo as any
-          const totalPeople = (payload.adults || 0) + (payload.child || 0) + (payload.infant || 0)
-          const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
-          const notIncludedTotal = (toNum(pricingInfo.not_included_price) || 0) * (totalPeople || 1)
-
-          const pricingData = {
-            reservation_id: reservation.id,
-            adult_product_price: toNum(pricingInfo.adultProductPrice),
-            child_product_price: toNum(pricingInfo.childProductPrice),
-            infant_product_price: toNum(pricingInfo.infantProductPrice),
-            product_price_total: toNum(pricingInfo.productPriceTotal) + notIncludedTotal,
-            not_included_price: toNum(pricingInfo.not_included_price),
-            required_options: pricingInfo.requiredOptions ?? {},
-            required_option_total: toNum(pricingInfo.requiredOptionTotal),
-            choices: pricingInfo.choices ?? {},
-            choices_total: toNum(pricingInfo.choicesTotal),
-            subtotal: toNum(pricingInfo.subtotal) + notIncludedTotal,
-            coupon_code: pricingInfo.couponCode ?? '',
-            coupon_discount: toNum(pricingInfo.couponDiscount),
-            additional_discount: toNum(pricingInfo.additionalDiscount),
-            additional_cost: toNum(pricingInfo.additionalCost),
-            card_fee: toNum(pricingInfo.cardFee),
-            tax: toNum(pricingInfo.tax),
-            prepayment_cost: toNum(pricingInfo.prepaymentCost),
-            prepayment_tip: toNum(pricingInfo.prepaymentTip),
-            selected_options: pricingInfo.selectedOptionalOptions ?? {},
-            option_total: toNum(pricingInfo.optionTotal),
-            total_price: toNum(pricingInfo.totalPrice) + notIncludedTotal,
-            deposit_amount: toNum(pricingInfo.depositAmount),
-            balance_amount: toNum(pricingInfo.balanceAmount),
-            private_tour_additional_cost: toNum(pricingInfo.privateTourAdditionalCost),
-            commission_percent: toNum(pricingInfo.commission_percent),
-            commission_amount: toNum(pricingInfo.commission_amount)
-          }
-
-          const { data: existingPricing } = await supabase
-            .from('reservation_pricing')
-            .select('id')
-            .eq('reservation_id', reservation.id)
-            .maybeSingle()
-
-          if (existingPricing?.id) {
-            const { error: pricingError } = await supabase
-              .from('reservation_pricing')
-              .update(pricingData as any)
-              .eq('id', existingPricing.id)
-            if (pricingError) console.error('가격 정보 업데이트 오류:', pricingError)
-          } else {
-            const insertData = { ...pricingData, id: crypto.randomUUID() }
-            const { error: pricingError } = await supabase
-              .from('reservation_pricing')
-              .insert(insertData as any)
-            if (pricingError) console.error('가격 정보 저장 오류:', pricingError)
-          }
-        } catch (pricingErr) {
-          console.error('가격 정보 저장 중 예외:', pricingErr)
-        }
       }
 
       await refreshReservations()
@@ -460,16 +337,13 @@ export default function ReservationDetailsPage() {
         setReservation(mapped)
       }
       
-      alert('예약이 수정되었습니다.')
-      // 투어가 생성되었다면 투어 섹션도 새로고침
-      if (tourCreated) {
-        setTourCreated(false)
-      }
+      alert(t('messages.reservationUpdated'))
+      if (tourCreated) setTourCreated(false)
     } catch (e) {
       console.error(e)
-      alert('예약 수정 중 오류가 발생했습니다.')
+      alert(t('messages.reservationUpdateError') + (e instanceof Error ? e.message : ''))
     }
-  }, [reservation, refreshReservations, tourCreated])
+  }, [reservation, refreshReservations, tourCreated, t])
 
   const handleDelete = useCallback(async (id: string) => {
     if (!confirm(t('deleteConfirmSoft'))) return

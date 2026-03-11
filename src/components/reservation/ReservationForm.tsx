@@ -214,7 +214,7 @@ export default function ReservationForm({
     return similarCustomers
   }, [customers])
   
-  const [formData, setFormData] = useState<{
+  const [formData, setFormDataState] = useState<{
     customerId: string
     customerSearch: string
     showCustomerDropdown: boolean
@@ -323,6 +323,8 @@ export default function ReservationForm({
     // OTA/현장 결제 분리
     onlinePaymentAmount: number
     onSiteBalanceAmount: number
+    /** 잔금 수령 총합 (입금 내역에서 계산, 총 결제 예정 금액 = 보증금 + 잔금 수령 + 잔액) */
+    balanceReceivedTotal?: number
     productRequiredOptions: ProductOption[]
     // 가격 타입 선택
     priceType: 'base' | 'dynamic'
@@ -511,6 +513,7 @@ export default function ReservationForm({
     not_included_price: 0,
     onlinePaymentAmount: 0,
     onSiteBalanceAmount: 0,
+    balanceReceivedTotal: 0,
     productRequiredOptions: [],
     priceType: 'dynamic', // 기본값은 dynamic pricing
     choiceNotIncludedTotal: 0
@@ -524,12 +527,26 @@ export default function ReservationForm({
   const [, setPriceAutoFillMessage] = useState<string>('')
   // 기존 가격 정보가 로드되었는지 추적
   const [isExistingPricingLoaded, setIsExistingPricingLoaded] = useState<boolean>(false)
+  // 편집 모드에서 가격 로드(loadPricingInfo)가 끝난 뒤에만 저장 가능 (0으로 덮어쓰기 방지)
+  const [pricingLoadComplete, setPricingLoadComplete] = useState<boolean>(false)
   // reservation_pricing 행 id (상세/폼 가격 섹션 표시용)
   const [reservationPricingId, setReservationPricingId] = useState<string | null>(null)
   
-  // savePricingInfo 등에서 항상 최신 formData 참조용
+  // savePricingInfo 등에서 항상 최신 formData 참조용 (제출 시 배칭 전 최신값 반영용)
   const formDataRef = useRef(formData)
   formDataRef.current = formData
+
+  // setFormData 호출 시 formDataRef를 동기적으로 갱신하여, 입력 직후 저장해도 불포함 가격 등이 반영되도록 함
+  const setFormData = useCallback((arg: typeof formData | ((prev: typeof formData) => typeof formData)) => {
+    if (typeof arg === 'function') {
+      const next = (arg as (prev: typeof formData) => typeof formData)(formDataRef.current)
+      formDataRef.current = next
+      setFormDataState(next)
+    } else {
+      formDataRef.current = arg
+      setFormDataState(arg)
+    }
+  }, [])
 
   // 무한 렌더링 방지를 위한 ref
   const prevPricingParams = useRef<{productId: string, tourDate: string, channelId: string, variantKey: string, selectedChoicesKey: string} | null>(null)
@@ -1932,8 +1949,11 @@ export default function ReservationForm({
       console.log('필수 정보가 부족합니다:', { productId, tourDate, channelId })
       return
     }
+    if (reservationId) setPricingLoadComplete(false)
 
     try {
+      // reservation_pricing에 행이 있을 때 dynamic_pricing으로 채운 뒤에도 불포함 가격은 DB 컬럼 값 유지
+      let notIncludedPriceFromReservationPricing: number | null = null
       // 선택된 초이스 정보 가져오기 (파라미터로 전달되지 않으면 formData에서 가져오기)
       const currentSelectedChoices = selectedChoices || (Array.isArray(formData.selectedChoices) ? formData.selectedChoices : [])
       setReservationPricingId(null)
@@ -2219,13 +2239,18 @@ export default function ReservationForm({
             }
           })
           
-          setIsExistingPricingLoaded(true)
-          setPriceAutoFillMessage('기존 가격 정보가 로드되었습니다!')
-          return // 기존 가격 정보가 있으면 dynamic_pricing 조회하지 않음
+          // 상품 단가·불포함이 모두 0이면 dynamic_pricing에서 채우기 위해 아래로 진행 (불포함은 DB 컬럼 값 유지)
+          const hasAnySavedPrice = hasSavedProductPrices || (Number((existingPricing as any).not_included_price) || 0) > 0
+          if (hasAnySavedPrice) {
+            setIsExistingPricingLoaded(true)
+            setPriceAutoFillMessage('기존 가격 정보가 로드되었습니다!')
+            return
+          }
+          notIncludedPriceFromReservationPricing = Number((existingPricing as any).not_included_price) || 0
         }
       }
 
-      // 2. reservation_pricing에 가격 정보가 없으면 dynamic_pricing에서 조회 (항상 동일 경로)
+      // 2. reservation_pricing에 가격 정보가 없거나 상품·불포함이 모두 0이면 dynamic_pricing에서 조회
       let adultPrice = 0
       let childPrice = 0
       let infantPrice = 0
@@ -2627,15 +2652,16 @@ export default function ReservationForm({
         setPriceAutoFillMessage('Dynamic pricing에서 가격 정보가 자동으로 입력되었습니다!')
 
       setFormData(prev => {
+        const notIncludedToUse = notIncludedPriceFromReservationPricing !== null ? notIncludedPriceFromReservationPricing : notIncludedPrice
         const updated = {
           ...prev,
           adultProductPrice: adultPrice,
           childProductPrice: childPrice,
           infantProductPrice: infantPrice,
           commission_percent: commissionPercent,
-          not_included_price: notIncludedPrice,
-          onlinePaymentAmount: notIncludedPrice != null
-            ? Math.max(0, (adultPrice - (notIncludedPrice || 0)) * (prev.adults || 0))
+          not_included_price: notIncludedToUse,
+          onlinePaymentAmount: notIncludedToUse != null
+            ? Math.max(0, (adultPrice - (notIncludedToUse || 0)) * (prev.adults || 0))
             : prev.onlinePaymentAmount || 0
         }
         
@@ -2711,6 +2737,8 @@ export default function ReservationForm({
       // (reservation_pricing에서 로드한 경우에만 위에서 이미 setIsExistingPricingLoaded(true) 호출됨)
     } catch (error) {
       console.error('Dynamic pricing 조회 중 오류:', error)
+    } finally {
+      setPricingLoadComplete(true)
     }
       }, [channels, reservationOptionsTotalPrice, loadProductChoices, formData.selectedChoices, formData.variantKey])
 
@@ -3294,8 +3322,8 @@ export default function ReservationForm({
         selected_options: fd.selectedOptionalOptions,
         option_total: Number(fd.optionTotal) || 0,
         total_price: (Number(fd.totalPrice) || 0) + notIncludedTotal,
-        deposit_amount: overrides?.depositAmount ?? (Number(fd.depositAmount) || 0),
-        balance_amount: overrides?.balanceAmount ?? (Number(fd.balanceAmount) || 0),
+        deposit_amount: overrides?.depositAmount ?? ((Number(fd.depositAmount) || 0) + (Number(fd.balanceReceivedTotal) || 0) + (Number(fd.onSiteBalanceAmount) || 0)),
+        balance_amount: overrides?.balanceAmount ?? (Number(fd.onSiteBalanceAmount ?? fd.balanceAmount) || 0),
         private_tour_additional_cost: Number(fd.privateTourAdditionalCost) || 0,
         commission_percent: Number(fd.commission_percent) || 0,
         commission_amount: Number(fd.commission_amount) || 0
@@ -3603,8 +3631,9 @@ export default function ReservationForm({
           selectedOptionalOptions: fd.selectedOptionalOptions,
           optionTotal: toNum(fd.optionTotal),
           totalPrice: toNum(fd.totalPrice),
-          depositAmount: toNum(fd.depositAmount),
-          balanceAmount: toNum(fd.balanceAmount),
+          // DB deposit_amount = 총 결제 예정 금액 (보증금 + 잔금 수령 + 잔액), balance_amount = 잔액(투어 당일 지불)만
+          depositAmount: toNum((fd.depositAmount || 0) + (fd.balanceReceivedTotal ?? 0) + (fd.onSiteBalanceAmount ?? 0)),
+          balanceAmount: toNum(fd.onSiteBalanceAmount ?? fd.balanceAmount ?? 0),
           isPrivateTour: fd.isPrivateTour,
           privateTourAdditionalCost: toNum(fd.privateTourAdditionalCost),
           commission_percent: toNum(fd.commission_percent),
@@ -3836,10 +3865,11 @@ export default function ReservationForm({
             <button
               type="submit"
               form="reservation-edit-form"
-              disabled={isSubmitting}
+              disabled={isSubmitting || (!isNewReservation && !!reservation?.id && !pricingLoadComplete)}
+              title={!isNewReservation && reservation?.id && !pricingLoadComplete ? '가격 정보 로딩 중입니다. 잠시 후 저장해 주세요.' : undefined}
               className="px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('save') : tCommon('add'))}
+              {!isNewReservation && reservation?.id && !pricingLoadComplete ? '가격 로딩 중...' : isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('save') : tCommon('add'))}
             </button>
             <button
               type="button"
@@ -4082,10 +4112,11 @@ export default function ReservationForm({
               <div className="flex flex-row items-center gap-2">
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || (!isNewReservation && !!reservation?.id && !pricingLoadComplete)}
+                  title={!isNewReservation && reservation?.id && !pricingLoadComplete ? '가격 정보 로딩 중입니다. 잠시 후 저장해 주세요.' : undefined}
                   className="flex-1 min-w-0 bg-blue-600 text-white py-2.5 px-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
                 >
-                  {isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('save') : tCommon('add'))}
+                  {!isNewReservation && reservation?.id && !pricingLoadComplete ? '가격 로딩 중...' : isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('save') : tCommon('add'))}
                 </button>
                 <button
                   type="button"

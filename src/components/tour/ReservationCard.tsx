@@ -101,6 +101,13 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
   pickupHotels = [],
   onRefresh
 }) => {
+  /** 요청 중단(AbortError) 여부 — 컴포넌트 언마운트/의존성 변경 시 정상 취소이므로 로그 생략 */
+  const isAbortError = useCallback((err: unknown): boolean => {
+    if (err instanceof Error && err.name === 'AbortError') return true
+    const msg = typeof (err as any)?.message === 'string' ? (err as any).message : ''
+    return msg.includes('AbortError') || msg.includes('aborted') || msg.includes('signal is aborted')
+  }, [])
+
   const customerName = getCustomerName(reservation.customer_id || '')
   const customerLanguage = getCustomerLanguage(reservation.customer_id || '')
   
@@ -159,7 +166,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         .eq('reservation_id', reservation.id) as { data: Array<{ resident_status: string | null; pass_covered_count: number | null }> | null; error: any }
       
       if (error) {
-        console.error('예약 고객 정보 조회 오류:', error)
+        if (!isAbortError(error)) console.error('예약 고객 정보 조회 오류:', error)
         // fallback: customers 테이블에서 가져오기
         if (reservation.customer_id) {
           const { data: customer, error: customerError } = await supabase
@@ -253,9 +260,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         }
       }
     } catch (error) {
-      console.error('고객 정보 조회 오류:', error)
+      if (!isAbortError(error)) console.error('고객 정보 조회 오류:', error)
     }
-  }, [reservation.id, reservation.customer_id])
+  }, [reservation.id, reservation.customer_id, isAbortError])
 
   // 채널 정보 가져오기
   const fetchChannelInfo = useCallback(async () => {
@@ -355,9 +362,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         setOptionsTotalFromOptions(null)
       }
     } catch (error) {
-      console.error('예약 가격 정보 조회 오류:', error)
+      if (!isAbortError(error)) console.error('예약 가격 정보 조회 오류:', error)
     }
-  }, [isStaff, reservation.id])
+  }, [isStaff, reservation.id, isAbortError])
 
   // 결제 방법 정보 로드
   const loadPaymentMethods = useCallback(async () => {
@@ -676,7 +683,7 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         .eq('reservation_id', reservation.id)
       
       if (error) {
-        console.error('예약 초이스 조회 오류:', error)
+        if (!isAbortError(error)) console.error('예약 초이스 조회 오류:', error)
         return
       }
       
@@ -693,9 +700,9 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
         setReservationChoices(choices)
       }
     } catch (error) {
-      console.error('예약 초이스 조회 중 오류:', error)
+      if (!isAbortError(error)) console.error('예약 초이스 조회 중 오류:', error)
     }
-  }, [reservation.id])
+  }, [reservation.id, isAbortError])
 
   // 컴포넌트 마운트 시 가격 정보, 입금 내역, 채널 정보, 고객 정보 가져오기
   useEffect(() => {
@@ -1614,15 +1621,11 @@ export const ReservationCard: React.FC<ReservationCardProps> = ({
               {getPickupLocation() || ''}
             </div>
             
-            {/* 잔액 뱃지 및 수령 버튼 - Grand Total - 입금액 (영수증과 동일) */}
+            {/* 잔액 뱃지 및 수령 버튼 - reservation_pricing.balance_amount 사용(실제 예약 잔금과 일치) */}
             {isStaff && (() => {
               const toN = (v: number | string | null | undefined) => (v == null ? 0 : typeof v === 'string' ? parseFloat(v) || 0 : v)
-              const totalPeopleForBalance = (reservation.adults || 0) + ((reservation.children ?? (reservation as any).child) || 0) + ((reservation.infants ?? (reservation as any).infant) || 0) || 1
-              const notIncludedForBadge = (toN(reservationPricing?.not_included_price) || 0) * totalPeopleForBalance
-              const effectiveOpts = optionsTotalFromOptions !== null ? optionsTotalFromOptions : toN(reservationPricing?.option_total)
-              const discounted = toN(reservationPricing?.product_price_total) - toN(reservationPricing?.coupon_discount) - toN(reservationPricing?.additional_discount)
-              const customerTotal = discounted + effectiveOpts + toN(reservationPricing?.choices_total) + notIncludedForBadge + toN(reservationPricing?.additional_cost) + toN(reservationPricing?.tax) + toN(reservationPricing?.card_fee) + toN(reservationPricing?.prepayment_cost) + toN(reservationPricing?.prepayment_tip)
-              const displayBalanceBadge = Math.max(0, customerTotal - toN(reservationPricing?.deposit_amount))
+              const storedBalance = toN(reservationPricing?.balance_amount)
+              const displayBalanceBadge = Math.max(0, storedBalance)
               if (displayBalanceBadge > 0) {
                 return (
                   <div className="flex items-center space-x-2">

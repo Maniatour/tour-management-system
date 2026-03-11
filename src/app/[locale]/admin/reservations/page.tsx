@@ -5,6 +5,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { X, Search, SlidersHorizontal } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
+import { updateReservation, type ReservationUpdatePayload } from '@/lib/reservationUpdate'
 import type { Database } from '@/lib/supabase'
 import CustomerForm from '@/components/CustomerForm'
 import ReservationForm from '@/components/reservation/ReservationForm'
@@ -1506,346 +1507,32 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   }, [refreshReservations])
 
   const handleEditReservation = useCallback(async (reservation: Omit<Reservation, 'id'>) => {
-    if (editingReservation) {
-      try {
-        // Supabase에 저장할 데이터 준비
-        const reservationData = {
-          customer_id: reservation.customerId,
-          product_id: reservation.productId,
-          tour_date: reservation.tourDate,
-          tour_time: reservation.tourTime || null, // 빈 문자열을 null로 변환
-          event_note: reservation.eventNote,
-          pickup_hotel: reservation.pickUpHotel,
-          pickup_time: reservation.pickUpTime || null, // 빈 문자열을 null로 변환
-          adults: reservation.adults,
-          child: reservation.child,
-          infant: reservation.infant,
-          total_people: reservation.totalPeople,
-          channel_id: reservation.channelId,
-          channel_rn: reservation.channelRN,
-          added_by: reservation.addedBy,
-          tour_id: reservation.tourId,
-          status: reservation.status,
-          selected_options: reservation.selectedOptions,
-          selected_option_prices: reservation.selectedOptionPrices,
-          is_private_tour: reservation.isPrivateTour || false,
-          choices: reservation.choices,
-          variant_key: (reservation as any).variantKey || 'default' // variant_key 추가
-        }
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error } = await (supabase as any)
-          .from('reservations')
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .update(reservationData as any)
-          .eq('id', editingReservation.id)
-
-        if (error) {
-          console.error('Error updating reservation:', {
-            message: error.message,
-            details: error.details,
-            hint: error.hint,
-            code: error.code
-          })
-          alert(t('messages.reservationUpdateError') + error.message)
-          return
-        }
-
-        // 새로운 초이스 시스템: reservation_choices 테이블에 저장
-        try {
-          const UNDECIDED_OPTION_ID = '__undecided__'
-          // 기존 reservation_choices 삭제
-          await supabase
-            .from('reservation_choices')
-            .delete()
-            .eq('reservation_id', editingReservation.id)
-
-          let choicesToSave: Array<{
-            reservation_id: string
-            choice_id: string
-            option_id: string
-            quantity: number
-            total_price: number
-          }> = []
-          
-          // 1. reservation.selectedChoices에서 가져오기 (우선순위 1 - 배열 형태)
-          if ((reservation as any).selectedChoices) {
-            const selectedChoices = (reservation as any).selectedChoices
-            console.log('handleEditReservation: reservation.selectedChoices 확인:', {
-              isArray: Array.isArray(selectedChoices),
-              length: Array.isArray(selectedChoices) ? selectedChoices.length : 'not array',
-              type: typeof selectedChoices,
-              value: selectedChoices
-            })
-            
-            if (Array.isArray(selectedChoices) && selectedChoices.length > 0) {
-              console.log('handleEditReservation: reservation.selectedChoices에서 초이스 데이터 발견:', selectedChoices.length, '개')
-              for (const choice of selectedChoices) {
-                if (choice.choice_id && choice.option_id && choice.option_id !== UNDECIDED_OPTION_ID) {
-                  const totalPrice = choice.total_price !== undefined && choice.total_price !== null 
-                    ? Number(choice.total_price) 
-                    : 0
-                  console.log('handleEditReservation: 초이스 저장 데이터:', {
-                    choice_id: choice.choice_id,
-                    option_id: choice.option_id,
-                    quantity: choice.quantity || 1,
-                    total_price: totalPrice,
-                    original_total_price: choice.total_price,
-                    type: typeof choice.total_price
-                  })
-                  choicesToSave.push({
-                    reservation_id: editingReservation.id,
-                    choice_id: choice.choice_id,
-                    option_id: choice.option_id,
-                    quantity: choice.quantity || 1,
-                    total_price: totalPrice
-                  })
-                } else if (choice.option_id === UNDECIDED_OPTION_ID) {
-                  // "미정" 선택은 reservation_choices에 저장하지 않음
-                } else {
-                  console.warn('초이스 데이터에 choice_id 또는 option_id가 없습니다:', choice)
-                }
-              }
-            }
-          }
-          
-          // 2. reservation.choices.required에서 가져오기 (fallback)
-          if (choicesToSave.length === 0 && reservation.choices && reservation.choices.required && Array.isArray(reservation.choices.required)) {
-            console.log('handleEditReservation: reservation.choices.required에서 초이스 데이터 발견:', reservation.choices.required.length, '개')
-            for (const choice of reservation.choices.required) {
-              if (choice.choice_id && choice.option_id && choice.option_id !== UNDECIDED_OPTION_ID) {
-                choicesToSave.push({
-                  reservation_id: editingReservation.id,
-                  choice_id: choice.choice_id,
-                  option_id: choice.option_id,
-                  quantity: choice.quantity || 1,
-                  total_price: choice.total_price || 0
-                })
-              }
-            }
-          }
-          
-          console.log('handleEditReservation: 저장할 초이스 데이터:', choicesToSave.length, '개', choicesToSave)
-          
-          if (choicesToSave.length > 0) {
-            // option_id 검증을 건너뛰고 바로 저장 (검증이 너무 엄격해서 저장이 안 될 수 있음)
-            console.log('handleEditReservation: reservation_choices에 저장할 데이터:', choicesToSave)
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const { data: insertedChoices, error: choicesError } = await (supabase as any)
-              .from('reservation_choices')
-              .insert(choicesToSave)
-              .select()
-
-            if (choicesError) {
-              console.error('초이스 저장 오류:', choicesError)
-              console.error('저장 시도한 데이터:', choicesToSave)
-              console.error('오류 상세:', {
-                message: choicesError.message,
-                details: choicesError.details,
-                hint: choicesError.hint,
-                code: choicesError.code
-              })
-              alert(t('messages.choicesSaveError') + choicesError.message)
-            } else {
-              console.log('초이스 저장 성공:', choicesToSave.length, '개', insertedChoices)
-            }
-          } else {
-            console.warn('저장할 초이스 데이터가 없습니다.', {
-              hasChoices: !!reservation.choices,
-              choicesRequiredCount: Array.isArray(reservation.choices?.required) ? reservation.choices.required.length : 0,
-              hasSelectedChoices: !!(reservation as any).selectedChoices,
-              selectedChoicesCount: Array.isArray((reservation as any).selectedChoices) ? (reservation as any).selectedChoices.length : 0,
-              selectedChoicesType: typeof (reservation as any).selectedChoices,
-              selectedChoicesValue: (reservation as any).selectedChoices
-            })
-          }
-        } catch (choicesError) {
-          console.error('초이스 저장 중 예외:', choicesError)
-          // 초이스 저장 실패해도 예약은 성공으로 처리
-        }
-
-        // reservation_customers 테이블에 거주 상태별 인원 수 저장
-        try {
-          // 기존 reservation_customers 데이터 삭제
-          await supabase
-            .from('reservation_customers')
-            .delete()
-            .eq('reservation_id', editingReservation.id)
-
-          // 상태별 인원 수에 따라 reservation_customers 레코드 생성
-          const reservationCustomers: any[] = []
-          let orderIndex = 0
-
-          // 미국 거주자
-          const usResidentCount = (reservation as any).usResidentCount || 0
-          for (let i = 0; i < usResidentCount; i++) {
-            reservationCustomers.push({
-              reservation_id: editingReservation.id,
-              customer_id: reservation.customerId,
-              resident_status: 'us_resident',
-              pass_covered_count: 0,
-              order_index: orderIndex++
-            })
-          }
-
-          // 비거주자
-          const nonResidentCount = (reservation as any).nonResidentCount || 0
-          for (let i = 0; i < nonResidentCount; i++) {
-            reservationCustomers.push({
-              reservation_id: editingReservation.id,
-              customer_id: reservation.customerId,
-              resident_status: 'non_resident',
-              pass_covered_count: 0,
-              order_index: orderIndex++
-            })
-          }
-
-          // 비 거주자 (16세 이하)
-          const nonResidentUnder16Count = (reservation as any).nonResidentUnder16Count || 0
-          for (let i = 0; i < nonResidentUnder16Count; i++) {
-            reservationCustomers.push({
-              reservation_id: editingReservation.id,
-              customer_id: reservation.customerId,
-              resident_status: 'non_resident_under_16',
-              pass_covered_count: 0,
-              order_index: orderIndex++
-            })
-          }
-
-          // 비거주자 (패스 보유) - 패스 장수는 nonResidentWithPassCount와 같음
-          const nonResidentWithPassCount = (reservation as any).nonResidentWithPassCount || 0
-          
-          // 비거주자 (패스 보유) - 패스 장수만큼 생성, 각 패스는 4인을 커버
-          for (let i = 0; i < nonResidentWithPassCount; i++) {
-            reservationCustomers.push({
-              reservation_id: editingReservation.id,
-              customer_id: reservation.customerId,
-              resident_status: 'non_resident_with_pass',
-              pass_covered_count: 4, // 패스 1장당 4인 커버
-              order_index: orderIndex++
-            })
-          }
-
-          // reservation_customers 데이터 삽입
-          if (reservationCustomers.length > 0) {
-            const { error: rcError } = await supabase
-              .from('reservation_customers')
-              .insert(reservationCustomers as any)
-
-            if (rcError) {
-              console.error('Error saving reservation_customers:', rcError)
-            } else {
-              console.log('Reservation customers updated successfully')
-            }
-          }
-        } catch (rcError) {
-          console.error('Error saving reservation_customers:', rcError)
-        }
-
-        // 가격 정보가 있으면 업데이트 또는 삽입 (숫자 필드 명시적 변환, 기존 행이 있으면 id로 update)
-        if (reservation.pricingInfo) {
-          try {
-            const pricingInfo = reservation.pricingInfo as any
-            const totalPeople = (reservation.adults || 0) + (reservation.child || 0) + (reservation.infant || 0)
-            const notIncludedTotal = (Number(pricingInfo.not_included_price) || 0) * (totalPeople || 1)
-            const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
-
-            const pricingData = {
-              reservation_id: editingReservation.id,
-              adult_product_price: toNum(pricingInfo.adultProductPrice),
-              child_product_price: toNum(pricingInfo.childProductPrice),
-              infant_product_price: toNum(pricingInfo.infantProductPrice),
-              product_price_total: toNum(pricingInfo.productPriceTotal) + notIncludedTotal,
-              not_included_price: toNum(pricingInfo.not_included_price),
-              required_options: pricingInfo.requiredOptions ?? {},
-              required_option_total: toNum(pricingInfo.requiredOptionTotal),
-              choices: pricingInfo.choices ?? {},
-              choices_total: toNum(pricingInfo.choicesTotal),
-              subtotal: toNum(pricingInfo.subtotal) + notIncludedTotal,
-              coupon_code: pricingInfo.couponCode ?? '',
-              coupon_discount: toNum(pricingInfo.couponDiscount),
-              additional_discount: toNum(pricingInfo.additionalDiscount),
-              additional_cost: toNum(pricingInfo.additionalCost),
-              card_fee: toNum(pricingInfo.cardFee),
-              tax: toNum(pricingInfo.tax),
-              prepayment_cost: toNum(pricingInfo.prepaymentCost),
-              prepayment_tip: toNum(pricingInfo.prepaymentTip),
-              selected_options: pricingInfo.selectedOptionalOptions ?? {},
-              option_total: toNum(pricingInfo.optionTotal),
-              total_price: toNum(pricingInfo.totalPrice) + notIncludedTotal,
-              deposit_amount: toNum(pricingInfo.depositAmount),
-              balance_amount: toNum(pricingInfo.balanceAmount),
-              private_tour_additional_cost: toNum(pricingInfo.privateTourAdditionalCost),
-              commission_percent: toNum(pricingInfo.commission_percent),
-              commission_amount: toNum(pricingInfo.commission_amount)
-            }
-
-            const { data: existingPricing } = await supabase
-              .from('reservation_pricing')
-              .select('id')
-              .eq('reservation_id', editingReservation.id)
-              .maybeSingle()
-
-            if (existingPricing?.id) {
-              const { error: pricingError } = await supabase
-                .from('reservation_pricing')
-                .update(pricingData as any)
-                .eq('id', existingPricing.id)
-
-              if (pricingError) {
-                console.error('Error saving pricing info:', pricingError)
-              } else {
-                console.log('가격 정보가 성공적으로 저장되었습니다.')
-              }
-            } else {
-              const insertData = { ...pricingData, id: crypto.randomUUID() }
-              const { error: pricingError } = await supabase
-                .from('reservation_pricing')
-                .insert(insertData as any)
-
-              if (pricingError) {
-                console.error('Error saving pricing info:', pricingError)
-              } else {
-                console.log('가격 정보가 성공적으로 저장되었습니다.')
-              }
-            }
-          } catch (pricingError) {
-            console.error('Error saving pricing info:', pricingError)
-          }
-        }
-
-        // Mania Tour 또는 Mania Service인 경우 자동으로 투어 생성 또는 업데이트
-        try {
-          const tourResult = await autoCreateOrUpdateTour(
-            reservation.productId,
-            reservation.tourDate,
-            editingReservation.id,
-            reservation.isPrivateTour
-          )
-          
-          if (tourResult.success) {
-            console.log('투어 자동 생성/업데이트 성공:', tourResult.message)
-          } else {
-            console.warn('투어 자동 생성/업데이트 실패:', tourResult.message)
-            // 투어 생성 실패는 예약 수정 성공에 영향을 주지 않음
-          }
-        } catch (tourError) {
-          console.error('투어 자동 생성/업데이트 중 예상치 못한 오류:', tourError)
-          // 투어 생성 실패는 예약 수정 성공에 영향을 주지 않음
-        }
-
-        // 성공 시 예약 목록 새로고침
-        await refreshReservations()
-        setEditingReservation(null)
-        alert(t('messages.reservationUpdated'))
-      } catch (error) {
-        console.error('Error updating reservation:', {
-          message: error instanceof Error ? error.message : 'Unknown error',
-          stack: error instanceof Error ? error.stack : undefined,
-          error: error
-        })
-        alert(t('messages.reservationUpdateError') + (error instanceof Error ? error.message : 'Unknown error'))
+    if (!editingReservation) return
+    try {
+      const fullPayload = {
+        ...reservation,
+        pricingInfo: (reservation as ReservationUpdatePayload).pricingInfo,
+        customerLanguage: (reservation as ReservationUpdatePayload).customerLanguage,
+        variantKey: (reservation as ReservationUpdatePayload).variantKey,
+        selectedChoices: Array.isArray((reservation as ReservationUpdatePayload).selectedChoices)
+          ? (reservation as ReservationUpdatePayload).selectedChoices
+          : undefined,
+        usResidentCount: (reservation as ReservationUpdatePayload).usResidentCount,
+        nonResidentCount: (reservation as ReservationUpdatePayload).nonResidentCount,
+        nonResidentWithPassCount: (reservation as ReservationUpdatePayload).nonResidentWithPassCount,
+        nonResidentUnder16Count: (reservation as ReservationUpdatePayload).nonResidentUnder16Count,
+      } as ReservationUpdatePayload
+      const result = await updateReservation(editingReservation.id, fullPayload)
+      if (!result.success) {
+        alert(t('messages.reservationUpdateError') + (result.error ?? ''))
+        return
       }
+      await refreshReservations()
+      setEditingReservation(null)
+      alert(t('messages.reservationUpdated'))
+    } catch (error) {
+      console.error('Error updating reservation:', error)
+      alert(t('messages.reservationUpdateError') + (error instanceof Error ? error.message : 'Unknown error'))
     }
   }, [editingReservation, refreshReservations, t])
 

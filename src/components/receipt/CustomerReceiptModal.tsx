@@ -674,13 +674,12 @@ export default function CustomerReceiptModal({
                 const totalPeople = Math.max(1, d.reservation.total_people ?? 1)
                 const notIncludedPerPerson = d.pricing.not_included_price ?? 0
                 const notIncludedTotal = notIncludedPerPerson * totalPeople
-                const productRowTotal = d.pricing.product_price_total + notIncludedTotal
-                // 상품 행 단가: adult_product_price가 있으면 사용, 0이면 (상품 총액/인원) 또는 (상품총액-불포함)/인원으로 계산 (판매가 $220, 불포함 $95가 있는데 단가가 $0으로 나오는 경우 방지)
-                const productTotalOnly = Math.max(0, (d.pricing.product_price_total ?? 0) - notIncludedTotal)
+                const productRowTotal = (d.pricing.product_price_total ?? 0) + notIncludedTotal
+                // 상품 행 단가: adult_product_price가 있으면 사용, 0이면 상품 총액/인원으로 표시 (절대 $0으로 나오지 않도록)
                 const productUnitPrice = (d.pricing.adult_product_price ?? 0) > 0
                   ? (d.pricing.adult_product_price ?? 0)
                   : totalPeople > 0
-                    ? (productTotalOnly > 0 ? productTotalOnly / totalPeople : (d.pricing.product_price_total ?? 0) / totalPeople)
+                    ? (d.pricing.product_price_total ?? 0) / totalPeople
                     : 0
                 const tip10PerPerson = (customerTotalPayment * 0.10) / totalPeople
                 const tip15PerPerson = (customerTotalPayment * 0.15) / totalPeople

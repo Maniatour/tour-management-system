@@ -235,7 +235,10 @@ export default function PricingSection({
         .maybeSingle()
 
       if (reservationError && (reservationError.message || reservationError.code)) {
-        console.error('예약 조회 오류:', reservationError)
+        const msg = String((reservationError as any)?.message ?? '')
+        if (!msg.includes('AbortError') && !msg.includes('aborted')) {
+          console.error('예약 조회 오류:', reservationError)
+        }
         setTourExpensesTotal(0)
         setLoadingTourExpenses(false)
         return
@@ -252,7 +255,10 @@ export default function PricingSection({
           .maybeSingle()
 
         if (tourByIdError && (tourByIdError.message || tourByIdError.code)) {
-          console.error('tour_id로 투어 조회 오류:', tourByIdError)
+          const msg = String((tourByIdError as any)?.message ?? '')
+          if (!msg.includes('AbortError') && !msg.includes('aborted')) {
+            console.error('tour_id로 투어 조회 오류:', tourByIdError)
+          }
         } else if (tourById) {
           tourData = tourById
           console.log('PricingSection: reservations.tour_id로 투어 찾음:', tourData.id)
@@ -272,7 +278,10 @@ export default function PricingSection({
 
         // 오류가 있고 실제 오류인 경우에만 처리 (빈 객체나 null이 아닌 경우)
         if (toursError && (toursError.message || toursError.code || Object.keys(toursError).length > 0)) {
-          console.error('투어 조회 오류:', toursError)
+          const msg = String((toursError as any)?.message ?? '')
+          if (!msg.includes('AbortError') && !msg.includes('aborted')) {
+            console.error('투어 조회 오류:', toursError)
+          }
           setTourExpensesTotal(0)
           setLoadingTourExpenses(false)
           return
@@ -330,7 +339,10 @@ export default function PricingSection({
         .not('status', 'eq', 'rejected')
 
       if (expensesError && (expensesError.message || expensesError.code || Object.keys(expensesError).length > 0)) {
-        console.error('투어 지출 조회 오류:', expensesError)
+        const errMsg = String((expensesError as any)?.message ?? '')
+        if (!errMsg.includes('AbortError') && !errMsg.includes('aborted') && !errMsg.includes('signal is aborted')) {
+          console.error('투어 지출 조회 오류:', expensesError)
+        }
         setTourExpensesTotal(0)
         setLoadingTourExpenses(false)
         return
@@ -557,8 +569,9 @@ export default function PricingSection({
         })
       }
 
-      // 계산 결과를 state에 저장
+      // 계산 결과를 state에 저장 (총 결제 예정 금액 저장 시 사용하도록 formData에도 동기화)
       setCalculatedBalanceReceivedTotal(balanceReceivedTotal)
+      setFormData((prev: typeof formData) => ({ ...prev, balanceReceivedTotal }))
       setRefundedAmount(refundedTotal)
       setReturnedAmount(returnedTotal)
 
@@ -616,9 +629,10 @@ export default function PricingSection({
         })
       }
 
-      // 입금 내역 반영 후 보증금/잔액을 DB에 저장 (기존 잔액 때문에 수정이 안 되는 문제 방지)
+      // 입금 내역 반영 후 보증금/잔액을 DB에 저장 (deposit_amount = 총 결제 예정 금액, balance_amount = 잔액)
       if (reservationId && paymentRecords.length > 0) {
-        savePricingInfo(reservationId, { depositAmount: depositToSave, balanceAmount: remainingBalance }).catch((err) => {
+        const totalScheduledPayment = depositToSave + balanceReceivedTotal + remainingBalance
+        savePricingInfo(reservationId, { depositAmount: totalScheduledPayment, balanceAmount: remainingBalance }).catch((err) => {
           console.error('PricingSection: 입금 내역 반영 저장 오류', err)
         })
       }
