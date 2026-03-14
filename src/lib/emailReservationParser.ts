@@ -21,9 +21,11 @@ const PLATFORM_FROM_PATTERNS: { pattern: RegExp | string; key: string }[] = [
   { pattern: /getyourguide/i, key: 'getyourguide' },
   { pattern: /tripadvisor/i, key: 'tripadvisor' },
   { pattern: /klook/i, key: 'klook' },
+  { pattern: /kkday\.com|kkday/i, key: 'kkday' },
   { pattern: /booking\.com/i, key: 'booking' },
   { pattern: /expedia/i, key: 'expedia' },
   { pattern: /airbnb/i, key: 'airbnb' },
+  { pattern: /wixsiteautomations\.com/i, key: 'maniatour' },
   { pattern: /resend\.dev|resend\.com/i, key: 'resend' },
 ]
 
@@ -898,6 +900,68 @@ function extractKlook(
   return out
 }
 
+/** KKday 상품번호 → 우리 투어명 (예약 가져오기 시 상품 자동 선택용) */
+const KKDAY_PRODUCT_NO_TO_TOUR_NAME: Record<string, string> = {
+  '174755': '밤도깨비 그랜드캐년 일출 투어',
+}
+
+/**
+ * KKday 예약 이메일 본문 추출.
+ * 상품번호：174755 → 밤도깨비 그랜드캐년 일출 투어, 사용 날짜, 수량(대인 x1 → 성인 1), 대표 여행자(WADA, YU → WADA YU), 미정/로어 앤텔롭 캐년 초이스.
+ */
+function extractKKday(
+  text: string,
+  _subject: string,
+  _sourceEmail: string | null
+): Partial<ExtractedReservationData> {
+  const out: Partial<ExtractedReservationData> = {}
+  if (!text || text.length < 10) return out
+
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+
+  // 상품번호：174755
+  const productNoMatch = normalized.match(/상품번호\s*[：:]\s*(\d+)/)
+  if (productNoMatch) {
+    const no = productNoMatch[1].trim()
+    if (KKDAY_PRODUCT_NO_TO_TOUR_NAME[no]) {
+      out.product_name = KKDAY_PRODUCT_NO_TO_TOUR_NAME[no]
+    }
+  }
+
+  // 사용 날짜：2026/03/15 → tour_date YYYY-MM-DD
+  const dateMatch = normalized.match(/사용\s*날짜\s*[：:]\s*(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/)
+  if (dateMatch) {
+    out.tour_date = `${dateMatch[1]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[3].padStart(2, '0')}`
+  }
+
+  // 수량：대인 x1 → adults: 1 (대인|성인 x N)
+  const adultMatch = normalized.match(/(?:수량\s*[：:].*?)?(?:대인|성인)\s*x\s*(\d+)/i)
+  if (adultMatch) {
+    out.adults = parseInt(adultMatch[1], 10)
+    out.total_people = out.adults + (out.children ?? 0) + (out.infants ?? 0)
+  }
+
+  // 대표 여행자：WADA, YU → customer_name (쉼표는 normalizeCustomerNameFromImport에서 공백으로 변환됨)
+  const travellerMatch = normalized.match(/대표\s*여행자\s*[：:]\s*([^\n]+?)(?=\n|$)/m)
+  if (travellerMatch) {
+    const raw = travellerMatch[1].trim()
+    if (raw.length >= 2 && raw.length <= 120) out.customer_name = raw
+  }
+
+  // 미정 + 로어 앤텔롭 캐년 초이스 (밤도깨비와 동일)
+  out.import_choice_undecided_groups = ['미국 거주자 구분', '기타 입장료']
+  if (/로어\s*앤텔롭|Lower\s*Antelope/i.test(normalized)) {
+    out.import_choice_option_names = ['Lower Antelope Canyon']
+  }
+
+  // 밤도깨비 그랜드캐년 일출 투어는 투어 시간 00:00
+  if (out.product_name === '밤도깨비 그랜드캐년 일출 투어') {
+    out.tour_time = '00:00'
+  }
+
+  return out
+}
+
 /** Viator 이메일 본문에서 레이블: 값 형식 추출 (Lead Traveler Name, Phone, Tour Language, Tour Name, Tour Option, Hotel Pickup 등) */
 function extractViator(
   text: string,
@@ -980,6 +1044,11 @@ const CHANNEL_PARSERS: Record<string, ChannelParserConfig> = {
     extract: (text, subject, sourceEmail, rawHtml) =>
       extractKlook(text, subject, sourceEmail, rawHtml),
   },
+  kkday: {
+    preprocess: toPlainText,
+    extract: (text, subject, sourceEmail) =>
+      extractKKday(text, subject, sourceEmail),
+  },
   viator: {
     preprocess: toPlainText,
     extract: (text, subject, sourceEmail) =>
@@ -1023,6 +1092,18 @@ export function extractReservationFromEmail(options: {
   if (platform_key === 'klook' && (subject || '').trimStart().toLowerCase().startsWith('klook order received -')) {
     merged.is_booking_confirmed = true
   }
+  // [KKday] 예약번호: 26KK242880792 주문이 접수되었습니다.
+  if (platform_key === 'kkday' && /^\[KKday\]\s*예약번호\s*[：:].*주문이\s*접수되었습니다/i.test((subject || '').trim())) {
+    merged.is_booking_confirmed = true
+  }
+  // Viator: Please Respond: New Booking Request:
+  if (platform_key === 'viator' && (subject || '').trim().toLowerCase().includes('please respond: new booking request:')) {
+    merged.is_booking_confirmed = true
+  }
+  // 홈페이지(maniatour): You got a new booking — vegasmaniatour@wixsiteautomations.com
+  if (platform_key === 'maniatour' && (subject || '').trim().toLowerCase() === 'you got a new booking') {
+    merged.is_booking_confirmed = true
+  }
 
   const extracted_data: ExtractedReservationData = merged as ExtractedReservationData
   return { platform_key, extracted_data }
@@ -1032,7 +1113,9 @@ export function extractReservationFromEmail(options: {
 export const SUPPORTED_EMAIL_CHANNELS = [
   'getyourguide',
   'klook',
+  'kkday',
   'viator',
+  'maniatour',
   'tripadvisor',
   'booking',
   'expedia',

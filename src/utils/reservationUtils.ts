@@ -46,11 +46,12 @@ export function matchPickupHotelId(
   return null
 }
 
-/** 이메일 추출/DB에 저장된 고객명에서 "customer-" 앞에서 끊어 반환 (기존 저장 데이터 표시용) */
+/** 이메일 추출/DB에 저장된 고객명에서 "customer-" 앞에서 끊어 반환. "LAST, FIRST" → "LAST FIRST" 정규화 (KKday 대표 여행자 등). */
 export function normalizeCustomerNameFromImport(name: string | null | undefined): string {
   if (name == null || typeof name !== 'string') return ''
   const before = name.split(/\s*customer-/i)[0].trim()
-  return before !== '' ? before : name.trim()
+  const base = before !== '' ? before : name.trim()
+  return base.replace(/\s*,\s*/g, ' ').trim()
 }
 
 // 고객 이름 가져오기

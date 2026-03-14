@@ -80,11 +80,17 @@ export default function ReservationImportDetailPage() {
     const ext = (data.extracted_data || {}) as ExtractedReservationData
     const hasBody = !!(data.raw_body_text || data.raw_body_html)
     const bodyHasWhatsApp = hasBody && /WhatsApp\s*:\s*[^\n]+/i.test(data.raw_body_text || data.raw_body_html || '')
+    const effectiveKey =
+      data.platform_key ||
+      ((data.source_email ?? '').toLowerCase().includes('kkday') || (data.subject ?? '').trim().startsWith('[KKday]')
+        ? 'kkday'
+        : null)
     const looksIncomplete =
       hasBody &&
-      (((data.platform_key === 'getyourguide' && (!ext.customer_name || ext.adults == null)) ||
-        (data.platform_key === 'klook' && (!ext.customer_name && !ext.customer_email && !ext.adults)) ||
-        (data.platform_key === 'viator' && (!ext.customer_name || !ext.pickup_hotel))) ||
+      (((effectiveKey === 'getyourguide' && (!ext.customer_name || ext.adults == null)) ||
+        (effectiveKey === 'klook' && (!ext.customer_name && !ext.customer_email && !ext.adults)) ||
+        (effectiveKey === 'kkday' && (!ext.customer_name || ext.adults == null || !ext.tour_date || !ext.product_name)) ||
+        (effectiveKey === 'viator' && (!ext.customer_name || !ext.pickup_hotel))) ||
         (bodyHasWhatsApp && !ext.emergency_contact))
     if (looksIncomplete) {
       const reparseRes = await fetch(`/api/reservation-imports/${id}/reparse`, { method: 'POST' })
@@ -124,15 +130,21 @@ export default function ReservationImportDetailPage() {
 
   const channelsSafe = channelsList ?? []
   const productsSafe = productsList ?? []
+  /** KKday 보정: DB에 platform_key가 없어도 발신/제목이 KKday면 kkday로 간주 */
+  const effectivePlatformKey =
+    row?.platform_key ||
+    (row && ((row.source_email ?? '').toLowerCase().includes('kkday') || (row.subject ?? '').trim().startsWith('[KKday]'))
+      ? 'kkday'
+      : null)
 
   useEffect(() => {
-    if (!row?.platform_key || !channelsSafe.length || form.channel_id) return
-    const mappedId = getChannelIdForPlatform(row.platform_key)
+    if (!effectivePlatformKey || !channelsSafe.length || form.channel_id) return
+    const mappedId = getChannelIdForPlatform(effectivePlatformKey)
     const channel = mappedId
       ? channelsSafe.find((c: { id: string; name?: string }) => c.id === mappedId || c.name?.toLowerCase().includes(mappedId))
-      : channelsSafe.find((c: { id: string; name?: string }) => c.name?.toLowerCase().includes(row.platform_key!.toLowerCase()))
+      : channelsSafe.find((c: { id: string; name?: string }) => c.name?.toLowerCase().includes(effectivePlatformKey.toLowerCase()))
     if (channel) setForm((f) => ({ ...f, channel_id: channel.id }))
-  }, [row?.platform_key, channelsSafe, form.channel_id])
+  }, [effectivePlatformKey, channelsSafe, form.channel_id])
 
   // 픽업 호텔 매칭 실패 시 사용할 기본 id
   const DEFAULT_PICKUP_HOTEL_ID = '518e504f-04d4-420a-bf45-f23210e38039'
@@ -292,7 +304,7 @@ export default function ReservationImportDetailPage() {
           <div className="px-4 py-2 border-b border-gray-100 bg-amber-50 flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-amber-800 uppercase tracking-wide">
-                {row.platform_key || '이메일'}
+                {effectivePlatformKey || '이메일'}
               </span>
               {row.subject && (
                 <span className="text-xs text-gray-500 truncate max-w-[280px]" title={row.subject}>

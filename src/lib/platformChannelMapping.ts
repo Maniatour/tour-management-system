@@ -7,6 +7,8 @@ export const PLATFORM_CHANNEL_MAP: Record<string, string> = {
   getyourguide: 'getyourguide',
   tripadvisor: 'tripadvisor',
   klook: 'klook',
+  kkday: 'kkday',
+  maniatour: 'maniatour',
   booking: 'booking',
   expedia: 'expedia',
   airbnb: 'airbnb',

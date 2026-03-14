@@ -304,24 +304,32 @@ export default function AdminSidebarAndHeader({ locale, children }: AdminSidebar
 
       const ackedIds = (myAcks as any[] | null)?.map((r: any) => r.announcement_id) || []
 
-      // recipients 에 내 이메일이 포함된 공지
-      const { data: annsByEmail } = await executeQueryWithRetry(() =>
-        (supabase as any)
-          .from('team_announcements' as any)
-          .select('id, recipients, target_positions, is_archived')
-          .contains('recipients', [myEmail])
-      )
-
-      // target_positions 에 내 포지션이 포함된 공지
+      // recipients / target_positions 공지 조회 (502·CORS 시 빈 배열로 fallback)
+      let annsByEmail: any[] = []
       let annsByPos: any[] = []
-      if (myPosition) {
-        const { data } = await executeQueryWithRetry(() =>
+      try {
+        const byEmail = await executeQueryWithRetry(() =>
           (supabase as any)
             .from('team_announcements' as any)
             .select('id, recipients, target_positions, is_archived')
-            .contains('target_positions', [myPosition])
+            .contains('recipients', [myEmail])
         )
-        annsByPos = (data as any[]) || []
+        annsByEmail = (byEmail.data as any[]) || []
+
+        if (myPosition) {
+          const byPos = await executeQueryWithRetry(() =>
+            (supabase as any)
+              .from('team_announcements' as any)
+              .select('id, recipients, target_positions, is_archived')
+              .contains('target_positions', [myPosition])
+          )
+          annsByPos = (byPos.data as any[]) || []
+        }
+      } catch (e) {
+        // 502 Bad Gateway 등으로 CORS 헤더가 없으면 브라우저가 CORS 오류로 표시. Supabase 프로젝트 일시중지/장애 가능성.
+        if (e instanceof Error && !e.message?.includes('AbortError')) {
+          console.warn('team_announcements 조회 실패(502/네트워크 시 Supabase 대시보드에서 프로젝트 상태 확인):', e.message)
+        }
       }
 
       const targetedAnns = ([...(annsByEmail as any[] || []), ...annsByPos])

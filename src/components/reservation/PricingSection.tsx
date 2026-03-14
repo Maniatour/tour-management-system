@@ -1673,8 +1673,11 @@ export default function PricingSection({
             type="button"
             onClick={async () => {
               try {
-                const tempReservationId = `temp_${Date.now()}`
-                await savePricingInfo(tempReservationId)
+                if (!reservationId) {
+                  alert(isKorean ? '가격 정보만 저장하려면 먼저 예약을 저장해 주세요.' : 'Please save the reservation first to save pricing.')
+                  return
+                }
+                await savePricingInfo(reservationId)
                 alert('가격 정보가 저장되었습니다!')
               } catch {
                 alert('가격 정보 저장 중 오류가 발생했습니다.')

@@ -29,15 +29,42 @@ function decodeBody(payload: { body?: { data?: string }; parts?: Array<{ body?: 
   return raw
 }
 
+type FullMsg = {
+  id: string
+  internalDate?: string
+  labelIds?: string[]
+  payload?: {
+    headers?: Array<{ name?: string; value?: string }>
+    body?: { data?: string }
+    parts?: Array<{ body?: { data?: string }; mimeType?: string }>
+  }
+}
+
 /**
  * POST /api/email/gmail/sync
- * 저장된 refresh_token으로 Gmail에서 최근 메일 조회 후 예약 가져오기 목록에 추가
+ * 전체 재동기화: body { fullSync: true } 또는 쿼리 ?full=1 → History 건너뛰고 after:날짜 검색으로 최근 메일 전부 처리
+ * 1) fullSync가 아니고 last_history_id가 있으면 History API로 그 이후 추가분만 조회
+ * 2) 그 외: after:(오늘-3일) 검색 → 수집한 메일 전부 internalDate 정렬 후 DB 비교·저장
  */
-export async function POST() {
+export async function POST(request: Request) {
+  let forceFullSync = false
+  try {
+    const url = new URL(request.url)
+    if (url.searchParams.get('full') === '1') forceFullSync = true
+  } catch {
+    /* ignore */
+  }
+  try {
+    const body = (await request.json().catch(() => ({}))) as { fullSync?: boolean }
+    if (body?.fullSync === true) forceFullSync = true
+  } catch {
+    /* ignore */
+  }
+
   const client = supabaseAdmin ?? (await import('@/lib/supabase')).supabase
   const { data: conn, error: connError } = await client
     .from('gmail_connections')
-    .select('email, refresh_token')
+    .select('id, email, refresh_token, last_history_id')
     .limit(1)
     .maybeSingle()
 
@@ -70,34 +97,14 @@ export async function POST() {
   }
 
   const accessToken = tokenData.access_token
-  // 최소 일주일치 메일을 볼 수 있도록 200건 조회 (기존 50 → 200)
-  const listRes = await fetch(
-    `${GMAIL_API_BASE}/messages?maxResults=200&labelIds=INBOX`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  )
-  const listData = (await listRes.json()) as { messages?: Array<{ id: string }>; error?: { message?: string } }
-  if (!listRes.ok || listData.error) {
-    return NextResponse.json(
-      { error: listData.error?.message || 'Gmail API list failed' },
-      { status: 502 }
-    )
-  }
-  const messages = listData.messages ?? []
+  const connId = (conn as { id?: string }).id
+  const connEmail = (conn as { email?: string }).email
+  const lastHistoryId = forceFullSync ? null : ((conn as { last_history_id?: string | null }).last_history_id ?? null)
 
-  let imported = 0
-  for (const msg of messages) {
-    const getRes = await fetch(`${GMAIL_API_BASE}/messages/${msg.id}?format=full`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
-    const full = (await getRes.json()) as {
-      id: string
-      internalDate?: string
-      payload?: {
-        headers?: Array<{ name?: string; value?: string }>
-        body?: { data?: string }
-        parts?: Array<{ body?: { data?: string }; mimeType?: string }> }
-    }
-    if (!getRes.ok || !full.payload) continue
+  const processOneMessage = async (full: FullMsg, skipInboxCheck = false): Promise<boolean> => {
+    if (!full.payload) return false
+    const labelIds = full.labelIds ?? []
+    if (!skipInboxCheck && labelIds.length > 0 && !labelIds.includes('INBOX')) return false
 
     const subject = getHeader(full.payload.headers ?? [], 'Subject') ?? ''
     const from = getHeader(full.payload.headers ?? [], 'From')
@@ -109,7 +116,7 @@ export async function POST() {
       .select('id')
       .eq('message_id', messageId)
       .maybeSingle()
-    if (existing) continue
+    if (existing) return false
 
     const { platform_key, extracted_data } = extractReservationFromEmail({
       subject,
@@ -118,10 +125,9 @@ export async function POST() {
       sourceEmail: from,
     })
 
-    // Gmail internalDate(epoch ms)를 실제 수신일시로 저장. 없으면 동기화 시각 사용
     let receivedAt: string
     if (full.internalDate) {
-      const ms = parseInt(full.internalDate, 10)
+      const ms = parseInt(String(full.internalDate), 10)
       if (!isNaN(ms)) receivedAt = new Date(ms).toISOString()
       else receivedAt = new Date().toISOString()
     } else {
@@ -139,8 +145,162 @@ export async function POST() {
       extracted_data: extracted_data as object,
       status: 'pending',
     })
-    if (!insertErr) imported++
+    return !insertErr
   }
 
-  return NextResponse.json({ imported, total: messages.length })
+  const updateHistoryId = async (historyId: string) => {
+    if (!connId && !connEmail) return
+    const q = client.from('gmail_connections').update({
+      last_history_id: historyId,
+      updated_at: new Date().toISOString(),
+    } as Record<string, unknown>)
+    if (connId) await q.eq('id', connId)
+    else if (connEmail) await q.eq('email', connEmail)
+  }
+
+  // 1) History API: last_history_id 이후 추가된 메일만 조회 (최신 메일만 확실히 포함)
+  if (lastHistoryId && lastHistoryId.trim() !== '') {
+    const addedIds: string[] = []
+    let newHistoryId: string | null = null
+    let historyPageToken: string | undefined
+
+    do {
+      const histUrl = new URL(`${GMAIL_API_BASE}/history`)
+      histUrl.searchParams.set('startHistoryId', lastHistoryId.trim())
+      histUrl.searchParams.set('historyTypes', 'messageAdded')
+      histUrl.searchParams.set('maxResults', '500')
+      if (historyPageToken) histUrl.searchParams.set('pageToken', historyPageToken)
+
+      const histRes = await fetch(histUrl.toString(), {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+
+      if (histRes.status === 404) {
+        const clearQ = client.from('gmail_connections').update({ last_history_id: null } as Record<string, unknown>)
+        if (connId) await clearQ.eq('id', connId)
+        else if (connEmail) await clearQ.eq('email', connEmail)
+        break
+      }
+
+      if (!histRes.ok) {
+        const errBody = await histRes.json().catch(() => ({}))
+        return NextResponse.json(
+          { error: (errBody as { error?: { message?: string } }).error?.message || 'Gmail history list failed' },
+          { status: 502 }
+        )
+      }
+
+      const histData = (await histRes.json()) as {
+        history?: Array<{
+          id?: string
+          messagesAdded?: Array<{ message?: { id?: string } }>
+        }>
+        nextPageToken?: string
+        historyId?: string
+      }
+      newHistoryId = histData.historyId ?? null
+      historyPageToken = histData.nextPageToken
+
+      for (const rec of histData.history ?? []) {
+        for (const add of rec.messagesAdded ?? []) {
+          const id = add.message?.id
+          if (id) addedIds.push(id)
+        }
+      }
+    } while (historyPageToken)
+
+    if (newHistoryId && addedIds.length > 0) {
+      let imported = 0
+      for (const id of addedIds) {
+        const getRes = await fetch(`${GMAIL_API_BASE}/messages/${id}?format=full`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        })
+        const full = (await getRes.json()) as FullMsg
+        if (getRes.ok && (await processOneMessage(full))) imported++
+      }
+      await updateHistoryId(newHistoryId)
+      return NextResponse.json({ imported, total: addedIds.length, mode: 'history' })
+    }
+
+    if (newHistoryId) {
+      await updateHistoryId(newHistoryId)
+      return NextResponse.json({ imported: 0, total: 0, mode: 'history' })
+    }
+  }
+
+  // 2) 전체 동기화: messages.list 순서를 믿지 않고, ID 300개 수집 → 본문 조회 → internalDate 기준 최신 100건만 처리
+  const profileRes = await fetch(`${GMAIL_API_BASE}/profile`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!profileRes.ok) {
+    return NextResponse.json(
+      { error: 'Gmail profile failed' },
+      { status: 502 }
+    )
+  }
+  const profile = (await profileRes.json()) as { historyId?: string }
+  const currentHistoryId = profile.historyId
+
+  // after:YYYY/MM/DD 로 최근 3일만 검색 (newer_than보다 확실). 해당 기간 메일 전부 수집 후 internalDate 정렬해 전부 처리.
+  const afterDate = new Date()
+  afterDate.setDate(afterDate.getDate() - 3)
+  const afterStr = `${afterDate.getFullYear()}/${String(afterDate.getMonth() + 1).padStart(2, '0')}/${String(afterDate.getDate()).padStart(2, '0')}`
+  const listIds: string[] = []
+  let listPageToken: string | undefined
+  do {
+    const listUrl = new URL(`${GMAIL_API_BASE}/messages`)
+    listUrl.searchParams.set('maxResults', '500')
+    listUrl.searchParams.set('labelIds', 'INBOX')
+    listUrl.searchParams.set('q', `after:${afterStr}`)
+    if (listPageToken) listUrl.searchParams.set('pageToken', listPageToken)
+    const listRes = await fetch(listUrl.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    const listData = (await listRes.json()) as {
+      messages?: Array<{ id: string }>
+      nextPageToken?: string
+      error?: { message?: string }
+    }
+    if (!listRes.ok || listData.error) {
+      return NextResponse.json(
+        { error: listData.error?.message || 'Gmail API list failed' },
+        { status: 502 }
+      )
+    }
+    const page = (listData.messages ?? []).map((m) => m.id)
+    for (const id of page) listIds.push(id)
+    listPageToken = listData.nextPageToken
+  } while (listPageToken)
+
+  if (listIds.length === 0) {
+    if (currentHistoryId) await updateHistoryId(currentHistoryId)
+    return NextResponse.json({ imported: 0, total: 0, mode: 'full' })
+  }
+
+  const fullList: FullMsg[] = []
+  for (const id of listIds) {
+    const getRes = await fetch(`${GMAIL_API_BASE}/messages/${id}?format=full`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    const full = (await getRes.json()) as FullMsg
+    if (getRes.ok && full.payload) fullList.push(full)
+  }
+  fullList.sort((a, b) => {
+    const ta = parseInt(String(a.internalDate ?? '0'), 10)
+    const tb = parseInt(String(b.internalDate ?? '0'), 10)
+    return tb - ta
+  })
+
+  let imported = 0
+  for (const full of fullList) {
+    if (await processOneMessage(full, true)) imported++
+  }
+  if (currentHistoryId) await updateHistoryId(currentHistoryId)
+
+  return NextResponse.json({
+    imported,
+    total: fullList.length,
+    mode: 'full',
+    queryUsed: `after:${afterStr}`,
+  })
 }

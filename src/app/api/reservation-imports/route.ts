@@ -186,27 +186,36 @@ export async function POST(request: NextRequest) {
 
 /**
  * GET /api/reservation-imports
- * 목록 (status, from_date, to_date 쿼리. from_date/to_date는 YYYY-MM-DD, 날짜별 페이지네이션용)
+ * 목록 (status, from_utc, to_utc 또는 from_date, to_date).
+ * from_utc/to_utc: 로컬 기준 날짜를 브라우저에서 UTC ISO로 변환해 보낸 값 (라스베가스 등 타임존 정확 반영).
+ * from_date/to_date: YYYY-MM-DD (UTC 자정 기준, 하위 호환).
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const status = searchParams.get('status') || 'pending'
-  const fromDate = searchParams.get('from_date') // YYYY-MM-DD
-  const toDate = searchParams.get('to_date')   // YYYY-MM-DD
+  const fromUtc = searchParams.get('from_utc')
+  const toUtc = searchParams.get('to_utc')
+  const fromDate = searchParams.get('from_date')
+  const toDate = searchParams.get('to_date')
 
   const client = supabaseAdmin ?? (await import('@/lib/supabase')).supabase
   let query = client
     .from('reservation_imports')
     .select('id, message_id, source_email, platform_key, subject, received_at, extracted_data, status, reservation_id, created_at')
     .eq('status', status)
-    .order('received_at', { ascending: false })
-    .limit(200)
+    .order('received_at', { ascending: false, nullsFirst: false })
+    .order('id', { ascending: false })
+    .limit(1000)
 
-  if (fromDate && /^\d{4}-\d{2}-\d{2}$/.test(fromDate)) {
-    query = query.gte('received_at', `${fromDate}T00:00:00.000Z`)
-  }
-  if (toDate && /^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
-    query = query.lte('received_at', `${toDate}T23:59:59.999Z`)
+  if (fromUtc && toUtc) {
+    query = query.gte('received_at', fromUtc).lte('received_at', toUtc)
+  } else {
+    if (fromDate && /^\d{4}-\d{2}-\d{2}$/.test(fromDate)) {
+      query = query.gte('received_at', `${fromDate}T00:00:00.000Z`)
+    }
+    if (toDate && /^\d{4}-\d{2}-\d{2}$/.test(toDate)) {
+      query = query.lte('received_at', `${toDate}T23:59:59.999Z`)
+    }
   }
 
   const { data: rows, error } = await query
