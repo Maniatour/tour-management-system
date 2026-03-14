@@ -12,6 +12,8 @@ export interface ExtractedReservationData {
   customer_name?: string
   customer_email?: string
   customer_phone?: string
+  /** 비상연락처 (Klook WhatsApp 등) */
+  emergency_contact?: string
   language?: string
   /** 예약 */
   product_name?: string
@@ -26,6 +28,8 @@ export interface ExtractedReservationData {
   channel_rn?: string
   pickup_hotel?: string
   amount?: string
+  /** Klook 등: 불포함 금액 (Not included / Amount not included). 예약 폼의 인원당 불포함 가격 매칭용 */
+  amount_excluded?: string
   note?: string
   special_requests?: string
   /** 플랫폼 식별용 (채널 매핑에 사용) */

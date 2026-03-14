@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { Mail, ChevronRight, Loader2, FileText, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
+import { Mail, ChevronRight, Loader2, FileText, CheckCircle, XCircle, RefreshCw, GripVertical, Inbox } from 'lucide-react'
 import { normalizeCustomerNameFromImport } from '@/utils/reservationUtils'
 import type { ExtractedReservationData } from '@/types/reservationImport'
 
@@ -16,6 +16,7 @@ interface ImportItem {
   extracted_data: ExtractedReservationData
   status: string
   reservation_id: string | null
+  reservation_exists_by_channel_rn?: boolean
   created_at: string | null
 }
 
@@ -48,6 +49,10 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const [items, setItems] = useState<ImportItem[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<string>('pending')
+  /** 탭: 'all' = 전체, 'booking' = 예약 접수 메일만 */
+  const [activeTab, setActiveTab] = useState<'all' | 'booking'>('all')
+  const [draggedId, setDraggedId] = useState<string | null>(null)
+  const [patchingId, setPatchingId] = useState<string | null>(null)
   // 날짜별 페이지: 표시 기간 끝날짜(7일 단위). 기본값 = 오늘
   const [dateEnd, setDateEnd] = useState<string>(() => todayLocal())
   const [pasteOpen, setPasteOpen] = useState(false)
@@ -82,6 +87,56 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
       .catch(() => setItems([]))
       .finally(() => setLoading(false))
   }, [statusFilter, dateStart, dateEnd])
+
+  /** 예약 접수 여부 (파서 자동 + 사용자 드래그 분류) */
+  const isBookingConfirmed = (row: ImportItem) => Boolean(row.extracted_data?.is_booking_confirmed === true)
+
+  const filteredItems = activeTab === 'booking'
+    ? items.filter((row) => isBookingConfirmed(row))
+    : items
+
+  const bookingCount = items.filter((row) => isBookingConfirmed(row)).length
+
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    setDraggedId(id)
+    e.dataTransfer.setData('text/plain', id)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleDragEnd = () => {
+    setDraggedId(null)
+  }
+
+  const handleTabDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }
+
+  const handleTabDrop = useCallback(
+    async (e: React.DragEvent, targetTab: 'all' | 'booking') => {
+      e.preventDefault()
+      const id = e.dataTransfer.getData('text/plain')
+      if (!id) return
+      const row = items.find((r) => r.id === id)
+      if (!row) return
+      const current = isBookingConfirmed(row)
+      const want = targetTab === 'booking'
+      if (current === want) return
+      setPatchingId(id)
+      try {
+        const res = await fetch(`/api/reservation-imports/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_booking_confirmed: want }),
+        })
+        if (res.ok) loadList()
+      } finally {
+        setPatchingId(null)
+      }
+      setDraggedId(null)
+    },
+    [items, loadList]
+  )
 
   const fetchGmailStatus = useCallback(() => {
     return fetch('/api/email/gmail/status')
@@ -335,6 +390,43 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
         플랫폼에서 수신된 이메일로 자동 추출된 예약 후보입니다. 항목을 클릭해 정보를 보완한 뒤 예약으로 생성하세요.
       </p>
 
+      {/* 탭: 전체 / 예약 접수 (드래그하여 분류) */}
+      <div className="flex gap-1 border-b border-gray-200">
+        <button
+          type="button"
+          onClick={() => setActiveTab('all')}
+          onDragOver={handleTabDragOver}
+          onDrop={(e) => handleTabDrop(e, 'all')}
+          className={`px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
+            activeTab === 'all'
+              ? 'border-blue-600 text-blue-600 bg-blue-50/50'
+              : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          }`}
+        >
+          전체
+          <span className="ml-1.5 text-gray-500 font-normal">({items.length})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('booking')}
+          onDragOver={handleTabDragOver}
+          onDrop={(e) => handleTabDrop(e, 'booking')}
+          title="항목을 이 탭에 드래그하면 예약 접수로 분류됩니다"
+          className={`px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 transition-colors flex items-center gap-1.5 ${
+            activeTab === 'booking'
+              ? 'border-blue-600 text-blue-600 bg-blue-50/50'
+              : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          }`}
+        >
+          <Inbox className="w-4 h-4" />
+          예약 접수
+          <span className="text-gray-500 font-normal">({bookingCount})</span>
+        </button>
+      </div>
+      <p className="text-xs text-gray-500 mt-1">
+        예약 접수 메일만 보려면 &quot;예약 접수&quot; 탭을 선택하세요. 목록에서 행을 드래그해 해당 탭에 놓으면 분류됩니다.
+      </p>
+
       <div className="flex items-center justify-between gap-4 py-3">
         <div className="flex items-center gap-2">
           <button
@@ -374,11 +466,17 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           <Mail className="w-12 h-12 mx-auto mb-3 text-gray-400" />
           <p>해당 상태의 예약 가져오기 항목이 없습니다.</p>
         </div>
+      ) : filteredItems.length === 0 ? (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center text-gray-600">
+          <Inbox className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+          <p>{activeTab === 'booking' ? '예약 접수로 분류된 메일이 없습니다. 목록에서 항목을 드래그해 이 탭에 놓아 보관하세요.' : '해당 기간 항목이 없습니다.'}</p>
+        </div>
       ) : (
         <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-2 py-2 w-8" aria-label="드래그" />
                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">수신일시</th>
                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">제목</th>
                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">플랫폼</th>
@@ -387,18 +485,38 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {items.map((row) => {
+              {filteredItems.map((row) => {
                 const isGyGBooking =
                   (row.source_email || '').toLowerCase().includes('getyourguide') &&
                   (row.subject || '').trimStart().toLowerCase().startsWith('booking -')
                 const isKlookOrderReceived = (row.subject || '').trimStart().toLowerCase().startsWith('klook order received -')
-                const isHighlight = isGyGBooking || isKlookOrderReceived || row.extracted_data?.is_booking_confirmed === true
+                const isChannelReservationEmail = isGyGBooking || isKlookOrderReceived || isBookingConfirmed(row)
+                const isRegistered =
+                  (row.status === 'confirmed' && !!row.reservation_id) || !!row.reservation_exists_by_channel_rn
+                const rowBg =
+                  !isChannelReservationEmail
+                    ? ''
+                    : isRegistered
+                      ? 'bg-amber-50/90 border-l-4 border-l-amber-500'
+                      : 'bg-red-50/90 border-l-4 border-l-red-500'
+                const isDragging = draggedId === row.id
+                const isPatching = patchingId === row.id
                 return (
                 <tr
                   key={row.id}
-                  className={`hover:bg-gray-50 cursor-pointer ${isHighlight ? 'bg-amber-50/80 border-l-4 border-l-amber-500' : ''}`}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, row.id)}
+                  onDragEnd={handleDragEnd}
+                  className={`hover:bg-gray-50 cursor-pointer ${rowBg} ${isDragging ? 'opacity-50' : ''} ${isPatching ? 'opacity-70' : ''}`}
                   onClick={() => router.push(`/${locale}/admin/reservation-imports/${row.id}`)}
                 >
+                  <td
+                    className="px-2 py-3 text-gray-400 cursor-grab active:cursor-grabbing"
+                    onClick={(e) => e.stopPropagation()}
+                    title="드래그하여 예약 접수 탭에 넣기"
+                  >
+                    <GripVertical className="w-4 h-4" />
+                  </td>
                   <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
                     {formatDate(row.received_at ?? row.created_at)}
                   </td>
@@ -410,7 +528,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                     {summary(row.extracted_data)}
                   </td>
                   <td className="px-4 py-3">
-                    <ChevronRight className="w-4 h-4 text-gray-400" />
+                    {isPatching ? <Loader2 className="w-4 h-4 animate-spin text-blue-500" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
                   </td>
                 </tr>
               );

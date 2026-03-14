@@ -660,6 +660,9 @@ export default function PricingSection({
     return undefined
   }, [expenseUpdateTrigger, fetchPaymentRecords])
 
+  // depositAmount → onlinePaymentAmount 효과에서 이미 적용한 값 (무한 루프 방지)
+  const lastDepositSyncRef = useRef<{ depositAmount: number; online: number; commissionBase: number; commissionAmt: number } | null>(null)
+
   // 잔액 자동 계산 (고객 총 결제금액 - 보증금 - 잔금 수령)
   // depositAmount, 고객 총 결제금액, 초이스 총액이 변경될 때 잔액을 자동으로 업데이트
   const prevBalanceDepsRef = useRef({
@@ -778,16 +781,24 @@ export default function PricingSection({
             const calculatedCommission = (commissionPercent > 0 && channelPaymentBase > 0)
               ? Math.round(channelPaymentBase * (commissionPercent / 100) * 100) / 100
               : (formData.commission_amount ?? 0)
-            setFormData((prev: typeof formData) => ({
-              ...prev,
-              depositAmount: totalCustomerPayment,
-              onlinePaymentAmount: discountedPrice,
-              commission_base_price: discountedPrice,
-              commission_percent: (prev.commission_percent != null && prev.commission_percent > 0) ? prev.commission_percent : commissionPercent,
-              commission_amount: isExistingPricingLoaded ? (prev.commission_amount ?? 0) : calculatedCommission,
-              onSiteBalanceAmount: 0,
-              balanceAmount: 0
-            }))
+            const commissionToSet = isExistingPricingLoaded ? (formData.commission_amount ?? 0) : calculatedCommission
+            // 무한 루프 방지: 설정할 값이 이미 현재와 같으면 setFormData 호출하지 않음
+            const same =
+              Math.abs((formData.depositAmount ?? 0) - totalCustomerPayment) < 0.01 &&
+              Math.abs((formData.onlinePaymentAmount ?? 0) - discountedPrice) < 0.01 &&
+              Math.abs((formData.commission_amount ?? 0) - commissionToSet) < 0.01
+            if (!same) {
+              setFormData((prev: typeof formData) => ({
+                ...prev,
+                depositAmount: totalCustomerPayment,
+                onlinePaymentAmount: discountedPrice,
+                commission_base_price: discountedPrice,
+                commission_percent: (prev.commission_percent != null && prev.commission_percent > 0) ? prev.commission_percent : commissionPercent,
+                commission_amount: isExistingPricingLoaded ? (prev.commission_amount ?? 0) : calculatedCommission,
+                onSiteBalanceAmount: 0,
+                balanceAmount: 0
+              }))
+            }
           }
         } else {
           // 일반 채널: 입금 내역이 있는 경우에는 업데이트하지 않음
@@ -803,12 +814,17 @@ export default function PricingSection({
             const calculatedBalance = Math.max(0, totalCustomerPayment - totalPaid)
             const existingBalance = formData.onSiteBalanceAmount ?? 0
             const balanceToUse = (calculatedBalance === 0 && existingBalance > 0) ? existingBalance : calculatedBalance
-            setFormData((prev: typeof formData) => ({
-              ...prev,
-              depositAmount: discountedPrice,
-              onSiteBalanceAmount: balanceToUse,
-              balanceAmount: balanceToUse
-            }))
+            // 무한 루프 방지: 설정할 값이 이미 현재와 같으면 setFormData 호출하지 않음
+            const sameDeposit = Math.abs((formData.depositAmount ?? 0) - discountedPrice) < 0.01
+            const sameBalance = Math.abs((formData.onSiteBalanceAmount ?? 0) - balanceToUse) < 0.01
+            if (!sameDeposit || !sameBalance) {
+              setFormData((prev: typeof formData) => ({
+                ...prev,
+                depositAmount: discountedPrice,
+                onSiteBalanceAmount: balanceToUse,
+                balanceAmount: balanceToUse
+              }))
+            }
           }
         }
       }
@@ -1359,44 +1375,45 @@ export default function PricingSection({
 
   // depositAmount 변경 시 채널 결제 금액 자동 업데이트 (입력 중이 아닐 때만)
   useEffect(() => {
-    // 사용자가 채널 결제 금액을 입력 중이면 자동 업데이트하지 않음
-    if (isChannelPaymentAmountFocused) {
-      return
-    }
-    
-    // depositAmount가 변경되고, onlinePaymentAmount가 없거나 0이거나 depositAmount와 다를 때 업데이트
-    if (formData.depositAmount > 0) {
-      const currentOnlinePaymentAmount = formData.onlinePaymentAmount || 0
-      // depositAmount와 onlinePaymentAmount가 다르면 업데이트 (사용자가 수동으로 변경한 경우를 제외하기 위해 0.01 이상 차이날 때만)
-      if (Math.abs(currentOnlinePaymentAmount - formData.depositAmount) > 0.01) {
-        setFormData((prev: typeof formData) => {
-          const updated: any = {
-            ...prev,
-            onlinePaymentAmount: formData.depositAmount
-          }
-          
-          // OTA 채널인 경우 commission_base_price도 업데이트
-          if (isOTAChannel) {
-            updated.commission_base_price = formData.depositAmount
-            // reservation_pricing에 데이터가 있으면 채널 수수료 재계산하지 않음
-            if (!isExistingPricingLoaded) {
-              const currentCommissionAmount = prev.commission_amount || 0
-              if (currentCommissionAmount === 0) {
-                const commissionPercent = prev.commission_percent || channelCommissionPercent || 0
-                const adjustedBasePrice = Math.max(0, formData.depositAmount - returnedAmount)
-                const calculatedCommission = adjustedBasePrice * (commissionPercent / 100)
-                updated.commission_amount = calculatedCommission
-              }
-            }
-          }
-          
-          return updated
-        })
+    if (isChannelPaymentAmountFocused || formData.depositAmount <= 0) return
+    const deposit = formData.depositAmount
+    const currentOnlinePaymentAmount = formData.onlinePaymentAmount || 0
+    if (Math.abs(currentOnlinePaymentAmount - deposit) <= 0.01) return
+
+    const nextOnline = deposit
+    let nextCommissionBase = formData.commission_base_price ?? 0
+    let nextCommissionAmount = formData.commission_amount ?? 0
+    if (isOTAChannel) {
+      nextCommissionBase = deposit
+      if (!isExistingPricingLoaded) {
+        const currentCommissionAmount = formData.commission_amount || 0
+        if (currentCommissionAmount === 0) {
+          const commissionPercent = formData.commission_percent || channelCommissionPercent || 0
+          nextCommissionAmount = Math.max(0, deposit - returnedAmount) * (commissionPercent / 100)
+        }
       }
     }
+    const last = lastDepositSyncRef.current
+    if (last && Math.abs(last.depositAmount - deposit) < 0.01 &&
+        Math.abs(last.online - nextOnline) < 0.01 &&
+        Math.abs(last.commissionBase - nextCommissionBase) < 0.01 &&
+        Math.abs(last.commissionAmt - nextCommissionAmount) < 0.01) return
+    lastDepositSyncRef.current = { depositAmount: deposit, online: nextOnline, commissionBase: nextCommissionBase, commissionAmt: nextCommissionAmount }
+
+    setFormData((prev: typeof formData) => ({
+      ...prev,
+      onlinePaymentAmount: nextOnline,
+      ...(isOTAChannel && {
+        commission_base_price: nextCommissionBase,
+        commission_amount: nextCommissionAmount
+      })
+    }))
   }, [
     formData.depositAmount,
     formData.onlinePaymentAmount,
+    formData.commission_base_price,
+    formData.commission_amount,
+    formData.commission_percent,
     isOTAChannel,
     channelCommissionPercent,
     returnedAmount,

@@ -79,10 +79,13 @@ export default function ReservationImportDetailPage() {
     if (!res.ok) throw new Error(data?.error || 'Failed to load')
     const ext = (data.extracted_data || {}) as ExtractedReservationData
     const hasBody = !!(data.raw_body_text || data.raw_body_html)
+    const bodyHasWhatsApp = hasBody && /WhatsApp\s*:\s*[^\n]+/i.test(data.raw_body_text || data.raw_body_html || '')
     const looksIncomplete =
       hasBody &&
-      ((data.platform_key === 'getyourguide' && (!ext.customer_name || ext.adults == null)) ||
-        (data.platform_key === 'klook' && (!ext.customer_name && !ext.customer_email && !ext.adults)))
+      (((data.platform_key === 'getyourguide' && (!ext.customer_name || ext.adults == null)) ||
+        (data.platform_key === 'klook' && (!ext.customer_name && !ext.customer_email && !ext.adults)) ||
+        (data.platform_key === 'viator' && (!ext.customer_name || !ext.pickup_hotel))) ||
+        (bodyHasWhatsApp && !ext.emergency_contact))
     if (looksIncomplete) {
       const reparseRes = await fetch(`/api/reservation-imports/${id}/reparse`, { method: 'POST' })
       if (reparseRes.ok) {
@@ -96,6 +99,7 @@ export default function ReservationImportDetailPage() {
       extFinal.note,
       extFinal.special_requests,
       extFinal.amount ? `금액: ${extFinal.amount}` : '',
+      extFinal.amount_excluded ? `불포함: ${extFinal.amount_excluded}` : '',
       extFinal.language ? `언어: ${extFinal.language}` : '',
       extFinal.product_choices ? `옵션: ${extFinal.product_choices}` : '',
       extFinal.product_name ? `상품(이메일): ${extFinal.product_name}` : '',
@@ -130,14 +134,18 @@ export default function ReservationImportDetailPage() {
     if (channel) setForm((f) => ({ ...f, channel_id: channel.id }))
   }, [row?.platform_key, channelsSafe, form.channel_id])
 
-  // 이메일에서 추출한 픽업 호텔 문자열을 pickup_hotels 목록과 매칭해 드롭다운 id로 치환
+  // 픽업 호텔 매칭 실패 시 사용할 기본 id
+  const DEFAULT_PICKUP_HOTEL_ID = '518e504f-04d4-420a-bf45-f23210e38039'
+
+  // 이메일에서 추출한 픽업 호텔 문자열을 pickup_hotels 목록과 매칭해 드롭다운 id로 치환 (매칭 실패 시 기본 id 사용)
   useEffect(() => {
     const raw = form.pickup_hotel
     if (!raw || !pickupHotelsList?.length) return
     const isAlreadyId = pickupHotelsList.some((h: PickupHotel) => h.id === raw)
     if (isAlreadyId) return
     const matchedId = matchPickupHotelId(raw, pickupHotelsList as Array<{ id: string; hotel?: string | null; pick_up_location?: string | null; address?: string | null }>)
-    if (matchedId) setForm((f) => ({ ...f, pickup_hotel: matchedId }))
+    const idToSet = matchedId ?? (pickupHotelsList.some((h: PickupHotel) => h.id === DEFAULT_PICKUP_HOTEL_ID) ? DEFAULT_PICKUP_HOTEL_ID : null)
+    if (idToSet) setForm((f) => ({ ...f, pickup_hotel: idToSet }))
   }, [form.pickup_hotel, pickupHotelsList])
 
   const ext = row ? ((row as ImportRow).extracted_data || {}) as ExtractedReservationData : null
@@ -354,7 +362,7 @@ export default function ReservationImportDetailPage() {
                   </div>
                 </div>
               )}
-              {(ext?.customer_name || ext?.customer_email || ext?.customer_phone || ext?.language) && (
+              {(ext?.customer_name || ext?.customer_email || ext?.customer_phone || ext?.emergency_contact || ext?.language) && (
                 <>
                   {ext.customer_name && (
                     <div className="flex items-start gap-3">
@@ -377,6 +385,12 @@ export default function ReservationImportDetailPage() {
                     <div className="flex items-start gap-3 pl-7">
                       <Phone className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-1" aria-hidden />
                       <dd className="text-sm text-gray-700">Phone: {ext.customer_phone}</dd>
+                    </div>
+                  )}
+                  {ext.emergency_contact && (
+                    <div className="flex items-start gap-3 pl-7">
+                      <Phone className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-1" aria-hidden />
+                      <dd className="text-sm text-gray-700">WhatsApp (비상): {ext.emergency_contact}</dd>
                     </div>
                   )}
                   {ext.language && (
@@ -404,12 +418,17 @@ export default function ReservationImportDetailPage() {
                   </div>
                 </div>
               )}
-              {ext?.amount && (
+              {(ext?.amount || ext?.amount_excluded) && (
                 <div className="flex items-start gap-3">
                   <DollarSign className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" aria-hidden />
                   <div className="min-w-0 flex-1">
                     <dt className="text-xs font-medium text-gray-500">Price</dt>
-                    <dd className="text-sm font-semibold text-gray-900 mt-0.5">{ext.amount}</dd>
+                    <dd className="text-sm font-semibold text-gray-900 mt-0.5">
+                      {ext.amount ?? '–'}
+                      {ext.amount_excluded && (
+                        <span className="block text-xs font-normal text-gray-500 mt-0.5">불포함: {ext.amount_excluded}</span>
+                      )}
+                    </dd>
                   </div>
                 </div>
               )}
@@ -540,12 +559,12 @@ export default function ReservationImportDetailPage() {
           customer_name: (ext?.customer_name ?? form.customer_name) || undefined,
           customer_email: (ext?.customer_email ?? form.customer_email) || undefined,
           customer_phone: (ext?.customer_phone ?? form.customer_phone) || undefined,
+          emergency_contact: ext?.emergency_contact || undefined,
           customer_language: ext?.language || undefined,
         }}
         initialShowNewCustomerForm={Boolean(normalizeCustomerNameFromImport(ext?.customer_name) || ext?.customer_name)}
         initialChoiceOptionNamesFromImport={ext?.import_choice_option_names}
         initialChoiceUndecidedGroupNamesFromImport={ext?.import_choice_undecided_groups}
-        initialAmountFromImport={ext?.amount}
       />
     </div>
   )

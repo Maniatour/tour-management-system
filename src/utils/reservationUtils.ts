@@ -16,25 +16,32 @@ export const getPickupHotelDisplay = (hotelId: string, pickupHotels: Array<{ id:
   return hotel ? `${hotel.hotel ?? ''} - ${hotel.pick_up_location ?? ''}` : hotelId
 }
 
-/** 이메일 등에서 추출한 픽업 주소/호텔명 문자열을 pickup_hotels 목록과 매칭해 id 반환 (없으면 null) */
+/** 이메일 등에서 추출한 픽업 주소/호텔명 문자열을 pickup_hotels 목록과 매칭해 id 반환 (없으면 null). 단어 단위 퍼지 매칭은 하지 않음(다른 호텔 오선택 방지). */
 export function matchPickupHotelId(
   extractedText: string | null | undefined,
   pickupHotels: Array<{ id: string; hotel?: string | null; pick_up_location?: string | null; address?: string | null }> | null
 ): string | null {
   if (!extractedText?.trim() || !pickupHotels?.length) return null
-  const query = extractedText.trim().toLowerCase()
-  // 호텔명으로 시작하는 경우(예: "Harrah's Las Vegas Hotel & Casino, 3475 S...") → 앞부분으로 매칭
-  const hotelNamePart = query.split(',')[0].trim()
-  const addressPart = query.includes(',') ? query.replace(/^[^,]+,?\s*/, '').trim() : ''
+  let query = extractedText.trim()
+  if (/\bTrump\s+(?:International\s+)?Hotel\s+(?:Las\s+Vegas)?/i.test(query)) query = 'Trump hotel'
+  const q = query.toLowerCase()
+  const hotelNamePart = q.split(',')[0].trim()
+  const addressPart = q.includes(',') ? q.replace(/^[^,]+,?\s*/, '').trim() : ''
   for (const h of pickupHotels) {
     const hotel = (h.hotel ?? '').toLowerCase()
     const location = (h.pick_up_location ?? '').toLowerCase()
     const address = (h.address ?? '').toLowerCase()
     if (!hotel && !location && !address) continue
     if (hotel && hotelNamePart && (hotel.includes(hotelNamePart) || hotelNamePart.includes(hotel))) return h.id
-    if (hotel && query.includes(hotel)) return h.id
-    if (address && (address.includes(addressPart) || addressPart.includes(address) || query.includes(address))) return h.id
+    if (hotel && q.includes(hotel)) return h.id
+    if (address && (address.includes(addressPart) || addressPart.includes(address) || q.includes(address))) return h.id
     if (location && (location.includes(hotelNamePart) || hotelNamePart.includes(location))) return h.id
+  }
+  if (q.includes('trump')) {
+    const byTrump = pickupHotels.find(
+      h => (h.hotel ?? '').toLowerCase().includes('trump') || (h.pick_up_location ?? '').toLowerCase().includes('trump')
+    )
+    if (byTrump) return byTrump.id
   }
   return null
 }

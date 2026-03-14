@@ -209,10 +209,40 @@ export async function GET(request: NextRequest) {
     query = query.lte('received_at', `${toDate}T23:59:59.999Z`)
   }
 
-  const { data, error } = await query
+  const { data: rows, error } = await query
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
-  return NextResponse.json({ data: data ?? [] })
+  const list = rows ?? []
+
+  const channelRns = list
+    .map((r: { extracted_data?: { channel_rn?: string } }) => r.extracted_data?.channel_rn)
+    .filter((rn: string | undefined): rn is string => typeof rn === 'string' && rn.trim().length > 0)
+  const uniqueChannelRns = [...new Set(channelRns)]
+
+  let existingChannelRns = new Set<string>()
+  if (uniqueChannelRns.length > 0) {
+    const { data: resRows } = await client
+      .from('reservations')
+      .select('channel_rn')
+      .in('channel_rn', uniqueChannelRns)
+      .not('channel_rn', 'is', null)
+    if (resRows?.length) {
+      resRows.forEach((r: { channel_rn?: string | null }) => {
+        if (r.channel_rn) existingChannelRns.add(r.channel_rn.trim())
+      })
+    }
+  }
+
+  const data = list.map((r: { extracted_data?: { channel_rn?: string }; reservation_id?: string | null }) => {
+    const channelRn = r.extracted_data?.channel_rn?.trim()
+    const existsByChannelRn = !!channelRn && existingChannelRns.has(channelRn)
+    return {
+      ...r,
+      reservation_exists_by_channel_rn: existsByChannelRn,
+    }
+  })
+
+  return NextResponse.json({ data })
 }

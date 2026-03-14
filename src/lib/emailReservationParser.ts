@@ -40,6 +40,27 @@ function detectPlatform(sourceEmail: string | null, subject: string): string | n
   return null
 }
 
+/** 전화번호에서 국가 번호(국가 코드)를 추출해 언어 코드로 매핑. 매칭 실패 시 null (KR, EN, ES, JA, ZH, FR, DE, IT, PT, RU) */
+function languageFromPhoneCountry(phone: string): string | null {
+  let s = phone.trim()
+  if (s.startsWith('+')) s = s.slice(1)
+  else if (s.startsWith('00')) s = s.slice(2)
+  const digits = s.replace(/\D/g, '')
+  if (digits.length < 1) return null
+  // 긴 국가 코드 우선 매칭 (3자리 → 2자리 → 1자리)
+  const COUNTRY_TO_LANG: Array<{ code: string; lang: string }> = [
+    { code: '852', lang: 'ZH' }, { code: '853', lang: 'ZH' }, { code: '886', lang: 'ZH' }, { code: '351', lang: 'PT' },
+    { code: '82', lang: 'KR' }, { code: '81', lang: 'JA' }, { code: '86', lang: 'ZH' },
+    { code: '55', lang: 'PT' }, { code: '44', lang: 'EN' }, { code: '61', lang: 'EN' }, { code: '91', lang: 'EN' },
+    { code: '34', lang: 'ES' }, { code: '52', lang: 'ES' }, { code: '33', lang: 'FR' }, { code: '49', lang: 'DE' }, { code: '39', lang: 'IT' },
+    { code: '7', lang: 'RU' }, { code: '1', lang: 'EN' },
+  ]
+  for (const { code, lang } of COUNTRY_TO_LANG) {
+    if (digits === code || digits.startsWith(code)) return lang
+  }
+  return null
+}
+
 /** 이메일에서 나온 언어명/문구를 고객 언어 드롭다운 코드로 매핑 (KR, EN, ES, JA, ZH, FR, DE, IT, PT, RU) */
 function normalizeLanguageToCode(raw: string): string {
   const s = raw.trim().toLowerCase()
@@ -159,11 +180,15 @@ function extractCommonPatterns(text: string): Partial<ExtractedReservationData> 
   }
 
   // 시간 (HH:MM, HH:MM AM/PM) — 위에서 tour_time 안 나왔을 때만; AM/PM이 있으면 24h로 변환
+  // Klook 등 "Your confirmation deadline is before 2026-03-13 09:30 (local time)" 문장의 시간은 투어 시간이 아니므로 제외
   if (out.tour_time == null) {
-    const timeMatch = text.match(/\b(0?[1-9]|1[0-2]):([0-5][0-9])\s*(AM|PM)?\b/i) ||
-      text.match(/\b([01]?[0-9]|2[0-3]):[0-5][0-9]\b/)
-    if (timeMatch) {
+    const timeRegex = /\b(0?[1-9]|1[0-2]):([0-5][0-9])\s*(AM|PM)?\b|\b([01]?[0-9]|2[0-3]):[0-5][0-9]\b/gi
+    let timeMatch: RegExpExecArray | null
+    while ((timeMatch = timeRegex.exec(text)) !== null) {
       const raw = timeMatch[0].trim()
+      const contextStart = Math.max(0, timeMatch.index - 80)
+      const context = text.slice(contextStart, timeMatch.index + 50)
+      if (/confirmation\s+deadline\s+is\s+before/i.test(context)) continue
       const amPm = raw.match(/(AM|PM)/i)?.[1]
       if (amPm) {
         const hour = parseInt(timeMatch[1], 10)
@@ -174,8 +199,12 @@ function extractCommonPatterns(text: string): Partial<ExtractedReservationData> 
         if (!isPm && hour === 12) h24 = 0
         out.tour_time = `${String(h24).padStart(2, '0')}:${min}`
       } else {
-        out.tour_time = raw
+        const hour = parseInt(timeMatch[1] ?? timeMatch[4], 10)
+        const min = timeMatch[2] ?? timeMatch[5]
+        if (!isNaN(hour) && min !== undefined) out.tour_time = `${String(hour).padStart(2, '0')}:${min}`
+        else out.tour_time = raw
       }
+      break
     }
   }
 
@@ -380,7 +409,32 @@ const KLOOK_LABEL_PATTERNS = [
   'Email',
   'Email address',
   'WhatsApp',
+  'Activity URL',
+  'Total amount',
+  'Total price',
+  'Price',
+  'Amount',
+  'Amount not included',
+  'Not included',
+  'Excluded amount',
+  'Excluded',
+  'Excluded price',
+  'Price not included',
+  'Pay on site',
+  'To be paid on site',
+  'Amount to pay on site',
 ]
+
+/** Klook Activity URL의 activity ID → 우리 투어명 매핑 (예약 가져오기 시 상품 매칭용) */
+const KLOOK_ACTIVITY_ID_TO_TOUR_NAME: Record<string, string> = {
+  '78944': '밤도깨비 그랜드캐년 일출 투어',
+}
+
+/** Activity URL에서 activity ID 추출 (예: https://www.klook.com/en-US/activity/78944 → 78944) */
+function parseKlookActivityIdFromUrl(url: string): string | null {
+  const m = url.trim().match(/\/activity\/([0-9]+)(?:\/|$|\?)/i) || url.trim().match(/activity\/([0-9]+)(?:\/|$|\?)/i)
+  return m ? m[1] : null
+}
 
 /** toPlainText가 줄바꿈을 공백으로 묶어 한 줄이 된 경우, 알려진 Klook 레이블 앞에 줄바꿈을 넣어 세그먼트 분리 */
 function ensureKlookLabelLineBreaks(text: string): string {
@@ -477,6 +531,14 @@ function getKlook(map: Map<string, string>, ...searchKeys: string[]): string | u
     }
   }
   return undefined
+}
+
+/** 이메일에서 추출한 픽업/출발지 문자열을 픽업 호텔 드롭다운 매칭용으로 정규화 */
+function normalizePickupHotelFromEmail(raw: string): string {
+  const t = raw.trim()
+  if (!t) return raw
+  if (/\bTrump\s+(?:International\s+)?Hotel\s+(?:Las\s+Vegas)?/i.test(t)) return 'Trump hotel'
+  return t
 }
 
 /**
@@ -586,6 +648,14 @@ function extractKlook(
       if (!isNaN(n)) { out.adults = n; out.total_people = n }
     }
   }
+  // Klook: 전화번호 국가 코드로 언어 우선 추정, 없을 때만 Preferred language 사용
+  if (!out.language) {
+    const phoneRaw = v('phone number') ?? v('contact number') ?? v('phone')
+    if (phoneRaw?.trim()) {
+      const langFromPhone = languageFromPhoneCountry(phoneRaw.trim())
+      if (langFromPhone) out.language = langFromPhone
+    }
+  }
   if (!out.language) {
     const lang = v('preferred language') ?? v('language')
     if (lang) out.language = normalizeLanguageToCode(lang.trim())
@@ -600,7 +670,7 @@ function extractKlook(
       v('please insert your pickup location') ??
       v('pickup location') ??
       v('pickup')
-    if (dep?.trim()) out.pickup_hotel = dep.trim()
+    if (dep?.trim()) out.pickup_hotel = normalizePickupHotelFromEmail(dep.trim())
   }
   if (!out.customer_phone) {
     const phone = v('phone number') ?? v('contact number') ?? v('phone')
@@ -609,6 +679,39 @@ function extractKlook(
   if (!out.customer_email) {
     const email = v('email') ?? v('email address')
     if (email && /@/.test(email)) out.customer_email = email.trim()
+  }
+
+  // Klook 가격: 총액(amount) + 불포함 금액(amount_excluded). 레이블 값에서 $ 또는 숫자만 추출해 정규화
+  const normalizePrice = (raw: string): string | null => {
+    const s = raw.replace(/,/g, '').trim()
+    const num = s.replace(/^[^\d.-]*/, '').replace(/[^\d.]/g, '')
+    const n = parseFloat(num)
+    if (!Number.isFinite(n) || n < 0) return null
+    return `$${n}`
+  }
+  if (!out.amount) {
+    const amountRaw = v('total amount') ?? v('total price') ?? v('price') ?? v('amount')
+    if (amountRaw?.trim()) {
+      const normalized = normalizePrice(amountRaw.trim())
+      if (normalized) out.amount = normalized
+    }
+  }
+  if (!out.amount_excluded) {
+    const excludedRaw =
+      v('amount not included') ??
+      v('not included') ??
+      v('excluded amount') ??
+      v('amount (excluded)') ??
+      v('excluded') ??
+      v('excluded price') ??
+      v('price not included') ??
+      v('pay on site') ??
+      v('to be paid on site') ??
+      v('amount to pay on site')
+    if (excludedRaw?.trim()) {
+      const normalized = normalizePrice(excludedRaw.trim())
+      if (normalized) out.amount_excluded = normalized
+    }
   }
 
   // 기존 정규식으로 한 번 더 채우기 (라인/한 줄 모두). 레이블 다음 줄에 값만 있는 경우도 처리
@@ -686,7 +789,11 @@ function extractKlook(
     }
   }
 
-  // Preferred language
+  // Preferred language (전화번호 국가로 언어를 못 정했을 때만)
+  if (!out.language && out.customer_phone?.trim()) {
+    const langFromPhone = languageFromPhoneCountry(out.customer_phone.trim())
+    if (langFromPhone) out.language = langFromPhone
+  }
   if (!out.language) {
     const langMatch = normalizedText.match(/Preferred\s*language\s*:\s*([^\n]+?)(?:\n|Special|$)/im)
     if (langMatch) out.language = normalizeLanguageToCode(langMatch[1].trim())
@@ -698,14 +805,14 @@ function extractKlook(
     if (specialMatch && specialMatch[1].trim()) out.special_requests = specialMatch[1].trim()
   }
 
-  // Departure location / Pickup location
+  // Departure location / Pickup location (정규식으로 잡은 값도 매칭용으로 정규화)
   if (!out.pickup_hotel) {
     const departureMatch = normalizedText.match(/Departure\s*location\s*:\s*([^\n]+?)(?:\n|Please|Phone|Email|$)/im)
-    if (departureMatch) out.pickup_hotel = departureMatch[1].trim()
+    if (departureMatch) out.pickup_hotel = normalizePickupHotelFromEmail(departureMatch[1].trim())
   }
   if (!out.pickup_hotel) {
     const insertMatch = normalizedText.match(/Please\s*insert\s*your\s*pickup\s*location\s*:\s*([^\n]+?)(?:\n|Please\s*confirm|Phone|Email|$)/im)
-    if (insertMatch) out.pickup_hotel = insertMatch[1].trim()
+    if (insertMatch) out.pickup_hotel = normalizePickupHotelFromEmail(insertMatch[1].trim())
   }
 
   // Phone number
@@ -720,14 +827,143 @@ function extractKlook(
     if (emailMatch) out.customer_email = emailMatch[1].trim()
   }
 
-  // Activity URL → note에 포함 (상품 매칭 참고용)
-  const activityUrlMatch = normalizedText.match(/Activity\s*URL\s*:\s*([^\s\n]+)/i)
+  // 불포함 금액 — 레이블로 못 잡았을 때 정규식으로: 레이블:값 / 레이블 뒤 금액 / 금액 뒤 (excluded)
+  if (!out.amount_excluded) {
+    const excludedMatch =
+      normalizedText.match(/(?:amount\s+not\s+included|not\s+included|excluded\s*amount|excluded\s*price)\s*:\s*\$?\s*([\d,]+\.?\d*)/im) ??
+      normalizedText.match(/(?:불포함\s*금액?|불포함)\s*:\s*\$?\s*([\d,]+\.?\d*)/im) ??
+      normalizedText.match(/(?:pay\s+on\s+site|to\s+be\s+paid\s+on\s+site)\s*:\s*\$?\s*([\d,]+\.?\d*)/im) ??
+      // 레이블과 값 사이에 공백/줄바꿈만: "Excluded" 다음에 오는 $95 또는 95
+      normalizedText.match(/(?:excluded|not\s+included)[\s:\-]*\$?\s*([\d,]+\.?\d*)/im) ??
+      // 금액이 먼저 오는 경우: "$95 (excluded)" / "95 USD excluded"
+      normalizedText.match(/\$?\s*([\d,]+\.?\d*)\s*(?:USD)?\s*[\(\s]*(?:excluded|not\s+included)/im)
+    if (excludedMatch) {
+      const num = excludedMatch[1].replace(/,/g, '')
+      const n = parseFloat(num)
+      if (Number.isFinite(n) && n >= 0) out.amount_excluded = `$${n}`
+    }
+  }
+  // 마지막 시도: "excluded"/"not included"가 포함된 줄에서만 금액 추출 (여러 금액 중 해당 줄 것만)
+  if (!out.amount_excluded) {
+    const lines = normalizedText.split(/\n+/)
+    for (const line of lines) {
+      if (!/(?:excluded|not\s+included|불포함)/i.test(line)) continue
+      const amountOnLine = line.match(/\$?\s*([\d,]+\.?\d*)\s*(?:USD)?/g)
+      if (amountOnLine && amountOnLine.length >= 1) {
+        const lastAmount = amountOnLine[amountOnLine.length - 1].replace(/[$,USD\s]/gi, '')
+        const n = parseFloat(lastAmount)
+        if (Number.isFinite(n) && n >= 0) {
+          out.amount_excluded = `$${n}`
+          break
+        }
+      }
+    }
+  }
+
+  // Activity URL → activity ID 추출 후 정규화: 매핑 테이블에 있으면 product_name 설정 (상품 매칭용)
+  const activityUrlRaw =
+    v('activity url')?.trim() ??
+    normalizedText.match(/Activity\s*URL\s*:\s*([^\s\n]+)/i)?.[1]?.trim()
+  if (activityUrlRaw) {
+    const activityId = parseKlookActivityIdFromUrl(activityUrlRaw)
+    if (activityId && KLOOK_ACTIVITY_ID_TO_TOUR_NAME[activityId]) {
+      out.product_name = KLOOK_ACTIVITY_ID_TO_TOUR_NAME[activityId]
+    }
+  }
+
+  // WhatsApp → emergency_contact (비상연락처). 값만 정규화 (예: "+818050339362")
+  const whatsappFromLabel = v('whatsapp')?.trim()
+  const whatsappMatch = normalizedText.match(/WhatsApp\s*:\s*([+\d\s\-()]+|\S+)/im)
+  const whatsappRaw = whatsappFromLabel ?? whatsappMatch?.[1]?.trim()
+  if (whatsappRaw) {
+    // 전화번호 형태만 남기기 (+, 숫자, 공백, 하이픈, 괄호)
+    out.emergency_contact = whatsappRaw.replace(/\s+/g, ' ').trim()
+  }
+
   const noteParts: string[] = []
   if (out.special_requests) noteParts.push(`요청: ${out.special_requests}`)
-  if (activityUrlMatch) noteParts.push(`Klook Activity: ${activityUrlMatch[1].trim()}`)
-  const whatsappMatch = normalizedText.match(/WhatsApp\s*:\s*([^\n]+?)(?:\n|$)/im)
-  if (whatsappMatch && whatsappMatch[1].trim()) noteParts.push(`비상연락처(WhatsApp): ${whatsappMatch[1].trim()}`)
+  if (activityUrlRaw) noteParts.push(`Klook Activity: ${activityUrlRaw}`)
+  if (out.emergency_contact) noteParts.push(`비상연락처(WhatsApp): ${out.emergency_contact}`)
+  if (out.amount_excluded) noteParts.push(`불포함: ${out.amount_excluded}`)
   if (noteParts.length) out.note = noteParts.join(' · ')
+
+  // Klook 채널: 미국 거주자 구분·기타 입장료는 항상 미정 기본 선택 (상품-초이스)
+  out.import_choice_undecided_groups = ['미국 거주자 구분', '기타 입장료']
+
+  // 밤도깨비 그랜드캐년 일출 투어는 투어 시간을 00:00(자정)으로 고정
+  if (out.product_name === '밤도깨비 그랜드캐년 일출 투어') {
+    out.tour_time = '00:00'
+  }
+
+  return out
+}
+
+/** Viator 이메일 본문에서 레이블: 값 형식 추출 (Lead Traveler Name, Phone, Tour Language, Tour Name, Tour Option, Hotel Pickup 등) */
+function extractViator(
+  text: string,
+  _subject: string,
+  _sourceEmail: string | null
+): Partial<ExtractedReservationData> {
+  const out: Partial<ExtractedReservationData> = {}
+  if (!text || text.length < 10) return out
+
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+
+  // Lead Traveler Name: Rogelio Guerra → 고객 이름
+  const leadTraveler = normalized.match(/(?:Lead\s*Traveler\s*Name|Traveler\s*Name)\s*:?\s*([A-Za-z\u00C0-\u024F\s'-]+?)(?=\s*(?:Phone|Email|Tour\s*Language|\n\n|$))/im)
+  if (leadTraveler) out.customer_name = leadTraveler[1].trim()
+
+  // Phone: (Alternate Phone)US+1 6507200644 → +1 6507200644
+  const phoneMatch = normalized.match(/(?:Phone|Alternate\s*Phone)\s*:?\s*\([^)]*\)\s*([A-Z]*\+?\d[\d\s.-]+)/im)
+    ?? normalized.match(/(?:Phone|Alternate\s*Phone)\s*:?\s*([A-Z]*\+?\d[\d\s.-]{10,})/im)
+  if (phoneMatch) {
+    let phone = phoneMatch[1].trim()
+    phone = phone.replace(/^US\s*/i, '').replace(/\s+/g, ' ').trim()
+    out.customer_phone = phone
+  }
+
+  // Tour Language: English - Guide → 고객 언어 EN (줄 끝까지 캡처 후 정규화)
+  const tourLang = normalized.match(/(?:Tour\s*[Ll]anguage)\s*:?\s*([^\n]+)/m)
+  if (tourLang) out.language = normalizeLanguageToCode(tourLang[1].trim())
+
+  // Tour Name 매핑: Viator 상품명 → 우리 상품명
+  const tourNameMatch = normalized.match(/(?:Tour\s*Name)\s*:?\s*([^\n]+?)(?=\s*(?:Tour\s*Option|Hotel\s*Pickup|\n\n|$))/im)
+  if (tourNameMatch) {
+    const rawName = tourNameMatch[1].trim()
+    // Las Vegas 2 Day Zion Bryce Antelope Grand Canyon Horseshoe Bend → 그랜드서클 1박 2일 투어
+    if (/2\s*[Dd]ay.*Zion.*Bryce|Zion.*Bryce.*2\s*[Dd]ay/i.test(rawName)) {
+      out.product_name = '그랜드서클 1박 2일 투어'
+    }
+    // Grand Canyon, Antelope Canyon and Horseshoe Bend Photo Tour → 그랜드서클 당일 투어
+    else if (/Grand\s*Canyon.*Antelope.*Horseshoe\s*Bend|Antelope\s*Canyon.*Horseshoe\s*Bend/i.test(rawName)) {
+      out.product_name = '그랜드서클 당일 투어'
+    }
+    if (!out.product_name) out.product_name = rawName
+  }
+
+  // Tour Option: Shared Van with Lower Antelope 02:00 → 로어 앤텔롭캐년 (Lower Antelope Canyon)
+  const tourOptionMatch = normalized.match(/(?:Tour\s*Option)\s*:?\s*([^\n]+?)(?=\s*(?:Hotel\s*Pickup|Pickup|\n\n|$))/im)
+  if (tourOptionMatch) {
+    const optionRaw = tourOptionMatch[1].trim()
+    if (/Lower\s*Antelope|로어\s*앤텔롭/i.test(optionRaw)) {
+      out.import_choice_option_names = ['Lower Antelope Canyon']
+    } else if (/Upper\s*Antelope|어퍼\s*앤텔롭/i.test(optionRaw)) {
+      out.import_choice_option_names = ['Upper Antelope Canyon']
+    } else if (/X\s*Antelope|Antelope\s*X/i.test(optionRaw)) {
+      out.import_choice_option_names = ['X Antelope Canyon', 'Antelope X Canyon']
+    }
+  }
+
+  // Hotel Pickup: Mandalay Bay Resort & Casino, 3950 S Las Vegas Blvd... → 픽업 호텔 (첫 번째 쉼표 앞 호텔명으로 매칭)
+  const pickupMatch = normalized.match(/(?:Hotel\s*Pickup|Pickup\s*Location)\s*:?\s*([^\n]+?)(?=\s*(?:$|\n\n))/im)
+  if (pickupMatch) {
+    const full = pickupMatch[1].trim()
+    const hotelNamePart = full.split(',')[0].trim()
+    out.pickup_hotel = hotelNamePart || full
+  }
+
+  // Viator도 미국 거주자 구분·기타 입장료는 미정 기본
+  out.import_choice_undecided_groups = ['미국 거주자 구분', '기타 입장료']
 
   return out
 }
@@ -744,8 +980,11 @@ const CHANNEL_PARSERS: Record<string, ChannelParserConfig> = {
     extract: (text, subject, sourceEmail, rawHtml) =>
       extractKlook(text, subject, sourceEmail, rawHtml),
   },
-  // viator, tripadvisor, booking, expedia, airbnb 등은 추후 동일 패턴으로 추가
-  // viator: { preprocess: toPlainText, extract: extractViator },
+  viator: {
+    preprocess: toPlainText,
+    extract: (text, subject, sourceEmail) =>
+      extractViator(text, subject, sourceEmail),
+  },
 }
 
 /**
