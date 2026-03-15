@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { Resend } from 'resend'
+import { getGoblinTourWeatherData, normalizeDate } from '@/lib/weatherApi'
 
 /**
  * POST /api/send-pickup-schedule-notification
@@ -18,7 +19,7 @@ import { Resend } from 'resend'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { reservationId, pickupTime, tourDate, locale = 'ko', sentBy } = body
+    const { reservationId, pickupTime, tourDate, locale = 'ko', sentBy, preparationInfo: preparationInfoFromBody } = body
 
     if (!reservationId || !pickupTime || !tourDate) {
       return NextResponse.json(
@@ -376,71 +377,88 @@ export async function POST(request: NextRequest) {
             console.error('[send-pickup-schedule-notification] 차량 타입 조회 오류:', vehicleTypeError)
           }
 
-          const { data: photosData, error: photosError } = await supabase
+          const { data: typePhotosData, error: typePhotosError } = await supabase
             .from('vehicle_type_photos')
             .select('photo_url, photo_name, description, is_primary, display_order')
             .eq('vehicle_type_id', vehicleTypeData?.id || '')
             .order('display_order', { ascending: true })
             .order('is_primary', { ascending: false })
 
-          if (photosError) {
-            console.error('[send-pickup-schedule-notification] 차량 사진 조회 오류:', photosError)
+          if (typePhotosError) {
+            console.error('[send-pickup-schedule-notification] vehicle_type_photos 조회 오류:', typePhotosError)
           }
 
-          // URL 단순화 함수: 불필요한 쿼리 파라미터 제거
+          const { data: vehiclePhotosData, error: vehiclePhotosError } = await supabase
+            .from('vehicle_photos')
+            .select('photo_url, photo_name, is_primary, display_order')
+            .eq('vehicle_id', tourData.tour_car_id)
+            .order('display_order', { ascending: true })
+            .order('is_primary', { ascending: false })
+
+          if (vehiclePhotosError) {
+            console.error('[send-pickup-schedule-notification] vehicle_photos 조회 오류:', vehiclePhotosError)
+          }
+
           const simplifyUrl = (url: string): string => {
             if (!url) return url
             try {
               const urlObj = new URL(url)
-              // 쿼리 파라미터 제거
               urlObj.search = ''
-              // 해시 제거
               urlObj.hash = ''
               return urlObj.toString()
             } catch {
-              // URL 파싱 실패 시 원본 반환
               return url
             }
           }
 
-          // 차량 사진 URL 처리: base64 이미지는 제외하고, 상대 경로는 공개 URL로 변환
-          const processedPhotos = (photosData || []).map((photo: any) => {
-            // base64 이미지는 이메일에서 표시되지 않으므로 제외
-            if (photo.photo_url && photo.photo_url.startsWith('data:image')) {
-              console.log('[send-pickup-schedule-notification] base64 이미지 제외:', photo.photo_name)
-              return null
+          const toPublicPhotoUrl = (photo: any): any => {
+            if (!photo.photo_url) return null
+            if (photo.photo_url.startsWith('data:image')) {
+              return { ...photo, photo_url: photo.photo_url }
             }
-
-            // photo_url이 상대 경로인 경우 Supabase Storage 공개 URL로 변환
-            if (photo.photo_url && !photo.photo_url.startsWith('http') && !photo.photo_url.startsWith('data:')) {
+            if (!photo.photo_url.startsWith('http') && !photo.photo_url.startsWith('data:')) {
               try {
-                // vehicle-type-photos 버킷에서 공개 URL 생성 시도
-                if (photo.photo_url.includes('vehicle-type-photos') || photo.photo_url.startsWith('vehicle-type-photos/')) {
-                  const path = photo.photo_url.replace('vehicle-type-photos/', '').replace(/^vehicle-type-photos/, '')
-                  const { data: { publicUrl } } = supabase.storage
-                    .from('vehicle-type-photos')
-                    .getPublicUrl(path)
-                  return { ...photo, photo_url: simplifyUrl(publicUrl) }
-                } else {
-                  // 다른 버킷일 수 있으므로 images 버킷으로 시도
-                  const { data: { publicUrl } } = supabase.storage
-                    .from('images')
-                    .getPublicUrl(photo.photo_url)
-                  return { ...photo, photo_url: simplifyUrl(publicUrl) }
-                }
+                const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(photo.photo_url)
+                return { ...photo, photo_url: simplifyUrl(publicUrl) }
               } catch (error) {
                 console.error('[send-pickup-schedule-notification] 공개 URL 생성 오류:', error)
-                return photo // 원본 URL 유지
+                return photo
               }
             }
+            return { ...photo, photo_url: simplifyUrl(photo.photo_url) }
+          }
 
-            // 이미 HTTP URL인 경우에도 단순화
-            if (photo.photo_url && photo.photo_url.startsWith('http')) {
-              return { ...photo, photo_url: simplifyUrl(photo.photo_url) }
-            }
+          const processedTypePhotos = (typePhotosData || []).map(toPublicPhotoUrl).filter((p: any) => p !== null)
+          const processedVehiclePhotos = (vehiclePhotosData || []).map(toPublicPhotoUrl).filter((p: any) => p !== null)
+          const displayPhotos = processedVehiclePhotos.length > 0 ? processedVehiclePhotos : processedTypePhotos
 
-            return photo
-          }).filter((photo: any) => photo !== null) // null 제거
+          // data URL 사진은 클릭 시 새 탭에서 보이도록 Storage에 임시 업로드 후 viewUrl 부여
+          const displayPhotosWithViewUrl = await Promise.all(
+            displayPhotos.map(async (photo: any) => {
+              if (!photo.photo_url?.startsWith('data:image')) {
+                return { ...photo, viewUrl: photo.photo_url }
+              }
+              try {
+                const [header, base64] = photo.photo_url.split(',')
+                const mime = (header.match(/data:(.+);/)?.[1] || 'image/jpeg').trim()
+                const ext = (mime.split('/')[1] || 'jpg').replace(/\+xml$/, '') || 'jpg'
+                const buffer = Buffer.from(base64, 'base64')
+                const path = `email-view/${crypto.randomUUID()}.${ext}`
+                const { error } = await supabase.storage
+                  .from('images')
+                  .upload(path, buffer, { contentType: mime, upsert: false })
+                if (error) {
+                  console.warn('[send-pickup-schedule-notification] data URL 업로드 실패:', error.message)
+                  return { ...photo, viewUrl: null }
+                }
+                const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(path)
+                return { ...photo, viewUrl: simplifyUrl(publicUrl) }
+              } catch (e) {
+                console.warn('[send-pickup-schedule-notification] data URL 업로드 예외:', e)
+                return { ...photo, viewUrl: null }
+              }
+            })
+          )
 
           vehicleInfo = {
             vehicle_type: vehicleData.vehicle_type,
@@ -455,7 +473,7 @@ export async function POST(request: NextRequest) {
               name: vehicleData.vehicle_type,
               passenger_capacity: vehicleData.capacity
             },
-            vehicle_type_photos: processedPhotos
+            vehicle_type_photos: displayPhotosWithViewUrl
           }
           console.log('[send-pickup-schedule-notification] 차량 정보:', vehicleInfo ? '있음' : '없음')
         }
@@ -492,6 +510,43 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 투어일 날씨 조회 (YYYY-MM-DD 통일로 투어 상세 페이지와 동일 데이터 사용)
+    let tourDayWeather: Awaited<ReturnType<typeof getGoblinTourWeatherData>> | null = null
+    try {
+      tourDayWeather = await getGoblinTourWeatherData(normalizeDate(tourDate))
+    } catch (weatherErr) {
+      console.warn('[send-pickup-schedule-notification] 투어일 날씨 조회 실패 (무시):', weatherErr)
+    }
+
+    // 상품 준비사항(추천 준비물): 요청에 값이 있으면 사용, 없으면 DB 조회
+    let preparationInfo: string | null = null
+    if (preparationInfoFromBody !== undefined && preparationInfoFromBody !== null) {
+      preparationInfo = typeof preparationInfoFromBody === 'string' ? preparationInfoFromBody : String(preparationInfoFromBody)
+    } else if (reservation.product_id) {
+      const languageCode = isEnglish ? 'en' : 'ko'
+      const channelId = (reservation as any).channel_id ?? null
+      if (channelId) {
+        const { data: channelDetails } = await supabase
+          .from('product_details_multilingual')
+          .select('preparation_info')
+          .eq('product_id', reservation.product_id)
+          .eq('language_code', languageCode)
+          .eq('channel_id', channelId)
+          .maybeSingle()
+        preparationInfo = (channelDetails as any)?.preparation_info ?? null
+      }
+      if (preparationInfo == null) {
+        const { data: commonDetails } = await supabase
+          .from('product_details_multilingual')
+          .select('preparation_info')
+          .eq('product_id', reservation.product_id)
+          .eq('language_code', languageCode)
+          .is('channel_id', null)
+          .maybeSingle()
+        preparationInfo = (commonDetails as any)?.preparation_info ?? null
+      }
+    }
+
     // 이메일 내용 생성
     const emailContent = generatePickupScheduleEmailContent(
       reservation,
@@ -503,7 +558,9 @@ export async function POST(request: NextRequest) {
       isEnglish,
       allPickups,
       tourDetails,
-      chatRoomCode
+      chatRoomCode,
+      tourDayWeather,
+      preparationInfo
     )
 
     // Resend를 사용한 이메일 발송
@@ -751,6 +808,13 @@ export async function POST(request: NextRequest) {
   }
 }
 
+/** 투어일 날씨 데이터 (getGoblinTourWeatherData 반환형과 호환) */
+export type TourDayWeather = {
+  grandCanyon: { location: string; weather: { temperature: number | null; temp_max: number | null; temp_min: number | null; weather_main: string | null; weather_description: string | null } }
+  zionCanyon: { location: string; weather: { temperature: number | null; temp_max: number | null; temp_min: number | null; weather_main: string | null; weather_description: string | null } }
+  pageCity: { location: string; weather: { temperature: number | null; temp_max: number | null; temp_min: number | null; weather_main: string | null; weather_description: string | null } }
+}
+
 export function generatePickupScheduleEmailContent(
   reservation: any,
   customer: any,
@@ -761,8 +825,19 @@ export function generatePickupScheduleEmailContent(
   isEnglish: boolean,
   allPickups?: any[],
   tourDetails?: any,
-  chatRoomCode?: string | null
+  chatRoomCode?: string | null,
+  tourDayWeather?: TourDayWeather | null,
+  preparationInfo?: string | null,
+  /** 미리보기에서 이미지 로딩용. 설정 시 차량 사진 img src를 이 베이스 URL의 /api/proxy-image?url=... 로 래핑 */
+  imageProxyBaseUrl?: string | null
 ) {
+  const imageUrl = (url: string) => {
+    if (!url || url.startsWith('data:')) return url
+    if (imageProxyBaseUrl) {
+      return `${imageProxyBaseUrl.replace(/\/$/, '')}/api/proxy-image?url=${encodeURIComponent(url)}`
+    }
+    return url
+  }
   const productName = isEnglish 
     ? (product?.customer_name_en || product?.name_en || product?.name) 
     : (product?.customer_name_ko || product?.name_ko || product?.name)
@@ -930,6 +1005,13 @@ export function generatePickupScheduleEmailContent(
             <div class="info-row">
               <a href="${pickupHotel.link}" target="_blank" class="button">${isEnglish ? 'View on Map' : '지도에서 보기'}</a>
             </div>
+            <div class="info-row" style="margin-top: 12px;">
+              <p style="margin: 0; font-size: 13px; color: #4b5563; line-height: 1.6;">
+                ${isEnglish
+                  ? 'Please click the button to check the exact pickup location on Google Maps. Many Las Vegas hotels have multiple entrances, and the pickup point may be different from the main lobby. Please come to the exact location shown on Google Maps.'
+                  : '위 버튼을 눌러 구글 지도에서 정확한 픽업 위치를 확인해 주세요. 라스베가스 호텔은 입구가 여러 곳이며, 픽업 장소가 메인 로비와 다른 경우가 많습니다. 반드시 구글 지도에 표시된 픽업 포인트로 와주시기 바랍니다.'}
+              </p>
+            </div>
             ` : ''}
             ` : `
             <div class="info-row">
@@ -959,6 +1041,87 @@ export function generatePickupScheduleEmailContent(
                 </div>
               `).join('')}
             </div>
+          </div>
+          ` : ''}
+
+          ${tourDayWeather ? (() => {
+            const fmt = (c: number | null) => c != null ? `${Math.round(c)}°C (${Math.round(c * 9/5 + 32)}°F)` : '—'
+            const productNameForTour = (product?.name_ko || product?.name || '').toLowerCase()
+            const isGoblinGrandCanyonTour = productNameForTour.includes('밤도깨비') && (productNameForTour.includes('그랜드캐년') || productNameForTour.includes('그랜드 캐니언'))
+            const weatherIcon = (main: string | null, desc: string | null) => {
+              const m = (main || '').toLowerCase()
+              const d = (desc || '').toLowerCase()
+              if (m === 'clear') return '☀️'
+              if (d.includes('thunderstorm') || m === 'thunderstorm') return '⛈️'
+              if (d.includes('drizzle') || m === 'drizzle') return '🌦️'
+              if (d.includes('rain') || m === 'rain') return '🌧️'
+              if (d.includes('snow') || m === 'snow') return '❄️'
+              if (d.includes('mist') || d.includes('fog') || m === 'mist' || m === 'fog') return '🌫️'
+              if (d.includes('overcast') || m === 'clouds' && d.includes('overcast')) return '☁️'
+              if (d.includes('broken clouds') || d.includes('broken')) return '⛅'
+              if (d.includes('scattered') || d.includes('few clouds')) return '🌤️'
+              if (m === 'clouds') return '☁️'
+              return '🌤️'
+            }
+            const clothingByTemp = (temp: number | null) => {
+              if (temp == null) return ''
+              const t = Math.round(temp)
+              if (t >= 28) return isEnglish ? '👕 Short sleeves recommended' : '👕 반팔 차림이 좋겠어요'
+              if (t >= 22) return isEnglish ? '👔 Light long sleeves' : '👔 가벼운 긴팔 추천'
+              if (t >= 15) return isEnglish ? '🧥 Thin jacket recommended' : '🧥 얇은 자켓을 준비하세요'
+              if (t >= 8) return isEnglish ? '🧥 Thick jacket needed' : '🧥 두꺼운 자켓이 필요해요'
+              return isEnglish ? '🧶 Warm layers needed' : '🧶 두꺼운 옷이 필요해요'
+            }
+            const locations = [
+              { data: tourDayWeather.grandCanyon, title: isEnglish ? 'Grand Canyon South Rim' : '그랜드 캐니언 사우스 림', showOnlyMin: isGoblinGrandCanyonTour, showOnlyMax: false, primaryTemp: 'min' as const },
+              { data: tourDayWeather.pageCity, title: 'Antelope Canyon & Horseshoe Bend', showOnlyMin: false, showOnlyMax: isGoblinGrandCanyonTour, primaryTemp: 'max' as const }
+            ]
+            return `
+          <div class="info-box" style="margin-top: 30px;">
+            <h2 style="font-size: 20px; font-weight: bold; color: #0d9488; margin-bottom: 15px; border-bottom: 2px solid #14b8a6; padding-bottom: 10px;">
+              ${isEnglish ? '🌤️ Tour Day Weather' : '🌤️ 투어일 날씨 정보'}
+            </h2>
+            <p style="font-size: 14px; color: #6b7280; margin-bottom: 15px;">${isEnglish ? 'Weather forecast for your tour date (reference only).' : '투어일 기준 날씨 예보입니다. 참고용으로 활용해 주세요.'}</p>
+            <div style="display: block;">
+              ${locations.map(({ data: locData, title, showOnlyMin, showOnlyMax, primaryTemp }) => {
+                const w = locData?.weather
+                const icon = weatherIcon(w?.weather_main ?? null, w?.weather_description ?? null)
+                const descText = (w?.weather_description || w?.weather_main || '—')
+                const descDisplay = descText.replace(/\b\w/g, (c: string) => c.toUpperCase())
+                let tempLine = ''
+                let tempForClothing: number | null = null
+                if (showOnlyMin) {
+                  tempLine = (w?.temp_min != null) ? `${isEnglish ? 'Day low' : '낮 최저'} ${fmt(w.temp_min)}` : '—'
+                  tempForClothing = w?.temp_min ?? null
+                } else if (showOnlyMax) {
+                  tempLine = (w?.temp_max != null) ? `${isEnglish ? 'Day high' : '낮 최고'} ${fmt(w.temp_max)}` : '—'
+                  tempForClothing = w?.temp_max ?? null
+                } else {
+                  const primary = primaryTemp === 'min' ? (w?.temp_min != null ? fmt(w.temp_min) : '—') : (w?.temp_max != null ? fmt(w.temp_max) : '—')
+                  tempLine = `<span style="font-size: 20px; font-weight: bold; color: #1f2937;">${primary}</span>`
+                  if (w?.temp_min != null || w?.temp_max != null) tempLine += `<br><span style="font-size: 13px; color: #6b7280;">${isEnglish ? 'Min' : '최저'} ${fmt(w?.temp_min)} / ${isEnglish ? 'Max' : '최고'} ${fmt(w?.temp_max)}</span>`
+                  tempForClothing = primaryTemp === 'max' ? (w?.temp_max ?? null) : (w?.temp_min ?? w?.temperature ?? w?.temp_max ?? null)
+                }
+                const clothing = clothingByTemp(tempForClothing)
+                return `
+                <div style="width: 100%; padding: 12px; margin-bottom: 12px; background: #f0fdfa; border-radius: 8px; border-left: 4px solid #14b8a6; box-sizing: border-box;">
+                  <div style="font-weight: bold; color: #0f766e; margin-bottom: 8px;">${title}</div>
+                  <div style="font-size: 18px; margin-bottom: 6px;">${icon} <span style="font-size: 14px; color: #374151;">${descDisplay}</span></div>
+                  <div style="font-size: 15px; color: #1f2937;">${tempLine}</div>
+                  ${clothing ? `<div style="font-size: 13px; color: #059669; margin-top: 8px; font-weight: 500;">${clothing}</div>` : ''}
+                </div>
+              `}).join('')}
+            </div>
+          </div>
+          `
+          })() : ''}
+
+          ${preparationInfo && preparationInfo.trim() ? `
+          <div class="info-box" style="margin-top: 30px;">
+            <h2 style="font-size: 20px; font-weight: bold; color: #059669; margin-bottom: 15px; border-bottom: 2px solid #10b981; padding-bottom: 10px;">
+              ${isEnglish ? '🎒 Recommended Preparation' : '🎒 추천 준비물'}
+            </h2>
+            <div style="font-size: 15px; line-height: 1.6; color: #1f2937;">${String(preparationInfo).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/\n/g, '<br>')}</div>
           </div>
           ` : ''}
 
@@ -1117,15 +1280,18 @@ export function generatePickupScheduleEmailContent(
                   </p>
                   <div class="media-gallery" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 15px 0; align-items: start;">
                     ${tourDetails.vehicle.vehicle_type_photos
-                      .filter((photo: any) => photo.photo_url && !photo.photo_url.startsWith('data:image'))
+                      .filter((photo: any) => photo.photo_url)
                       .slice(0, 4)
-                      .map((photo: any) => `
+                      .map((photo: any) => {
+                        const src = imageUrl(photo.photo_url)
+                        const linkUrl = (photo as any).viewUrl || (!(photo.photo_url as string).startsWith('data:') ? photo.photo_url : null)
+                        const imgTag = `<img src="${src}" alt="${photo.photo_name || (isEnglish ? 'Vehicle photo' : '차량 사진')}" width="250" height="250" style="max-width: 250px; max-height: 250px; width: auto; height: auto; display: block; transition: transform 0.2s; object-fit: cover;" loading="lazy" />`
+                        const wrapStyle = 'display: block; text-decoration: none; flex: 1; display: flex; align-items: center; justify-content: center;'
+                        return `
                       <div class="media-item" style="width: 100%; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: transform 0.2s, box-shadow 0.2s; display: flex; flex-direction: column;">
-                        <a href="${photo.photo_url}" target="_blank" style="display: block; text-decoration: none; cursor: pointer; flex: 1; display: flex; align-items: center; justify-content: center;">
-                          <img src="${photo.photo_url}" alt="${photo.photo_name || (isEnglish ? 'Vehicle photo' : '차량 사진')}" width="250" height="250" style="max-width: 250px; max-height: 250px; width: auto; height: auto; display: block; transition: transform 0.2s; object-fit: cover;" loading="lazy" />
-                        </a>
+                        ${linkUrl ? `<a href="${linkUrl}" target="_blank" rel="noopener noreferrer" style="${wrapStyle} cursor: pointer;">${imgTag}</a>` : `<span style="${wrapStyle} cursor: default;">${imgTag}</span>`}
                       </div>
-                    `).join('')}
+                    `}).join('')}
                   </div>
                 </div>
                 ` : ''}

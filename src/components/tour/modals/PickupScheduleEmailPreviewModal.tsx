@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslations } from 'next-intl'
-import { X, Mail, Eye, Loader2, Users, Clock, Building, Copy, Check, Image as ImageIcon, FileText } from 'lucide-react'
+import { X, Mail, Eye, Loader2, Users, Clock, Building, Copy, Check, Image as ImageIcon, FileText, ExternalLink } from 'lucide-react'
+import { useLocale } from 'next-intl'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
@@ -31,6 +33,7 @@ export default function PickupScheduleEmailPreviewModal({
   onSend
 }: PickupScheduleEmailPreviewModalProps) {
   const t = useTranslations('tours.pickupSchedule')
+  const locale = useLocale()
   const [selectedReservationId, setSelectedReservationId] = useState<string | null>(null)
   const [emailContent, setEmailContent] = useState<{
     subject: string
@@ -56,6 +59,12 @@ export default function PickupScheduleEmailPreviewModal({
     pickupHotel: string | null
     pickupLocation: string | null
   }>>({})
+  const [preparationInfoSource, setPreparationInfoSource] = useState<{
+    productId: string
+    channelId: string | null
+    languageCode: string
+    productName?: string
+  } | null>(null)
 
   // 픽업 시간별로 정렬 (오후 9시(21:00) 이후 시간은 전날로 취급)
   const reservationsWithPickupTime = React.useMemo(() => {
@@ -281,24 +290,28 @@ export default function PickupScheduleEmailPreviewModal({
     ? reservations.find(r => r.id === selectedReservationId)
     : reservationsWithPickupTime[0]
 
-  const loadEmailPreview = useCallback(async () => {
+  const loadEmailPreview = useCallback(async (preparationInfoOverride?: string | null) => {
     if (!selectedReservation || !selectedReservation.pickup_time) return
 
     setLoading(true)
     try {
+      const body: Record<string, unknown> = {
+        reservationId: selectedReservation.id,
+        pickupTime: selectedReservation.pickup_time.includes(':') 
+          ? selectedReservation.pickup_time 
+          : `${selectedReservation.pickup_time}:00`,
+        tourDate: selectedReservation.tour_date || tourDate,
+        tourId: tourId || undefined
+      }
+      if (preparationInfoOverride !== undefined && preparationInfoOverride !== null) {
+        body.preparationInfo = preparationInfoOverride
+      }
       const response = await fetch('/api/preview-pickup-schedule-notification', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          reservationId: selectedReservation.id,
-          pickupTime: selectedReservation.pickup_time.includes(':') 
-            ? selectedReservation.pickup_time 
-            : `${selectedReservation.pickup_time}:00`,
-          tourDate: selectedReservation.tour_date || tourDate,
-          tourId: tourId || undefined
-        })
+        body: JSON.stringify(body)
       })
 
       if (!response.ok) {
@@ -312,13 +325,18 @@ export default function PickupScheduleEmailPreviewModal({
         throw new Error('이메일 내용을 받을 수 없습니다.')
       }
       setEmailContent(data.emailContent)
+      if (data.preparationInfoSource) {
+        setPreparationInfoSource(data.preparationInfoSource)
+      } else {
+        setPreparationInfoSource(null)
+      }
     } catch (error) {
       console.error('이메일 미리보기 로드 오류:', error)
       alert(t('emailPreviewLoadError'))
     } finally {
       setLoading(false)
     }
-  }, [selectedReservation, tourDate])
+  }, [selectedReservation, tourDate, tourId])
 
   // 초기 선택 예약 설정
   useEffect(() => {
@@ -1013,6 +1031,21 @@ export default function PickupScheduleEmailPreviewModal({
                     </div>
                   </div>
                 </div>
+
+                {/* 상품 상세 수정으로 이동 (추천 준비물 등 편집) */}
+                {preparationInfoSource?.productId && (
+                  <div className="flex justify-end">
+                    <Link
+                      href={`/${locale}/admin/products/${preparationInfoSource.productId}/details`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      {t('emailPreviewProductDetailsEdit')}
+                    </Link>
+                  </div>
+                )}
 
                 {/* 이메일 내용 미리보기 */}
                 <div className="border rounded-lg overflow-hidden bg-white">

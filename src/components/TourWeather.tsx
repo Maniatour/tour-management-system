@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import { Sun, Sunset, Cloud, Thermometer, Droplets, Wind, MapPin, Clock, RefreshCw, CloudRain, CloudSnow, CloudLightning, Eye, EyeOff, ChevronDown, ChevronUp, CloudSun, CloudDrizzle, CloudFog, CloudHail } from 'lucide-react'
-import { getGoblinTourWeatherData, type LocationWeather } from '@/lib/weatherApi'
+import { getGoblinTourWeatherData, normalizeDate, type LocationWeather } from '@/lib/weatherApi'
 
 interface TourWeatherProps {
   tourDate?: string
@@ -232,11 +232,11 @@ export default function TourWeather({ tourDate, productId }: TourWeatherProps) {
       setLoading(true)
       setError(null)
       
-      const targetDate = tourDate || new Date().toISOString().split('T')[0]
+      const targetDate = normalizeDate(tourDate || new Date().toISOString().split('T')[0])
       const data = await getGoblinTourWeatherData(targetDate)
       setWeatherData(data)
       
-      // Check if we have actual data in Supabase
+      // Check if we have actual data in Supabase (동일 YYYY-MM-DD로 캐시 조회)
       const { createClientSupabase } = await import('@/lib/supabase')
       const supabase = createClientSupabase()
       

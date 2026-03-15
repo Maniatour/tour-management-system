@@ -143,13 +143,13 @@ export function getFallbackOtaAndNotIncluded(
 ): { ota_sale_price: number; not_included_price?: number } | undefined {
   if (!choicesPricing || Object.keys(choicesPricing).length === 0) return undefined;
   const keyToUse = combination.combination_key || combination.id;
-  const partCount = keyToUse ? keyToUse.split('+').length : 0;
+  const requestedParts = keyToUse ? keyToUse.split('+').filter(Boolean) : [];
+  const partCount = requestedParts.length;
+  const requestedSet = new Set(requestedParts);
+  // 같은 구조일 때는 요청한 조합과 세그먼트 일치도(오버랩)가 가장 높은 키를 선택 (로어 vs 엑스 앤텔롭 등 다른 옵션 가격 오매칭 방지)
   let bestSameStructure: { ota: number; notIncluded?: number } | null = null;
-  let maxOtaSameStructure = 0;
-  let foundSameStructure = false;
-  let bestAny: { ota: number; notIncluded?: number } | null = null;
-  let maxOtaAny = 0;
-  let foundAny = false;
+  let bestOverlap = -1;
+  let bestOtaForOverlap = 0;
   for (const key of Object.keys(choicesPricing)) {
     const entry = choicesPricing[key];
     if (!entry || typeof entry !== 'object') continue;
@@ -161,46 +161,20 @@ export function getFallbackOtaAndNotIncluded(
       entry.not_included_price !== undefined && entry.not_included_price !== null
         ? Number(entry.not_included_price)
         : undefined;
-    const sameStructure = partCount > 0 && key.split('+').length === partCount;
-    if (sameStructure && num > maxOtaSameStructure) {
-      maxOtaSameStructure = num;
-      bestSameStructure = { ota: num, notIncluded: notIncluded ?? undefined };
-      foundSameStructure = true;
-    }
-    if (num > maxOtaAny) {
-      maxOtaAny = num;
-      bestAny = { ota: num, notIncluded: notIncluded ?? undefined };
-      foundAny = true;
-    }
-  }
-  // 밤도깨비 등: 미국 거주자 + 로어 앤텔롭 조합은 not_included 95 (75·95 중 95 선호)
-  if (foundAny && bestAny && maxOtaAny > 0) {
-    const NOT_INCLUDED_CAP = 100;
-    let bestInRange: { ota: number; notIncluded: number } | null = null;
-    let bestAnyWithNotIncluded: { ota: number; notIncluded: number } | null = null;
-    for (const key of Object.keys(choicesPricing)) {
-      const entry = choicesPricing[key];
-      if (!entry || typeof entry !== 'object') continue;
-      const num = Number(entry.ota_sale_price);
-      if (num !== maxOtaAny) continue;
-      const ni =
-        entry.not_included_price !== undefined && entry.not_included_price !== null
-          ? Number(entry.not_included_price)
-          : NaN;
-      if (Number.isNaN(ni) || ni <= 0) continue;
-      if (ni <= NOT_INCLUDED_CAP) {
-        if (!bestInRange || ni > bestInRange.notIncluded) {
-          bestInRange = { ota: num, notIncluded: ni };
-        }
-      }
-      if (!bestAnyWithNotIncluded || ni < bestAnyWithNotIncluded.notIncluded) {
-        bestAnyWithNotIncluded = { ota: num, notIncluded: ni };
+    const keyParts = key.split('+').filter(Boolean);
+    const sameStructure = partCount > 0 && keyParts.length === partCount;
+    if (sameStructure) {
+      const overlap = keyParts.filter((p) => requestedSet.has(p)).length;
+      if (overlap > bestOverlap || (overlap === bestOverlap && num > bestOtaForOverlap)) {
+        bestOverlap = overlap;
+        bestOtaForOverlap = num;
+        bestSameStructure = { ota: num, notIncluded: notIncluded ?? undefined };
       }
     }
-    if (bestInRange) bestAny = bestInRange;
-    else if (bestAnyWithNotIncluded) bestAny = bestAnyWithNotIncluded;
   }
-  const best = foundSameStructure ? bestSameStructure : (foundAny ? bestAny : null);
+  // 오버랩이 1 이상인 같은 구조 키가 있을 때만 사용. 전체 중 최대 OTA 폴백은 사용하지 않음 (로어/엑스 등 다른 옵션 가격 오매칭 방지).
+  const foundSameStructure = bestSameStructure !== null && bestOverlap >= 1;
+  const best = foundSameStructure ? bestSameStructure : null;
   if (!best) return undefined;
   return {
     ota_sale_price: best.ota,

@@ -2427,7 +2427,14 @@ export default function ReservationForm({
                 const usResidentOption = productChoice.options.find((opt: any) => {
                   const nameKo = (opt.option_name_ko || opt.name_ko || '').trim()
                   const name = (opt.option_name || opt.name || '').trim()
-                  return nameKo === '미국 거주자' || name === '미국 거주자' || (nameKo.includes('미국 거주자') && !nameKo.includes('비 거주자'))
+                  const nameEn = (opt.option_name_en || opt.name_en || '').trim().toLowerCase()
+                  return (
+                    nameKo === '미국 거주자' ||
+                    name === '미국 거주자' ||
+                    (nameKo.includes('미국 거주자') && !nameKo.includes('비 거주자')) ||
+                    nameEn === 'us resident' ||
+                    (nameEn.includes('us resident') && !nameEn.includes('non') && !nameEn.includes('비거주'))
+                  )
                 })
                 if (usResidentOption) {
                   return { ...c, option_id: usResidentOption.id, option_key: usResidentOption.option_key }
@@ -2471,13 +2478,12 @@ export default function ReservationForm({
             
             const combinationKey = selectedOptionKeys.length > 0
               ? selectedOptionKeys.join('+')
-              : selectedOptionIds.length > 0 
+              : selectedOptionIds.length > 0
                 ? selectedOptionIds.join('+')
                 : selectedChoiceIds.join('+')
-            
             let foundChoicePricing = false
             let choiceData: any = null
-            
+
             // 1. 조합 키 우선 (밤도깨비 등 복수 초이스 시 불포함 가격이 조합 키에만 있는 경우 대비)
             if (combinationKey && choicesPricing[combinationKey]) {
               choiceData = choicesPricing[combinationKey]

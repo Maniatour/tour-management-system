@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { generatePickupScheduleEmailContent } from '@/app/api/send-pickup-schedule-notification/route'
+import { getGoblinTourWeatherData, normalizeDate } from '@/lib/weatherApi'
 
 /**
  * POST /api/preview-pickup-schedule-notification
@@ -19,9 +20,9 @@ export async function POST(request: NextRequest) {
   try {
     console.log('[preview-pickup-schedule-notification] 요청 수신')
     const body = await request.json()
-    const { reservationId, pickupTime, tourDate, locale = 'ko', tourId } = body
+    const { reservationId, pickupTime, tourDate, locale = 'ko', tourId, preparationInfo: preparationInfoFromBody } = body
 
-    console.log('[preview-pickup-schedule-notification] 요청 데이터:', { reservationId, pickupTime, tourDate, locale, tourId })
+    console.log('[preview-pickup-schedule-notification] 요청 데이터:', { reservationId, pickupTime, tourDate, locale, tourId, hasPreparationInfo: preparationInfoFromBody !== undefined })
 
     if (!reservationId || !pickupTime || !tourDate) {
       console.error('[preview-pickup-schedule-notification] 필수 파라미터 누락')
@@ -434,47 +435,91 @@ export async function POST(request: NextRequest) {
             console.error('[preview-pickup-schedule-notification] 차량 타입 조회 오류:', vehicleTypeError)
           }
 
-          const { data: photosData, error: photosError } = await supabase
+          const { data: typePhotosData, error: typePhotosError } = await supabase
             .from('vehicle_type_photos')
             .select('photo_url, photo_name, description, is_primary, display_order')
             .eq('vehicle_type_id', vehicleTypeData?.id || '')
             .order('display_order', { ascending: true })
             .order('is_primary', { ascending: false })
 
-          if (photosError) {
-            console.error('[preview-pickup-schedule-notification] 차량 사진 조회 오류:', photosError)
+          if (typePhotosError) {
+            console.error('[preview-pickup-schedule-notification] vehicle_type_photos 조회 오류:', typePhotosError)
           }
 
-          // URL 단순화 함수: 불필요한 쿼리 파라미터 제거
+          const { data: vehiclePhotosData, error: vehiclePhotosError } = await supabase
+            .from('vehicle_photos')
+            .select('photo_url, photo_name, is_primary, display_order')
+            .eq('vehicle_id', tourData.tour_car_id)
+            .order('display_order', { ascending: true })
+            .order('is_primary', { ascending: false })
+
+          if (vehiclePhotosError) {
+            console.error('[preview-pickup-schedule-notification] vehicle_photos 조회 오류:', vehiclePhotosError)
+          }
+
           const simplifyUrl = (url: string): string => {
             if (!url) return url
             try {
               const urlObj = new URL(url)
-              // 쿼리 파라미터 제거
               urlObj.search = ''
-              // 해시 제거
               urlObj.hash = ''
               return urlObj.toString()
             } catch {
-              // URL 파싱 실패 시 원본 반환
               return url
             }
           }
 
-          // 차량 사진 URL 단순화 및 base64 이미지 제외
-          const processedPhotos = (photosData || [])
-            .filter((photo: any) => {
-              // base64 이미지는 제외
-              if (photo.photo_url && photo.photo_url.startsWith('data:image')) {
-                console.log('[preview-pickup-schedule-notification] base64 이미지 제외:', photo.photo_name)
-                return false
+          const toPublicPhotoUrl = (photo: any): any => {
+            if (!photo.photo_url) return null
+            if (photo.photo_url.startsWith('data:image')) {
+              return { ...photo, photo_url: photo.photo_url }
+            }
+            if (!photo.photo_url.startsWith('http') && !photo.photo_url.startsWith('data:')) {
+              try {
+                const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(photo.photo_url)
+                return { ...photo, photo_url: simplifyUrl(publicUrl) }
+              } catch (error) {
+                console.error('[preview-pickup-schedule-notification] 차량 사진 공개 URL 생성 오류:', error)
+                return photo
               }
-              return true
+            }
+            if (photo.photo_url && photo.photo_url.startsWith('http')) {
+              return { ...photo, photo_url: simplifyUrl(photo.photo_url) }
+            }
+            return photo
+          }
+
+          const processedTypePhotos = (typePhotosData || []).map(toPublicPhotoUrl).filter((p: any) => p !== null)
+          const processedVehiclePhotos = (vehiclePhotosData || []).map(toPublicPhotoUrl).filter((p: any) => p !== null)
+          const displayPhotos = processedVehiclePhotos.length > 0 ? processedVehiclePhotos : processedTypePhotos
+
+          // data URL 사진은 클릭 시 새 탭에서 보이도록 Storage에 임시 업로드 후 viewUrl 부여
+          const displayPhotosWithViewUrl = await Promise.all(
+            displayPhotos.map(async (photo: any) => {
+              if (!photo.photo_url?.startsWith('data:image')) {
+                return { ...photo, viewUrl: photo.photo_url }
+              }
+              try {
+                const [header, base64] = photo.photo_url.split(',')
+                const mime = (header.match(/data:(.+);/)?.[1] || 'image/jpeg').trim()
+                const ext = (mime.split('/')[1] || 'jpg').replace(/\+xml$/, '') || 'jpg'
+                const buffer = Buffer.from(base64, 'base64')
+                const path = `email-view/${crypto.randomUUID()}.${ext}`
+                const { error } = await supabase.storage
+                  .from('images')
+                  .upload(path, buffer, { contentType: mime, upsert: false })
+                if (error) {
+                  console.warn('[preview-pickup-schedule-notification] data URL 업로드 실패:', error.message)
+                  return { ...photo, viewUrl: null }
+                }
+                const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(path)
+                return { ...photo, viewUrl: simplifyUrl(publicUrl) }
+              } catch (e) {
+                console.warn('[preview-pickup-schedule-notification] data URL 업로드 예외:', e)
+                return { ...photo, viewUrl: null }
+              }
             })
-            .map((photo: any) => ({
-              ...photo,
-              photo_url: photo.photo_url ? simplifyUrl(photo.photo_url) : photo.photo_url
-            }))
+          )
 
           vehicleInfo = {
             vehicle_type: vehicleData.vehicle_type,
@@ -489,7 +534,7 @@ export async function POST(request: NextRequest) {
               name: vehicleData.vehicle_type,
               passenger_capacity: vehicleData.capacity
             },
-            vehicle_type_photos: processedPhotos
+            vehicle_type_photos: displayPhotosWithViewUrl
           }
           console.log('[preview-pickup-schedule-notification] 차량 정보:', vehicleInfo ? '있음' : '없음')
         }
@@ -538,8 +583,50 @@ export async function POST(request: NextRequest) {
       console.log('[preview-pickup-schedule-notification] 최종 채팅방 코드: 없음')
     }
 
-    // 이메일 내용 생성
+    // 투어일 날씨 조회 (YYYY-MM-DD 통일로 투어 상세 페이지와 동일 데이터 사용)
+    let tourDayWeather: Awaited<ReturnType<typeof getGoblinTourWeatherData>> | null = null
+    try {
+      tourDayWeather = await getGoblinTourWeatherData(normalizeDate(tourDate))
+    } catch (weatherErr) {
+      console.warn('[preview-pickup-schedule-notification] 투어일 날씨 조회 실패 (무시):', weatherErr)
+    }
+
+    // 상품 준비사항(추천 준비물): 요청에 값이 있으면 사용, 없으면 DB 조회
+    let preparationInfo: string | null = null
+    if (preparationInfoFromBody !== undefined && preparationInfoFromBody !== null) {
+      preparationInfo = typeof preparationInfoFromBody === 'string' ? preparationInfoFromBody : String(preparationInfoFromBody)
+    } else if (reservation.product_id) {
+      const languageCode = isEnglish ? 'en' : 'ko'
+      const channelId = (reservation as any).channel_id ?? null
+      if (channelId) {
+        const { data: channelDetails } = await supabase
+          .from('product_details_multilingual')
+          .select('preparation_info')
+          .eq('product_id', reservation.product_id)
+          .eq('language_code', languageCode)
+          .eq('channel_id', channelId)
+          .maybeSingle()
+        preparationInfo = (channelDetails as any)?.preparation_info ?? null
+      }
+      if (preparationInfo == null) {
+        const { data: commonDetails } = await supabase
+          .from('product_details_multilingual')
+          .select('preparation_info')
+          .eq('product_id', reservation.product_id)
+          .eq('language_code', languageCode)
+          .is('channel_id', null)
+          .maybeSingle()
+        preparationInfo = (commonDetails as any)?.preparation_info ?? null
+      }
+    }
+
+    // 이메일 내용 생성 (미리보기에서는 차량 사진을 같은 오리진 프록시로 로드해 표시)
     console.log('[preview-pickup-schedule-notification] 이메일 내용 생성 중...')
+    const imageProxyBaseUrl =
+      (typeof request.headers.get('origin') === 'string' && request.headers.get('origin'))
+      || (typeof request.nextUrl?.origin === 'string' && request.nextUrl?.origin)
+      || process.env.NEXT_PUBLIC_APP_URL
+      || null
     const emailContent = generatePickupScheduleEmailContent(
       reservation,
       customer,
@@ -550,10 +637,26 @@ export async function POST(request: NextRequest) {
       isEnglish,
       allPickups,
       tourDetails,
-      chatRoomCode
+      chatRoomCode,
+      tourDayWeather,
+      preparationInfo,
+      imageProxyBaseUrl
     )
 
     console.log('[preview-pickup-schedule-notification] 이메일 내용 생성 완료')
+    const productNameForSource = product
+      ? (isEnglish ? (product.customer_name_en || product.name_en || product.name) : (product.customer_name_ko || product.name_ko || product.name))
+      : ''
+    const preparationInfoSource =
+      reservation.product_id
+        ? {
+            productId: reservation.product_id,
+            channelId: (reservation as any).channel_id ?? null,
+            languageCode: isEnglish ? 'en' : 'ko',
+            productName: productNameForSource
+          }
+        : null
+
     return NextResponse.json({
       success: true,
       emailContent: {
@@ -563,7 +666,9 @@ export async function POST(request: NextRequest) {
           email: customer.email,
           language: customer.language
         }
-      }
+      },
+      preparationInfo: preparationInfo ?? '',
+      preparationInfoSource
     })
 
   } catch (error) {

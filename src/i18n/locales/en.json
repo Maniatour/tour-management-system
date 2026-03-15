@@ -2445,7 +2445,8 @@
         "emailPreviewNoTourDate": "Tour date not found.",
         "emailPreviewSendSuccess": "Email sent successfully.",
         "emailPreviewSendError": "An error occurred while sending the email.",
-        "emailPreviewDefaultLanguage": "Korean"
+        "emailPreviewDefaultLanguage": "Korean",
+        "emailPreviewProductDetailsEdit": "Product edit (details)"
     },
     "bookingManagement": {
         "title": "Booking Management",

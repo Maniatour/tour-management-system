@@ -170,8 +170,17 @@ async function getSunriseSunsetDataFromAPI(lat: number, lng: number, date: strin
   }
 }
 
-// Fallback: Get weather data from API (only if cache miss)
-async function getWeatherDataFromAPI(lat: number, lng: number) {
+// 요청한 날짜를 YYYY-MM-DD로 통일 (캐시/API 일치용). 투어 상세·이메일 미리보기 동일 데이터 보장.
+export function normalizeDate(dateStr: string): string {
+  if (!dateStr || typeof dateStr !== 'string') return new Date().toISOString().split('T')[0]
+  const trimmed = dateStr.trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed
+  if (trimmed.includes('T')) return trimmed.split('T')[0]
+  return trimmed
+}
+
+// Fallback: Get weather data from API (only if cache miss). date는 YYYY-MM-DD.
+async function getWeatherDataFromAPI(lat: number, lng: number, date: string) {
   const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY
   if (!apiKey) {
     console.warn('OpenWeatherMap API key not found')
@@ -202,20 +211,16 @@ async function getWeatherDataFromAPI(lat: number, lng: number) {
     const data = await response.json()
 
     if (data.cod === '200') {
-      // Get today's forecast data
-      const today = new Date().toISOString().split('T')[0]
-      const todayForecasts = data.list.filter((item: any) => 
-        item.dt_txt.startsWith(today)
+      const targetDate = normalizeDate(date)
+      const dayForecasts = data.list.filter((item: any) => 
+        item.dt_txt.startsWith(targetDate)
       )
       
-      if (todayForecasts.length > 0) {
-        // Calculate min/max temperatures from today's forecasts
-        const temperatures = todayForecasts.map((item: any) => item.main.temp)
+      if (dayForecasts.length > 0) {
+        const temperatures = dayForecasts.map((item: any) => item.main.temp)
         const temp_max = Math.max(...temperatures)
         const temp_min = Math.min(...temperatures)
-        
-        // Use the most recent forecast for current conditions
-        const currentForecast = todayForecasts[todayForecasts.length - 1]
+        const currentForecast = dayForecasts[dayForecasts.length - 1]
         
         return {
           temperature: currentForecast.main.temp,
@@ -243,19 +248,18 @@ async function getWeatherDataFromAPI(lat: number, lng: number) {
   }
 }
 
-// Get sunrise/sunset data (cached first, API fallback)
+// Get sunrise/sunset data (cached first, API fallback). date는 YYYY-MM-DD로 통일.
 export async function getSunriseSunsetData(locationName: string, date: string) {
+  const normalizedDate = normalizeDate(date)
   try {
-    // Try cached data first
-    const cachedData = await getCachedSunriseSunsetData(locationName, date)
+    const cachedData = await getCachedSunriseSunsetData(locationName, normalizedDate)
     if (cachedData) {
       return cachedData
     }
     
-    // Fallback to API
     const location = GOBLIN_TOUR_LOCATIONS.find(loc => loc.name === locationName)
     if (location) {
-      return await getSunriseSunsetDataFromAPI(location.lat, location.lng, date)
+      return await getSunriseSunsetDataFromAPI(location.lat, location.lng, normalizedDate)
     }
     
     // Return default values if everything fails
@@ -272,19 +276,18 @@ export async function getSunriseSunsetData(locationName: string, date: string) {
   }
 }
 
-// Get weather data (cached first, API fallback)
+// Get weather data (cached first, API fallback). date는 YYYY-MM-DD로 통일해 사용.
 export async function getWeatherData(locationName: string, date: string) {
+  const normalizedDate = normalizeDate(date)
   try {
-    // Try cached data first
-    const cachedData = await getCachedWeatherData(locationName, date)
+    const cachedData = await getCachedWeatherData(locationName, normalizedDate)
     if (cachedData) {
       return cachedData
     }
     
-    // Fallback to API
     const location = GOBLIN_TOUR_LOCATIONS.find(loc => loc.name === locationName)
     if (location) {
-      return await getWeatherDataFromAPI(location.lat, location.lng)
+      return await getWeatherDataFromAPI(location.lat, location.lng, normalizedDate)
     }
     
     // Return default values if everything fails
@@ -422,19 +425,20 @@ export async function get7DayWeatherForecast(locationName: string): Promise<Loca
   }
 }
 
-// Get all goblin tour weather data for a specific date
+// Get all goblin tour weather data for a specific date. tourDate는 ISO 또는 YYYY-MM-DD 모두 허용.
 export async function getGoblinTourWeatherData(tourDate: string): Promise<{
   grandCanyon: LocationWeather
   zionCanyon: LocationWeather
   pageCity: LocationWeather
 }> {
+  const normalizedDate = normalizeDate(tourDate)
   const results = []
   
   for (const location of GOBLIN_TOUR_LOCATIONS) {
     try {
       const [sunriseSunsetData, weatherData] = await Promise.all([
-        getSunriseSunsetData(location.name, tourDate),
-        getWeatherData(location.name, tourDate)
+        getSunriseSunsetData(location.name, normalizedDate),
+        getWeatherData(location.name, normalizedDate)
       ])
       
       results.push({
