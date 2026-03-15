@@ -33,6 +33,7 @@ export default function ReservationImportDetailPage() {
 
   const [row, setRow] = useState<ImportRow | null>(null)
   const [loading, setLoading] = useState(true)
+  const [notFound, setNotFound] = useState(false)
   const [rejecting, setRejecting] = useState(false)
   const [showEmailBody, setShowEmailBody] = useState(true)
   const [emailBodyView, setEmailBodyView] = useState<'preview' | 'code'>('preview')
@@ -74,8 +75,14 @@ export default function ReservationImportDetailPage() {
 
   const loadImport = useCallback(async () => {
     if (!id) return
+    setNotFound(false)
     let res = await fetch(`/api/reservation-imports/${id}`)
     let data = await res.json()
+    if (res.status === 404) {
+      setRow(null)
+      setNotFound(true)
+      return
+    }
     if (!res.ok) throw new Error(data?.error || 'Failed to load')
     const ext = (data.extracted_data || {}) as ExtractedReservationData
     const hasBody = !!(data.raw_body_text || data.raw_body_html)
@@ -101,6 +108,20 @@ export default function ReservationImportDetailPage() {
     }
     setRow(data)
     const extFinal = (data.extracted_data || {}) as ExtractedReservationData
+    const effectiveKeyForChannel =
+      data.platform_key ||
+      ((data.source_email ?? '').toLowerCase().includes('kkday') || (data.subject ?? '').trim().startsWith('[KKday]')
+        ? 'kkday'
+        : null)
+    const channelsSafe = (typeof channelsList !== 'undefined' && Array.isArray(channelsList)) ? channelsList : []
+    const mappedChannelId = effectiveKeyForChannel ? getChannelIdForPlatform(effectiveKeyForChannel) : null
+    const channelForImport = mappedChannelId
+      ? channelsSafe.find((c: { id: string; name?: string }) => c.id === mappedChannelId || (c.name || '').toLowerCase().includes(mappedChannelId))
+      : effectiveKeyForChannel
+        ? channelsSafe.find((c: { id: string; name?: string }) => (c.name || '').toLowerCase().includes((effectiveKeyForChannel as string).toLowerCase()))
+        : null
+    const channelIdFromPlatform = channelForImport ? (channelForImport as { id: string }).id : ''
+
     const noteParts = [
       extFinal.note,
       extFinal.special_requests,
@@ -121,12 +142,13 @@ export default function ReservationImportDetailPage() {
       child: extFinal.children ?? 0,
       infant: extFinal.infants ?? 0,
       total_people: extFinal.total_people ?? extFinal.adults ?? 1,
+      channel_id: channelIdFromPlatform || prev.channel_id,
       channel_rn: extFinal.channel_rn ?? prev.channel_rn,
       pickup_hotel: extFinal.pickup_hotel ?? prev.pickup_hotel,
       event_note: noteParts.join(' · ') || prev.event_note,
       product_id: extFinal.product_id ?? prev.product_id,
     }))
-  }, [id])
+  }, [id, channelsList])
 
   const channelsSafe = channelsList ?? []
   const productsSafe = productsList ?? []
@@ -194,6 +216,20 @@ export default function ReservationImportDetailPage() {
     run()
     return () => { cancelled = true }
   }, [loadImport])
+  if (notFound) {
+    return (
+      <div className="p-6 max-w-2xl mx-auto">
+        <p className="text-gray-600 mb-4">해당 예약 가져오기 항목을 찾을 수 없습니다. (삭제되었거나 ID가 잘못되었을 수 있습니다.)</p>
+        <button
+          type="button"
+          onClick={() => router.push(`/${locale}/admin/reservation-imports`)}
+          className="px-4 py-2 bg-gray-900 text-white rounded-md hover:bg-gray-800"
+        >
+          목록으로 돌아가기
+        </button>
+      </div>
+    )
+  }
 
   const handleImportSubmit = useCallback(
     async (payload: Record<string, unknown>) => {
@@ -519,7 +555,7 @@ export default function ReservationImportDetailPage() {
       </div>
 
       <div className="flex items-center justify-between gap-2 mb-2">
-        <p className="text-sm text-gray-600">아래는 실제 &quot;새 예약 추가&quot;와 동일한 입력 폼입니다. 수정 후 저장하면 예약으로 생성됩니다.</p>
+        <p className="text-sm text-gray-600">이메일에서 가져온 내용을 확인·수정한 뒤 저장하면 예약으로 생성됩니다.</p>
         <button
           type="button"
           onClick={handleReject}
@@ -531,6 +567,8 @@ export default function ReservationImportDetailPage() {
         </button>
       </div>
       <ReservationForm
+        formTitle="이메일에서 예약 가져오기"
+        key={`import-${row.id}-${(ext?.customer_name ?? form.customer_name) ?? ''}`}
         reservation={
           row
             ? ({
@@ -568,13 +606,13 @@ export default function ReservationImportDetailPage() {
         layout="page"
         isNewReservation
         initialDataFromImport={{
-          customer_name: (ext?.customer_name ?? form.customer_name) || undefined,
+          customer_name: (normalizeCustomerNameFromImport(ext?.customer_name ?? form.customer_name) || (ext?.customer_name ?? form.customer_name)) || undefined,
           customer_email: (ext?.customer_email ?? form.customer_email) || undefined,
           customer_phone: (ext?.customer_phone ?? form.customer_phone) || undefined,
           emergency_contact: ext?.emergency_contact || undefined,
           customer_language: ext?.language || undefined,
         }}
-        initialShowNewCustomerForm={Boolean(normalizeCustomerNameFromImport(ext?.customer_name) || ext?.customer_name)}
+        initialShowNewCustomerForm={Boolean(normalizeCustomerNameFromImport(ext?.customer_name) || ext?.customer_name || form.customer_name)}
         initialChoiceOptionNamesFromImport={ext?.import_choice_option_names}
         initialChoiceUndecidedGroupNamesFromImport={ext?.import_choice_undecided_groups}
       />

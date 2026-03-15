@@ -1450,9 +1450,164 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
 
   const printAreaRef = useRef<HTMLDivElement>(null)
 
+  const buildPrintHTML = (): string => {
+    const fc = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const fd = (d: string) => {
+      const [y, m, day] = d.split('-')
+      return new Date(parseInt(y), parseInt(m) - 1, parseInt(day)).toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' })
+    }
+    const period = startDate && endDate ? `${fd(startDate)} ~ ${fd(endDate)}` : ''
+    const employeeName = viewMode === 'individual' && selectedEmployee ? (teamMembers.find(m => m.email === selectedEmployee)?.name_ko || selectedEmployee) : ''
+
+    let body = ''
+    if (viewMode === 'individual' && tourBonuses.length > 0) {
+      body = `
+        <div class="print-section">
+          <h2 class="print-subtitle">개인 보너스 · ${employeeName}</h2>
+          <div class="print-summary">
+            <div class="print-summary-row"><span>총 비거주자 옵션</span><strong>$${fc(totalNonResidentOption)}</strong></div>
+            <div class="print-summary-row"><span>가이드 보너스</span><strong>$${fc(totalGuideBonus)}</strong></div>
+            <div class="print-summary-row"><span>드라이버 보너스</span><strong>$${fc(totalDriverBonus)}</strong></div>
+          </div>
+          <table class="print-table">
+            <thead><tr><th>투어일</th><th>투어명</th><th>비거주자 옵션</th><th>가이드 보너스</th><th>드라이버 보너스</th></tr></thead>
+            <tbody>
+              ${tourBonuses.map(t => `
+                <tr>
+                  <td>${t.tour_date ? fd(t.tour_date) : ''}</td>
+                  <td>${(t.tour_name || '').replace(/</g, '&lt;')}</td>
+                  <td class="num">$${fc(t.non_resident_option_total)}</td>
+                  <td class="num">$${fc(t.guide_bonus)}</td>
+                  <td class="num">$${fc(t.driver_bonus)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr class="total-row"><td colspan="2">합계</td><td class="num">$${fc(totalNonResidentOption)}</td><td class="num">$${fc(totalGuideBonus)}</td><td class="num">$${fc(totalDriverBonus)}</td></tr>
+            </tfoot>
+          </table>
+        </div>
+      `
+    } else if (viewMode === 'all' && calculationMethod === 1 && allBonusSummary.length > 0) {
+      body = `
+        <div class="print-section">
+          <h2 class="print-subtitle">전체 보너스 · 계산법 1 (가이드별 합계)</h2>
+          <table class="print-table">
+            <thead><tr><th>가이드</th><th>비거주자 인원</th><th>비거주자 옵션</th><th>가이드 보너스</th><th>드라이버 보너스</th><th>보너스 총합</th></tr></thead>
+            <tbody>
+              ${allBonusSummary.map(r => `
+                <tr>
+                  <td>${(r.guide_name || '').replace(/</g, '&lt;')}</td>
+                  <td class="num">${r.non_resident_count}명</td>
+                  <td class="num">$${fc(r.non_resident_option_total)}</td>
+                  <td class="num">$${fc(r.guide_bonus)}</td>
+                  <td class="num">$${fc(r.driver_bonus)}</td>
+                  <td class="num">$${fc(r.guide_bonus + r.driver_bonus)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr class="total-row">
+                <td>총합</td>
+                <td class="num">${allBonusSummary.reduce((s, r) => s + r.non_resident_count, 0)}명</td>
+                <td class="num">$${fc(allBonusSummary.reduce((s, r) => s + r.non_resident_option_total, 0))}</td>
+                <td class="num">$${fc(allBonusSummary.reduce((s, r) => s + r.guide_bonus, 0))}</td>
+                <td class="num">$${fc(allBonusSummary.reduce((s, r) => s + r.driver_bonus, 0))}</td>
+                <td class="num">$${fc(allBonusSummary.reduce((s, r) => s + r.guide_bonus + r.driver_bonus, 0))}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      `
+    } else if (viewMode === 'all' && calculationMethod === 2 && method2Data) {
+      const eff = method2PerParticipationOverride ?? method2Data.perTourAmount
+      const guideRows = method2Data.guideSummaries.map(r => {
+        const inputVal = method2BonusOverrides[r.guide_email] ?? Math.round(eff * r.eligibleTourCount * 100) / 100
+        return `<tr><td>${(r.guide_name || '').replace(/</g, '&lt;')}</td><td class="num">${r.eligibleTourCount}회</td><td class="num">$${fc(inputVal)}</td></tr>`
+      }).join('')
+      const unclaimed = method2Data.guideSummaries.filter(r => method2BonusOverrides[r.guide_email] === 0).reduce((s, r) => s + Math.round(eff * r.eligibleTourCount * 100) / 100, 0)
+      const effectiveOpOmTotal = method2OpOmTotalOverride ?? unclaimed
+      const opOmCount = opOfficeManagers.length
+      let opOmRows = ''
+      if (opOmCount > 0) {
+        opOmRows = opOfficeManagers.map(p => {
+          const pct = method2OpOmPercent[p.email] ?? (100 / opOmCount)
+          const share = Math.round((effectiveOpOmTotal * (pct / 100)) * 100) / 100
+          const amount = method2OpOfficeManagerOverrides[p.email] ?? share
+          return `<tr class="op-row"><td>${(p.name_ko || '').replace(/</g, '&lt;')} (${(p.position || '').replace(/</g, '&lt;')})</td><td class="num">${Number(pct).toFixed(2)}%</td><td class="num">$${fc(amount)}</td></tr>`
+        }).join('')
+      }
+      body = `
+        <div class="print-section">
+          <h2 class="print-subtitle">전체 보너스 · 계산법 2</h2>
+          <div class="print-summary">
+            <div class="print-summary-row"><span>기간 내 비거주자 옵션 총합</span><strong>$${fc(method2Data.totalNonResidentOption)}</strong></div>
+            <div class="print-summary-row"><span>참여 횟수 합계</span><strong>${method2Data.totalEligibleTours} 참여</strong></div>
+            <div class="print-summary-row"><span>보너스 풀</span><strong>$${fc(method2Data.bonusPool)}</strong></div>
+            <div class="print-summary-row"><span>1참여당 금액</span><strong>$${fc(eff)}</strong></div>
+          </div>
+          <table class="print-table">
+            <thead><tr><th>이름</th><th>참여 횟수</th><th>보너스</th></tr></thead>
+            <tbody>${guideRows}</tbody>
+            ${opOmRows ? `<tbody class="op-section"><tr><td colspan="3" class="op-total-cell">OP·Office Manager 배분 총합 $${fc(effectiveOpOmTotal)}</td></tr>${opOmRows}</tbody>` : ''}
+            <tfoot>
+              <tr class="total-row">
+                <td>총합</td>
+                <td class="num">${method2Data.totalEligibleTours}참여</td>
+                <td class="num">$${fc(
+                  method2Data.guideSummaries.reduce((s, r) => s + (method2BonusOverrides[r.guide_email] ?? Math.round(eff * r.eligibleTourCount * 100) / 100), 0) +
+                  (opOmCount > 0 ? opOfficeManagers.reduce((s, p) => { const pct = method2OpOmPercent[p.email] ?? (100 / opOmCount); return s + (method2OpOfficeManagerOverrides[p.email] ?? Math.round((effectiveOpOmTotal * (pct / 100)) * 100) / 100) }, 0) : 0)
+                )}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      `
+    } else {
+      body = `<p class="print-empty">출력할 데이터가 없습니다. 기간을 선택하고 조회한 뒤 프린트해 주세요.</p>`
+    }
+
+    return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>보너스 계산기</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; margin: 0; padding: 14px; color: #1f2937; font-size: 11px; line-height: 1.35; }
+    .print-header { text-align: center; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid #3b82f6; }
+    .print-header h1 { margin: 0 0 4px 0; font-size: 16px; font-weight: 700; color: #1e40af; }
+    .print-header .period { font-size: 11px; color: #4b5563; }
+    .print-section { margin-top: 12px; page-break-inside: avoid; }
+    .print-subtitle { font-size: 12px; font-weight: 600; color: #374151; margin: 0 0 8px 0; }
+    .print-summary { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px 12px; margin-bottom: 10px; }
+    .print-summary-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 11px; }
+    .print-summary-row span { color: #64748b; }
+    .print-summary-row strong { color: #0f172a; }
+    .print-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 10px; }
+    .print-table th, .print-table td { border: 1px solid #e2e8f0; padding: 5px 7px; text-align: left; }
+    .print-table th { background: #f1f5f9; font-weight: 600; color: #475569; font-size: 10px; }
+    .print-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .print-table tbody tr:nth-child(even) { background: #fafafa; }
+    .print-table .total-row { background: #eff6ff !important; font-weight: 600; font-size: 10px; }
+    .print-table .op-section { border-top: 1px solid #f59e0b; }
+    .print-table .op-total-cell { background: #fffbeb; font-weight: 600; color: #b45309; font-size: 10px; padding: 4px 7px; }
+    .print-table .op-row { background: #fffbeb !important; }
+    .print-empty { color: #94a3b8; text-align: center; padding: 24px 12px; font-size: 11px; }
+    @media print { body { padding: 10px; font-size: 10px; } .print-section { page-break-inside: avoid; } .print-table th, .print-table td { padding: 4px 6px; } }
+  </style>
+</head>
+<body>
+  <header class="print-header">
+    <h1>보너스 계산기</h1>
+    <p class="period">${period}</p>
+  </header>
+  ${body}
+</body>
+</html>`
+  }
+
   const handlePrint = () => {
-    const el = printAreaRef.current
-    if (!el) return
     const iframe = document.createElement('iframe')
     iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;overflow:hidden;')
     document.body.appendChild(iframe)
@@ -1461,31 +1616,8 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
       document.body.removeChild(iframe)
       return
     }
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin + window.location.pathname : ''
-    const linkTags = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
-      .map((link) => (link as HTMLLinkElement).href ? `<link rel="stylesheet" href="${(link as HTMLLinkElement).href}">` : '')
-      .join('')
     doc.open()
-    doc.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <title>보너스 계산기</title>
-          <base href="${baseUrl}" />
-          ${linkTags}
-          <style>
-            body { margin: 0; padding: 16px; }
-            .no-print { display: none !important; }
-            @media print {
-              body { margin: 0; padding: 12px; }
-              .print-single-page { page-break-inside: avoid; }
-            }
-          </style>
-        </head>
-        <body>${el.innerHTML}</body>
-      </html>
-    `)
+    doc.write(buildPrintHTML())
     doc.close()
     try {
       iframe.contentWindow?.focus()
@@ -1992,9 +2124,9 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                                       type="number"
                                       min={0}
                                       max={100}
-                                      step={0.5}
-                                      value={method2OpOmPercent[person.email] ?? ''}
-                                      placeholder={String(100 / opOmCount)}
+                                      step={0.01}
+                                      value={method2OpOmPercent[person.email] != null ? Number(method2OpOmPercent[person.email]).toFixed(2) : ''}
+                                      placeholder={(100 / opOmCount).toFixed(2)}
                                       onChange={(e) => {
                                         const v = parseFloat(e.target.value)
                                         if (e.target.value.trim() === '' || Number.isNaN(v)) {

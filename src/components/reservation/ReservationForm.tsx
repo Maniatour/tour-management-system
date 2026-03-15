@@ -102,6 +102,8 @@ interface ReservationFormProps {
   initialAmountFromImport?: string
   /** @deprecated 가격 정보는 동적가격에서만 로드. 이메일 불포함 금액은 사용하지 않음 */
   initialNotIncludedAmountFromImport?: string
+  /** 폼 제목 오버라이드 (예: 이메일에서 예약 가져오기) */
+  formTitle?: string
 }
 
 type RezLike = Partial<Reservation> & {
@@ -148,6 +150,7 @@ export default function ReservationForm({
   initialChoiceUndecidedGroupNamesFromImport,
   initialAmountFromImport: _initialAmountFromImport,
   initialNotIncludedAmountFromImport: _initialNotIncludedAmountFromImport,
+  formTitle: formTitleOverride,
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
@@ -2420,24 +2423,33 @@ export default function ReservationForm({
               const choiceId = c.choice_id || c.id
               const optionId = c.option_id
               const productChoice = formData.productChoices?.find((pc: any) => pc.id === choiceId)
-              const groupKo = (productChoice?.choice_group_ko || '').trim()
+              const groupKo = (productChoice?.choice_group_ko || productChoice?.choice_group || '').trim()
               const isUndecidedGroup = UNDECIDED_GROUPS_FOR_US_RESIDENT.some(g => groupKo === g || groupKo.includes(g))
               const isUndecided = optionId === UNDECIDED_OPTION_ID || c.option_key === UNDECIDED_OPTION_ID
               if (isUndecidedGroup && isUndecided && productChoice?.options?.length) {
-                const usResidentOption = productChoice.options.find((opt: any) => {
+                const opts = productChoice.options as any[]
+                let usResidentOption = opts.find((opt: any) => {
                   const nameKo = (opt.option_name_ko || opt.name_ko || '').trim()
                   const name = (opt.option_name || opt.name || '').trim()
                   const nameEn = (opt.option_name_en || opt.name_en || '').trim().toLowerCase()
+                  const key = (opt.option_key || opt.key || '').trim().toLowerCase()
                   return (
                     nameKo === '미국 거주자' ||
                     name === '미국 거주자' ||
                     (nameKo.includes('미국 거주자') && !nameKo.includes('비 거주자')) ||
+                    (nameKo.includes('미국') && nameKo.includes('거주') && !nameKo.includes('비')) ||
                     nameEn === 'us resident' ||
-                    (nameEn.includes('us resident') && !nameEn.includes('non') && !nameEn.includes('비거주'))
+                    (nameEn.includes('us resident') && !nameEn.includes('non') && !nameEn.includes('비거주')) ||
+                    (key.includes('us') && key.includes('resident')) ||
+                    key === 'us_resident' ||
+                    key === 'usresident'
                   )
                 })
+                if (!usResidentOption && opts.length > 0) {
+                  usResidentOption = opts[0]
+                }
                 if (usResidentOption) {
-                  return { ...c, option_id: usResidentOption.id, option_key: usResidentOption.option_key }
+                  return { ...c, option_id: usResidentOption.id, option_key: (usResidentOption as any).option_key ?? (usResidentOption as any).key }
                 }
               }
               return c
@@ -2605,6 +2617,40 @@ export default function ReservationForm({
               }
             }
             
+            // 5. choice_id 불일치 시 option_id/option_key만으로 매칭 (폼 choice_id와 pricing 키의 choice_id가 다른 경우)
+            if (!choiceData && choicesForPricingLookup.length > 0) {
+              const ourOptionIds = new Set(
+                choicesForPricingLookup.map((c: any) => c.option_id).filter(Boolean)
+              )
+              const ourOptionKeys = new Set(
+                choicesForPricingLookup.map((c: any) => (c as any).option_key).filter(Boolean)
+              )
+              const matches: { key: string; entry: any }[] = []
+              for (const key of Object.keys(choicesPricing)) {
+                const parts = key.split(/[+_]/)
+                const optionPart = parts.length >= 2 ? parts[parts.length - 1] : key
+                if (ourOptionIds.has(optionPart) || ourOptionKeys.has(optionPart)) {
+                  matches.push({ key, entry: choicesPricing[key] })
+                }
+                if (ourOptionIds.has(key) || ourOptionKeys.has(key)) matches.push({ key, entry: choicesPricing[key] })
+              }
+              if (matches.length > 0) {
+                const best = matches.reduce((a, b) => 
+                  (Number((b.entry as any)?.ota_sale_price) || 0) > (Number((a.entry as any)?.ota_sale_price) || 0) ? b : a
+                )
+                choiceData = best.entry
+                const maxNi = matches.reduce((m, x) => {
+                  const ni = Number((x.entry as any)?.not_included_price)
+                  return ni > 0 && ni > m ? ni : m
+                }, 0)
+                if (choiceData && (choiceData as any).ota_sale_price != null) {
+                  foundChoicePricing = true
+                  if (maxNi > 0) (choiceData as any).not_included_price = maxNi
+                  console.log('option_id/option_key만으로 초이스 가격 찾음 (choice_id 불일치 폴백):', { matchesCount: matches.length, bestKey: best.key, ota_sale_price: (choiceData as any).ota_sale_price, not_included_price: maxNi || (choiceData as any).not_included_price })
+                }
+              }
+            }
+            
             if (choiceData) {
               const data = choiceData as any
               
@@ -2691,20 +2737,23 @@ export default function ReservationForm({
         if (!useChoicePricing) {
           // 초이스가 있는 상품(choices_pricing 있음 또는 productChoices 있음)
           if (mustUseChoicePricingOnly) {
-            // 필수 초이스가 모두 선택되지 않은 경우
+            // 필수 초이스가 모두 선택되지 않은 경우: 기본 상품가(판매가·불포함)는 dynamic_pricing 행에서 로드
             if (!allRequiredChoicesSelected) {
-              console.log('초이스별 가격 설정이 있지만 모든 필수 초이스가 선택되지 않아 가격을 로드하지 않음:', {
-                hasChoicesPricing: !!pricing?.choices_pricing,
-                requiredChoicesCount: requiredChoices.length,
-                selectedChoicesCount: currentSelectedChoices?.length || 0,
-                allRequiredChoicesSelected
+              const baseAdult = (pricing?.adult_price as number) ?? 0
+              const baseChild = isSinglePrice ? baseAdult : ((pricing?.child_price as number) ?? 0)
+              const baseInfant = isSinglePrice ? baseAdult : ((pricing?.infant_price as number) ?? 0)
+              const baseNotIncluded = (pricing?.not_included_price as number) ?? 0
+              adultPrice = baseAdult
+              childPrice = baseChild
+              infantPrice = baseInfant
+              notIncludedPrice = baseNotIncluded
+              console.log('필수 초이스 미선택 — 기본 상품가(판매가·불포함) 로드:', {
+                adultPrice,
+                childPrice,
+                infantPrice,
+                notIncludedPrice
               })
-              // 가격을 0으로 설정하고 메시지 표시
-              adultPrice = 0
-              childPrice = 0
-              infantPrice = 0
-              notIncludedPrice = 0
-              setPriceAutoFillMessage('모든 필수 초이스를 선택하면 가격이 자동으로 로드됩니다.')
+              setPriceAutoFillMessage(baseAdult > 0 || baseNotIncluded > 0 ? 'Dynamic pricing에서 기본 가격이 입력되었습니다. 필수 초이스 선택 시 정확한 가격으로 갱신됩니다.' : '모든 필수 초이스를 선택하면 가격이 자동으로 로드됩니다.')
             } else {
               // 필수 초이스는 모두 선택되었지만 초이스별 가격을 찾지 못한 경우
               console.log('초이스별 가격 설정이 있지만 해당 초이스의 가격을 찾지 못함. 기본 가격을 로드하지 않음:', {
@@ -3087,53 +3136,53 @@ export default function ReservationForm({
     }
   }, [formData.productId, formData.productChoices, formData.selectedChoices, loadProductChoices, reservation?.id])
 
-  // 상품, 날짜, 채널, variant, 초이스가 변경될 때 dynamic pricing에서 가격 자동 조회
-  // 필수 초이스가 모두 선택된 경우에만 가격 로드
+  // 상품, 날짜, 채널, variant, 초이스가 변경될 때 dynamic pricing에서 가격 자동 조회 (새 예약 모달과 동일)
   useEffect(() => {
-    if (formData.productId && formData.tourDate && formData.channelId) {
-      // 필수 초이스가 모두 선택되었는지 확인
-      const requiredChoices = formData.productChoices?.filter(choice => choice.is_required) || []
-      const selectedChoicesArray = Array.isArray(formData.selectedChoices) ? formData.selectedChoices : []
-      const selectedChoiceIds = new Set(selectedChoicesArray.map(c => c.choice_id || (c as any).id).filter(Boolean))
-      const allRequiredChoicesSelected = requiredChoices.length === 0 || requiredChoices.every(choice => selectedChoiceIds.has(choice.id))
-      
-      // 필수 초이스가 모두 선택되지 않았으면 가격 로드 건너뛰기
-      if (requiredChoices.length > 0 && !allRequiredChoicesSelected) {
-        console.log('필수 초이스가 모두 선택되지 않아 가격 로드를 건너뜁니다:', {
-          requiredChoicesCount: requiredChoices.length,
-          selectedChoicesCount: selectedChoicesArray.length,
-          requiredChoiceIds: requiredChoices.map(c => c.id),
-          selectedChoiceIds: Array.from(selectedChoiceIds)
-        })
-        return
-      }
-      
-      const selectedChoicesKey = JSON.stringify(selectedChoicesArray.map(c => ({ choice_id: c.choice_id, option_id: c.option_id })))
-      const currentParams = {
-        productId: formData.productId,
-        tourDate: formData.tourDate,
-        channelId: formData.channelId,
-        variantKey: formData.variantKey || 'default',
-        selectedChoicesKey
-      }
-      
-      // 이전 파라미터와 비교하여 변경된 경우에만 실행
-      if (!prevPricingParams.current || 
-          prevPricingParams.current.productId !== currentParams.productId ||
-          prevPricingParams.current.tourDate !== currentParams.tourDate ||
-          prevPricingParams.current.channelId !== currentParams.channelId ||
-          prevPricingParams.current.variantKey !== currentParams.variantKey ||
-          prevPricingParams.current.selectedChoicesKey !== currentParams.selectedChoicesKey) {
-        
-        console.log('가격 자동 조회 트리거:', currentParams)
-        prevPricingParams.current = currentParams
-        // 실제 예약 편집 시에만 플래그 설정 (가져오기/새 예약은 reservation.id가 'import-xxx' 또는 없음 → 채널 수수료 자동 계산 허용)
-        const isRealReservationId = reservation?.id && !String(reservation.id).startsWith('import-')
-        if (isRealReservationId) setIsExistingPricingLoaded(true)
-        loadPricingInfo(formData.productId, formData.tourDate, formData.channelId, reservation?.id, selectedChoicesArray)
-      }
+    if (!formData.productId || !formData.tourDate || !formData.channelId) return
+    const selectedChoicesArray = Array.isArray(formData.selectedChoices) ? formData.selectedChoices : []
+    const selectedChoicesKey = JSON.stringify(selectedChoicesArray.map(c => ({ choice_id: c.choice_id, option_id: c.option_id })))
+    const currentParams = {
+      productId: formData.productId,
+      tourDate: formData.tourDate,
+      channelId: formData.channelId,
+      variantKey: formData.variantKey || 'default',
+      selectedChoicesKey
+    }
+    if (!prevPricingParams.current ||
+        prevPricingParams.current.productId !== currentParams.productId ||
+        prevPricingParams.current.tourDate !== currentParams.tourDate ||
+        prevPricingParams.current.channelId !== currentParams.channelId ||
+        prevPricingParams.current.variantKey !== currentParams.variantKey ||
+        prevPricingParams.current.selectedChoicesKey !== currentParams.selectedChoicesKey) {
+      console.log('가격 자동 조회 트리거:', currentParams)
+      prevPricingParams.current = currentParams
+      const isRealReservationId = reservation?.id && !String(reservation.id).startsWith('import-')
+      if (isRealReservationId) setIsExistingPricingLoaded(true)
+      loadPricingInfo(formData.productId, formData.tourDate, formData.channelId, reservation?.id, selectedChoicesArray)
     }
   }, [formData.productId, formData.tourDate, formData.channelId, formData.variantKey, formData.selectedChoices, formData.productChoices, reservation?.id, loadPricingInfo])
+
+  // 이메일에서 예약 가져오기: 상위에서 넘긴 reservation에 상품·날짜·채널이 있으면 새 예약 모달과 동일한 방식으로 loadPricingInfo 한 번 호출
+  useEffect(() => {
+    if (!isImportMode || !reservation) return
+    const rez = reservation as RezLike
+    const productId = rez.product_id
+    const tourDate = rez.tour_date
+    const channelId = rez.channel_id
+    if (!productId || !tourDate || !channelId) return
+    const selectedChoicesArray = Array.isArray(formData.selectedChoices) ? formData.selectedChoices : []
+    const selectedChoicesKey = JSON.stringify(selectedChoicesArray.map(c => ({ choice_id: c.choice_id, option_id: c.option_id })))
+    const variantKey = formData.variantKey || 'default'
+    const currentParams = { productId, tourDate, channelId, variantKey, selectedChoicesKey }
+    if (prevPricingParams.current &&
+        prevPricingParams.current.productId === currentParams.productId &&
+        prevPricingParams.current.tourDate === currentParams.tourDate &&
+        prevPricingParams.current.channelId === currentParams.channelId &&
+        prevPricingParams.current.variantKey === currentParams.variantKey &&
+        prevPricingParams.current.selectedChoicesKey === currentParams.selectedChoicesKey) return
+    prevPricingParams.current = currentParams
+    loadPricingInfo(productId, tourDate, channelId, reservation?.id, selectedChoicesArray)
+  }, [isImportMode, (reservation as any)?.product_id, (reservation as any)?.tour_date, (reservation as any)?.channel_id, reservation?.id, formData.variantKey, formData.selectedChoices, loadPricingInfo])
 
   // 상품, 날짜, 채널이 변경될 때 쿠폰 자동 선택 (기존 가격 정보가 로드되지 않은 경우에만)
   useEffect(() => {
@@ -3870,7 +3919,7 @@ export default function ReservationForm({
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center flex-shrink-0 p-3 sm:p-0 sm:mb-2 sm:space-y-0 space-y-3 border-b border-gray-200 max-lg:bg-white max-lg:sticky max-lg:top-0 max-lg:z-10 max-lg:shadow-sm">
           <div className="flex items-center justify-between gap-2 min-w-0">
             <h2 className="text-base sm:text-base font-semibold text-gray-900 truncate">
-              {isNewReservation ? t('form.title') : (reservation ? t('form.editTitle') : t('form.title'))}
+              {formTitleOverride ?? (isNewReservation ? t('form.title') : (reservation ? t('form.editTitle') : t('form.title')))}
               {reservation && !isNewReservation && (
                 <span className="ml-2 text-xs font-normal text-gray-500 hidden sm:inline">
                   (ID: {reservation.id})

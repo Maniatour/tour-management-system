@@ -941,11 +941,36 @@ function extractKKday(
     out.total_people = out.adults + (out.children ?? 0) + (out.infants ?? 0)
   }
 
-  // 대표 여행자：WADA, YU → customer_name (쉼표는 normalizeCustomerNameFromImport에서 공백으로 변환됨)
-  const travellerMatch = normalized.match(/대표\s*여행자\s*[：:]\s*([^\n]+?)(?=\n|$)/m)
-  if (travellerMatch) {
-    const raw = travellerMatch[1].trim()
-    if (raw.length >= 2 && raw.length <= 120) out.customer_name = raw
+  // 대표 여행자：Okuyama, Shuho<br> (앞에 스페이스 많음) → customer_name: "Okuyama Shuho"
+  const cleanTravelerName = (raw: string) => {
+    const s = raw.replace(/<br\s*\/?>/gi, '').replace(/<\s*\/?\s*br\s*\/?>/gi, '').trim()
+    return s.replace(/\s*,\s*/g, ' ').replace(/\s+/g, ' ').trim()
+  }
+  const trySetCustomerName = (raw: string) => {
+    const cleaned = cleanTravelerName(raw)
+    if (cleaned.length >= 2 && cleaned.length <= 120) out.customer_name = cleaned
+  }
+  // 0) KKday: "대표 여행자：Okuyama, Shuho" — Sh<br>uho 처럼 줄바꿈이 이름 중간에 있어도 끝 구분자(예약/자세한/<br>) 전까지 전부 캡처
+  const travelerIdx = normalized.indexOf('여행자')
+  if (travelerIdx !== -1) {
+    const afterLabel = normalized.slice(travelerIdx + 3)
+    const colonMatch = afterLabel.match(/\s*[：:]\s*([A-Za-z\u00C0-\u024F]+\s*,\s*[A-Za-z\u00C0-\u024F\s\n]+?)(?=\s*<br|<\s*\/|$|\s*예약|\s*자세한)/)
+    if (colonMatch) {
+      trySetCustomerName(colonMatch[1])
+    }
+  }
+  let m: RegExpMatchArray | null = null
+  if (!out.customer_name) {
+    m = normalized.match(/\s*대표\s*여행자\s*[：:]\s*([A-Za-z\u00C0-\u024F]+\s*,\s*[A-Za-z\u00C0-\u024F\s\n]+?)(?=\s*<br|<\s*\/|$|\s*예약|\s*자세한)/)
+    if (m) trySetCustomerName(m[1])
+  }
+  if (!out.customer_name) {
+    m = normalized.match(/\s*대\s*표\s*여\s*행\s*자\s*[：:]\s*([A-Za-z\u00C0-\u024F]+\s*,\s*[A-Za-z\u00C0-\u024F\s\n]+?)(?=\s*<br|<\s*\/|$|\s*예약|\s*자세한)/)
+    if (m) trySetCustomerName(m[1])
+  }
+  if (!out.customer_name) {
+    m = normalized.match(/여행자\s*[：:]\s*([A-Za-z\u00C0-\u024F]+\s*,\s*[A-Za-z\u00C0-\u024F\s\n]+?)(?=\s*<br|<\s*\/|$|\s*예약|\s*자세한)/)
+    if (m) trySetCustomerName(m[1])
   }
 
   // 미정 + 로어 앤텔롭 캐년 초이스 (밤도깨비와 동일)
@@ -1045,7 +1070,22 @@ const CHANNEL_PARSERS: Record<string, ChannelParserConfig> = {
       extractKlook(text, subject, sourceEmail, rawHtml),
   },
   kkday: {
-    preprocess: toPlainText,
+    preprocess: (html: string) => {
+      const s = html
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\s*\/?\s*br\s*\/?>/gi, '\n')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .trim()
+      return s
+    },
     extract: (text, subject, sourceEmail) =>
       extractKKday(text, subject, sourceEmail),
   },

@@ -4,7 +4,9 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { Mail, ChevronRight, Loader2, FileText, CheckCircle, XCircle, RefreshCw, GripVertical, Inbox, Search, Filter } from 'lucide-react'
 import { normalizeCustomerNameFromImport } from '@/utils/reservationUtils'
+import { useReservationData } from '@/hooks/useReservationData'
 import type { ExtractedReservationData } from '@/types/reservationImport'
+import type { Product } from '@/types/reservation'
 
 interface ImportItem {
   id: string
@@ -53,11 +55,32 @@ function localDateToUtcEnd(ymd: string): string {
   return end.toISOString()
 }
 
+/** 추출 데이터 + 상품 목록으로 내부 상품명(name) 반환. 매칭 실패 시 추출된 product_name 그대로 반환 */
+function productInternalName(extracted: ExtractedReservationData, products: Product[] | null | undefined): string {
+  const list = products ?? []
+  if (!extracted.product_id && !extracted.product_name) return ''
+  if (extracted.product_id && list.length > 0) {
+    const p = list.find((x) => x.id === extracted.product_id)
+    if (p) return ((p.name ?? p.name_ko ?? '').trim() || (extracted.product_name ?? ''))
+  }
+  const name = (extracted.product_name ?? '').trim()
+  if (!name || !list.length) return name
+  const nameLower = name.toLowerCase()
+  const matched = list.find(
+    (p) =>
+      (p.name && (p.name.toLowerCase() === nameLower || nameLower.includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(nameLower))) ||
+      (p.name_ko && (p.name_ko.toLowerCase() === nameLower || nameLower.includes(p.name_ko.toLowerCase()) || p.name_ko.toLowerCase().includes(nameLower))) ||
+      (p.name_en && (p.name_en.toLowerCase() === nameLower || nameLower.includes(p.name_en.toLowerCase()) || p.name_en.toLowerCase().includes(nameLower)))
+  )
+  return matched ? ((matched.name ?? matched.name_ko ?? '').trim() || name) : name
+}
+
 export default function AdminReservationImportsPage({}: AdminReservationImportsProps) {
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
   const locale = (params?.locale as string) || 'ko'
+  const { products: productsList = [] } = useReservationData()
   const [items, setItems] = useState<ImportItem[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<string>('pending')
@@ -85,10 +108,16 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
 
   const summary = (extracted: ExtractedReservationData) => {
     const parts = []
+    if (extracted.tour_date) parts.push(extracted.tour_date)
+    const productLabel = productInternalName(extracted, productsList)
+    if (productLabel) parts.push(productLabel)
+    const headcountParts = []
+    if (extracted.adults != null) headcountParts.push(`성인 ${extracted.adults}`)
+    if (extracted.children != null && extracted.children > 0) headcountParts.push(`아동 ${extracted.children}`)
+    if (extracted.infants != null && extracted.infants > 0) headcountParts.push(`유아 ${extracted.infants}`)
+    if (headcountParts.length) parts.push(headcountParts.join(' · '))
     if (extracted.customer_name) parts.push(normalizeCustomerNameFromImport(extracted.customer_name) || extracted.customer_name)
     if (extracted.customer_email) parts.push(extracted.customer_email)
-    if (extracted.tour_date) parts.push(extracted.tour_date)
-    if (extracted.adults != null) parts.push(`성인 ${extracted.adults}`)
     return parts.length ? parts.join(' · ') : '-'
   }
 
