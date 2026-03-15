@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { X, Calculator, Calendar, User, DollarSign, Users, Link as LinkIcon, Save, CreditCard, Star, Eye, ChevronDown, ChevronRight } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { X, Calculator, Calendar, User, DollarSign, Users, Link as LinkIcon, Save, CreditCard, Star, Eye, ChevronDown, ChevronRight, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import Link from 'next/link'
@@ -50,6 +50,20 @@ function isNonResidentOrEntranceOption(o: { option_key?: string | null; option_n
   return key === 'non_resident' || ko.includes('비거주자') || ko.includes('입장료') || en.includes('entrance') || en.includes('non-resident')
 }
 
+/** options 테이블: 패스 구매 옵션인지 (비거주자 옵션 합계에서 제외) */
+function isPassOptionLegacy(o: { name?: string | null; category?: string | null }): boolean {
+  const name = (o.name || '').toLowerCase()
+  const category = (o.category || '').toLowerCase()
+  return name.includes('pass') || name.includes('패스') || category.includes('pass') || category.includes('패스')
+}
+
+/** choice_options: 패스 구매 옵션인지 (비거주자 옵션 합계에서 제외) */
+function isPassOptionChoice(o: { option_name_ko?: string | null; option_name?: string | null }): boolean {
+  const ko = (o.option_name_ko || '').toLowerCase()
+  const en = (o.option_name || '').toLowerCase()
+  return ko.includes('패스') || en.includes('pass')
+}
+
 /**
  * reservation_choices에 있는 option_id 중 비거주자/입장료(Entrance Fee) 타입인 option_id 집합 반환.
  * (투어 상세에서 "비거주자 인원 8개"·"Entrance Fee"로 보이는 옵션과 동일 기준)
@@ -77,7 +91,11 @@ async function getNonResidentChoiceOptionIds(reservationIds: string[]): Promise<
       .in('id', batch)
     if (data?.length) optData = optData.concat(data)
   }
-  const ids = optData.filter(isNonResidentOrEntranceOption).map((o: { id: string }) => o.id)
+  const ids = optData
+    .filter((o: { option_key?: string | null; option_name_ko?: string | null; option_name?: string | null }) =>
+      isNonResidentOrEntranceOption(o) && !isPassOptionChoice(o)
+    )
+    .map((o: { id: string }) => o.id)
   return new Set(ids)
 }
 
@@ -94,30 +112,37 @@ async function getNonResidentOptionTotal(
 ): Promise<number> {
   if (reservationIds.length === 0) return 0
   const BATCH_SIZE = 100
-  // 1) reservation_options: option_id = 고정 비거주자 ID (6941b5d0), status 무관 — 배치 조회
+  const isExcludedStatus = (s: string | null | undefined) =>
+    String(s || '').toLowerCase() === 'cancelled' || String(s || '').toLowerCase() === 'refunded'
+  // 1) reservation_options: option_id = 고정 비거주자 ID (6941b5d0), status가 cancelled/refunded 제외
   let optionsDataFixed: any[] = []
   for (let i = 0; i < reservationIds.length; i += BATCH_SIZE) {
     const batch = reservationIds.slice(i, i + BATCH_SIZE)
     const { data } = await supabase
       .from('reservation_options')
-      .select('reservation_id, total_price, ea, price')
+      .select('reservation_id, total_price, ea, price, status')
       .in('reservation_id', batch)
       .eq('option_id', NON_RESIDENT_OPTION_ID)
     if (data?.length) optionsDataFixed = optionsDataFixed.concat(data)
   }
-  const fromFixed = (optionsDataFixed || []).reduce((sum, row) => {
+  let fromFixed = (optionsDataFixed || []).reduce((sum, row) => {
+    if (isExcludedStatus((row as { status?: string }).status)) return sum
     const amount = (row as { total_price?: number; ea?: number; price?: number }).total_price
       ?? ((row as { ea?: number; price?: number }).ea ?? 1) * ((row as { ea?: number; price?: number }).price ?? 0)
     return sum + Number(amount || 0)
   }, 0)
+  if (fromFixed > 0) {
+    const { data: optRow } = await supabase.from('options').select('name, category').eq('id', NON_RESIDENT_OPTION_ID).maybeSingle()
+    if (optRow && isPassOptionLegacy(optRow as { name?: string | null; category?: string | null })) fromFixed = 0
+  }
   if (fromFixed > 0) return roundTo100(fromFixed)
-  // 2) reservation_options 전체 조회(상태 무관) — 배치 조회 후 options 테이블에서 비거주자·Entrance Fee만 합산
+  // 2) reservation_options 전체 조회 — status가 cancelled/refunded 제외, 패스 제외, options 테이블에서 비거주자·Entrance Fee만 합산
   let optionsDataAll: any[] = []
   for (let i = 0; i < reservationIds.length; i += BATCH_SIZE) {
     const batch = reservationIds.slice(i, i + BATCH_SIZE)
     const { data } = await supabase
       .from('reservation_options')
-      .select('reservation_id, option_id, total_price, ea, price')
+      .select('reservation_id, option_id, total_price, ea, price, status')
       .in('reservation_id', batch)
     if (data?.length) optionsDataAll = optionsDataAll.concat(data)
   }
@@ -130,10 +155,11 @@ async function getNonResidentOptionTotal(
         .select('id, name, category')
         .in('id', uniqueOptionIds)
       ;(optRows || []).forEach((o: { id: string; name?: string | null; category?: string | null }) => {
-        if (isNonResidentOrEntranceOptionLegacy(o)) nonResidentIds.add(String(o.id).trim())
+        if (isNonResidentOrEntranceOptionLegacy(o) && !isPassOptionLegacy(o)) nonResidentIds.add(String(o.id).trim())
       })
     }
     const fromOptionsTable = (optionsDataAll || []).reduce((sum, row) => {
+      if (isExcludedStatus((row as { status?: string }).status)) return sum
       const oid = String((row as { option_id?: string }).option_id || '').trim()
       if (!nonResidentIds.has(oid)) return sum
       const amount = (row as { total_price?: number; ea?: number; price?: number }).total_price
@@ -235,6 +261,14 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
   const [endDate, setEndDate] = useState<string>(getStoredEndDate)
   const [selectedEmployee, setSelectedEmployee] = useState<string>('')
   const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string}>>([])
+  /** 계산법 2: OP, Office Manager (보너스 입력 0인 분의 몫을 나눠 가짐) */
+  const [opOfficeManagers, setOpOfficeManagers] = useState<Array<{email: string, name_ko: string, position: string}>>([])
+  /** 계산법 2: OP/Office Manager별 보너스 입력 오버라이드 (없으면 균등 분배 몫) */
+  const [method2OpOfficeManagerOverrides, setMethod2OpOfficeManagerOverrides] = useState<Record<string, number>>({})
+  /** 계산법 2: OP/OM 배분 총액 직접 입력 (null이면 0원 입력분 합계 사용) */
+  const [method2OpOmTotalOverride, setMethod2OpOmTotalOverride] = useState<number | null>(null)
+  /** 계산법 2: OP/OM별 배분 비율(%) — 없으면 균등 배분 */
+  const [method2OpOmPercent, setMethod2OpOmPercent] = useState<Record<string, number>>({})
   const [tourBonuses, setTourBonuses] = useState<TourBonus[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -253,6 +287,10 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
   /** 계산법 2 전용: 밤도깨비·그랜드서클 당일 투어 기준 배분 결과 */
   const [method2Data, setMethod2Data] = useState<{
     totalNonResidentOption: number
+    /** 차감 전 비거주자 옵션 총합 (American Beautiful Non-citizen pass 차감 표시용) */
+    totalNonResidentOptionRaw?: number
+    /** 회사 지출 중 paid_for = American Beautiful Non-citizen pass 기간 합계 (옵션 총합에서 차감) */
+    nonCitizenPassDeduction?: number
     totalEligibleTours: number
     bonusPool: number
     perTourAmount: number
@@ -302,45 +340,19 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
     }
   }
 
-  // 이번 기간 설정 함수
-  const setCurrentPeriod = () => {
-    const today = new Date()
-    const day = today.getDate()
-    
-    let startDate, endDate
-    
-    if (day >= 1 && day <= 15) {
-      startDate = new Date(today.getFullYear(), today.getMonth(), 1)
-      endDate = new Date(today.getFullYear(), today.getMonth(), 15)
-    } else {
-      startDate = new Date(today.getFullYear(), today.getMonth(), 16)
-      endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0)
-    }
-    
-    setStartDate(startDate.toISOString().split('T')[0])
-    setEndDate(endDate.toISOString().split('T')[0])
+  // 해당 월(1~12) 전체 기간 설정 함수 (현재 연도 기준)
+  const setMonthPeriod = (month: number) => {
+    const year = new Date().getFullYear()
+    const start = new Date(year, month - 1, 1)
+    const end = new Date(year, month, 0) // 해당 월 마지막 날
+    setStartDate(start.toISOString().split('T')[0])
+    setEndDate(end.toISOString().split('T')[0])
   }
 
-  // 지난 기간 설정 함수
-  const setPreviousPeriod = () => {
-    const today = new Date()
-    const day = today.getDate()
-    
-    let startDate, endDate
-    
-    if (day >= 1 && day <= 15) {
-      const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 16)
-      const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0)
-      startDate = lastMonth
-      endDate = lastMonthEnd
-    } else {
-      startDate = new Date(today.getFullYear(), today.getMonth(), 1)
-      endDate = new Date(today.getFullYear(), today.getMonth(), 15)
-    }
-    
-    setStartDate(startDate.toISOString().split('T')[0])
-    setEndDate(endDate.toISOString().split('T')[0])
-  }
+  // 현재 선택된 기간이 특정 월과 일치하는지 (버튼 활성화 표시용)
+  const selectedMonth = startDate && endDate && startDate.slice(0, 7) === endDate.slice(0, 7)
+    ? parseInt(startDate.slice(5, 7), 10)
+    : null
 
   // 시작일·종료일 변경 시 로컬 스토리지에 저장 (새로고침 후에도 유지)
   useEffect(() => {
@@ -366,14 +378,22 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
       // 가이드와 드라이버만 필터링
       const filteredMembers = (data || []).filter(member => {
         const position = member.position?.toLowerCase()
-        return position === '가이드' || 
+        return position === '가이드' ||
                position === 'guide' ||
                position === 'tour guide' ||
-               position === '드라이버' || 
+               position === '드라이버' ||
                position === 'driver' ||
                position === '전용 운전기사'
       })
 
+      // OP, Office Manager 필터링 (계산법 2에서 0원 입력분 배분용) — vegasmaniatour@gmail.com 제외
+      const opOm = (data || []).filter(member => {
+        const position = (member.position || '').toLowerCase().trim()
+        const isOpOrOm = position === 'op' || position === 'office manager'
+        const excludedEmail = 'vegasmaniatour@gmail.com'
+        return isOpOrOm && (member.email || '').toLowerCase() !== excludedEmail.toLowerCase()
+      })
+      setOpOfficeManagers(opOm)
       setTeamMembers(filteredMembers)
       if (filteredMembers.length > 0) {
         setSelectedEmployee(filteredMembers[0].email)
@@ -629,25 +649,32 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
     setLoadingTourDetails(tourId)
     try {
       const BATCH = 100
-      // 옵션 관리와 동일: reservation_options에서 비거주자 옵션 조회 (status 무관) — 배치
+      const isExcludedStatus = (s: string | null | undefined) =>
+        String(s || '').toLowerCase() === 'cancelled' || String(s || '').toLowerCase() === 'refunded'
+      // reservation_options에서 비거주자 옵션 조회 — status cancelled/refunded 제외
       let optionsDataFixed: any[] = []
       for (let i = 0; i < reservationIds.length; i += BATCH) {
         const batch = reservationIds.slice(i, i + BATCH)
         const { data } = await supabase
           .from('reservation_options')
-          .select('reservation_id, ea, price, total_price')
+          .select('reservation_id, ea, price, total_price, status')
           .in('reservation_id', batch)
           .eq('option_id', NON_RESIDENT_OPTION_ID)
         if (data?.length) optionsDataFixed = optionsDataFixed.concat(data)
       }
       let byRes: Record<string, { option_count: number; option_total: number }> = {}
       if (optionsDataFixed?.length) {
-        for (const row of optionsDataFixed) {
-          const rid = row.reservation_id
-          const total = (row as { total_price?: number }).total_price ?? (row as { ea?: number }).ea * (row as { price?: number }).price
-          if (!byRes[rid]) byRes[rid] = { option_count: 0, option_total: 0 }
-          byRes[rid].option_count += (row as { ea?: number }).ea ?? 1
-          byRes[rid].option_total += Number(total || 0)
+        const { data: optRow } = await supabase.from('options').select('name, category').eq('id', NON_RESIDENT_OPTION_ID).maybeSingle()
+        const isPass = optRow && isPassOptionLegacy(optRow as { name?: string | null; category?: string | null })
+        if (!isPass) {
+          for (const row of optionsDataFixed) {
+            if (isExcludedStatus((row as { status?: string }).status)) continue
+            const rid = row.reservation_id
+            const total = (row as { total_price?: number }).total_price ?? (row as { ea?: number }).ea * (row as { price?: number }).price
+            if (!byRes[rid]) byRes[rid] = { option_count: 0, option_total: 0 }
+            byRes[rid].option_count += (row as { ea?: number }).ea ?? 1
+            byRes[rid].option_total += Number(total || 0)
+          }
         }
       }
       if (Object.keys(byRes).length === 0) {
@@ -656,7 +683,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
           const batch = reservationIds.slice(i, i + BATCH)
           const { data } = await supabase
             .from('reservation_options')
-            .select('reservation_id, option_id, ea, price, total_price')
+            .select('reservation_id, option_id, ea, price, total_price, status')
             .in('reservation_id', batch)
           if (data?.length) optionsDataAll = optionsDataAll.concat(data)
         }
@@ -669,10 +696,11 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
               .select('id, name, category')
               .in('id', uniqueOptionIds)
             ;(optRows || []).forEach((o: { id: string; name?: string | null; category?: string | null }) => {
-              if (isNonResidentOrEntranceOptionLegacy(o)) nonResidentIds.add(String(o.id).trim())
+              if (isNonResidentOrEntranceOptionLegacy(o) && !isPassOptionLegacy(o)) nonResidentIds.add(String(o.id).trim())
             })
           }
           for (const row of optionsDataAll) {
+            if (isExcludedStatus((row as { status?: string }).status)) continue
             const oid = String((row as { option_id?: string }).option_id || '').trim()
             if (!nonResidentIds.has(oid)) continue
             const rid = row.reservation_id
@@ -915,6 +943,26 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
         )
       }
 
+      // 회사 지출 중 paid_for = American Beautiful Non-citizen pass 기간 합계(옵션 총합에서 차감) — 계산법 1·2 공통
+      const totalNonResidentAll = withSaved.reduce((s, r) => s + r.non_resident_option_total, 0)
+      const startISO = `${startDate}T00:00:00.000Z`
+      const endISO = `${endDate}T23:59:59.999Z`
+      const { data: nonCitizenExpenses } = await supabase
+        .from('company_expenses')
+        .select('amount')
+        .eq('paid_for', 'American Beautiful Non-citizen pass')
+        .gte('submit_on', startISO)
+        .lte('submit_on', endISO)
+      const nonCitizenPassDeduction = (nonCitizenExpenses || []).reduce((sum, r) => sum + Number((r as { amount: number }).amount || 0), 0)
+      const totalNonResidentEffective = Math.max(0, totalNonResidentAll - nonCitizenPassDeduction)
+      const scale = totalNonResidentAll > 0 ? totalNonResidentEffective / totalNonResidentAll : 1
+      const withSavedScaled = withSaved.map(r => ({
+        ...r,
+        non_resident_option_total: Math.round(r.non_resident_option_total * scale * 100) / 100,
+        guide_bonus: Math.round(r.guide_bonus * scale * 100) / 100,
+        driver_bonus: Math.round(r.driver_bonus * scale * 100) / 100
+      }))
+
       const tourDetailBase = toursData.map((tour, i) => {
         const total_tour_people = (tour.reservation_ids || []).reduce((s, rid) => s + (peopleMap[rid] ?? 0), 0)
         return {
@@ -923,7 +971,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
           guide_name: tour.tour_guide_id ? (nameMap[tour.tour_guide_id] || null) : null,
           driver_name: tour.assistant_id ? (nameMap[tour.assistant_id] || null) : null,
           total_tour_people,
-          non_resident_option_total: withSaved[i].non_resident_option_total
+          non_resident_option_total: withSavedScaled[i].non_resident_option_total
         }
       })
       const detailMap: Record<string, GuideTourDetailRow[]> = {}
@@ -932,7 +980,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
         for (let i = 0; i < toursData.length; i++) {
           const tour = toursData[i]
           const base = tourDetailBase[i]
-          const saved = withSaved[i]
+          const saved = withSavedScaled[i]
           if (tour.tour_guide_id === g.email) {
             detailMap[g.email].push({ ...base, bonus_amount: saved.guide_bonus, role: '가이드' })
           }
@@ -955,7 +1003,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
           review_bonus_points: 0
         })
       }
-      for (const row of withSaved) {
+      for (const row of withSavedScaled) {
         if (row.guide_email) {
           const cur = byGuide.get(row.guide_email)
           if (cur) {
@@ -977,7 +1025,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
       setAllBonusSummary(Array.from(byGuide.values()).sort((a, b) => (a.guide_name || '').localeCompare(b.guide_name || '')))
 
       // 계산법 2: 비거주자 총합의 %를 밤도깨비/그랜드서클 당일 투어 참여(가이드+드라이버/어시스턴트) 횟수로 배분
-      const totalNonResidentAll = withSaved.reduce((s, r) => s + r.non_resident_option_total, 0)
+
       const eligibleTours = toursData.filter(t =>
         isEligibleTourForMethod2((t.products as { name_ko?: string })?.name_ko)
       )
@@ -986,7 +1034,7 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
         0
       )
       const rate = Math.max(0, Math.min(100, bonusPercent)) / 100
-      const bonusPool = totalNonResidentAll * rate
+      const bonusPool = totalNonResidentEffective * rate
       const perParticipationAmount = totalParticipations > 0 ? bonusPool / totalParticipations : 0
       const participantEmails = [...new Set(eligibleTours.flatMap(t => [t.tour_guide_id, t.assistant_id].filter(Boolean) as string[]))]
       const guideSummaries = participantEmails.map(email => {
@@ -1019,7 +1067,9 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
         }
       }).sort((a, b) => (a.guide_name || '').localeCompare(b.guide_name || ''))
       setMethod2Data({
-        totalNonResidentOption: totalNonResidentAll,
+        totalNonResidentOption: totalNonResidentEffective,
+        totalNonResidentOptionRaw: totalNonResidentAll,
+        nonCitizenPassDeduction,
         totalEligibleTours: totalParticipations,
         bonusPool,
         perTourAmount: perParticipationAmount,
@@ -1286,6 +1336,56 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
     }
   }
 
+  // 계산법 2: OP/Office Manager 회사 지출 추가
+  const handleMethod2PaymentOpOfficeManager = async (email: string) => {
+    if (!method2Data || !authUser?.email) return
+    const person = opOfficeManagers.find(m => m.email === email)
+    if (!person) return
+    const effectivePerParticipation = method2PerParticipationOverride ?? method2Data.perTourAmount
+    const unclaimedPool = method2Data.guideSummaries
+      .filter(r => method2BonusOverrides[r.guide_email] === 0)
+      .reduce((s, r) => s + Math.round(effectivePerParticipation * r.eligibleTourCount * 100) / 100, 0)
+    const effectiveOpOmTotal = method2OpOmTotalOverride ?? unclaimedPool
+    const opOmCount = opOfficeManagers.length
+    const pct = opOmCount > 0 ? (method2OpOmPercent[email] ?? (100 / opOmCount)) : 0
+    const share = Math.round((effectiveOpOmTotal * (pct / 100)) * 100) / 100
+    const amount = method2OpOfficeManagerOverrides[email] ?? share
+    if (amount <= 0) {
+      alert('지불할 보너스 금액이 0 이하입니다.')
+      return
+    }
+    if (!confirm(`${person.name_ko}님에게 ${formatCurrency(amount)} 보너스를 지불하고 회사 지출에 추가하시겠습니까?`)) return
+
+    setPayingMethod2Email(email)
+    try {
+      const expenseId = `BONUS_M2_OP_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+      const { error } = await supabase
+        .from('company_expenses')
+        .insert({
+          id: expenseId,
+          paid_to: person.name_ko,
+          paid_to_employee_email: email,
+          paid_for: `보너스(계산법2) - OP/OM - ${person.name_ko}`,
+          description: `${startDate} ~ ${endDate} 기간 보너스 입력 0원 분 배분`,
+          amount,
+          payment_method: 'cash',
+          submit_by: authUser.email,
+          category: 'payroll',
+          subcategory: 'bonus',
+          status: 'approved',
+          expense_type: 'operating',
+          tax_deductible: true
+        })
+      if (error) throw error
+      alert(`${person.name_ko}님 보너스가 회사 지출에 추가되었습니다.`)
+    } catch (error: any) {
+      console.error('계산법2 OP/OM 지불 오류:', error)
+      alert('지불 처리 중 오류가 발생했습니다: ' + (error.message || '알 수 없는 오류'))
+    } finally {
+      setPayingMethod2Email(null)
+    }
+  }
+
   // 날짜·직원·보너스% 변경 시 투어 보너스 조회
   useEffect(() => {
     if (viewMode === 'individual' && selectedEmployee && startDate && endDate) {
@@ -1335,6 +1435,9 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
     setCalculationMethod(1)
     setMethod2Data(null)
     setMethod2BonusOverrides({})
+    setMethod2OpOfficeManagerOverrides({})
+    setMethod2OpOmTotalOverride(null)
+    setMethod2OpOmPercent({})
     setMethod2PerParticipationOverride(null)
     setExpandedGuideEmailMethod2(null)
     setPayingMethod2Email(null)
@@ -1345,11 +1448,62 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
     onClose()
   }
 
+  const printAreaRef = useRef<HTMLDivElement>(null)
+
+  const handlePrint = () => {
+    const el = printAreaRef.current
+    if (!el) return
+    const iframe = document.createElement('iframe')
+    iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;overflow:hidden;')
+    document.body.appendChild(iframe)
+    const doc = iframe.contentWindow?.document
+    if (!doc) {
+      document.body.removeChild(iframe)
+      return
+    }
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin + window.location.pathname : ''
+    const linkTags = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
+      .map((link) => (link as HTMLLinkElement).href ? `<link rel="stylesheet" href="${(link as HTMLLinkElement).href}">` : '')
+      .join('')
+    doc.open()
+    doc.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>보너스 계산기</title>
+          <base href="${baseUrl}" />
+          ${linkTags}
+          <style>
+            body { margin: 0; padding: 16px; }
+            .no-print { display: none !important; }
+            @media print {
+              body { margin: 0; padding: 12px; }
+              .print-single-page { page-break-inside: avoid; }
+            }
+          </style>
+        </head>
+        <body>${el.innerHTML}</body>
+      </html>
+    `)
+    doc.close()
+    try {
+      iframe.contentWindow?.focus()
+      iframe.contentWindow?.print()
+    } finally {
+      setTimeout(() => document.body.removeChild(iframe), 100)
+    }
+  }
+
   if (!isOpen) return null
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-white rounded-t-2xl sm:rounded-lg shadow-xl max-w-[1400px] w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto flex flex-col">
+      <div
+        id="bonus-calculator-print-area"
+        ref={printAreaRef}
+        className="bg-white rounded-t-2xl sm:rounded-lg shadow-xl max-w-[1400px] w-full max-h-[95vh] sm:max-h-[90vh] overflow-y-auto flex flex-col"
+      >
         {/* 헤더 */}
         <div className="flex items-center justify-between gap-2 p-4 sm:p-6 border-b border-gray-200 shrink-0">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
@@ -1372,13 +1526,24 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
               </button>
             </div>
           </div>
-          <button
-            onClick={handleClose}
-            className="p-2 -m-2 text-gray-400 hover:text-gray-600 transition-colors shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center sm:min-w-0 sm:min-h-0"
-            aria-label="닫기"
-          >
-            <X className="w-6 h-6" />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="no-print p-2 -m-2 text-gray-500 hover:text-blue-600 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center sm:min-w-0 sm:min-h-0"
+              aria-label="프린트"
+              title="프린트"
+            >
+              <Printer className="w-5 h-5 sm:w-6 sm:h-6" />
+            </button>
+            <button
+              onClick={handleClose}
+              className="no-print p-2 -m-2 text-gray-400 hover:text-gray-600 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center sm:min-w-0 sm:min-h-0"
+              aria-label="닫기"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
         </div>
 
         {/* 내용 */}
@@ -1407,19 +1572,21 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                           </option>
                         ))}
                       </select>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={setCurrentPeriod}
-                          className="flex-1 sm:flex-none min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-xs sm:text-xs font-medium text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700 transition-colors"
-                        >
-                          이번
-                        </button>
-                        <button
-                          onClick={setPreviousPeriod}
-                          className="flex-1 sm:flex-none min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-                        >
-                          지난
-                        </button>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setMonthPeriod(m)}
+                            className={`min-h-[36px] px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                              selectedMonth === m
+                                ? 'bg-blue-600 text-white border border-blue-600'
+                                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            {m}월
+                          </button>
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -1429,19 +1596,21 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                 <>
                   <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-wrap">
                     <span className="text-sm font-medium text-gray-700">기간 선택 후 가이드별 합계가 표시됩니다.</span>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={setCurrentPeriod}
-                        className="min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-xs font-medium text-white bg-blue-600 border border-blue-600 rounded-md hover:bg-blue-700 transition-colors"
-                      >
-                        이번
-                      </button>
-                      <button
-                        onClick={setPreviousPeriod}
-                        className="min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2 sm:py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-                      >
-                        지난
-                      </button>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setMonthPeriod(m)}
+                          className={`min-h-[36px] px-2 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                            selectedMonth === m
+                              ? 'bg-blue-600 text-white border border-blue-600'
+                              : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          {m}월
+                        </button>
+                      ))}
                     </div>
                   </div>
                   <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 flex-wrap">
@@ -1607,7 +1776,21 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                       <div className="mb-6 p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200 text-xs sm:text-sm space-y-2 overflow-x-auto">
                         <p className="font-medium text-gray-800">계산식</p>
                         <ol className="list-decimal list-inside space-y-1 text-gray-700 min-w-0">
-                          <li>기간 내 비거주자 옵션 총합: <span className="font-bold text-gray-900 bg-amber-100/80 px-1.5 py-0.5 rounded">${formatCurrency(method2Data.totalNonResidentOption)}</span></li>
+                          <li>
+                              기간 내 비거주자 옵션 총합:
+                              {method2Data.nonCitizenPassDeduction != null && method2Data.nonCitizenPassDeduction > 0 ? (
+                                <>
+                                  <span className="font-bold text-gray-900 bg-amber-100/80 px-1.5 py-0.5 rounded">${formatCurrency(method2Data.totalNonResidentOptionRaw ?? method2Data.totalNonResidentOption + method2Data.nonCitizenPassDeduction)}</span>
+                                  {' − '}
+                                  <span className="font-bold text-red-700 bg-red-100/80 px-1.5 py-0.5 rounded">${formatCurrency(method2Data.nonCitizenPassDeduction)}</span>
+                                  <span className="text-gray-600 ml-1">(American Beautiful Non-citizen pass)</span>
+                                  {' = '}
+                                  <span className="font-bold text-gray-900 bg-amber-100/80 px-1.5 py-0.5 rounded">${formatCurrency(method2Data.totalNonResidentOption)}</span>
+                                </>
+                              ) : (
+                                <span className="font-bold text-gray-900 bg-amber-100/80 px-1.5 py-0.5 rounded">${formatCurrency(method2Data.totalNonResidentOption)}</span>
+                              )}
+                            </li>
                           <li>기간 내 밤도깨비·그랜드서클 당일 투어 참여 횟수(가이드+드라이버/어시스턴트) 합계: <span className="font-bold text-gray-900 bg-amber-100/80 px-1.5 py-0.5 rounded">{method2Data.totalEligibleTours} 참여</span></li>
                           <li>보너스 풀 = 비거주자 총합 × {bonusPercent}% = ${formatCurrency(method2Data.bonusPool)}</li>
                           <li className="flex flex-wrap items-center gap-1">
@@ -1636,6 +1819,9 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                             ) : '참여 0건이라 배분 없음'}
                           </li>
                           <li>각 직원 보너스 = 1참여당 금액 × 해당 직원 참여 횟수(가이드 또는 드라이버/어시스턴트)</li>
+                          {opOfficeManagers.length > 0 && (
+                            <li className="text-amber-800">보너스 입력을 0으로 둔 직원의 계산 보너스는 테이블 하단 OP·Office Manager가 균등 분배합니다.</li>
+                          )}
                         </ol>
                       </div>
                     )
@@ -1757,6 +1943,107 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                           </React.Fragment>
                           )
                         })}
+                        {(() => {
+                          const unclaimedPool = method2Data.guideSummaries
+                            .filter(r => method2BonusOverrides[r.guide_email] === 0)
+                            .reduce((s, r) => s + Math.round(effectivePerParticipation * r.eligibleTourCount * 100) / 100, 0)
+                          const opOmCount = opOfficeManagers.length
+                          const effectiveOpOmTotal = method2OpOmTotalOverride ?? unclaimedPool
+                          const sharePerOpOm = opOmCount > 0 ? Math.round((effectiveOpOmTotal / opOmCount) * 100) / 100 : 0
+                          if (opOmCount === 0) return null
+                          return (
+                            <>
+                              <tr className="bg-amber-100/80 border-t-2 border-amber-200">
+                                <td className="px-2 py-2 sm:px-3" colSpan={2}></td>
+                                <td className="px-2 py-2 sm:px-3 text-sm font-semibold text-amber-900">OP·Office Manager 배분 총합</td>
+                                <td className="px-2 py-2 sm:px-3 text-sm font-bold text-amber-800">${formatCurrency(unclaimedPool)}</td>
+                                <td className="px-2 py-2 sm:px-3" onClick={e => e.stopPropagation()}>
+                                  <div className="flex items-center w-28 sm:w-32 min-h-[36px] border border-amber-300 rounded focus-within:ring-2 focus-within:ring-amber-500 bg-white">
+                                    <span className="pl-2 text-sm text-gray-500 shrink-0">$</span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      step={0.01}
+                                      value={effectiveOpOmTotal}
+                                      onChange={(e) => {
+                                        const v = parseFloat(e.target.value)
+                                        setMethod2OpOmTotalOverride(Number.isNaN(v) || v < 0 ? null : Math.round(v * 100) / 100)
+                                      }}
+                                      className="w-full min-w-0 py-1.5 sm:py-1 pr-2 text-sm border-0 rounded bg-transparent text-amber-900 focus:ring-0 focus:outline-none"
+                                    />
+                                  </div>
+                                  <span className="text-xs text-amber-800 mt-0.5 block">총액 입력 (×{opOmCount}명 균등)</span>
+                                </td>
+                                <td className="px-2 py-2 sm:px-3"></td>
+                              </tr>
+                              {opOfficeManagers.map((person) => {
+                            const pct = method2OpOmPercent[person.email] ?? (100 / opOmCount)
+                            const shareForPerson = Math.round((effectiveOpOmTotal * (pct / 100)) * 100) / 100
+                            const amount = method2OpOfficeManagerOverrides[person.email] ?? shareForPerson
+                            return (
+                              <tr key={person.email} className="bg-amber-50/80 hover:bg-amber-100/80 border-t-2 border-amber-200">
+                                <td className="px-2 py-2 sm:px-3"></td>
+                                <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                                  {person.name_ko} <span className="text-xs text-gray-500">({person.position})</span>
+                                </td>
+                                <td className="px-2 py-2 sm:px-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                                  <div className="flex items-center w-16 sm:w-20 min-h-[44px] sm:min-h-0 border border-gray-300 rounded focus-within:ring-2 focus-within:ring-amber-500 bg-white">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={100}
+                                      step={0.5}
+                                      value={method2OpOmPercent[person.email] ?? ''}
+                                      placeholder={String(100 / opOmCount)}
+                                      onChange={(e) => {
+                                        const v = parseFloat(e.target.value)
+                                        if (e.target.value.trim() === '' || Number.isNaN(v)) {
+                                          setMethod2OpOmPercent(prev => { const next = { ...prev }; delete next[person.email]; return next })
+                                        } else {
+                                          setMethod2OpOmPercent(prev => ({ ...prev, [person.email]: Math.max(0, Math.min(100, v)) }))
+                                        }
+                                      }}
+                                      className="w-full min-w-0 py-2 sm:py-1 px-2 text-sm border-0 rounded bg-transparent text-gray-900 focus:ring-0 focus:outline-none"
+                                    />
+                                    <span className="pr-2 text-sm text-gray-500 shrink-0">%</span>
+                                  </div>
+                                </td>
+                                <td className="px-2 py-2 sm:px-3 whitespace-nowrap text-sm text-amber-700 text-left font-medium">${formatCurrency(shareForPerson)}</td>
+                                <td className="px-2 py-2 sm:px-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                                  <div className="flex items-center w-24 sm:w-28 min-h-[44px] sm:min-h-0 border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500 bg-white">
+                                    <span className="pl-2 text-sm text-gray-500 shrink-0">$</span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      step={0.01}
+                                      value={amount}
+                                      onChange={(e) => {
+                                        const v = parseFloat(e.target.value)
+                                        setMethod2OpOfficeManagerOverrides(prev => ({
+                                          ...prev,
+                                          [person.email]: Number.isNaN(v) ? 0 : Math.max(0, v)
+                                        }))
+                                      }}
+                                      className="w-full min-w-0 py-2 sm:py-1 pr-2 text-sm border-0 rounded bg-transparent text-gray-900 focus:ring-0 focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="px-2 py-2 sm:px-3 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMethod2PaymentOpOfficeManager(person.email)}
+                                    disabled={payingMethod2Email !== null}
+                                    className="min-h-[44px] sm:min-h-0 px-3 py-2 sm:py-1.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    {payingMethod2Email === person.email ? '처리 중...' : '지불'}
+                                  </button>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                            </>
+                          )
+                        })()}
                       </tbody>
                       <tfoot className="bg-gray-50">
                         <tr>
@@ -1766,7 +2053,18 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                             ${formatCurrency(method2Data.guideSummaries.reduce((s, r) => s + Math.round(effectivePerParticipation * r.eligibleTourCount * 100) / 100, 0))}
                           </td>
                           <td className="px-2 sm:px-3 py-2 text-sm font-bold text-green-600 text-left">
-                            ${formatCurrency(method2Data.guideSummaries.reduce((s, r) => s + (method2BonusOverrides[r.guide_email] ?? Math.round(effectivePerParticipation * r.eligibleTourCount * 100) / 100), 0))}
+                            ${formatCurrency(
+                              method2Data.guideSummaries.reduce((s, r) => s + (method2BonusOverrides[r.guide_email] ?? Math.round(effectivePerParticipation * r.eligibleTourCount * 100) / 100), 0) +
+                              (opOfficeManagers.length > 0
+                                ? opOfficeManagers.reduce((s, p) => {
+                                    const unclaimed = method2Data.guideSummaries.filter(r => method2BonusOverrides[r.guide_email] === 0).reduce((s2, r) => s2 + Math.round(effectivePerParticipation * r.eligibleTourCount * 100) / 100, 0)
+                                    const effectiveOpOmTotal = method2OpOmTotalOverride ?? unclaimed
+                                    const pct = method2OpOmPercent[p.email] ?? (100 / opOfficeManagers.length)
+                                    const share = Math.round((effectiveOpOmTotal * (pct / 100)) * 100) / 100
+                                    return s + (method2OpOfficeManagerOverrides[p.email] ?? share)
+                                  }, 0)
+                                : 0)
+                            )}
                           </td>
                           <td className="px-2 sm:px-3 py-2"></td>
                         </tr>
@@ -1782,9 +2080,14 @@ export default function BonusCalculatorModal({ isOpen, onClose, locale = 'ko' }:
                 </div>
               ) : (
                 <div className="mt-6">
-                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">
                     전체 보너스 — 계산법 1 가이드별 합계 ({startDate} ~ {endDate})
                   </h3>
+                  {method2Data?.nonCitizenPassDeduction != null && method2Data.nonCitizenPassDeduction > 0 && (
+                    <p className="text-sm text-gray-600 mb-4">
+                      기간 내 회사 지출 American Beautiful Non-citizen pass ${formatCurrency(method2Data.nonCitizenPassDeduction)} 차감 반영
+                    </p>
+                  )}
                   <div className="overflow-x-auto -mx-4 sm:mx-0">
                     <div className="min-w-[720px] px-4 sm:px-0">
                     <table className="min-w-full bg-white border border-gray-200 rounded-lg">
