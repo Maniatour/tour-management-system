@@ -787,32 +787,36 @@ export default function AttendancePage() {
                   <DollarSign className="w-4 h-4 shrink-0" />
                   <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('officeTips')}</span>
                 </button>
-                <button
-                  onClick={() => setIsBiweeklyCalculatorOpen(true)}
-                  className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-green-600 border border-green-600 rounded-lg hover:bg-green-700 transition-colors min-w-[3rem]"
-                >
-                  <Calculator className="w-4 h-4 shrink-0" />
-                  <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('biweekly')}</span>
-                </button>
-                <button
-                  onClick={() => setIsBonusCalculatorOpen(true)}
-                  className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-orange-600 border border-orange-600 rounded-lg hover:bg-orange-700 transition-colors min-w-[3rem]"
-                >
-                  <Calculator className="w-4 h-4 shrink-0" />
-                  <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('bonus')}</span>
-                </button>
-                <button
-                  onClick={() => setIsTotalEmployeesModalOpen(true)}
-                  className="relative flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors min-w-[3rem]"
-                >
-                  {totalEmployeesOverdueCount > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-[10px] font-bold text-white bg-red-500 rounded-full">
-                      {totalEmployeesOverdueCount}
-                    </span>
-                  )}
-                  <Users className="w-4 h-4 shrink-0" />
-                  <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('totalAll')}</span>
-                </button>
+                {(isAdmin || canViewTipsShare) && (
+                  <>
+                    <button
+                      onClick={() => setIsBiweeklyCalculatorOpen(true)}
+                      className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-green-600 border border-green-600 rounded-lg hover:bg-green-700 transition-colors min-w-[3rem]"
+                    >
+                      <Calculator className="w-4 h-4 shrink-0" />
+                      <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('biweekly')}</span>
+                    </button>
+                    <button
+                      onClick={() => setIsBonusCalculatorOpen(true)}
+                      className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-orange-600 border border-orange-600 rounded-lg hover:bg-orange-700 transition-colors min-w-[3rem]"
+                    >
+                      <Calculator className="w-4 h-4 shrink-0" />
+                      <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('bonus')}</span>
+                    </button>
+                    <button
+                      onClick={() => setIsTotalEmployeesModalOpen(true)}
+                      className="relative flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors min-w-[3rem]"
+                    >
+                      {totalEmployeesOverdueCount > 0 && (
+                        <span className="absolute -top-1 -right-1 min-w-[1.25rem] h-5 px-1 flex items-center justify-center text-[10px] font-bold text-white bg-red-500 rounded-full">
+                          {totalEmployeesOverdueCount}
+                        </span>
+                      )}
+                      <Users className="w-4 h-4 shrink-0" />
+                      <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('totalAll')}</span>
+                    </button>
+                  </>
+                )}
               </>
             )}
             {(isAdmin || canViewTipsShare) && (
