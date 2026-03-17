@@ -239,9 +239,13 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         0
       ) || 0
       const round2 = (n: number) => Math.round(n * 100) / 100
-      const withShare = rows.map(r => ({
+      const n = rows.length
+      const equalShare = n > 0 ? round2(100 / n) : 0
+      const withShare = rows.map((r, i) => ({
         ...r,
-        sharePercent: totalEffective > 0 ? round2((100 * r.hoursInPeriod * (r.tierPercent / 100)) / totalEffective) : 0
+        sharePercent: totalEffective > 0
+          ? round2((100 * r.hoursInPeriod * (r.tierPercent / 100)) / totalEffective)
+          : (i === n - 1 ? round2(100 - equalShare * (n - 1)) : equalShare)
       }))
       setEmployeeStats(withShare)
     } catch (e) {
@@ -289,15 +293,16 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
 
   const totalOfficeTips = tours.reduce((s, row) => s + (row.office_tip_amount || 0), 0)
   const totalPrepaidTips = tours.reduce((s, row) => s + (row.prepaid_tips_office_share || 0), 0)
+  const totalToDistribute = totalOfficeTips + totalPrepaidTips
 
   useEffect(() => {
     setEmployeeStats(prev =>
       prev.map(p => ({
         ...p,
-        shareAmount: totalOfficeTips * (p.sharePercent / 100)
+        shareAmount: totalToDistribute * (p.sharePercent / 100)
       }))
     )
-  }, [totalOfficeTips, employeeStats.length])
+  }, [totalToDistribute, employeeStats.length])
 
   const updateTourTip = (tourId: string, field: 'office_tip_amount' | 'note' | 'settled_at', value: number | string | null) => {
     setTours(prev =>
@@ -590,6 +595,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
               <div className="mt-2 space-y-1 text-sm font-medium text-gray-700">
                 <div>{t('officeTipsTotal') || '총 오피스 팁'}: ${totalOfficeTips.toFixed(2)}</div>
                 <div>Prepaid Tips 총합: ${totalPrepaidTips.toFixed(2)}</div>
+                <div className="border-t border-gray-200 pt-1 mt-1 font-semibold">배분 할 금액: ${totalToDistribute.toFixed(2)}</div>
               </div>
             </div>
 
@@ -632,7 +638,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
                           className="w-20 rounded border border-gray-300 px-2 py-1 text-sm"
                         />
                         <span className="text-xs">%</span>
-                        <span className="text-sm font-medium ml-auto">{t('tipShareAmount')}: ${emp.shareAmount.toFixed(2)}</span>
+                        <span className="text-sm font-medium ml-auto">{t('tipShareAmount')}: ${(totalToDistribute * (emp.sharePercent / 100)).toFixed(2)}</span>
                       </div>
                     </li>
                     );
