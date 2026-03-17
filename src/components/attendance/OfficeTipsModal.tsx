@@ -19,6 +19,7 @@ interface TourOfficeTipRow {
   guide_name: string | null
   assistant_name: string | null
   office_tip_amount: number
+  prepaid_tips_office_share: number
   note: string
   settled_at: string | null
 }
@@ -96,6 +97,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
           tour_date,
           tour_guide_id,
           assistant_id,
+          reservation_ids,
           products!inner(name_ko)
         `)
         .gte('tour_date', startDate)
@@ -120,6 +122,37 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         ])
       )
 
+      const allReservationIds = (toursData as { reservation_ids?: string[] | unknown }[])
+        .flatMap(t => {
+          const ids = t.reservation_ids
+          if (!ids) return []
+          return Array.isArray(ids) ? ids : typeof ids === 'string' ? ids.split(',').map((id: string) => id.trim()).filter(Boolean) : []
+        })
+        .filter((id, i, arr) => arr.indexOf(id) === i)
+
+      let pricingByReservation = new Map<string, number>()
+      if (allReservationIds.length > 0) {
+        const { data: pricingData } = await supabase
+          .from('reservation_pricing')
+          .select('reservation_id, prepayment_tip')
+          .in('reservation_id', allReservationIds)
+        pricingData?.forEach((p: { reservation_id: string; prepayment_tip?: number | null }) => {
+          pricingByReservation.set(p.reservation_id, Number(p.prepayment_tip) || 0)
+        })
+      }
+
+      const getPrepaidTipsOfficeShare = (tour: { reservation_ids?: string[] | unknown }) => {
+        const ids = tour.reservation_ids
+        if (!ids || (Array.isArray(ids) && ids.length === 0)) return 0
+        const list = Array.isArray(ids) ? ids as string[] : typeof ids === 'string' ? (ids as string).split(',').map((id: string) => id.trim()).filter(Boolean) : []
+        let sum = 0
+        for (const rid of list) {
+          const tip = pricingByReservation.get(rid) ?? 0
+          sum += tip * 0.1
+        }
+        return Math.round(sum * 100) / 100
+      }
+
       const rows: TourOfficeTipRow[] = []
       for (const tour of toursData) {
         let guideName: string | null = null
@@ -142,6 +175,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
           guide_name: guideName,
           assistant_name: assistantName,
           office_tip_amount: tip.amount,
+          prepaid_tips_office_share: getPrepaidTipsOfficeShare(tour),
           note: tip.note,
           settled_at: tip.settled_at ?? null
         })
@@ -177,7 +211,8 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
       const totalByEmail = new Map<string, number>()
       const periodByEmail = new Map<string, number>()
       for (const r of records) {
-        const h = Number(r.work_hours) || 0
+        const raw = Number(r.work_hours) || 0
+        const h = raw > 8 ? raw - 0.5 : raw
         totalByEmail.set(r.employee_email, (totalByEmail.get(r.employee_email) || 0) + h)
         if (startDate && endDate && r.date >= startDate && r.date <= endDate) {
           periodByEmail.set(r.employee_email, (periodByEmail.get(r.employee_email) || 0) + h)
@@ -225,6 +260,25 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
   }, [isOpen, getDefaultDates, fetchOpMembers])
 
   useEffect(() => {
+    if (!isOpen || opMembers.length === 0) return
+    const defaultEmails = opMembers
+      .filter(m => {
+        const name = (m.name_ko || '').trim()
+        const email = (m.email || '').toLowerCase()
+        const nameLower = name.toLowerCase()
+        return (
+          name === '송화영' ||
+          nameLower.includes('amy') || email.includes('amy') ||
+          nameLower.includes('hana') || nameLower.includes('myers') || email.includes('hana') || email.includes('myers')
+        )
+      })
+      .map(m => m.email)
+    if (defaultEmails.length > 0) {
+      setSelectedStaffEmails(defaultEmails)
+    }
+  }, [isOpen, opMembers])
+
+  useEffect(() => {
     if (isOpen && startDate && endDate) fetchTours()
   }, [isOpen, startDate, endDate, fetchTours])
 
@@ -234,6 +288,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
   }, [isOpen, selectedStaffEmails, startDate, endDate, opMembers, fetchAttendanceForStaff])
 
   const totalOfficeTips = tours.reduce((s, row) => s + (row.office_tip_amount || 0), 0)
+  const totalPrepaidTips = tours.reduce((s, row) => s + (row.prepaid_tips_office_share || 0), 0)
 
   useEffect(() => {
     setEmployeeStats(prev =>
@@ -474,6 +529,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
                         <th className="text-left py-1 px-2 font-medium text-gray-700">{t('officeTipsProduct')}</th>
                         <th className="text-left py-1 px-2 font-medium text-gray-700">{t('officeTipsGuide')}</th>
                         <th className="text-left py-1 px-2 font-medium text-gray-700 whitespace-nowrap">{t('officeTipsPerTour')}</th>
+                        <th className="text-left py-1 px-2 font-medium text-gray-700 whitespace-nowrap">Prepaid Tips</th>
                         <th className="text-left py-1 px-2 font-medium text-gray-700">{t('officeTipsNote')}</th>
                         <th className="text-left py-1 px-2 font-medium text-gray-700 whitespace-nowrap">{t('officeTipsSettled')}</th>
                       </tr>
@@ -496,6 +552,9 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
                                 onChange={e => updateTourTip(tour.id, 'office_tip_amount', e.target.value)}
                                 className="w-16 rounded border border-gray-300 px-1.5 py-0.5 text-xs"
                               />
+                            </td>
+                            <td className="py-1 px-2 align-middle text-gray-700">
+                              ${tour.prepaid_tips_office_share.toFixed(2)}
                             </td>
                             <td className="py-1 px-2 align-middle">
                               <input
@@ -528,8 +587,9 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
                   </table>
                 </div>
               )}
-              <div className="mt-2 text-sm font-medium text-gray-700">
-                {t('officeTipsTotal') || '총 오피스 팁'}: ${totalOfficeTips.toFixed(2)}
+              <div className="mt-2 space-y-1 text-sm font-medium text-gray-700">
+                <div>{t('officeTipsTotal') || '총 오피스 팁'}: ${totalOfficeTips.toFixed(2)}</div>
+                <div>Prepaid Tips 총합: ${totalPrepaidTips.toFixed(2)}</div>
               </div>
             </div>
 

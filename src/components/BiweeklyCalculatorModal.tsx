@@ -1146,10 +1146,13 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   <th>근무시간</th>
                   <th>식사시간 차감 후</th>
                   <th>상태</th>
+                  <th>누적 시간</th>
                 </tr>
               </thead>
               <tbody>
-                ${attendanceRecords.map(record => `
+                ${attendanceRecords.map((record, idx) => {
+                  const cumulative = attendanceRecords.slice(0, idx + 1).reduce((sum, r) => sum + (r.work_hours ? (r.work_hours > 8 ? r.work_hours - 0.5 : r.work_hours) : 0), 0)
+                  return `
                   <tr>
                     <td>${getDateFromCheckInTime(record.check_in_time)}</td>
                     <td>${formatTime(record.check_in_time)}</td>
@@ -1157,8 +1160,10 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                     <td>${formatWorkHours(record.work_hours || 0)}</td>
                     <td>${formatWorkHours(record.work_hours && record.work_hours > 8 ? record.work_hours - 0.5 : record.work_hours || 0)}</td>
                     <td>${record.status || '-'}</td>
+                    <td>${formatWorkHours(cumulative)}</td>
                   </tr>
-                `).join('')}
+                `
+                }).join('')}
               </tbody>
             </table>
           ` : ''}
@@ -1521,10 +1526,13 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   <th>근무시간</th>
                   <th>식사시간 차감 후</th>
                   <th>상태</th>
+                  <th>누적 시간</th>
                 </tr>
               </thead>
               <tbody>
-                ${attendanceRecords.map(record => `
+                ${attendanceRecords.map((record, idx) => {
+                  const cumulative = attendanceRecords.slice(0, idx + 1).reduce((sum, r) => sum + (r.work_hours ? (r.work_hours > 8 ? r.work_hours - 0.5 : r.work_hours) : 0), 0)
+                  return `
                   <tr>
                     <td>${getDateFromCheckInTime(record.check_in_time)}</td>
                     <td>${formatTime(record.check_in_time)}</td>
@@ -1532,8 +1540,10 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                     <td>${formatWorkHours(record.work_hours || 0)}</td>
                     <td>${formatWorkHours(record.work_hours && record.work_hours > 8 ? record.work_hours - 0.5 : record.work_hours || 0)}</td>
                     <td>${record.status || '-'}</td>
+                    <td>${formatWorkHours(cumulative)}</td>
                   </tr>
-                `).join('')}
+                `
+                }).join('')}
               </tbody>
             </table>
           ` : ''}
@@ -2026,31 +2036,38 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
               </h3>
               {/* 모바일: 카드 리스트 */}
               <div className="md:hidden space-y-2">
-                {attendanceRecords.map((record) => (
-                  <div key={record.id} className="bg-white border border-gray-200 rounded-lg p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                      <span className="text-sm font-medium text-gray-900">
-                        {getDateFromCheckInTime(record.check_in_time)}
-                      </span>
-                      <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${
-                        record.status === 'present' ? 'bg-green-100 text-green-800' :
-                        record.status === 'late' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
-                      }`}>
-                        {record.status === 'present' ? '정상' : record.status === 'late' ? '지각' : '결근'}
-                      </span>
+                {attendanceRecords.map((record, index) => {
+                  const cumulative = attendanceRecords
+                    .slice(0, index + 1)
+                    .reduce((sum, r) => sum + (r.work_hours ? (r.work_hours > 8 ? r.work_hours - 0.5 : r.work_hours) : 0), 0)
+                  return (
+                    <div key={record.id} className="bg-white border border-gray-200 rounded-lg p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                        <span className="text-sm font-medium text-gray-900">
+                          {getDateFromCheckInTime(record.check_in_time)}
+                        </span>
+                        <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${
+                          record.status === 'present' ? 'bg-green-100 text-green-800' :
+                          record.status === 'late' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {record.status === 'present' ? '정상' : record.status === 'late' ? '지각' : '결근'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600">
+                        <span>출근</span>
+                        <span>{formatTime(record.check_in_time)}</span>
+                        <span>퇴근</span>
+                        <span>{formatTime(record.check_out_time)}</span>
+                        <span>근무</span>
+                        <span>{record.work_hours ? formatWorkHours(record.work_hours) : '-'}</span>
+                        <span>차감 후</span>
+                        <span>{record.work_hours ? formatWorkHours(record.work_hours > 8 ? record.work_hours - 0.5 : record.work_hours) : '-'}</span>
+                        <span>누적 시간</span>
+                        <span className="font-medium">{formatWorkHours(cumulative)}</span>
+                      </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600">
-                      <span>출근</span>
-                      <span>{formatTime(record.check_in_time)}</span>
-                      <span>퇴근</span>
-                      <span>{formatTime(record.check_out_time)}</span>
-                      <span>근무</span>
-                      <span>{record.work_hours ? formatWorkHours(record.work_hours) : '-'}</span>
-                      <span>차감 후</span>
-                      <span>{record.work_hours ? formatWorkHours(record.work_hours > 8 ? record.work_hours - 0.5 : record.work_hours) : '-'}</span>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
               {/* 데스크톱: 테이블 */}
               <div className="hidden md:block overflow-x-auto">
@@ -2075,40 +2092,51 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         상태
                       </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        누적 시간
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {attendanceRecords.map((record) => (
-                      <tr key={record.id} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
-                          {getDateFromCheckInTime(record.check_in_time)}
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
-                          {formatTime(record.check_in_time)}
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
-                          {formatTime(record.check_out_time)}
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
-                          {record.work_hours ? formatWorkHours(record.work_hours) : '-'}
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
-                          {record.work_hours ? formatWorkHours(record.work_hours > 8 ? record.work_hours - 0.5 : record.work_hours) : '-'}
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                            record.status === 'present' 
-                              ? 'bg-green-100 text-green-800'
-                              : record.status === 'late'
-                              ? 'bg-yellow-100 text-yellow-800'
-                              : 'bg-red-100 text-red-800'
-                          }`}>
-                            {record.status === 'present' ? '정상' : 
-                             record.status === 'late' ? '지각' : '결근'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {attendanceRecords.map((record, index) => {
+                      const cumulative = attendanceRecords
+                        .slice(0, index + 1)
+                        .reduce((sum, r) => sum + (r.work_hours ? (r.work_hours > 8 ? r.work_hours - 0.5 : r.work_hours) : 0), 0)
+                      return (
+                        <tr key={record.id} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
+                            {getDateFromCheckInTime(record.check_in_time)}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
+                            {formatTime(record.check_in_time)}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
+                            {formatTime(record.check_out_time)}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
+                            {record.work_hours ? formatWorkHours(record.work_hours) : '-'}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
+                            {record.work_hours ? formatWorkHours(record.work_hours > 8 ? record.work_hours - 0.5 : record.work_hours) : '-'}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                              record.status === 'present'
+                                ? 'bg-green-100 text-green-800'
+                                : record.status === 'late'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : 'bg-red-100 text-red-800'
+                            }`}>
+                              {record.status === 'present' ? '정상' :
+                               record.status === 'late' ? '지각' : '결근'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 font-medium">
+                            {formatWorkHours(cumulative)}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
