@@ -16,6 +16,7 @@ import { supabase } from '@/lib/supabase'
 import AddAttendanceForm from '@/components/AddAttendanceForm'
 import { useAttendanceSync } from '@/hooks/useAttendanceSync'
 import AttendanceEditModal from '@/components/attendance/AttendanceEditModal'
+import OfficeTipsModal from '@/components/attendance/OfficeTipsModal'
 import BiweeklyCalculatorModal from '@/components/BiweeklyCalculatorModal'
 import TotalEmployeesModal from '@/components/TotalEmployeesModal'
 import TipsShareModal from '@/components/TipsShareModal'
@@ -78,6 +79,7 @@ export default function AttendancePage() {
   const [isTotalEmployeesModalOpen, setIsTotalEmployeesModalOpen] = useState(false)
   const [totalEmployeesOverdueCount, setTotalEmployeesOverdueCount] = useState(0)
   const [isTipsShareModalOpen, setIsTipsShareModalOpen] = useState(false)
+  const [isOfficeTipsModalOpen, setIsOfficeTipsModalOpen] = useState(false)
   const [isBonusCalculatorOpen, setIsBonusCalculatorOpen] = useState(false)
   /** Tips 쉐어 모달에서 예약 클릭 시 예약 수정 모달용 */
   const [reservationIdForEdit, setReservationIdForEdit] = useState<string | null>(null)
@@ -770,6 +772,15 @@ export default function AttendancePage() {
                   <Plus className="w-4 h-4 shrink-0" />
                   <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('addRecord')}</span>
                 </button>
+                {(isAdmin || canViewTipsShare) && (
+                  <button
+                    onClick={() => setIsOfficeTipsModalOpen(true)}
+                    className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-amber-600 border border-amber-600 rounded-lg hover:bg-amber-700 transition-colors min-w-[3rem]"
+                  >
+                    <DollarSign className="w-4 h-4 shrink-0" />
+                    <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('officeTips')}</span>
+                  </button>
+                )}
                 <button
                   onClick={() => setIsBiweeklyCalculatorOpen(true)}
                   className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-green-600 border border-green-600 rounded-lg hover:bg-green-700 transition-colors min-w-[3rem]"
@@ -1212,6 +1223,12 @@ export default function AttendancePage() {
         onClose={() => setIsTotalEmployeesModalOpen(false)}
         locale={locale}
         onOverdueCountChange={setTotalEmployeesOverdueCount}
+      />
+
+      {/* Office Tips 모달 */}
+      <OfficeTipsModal
+        isOpen={isOfficeTipsModalOpen}
+        onClose={() => setIsOfficeTipsModalOpen(false)}
       />
 
       {/* Tips 쉐어 모달 */}

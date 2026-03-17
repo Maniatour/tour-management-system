@@ -3395,18 +3395,19 @@ export default function ReservationForm({
   ) => {
     try {
       const fd = formDataRef.current
-      // 기존 가격 정보가 있는지 확인하여 id를 가져오거나 새로 생성
-      const { data: existingPricing, error: checkError } = await (supabase as any)
+      // 기존 가격 정보 조회 (업데이트 시 0 덮어쓰기 방지를 위해 가격 컬럼 포함)
+      const selectColumns = 'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, subtotal, total_price, choices_total, option_total, required_option_total'
+      const { data: existingRow, error: checkError } = await (supabase as any)
         .from('reservation_pricing')
-        .select('id')
+        .select(selectColumns)
         .eq('reservation_id', reservationId)
         .maybeSingle()
 
+      const existing = checkError ? null : existingRow
       let pricingId: string
-      if (existingPricing) {
-        pricingId = existingPricing.id
+      if (existing?.id) {
+        pricingId = existing.id
       } else {
-        // 새 ID 생성 (UUID 형식)
         pricingId = crypto.randomUUID()
       }
 
@@ -3414,19 +3415,35 @@ export default function ReservationForm({
       const totalPeople = fd.adults + fd.child + fd.infant
       const notIncludedTotal = (Number(fd.not_included_price) || 0) * (totalPeople || 1)
 
+      const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
+      const newAdult = toNum(fd.adultProductPrice)
+      const newChild = toNum(fd.childProductPrice)
+      const newInfant = toNum(fd.infantProductPrice)
+      const newProductTotal = (toNum(fd.productPriceTotal) || 0) + notIncludedTotal
+      const newNotIncluded = toNum(fd.not_included_price)
+      const newSubtotal = (toNum(fd.subtotal) || 0) + notIncludedTotal
+      const newTotal = (toNum(fd.totalPrice) || 0) + notIncludedTotal
+      const newChoicesTotal = toNum(fd.choicesTotal)
+      const newOptionTotal = toNum(fd.optionTotal)
+      const newRequiredOptionTotal = toNum(fd.requiredOptionTotal)
+
+      // 업데이트 시: 가격이 0이면 기존 DB 값을 유지 (의도치 않은 0 덮어쓰기 방지)
+      const keep = (newVal: number, existingVal: unknown) =>
+        existing && newVal === 0 && (toNum(existingVal) || 0) > 0 ? toNum(existingVal) : newVal
+
       const pricingData: Database['public']['Tables']['reservation_pricing']['Insert'] = {
         id: pricingId,
         reservation_id: reservationId,
-        adult_product_price: Number(fd.adultProductPrice) || 0,
-        child_product_price: Number(fd.childProductPrice) || 0,
-        infant_product_price: Number(fd.infantProductPrice) || 0,
-        product_price_total: (Number(fd.productPriceTotal) || 0) + notIncludedTotal,
-        not_included_price: Number(fd.not_included_price) || 0,
+        adult_product_price: keep(newAdult, (existing as any)?.adult_product_price),
+        child_product_price: keep(newChild, (existing as any)?.child_product_price),
+        infant_product_price: keep(newInfant, (existing as any)?.infant_product_price),
+        product_price_total: keep(newProductTotal, (existing as any)?.product_price_total),
+        not_included_price: keep(newNotIncluded, (existing as any)?.not_included_price),
         required_options: fd.requiredOptions,
-        required_option_total: Number(fd.requiredOptionTotal) || 0,
+        required_option_total: keep(newRequiredOptionTotal, (existing as any)?.required_option_total),
         choices: fd.choices,
-        choices_total: Number(fd.choicesTotal) || 0,
-        subtotal: (Number(fd.subtotal) || 0) + notIncludedTotal,
+        choices_total: keep(newChoicesTotal, (existing as any)?.choices_total),
+        subtotal: keep(newSubtotal, (existing as any)?.subtotal),
         coupon_code: fd.couponCode ?? '',
         coupon_discount: Number(fd.couponDiscount) || 0,
         additional_discount: Number(fd.additionalDiscount) || 0,
@@ -3436,8 +3453,8 @@ export default function ReservationForm({
         prepayment_cost: Number(fd.prepaymentCost) || 0,
         prepayment_tip: Number(fd.prepaymentTip) || 0,
         selected_options: fd.selectedOptionalOptions,
-        option_total: Number(fd.optionTotal) || 0,
-        total_price: (Number(fd.totalPrice) || 0) + notIncludedTotal,
+        option_total: keep(newOptionTotal, (existing as any)?.option_total),
+        total_price: keep(newTotal, (existing as any)?.total_price),
         deposit_amount: overrides?.depositAmount ?? ((Number(fd.depositAmount) || 0) + (Number(fd.balanceReceivedTotal) || 0) + (Number(fd.onSiteBalanceAmount) || 0)),
         balance_amount: overrides?.balanceAmount ?? (Number(fd.onSiteBalanceAmount ?? fd.balanceAmount) || 0),
         private_tour_additional_cost: Number(fd.privateTourAdditionalCost) || 0,
@@ -3451,7 +3468,7 @@ export default function ReservationForm({
         throw checkError
       }
 
-      if (existingPricing) {
+      if (existing?.id) {
         // 기존 데이터가 있으면 업데이트
         const { error: updateError } = await (supabase as any)
           .from('reservation_pricing')

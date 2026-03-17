@@ -2057,18 +2057,39 @@ export default function TourDetailPage() {
                   const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
                   const notIncludedTotal = (toNum(pricingInfo.not_included_price) || 0) * (totalPeople || 1)
 
+                  const { data: existingRow } = await supabase
+                    .from('reservation_pricing')
+                    .select('id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, subtotal, total_price, choices_total, option_total, required_option_total')
+                    .eq('reservation_id', editingReservation.id)
+                    .maybeSingle()
+
+                  // 업데이트 시: 가격이 0이면 기존 DB 값을 유지 (의도치 않은 0 덮어쓰기 방지)
+                  const keep = (newVal: number, existingVal: unknown) =>
+                    existingRow && newVal === 0 && (toNum(existingVal) || 0) > 0 ? toNum(existingVal) : newVal
+
+                  const newAdult = toNum(pricingInfo.adultProductPrice)
+                  const newChild = toNum(pricingInfo.childProductPrice)
+                  const newInfant = toNum(pricingInfo.infantProductPrice)
+                  const newProductTotal = toNum(pricingInfo.productPriceTotal) + notIncludedTotal
+                  const newNotIncluded = toNum(pricingInfo.not_included_price)
+                  const newSubtotal = toNum(pricingInfo.subtotal) + notIncludedTotal
+                  const newTotal = toNum(pricingInfo.totalPrice) + notIncludedTotal
+                  const newChoicesTotal = toNum(pricingInfo.choicesTotal)
+                  const newOptionTotal = toNum(pricingInfo.optionTotal)
+                  const newRequiredOptionTotal = toNum(pricingInfo.requiredOptionTotal)
+
                   const pricingData = {
                     reservation_id: editingReservation.id,
-                    adult_product_price: toNum(pricingInfo.adultProductPrice),
-                    child_product_price: toNum(pricingInfo.childProductPrice),
-                    infant_product_price: toNum(pricingInfo.infantProductPrice),
-                    product_price_total: toNum(pricingInfo.productPriceTotal) + notIncludedTotal,
-                    not_included_price: toNum(pricingInfo.not_included_price),
+                    adult_product_price: keep(newAdult, existingRow?.adult_product_price),
+                    child_product_price: keep(newChild, existingRow?.child_product_price),
+                    infant_product_price: keep(newInfant, existingRow?.infant_product_price),
+                    product_price_total: keep(newProductTotal, existingRow?.product_price_total),
+                    not_included_price: keep(newNotIncluded, existingRow?.not_included_price),
                     required_options: pricingInfo.requiredOptions ?? {},
-                    required_option_total: toNum(pricingInfo.requiredOptionTotal),
+                    required_option_total: keep(newRequiredOptionTotal, existingRow?.required_option_total),
                     choices: pricingInfo.choices ?? {},
-                    choices_total: toNum(pricingInfo.choicesTotal),
-                    subtotal: toNum(pricingInfo.subtotal) + notIncludedTotal,
+                    choices_total: keep(newChoicesTotal, existingRow?.choices_total),
+                    subtotal: keep(newSubtotal, existingRow?.subtotal),
                     coupon_code: pricingInfo.couponCode ?? '',
                     coupon_discount: toNum(pricingInfo.couponDiscount),
                     additional_discount: toNum(pricingInfo.additionalDiscount),
@@ -2078,8 +2099,8 @@ export default function TourDetailPage() {
                     prepayment_cost: toNum(pricingInfo.prepaymentCost),
                     prepayment_tip: toNum(pricingInfo.prepaymentTip),
                     selected_options: pricingInfo.selectedOptionalOptions ?? {},
-                    option_total: toNum(pricingInfo.optionTotal),
-                    total_price: toNum(pricingInfo.totalPrice) + notIncludedTotal,
+                    option_total: keep(newOptionTotal, existingRow?.option_total),
+                    total_price: keep(newTotal, existingRow?.total_price),
                     deposit_amount: toNum(pricingInfo.depositAmount),
                     balance_amount: toNum(pricingInfo.balanceAmount),
                     private_tour_additional_cost: toNum(pricingInfo.privateTourAdditionalCost),
@@ -2087,17 +2108,11 @@ export default function TourDetailPage() {
                     commission_amount: toNum(pricingInfo.commission_amount)
                   }
 
-                  const { data: existingPricing } = await supabase
-                    .from('reservation_pricing')
-                    .select('id')
-                    .eq('reservation_id', editingReservation.id)
-                    .maybeSingle()
-
-                  if (existingPricing?.id) {
+                  if (existingRow?.id) {
                     const { error: pricingError } = await supabase
                       .from('reservation_pricing')
                       .update(pricingData as any)
-                      .eq('id', existingPricing.id)
+                      .eq('id', existingRow.id)
                     if (pricingError) console.error('가격 정보 업데이트 오류:', pricingError)
                   } else {
                     const insertData = { ...pricingData, id: crypto.randomUUID() }

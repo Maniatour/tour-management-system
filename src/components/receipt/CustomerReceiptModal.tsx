@@ -468,8 +468,12 @@ export default function CustomerReceiptModal({
             },
           })
         }
-        if (results.length === 1) setData(results[0])
-        else setBatchData(results)
+        if (results.length === 1) {
+          setData(results[0])
+          setBatchData(results)
+        } else {
+          setBatchData(results)
+        }
         if (results.length > 0) setSelectedReservationIds(new Set(results.map((r) => r.reservation.id)))
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load')
@@ -528,13 +532,14 @@ export default function CustomerReceiptModal({
     const printStyles = useHalfLayout
       ? `
       *, *::before, *::after { box-sizing: border-box; }
-      html { margin: 0 !important; padding: 0 !important; width: 100% !important; min-height: 0 !important; background: #fff !important; }
-      body { margin: 0 !important; padding: 0 !important; width: 100% !important; max-width: 100% !important; min-height: 0 !important; height: auto !important; background: #fff !important; color: #111 !important; font-size: 12px !important; overflow: visible !important; }
-      .receipt-half-container { display: block !important; width: 100% !important; max-width: 100% !important; padding: 0 !important; margin: 0 !important; min-height: 0 !important; height: auto !important; }
-      .receipt-half-container.receipt-half-batch > * { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 6mm !important; width: 100% !important; max-width: 100% !important; min-width: 0 !important; min-height: 0 !important; height: auto !important; align-content: start !important; }
-      .receipt-half-container .receipt-letter { width: 100% !important; max-width: 100% !important; min-width: 0 !important; box-sizing: border-box !important; }
+      html { margin: 0 !important; padding: 0 !important; width: 279mm !important; min-height: 0 !important; background: #fff !important; }
+      body { margin: 0 !important; padding: 0 !important; width: 279mm !important; max-width: 279mm !important; min-height: 0 !important; height: auto !important; background: #fff !important; color: #111 !important; font-size: 12px !important; overflow: visible !important; }
+      .receipt-half-container { display: block !important; width: 279mm !important; max-width: 279mm !important; padding: 0 !important; margin: 0 !important; min-height: 0 !important; height: auto !important; }
+      .receipt-half-container.receipt-half-batch > * { display: grid !important; grid-template-columns: 139.5mm 139.5mm !important; gap: 6mm !important; width: 279mm !important; max-width: 279mm !important; min-width: 0 !important; min-height: 0 !important; height: auto !important; align-content: start !important; }
+      .receipt-half-container.receipt-half-single > * { width: 279mm !important; max-width: 279mm !important; }
+      .receipt-half-container .receipt-letter { width: 139.5mm !important; max-width: 139.5mm !important; min-width: 0 !important; box-sizing: border-box !important; }
       .receipt-letter .receipt-logo { width: 10.5rem !important; height: 3rem !important; min-width: 10.5rem !important; min-height: 3rem !important; object-fit: contain !important; }
-      .receipt-letter { page-break-inside: avoid !important; break-inside: avoid !important; border: none !important; box-shadow: none !important; padding: 2mm !important; font-size: 1rem !important; background: #fff !important; color: #111 !important; max-width: 100% !important; min-height: 0 !important; height: auto !important; }
+      .receipt-letter { page-break-inside: avoid !important; break-inside: avoid !important; border: none !important; box-shadow: none !important; padding: 2mm !important; font-size: 1rem !important; background: #fff !important; color: #111 !important; min-height: 0 !important; height: auto !important; }
       .receipt-letter:last-child { page-break-after: auto !important; }
       .receipt-letter * { color: #111 !important; }
       .receipt-letter .receipt-balance-amount { color: #dc2626 !important; }
@@ -545,8 +550,8 @@ export default function CustomerReceiptModal({
       .receipt-letter .receipt-items-table tbody tr:last-child td { border-bottom: none !important; border-top: 2px solid #d1d5db !important; }
       @page { size: 279mm 216mm; margin: 5mm; }
       @media print {
-        html, body { width: 100% !important; max-width: 100% !important; height: auto !important; min-height: 0 !important; }
-        .receipt-half-container { width: 100% !important; max-width: 100% !important; }
+        html, body { width: 279mm !important; max-width: 279mm !important; height: auto !important; min-height: 0 !important; }
+        .receipt-half-container { width: 279mm !important; max-width: 279mm !important; }
       }
     `
       : `
@@ -568,7 +573,7 @@ export default function CustomerReceiptModal({
       .filter(Boolean)
     iframeDoc.open()
     const bodyContent = printRoot.outerHTML
-    const bodyAttrs = useHalfLayout ? ' class="receipt-half-body" style="margin:0;padding:0;background:#fff;width:100%;max-width:100%;box-sizing:border-box"' : ''
+    const bodyAttrs = useHalfLayout ? ' class="receipt-half-body" style="margin:0;padding:0;background:#fff;width:279mm;max-width:279mm;box-sizing:border-box"' : ''
     iframeDoc.write(`
       <!DOCTYPE html><html><head><meta charset="utf-8"><title>Receipt</title>
       ${links.map((href) => `<link rel="stylesheet" href="${href}">`).join('')}
@@ -669,18 +674,31 @@ export default function CustomerReceiptModal({
                   ? (d.product.customer_name_en || d.product.name_en || d.product.customer_name_ko || d.product.name_ko || '')
                   : (d.product.customer_name_ko || d.product.name_ko || d.product.customer_name_en || d.product.name_en || '')
                 const optionsTotal = (d.reservationOptions || []).reduce((s, o) => s + o.total_price, 0)
-                const customerTotalPayment = getCustomerTotalPayment(d.pricing, d.reservation.total_people ?? 0, optionsTotal)
-                const balanceAmount = customerTotalPayment - (d.pricing.deposit_amount ?? 0)
                 const totalPeople = Math.max(1, d.reservation.total_people ?? 1)
                 const notIncludedPerPerson = d.pricing.not_included_price ?? 0
                 const notIncludedTotal = notIncludedPerPerson * totalPeople
-                const productRowTotal = (d.pricing.product_price_total ?? 0) + notIncludedTotal
                 // 상품 행 단가: adult_product_price가 있으면 사용, 0이면 상품 총액/인원으로 표시 (절대 $0으로 나오지 않도록)
                 const productUnitPrice = (d.pricing.adult_product_price ?? 0) > 0
                   ? (d.pricing.adult_product_price ?? 0)
                   : totalPeople > 0
                     ? (d.pricing.product_price_total ?? 0) / totalPeople
                     : 0
+                // 상품 행 Amount: 단가×수량으로 표시 (Unit × Qty = Amount 일치)
+                const productRowAmount = productUnitPrice * totalPeople
+                // Product Total·Grand Total을 표시된 항목(상품+불포함)과 일치시키기 위해 표시 기준 합계 사용
+                const productRowTotal = productRowAmount + notIncludedTotal
+                // Grand Total도 표시된 상품 합계(productRowAmount + notIncluded - 할인) 기준으로 계산
+                const customerTotalPayment =
+                  (productRowAmount - (d.pricing.coupon_discount ?? 0) - (d.pricing.additional_discount ?? 0)) +
+                  notIncludedTotal +
+                  optionsTotal +
+                  (d.pricing.choices_total ?? 0) +
+                  (d.pricing.additional_cost ?? 0) +
+                  (d.pricing.tax ?? 0) +
+                  (d.pricing.card_fee ?? 0) +
+                  (d.pricing.prepayment_cost ?? 0) +
+                  (d.pricing.prepayment_tip ?? 0)
+                const balanceAmount = customerTotalPayment - (d.pricing.deposit_amount ?? 0)
                 const tip10PerPerson = (customerTotalPayment * 0.10) / totalPeople
                 const tip15PerPerson = (customerTotalPayment * 0.15) / totalPeople
                 const tip20PerPerson = (customerTotalPayment * 0.20) / totalPeople
@@ -749,13 +767,13 @@ export default function CustomerReceiptModal({
                           </tr>
                         </thead>
                         <tbody>
-                          {/* 상품 */}
+                          {/* 상품 - Amount는 단가×수량(Unit × Qty)으로 표시 */}
                           <tr className="border-b border-gray-100">
                             <td className="px-1.5 py-1 text-gray-900 whitespace-nowrap min-w-[6rem] w-[6rem]">{d.reservation.tour_date}</td>
                             <td className="px-1.5 py-1 text-gray-900 break-words">{productName}</td>
                             <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(productUnitPrice, cur)}</td>
                             <td className="px-1.5 py-1 text-right text-gray-900 w-8 min-w-0">{d.reservation.total_people}</td>
-                            <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(d.pricing.product_price_total, cur)}</td>
+                            <td className="px-1.5 py-1 text-right text-gray-900 whitespace-nowrap w-14 min-w-0">{formatMoney(productRowAmount, cur)}</td>
                           </tr>
                           {/* 불포함 가격 (있을 때만 별도 행 표시) */}
                           {notIncludedTotal > 0 && (
