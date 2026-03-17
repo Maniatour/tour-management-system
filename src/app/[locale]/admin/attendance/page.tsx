@@ -769,24 +769,24 @@ export default function AttendancePage() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2 sm:gap-3 shrink-0">
-            {isAdmin && (
+            {(isAdmin || canViewOfficeTips) && (
               <>
-                <button
-                  onClick={() => setIsAddFormOpen(true)}
-                  className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors min-w-[3rem]"
-                >
-                  <Plus className="w-4 h-4 shrink-0" />
-                  <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('addRecord')}</span>
-                </button>
-                {(isAdmin || canViewOfficeTips) && (
+                {isAdmin && (
                   <button
-                    onClick={() => setIsOfficeTipsModalOpen(true)}
-                    className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-amber-600 border border-amber-600 rounded-lg hover:bg-amber-700 transition-colors min-w-[3rem]"
+                    onClick={() => setIsAddFormOpen(true)}
+                    className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 transition-colors min-w-[3rem]"
                   >
-                    <DollarSign className="w-4 h-4 shrink-0" />
-                    <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('officeTips')}</span>
+                    <Plus className="w-4 h-4 shrink-0" />
+                    <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('addRecord')}</span>
                   </button>
                 )}
+                <button
+                  onClick={() => setIsOfficeTipsModalOpen(true)}
+                  className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-amber-600 border border-amber-600 rounded-lg hover:bg-amber-700 transition-colors min-w-[3rem]"
+                >
+                  <DollarSign className="w-4 h-4 shrink-0" />
+                  <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('officeTips')}</span>
+                </button>
                 <button
                   onClick={() => setIsBiweeklyCalculatorOpen(true)}
                   className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-green-600 border border-green-600 rounded-lg hover:bg-green-700 transition-colors min-w-[3rem]"
