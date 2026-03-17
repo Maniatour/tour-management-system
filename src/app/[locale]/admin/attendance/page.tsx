@@ -70,6 +70,8 @@ export default function AttendancePage() {
   const [isAdmin, setIsAdmin] = useState(false)
   /** Tips 쉐어 버튼 표시 (super + manager / office manager) */
   const [canViewTipsShare, setCanViewTipsShare] = useState(false)
+  /** Office Tips 버튼 표시 (super + manager / office manager + op + om) */
+  const [canViewOfficeTips, setCanViewOfficeTips] = useState(false)
   const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string}>>([])
   const [selectedEmployee, setSelectedEmployee] = useState<string>('')
   const [currentSessionForSelectedEmployee, setCurrentSessionForSelectedEmployee] = useState<AttendanceRecord | null>(null)
@@ -111,21 +113,25 @@ export default function AttendancePage() {
         setIsAdmin(false)
         setCanEditAttendance(false)
         setCanViewTipsShare(false)
+        setCanViewOfficeTips(false)
         return
       }
       
       const position = (teamData as any).position?.toLowerCase()
       const isAdminUser = position === 'super'
       const isManager = position === 'manager' || position === 'office manager'
+      const isOpOrOm = position === 'op' || position === 'om'
       
       setIsAdmin(isAdminUser)
       setCanEditAttendance(position === 'super')
       setCanViewTipsShare(isAdminUser || isManager)
+      setCanViewOfficeTips(isAdminUser || isManager || isOpOrOm)
     } catch (error) {
       console.error('권한 체크 오류:', error)
       setIsAdmin(false)
       setCanEditAttendance(false)
       setCanViewTipsShare(false)
+      setCanViewOfficeTips(false)
     }
   }
 
@@ -772,7 +778,7 @@ export default function AttendancePage() {
                   <Plus className="w-4 h-4 shrink-0" />
                   <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('addRecord')}</span>
                 </button>
-                {(isAdmin || canViewTipsShare) && (
+                {(isAdmin || canViewOfficeTips) && (
                   <button
                     onClick={() => setIsOfficeTipsModalOpen(true)}
                     className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-amber-600 border border-amber-600 rounded-lg hover:bg-amber-700 transition-colors min-w-[3rem]"
