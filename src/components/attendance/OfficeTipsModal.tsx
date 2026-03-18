@@ -291,8 +291,9 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
     else if (selectedStaffEmails.length === 0) setEmployeeStats([])
   }, [isOpen, selectedStaffEmails, startDate, endDate, opMembers, fetchAttendanceForStaff])
 
-  const totalOfficeTips = tours.reduce((s, row) => s + (row.office_tip_amount || 0), 0)
-  const totalPrepaidTips = tours.reduce((s, row) => s + (row.prepaid_tips_office_share || 0), 0)
+  const unsettledTours = tours.filter(t => !t.settled_at)
+  const totalOfficeTips = unsettledTours.reduce((s, row) => s + (row.office_tip_amount || 0), 0)
+  const totalPrepaidTips = unsettledTours.reduce((s, row) => s + (row.prepaid_tips_office_share || 0), 0)
   const totalToDistribute = totalOfficeTips + totalPrepaidTips
 
   useEffect(() => {
@@ -593,8 +594,8 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
                 </div>
               )}
               <div className="mt-2 space-y-1 text-sm font-medium text-gray-700">
-                <div>{t('officeTipsTotal') || '총 오피스 팁'}: ${totalOfficeTips.toFixed(2)}</div>
-                <div>Prepaid Tips 총합: ${totalPrepaidTips.toFixed(2)}</div>
+                <div>{t('officeTipsTotal') || '총 오피스 팁'} (미정산): ${totalOfficeTips.toFixed(2)}</div>
+                <div>Prepaid Tips 총합 (미정산): ${totalPrepaidTips.toFixed(2)}</div>
                 <div className="border-t border-gray-200 pt-1 mt-1 font-semibold">배분 할 금액: ${totalToDistribute.toFixed(2)}</div>
               </div>
             </div>
