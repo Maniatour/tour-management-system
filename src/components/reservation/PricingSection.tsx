@@ -3039,6 +3039,16 @@ export default function PricingSection({
                 </span>
               </div>
               
+              {/* 예약 옵션 가격 */}
+              {reservationOptionsTotalPrice > 0 && (
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-xs font-medium text-gray-700">+ {isKorean ? '예약 옵션 가격' : 'Reservation Options'}</span>
+                  <span className="text-xs font-medium text-gray-900">
+                    +${reservationOptionsTotalPrice.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              
               {/* 초이스 총액 */}
               {(formData.choiceTotal || formData.choicesTotal || 0) > 0 && (
                 <>
@@ -3215,8 +3225,13 @@ export default function PricingSection({
                       ? choiceNotIncludedTotal 
                       : (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
                     
-                    // 총 매출 = 채널 정산금액 + 초이스 총액 + 불포함 가격 - 추가할인 + 추가비용 + 세금 + 결제 수수료 + 선결제 지출 - 환불금
+                    // 총 매출 = 채널 정산금액 + 예약 옵션(OTA만) + 초이스 총액 + 불포함 가격 - 추가할인 + 추가비용 + 세금 + 결제 수수료 + 선결제 지출 - 환불금
                     let totalRevenue = channelSettlementAmount
+                    
+                    // 예약 옵션 가격 (OTA는 채널 정산에 미포함이므로 가산; 비OTA는 채널 정산에 이미 포함)
+                    if (reservationOptionsTotalPrice > 0 && isOTAChannel) {
+                      totalRevenue += reservationOptionsTotalPrice
+                    }
                     
                     // 초이스 총액
                     const choicesTotal = formData.choiceTotal || formData.choicesTotal || 0
@@ -3308,8 +3323,13 @@ export default function PricingSection({
                       ? choiceNotIncludedTotal 
                       : (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
                     
-                    // 총 매출 = 채널 정산금액 + 초이스 총액 + 불포함 가격 - 추가할인 + 추가비용 + 세금 + 결제 수수료 + 선결제 지출 - 환불금
+                    // 총 매출 = 채널 정산금액 + 예약 옵션(OTA만) + 초이스 총액 + 불포함 가격 - 추가할인 + 추가비용 + 세금 + 결제 수수료 + 선결제 지출 - 환불금
                     let totalRevenue = channelSettlementAmount
+                    
+                    // 예약 옵션 가격 (OTA는 채널 정산에 미포함이므로 가산; 비OTA는 채널 정산에 이미 포함)
+                    if (reservationOptionsTotalPrice > 0 && isOTAChannel) {
+                      totalRevenue += reservationOptionsTotalPrice
+                    }
                     
                     // 초이스 총액
                     const choicesTotal = formData.choiceTotal || formData.choicesTotal || 0
