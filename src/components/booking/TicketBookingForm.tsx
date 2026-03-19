@@ -614,34 +614,52 @@ export default function TicketBookingForm({
         }
       }
 
-      const bookingData = {
-        ...formData,
-        tour_id: formData.tour_id && formData.tour_id.trim() !== '' ? formData.tour_id : null,
-        reservation_id: formData.reservation_id && formData.reservation_id.trim() !== '' ? formData.reservation_id : null,
-        uploaded_file_urls: uploadedFileUrls // 업로드된 파일 URL들 추가
+      const tourId = formData.tour_id && formData.tour_id.trim() !== '' ? formData.tour_id : null;
+      const reservationId = formData.reservation_id && formData.reservation_id.trim() !== '' ? formData.reservation_id : null;
+
+      // DB에 없는 필드(supplier_product_id, uploaded_files 등)를 제거한 payload만 전송 (400 방지)
+      const dbPayload = {
+        category: formData.category,
+        submitted_by: formData.submitted_by,
+        check_in_date: formData.check_in_date,
+        time: formData.time,
+        company: formData.company,
+        ea: formData.ea,
+        expense: formData.expense,
+        income: formData.income,
+        payment_method: formData.payment_method || null,
+        rn_number: formData.rn_number || null,
+        tour_id: tourId,
+        reservation_id: reservationId,
+        note: formData.note || null,
+        status: formData.status,
+        season: formData.season || null,
+        uploaded_file_urls: uploadedFileUrls?.length ? uploadedFileUrls : null
       };
 
-      console.log('전송할 데이터:', bookingData);
+      console.log('전송할 데이터:', dbPayload);
 
       let error;
+      let savedId: string | undefined;
       if (booking?.id) {
-        // 수정인 경우 - 간단한 필드만 업데이트
+        // 수정인 경우 - DB 컬럼만 업데이트
         console.log('수정 모드 - ID:', booking.id);
         const updateData = {
-          category: bookingData.category,
-          check_in_date: bookingData.check_in_date,
-          time: bookingData.time,
-          company: bookingData.company,
-          ea: bookingData.ea,
-          expense: bookingData.expense,
-          income: bookingData.income,
-          payment_method: bookingData.payment_method,
-          rn_number: bookingData.rn_number,
-          tour_id: bookingData.tour_id,
-          reservation_id: bookingData.reservation_id ?? null,
-          note: bookingData.note,
-          status: bookingData.status,
-          season: bookingData.season
+          category: dbPayload.category,
+          check_in_date: dbPayload.check_in_date,
+          time: dbPayload.time,
+          company: dbPayload.company,
+          ea: dbPayload.ea,
+          expense: dbPayload.expense,
+          income: dbPayload.income,
+          payment_method: dbPayload.payment_method,
+          rn_number: dbPayload.rn_number,
+          tour_id: dbPayload.tour_id,
+          reservation_id: dbPayload.reservation_id,
+          note: dbPayload.note,
+          status: dbPayload.status,
+          season: dbPayload.season,
+          uploaded_file_urls: dbPayload.uploaded_file_urls
         };
         console.log('업데이트할 데이터:', updateData);
         
@@ -650,29 +668,34 @@ export default function TicketBookingForm({
           .update(updateData)
           .eq('id', booking.id);
         error = updateError;
+        savedId = booking.id;
       } else {
-        // 새로 생성인 경우
+        // 새로 생성인 경우 - DB 컬럼만 insert
         console.log('새로 생성 모드');
         const { data: insertedData, error: insertError } = await (supabase as any)
           .from('ticket_bookings')
-          .insert(bookingData)
+          .insert(dbPayload)
           .select()
           .single();
         error = insertError;
-        
-        if (!error && insertedData) {
-          bookingData.id = insertedData.id;
-        }
+        savedId = insertedData?.id;
       }
 
       if (error) throw error;
 
       // 공급업체 티켓을 사용한 경우 구매 기록 생성
-      if (formData.supplier_product_id && bookingData.id) {
-        await createSupplierTicketPurchase(bookingData.id, formData.supplier_product_id, formData.ea);
+      if (formData.supplier_product_id && savedId) {
+        await createSupplierTicketPurchase(savedId, formData.supplier_product_id, formData.ea);
       }
 
-      onSave(bookingData as TicketBooking);
+      const resultBooking: TicketBooking = {
+        ...formData,
+        id: savedId,
+        tour_id: tourId,
+        reservation_id: reservationId || undefined,
+        uploaded_file_urls: uploadedFileUrls
+      };
+      onSave(resultBooking);
     } catch (error) {
       console.error('입장권 부킹 저장 오류:', error);
       alert('저장 중 오류가 발생했습니다.');
