@@ -2491,7 +2491,10 @@
         "noBookings": "No bookings registered",
         "noBookingsMessage": "Click the buttons above to add bookings.",
         "people": "people",
-        "rooms": "rooms"
+        "rooms": "rooms",
+        "time": "Time",
+        "reservationId": "Reservation",
+        "rnNumber": "RN#"
     },
     "assignmentManagement": {
         "title": "Assignment Management",

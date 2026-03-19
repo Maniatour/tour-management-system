@@ -80,6 +80,8 @@ type LocalTicketBooking = {
   time?: string | null
   ea?: number | null
   rn_number?: string | null
+  /** 간단히 보기 시 회사별 하위 행 (시간, 인원, 예약번호) */
+  bookingDetails?: { time: string | null; ea: number; reservation_id: string | null; rn_number: string | null }[]
 }
 
 type LocalTourHotelBooking = {
@@ -1378,7 +1380,7 @@ export default function TourDetailPage() {
         companyData.bookings.push(booking)
       })
       
-      // 합산된 결과를 booking 형태로 변환 (표시용)
+      // 합산된 결과를 booking 형태로 변환 (표시용) - 회사별 카드 안에 "시간 인원 #예약번호" 줄 단위로 표시
       return Array.from(companyMap.values()).map((companyData, index) => ({
         id: `aggregated-${companyData.company}-${index}`,
         company: companyData.company,
@@ -1387,7 +1389,13 @@ export default function TourDetailPage() {
         reservation_id: null,
         category: null,
         time: null,
-        rn_number: null
+        rn_number: null,
+        bookingDetails: companyData.bookings.map(b => ({
+          time: b.time ? (typeof b.time === 'string' ? b.time.substring(0, 5) : b.time) : null,
+          ea: b.ea || 0,
+          reservation_id: b.reservation_id ?? null,
+          rn_number: b.rn_number ?? null
+        }))
       } as LocalTicketBooking))
     }
   }, [ticketBookings, showTicketBookingDetails])

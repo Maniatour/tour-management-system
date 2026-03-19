@@ -2537,7 +2537,10 @@
         "noBookings": "등록된 부킹이 없습니다",
         "noBookingsMessage": "위 버튼을 클릭하여 부킹을 추가하세요.",
         "people": "명",
-        "rooms": "개"
+        "rooms": "개",
+        "time": "시간",
+        "reservationId": "예약번호",
+        "rnNumber": "RN#"
     },
     "assignmentManagement": {
         "title": "배정 관리",

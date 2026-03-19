@@ -617,6 +617,7 @@ export default function TicketBookingForm({
       const bookingData = {
         ...formData,
         tour_id: formData.tour_id && formData.tour_id.trim() !== '' ? formData.tour_id : null,
+        reservation_id: formData.reservation_id && formData.reservation_id.trim() !== '' ? formData.reservation_id : null,
         uploaded_file_urls: uploadedFileUrls // 업로드된 파일 URL들 추가
       };
 
@@ -637,7 +638,7 @@ export default function TicketBookingForm({
           payment_method: bookingData.payment_method,
           rn_number: bookingData.rn_number,
           tour_id: bookingData.tour_id,
-          reservation_id: bookingData.reservation_id,
+          reservation_id: bookingData.reservation_id ?? null,
           note: bookingData.note,
           status: bookingData.status,
           season: bookingData.season

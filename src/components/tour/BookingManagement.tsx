@@ -3,6 +3,14 @@ import { Plus, Hotel } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { ConnectionStatusLabel } from './TourUIComponents'
 
+/** 간단히 보기(집계) 시 시간·인원·예약번호·RN#을 줄 단위로 표시하기 위한 한 줄 데이터 */
+export interface TicketBookingDetailRow {
+  time: string | null
+  ea: number
+  reservation_id: string | null
+  rn_number: string | null
+}
+
 interface LocalTicketBooking {
   id: string
   reservation_id?: string | null
@@ -12,6 +20,8 @@ interface LocalTicketBooking {
   time?: string | null
   ea?: number | null
   rn_number?: string | null
+  /** 간단히 보기 시 회사별 하위 행 (시간, 인원, 예약번호) */
+  bookingDetails?: TicketBookingDetailRow[]
 }
 
 interface LocalTourHotelBooking {
@@ -176,33 +186,50 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
                         )}
                       </div>
                       
-                      {/* 두 번째 줄: 카테고리, 시간, 인원, RN# */}
-                      <div className="flex items-center justify-between text-xs text-gray-500">
-                        <div className="flex items-center space-x-2">
-                          {!isAggregated && (
-                            <>
-                              <span className="font-medium text-gray-700">
-                                {booking.category || 'N/A'}
-                              </span>
+                      {/* 두 번째 줄: 상세보기 = 카테고리/시간/인원/예약번호, 간단히 보기 = 줄마다 "시간 인원 #예약번호" */}
+                      <div className="text-xs text-gray-500">
+                        {isAggregated && booking.bookingDetails && booking.bookingDetails.length > 0 ? (
+                          <div className="space-y-0.5">
+                            {booking.bookingDetails.map((row, i) => (
+                              <div key={i} className="flex items-center gap-x-2">
+                                <span>{row.time ?? '–'}</span>
+                                <span>{row.ea} {t('people')}</span>
+                                {row.reservation_id && (
+                                  <span className="font-mono">#{row.reservation_id}</span>
+                                )}
+                                {row.rn_number && (
+                                  <span className="font-mono">{t('rnNumber')}: {row.rn_number}</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                              {!isAggregated && (
+                                <span className="font-medium text-gray-700">
+                                  {booking.category || 'N/A'}
+                                </span>
+                              )}
+                              {booking.time != null && booking.time !== '' && (
+                                <span>{typeof booking.time === 'string' ? booking.time.substring(0, 5) : booking.time}</span>
+                              )}
                               <span>
-                                {booking.time ? booking.time.substring(0, 5) : 'N/A'}
+                                {booking.ea || 0} {t('people')}
                               </span>
-                            </>
-                          )}
-                          <span>
-                            {booking.ea || 0} {t('people')}
-                          </span>
-                          {!isAggregated && booking.rn_number && (
-                            <span>
-                              #{booking.rn_number}
-                            </span>
-                          )}
-                        </div>
-                        {/* 오른쪽 아래: 금액 */}
-                        {!isAggregated && booking.expense && booking.expense > 0 && (
-                          <span className="font-semibold text-green-600">
-                            ${booking.expense.toFixed(2)}
-                          </span>
+                              {booking.reservation_id != null && booking.reservation_id !== '' && (
+                                <span className="font-mono">{booking.reservation_id}</span>
+                              )}
+                              {!isAggregated && booking.rn_number && (
+                                <span>#{booking.rn_number}</span>
+                              )}
+                            </div>
+                            {!isAggregated && booking.expense && booking.expense > 0 && (
+                              <span className="font-semibold text-green-600">
+                                ${booking.expense.toFixed(2)}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
