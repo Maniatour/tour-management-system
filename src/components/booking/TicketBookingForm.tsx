@@ -67,7 +67,7 @@ export default function TicketBookingForm({
     
     const initialData = {
       category: '',
-      submitted_by: 'admin@maniatour.com',
+      submitted_by: '',
       check_in_date: '',
       time: '',
       company: '',
@@ -161,13 +161,16 @@ export default function TicketBookingForm({
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [companies, setCompanies] = useState<string[]>([]);
+  const [paymentMethodsList, setPaymentMethodsList] = useState<Array<{ id: string; method: string; display_name: string | null }>>([]);
   const [supplierProducts, setSupplierProducts] = useState<SupplierProduct[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showCategorySuggestions, setShowCategorySuggestions] = useState(false);
-  const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
-  const [filteredCategories, setFilteredCategories] = useState<string[]>([]);
-  const [filteredCompanies, setFilteredCompanies] = useState<string[]>([]);
   const [useSupplierTicket, setUseSupplierTicket] = useState(false);
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
+  const [newCategoryValue, setNewCategoryValue] = useState('');
+  const [showNewCompanyInput, setShowNewCompanyInput] = useState(false);
+  const [newCompanyValue, setNewCompanyValue] = useState('');
+  const [showNewPaymentMethodInput, setShowNewPaymentMethodInput] = useState(false);
+  const [newPaymentMethodValue, setNewPaymentMethodValue] = useState('');
   
   // 파일 업로드 관련 상태
   const [isDragOver, setIsDragOver] = useState(false);
@@ -178,8 +181,62 @@ export default function TicketBookingForm({
     fetchReservations();
     fetchCategories();
     fetchCompanies();
+    fetchPaymentMethods();
     fetchSupplierProducts();
   }, []);
+
+  // 제출자 이메일: 새 부킹일 때만 로그인 사용자 이메일로 자동 설정
+  useEffect(() => {
+    if (booking?.submitted_by) return;
+    let mounted = true;
+    (async () => {
+      const { data: { session } } = await (supabase as any).auth.getSession();
+      if (mounted && session?.user?.email) {
+        setFormData(prev => ({ ...prev, submitted_by: session.user.email }));
+      }
+    })();
+    return () => { mounted = false; };
+  }, [booking?.submitted_by]);
+
+  const fetchPaymentMethods = async () => {
+    try {
+      const { data, error } = await (supabase as any)
+        .from('payment_methods')
+        .select('id, method, display_name')
+        .eq('status', 'active')
+        .order('display_name');
+      if (error) throw error;
+      setPaymentMethodsList((data || []).map((r: any) => ({
+        id: r.id,
+        method: r.method,
+        display_name: r.display_name ?? r.method
+      })));
+    } catch (error) {
+      console.error('결제 방법 목록 조회 오류:', error);
+    }
+  };
+
+  const handleAddPaymentMethod = async () => {
+    const methodName = newPaymentMethodValue.trim();
+    if (!methodName) return;
+    try {
+      const id = `PAYM-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const res = await fetch('/api/payment-methods', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, method: methodName, method_type: 'other', status: 'active' })
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.message || 'Failed to add payment method');
+      await fetchPaymentMethods();
+      setFormData(prev => ({ ...prev, payment_method: methodName }));
+      setNewPaymentMethodValue('');
+      setShowNewPaymentMethodInput(false);
+    } catch (error) {
+      console.error('결제 방법 추가 오류:', error);
+      alert(typeof error === 'object' && error && 'message' in error ? String((error as Error).message) : '결제 방법 추가에 실패했습니다.');
+    }
+  };
 
   const fetchTours = async () => {
     try {
@@ -584,6 +641,18 @@ export default function TicketBookingForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.category?.trim()) {
+      alert('카테고리를 선택하거나 새로 추가해주세요.');
+      return;
+    }
+    if (!formData.company?.trim()) {
+      alert('공급업체를 선택하거나 새로 추가해주세요.');
+      return;
+    }
+    if (!formData.submitted_by?.trim()) {
+      alert('로그인이 필요합니다. 페이지를 새로고침한 뒤 다시 시도해주세요.');
+      return;
+    }
     setLoading(true);
 
     try {
@@ -690,9 +759,9 @@ export default function TicketBookingForm({
 
       const resultBooking: TicketBooking = {
         ...formData,
-        id: savedId,
+        ...(savedId ? { id: savedId } : {}),
         tour_id: tourId,
-        reservation_id: reservationId || undefined,
+        ...(reservationId ? { reservation_id: reservationId } : {}),
         uploaded_file_urls: uploadedFileUrls
       };
       onSave(resultBooking);
@@ -711,42 +780,8 @@ export default function TicketBookingForm({
       [name]: name === 'ea' || name === 'expense' || name === 'income' ? Number(value) : value
     }));
 
-    // 카테고리 자동완성
-    if (name === 'category') {
-      const filtered = categories.filter(cat => 
-        cat.toLowerCase().includes(value.toLowerCase())
-      );
-      setFilteredCategories(filtered);
-      setShowCategorySuggestions(value.length > 0 && filtered.length > 0);
-    }
-
-    // 공급업체 자동완성
-    if (name === 'company') {
-      const filtered = companies.filter(comp => 
-        comp.toLowerCase().includes(value.toLowerCase())
-      );
-      setFilteredCompanies(filtered);
-      setShowCompanySuggestions(value.length > 0 && filtered.length > 0);
-    }
   };
 
-  const handleCategorySelect = (category: string) => {
-    setFormData(prev => ({ ...prev, category }));
-    setShowCategorySuggestions(false);
-  };
-
-  const handleCompanySelect = (company: string) => {
-    setFormData(prev => ({ ...prev, company }));
-    setShowCompanySuggestions(false);
-  };
-
-  const handleCategoryBlur = () => {
-    setTimeout(() => setShowCategorySuggestions(false), 200);
-  };
-
-  const handleCompanyBlur = () => {
-    setTimeout(() => setShowCompanySuggestions(false), 200);
-  };
 
   const handleDateChange = (field: string, direction: 'up' | 'down') => {
     const currentDate = new Date(formData[field as keyof TicketBooking] as string);
@@ -856,61 +891,77 @@ export default function TicketBookingForm({
               </div>
             )}
 
-            <div className="relative">
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {t('category')} *
               </label>
-              <input
-                type="text"
-                name="category"
-                value={formData.category}
-                onChange={handleChange}
-                onBlur={handleCategoryBlur}
-                onFocus={() => {
-                  if (formData.category.length > 0) {
-                    const filtered = categories.filter(cat => 
-                      cat.toLowerCase().includes(formData.category.toLowerCase())
-                    );
-                    setFilteredCategories(filtered);
-                    setShowCategorySuggestions(filtered.length > 0);
-                  }
-                }}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder={t('categoryPlaceholder')}
-                autoComplete="off"
-                disabled={useSupplierTicket}
-              />
-              {showCategorySuggestions && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                  {filteredCategories.map((category, index) => (
-                    <div
-                      key={index}
-                      className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
-                      onClick={() => handleCategorySelect(category)}
-                    >
-                      {category}
-                    </div>
-                  ))}
+              {showNewCategoryInput ? (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newCategoryValue}
+                    onChange={(e) => setNewCategoryValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const v = newCategoryValue.trim();
+                        if (v) {
+                          if (!categories.includes(v)) setCategories(prev => [...prev].concat(v).sort());
+                          setFormData(prev => ({ ...prev, category: v }));
+                          setNewCategoryValue('');
+                          setShowNewCategoryInput(false);
+                        }
+                      }
+                      if (e.key === 'Escape') setShowNewCategoryInput(false);
+                    }}
+                    placeholder={t('categoryPlaceholder')}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autoFocus
+                    disabled={useSupplierTicket}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const v = newCategoryValue.trim();
+                      if (v) {
+                        if (!categories.includes(v)) setCategories(prev => [...prev].concat(v).sort());
+                        setFormData(prev => ({ ...prev, category: v }));
+                        setNewCategoryValue('');
+                        setShowNewCategoryInput(false);
+                      }
+                    }}
+                    className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                  >
+                    {t('add')}
+                  </button>
+                  <button type="button" onClick={() => setShowNewCategoryInput(false)} className="px-3 py-2 border rounded-md text-sm">
+                    {t('cancel')}
+                  </button>
                 </div>
+              ) : (
+                <select
+                  name="category"
+                  value={formData.category}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === '__new__') {
+                      setShowNewCategoryInput(true);
+                      return;
+                    }
+                    setFormData(prev => ({ ...prev, category: v }));
+                  }}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={useSupplierTicket}
+                >
+                  <option value="">{t('selectCategory')}</option>
+                  {categories.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                  <option value="__new__">➕ {t('addNew')}</option>
+                </select>
               )}
             </div>
 
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {t('submitterEmail')} *
-              </label>
-              <input
-                type="email"
-                name="submitted_by"
-                value={formData.submitted_by}
-                onChange={handleChange}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder={t('submitterEmailPlaceholder')}
-              />
-            </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1062,43 +1113,74 @@ export default function TicketBookingForm({
               </select>
             </div>
 
-            <div className="relative">
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {t('supplier')} *
               </label>
-              <input
-                type="text"
-                name="company"
-                value={formData.company}
-                onChange={handleChange}
-                onBlur={handleCompanyBlur}
-                onFocus={() => {
-                  if (formData.company.length > 0) {
-                    const filtered = companies.filter(comp => 
-                      comp.toLowerCase().includes(formData.company.toLowerCase())
-                    );
-                    setFilteredCompanies(filtered);
-                    setShowCompanySuggestions(filtered.length > 0);
-                  }
-                }}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder={t('supplierPlaceholder')}
-                autoComplete="off"
-                disabled={useSupplierTicket}
-              />
-              {showCompanySuggestions && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                  {filteredCompanies.map((company, index) => (
-                    <div
-                      key={index}
-                      className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
-                      onClick={() => handleCompanySelect(company)}
-                    >
-                      {company}
-                    </div>
-                  ))}
+              {showNewCompanyInput ? (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newCompanyValue}
+                    onChange={(e) => setNewCompanyValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const v = newCompanyValue.trim();
+                        if (v) {
+                          if (!companies.includes(v)) setCompanies(prev => [...prev].concat(v).sort());
+                          setFormData(prev => ({ ...prev, company: v }));
+                          setNewCompanyValue('');
+                          setShowNewCompanyInput(false);
+                        }
+                      }
+                      if (e.key === 'Escape') setShowNewCompanyInput(false);
+                    }}
+                    placeholder={t('supplierPlaceholder')}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autoFocus
+                    disabled={useSupplierTicket}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const v = newCompanyValue.trim();
+                      if (v) {
+                        if (!companies.includes(v)) setCompanies(prev => [...prev].concat(v).sort());
+                        setFormData(prev => ({ ...prev, company: v }));
+                        setNewCompanyValue('');
+                        setShowNewCompanyInput(false);
+                      }
+                    }}
+                    className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                  >
+                    {t('add')}
+                  </button>
+                  <button type="button" onClick={() => setShowNewCompanyInput(false)} className="px-3 py-2 border rounded-md text-sm">
+                    {t('cancel')}
+                  </button>
                 </div>
+              ) : (
+                <select
+                  name="company"
+                  value={formData.company}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === '__new__') {
+                      setShowNewCompanyInput(true);
+                      return;
+                    }
+                    setFormData(prev => ({ ...prev, company: v }));
+                  }}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={useSupplierTicket}
+                >
+                  <option value="">{t('selectCompany')}</option>
+                  {companies.map((comp) => (
+                    <option key={comp} value={comp}>{comp}</option>
+                  ))}
+                  <option value="__new__">➕ {t('addNew')}</option>
+                </select>
               )}
             </div>
 
@@ -1151,18 +1233,55 @@ export default function TicketBookingForm({
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {t('paymentMethod')}
               </label>
-              <select
-                name="payment_method"
-                value={formData.payment_method || ''}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">{t('select')}</option>
-                <option value="credit_card">{t('paymentCreditCard')}</option>
-                <option value="bank_transfer">{t('paymentBankTransfer')}</option>
-                <option value="cash">{t('paymentCash')}</option>
-                <option value="other">{t('paymentOther')}</option>
-              </select>
+              {showNewPaymentMethodInput ? (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newPaymentMethodValue}
+                    onChange={(e) => setNewPaymentMethodValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddPaymentMethod();
+                      }
+                      if (e.key === 'Escape') setShowNewPaymentMethodInput(false);
+                    }}
+                    placeholder={t('paymentMethod')}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddPaymentMethod}
+                    className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                  >
+                    {t('add')}
+                  </button>
+                  <button type="button" onClick={() => { setShowNewPaymentMethodInput(false); setNewPaymentMethodValue(''); }} className="px-3 py-2 border rounded-md text-sm">
+                    {t('cancel')}
+                  </button>
+                </div>
+              ) : (
+                <select
+                  name="payment_method"
+                  value={formData.payment_method || ''}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === '__new__') {
+                      setShowNewPaymentMethodInput(true);
+                      return;
+                    }
+                    setFormData(prev => ({ ...prev, payment_method: v }));
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">{t('select')}</option>
+                  {paymentMethodsList.map((pm) => (
+                    <option key={pm.id} value={pm.method}>{pm.display_name || pm.method}</option>
+                  ))}
+                  <option value="__new__">➕ {t('addNew')}</option>
+                </select>
+              )}
             </div>
 
             <div>
@@ -1206,33 +1325,35 @@ export default function TicketBookingForm({
               </p>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {t('selectReservationOptional')}
-              </label>
-              <select
-                name="reservation_id"
-                value={formData.reservation_id || ''}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">{t('selectReservationPlaceholder')}</option>
-                {reservations.length > 0 ? (
-                    reservations.map(reservation => (
-                      <option key={reservation.id} value={reservation.id}>
-                        {reservation.id} - {reservation.tour_date} - {reservation.products?.name || '상품명 없음'} ({reservation.status})
-                      </option>
-                    ))
-                ) : (
-                  <option value="" disabled>
-                    예정된 예약이 없습니다
-                  </option>
-                )}
-              </select>
-              <p className="text-xs text-gray-500 mt-1">
-                {t('selectReservationHelpText')}
-              </p>
-            </div>
+            {!formData.tour_id && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {t('selectReservationOptional')}
+                </label>
+                <select
+                  name="reservation_id"
+                  value={formData.reservation_id || ''}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">{t('selectReservationPlaceholder')}</option>
+                  {reservations.length > 0 ? (
+                      reservations.map(reservation => (
+                        <option key={reservation.id} value={reservation.id}>
+                          {reservation.id} - {reservation.tour_date} - {reservation.products?.name || '상품명 없음'} ({reservation.status})
+                        </option>
+                      ))
+                  ) : (
+                    <option value="" disabled>
+                      예정된 예약이 없습니다
+                    </option>
+                  )}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {t('selectReservationHelpText')}
+                </p>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
