@@ -31,6 +31,8 @@ type ReceiptData = {
     not_included_price?: number
     balance_amount: number
     deposit_amount: number
+    /** 실제 입금 내역 합계(보증금+잔금 수령). 있으면 Paid Amount·잔액 계산에 사용 */
+    paid_amount_from_records?: number
     coupon_discount: number
     additional_discount: number
     option_total: number
@@ -363,6 +365,26 @@ export default function CustomerReceiptModal({
           ])
           const pickupHotelName = pickupHotel?.hotel || ''
           const channelName = (channel as any)?.name || ''
+          // 실제 입금액 = payment_records에서 보증금 수령 + 잔금 수령 합계
+          let paidAmountFromRecords: number | undefined
+          const { data: paymentRecords } = await supabase
+            .from('payment_records')
+            .select('amount, payment_status')
+            .eq('reservation_id', id)
+          if (paymentRecords && paymentRecords.length > 0) {
+            let depositTotal = 0
+            let balanceReceivedTotal = 0
+            paymentRecords.forEach((r: { payment_status?: string; amount?: number }) => {
+              const status = (r.payment_status || '').toLowerCase()
+              const amount = Number(r.amount) || 0
+              if (status.includes('partner received') || status.includes('deposit received') || status.includes("customer's cc charged")) {
+                depositTotal += amount
+              } else if (status.includes('balance received') || status.includes('balance requested')) {
+                balanceReceivedTotal += amount
+              }
+            })
+            paidAmountFromRecords = depositTotal + balanceReceivedTotal
+          }
           // reservation_options (status 필터 없이 모두 조회) + option names
           const { data: optsRows, error: optsErr } = await supabase
             .from('reservation_options')
@@ -455,6 +477,7 @@ export default function CustomerReceiptModal({
               not_included_price: toNum(pricing?.not_included_price),
               balance_amount: toNum(pricing?.balance_amount),
               deposit_amount: toNum(pricing?.deposit_amount),
+              paid_amount_from_records: paidAmountFromRecords,
               coupon_discount: toNum((pricing as any)?.coupon_discount),
               additional_discount: toNum((pricing as any)?.additional_discount),
               option_total: toNum((pricing as any)?.option_total),
@@ -698,7 +721,8 @@ export default function CustomerReceiptModal({
                   (d.pricing.card_fee ?? 0) +
                   (d.pricing.prepayment_cost ?? 0) +
                   (d.pricing.prepayment_tip ?? 0)
-                const balanceAmount = customerTotalPayment - (d.pricing.deposit_amount ?? 0)
+                const paidAmountToShow = d.pricing.paid_amount_from_records ?? d.pricing.deposit_amount ?? 0
+                const balanceAmount = customerTotalPayment - paidAmountToShow
                 const tip10PerPerson = (customerTotalPayment * 0.10) / totalPeople
                 const tip15PerPerson = (customerTotalPayment * 0.15) / totalPeople
                 const tip20PerPerson = (customerTotalPayment * 0.20) / totalPeople
@@ -871,7 +895,7 @@ export default function CustomerReceiptModal({
                       </table>
 
                       <div className="mt-2 flex flex-col items-end gap-0.5 text-xs">
-                        <p className="flex justify-end gap-3 w-full max-w-[200px]"><span className="text-gray-600">{L.paidAmount}:</span> <span>{formatMoney(d.pricing.deposit_amount, cur)}</span></p>
+                        <p className="flex justify-end gap-3 w-full max-w-[200px]"><span className="text-gray-600">{L.paidAmount}:</span> <span>{formatMoney(paidAmountToShow, cur)}</span></p>
                         <p className="flex justify-end gap-3 w-full max-w-[200px]"><span className="text-gray-600">{L.balance}:</span> <span className="receipt-balance-amount font-medium text-red-600">{formatMoney(balanceAmount, cur)}</span></p>
                       </div>
                     </div>
