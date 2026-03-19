@@ -2095,7 +2095,11 @@
       "dragOrClickFiles": "파일을 드래그하여 놓거나 클릭하여 선택하세요",
       "orPasteClipboard": "또는 클립보드에서 붙여넣기 (Ctrl+V)",
       "supportedFormats": "지원 형식: JPG, PNG, GIF, PDF, DOC, DOCX (최대 10MB)",
-      "uploadedFiles": "업로드된 파일"
+      "uploadedFiles": "업로드된 파일",
+      "deleteRequest": "삭제 요청",
+      "deleteRequestConfirm": "삭제를 요청하시겠습니까? (Super가 확인 후 실제 삭제합니다.)",
+      "deleteRequestedWaiting": "삭제 요청됨 (Super가 삭제할 때까지 대기)",
+      "deleteActual": "실제 삭제"
     },
     "tourHotelBooking": {
       "newTitle": "새 투어 호텔 부킹",
@@ -2545,7 +2549,8 @@
         "rooms": "개",
         "time": "시간",
         "reservationId": "예약번호",
-        "rnNumber": "RN#"
+        "rnNumber": "RN#",
+        "deletionRequested": "삭제 요청됨"
     },
     "assignmentManagement": {
         "title": "배정 관리",

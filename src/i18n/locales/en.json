@@ -2076,7 +2076,11 @@
       "dragOrClickFiles": "Drag and drop files or click to select",
       "orPasteClipboard": "Or paste from clipboard (Ctrl+V)",
       "supportedFormats": "Supported formats: JPG, PNG, GIF, PDF, DOC, DOCX (max 10MB)",
-      "uploadedFiles": "Uploaded Files"
+      "uploadedFiles": "Uploaded Files",
+      "deleteRequest": "Request deletion",
+      "deleteRequestConfirm": "Request deletion? (Super will perform actual delete after review.)",
+      "deleteRequestedWaiting": "Deletion requested (waiting for Super to delete)",
+      "deleteActual": "Delete (actual)"
     },
     "tourHotelBooking": {
       "newTitle": "New Tour Hotel Booking",
@@ -2499,7 +2503,8 @@
         "rooms": "rooms",
         "time": "Time",
         "reservationId": "Reservation",
-        "rnNumber": "RN#"
+        "rnNumber": "RN#",
+        "deletionRequested": "Deletion requested"
     },
     "assignmentManagement": {
         "title": "Assignment Management",

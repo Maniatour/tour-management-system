@@ -547,6 +547,8 @@ export default function ReservationForm({
   const [, setPriceAutoFillMessage] = useState<string>('')
   // 기존 가격 정보가 로드되었는지 추적
   const [isExistingPricingLoaded, setIsExistingPricingLoaded] = useState<boolean>(false)
+  // DB에서 불러온 가격 필드 여부 (검은색=DB값, 빨간색=계산값 표시용)
+  const [pricingFieldsFromDb, setPricingFieldsFromDb] = useState<Record<string, boolean>>({})
   // 편집 모드에서 가격 로드(loadPricingInfo)가 끝난 뒤에만 저장 가능 (0으로 덮어쓰기 방지)
   const [pricingLoadComplete, setPricingLoadComplete] = useState<boolean>(false)
   // reservation_pricing 행 id (상세/폼 가격 섹션 표시용)
@@ -1995,6 +1997,7 @@ export default function ReservationForm({
       return
     }
     if (reservationId) setPricingLoadComplete(false)
+    setPricingFieldsFromDb({})
 
     try {
       // reservation_pricing에 행이 있을 때 dynamic_pricing으로 채운 뒤에도 불포함 가격은 DB 컬럼 값 유지
@@ -2284,6 +2287,28 @@ export default function ReservationForm({
             }
           })
           
+          // DB에서 불러온 필드 표시용 (가격 정보에서 검은색=DB값, 빨간색=계산값)
+          setPricingFieldsFromDb({
+            productPriceTotal: (existingPricing as any).product_price_total != null && (existingPricing as any).product_price_total !== '',
+            couponDiscount: (existingPricing as any).coupon_discount != null && (existingPricing as any).coupon_discount !== '',
+            additionalDiscount: (existingPricing as any).additional_discount != null && (existingPricing as any).additional_discount !== '',
+            additionalCost: (existingPricing as any).additional_cost != null && (existingPricing as any).additional_cost !== '',
+            cardFee: (existingPricing as any).card_fee != null && (existingPricing as any).card_fee !== '',
+            tax: (existingPricing as any).tax != null && (existingPricing as any).tax !== '',
+            prepaymentCost: (existingPricing as any).prepayment_cost != null && (existingPricing as any).prepayment_cost !== '',
+            prepaymentTip: (existingPricing as any).prepayment_tip != null && (existingPricing as any).prepayment_tip !== '',
+            optionTotal: (existingPricing as any).option_total != null && (existingPricing as any).option_total !== '',
+            totalPrice: (existingPricing as any).total_price != null && (existingPricing as any).total_price !== '',
+            depositAmount: (existingPricing as any).deposit_amount != null && (existingPricing as any).deposit_amount !== '',
+            balanceAmount: (existingPricing as any).balance_amount != null && (existingPricing as any).balance_amount !== '',
+            commission_percent: (existingPricing as any).commission_percent != null && (existingPricing as any).commission_percent !== '',
+            commission_amount: (existingPricing as any).commission_amount != null && (existingPricing as any).commission_amount !== '',
+            not_included_price: (existingPricing as any).not_included_price != null && (existingPricing as any).not_included_price !== '',
+            choicesTotal: (existingPricing as any).choices_total != null && (existingPricing as any).choices_total !== '',
+            onSiteBalanceAmount: (existingPricing as any).balance_amount != null && (existingPricing as any).balance_amount !== '',
+            onlinePaymentAmount: (existingPricing as any).commission_base_price != null && (existingPricing as any).commission_base_price !== ''
+          })
+
           // 상품 단가·불포함이 모두 0이면 dynamic_pricing에서 채우기 위해 아래로 진행 (불포함은 DB 컬럼 값 유지)
           const hasAnySavedPrice = hasSavedProductPrices || (Number((existingPricing as any).not_included_price) || 0) > 0
           if (hasAnySavedPrice) {
@@ -3395,8 +3420,8 @@ export default function ReservationForm({
   ) => {
     try {
       const fd = formDataRef.current
-      // 기존 가격 정보 조회 (업데이트 시 0 덮어쓰기 방지를 위해 가격 컬럼 포함)
-      const selectColumns = 'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, subtotal, total_price, choices_total, option_total, required_option_total'
+      // 기존 가격 정보 조회 (업데이트 시 0 덮어쓰기 방지를 위해 가격·수수료·잔액 컬럼 포함)
+      const selectColumns = 'id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, subtotal, total_price, choices_total, option_total, required_option_total, card_fee, tax, prepayment_cost, prepayment_tip, deposit_amount, balance_amount, commission_percent, commission_amount'
       const { data: existingRow, error: checkError } = await (supabase as any)
         .from('reservation_pricing')
         .select(selectColumns)
@@ -3431,7 +3456,8 @@ export default function ReservationForm({
       const keep = (newVal: number, existingVal: unknown) =>
         existing && newVal === 0 && (toNum(existingVal) || 0) > 0 ? toNum(existingVal) : newVal
 
-      const pricingData: Database['public']['Tables']['reservation_pricing']['Insert'] = {
+      // DB에 저장할 전체 컬럼을 명시적으로 구성 (타입 필터로 누락 방지)
+      const pricingData = {
         id: pricingId,
         reservation_id: reservationId,
         adult_product_price: keep(newAdult, (existing as any)?.adult_product_price),
@@ -3448,10 +3474,10 @@ export default function ReservationForm({
         coupon_discount: Number(fd.couponDiscount) || 0,
         additional_discount: Number(fd.additionalDiscount) || 0,
         additional_cost: Number(fd.additionalCost) || 0,
-        card_fee: Number(fd.cardFee) || 0,
-        tax: Number(fd.tax) || 0,
-        prepayment_cost: Number(fd.prepaymentCost) || 0,
-        prepayment_tip: Number(fd.prepaymentTip) || 0,
+        card_fee: keep(Number(fd.cardFee) || 0, (existing as any)?.card_fee),
+        tax: keep(Number(fd.tax) || 0, (existing as any)?.tax),
+        prepayment_cost: keep(Number(fd.prepaymentCost) || 0, (existing as any)?.prepayment_cost),
+        prepayment_tip: keep(Number(fd.prepaymentTip) || 0, (existing as any)?.prepayment_tip),
         selected_options: fd.selectedOptionalOptions,
         option_total: keep(newOptionTotal, (existing as any)?.option_total),
         total_price: keep(newTotal, (existing as any)?.total_price),
@@ -3459,8 +3485,8 @@ export default function ReservationForm({
         balance_amount: overrides?.balanceAmount ?? (Number(fd.onSiteBalanceAmount ?? fd.balanceAmount) || 0),
         private_tour_additional_cost: Number(fd.privateTourAdditionalCost) || 0,
         commission_percent: Number(fd.commission_percent) || 0,
-        commission_amount: Number(fd.commission_amount) || 0
-      } as Database['public']['Tables']['reservation_pricing']['Insert'] & { commission_amount?: number; not_included_price?: number }
+        commission_amount: keep(Number(fd.commission_amount) || 0, (existing as any)?.commission_amount),
+      }
 
       let error: unknown
       if (checkError && checkError.code !== 'PGRST116') { // PGRST116은 "no rows returned" 오류
@@ -3469,10 +3495,10 @@ export default function ReservationForm({
       }
 
       if (existing?.id) {
-        // 기존 데이터가 있으면 업데이트
+        // 기존 데이터가 있으면 업데이트 (전체 컬럼 명시로 card_fee, balance_amount, commission_amount 등 누락 방지)
         const { error: updateError } = await (supabase as any)
           .from('reservation_pricing')
-          .update(pricingData as Database['public']['Tables']['reservation_pricing']['Update'])
+          .update(pricingData)
           .eq('reservation_id', reservationId)
         
         error = updateError
@@ -3480,7 +3506,7 @@ export default function ReservationForm({
         // 기존 데이터가 없으면 새로 삽입
         const { error: insertError } = await (supabase as any)
           .from('reservation_pricing')
-          .insert([pricingData as Database['public']['Tables']['reservation_pricing']['Insert']])
+          .insert([pricingData])
         
         error = insertError
       }
@@ -4457,6 +4483,7 @@ export default function ReservationForm({
                 autoSelectCoupon={autoSelectCoupon}
                 reservationOptionsTotalPrice={reservationOptionsTotalPrice}
                 isExistingPricingLoaded={isExistingPricingLoaded}
+                pricingFieldsFromDb={pricingFieldsFromDb}
                 {...(reservation?.id ? { reservationId: reservation.id } : {})}
                 expenseUpdateTrigger={expenseUpdateTrigger}
                 channels={channels.map(({ type, ...c }) => ({ ...c, ...(type != null ? { type } : {}) })) as any}

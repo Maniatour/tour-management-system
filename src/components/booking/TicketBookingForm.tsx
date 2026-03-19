@@ -24,6 +24,8 @@ interface TicketBooking {
   supplier_product_id?: string; // 공급업체 상품 ID 추가
   uploaded_files?: File[]; // 파일 업로드 필드 추가
   uploaded_file_urls?: string[]; // 업로드된 파일 URL들
+  deletion_requested_at?: string | null;
+  deletion_requested_by?: string | null;
 }
 
 interface Supplier {
@@ -50,7 +52,12 @@ interface TicketBookingFormProps {
   booking?: TicketBooking;
   onSave: (booking: TicketBooking) => void;
   onCancel: () => void;
+  /** Super만 사용. 삭제 요청된 건을 실제 삭제 */
   onDelete?: (id: string) => void;
+  /** 사용자 삭제 요청 (실제 삭제는 하지 않음) */
+  onRequestDelete?: (id: string) => void;
+  /** Super 권한 여부 */
+  isSuper?: boolean;
   tourId?: string;
 }
 
@@ -59,6 +66,8 @@ export default function TicketBookingForm({
   onSave, 
   onCancel,
   onDelete,
+  onRequestDelete,
+  isSuper,
   tourId 
 }: TicketBookingFormProps) {
   const t = useTranslations('booking.ticketBooking');
@@ -1539,19 +1548,44 @@ export default function TicketBookingForm({
           </div>
 
           <div className="flex justify-between items-center pt-4">
-            {booking?.id && onDelete && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (booking?.id && confirm('정말로 이 부킹을 삭제하시겠습니까?')) {
-                    onDelete(booking.id);
-                  }
-                }}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-              >
-                삭제
-              </button>
-            )}
+            {booking?.id && (() => {
+              const bookingId = booking.id;
+              return (
+              <div className="flex items-center gap-2">
+                {isSuper && booking.deletion_requested_at && onDelete && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm('정말로 이 부킹을 삭제하시겠습니까? (실제 삭제)')) {
+                        onDelete(bookingId);
+                      }
+                    }}
+                    className="px-4 py-2 bg-red-700 text-white rounded-md hover:bg-red-800"
+                  >
+                    {t('deleteActual')}
+                  </button>
+                )}
+                {!isSuper && !booking.deletion_requested_at && onRequestDelete && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm(t('deleteRequestConfirm'))) {
+                        onRequestDelete(bookingId);
+                      }
+                    }}
+                    className="px-4 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700"
+                  >
+                    {t('deleteRequest')}
+                  </button>
+                )}
+                {!isSuper && booking.deletion_requested_at && (
+                  <span className="text-sm text-amber-700 bg-amber-50 px-3 py-1.5 rounded">
+                    {t('deleteRequestedWaiting')}
+                  </span>
+                )}
+              </div>
+              );
+            })()}
             <div className="flex space-x-3 ml-auto">
               <button
                 type="button"

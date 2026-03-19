@@ -80,6 +80,8 @@ type LocalTicketBooking = {
   time?: string | null
   ea?: number | null
   rn_number?: string | null
+  deletion_requested_at?: string | null
+  deletion_requested_by?: string | null
   /** 간단히 보기 시 회사별 하위 행 (시간, 인원, 예약번호) */
   bookingDetails?: { time: string | null; ea: number; reservation_id: string | null; rn_number: string | null }[]
 }
@@ -108,7 +110,8 @@ export default function TourDetailPage() {
   const locale = params.locale as string
   const t = useTranslations('tours')
   
-  const { hasPermission, loading } = useAuth()
+  const { hasPermission, loading, userPosition, authUser } = useAuth()
+  const isSuper = userPosition === 'super' || (authUser?.email && ['info@maniatour.com', 'wooyong.shim09@gmail.com'].includes(authUser.email.toLowerCase().trim()))
   const { openChat } = useFloatingChat()
 
   // 커스텀 훅으로 데이터와 상태 관리
@@ -1316,7 +1319,40 @@ export default function TourDetailPage() {
   const handleCloseTicketBookingForm = async () => {
     setShowTicketBookingForm(false)
     setEditingTicketBooking(null)
-    // 부킹 데이터 새로고침
+    await loadBookings()
+  }
+
+  /** 사용자: 삭제 요청만 (DB에 삭제 요청 상태 저장) */
+  const handleRequestTicketBookingDelete = async (id: string) => {
+    const email = authUser?.email || ''
+    const { error } = await supabase
+      .from('ticket_bookings')
+      .update({
+        deletion_requested_at: new Date().toISOString(),
+        deletion_requested_by: email || null
+      })
+      .eq('id', id)
+    if (error) {
+      console.error('삭제 요청 오류:', error)
+      alert(locale === 'ko' ? '삭제 요청 처리 중 오류가 발생했습니다.' : 'Failed to request deletion.')
+      return
+    }
+    alert(locale === 'ko' ? '삭제 요청되었습니다. Super가 확인 후 삭제합니다.' : 'Deletion requested. Super will delete after review.')
+    await loadBookings()
+    setEditingTicketBooking(prev => prev?.id === id ? { ...prev, deletion_requested_at: new Date().toISOString(), deletion_requested_by: email } : prev)
+  }
+
+  /** Super: 실제 삭제 */
+  const handleActualTicketBookingDelete = async (id: string) => {
+    const { error } = await supabase.from('ticket_bookings').delete().eq('id', id)
+    if (error) {
+      console.error('삭제 오류:', error)
+      alert(locale === 'ko' ? '삭제 중 오류가 발생했습니다.' : 'Failed to delete.')
+      return
+    }
+    alert(locale === 'ko' ? '삭제되었습니다.' : 'Deleted.')
+    setShowTicketBookingForm(false)
+    setEditingTicketBooking(null)
     await loadBookings()
   }
 
@@ -1341,12 +1377,19 @@ export default function TourDetailPage() {
     await loadBookings()
   }
 
-  const handleBookingSubmit = async (booking: LocalTicketBooking | LocalTourHotelBooking) => {
+  const handleBookingSubmit = async (_booking: LocalTicketBooking | LocalTourHotelBooking, type: 'ticket' | 'hotel') => {
     if (tourData.tour) {
-      // 부킹 데이터 새로고침
       await loadBookings()
     }
-    console.log('부킹이 저장되었습니다:', booking)
+    const savedMessage = locale === 'ko' ? '저장 완료되었습니다.' : 'Saved successfully.'
+    alert(savedMessage)
+    if (type === 'ticket') {
+      setShowTicketBookingForm(false)
+      setEditingTicketBooking(null)
+    } else {
+      setShowTourHotelBookingForm(false)
+      setEditingTourHotelBooking(null)
+    }
   }
 
   // 필터링된 입장권 부킹 계산
@@ -2205,9 +2248,12 @@ export default function TourDetailPage() {
         {showTicketBookingForm && tourData.tour && (
             <TicketBookingFormAny
               booking={editingTicketBooking || undefined}
-            tourId={tourData.tour?.id || ''}
-              onSave={(b: any) => handleBookingSubmit(b as unknown as LocalTicketBooking)}
+              tourId={tourData.tour?.id || ''}
+              onSave={(b: any) => handleBookingSubmit(b as unknown as LocalTicketBooking, 'ticket')}
               onCancel={handleCloseTicketBookingForm}
+              isSuper={isSuper}
+              onRequestDelete={handleRequestTicketBookingDelete}
+              onDelete={isSuper ? handleActualTicketBookingDelete : undefined}
             />
       )}
       </BookingModal>
@@ -2222,7 +2268,7 @@ export default function TourDetailPage() {
               <TourHotelBookingFormAny
                 booking={editingTourHotelBooking || undefined}
             tourId={tourData.tour?.id || ''}
-                onSave={(b: any) => handleBookingSubmit(b as unknown as LocalTourHotelBooking)}
+                onSave={(b: any) => handleBookingSubmit(b as unknown as LocalTourHotelBooking, 'hotel')}
                 onCancel={handleCloseTourHotelBookingForm}
               />
         )}

@@ -20,6 +20,7 @@ interface LocalTicketBooking {
   time?: string | null
   ea?: number | null
   rn_number?: string | null
+  deletion_requested_at?: string | null
   /** 간단히 보기 시 회사별 하위 행 (시간, 인원, 예약번호) */
   bookingDetails?: TicketBookingDetailRow[]
 }
@@ -171,13 +172,18 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
                       className={`p-2 border rounded ${isAggregated ? '' : 'cursor-pointer hover:bg-gray-50'} transition-colors ${isStaff && !isAggregated ? '' : 'cursor-not-allowed'}`}
                       onClick={() => !isAggregated && onEditTicketBooking(booking)}
                     >
-                      {/* 첫 번째 줄: company와 status */}
+                      {/* 첫 번째 줄: company, status, 삭제 요청 배지 */}
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center space-x-2">
                           <span className="text-lg">🎫</span>
                           <span className="font-medium text-sm text-gray-900 truncate">
                             {booking.company || 'N/A'}
                           </span>
+                          {!isAggregated && booking.deletion_requested_at && (
+                            <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                              {t('deletionRequested')}
+                            </span>
+                          )}
                         </div>
                         {!isAggregated && booking.status && (
                           <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(booking.status)}`}>

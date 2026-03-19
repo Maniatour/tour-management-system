@@ -185,7 +185,7 @@ export async function updateReservation(
 
       const { data: existingRow } = await supabase
         .from('reservation_pricing')
-        .select('id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, subtotal, total_price, choices_total, option_total, required_option_total')
+        .select('id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, subtotal, total_price, choices_total, option_total, required_option_total, card_fee, tax, prepayment_cost, prepayment_tip, deposit_amount, balance_amount, commission_percent, commission_amount')
         .eq('reservation_id', reservationId)
         .maybeSingle()
 
@@ -204,6 +204,7 @@ export async function updateReservation(
       const newOptionTotal = toNum(pricingInfo.optionTotal)
       const newRequiredOptionTotal = toNum(pricingInfo.requiredOptionTotal)
 
+      // DB에 저장할 컬럼을 모두 명시 (card_fee, balance_amount, commission_amount 등 누락 방지)
       const pricingData = {
         reservation_id: reservationId,
         adult_product_price: keep(newAdult, existingRow?.adult_product_price),
@@ -220,10 +221,10 @@ export async function updateReservation(
         coupon_discount: toNum(pricingInfo.couponDiscount),
         additional_discount: toNum(pricingInfo.additionalDiscount),
         additional_cost: toNum(pricingInfo.additionalCost),
-        card_fee: toNum(pricingInfo.cardFee ?? (pricingInfo as any).card_fee),
-        tax: toNum(pricingInfo.tax),
-        prepayment_cost: toNum(pricingInfo.prepaymentCost),
-        prepayment_tip: toNum(pricingInfo.prepaymentTip),
+        card_fee: keep(toNum(pricingInfo.cardFee ?? (pricingInfo as any).card_fee), existingRow?.card_fee),
+        tax: keep(toNum(pricingInfo.tax), existingRow?.tax),
+        prepayment_cost: keep(toNum(pricingInfo.prepaymentCost), existingRow?.prepayment_cost),
+        prepayment_tip: keep(toNum(pricingInfo.prepaymentTip), existingRow?.prepayment_tip),
         selected_options: pricingInfo.selectedOptionalOptions ?? {},
         option_total: keep(newOptionTotal, existingRow?.option_total),
         total_price: keep(newTotal, existingRow?.total_price),
@@ -231,13 +232,13 @@ export async function updateReservation(
         balance_amount: toNum(pricingInfo.balanceAmount),
         private_tour_additional_cost: toNum(pricingInfo.privateTourAdditionalCost),
         commission_percent: toNum(pricingInfo.commission_percent),
-        commission_amount: toNum(pricingInfo.commission_amount),
+        commission_amount: keep(toNum(pricingInfo.commission_amount), existingRow?.commission_amount),
       }
 
       if (existingRow?.id) {
         await supabase
           .from('reservation_pricing')
-          .update(pricingData as any)
+          .update(pricingData)
           .eq('id', existingRow.id)
       } else {
         await supabase
