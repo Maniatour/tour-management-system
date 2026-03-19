@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { X, Save, Calendar, DollarSign, Users, Printer, CheckCircle } from 'lucide-react'
+import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 
@@ -53,7 +54,9 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
   const [opMembers, setOpMembers] = useState<OpMember[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [dirty, setDirty] = useState(false)
   const [employeeStats, setEmployeeStats] = useState<EmployeeShareRow[]>([])
+  const lastSavedToursRef = useRef<string>('')
 
   const getDefaultDates = useCallback(() => {
     const today = new Date()
@@ -181,6 +184,8 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         })
       }
       setTours(rows)
+      lastSavedToursRef.current = JSON.stringify(rows.map(r => ({ id: r.id, office_tip_amount: r.office_tip_amount, note: r.note, settled_at: r.settled_at })))
+      setDirty(false)
     } catch (e) {
       console.error('투어 조회 오류:', e)
       setTours([])
@@ -306,6 +311,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
   }, [totalToDistribute, employeeStats.length])
 
   const updateTourTip = (tourId: string, field: 'office_tip_amount' | 'note' | 'settled_at', value: number | string | null) => {
+    setDirty(true)
     setTours(prev =>
       prev.map(t =>
         t.id === tourId
@@ -319,6 +325,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
   }
 
   const toggleSettled = (tourId: string) => {
+    setDirty(true)
     setTours(prev =>
       prev.map(t =>
         t.id === tourId
@@ -367,15 +374,24 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         note: tour.note || null,
         settled_at: settledAt ?? tour.settled_at ?? null
       }
-      const { data: existing } = await supabase
+      const { data: existing, error: fetchError } = await supabase
         .from('tour_office_tips')
         .select('id')
         .eq('tour_id', tour.id)
         .maybeSingle()
+      if (fetchError) {
+        throw new Error(`투어 팁 조회 실패: ${fetchError.message}`)
+      }
       if (existing) {
-        await supabase.from('tour_office_tips').update(payload).eq('tour_id', tour.id)
+        const { error: updateError } = await supabase.from('tour_office_tips').update(payload).eq('tour_id', tour.id)
+        if (updateError) {
+          throw new Error(`저장 실패 (투어 ${tour.tour_date}): ${updateError.message}`)
+        }
       } else {
-        await supabase.from('tour_office_tips').insert(payload)
+        const { error: insertError } = await supabase.from('tour_office_tips').insert(payload)
+        if (insertError) {
+          throw new Error(`저장 실패 (투어 ${tour.tour_date}): ${insertError.message}`)
+        }
       }
     }
   }
@@ -384,9 +400,14 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
     setSaving(true)
     try {
       await upsertTourTips(tours, null)
+      lastSavedToursRef.current = JSON.stringify(tours.map(r => ({ id: r.id, office_tip_amount: r.office_tip_amount, note: r.note, settled_at: r.settled_at })))
+      setDirty(false)
+      toast.success(t('saveSuccess'))
       onClose()
     } catch (e) {
       console.error('저장 오류:', e)
+      const message = e instanceof Error ? e.message : '저장 중 오류가 발생했습니다.'
+      toast.error(message)
     } finally {
       setSaving(false)
     }
@@ -399,8 +420,13 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
       const settledAt = new Date().toISOString()
       await upsertTourTips(tours, settledAt)
       setTours(prev => prev.map(t => ({ ...t, settled_at: settledAt })))
+      lastSavedToursRef.current = JSON.stringify(tours.map(r => ({ id: r.id, office_tip_amount: r.office_tip_amount, note: r.note, settled_at: settledAt })))
+      setDirty(false)
+      toast.success(t('batchSettleSuccess'))
     } catch (e) {
       console.error('배분 완료 오류:', e)
+      const message = e instanceof Error ? e.message : '배분 완료 처리 중 오류가 발생했습니다.'
+      toast.error(message)
     } finally {
       setSaving(false)
     }
@@ -415,6 +441,17 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
 
   const handlePrint = () => {
     window.print()
+  }
+
+  const handleClose = () => {
+    const currentSnapshot = JSON.stringify(tours.map(r => ({ id: r.id, office_tip_amount: r.office_tip_amount, note: r.note, settled_at: r.settled_at })))
+    if (dirty && currentSnapshot !== lastSavedToursRef.current) {
+      if (window.confirm(t('unsavedChanges'))) {
+        onClose()
+      }
+    } else {
+      onClose()
+    }
   }
 
   if (!isOpen) return null
@@ -446,7 +483,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
             </button>
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700"
             >
               <X className="w-5 h-5" />
@@ -653,7 +690,7 @@ export default function OfficeTipsModal({ isOpen, onClose }: OfficeTipsModalProp
         <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50 print:hidden">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
           >
             {t('close') || '닫기'}

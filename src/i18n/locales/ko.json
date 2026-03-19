@@ -1172,6 +1172,9 @@
     "close": "닫기",
     "save": "저장",
     "saving": "저장 중...",
+    "unsavedChanges": "저장하지 않은 변경사항이 있습니다. 닫으시겠습니까?",
+    "saveSuccess": "저장되었습니다.",
+    "batchSettleSuccess": "배분이 완료되었습니다.",
     "refresh": "새로고침",
     "todayStatus": "오늘의 출퇴근 상태",
     "selectedEmployeeStatus": "{name}의 출퇴근 상태",
@@ -2190,7 +2193,8 @@
       "tourHotelBookingEdit": "투어 호텔 부킹 수정",
       "tourHotelBookingAdd": "투어 호텔 부킹 추가",
       "saveSuccess": "저장되었습니다.",
-      "saveError": "저장 중 오류가 발생했습니다."
+      "saveError": "저장 중 오류가 발생했습니다.",
+      "tourNotFound": "투어를 찾을 수 없습니다"
     },
     "teamAndVehicle": {
       "title": "팀 구성 & 차량 배정",

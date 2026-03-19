@@ -55,6 +55,28 @@ interface CompanyExpenseRow {
   paid_to_employee_email: string | null
 }
 
+const HOURLY_RATES_STORAGE_KEY = 'biweekly_hourly_rates'
+
+function getSavedHourlyRates(): Record<string, string> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem(HOURLY_RATES_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveHourlyRateToStorage(email: string, rate: string) {
+  const rates = getSavedHourlyRates()
+  if (rate === '') {
+    delete rates[email]
+  } else {
+    rates[email] = rate
+  }
+  localStorage.setItem(HOURLY_RATES_STORAGE_KEY, JSON.stringify(rates))
+}
+
 export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko' }: BiweeklyCalculatorModalProps) {
   const [hourlyRate, setHourlyRate] = useState<string>('')
   const [startDate, setStartDate] = useState<string>('')
@@ -164,15 +186,20 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       if (filteredMembers.length > 0) {
         const firstMember = filteredMembers[0]
         setSelectedEmployee(firstMember.email)
-        
-        // 첫 번째 직원의 position에 따라 시급 설정
-        const position = firstMember.position?.toLowerCase()
-        if (position === 'op') {
-          setHourlyRate('15')
-        } else if (position === 'office manager') {
-          setHourlyRate('17')
+        const savedRates = getSavedHourlyRates()
+        const savedRate = savedRates[firstMember.email]
+        if (savedRate !== undefined && savedRate !== '') {
+          setHourlyRate(savedRate)
         } else {
-          setHourlyRate('')
+          // 저장된 시급이 없으면 position에 따라 기본 시급 설정
+          const position = firstMember.position?.toLowerCase()
+          if (position === 'op') {
+            setHourlyRate('15')
+          } else if (position === 'office manager') {
+            setHourlyRate('17')
+          } else {
+            setHourlyRate('')
+          }
         }
       }
 
@@ -710,11 +737,13 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     }
   }
 
-  // 시급 입력 핸들러
+  // 시급 입력 핸들러 (변경 시 해당 직원 시급을 localStorage에 저장)
   const handleHourlyRateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     setHourlyRate(value)
-    
+    if (selectedEmployee) {
+      saveHourlyRateToStorage(selectedEmployee, value)
+    }
     // 숫자만 입력 허용하고 출퇴근 급여 계산
     if (value === '' || !isNaN(Number(value))) {
       if (value && !isNaN(Number(value)) && totalHours > 0) {
@@ -737,22 +766,25 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     }
   }
 
-  // 직원 선택 핸들러
+  // 직원 선택 핸들러 (저장된 시급이 있으면 적용, 없으면 position 기본값)
   const handleEmployeeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedEmail = e.target.value
     setSelectedEmployee(selectedEmail)
-    
-    // 선택된 직원의 position에 따라 시급 설정
-    const selectedMember = teamMembers.find(member => member.email === selectedEmail)
-    if (selectedMember) {
-      const position = selectedMember.position?.toLowerCase()
-      if (position === 'op') {
-        setHourlyRate('15')
-      } else if (position === 'office manager') {
-        setHourlyRate('17')
-      } else {
-        // 다른 position의 경우 기본값 없음
-        setHourlyRate('')
+    const savedRates = getSavedHourlyRates()
+    const savedRate = savedRates[selectedEmail]
+    if (savedRate !== undefined && savedRate !== '') {
+      setHourlyRate(savedRate)
+    } else {
+      const selectedMember = teamMembers.find(member => member.email === selectedEmail)
+      if (selectedMember) {
+        const position = selectedMember.position?.toLowerCase()
+        if (position === 'op') {
+          setHourlyRate('15')
+        } else if (position === 'office manager') {
+          setHourlyRate('17')
+        } else {
+          setHourlyRate('')
+        }
       }
     }
   }

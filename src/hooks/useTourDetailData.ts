@@ -134,7 +134,7 @@ export function useTourDetailData() {
       setPageLoading(true)
 
       try {
-        // 투어 기본 정보 가져오기
+        // 투어 기본 정보 가져오기 (.maybeSingle() 사용: 0건이면 406 대신 null 반환)
         const { data: tourData, error: tourError } = await supabase
           .from('tours')
           .select(`
@@ -142,7 +142,7 @@ export function useTourDetailData() {
             products (*)
           `)
           .eq('id', params.id)
-          .single()
+          .maybeSingle()
 
         if (tourError) {
           console.error('투어 데이터 가져오기 오류:', tourError)
@@ -150,7 +150,9 @@ export function useTourDetailData() {
         }
 
         if (!tourData) {
-          console.error('투어 데이터가 없습니다.')
+          // ID에 해당하는 투어 없음 (잘못된 URL 또는 삭제된 투어)
+          setTour(null)
+          setProduct(null)
           return
         }
 

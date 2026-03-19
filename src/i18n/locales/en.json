@@ -1163,6 +1163,9 @@
     "close": "Close",
     "save": "Save",
     "saving": "Saving...",
+    "unsavedChanges": "You have unsaved changes. Close anyway?",
+    "saveSuccess": "Saved.",
+    "batchSettleSuccess": "Distribution completed.",
     "refresh": "Refresh",
     "todayStatus": "Today's attendance",
     "selectedEmployeeStatus": "{name}'s attendance",
@@ -2171,7 +2174,8 @@
         "tourHotelBookingEdit": "Edit Tour Hotel Booking",
         "tourHotelBookingAdd": "Add Tour Hotel Booking",
         "saveSuccess": "Saved successfully.",
-        "saveError": "An error occurred while saving."
+        "saveError": "An error occurred while saving.",
+        "tourNotFound": "Tour not found"
       },
       "teamAndVehicle": {
       "title": "Team Composition & Vehicle Assignment",
