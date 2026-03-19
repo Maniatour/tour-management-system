@@ -19,6 +19,7 @@ import AttendanceEditModal from '@/components/attendance/AttendanceEditModal'
 import OfficeTipsModal from '@/components/attendance/OfficeTipsModal'
 import BiweeklyCalculatorModal from '@/components/BiweeklyCalculatorModal'
 import TotalEmployeesModal from '@/components/TotalEmployeesModal'
+import EmployeeHourlyRatesPanel from '@/components/attendance/EmployeeHourlyRatesPanel'
 import TipsShareModal from '@/components/TipsShareModal'
 import BonusCalculatorModal from '@/components/BonusCalculatorModal'
 import ReservationForm from '@/components/reservation/ReservationForm'
@@ -838,6 +839,8 @@ export default function AttendancePage() {
           </div>
         </div>
       </div>
+
+      {canEditAttendance && <EmployeeHourlyRatesPanel />}
 
       {/* 오늘의 출퇴근 상태 */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">

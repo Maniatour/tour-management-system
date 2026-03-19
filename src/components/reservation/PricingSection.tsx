@@ -781,12 +781,13 @@ export default function PricingSection({
         const priceDifference = Math.abs(currentDeposit - discountedPrice)
         
         // OTA 채널: depositAmount = 고객 총 결제 금액(잔액 0), 채널 결제 금액 = 판매가×인원(productPriceTotal), 채널 수수료 $ = 채널 결제 금액 × 수수료 %
-        // 단, 입금 내역이 있으면 고객 실제 지불액(보증금)은 입금 내역 합으로 유지하므로 덮어쓰지 않음
+        // 단, 입금 내역이 있거나 DB에서 불러온 deposit_amount가 있으면 고객 실제 지불액(보증금)을 덮어쓰지 않음
         if (isOTAChannel) {
           const totalCustomerPayment = calculateTotalCustomerPayment()
           const salePriceTimesPax = formData.productPriceTotal
-          if (hasPaymentRecordsRef.current) {
-            // 입금 내역 합을 유지; depositAmount는 건드리지 않음. 채널 결제 금액만 판매가×인원으로 설정 가능
+          const depositFromDb = isExistingPricingLoaded && (formData.depositAmount ?? 0) > 0 && Math.abs((formData.depositAmount ?? 0) - totalCustomerPayment) > 0.01
+          if (hasPaymentRecordsRef.current || depositFromDb) {
+            // 입금 내역 합 또는 DB 저장값 유지; depositAmount는 건드리지 않음. 채널 결제 금액만 판매가×인원으로 설정 가능
             const channelPaymentBase = Math.max(0, salePriceTimesPax - returnedAmount)
             const commissionPercent = (formData.commission_percent != null && formData.commission_percent > 0)
               ? Number(formData.commission_percent)

@@ -1,12 +1,19 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard } from 'lucide-react'
+import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard, Phone } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import html2pdf from 'html2pdf.js'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
+import {
+  fetchEmployeeHourlyRatePeriods,
+  getHourlyRateForEmployeeOnDate,
+  employeeHasHourlyPeriods,
+  lasVegasDateFromCheckIn,
+  type EmployeeRatePeriod,
+} from '@/lib/employeeHourlyRates'
 
 interface BiweeklyCalculatorModalProps {
   isOpen: boolean
@@ -31,6 +38,7 @@ interface TourFee {
   id: string
   tour_id: string
   tour_name: string
+  tour_name_en?: string | null
   date: string
   team_type: string
   tour_guide_id: string | null
@@ -38,6 +46,8 @@ interface TourFee {
   guide_fee: number
   driver_fee: number
   prepaid_tips: number
+  /** 해당 투어의 reservation_ids → reservation_pricing.prepayment_tip 합계 (행별 총액 표시용) */
+  prepayment_tip_total: number
   personal_car: number
   total_fee: number
 }
@@ -77,6 +87,35 @@ function saveHourlyRateToStorage(email: string, rate: string) {
   localStorage.setItem(HOURLY_RATES_STORAGE_KEY, JSON.stringify(rates))
 }
 
+/** DB에 직원별 시급 구간이 있으면 일자별 적용, 없으면 입력 시급 × 총 근무시간 */
+function computeBiweeklyAttendancePay(
+  sortedRecords: AttendanceRecord[],
+  selectedEmployee: string,
+  hourlyRate: string,
+  periods: EmployeeRatePeriod[]
+): number {
+  if (employeeHasHourlyPeriods(periods, selectedEmployee)) {
+    let sum = 0
+    for (const record of sortedRecords) {
+      let wh = record.work_hours || 0
+      if (wh > 8) wh -= 0.5
+      const d =
+        lasVegasDateFromCheckIn(record.check_in_time) ||
+        (record.date ? record.date.slice(0, 10) : null)
+      if (!d) continue
+      sum += wh * getHourlyRateForEmployeeOnDate(periods, selectedEmployee, d, 15)
+    }
+    return sum
+  }
+  const actualTotalHours = sortedRecords.reduce((sum, record) => {
+    let workHours = record.work_hours || 0
+    if (workHours > 8) workHours -= 0.5
+    return sum + workHours
+  }, 0)
+  if (hourlyRate && !isNaN(Number(hourlyRate))) return actualTotalHours * Number(hourlyRate)
+  return 0
+}
+
 export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko' }: BiweeklyCalculatorModalProps) {
   const [hourlyRate, setHourlyRate] = useState<string>('')
   const [startDate, setStartDate] = useState<string>('')
@@ -90,7 +129,8 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<string>('')
-  const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string, display_name: string | null}>>([])
+  const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string, display_name: string | null, languages?: string[] | null, phone?: string | null}>>([])
+  const [employeeRatePeriods, setEmployeeRatePeriods] = useState<EmployeeRatePeriod[]>([])
   const [tourFees, setTourFees] = useState<TourFee[]>([])
   const [companyExpensesForEmployee, setCompanyExpensesForEmployee] = useState<CompanyExpenseRow[]>([])
   const [showPaymentModal, setShowPaymentModal] = useState(false)
@@ -159,9 +199,13 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   // 팀 멤버 목록 조회 (op와 office manager만)
   const fetchTeamMembers = async () => {
     try {
+      const defaultDates = getDefaultDates()
+      const ratePeriods = await fetchEmployeeHourlyRatePeriods(supabase)
+      setEmployeeRatePeriods(ratePeriods)
+
       const { data, error } = await supabase
         .from('team')
-        .select('email, name_ko, position, display_name')
+        .select('email, name_ko, position, display_name, languages, phone')
         .eq('is_active', true)
         .order('name_ko')
 
@@ -190,21 +234,15 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         const savedRate = savedRates[firstMember.email]
         if (savedRate !== undefined && savedRate !== '') {
           setHourlyRate(savedRate)
+        } else if (employeeHasHourlyPeriods(ratePeriods, firstMember.email)) {
+          setHourlyRate(
+            String(getHourlyRateForEmployeeOnDate(ratePeriods, firstMember.email, defaultDates.end, 15))
+          )
         } else {
-          // 저장된 시급이 없으면 position에 따라 기본 시급 설정
-          const position = firstMember.position?.toLowerCase()
-          if (position === 'op') {
-            setHourlyRate('15')
-          } else if (position === 'office manager') {
-            setHourlyRate('17')
-          } else {
-            setHourlyRate('')
-          }
+          setHourlyRate('')
         }
       }
 
-      // 기본 날짜 설정
-      const defaultDates = getDefaultDates()
       setStartDate(defaultDates.start)
       setEndDate(defaultDates.end)
     } catch (error) {
@@ -368,16 +406,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       }, 0)
       
       setTotalHours(actualTotalHours)
-      
-      // 시급이 입력되어 있으면 출퇴근 급여 계산
-      if (hourlyRate && !isNaN(Number(hourlyRate))) {
-        const attendanceSalary = actualTotalHours * Number(hourlyRate)
-        setAttendancePay(attendanceSalary)
-        // 총 급여는 별도 useEffect에서 계산
-      } else {
-        setAttendancePay(0)
-        // 총 급여는 별도 useEffect에서 계산
-      }
+      // 출퇴근 급여는 attendanceRecords·시급 구간 반영 useEffect에서 계산
     } catch (error) {
       console.error('출퇴근 기록 조회 오류:', error)
       setAttendanceRecords([])
@@ -413,7 +442,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
           assistant_fee,
           team_type,
           reservation_ids,
-          products!inner(name_ko)
+          products!inner(name_ko, name_en)
         `)
         .gte('tour_date', startDate)
         .lte('tour_date', endDate)
@@ -426,56 +455,49 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         return
       }
 
-      // 각 투어의 prepaid tips 계산
+      // 각 투어의 prepaid tips 계산 (투어별 총액 + 90% 후 2guide 50% / 1guide·guide+driver 100% 자동 입력)
       const fees = await Promise.all(
         (data || []).map(async (tour) => {
-          // 선택된 직원이 가이드인지 어시스턴트인지 확인
           const isGuide = tour.tour_guide_id === selectedEmployee
           const isAssistant = tour.assistant_id === selectedEmployee
-          
-          // prepaid tips 계산
+          let prepayment_tip_total = 0
           let prepaidTips = 0
-          
-          // 먼저 tour_tip_shares 테이블에서 확인
-          try {
-            const { data: tipShareData, error: tipShareError } = await supabase
-              .from('tour_tip_shares')
-              .select('total_tip, guide_amount, assistant_amount')
-              .eq('tour_id', tour.id)
-              .maybeSingle()
 
-            if (!tipShareError && tipShareData) {
-              // tour_tip_shares에 값이 있으면 그것을 사용
-              if (isGuide) {
-                prepaidTips = tipShareData.guide_amount || 0
-              } else if (isAssistant) {
-                prepaidTips = tipShareData.assistant_amount || 0
-              }
-            } else if (tour.reservation_ids && tour.reservation_ids.length > 0) {
-              // tour_tip_shares에 값이 없으면 reservation_pricing에서 계산
+          try {
+            // 해당 투어의 reservation_ids → reservation_pricing.prepayment_tip 합계 (행별 총액용)
+            if (tour.reservation_ids && tour.reservation_ids.length > 0) {
               const { data: pricingData, error: pricingError } = await supabase
                 .from('reservation_pricing')
                 .select('prepayment_tip')
                 .in('reservation_id', tour.reservation_ids)
-
               if (!pricingError && pricingData) {
-                const totalTip = pricingData.reduce((sum, pricing) => sum + (pricing.prepayment_tip || 0), 0)
-                
-                // 팀 타입에 따른 팁 분배
-                if (tour.team_type === '1guide' && isGuide) {
-                  prepaidTips = totalTip
-                } else if (tour.team_type === '2guide' && (isGuide || isAssistant)) {
-                  prepaidTips = totalTip / 2
-                } else if ((tour.team_type === 'guide+driver' || tour.team_type === 'guide + driver') && isGuide) {
-                  prepaidTips = totalTip
+                prepayment_tip_total = pricingData.reduce((sum, p) => sum + (p.prepayment_tip || 0), 0)
+                // 자동 완성: 총액의 90% 후, 2guide면 50%, 1guide 또는 guide+driver면 가이드 100% / 드라이버 0
+                const after10Percent = prepayment_tip_total * 0.9
+                const is2guide = tour.team_type === '2guide'
+                if (is2guide && (isGuide || isAssistant)) {
+                  prepaidTips = after10Percent * 0.5
+                } else if ((tour.team_type === '1guide' || tour.team_type === 'guide+driver' || tour.team_type === 'guide + driver') && isGuide) {
+                  prepaidTips = after10Percent
                 }
+              }
+            }
+            // reservation_pricing에 없으면 tour_tip_shares 사용 (기존 동작)
+            if (prepaidTips === 0 && prepayment_tip_total === 0) {
+              const { data: tipShareData, error: tipShareError } = await supabase
+                .from('tour_tip_shares')
+                .select('total_tip, guide_amount, assistant_amount')
+                .eq('tour_id', tour.id)
+                .maybeSingle()
+              if (!tipShareError && tipShareData) {
+                if (isGuide) prepaidTips = tipShareData.guide_amount || 0
+                else if (isAssistant) prepaidTips = tipShareData.assistant_amount || 0
               }
             }
           } catch (err) {
             console.error('Prepaid tips 계산 오류:', err)
           }
-          
-          // Personal Car 금액 계산 (paid_for가 "Rent (Personal Vehicle)"인 tour_expenses 합산)
+
           let personalCarAmount = 0
           try {
             const { data: expensesData, error: expensesError } = await supabase
@@ -483,18 +505,18 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               .select('amount')
               .eq('tour_id', tour.id)
               .eq('paid_for', 'Rent (Personal Vehicle)')
-
             if (!expensesError && expensesData) {
               personalCarAmount = expensesData.reduce((sum, expense) => sum + (expense.amount || 0), 0)
             }
           } catch (err) {
             console.error('Personal Car 금액 계산 오류:', err)
           }
-          
+
           return {
             id: tour.id,
             tour_id: tour.id,
             tour_name: (tour.products as any)?.name_ko || '투어명 없음',
+            tour_name_en: (tour.products as any)?.name_en || null,
             date: tour.tour_date,
             team_type: tour.team_type || '',
             tour_guide_id: tour.tour_guide_id,
@@ -502,6 +524,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
             guide_fee: tour.guide_fee || 0,
             driver_fee: tour.assistant_fee || 0,
             prepaid_tips: prepaidTips,
+            prepayment_tip_total,
             personal_car: personalCarAmount,
             total_fee: (isGuide ? (tour.guide_fee || 0) : (tour.assistant_fee || 0)) + prepaidTips + personalCarAmount
           }
@@ -567,11 +590,41 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     }
   }, [selectedEmployee, startDate, endDate])
 
+  // 출퇴근 급여: OP/OM은 일자별 DB 시급, 그 외는 입력 시급
+  useEffect(() => {
+    if (!selectedEmployee) {
+      setAttendancePay(0)
+      return
+    }
+    const pay = computeBiweeklyAttendancePay(
+      attendanceRecords,
+      selectedEmployee,
+      hourlyRate,
+      employeeRatePeriods
+    )
+    setAttendancePay(pay)
+  }, [attendanceRecords, selectedEmployee, hourlyRate, employeeRatePeriods])
+
+  // localStorage에 저장된 시급이 없을 때, 기간 종료일 기준 DB 직원 시급과 입력칸 맞춤
+  useEffect(() => {
+    if (!isOpen || !selectedEmployee || !endDate) return
+    const saved = getSavedHourlyRates()[selectedEmployee]
+    if (saved !== undefined && saved !== '') return
+    if (!employeeHasHourlyPeriods(employeeRatePeriods, selectedEmployee)) return
+    setHourlyRate(String(getHourlyRateForEmployeeOnDate(employeeRatePeriods, selectedEmployee, endDate, 15)))
+  }, [isOpen, endDate, startDate, selectedEmployee, employeeRatePeriods])
+
   // attendancePay, tourPay, tipPay, personalCarPay가 변경될 때마다 총 급여 계산
   useEffect(() => {
     const total = calculateTotalPay(attendancePay, tourPay, tipPay, personalCarPay)
     setTotalPay(total)
   }, [attendancePay, tourPay, tipPay, personalCarPay])
+
+  // 투어 Fee 테이블의 Prepaid Tips 합계를 Tips Share Subtotal(tipPay)과 동기화 (Pay Summary와 아래 테이블 일치)
+  useEffect(() => {
+    const sum = tourFees.reduce((s, t) => s + (t.prepaid_tips ?? 0), 0)
+    setTipPay(sum)
+  }, [tourFees])
 
   // 날짜나 직원이 변경될 때 투어 fee 및 회사 지출(지불 내역) 조회
   useEffect(() => {
@@ -744,17 +797,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     if (selectedEmployee) {
       saveHourlyRateToStorage(selectedEmployee, value)
     }
-    // 숫자만 입력 허용하고 출퇴근 급여 계산
-    if (value === '' || !isNaN(Number(value))) {
-      if (value && !isNaN(Number(value)) && totalHours > 0) {
-        const attendanceSalary = totalHours * Number(value)
-        setAttendancePay(attendanceSalary)
-        // 총 급여는 별도 useEffect에서 계산
-      } else {
-        setAttendancePay(0)
-        // 총 급여는 별도 useEffect에서 계산
-      }
-    }
+    // 출퇴근 급여는 별도 useEffect(computeBiweeklyAttendancePay)에서 계산
   }
 
   // 날짜 변경 핸들러
@@ -775,16 +818,11 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     if (savedRate !== undefined && savedRate !== '') {
       setHourlyRate(savedRate)
     } else {
-      const selectedMember = teamMembers.find(member => member.email === selectedEmail)
-      if (selectedMember) {
-        const position = selectedMember.position?.toLowerCase()
-        if (position === 'op') {
-          setHourlyRate('15')
-        } else if (position === 'office manager') {
-          setHourlyRate('17')
-        } else {
-          setHourlyRate('')
-        }
+      const refDate = endDate || startDate || toLocalDateString(new Date())
+      if (employeeHasHourlyPeriods(employeeRatePeriods, selectedEmail)) {
+        setHourlyRate(String(getHourlyRateForEmployeeOnDate(employeeRatePeriods, selectedEmail, refDate, 15)))
+      } else {
+        setHourlyRate('')
       }
     }
   }
@@ -799,6 +837,19 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
             const updated = { ...tour }
             if (field === 'team_type') {
               updated.team_type = value as string
+              // 팀 타입 변경 시 prepaid_tips 자동 재계산: 총액 90% 후 2guide 50% / 1guide·guide+driver 가이드 100%
+              const base = (tour.prepayment_tip_total ?? 0) * 0.9
+              const is2guide = (value as string) === '2guide'
+              const isGuide = tour.tour_guide_id === selectedEmployee
+              const isAssistant = tour.assistant_id === selectedEmployee
+              if (is2guide && (isGuide || isAssistant)) {
+                updated.prepaid_tips = base * 0.5
+              } else if ((value === '1guide' || value === 'guide+driver' || value === 'guide + driver') && isGuide) {
+                updated.prepaid_tips = base
+              } else {
+                updated.prepaid_tips = 0
+              }
+              updated.total_fee = (tour.tour_guide_id === selectedEmployee ? (updated.guide_fee || 0) : (updated.driver_fee || 0)) + updated.prepaid_tips + (updated.personal_car || 0)
             } else if (field === 'guide_fee') {
               updated.guide_fee = value as number
               // 선택된 직원이 가이드인 경우 total_fee도 업데이트 (prepaid_tips, personal_car 포함)
@@ -978,6 +1029,97 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     onClose()
   }
 
+  // 직원 언어로 프린트 라벨·포맷 결정 (EN 있으면 영문, 아니면 한글)
+  const getPrintLabels = (member: { languages?: string[] | null } | undefined) => {
+    const langs = member?.languages
+    const isEn = Array.isArray(langs) && langs.some((l: string) => ['EN', 'en', 'US', 'us'].includes(String(l).toUpperCase()))
+    const formatWorkHoursForPrint = (hours: number) => {
+      const h = Math.floor(hours)
+      const m = Math.round((hours - h) * 60)
+      return isEn ? `${h}h ${m}m` : `${h}시간 ${m}분`
+    }
+    const formatDateForPrint = (dateString: string) => {
+      const [y, mo, d] = (dateString || '').split('-')
+      if (!y || !mo || !d) return dateString || ''
+      const date = new Date(parseInt(y, 10), parseInt(mo, 10) - 1, parseInt(d, 10))
+      return date.toLocaleDateString(isEn ? 'en-US' : 'ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' })
+    }
+    const getTourNameForPrint = (tour: TourFee) => (isEn && tour.tour_name_en ? tour.tour_name_en : tour.tour_name) || (isEn ? '—' : '투어명 없음')
+    const formatAttendanceDateForPrint = (checkInTime: string | null) => {
+      if (!checkInTime) return '-'
+      const utcDate = new Date(checkInTime)
+      const lasVegasTime = new Date(utcDate.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }))
+      return lasVegasTime.toLocaleDateString(isEn ? 'en-US' : 'ko-KR', { year: 'numeric', month: isEn ? 'short' : 'long', day: 'numeric' })
+    }
+    return isEn ? {
+      title: 'Biweekly Pay Calculator',
+      employeeInfo: 'Employee Info',
+      employee: 'Employee:',
+      phone: 'Phone:',
+      period: 'Period:',
+      hourlyRate: 'Hourly Rate:',
+      paySummary: 'Pay Summary',
+      totalWorkHours: 'Total Work Hours:',
+      attendancePay: 'Attendance Pay:',
+      guideFeeSubtotal: 'Guide Fee Subtotal:',
+      tipsShareSubtotal: 'Tips Share Subtotal:',
+      personalCarSubtotal: 'Personal Car Subtotal:',
+      totalPay: 'Total Pay:',
+      attendanceSection: (days: number, sessions: number) => `Attendance (${days} days, ${sessions} sessions)`,
+      date: 'Date',
+      checkIn: 'Check-in',
+      checkOut: 'Check-out',
+      hours: 'Hours',
+      afterMealDeduction: 'After meal deduction',
+      status: 'Status',
+      cumulative: 'Cumulative',
+      tourFee: 'Tour Fee',
+      tourDate: 'Tour Date',
+      tourName: 'Tour Name',
+      teamType: 'Team Type',
+      guideFee: 'Guide Fee',
+      totalFee: 'Total Fee',
+      total: 'Total',
+      formatWorkHours: formatWorkHoursForPrint,
+      formatDate: formatDateForPrint,
+      formatAttendanceDate: formatAttendanceDateForPrint,
+      getTourName: getTourNameForPrint,
+    } : {
+      title: '2주급 계산기',
+      employeeInfo: '직원 정보',
+      employee: '직원:',
+      phone: '전화번호:',
+      period: '기간:',
+      hourlyRate: '시급:',
+      paySummary: '급여 계산',
+      totalWorkHours: '총 근무시간:',
+      attendancePay: '출퇴근 기록 소계:',
+      guideFeeSubtotal: '가이드 Fee 소계:',
+      tipsShareSubtotal: 'Tips 쉐어 소계:',
+      personalCarSubtotal: 'Personal Car 소계:',
+      totalPay: '총 급여:',
+      attendanceSection: (days: number, sessions: number) => `출퇴근 기록 (${days}일, 총 ${sessions}회)`,
+      date: '출근 날짜',
+      checkIn: '출근 시간',
+      checkOut: '퇴근 시간',
+      hours: '근무시간',
+      afterMealDeduction: '식사시간 차감 후',
+      status: '상태',
+      cumulative: '누적 시간',
+      tourFee: '투어 Fee',
+      tourDate: '투어 날짜',
+      tourName: '투어명',
+      teamType: '팀 타입',
+      guideFee: '가이드 Fee',
+      totalFee: '총 Fee',
+      total: '총합',
+      formatWorkHours: formatWorkHoursForPrint,
+      formatDate: formatDateForPrint,
+      formatAttendanceDate: formatAttendanceDateForPrint,
+      getTourName: getTourNameForPrint,
+    }
+  }
+
   // 프린트 함수
   const handlePrint = () => {
     // 프린트용 새 창 열기
@@ -992,6 +1134,15 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                               position === 'tour guide' ||
                               position === '드라이버' || 
                               position === 'driver'
+      const pr = getPrintLabels(selectedMember)
+      const employeePhone =
+        (selectedMember?.phone && String(selectedMember.phone).trim()) ? String(selectedMember.phone).trim() : '—'
+      const attendanceDays = new Set(attendanceRecords.map(record => {
+        if (!record.check_in_time) return record.date
+        const utcDate = new Date(record.check_in_time)
+        const lasVegasTime = new Date(utcDate.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+        return lasVegasTime.toISOString().split('T')[0]
+      })).size
       
       // 프린트용 HTML 생성
       const printContent = `
@@ -1002,28 +1153,31 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
           <style>
             body {
               font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              margin: 20px;
+              margin: 0;
+              padding: 8px 10px;
               color: #333;
+              font-size: 11px;
             }
             .header {
               text-align: center;
-              margin-bottom: 30px;
-              border-bottom: 2px solid #e5e7eb;
-              padding-bottom: 20px;
+              margin-bottom: 10px;
+              border-bottom: 1px solid #e5e7eb;
+              padding-bottom: 6px;
             }
             .header h1 {
-              font-size: 24px;
+              font-size: 16px;
               font-weight: bold;
-              margin: 0 0 10px 0;
+              margin: 0 0 2px 0;
             }
             .header p {
-              font-size: 14px;
+              font-size: 11px;
               color: #666;
               margin: 0;
             }
             .content {
               display: flex;
-              gap: 30px;
+              gap: 16px;
+              margin-bottom: 10px;
             }
             .left-section {
               flex: 1;
@@ -1032,18 +1186,18 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               flex: 1;
             }
             .section-title {
-              font-size: 18px;
+              font-size: 12px;
               font-weight: 600;
-              margin-bottom: 15px;
+              margin-bottom: 6px;
               color: #374151;
             }
             .info-row {
               display: flex;
-              margin-bottom: 10px;
+              margin-bottom: 3px;
             }
             .info-label {
               font-weight: 500;
-              min-width: 120px;
+              min-width: 80px;
               color: #6b7280;
             }
             .info-value {
@@ -1053,41 +1207,43 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
             .calculation-box {
               background: #f9fafb;
               border: 1px solid #e5e7eb;
-              border-radius: 8px;
-              padding: 20px;
-              margin-bottom: 20px;
+              border-radius: 4px;
+              padding: 8px 10px;
+              margin-bottom: 8px;
             }
             .calculation-item {
               display: flex;
               justify-content: space-between;
-              margin-bottom: 8px;
-              padding: 5px 0;
+              margin-bottom: 2px;
+              padding: 1px 0;
+              font-size: 11px;
             }
             .calculation-item.total {
               border-top: 1px solid #d1d5db;
-              padding-top: 10px;
-              margin-top: 10px;
+              padding-top: 4px;
+              margin-top: 4px;
               font-weight: bold;
-              font-size: 16px;
+              font-size: 12px;
             }
             .table {
               width: 100%;
               border-collapse: collapse;
-              margin-top: 15px;
+              margin-top: 6px;
+              font-size: 10px;
             }
             .table th,
             .table td {
               border: 1px solid #d1d5db;
-              padding: 8px 12px;
+              padding: 3px 5px;
               text-align: left;
             }
             .table th {
               background: #f9fafb;
               font-weight: 600;
-              font-size: 14px;
+              font-size: 10px;
             }
             .table td {
-              font-size: 13px;
+              font-size: 10px;
             }
             .table tbody tr:nth-child(even) {
               background: #f9fafb;
@@ -1096,66 +1252,68 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               color: #2563eb;
               text-decoration: none;
             }
-            .tour-link:hover {
-              text-decoration: underline;
-            }
             @media print {
-              body { margin: 0; }
-              .content { display: block; }
-              .left-section, .right-section { flex: none; margin-bottom: 20px; }
+              body { margin: 0; padding: 6px 8px; }
+              .content { display: block; gap: 0; margin-bottom: 8px; }
+              .left-section, .right-section { flex: none; margin-bottom: 8px; }
+              .section-title { margin-bottom: 4px; }
             }
           </style>
         </head>
         <body>
           <div class="header">
-            <h1>2주급 계산기</h1>
+            <h1>${pr.title}</h1>
             <p>${selectedEmployee && (teamMembers.find(m => m.email === selectedEmployee)?.display_name || teamMembers.find(m => m.email === selectedEmployee)?.name_ko) || ''} | ${startDate} ~ ${endDate}</p>
           </div>
           
           <div class="content">
             <div class="left-section">
-              <div class="section-title">직원 정보</div>
+              <div class="section-title">${pr.employeeInfo}</div>
               <div class="info-row">
-                <span class="info-label">직원:</span>
+                <span class="info-label">${pr.employee}</span>
                 <span class="info-value">${selectedEmployee && (teamMembers.find(m => m.email === selectedEmployee)?.display_name || teamMembers.find(m => m.email === selectedEmployee)?.name_ko) || ''}</span>
               </div>
               <div class="info-row">
-                <span class="info-label">기간:</span>
+                <span class="info-label">${pr.phone}</span>
+                <span class="info-value">${employeePhone}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">${pr.period}</span>
                 <span class="info-value">${startDate} ~ ${endDate}</span>
               </div>
               ${!isGuideOrDriver ? `
               <div class="info-row">
-                <span class="info-label">시급:</span>
+                <span class="info-label">${pr.hourlyRate}</span>
                 <span class="info-value">$${hourlyRate || '0'}</span>
               </div>
               ` : ''}
             </div>
             
             <div class="right-section">
-              <div class="section-title">급여 계산</div>
+              <div class="section-title">${pr.paySummary}</div>
               <div class="calculation-box">
                 <div class="calculation-item">
-                  <span>총 근무시간:</span>
-                  <span>${formatWorkHours(totalHours)}</span>
+                  <span>${pr.totalWorkHours}</span>
+                  <span>${pr.formatWorkHours(totalHours)}</span>
                 </div>
                 <div class="calculation-item">
-                  <span>출퇴근 기록 소계:</span>
+                  <span>${pr.attendancePay}</span>
                   <span>$${formatCurrency(attendancePay)}</span>
                 </div>
                 <div class="calculation-item">
-                  <span>가이드 Fee 소계:</span>
+                  <span>${pr.guideFeeSubtotal}</span>
                   <span>$${formatCurrency(tourPay)}</span>
                 </div>
                 <div class="calculation-item">
-                  <span>Tips 쉐어 소계:</span>
+                  <span>${pr.tipsShareSubtotal}</span>
                   <span>$${formatCurrency(tipPay)}</span>
                 </div>
                 <div class="calculation-item">
-                  <span>Personal Car 소계:</span>
+                  <span>${pr.personalCarSubtotal}</span>
                   <span>$${formatCurrency(personalCarPay)}</span>
                 </div>
                 <div class="calculation-item total">
-                  <span>총 급여:</span>
+                  <span>${pr.totalPay}</span>
                   <span>$${formatCurrency(totalPay)}</span>
                 </div>
               </div>
@@ -1163,22 +1321,17 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
           </div>
           
           ${attendanceRecords.length > 0 ? `
-            <div class="section-title">출퇴근 기록 (${new Set(attendanceRecords.map(record => {
-              if (!record.check_in_time) return record.date
-              const utcDate = new Date(record.check_in_time)
-              const lasVegasTime = new Date(utcDate.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
-              return lasVegasTime.toISOString().split('T')[0]
-            })).size}일, 총 ${attendanceRecords.length}회)</div>
+            <div class="section-title">${pr.attendanceSection(attendanceDays, attendanceRecords.length)}</div>
             <table class="table">
               <thead>
                 <tr>
-                  <th>출근 날짜</th>
-                  <th>출근 시간</th>
-                  <th>퇴근 시간</th>
-                  <th>근무시간</th>
-                  <th>식사시간 차감 후</th>
-                  <th>상태</th>
-                  <th>누적 시간</th>
+                  <th>${pr.date}</th>
+                  <th>${pr.checkIn}</th>
+                  <th>${pr.checkOut}</th>
+                  <th>${pr.hours}</th>
+                  <th>${pr.afterMealDeduction}</th>
+                  <th>${pr.status}</th>
+                  <th>${pr.cumulative}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1186,13 +1339,13 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   const cumulative = attendanceRecords.slice(0, idx + 1).reduce((sum, r) => sum + (r.work_hours ? (r.work_hours > 8 ? r.work_hours - 0.5 : r.work_hours) : 0), 0)
                   return `
                   <tr>
-                    <td>${getDateFromCheckInTime(record.check_in_time)}</td>
+                    <td>${pr.formatAttendanceDate(record.check_in_time)}</td>
                     <td>${formatTime(record.check_in_time)}</td>
                     <td>${formatTime(record.check_out_time)}</td>
-                    <td>${formatWorkHours(record.work_hours || 0)}</td>
-                    <td>${formatWorkHours(record.work_hours && record.work_hours > 8 ? record.work_hours - 0.5 : record.work_hours || 0)}</td>
+                    <td>${pr.formatWorkHours(record.work_hours || 0)}</td>
+                    <td>${pr.formatWorkHours(record.work_hours && record.work_hours > 8 ? record.work_hours - 0.5 : record.work_hours || 0)}</td>
                     <td>${record.status || '-'}</td>
-                    <td>${formatWorkHours(cumulative)}</td>
+                    <td>${pr.formatWorkHours(cumulative)}</td>
                   </tr>
                 `
                 }).join('')}
@@ -1201,17 +1354,17 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
           ` : ''}
           
           ${tourFees.length > 0 ? `
-            <div class="section-title">투어 Fee</div>
+            <div class="section-title">${pr.tourFee}</div>
             <table class="table">
               <thead>
                 <tr>
-                  <th>투어 날짜</th>
-                  <th>투어명</th>
-                  <th>팀 타입</th>
-                  <th>가이드 Fee</th>
+                  <th>${pr.tourDate}</th>
+                  <th>${pr.tourName}</th>
+                  <th>${pr.teamType}</th>
+                  <th>${pr.guideFee}</th>
                   <th>Prepaid Tips</th>
                   <th>Personal Car</th>
-                  <th>총 Fee</th>
+                  <th>${pr.totalFee}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1226,8 +1379,8 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   }
                   return `
                   <tr>
-                    <td>${formatDate(tour.date)}</td>
-                    <td>${tour.tour_name}</td>
+                    <td>${pr.formatDate(tour.date)}</td>
+                    <td>${pr.getTourName(tour)}</td>
                     <td>${tour.team_type}</td>
                     <td>$${formatCurrency(guideFeeDisplay)}</td>
                     <td>$${formatCurrency(tour.prepaid_tips || 0)}</td>
@@ -1237,7 +1390,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                 `
                 }).join('')}
                 <tr style="font-weight: bold; background: #f3f4f6;">
-                  <td colspan="6">총합</td>
+                  <td colspan="6">${pr.total}</td>
                   <td>$${formatCurrency(tourFees.reduce((sum, tour) => sum + tour.total_fee, 0))}</td>
                 </tr>
               </tbody>
@@ -1377,6 +1530,15 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       
       // Personal Car 소계 계산
       const personalCarTotal = tourFees.reduce((sum, tour) => sum + (tour.personal_car || 0), 0)
+      const pr = getPrintLabels(selectedMember)
+      const pdfEmployeePhone =
+        (selectedMember?.phone && String(selectedMember.phone).trim()) ? String(selectedMember.phone).trim() : '—'
+      const pdfAttendanceDays = new Set(attendanceRecords.map(record => {
+        if (!record.check_in_time) return record.date
+        const utcDate = new Date(record.check_in_time)
+        const lasVegasTime = new Date(utcDate.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
+        return lasVegasTime.toISOString().split('T')[0]
+      })).size
 
       const printContent = `
         <!DOCTYPE html>
@@ -1390,32 +1552,33 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
             body {
               font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
               margin: 0;
-              padding: 20mm 15mm;
+              padding: 10mm 8mm;
               color: #333;
               width: 100%;
               max-width: 210mm;
               margin: 0 auto;
+              font-size: 11px;
             }
             .header {
               text-align: center;
-              margin-bottom: 30px;
-              border-bottom: 2px solid #e5e7eb;
-              padding-bottom: 20px;
+              margin-bottom: 8px;
+              border-bottom: 1px solid #e5e7eb;
+              padding-bottom: 5px;
             }
             .header h1 {
-              font-size: 24px;
+              font-size: 16px;
               font-weight: bold;
-              margin: 0 0 10px 0;
+              margin: 0 0 2px 0;
             }
             .header p {
-              font-size: 14px;
+              font-size: 11px;
               color: #666;
               margin: 0;
             }
             .content {
               display: flex;
-              gap: 30px;
-              margin-bottom: 30px;
+              gap: 12px;
+              margin-bottom: 10px;
             }
             .left-section {
               flex: 1;
@@ -1424,18 +1587,18 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
               flex: 1;
             }
             .section-title {
-              font-size: 18px;
+              font-size: 12px;
               font-weight: 600;
-              margin-bottom: 15px;
+              margin-bottom: 5px;
               color: #374151;
             }
             .info-row {
               display: flex;
-              margin-bottom: 10px;
+              margin-bottom: 3px;
             }
             .info-label {
               font-weight: 500;
-              min-width: 120px;
+              min-width: 80px;
               color: #6b7280;
             }
             .info-value {
@@ -1445,43 +1608,45 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
             .calculation-box {
               background: #f9fafb;
               border: 1px solid #e5e7eb;
-              border-radius: 8px;
-              padding: 20px;
-              margin-bottom: 20px;
+              border-radius: 4px;
+              padding: 8px 10px;
+              margin-bottom: 8px;
             }
             .calculation-item {
               display: flex;
               justify-content: space-between;
-              margin-bottom: 8px;
-              padding: 5px 0;
+              margin-bottom: 2px;
+              padding: 1px 0;
+              font-size: 11px;
             }
             .calculation-item.total {
               border-top: 1px solid #d1d5db;
-              padding-top: 10px;
-              margin-top: 10px;
+              padding-top: 4px;
+              margin-top: 4px;
               font-weight: bold;
-              font-size: 16px;
+              font-size: 12px;
             }
             .table {
               width: 100%;
               border-collapse: collapse;
-              margin-top: 15px;
+              margin-top: 5px;
               table-layout: fixed;
+              font-size: 10px;
             }
             .table th,
             .table td {
               border: 1px solid #d1d5db;
-              padding: 6px 8px;
+              padding: 3px 5px;
               text-align: left;
               word-wrap: break-word;
             }
             .table th {
               background: #f9fafb;
               font-weight: 600;
-              font-size: 10px;
+              font-size: 9px;
             }
             .table td {
-              font-size: 11px;
+              font-size: 9px;
             }
             .table tbody tr:nth-child(even) {
               background: #f9fafb;
@@ -1490,52 +1655,56 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         </head>
         <body>
           <div class="header">
-            <h1>2주급 계산기</h1>
+            <h1>${pr.title}</h1>
             <p>${employeeName} | ${startDate} ~ ${endDate}</p>
           </div>
           
           <div class="content">
             <div class="left-section">
-              <div class="section-title">직원 정보</div>
+              <div class="section-title">${pr.employeeInfo}</div>
               <div class="info-row">
-                <span class="info-label">직원:</span>
+                <span class="info-label">${pr.employee}</span>
                 <span class="info-value">${employeeName}</span>
               </div>
               <div class="info-row">
-                <span class="info-label">기간:</span>
+                <span class="info-label">${pr.phone}</span>
+                <span class="info-value">${pdfEmployeePhone}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">${pr.period}</span>
                 <span class="info-value">${startDate} ~ ${endDate}</span>
               </div>
               <div class="info-row">
-                <span class="info-label">시급:</span>
+                <span class="info-label">${pr.hourlyRate}</span>
                 <span class="info-value">$${hourlyRate || '0'}</span>
               </div>
             </div>
             
             <div class="right-section">
-              <div class="section-title">급여 계산</div>
+              <div class="section-title">${pr.paySummary}</div>
               <div class="calculation-box">
                 <div class="calculation-item">
-                  <span>총 근무시간:</span>
-                  <span>${formatWorkHours(totalHours)}</span>
+                  <span>${pr.totalWorkHours}</span>
+                  <span>${pr.formatWorkHours(totalHours)}</span>
                 </div>
                 <div class="calculation-item">
-                  <span>출퇴근 기록 소계:</span>
+                  <span>${pr.attendancePay}</span>
                   <span>$${formatCurrency(attendancePay)}</span>
                 </div>
                 <div class="calculation-item">
-                  <span>가이드 Fee 소계:</span>
+                  <span>${pr.guideFeeSubtotal}</span>
                   <span>$${formatCurrency(tourPay)}</span>
                 </div>
                 <div class="calculation-item">
-                  <span>Tips 쉐어 소계:</span>
+                  <span>${pr.tipsShareSubtotal}</span>
                   <span>$${formatCurrency(tipPay)}</span>
                 </div>
                 <div class="calculation-item">
-                  <span>Personal Car 소계:</span>
+                  <span>${pr.personalCarSubtotal}</span>
                   <span>$${formatCurrency(personalCarTotal)}</span>
                 </div>
                 <div class="calculation-item total">
-                  <span>총 급여:</span>
+                  <span>${pr.totalPay}</span>
                   <span>$${formatCurrency(totalPay)}</span>
                 </div>
               </div>
@@ -1543,22 +1712,17 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
           </div>
           
           ${attendanceRecords.length > 0 ? `
-            <div class="section-title">출퇴근 기록 (${new Set(attendanceRecords.map(record => {
-              if (!record.check_in_time) return record.date
-              const utcDate = new Date(record.check_in_time)
-              const lasVegasTime = new Date(utcDate.toLocaleString("en-US", {timeZone: "America/Los_Angeles"}))
-              return lasVegasTime.toISOString().split('T')[0]
-            })).size}일, 총 ${attendanceRecords.length}회)</div>
+            <div class="section-title">${pr.attendanceSection(pdfAttendanceDays, attendanceRecords.length)}</div>
             <table class="table">
               <thead>
                 <tr>
-                  <th>출근 날짜</th>
-                  <th>출근 시간</th>
-                  <th>퇴근 시간</th>
-                  <th>근무시간</th>
-                  <th>식사시간 차감 후</th>
-                  <th>상태</th>
-                  <th>누적 시간</th>
+                  <th>${pr.date}</th>
+                  <th>${pr.checkIn}</th>
+                  <th>${pr.checkOut}</th>
+                  <th>${pr.hours}</th>
+                  <th>${pr.afterMealDeduction}</th>
+                  <th>${pr.status}</th>
+                  <th>${pr.cumulative}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1566,13 +1730,13 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   const cumulative = attendanceRecords.slice(0, idx + 1).reduce((sum, r) => sum + (r.work_hours ? (r.work_hours > 8 ? r.work_hours - 0.5 : r.work_hours) : 0), 0)
                   return `
                   <tr>
-                    <td>${getDateFromCheckInTime(record.check_in_time)}</td>
+                    <td>${pr.formatAttendanceDate(record.check_in_time)}</td>
                     <td>${formatTime(record.check_in_time)}</td>
                     <td>${formatTime(record.check_out_time)}</td>
-                    <td>${formatWorkHours(record.work_hours || 0)}</td>
-                    <td>${formatWorkHours(record.work_hours && record.work_hours > 8 ? record.work_hours - 0.5 : record.work_hours || 0)}</td>
+                    <td>${pr.formatWorkHours(record.work_hours || 0)}</td>
+                    <td>${pr.formatWorkHours(record.work_hours && record.work_hours > 8 ? record.work_hours - 0.5 : record.work_hours || 0)}</td>
                     <td>${record.status || '-'}</td>
-                    <td>${formatWorkHours(cumulative)}</td>
+                    <td>${pr.formatWorkHours(cumulative)}</td>
                   </tr>
                 `
                 }).join('')}
@@ -1581,17 +1745,17 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
           ` : ''}
           
           ${tourFees.length > 0 ? `
-            <div class="section-title">투어 Fee</div>
+            <div class="section-title">${pr.tourFee}</div>
             <table class="table">
               <thead>
                 <tr>
-                  <th>투어 날짜</th>
-                  <th>투어명</th>
-                  <th>팀 타입</th>
-                  <th>가이드 Fee</th>
+                  <th>${pr.tourDate}</th>
+                  <th>${pr.tourName}</th>
+                  <th>${pr.teamType}</th>
+                  <th>${pr.guideFee}</th>
                   <th>Prepaid Tips</th>
                   <th>Personal Car</th>
-                  <th>총 Fee</th>
+                  <th>${pr.totalFee}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1606,8 +1770,8 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   }
                   return `
                   <tr>
-                    <td>${formatDate(tour.date)}</td>
-                    <td>${tour.tour_name}</td>
+                    <td>${pr.formatDate(tour.date)}</td>
+                    <td>${pr.getTourName(tour)}</td>
                     <td>${tour.team_type}</td>
                     <td>$${formatCurrency(guideFeeDisplay)}</td>
                     <td>$${formatCurrency(tour.prepaid_tips || 0)}</td>
@@ -1617,7 +1781,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                 `
                 }).join('')}
                 <tr style="font-weight: bold; background: #f3f4f6;">
-                  <td colspan="6">총합</td>
+                  <td colspan="6">${pr.total}</td>
                   <td>$${formatCurrency(tourFees.reduce((sum, tour) => sum + tour.total_fee, 0))}</td>
                 </tr>
               </tbody>
@@ -1945,6 +2109,17 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                     </button>
                   </div>
                 </div>
+                {selectedEmployee && (
+                  <div className="flex items-center gap-2 text-sm text-gray-600 mt-2">
+                    <Phone className="w-4 h-4 shrink-0 text-gray-500" />
+                    <span>
+                      전화번호:{' '}
+                      <span className="font-medium text-gray-900">
+                        {teamMembers.find((m) => m.email === selectedEmployee)?.phone?.trim() || '—'}
+                      </span>
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* 날짜 및 시급 입력 */}
@@ -2245,10 +2420,16 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                           <input
                             type="number"
                             step="0.01"
-                            value={tour.prepaid_tips || 0}
+                            value={(Number(tour.prepaid_tips) || 0).toFixed(2)}
                             onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'prepaid_tips', parseFloat(e.target.value) || 0)}
                             className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
                           />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-500 block mb-0.5">Prepaid Tips 총액</label>
+                          <div className="px-2 py-1.5 text-xs font-medium text-pink-600">
+                            ${formatCurrency(tour.prepayment_tip_total ?? 0)}
+                          </div>
                         </div>
                         <div>
                           <label className="text-[10px] text-gray-500 block mb-0.5">Personal Car</label>
@@ -2294,6 +2475,9 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider align-middle">
                         Prepaid Tips
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider align-middle">
+                        Prepaid Tips 총액
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider align-middle">
                         Personal Car
@@ -2365,10 +2549,13 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                           <input
                             type="number"
                             step="0.01"
-                            value={tour.prepaid_tips || 0}
+                            value={(Number(tour.prepaid_tips) || 0).toFixed(2)}
                             onChange={(e) => handleTourFieldUpdate(tour.tour_id, 'prepaid_tips', parseFloat(e.target.value) || 0)}
                             className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           />
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap text-xs font-medium text-pink-600 align-middle">
+                          ${formatCurrency(tour.prepayment_tip_total ?? 0)}
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 align-middle">
                           <input
@@ -2387,7 +2574,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                   </tbody>
                   <tfoot className="bg-gray-50">
                     <tr>
-                      <td colSpan={8} className="px-3 py-2 text-right text-xs font-medium text-gray-900 align-middle">
+                      <td colSpan={9} className="px-3 py-2 text-right text-xs font-medium text-gray-900 align-middle">
                         총합:
                       </td>
                       <td className="px-3 py-2 text-xs font-bold text-green-600 align-middle">
@@ -2420,7 +2607,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                   <div className="text-center p-2">
                     <div className="text-xs font-medium text-gray-600 mb-1">Prepaid Tips 소계</div>
                     <div className="text-sm font-bold text-pink-600">
-                      ${formatCurrency(tourFees.reduce((sum, tour) => sum + (tour.prepaid_tips || 0), 0))}
+                      ${formatCurrency(tourFees.reduce((sum, t) => sum + (t.prepaid_tips ?? 0), 0))}
                     </div>
                   </div>
                   <div className="text-center p-2">

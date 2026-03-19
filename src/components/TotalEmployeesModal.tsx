@@ -4,6 +4,12 @@ import React, { useState, useEffect } from 'react'
 import { X, Calculator, ChevronDown, ChevronRight, Clock, DollarSign, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
+import {
+  fetchEmployeeHourlyRatePeriods,
+  getHourlyRateForEmployeeOnDate,
+  employeeHasHourlyPeriods,
+  lasVegasDateFromCheckIn,
+} from '@/lib/employeeHourlyRates'
 
 interface TotalEmployeesModalProps {
   isOpen: boolean
@@ -19,6 +25,8 @@ interface EmployeeData {
   name_en: string
   position: string
   language: string[]
+  /** team.is_active */
+  is_active: boolean
   attendancePay: number
   guideFee: number
   assistantFee: number
@@ -63,6 +71,10 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
   const [totalPay, setTotalPay] = useState<number>(0)
   const [loading, setLoading] = useState(false)
   const [expandedEmployees, setExpandedEmployees] = useState<Set<string>>(new Set())
+  /** true: 재직(활성) 직원만 표시 */
+  const [filterActiveOnly, setFilterActiveOnly] = useState(true)
+  /** true: 해당 기간 Subtotal(totalPay) > 0 인 직원만 표시 */
+  const [filterSubtotalPositive, setFilterSubtotalPositive] = useState(false)
 
   // 로컬 날짜를 YYYY-MM-DD로 (toISOString은 UTC라 타임존에서 하루 어긋날 수 있음)
   const toLocalDateString = (d: Date) => {
@@ -128,8 +140,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
       // 팀 멤버 조회
       const { data: teamData, error: teamError } = await supabase
         .from('team')
-        .select('email, name_ko, name_en, nick_name, display_name, position, languages')
-        .eq('is_active', true)
+        .select('email, name_ko, name_en, nick_name, display_name, position, languages, is_active')
         .order('name_ko')
 
       if (teamError) {
@@ -197,6 +208,8 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
         return lasVegasDate >= startDate && lasVegasDate <= endDate
       }) || []
 
+      const ratePeriods = await fetchEmployeeHourlyRatePeriods(supabase)
+
       const teamNameMap: Record<string, string> = {}
       ;(teamData || []).forEach((m: { email: string; nick_name?: string | null; display_name?: string | null; name_ko?: string | null }) => {
         teamNameMap[m.email] = (m.nick_name || m.display_name || m.name_ko || m.email).trim() || m.email
@@ -210,22 +223,25 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
             record.employee_email === employee.email
           )
 
-          // 시급 설정
-          let hourlyRate = 15 // 기본값
-          if (employee.position === 'office manager') {
-            hourlyRate = 17
-          }
+          const useDbRates = employeeHasHourlyPeriods(ratePeriods, employee.email)
 
-          // 실제 근무시간 계산 (식사시간 차감 포함)
+          // 실제 근무시간·출퇴근 급여 (DB에 직원별 구간이 있으면 일자별 시급, 없으면 시간당 $15)
+          let attendancePay = 0
           const actualTotalHours = employeeAttendanceRecords.reduce((sum, record) => {
             let workHours = record.work_hours || 0
             if (workHours > 8) {
               workHours = workHours - 0.5
             }
+            const dayStr =
+              lasVegasDateFromCheckIn(record.check_in_time) ||
+              (typeof record.date === 'string' ? record.date.slice(0, 10) : null)
+            const rateForDay =
+              useDbRates && dayStr
+                ? getHourlyRateForEmployeeOnDate(ratePeriods, employee.email, dayStr, 15)
+                : 15
+            attendancePay += workHours * rateForDay
             return sum + workHours
           }, 0)
-
-          const attendancePay = actualTotalHours * hourlyRate
 
           // 투어 fee 필터링 및 prepaid 팁 계산
           const filteredTours = tourData?.filter(tour => 
@@ -306,6 +322,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
             name_en: employee.name_en,
             position: employee.position,
             language: employee.languages,
+            is_active: (employee as { is_active?: boolean }).is_active !== false,
             attendancePay,
             guideFee,
             assistantFee,
@@ -353,40 +370,49 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
     return employeeLanguages[0] || 'KR'
   }
 
-  // 투어의 prepaid 팁을 계산하는 함수 (tour_tip_shares 우선, 없으면 reservation_pricing)
+  // 투어의 prepaid 팁 (2주급 계산기와 동일: reservation_pricing 합계의 90% 후 2guide 50% / 1guide·guide+driver 가이드 100%, 없으면 tour_tip_shares)
   const calculatePrepaidTip = async (tour: any, employeeEmail: string) => {
     try {
       const isGuide = tour.tour_guide_id === employeeEmail
       const isAssistant = tour.assistant_id === employeeEmail
+      let prepayment_tip_total = 0
+      let prepaidTips = 0
 
-      const { data: tipShareData, error: tipShareError } = await supabase
-        .from('tour_tip_shares')
-        .select('total_tip, guide_amount, assistant_amount')
-        .eq('tour_id', tour.id)
-        .maybeSingle()
-
-      if (!tipShareError && tipShareData) {
-        if (isGuide) return tipShareData.guide_amount ?? 0
-        if (isAssistant) return tipShareData.assistant_amount ?? 0
-        return 0
+      if (tour.reservation_ids && tour.reservation_ids.length > 0) {
+        const { data: pricingData, error: pricingError } = await supabase
+          .from('reservation_pricing')
+          .select('prepayment_tip')
+          .in('reservation_id', tour.reservation_ids)
+        if (!pricingError && pricingData) {
+          prepayment_tip_total = pricingData.reduce((sum, p) => sum + (p.prepayment_tip || 0), 0)
+          const after10Percent = prepayment_tip_total * 0.9
+          const is2guide = tour.team_type === '2guide'
+          if (is2guide && (isGuide || isAssistant)) {
+            prepaidTips = after10Percent * 0.5
+          } else if (
+            (tour.team_type === '1guide' ||
+              tour.team_type === 'guide+driver' ||
+              tour.team_type === 'guide + driver') &&
+            isGuide
+          ) {
+            prepaidTips = after10Percent
+          }
+        }
       }
 
-      if (!tour.reservation_ids || tour.reservation_ids.length === 0) return 0
+      if (prepaidTips === 0 && prepayment_tip_total === 0) {
+        const { data: tipShareData, error: tipShareError } = await supabase
+          .from('tour_tip_shares')
+          .select('total_tip, guide_amount, assistant_amount')
+          .eq('tour_id', tour.id)
+          .maybeSingle()
+        if (!tipShareError && tipShareData) {
+          if (isGuide) return tipShareData.guide_amount ?? 0
+          if (isAssistant) return tipShareData.assistant_amount ?? 0
+        }
+      }
 
-      const { data: pricingData, error: pricingError } = await supabase
-        .from('reservation_pricing')
-        .select('prepayment_tip')
-        .in('reservation_id', tour.reservation_ids)
-
-      if (pricingError) return 0
-
-      const totalTip = pricingData?.reduce((sum, pricing) => sum + (pricing.prepayment_tip || 0), 0) || 0
-
-      if (tour.team_type === '1guide' && isGuide) return totalTip
-      if (tour.team_type === '2guide' && (isGuide || isAssistant)) return totalTip / 2
-      if ((tour.team_type === 'guide+driver' || tour.team_type === 'guide + driver') && isGuide) return totalTip
-
-      return 0
+      return prepaidTips
     } catch (error) {
       console.error('Prepaid tip 계산 오류:', error)
       return 0
@@ -916,12 +942,23 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
     )
   }
 
-  // 인라인 수정 반영을 위해 employeeData 기준 총합 (있으면 사용, 없으면 state 사용)
-  const displayTotalAttendancePay = employeeData.length > 0 ? employeeData.reduce((s, e) => s + e.attendancePay, 0) : totalAttendancePay
-  const displayTotalGuideFee = employeeData.length > 0 ? employeeData.reduce((s, e) => s + e.guideFee, 0) : totalGuideFee
-  const displayTotalAssistantFee = employeeData.length > 0 ? employeeData.reduce((s, e) => s + e.assistantFee, 0) : totalAssistantFee
-  const displayTotalPrepaidTip = employeeData.length > 0 ? employeeData.reduce((s, e) => s + e.prepaidTip, 0) : totalPrepaidTip
-  const displayTotalPay = employeeData.length > 0 ? employeeData.reduce((s, e) => s + e.totalPay, 0) : totalPay
+  const filteredEmployeeData = employeeData.filter((e) => {
+    if (filterActiveOnly && !e.is_active) return false
+    if (filterSubtotalPositive && e.totalPay <= 0) return false
+    return true
+  })
+
+  // 필터 적용 후 표시 구간 총합
+  const displayTotalAttendancePay =
+    employeeData.length > 0 ? filteredEmployeeData.reduce((s, e) => s + e.attendancePay, 0) : totalAttendancePay
+  const displayTotalGuideFee =
+    employeeData.length > 0 ? filteredEmployeeData.reduce((s, e) => s + e.guideFee, 0) : totalGuideFee
+  const displayTotalAssistantFee =
+    employeeData.length > 0 ? filteredEmployeeData.reduce((s, e) => s + e.assistantFee, 0) : totalAssistantFee
+  const displayTotalPrepaidTip =
+    employeeData.length > 0 ? filteredEmployeeData.reduce((s, e) => s + e.prepaidTip, 0) : totalPrepaidTip
+  const displayTotalPay =
+    employeeData.length > 0 ? filteredEmployeeData.reduce((s, e) => s + e.totalPay, 0) : totalPay
 
   // Subtotal > 0 이고 Last Paid가 15일 초과(또는 없음)이면 미지급 강조
   const isPaymentOverdue = (emp: EmployeeData) => {
@@ -934,6 +971,130 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
   }
 
   const overdueCount = employeeData.filter(isPaymentOverdue).length
+
+  /** 현재 화면(필터 반영)과 동일한 요약 테이블 프린트 */
+  const handlePrintSummary = () => {
+    const printWindow = window.open('', '_blank', 'width=900,height=700')
+    if (!printWindow) return
+
+    const formatCurrencyForPrint = (n: number) =>
+      n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+    const esc = (s: string) =>
+      String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+
+    const list = filteredEmployeeData
+    const filterLine = [
+      filterActiveOnly ? 'Active employees only' : 'Including inactive',
+      filterSubtotalPositive ? 'Subtotal &gt; 0 only' : 'All subtotals',
+    ].join(' · ')
+
+    const lastPaidFmt = (emp: EmployeeData) => {
+      if (!emp.lastPaid) return '—'
+      const d = new Date(emp.lastPaid.date + 'T00:00:00').toLocaleDateString(locale === 'en' ? 'en-US' : 'ko-KR')
+      return `${d} / $${formatCurrencyForPrint(emp.lastPaid.amount)}`
+    }
+
+    const rows =
+      list.length > 0
+        ? list
+            .map(
+              (emp) => `
+          <tr class="${isPaymentOverdue(emp) ? 'overdue' : ''}">
+            <td>${esc(emp.name || '')}${emp.hasWarning ? ' ⚠' : ''}${!emp.is_active ? ' <span class="muted">(Inactive)</span>' : ''}</td>
+            <td class="num">$${formatCurrencyForPrint(emp.attendancePay)}</td>
+            <td class="num">$${formatCurrencyForPrint(emp.guideFee)}</td>
+            <td class="num">$${formatCurrencyForPrint(emp.assistantFee)}</td>
+            <td class="num">$${formatCurrencyForPrint(emp.prepaidTip)}</td>
+            <td class="num">${emp.tourFees.length}</td>
+            <td class="num strong">$${formatCurrencyForPrint(emp.totalPay)}</td>
+            <td class="small">${lastPaidFmt(emp)}</td>
+          </tr>`
+            )
+            .join('')
+        : `<tr><td colspan="8" style="text-align:center;color:#666;padding:12px">No employees match the current filters.</td></tr>`
+
+    const totalTourSessions = list.reduce((s, e) => s + e.tourFees.length, 0)
+
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Total Employees Summary</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 10px 12px; color: #111; font-size: 11px; }
+          h1 { font-size: 16px; margin: 0 0 4px 0; }
+          .sub { color: #666; margin-bottom: 8px; font-size: 11px; }
+          .filters { color: #374151; margin-bottom: 10px; font-size: 10px; }
+          .totals { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 12px; }
+          .totals div { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 6px 8px; text-align: center; }
+          .totals .lbl { font-size: 9px; color: #6b7280; margin-bottom: 2px; }
+          .totals .amt { font-weight: 700; font-size: 12px; }
+          table { width: 100%; border-collapse: collapse; font-size: 10px; }
+          th, td { border: 1px solid #d1d5db; padding: 4px 6px; text-align: left; }
+          th { background: #f9fafb; font-weight: 600; }
+          th.num { text-align: right; }
+          td.num { text-align: right; }
+          td.strong { font-weight: 600; color: #059669; }
+          tr.overdue { background: #fef2f2; }
+          .muted { color: #6b7280; font-size: 9px; }
+          td.small { font-size: 9px; }
+          tfoot td { font-weight: 700; background: #f3f4f6; }
+          @media print { body { padding: 6px 8px; } }
+        </style>
+      </head>
+      <body>
+        <h1>Total Employees Summary</h1>
+        <div class="sub">Period: ${startDate} ~ ${endDate}</div>
+        <div class="filters">${filterLine} · Showing ${list.length} / ${employeeData.length} employees</div>
+        <div class="totals">
+          <div><div class="lbl">Attendance Subtotal</div><div class="amt">$${formatCurrencyForPrint(displayTotalAttendancePay)}</div></div>
+          <div><div class="lbl">Guide Fee</div><div class="amt">$${formatCurrencyForPrint(displayTotalGuideFee)}</div></div>
+          <div><div class="lbl">Assistant Fee</div><div class="amt">$${formatCurrencyForPrint(displayTotalAssistantFee)}</div></div>
+          <div><div class="lbl">Prepaid Tip</div><div class="amt">$${formatCurrencyForPrint(displayTotalPrepaidTip)}</div></div>
+          <div><div class="lbl">Total Pay</div><div class="amt">$${formatCurrencyForPrint(displayTotalPay)}</div></div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Employee Name</th>
+              <th class="num">Attendance</th>
+              <th class="num">Guide Fee</th>
+              <th class="num">Asst. Fee</th>
+              <th class="num">Prepaid Tip</th>
+              <th class="num">Tours</th>
+              <th class="num">Subtotal</th>
+              <th>Last Paid</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+          <tfoot>
+            <tr>
+              <td>Total</td>
+              <td class="num">$${formatCurrencyForPrint(displayTotalAttendancePay)}</td>
+              <td class="num">$${formatCurrencyForPrint(displayTotalGuideFee)}</td>
+              <td class="num">$${formatCurrencyForPrint(displayTotalAssistantFee)}</td>
+              <td class="num">$${formatCurrencyForPrint(displayTotalPrepaidTip)}</td>
+              <td class="num">${totalTourSessions}</td>
+              <td class="num">$${formatCurrencyForPrint(displayTotalPay)}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </body>
+      </html>
+    `
+
+    printWindow.document.write(printContent)
+    printWindow.document.close()
+    printWindow.onload = () => {
+      printWindow.print()
+    }
+  }
 
   useEffect(() => {
     onOverdueCountChange?.(overdueCount)
@@ -966,14 +1127,26 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
             <Calculator className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 mr-2 shrink-0" />
             <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">Total Employees Summary</h2>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 transition-colors touch-manipulation shrink-0"
-            type="button"
-            aria-label="닫기"
-          >
-            <X className="w-5 h-5 sm:w-6 sm:h-6" />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={handlePrintSummary}
+              disabled={loading || employeeData.length === 0}
+              className="p-2 text-gray-400 hover:text-gray-600 transition-colors touch-manipulation disabled:opacity-40 disabled:pointer-events-none"
+              title="요약 프린트"
+              aria-label="요약 프린트"
+            >
+              <Printer className="w-5 h-5 sm:w-6 sm:h-6" />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 text-gray-400 hover:text-gray-600 transition-colors touch-manipulation shrink-0"
+              type="button"
+              aria-label="닫기"
+            >
+              <X className="w-5 h-5 sm:w-6 sm:h-6" />
+            </button>
+          </div>
         </div>
 
         {/* 내용 */}
@@ -1027,6 +1200,40 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
             </div>
           </div>
 
+          {/* 필터 */}
+          {!loading && employeeData.length > 0 && (
+            <div className="mb-4 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3">
+              <span className="text-sm font-medium text-gray-700 shrink-0">필터</span>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFilterActiveOnly((v) => !v)}
+                  className={`px-3 py-2 text-sm font-medium rounded-md border transition-colors touch-manipulation ${
+                    filterActiveOnly
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  Active 직원
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterSubtotalPositive((v) => !v)}
+                  className={`px-3 py-2 text-sm font-medium rounded-md border transition-colors touch-manipulation ${
+                    filterSubtotalPositive
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  Subtotal &gt; 0
+                </button>
+              </div>
+              <span className="text-xs text-gray-500 sm:ml-auto">
+                표시 {filteredEmployeeData.length}명 / 전체 {employeeData.length}명
+              </span>
+            </div>
+          )}
+
           {/* 통계 요약 */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 mb-4 sm:mb-6">
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
@@ -1067,11 +1274,15 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
               <p className="mt-2 text-sm sm:text-base text-gray-600">데이터를 불러오는 중...</p>
             </div>
+          ) : filteredEmployeeData.length === 0 && employeeData.length > 0 ? (
+            <div className="text-center py-8 text-gray-500 text-sm">
+              필터 조건에 맞는 직원이 없습니다. 필터를 해제해 보세요.
+            </div>
           ) : (
             <>
               {/* 모바일: 직원 카드 리스트 */}
               <div className="md:hidden space-y-2">
-                {employeeData.map((employee) => (
+                {filteredEmployeeData.map((employee) => (
                   <div
                     key={employee.email}
                     className={`rounded-lg overflow-hidden ${
@@ -1089,7 +1300,12 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                         {employee.hasWarning && (
                           <span className="text-red-500 mr-1.5 shrink-0" title="Fee가 $0으로 설정된 투어가 있습니다">⚠️</span>
                         )}
-                        <span className="font-medium text-gray-900 truncate">{employee.name}</span>
+                        <span className="font-medium text-gray-900 truncate">
+                          {employee.name}
+                          {!employee.is_active && (
+                            <span className="ml-1.5 text-[10px] font-normal text-gray-500 bg-gray-200 px-1 rounded">Inactive</span>
+                          )}
+                        </span>
                       </div>
                       <span className={`text-sm font-medium shrink-0 ${isPaymentOverdue(employee) ? 'text-red-600' : 'text-green-600'}`}>{formatCurrencyWithStyle(employee.totalPay)}</span>
                       {expandedEmployees.has(employee.email) ? (
@@ -1226,7 +1442,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {employeeData.map((employee) => (
+                    {filteredEmployeeData.map((employee) => (
                       <React.Fragment key={employee.email}>
                         <tr 
                           className={`cursor-pointer ${isPaymentOverdue(employee) ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}`}
@@ -1240,6 +1456,9 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                                 </span>
                               )}
                               {employee.name}
+                              {!employee.is_active && (
+                                <span className="ml-2 text-xs font-normal text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded">Inactive</span>
+                              )}
                             </div>
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
@@ -1458,7 +1677,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                                                     min={0}
                                                     step={0.01}
                                                     className="w-20 px-1.5 py-0.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                                    defaultValue={tour.prepaid_tip}
+                                                    defaultValue={(Number(tour.prepaid_tip) || 0).toFixed(2)}
                                                     onBlur={(e) => {
                                                       const v = parseFloat(e.target.value)
                                                       if (!Number.isNaN(v) && v !== tour.prepaid_tip) handleTourFeeUpdate(employee.email, tour.tour_id, 'prepaid_tip', v)
@@ -1502,7 +1721,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                         ${formatCurrency(displayTotalPrepaidTip)}
                       </td>
                       <td className="px-4 py-3 text-sm font-bold text-gray-600">
-                        {employeeData.reduce((sum, emp) => sum + emp.tourFees.length, 0)}회
+                        {filteredEmployeeData.reduce((sum, emp) => sum + emp.tourFees.length, 0)}회
                       </td>
                       <td className="px-4 py-3 text-sm font-bold text-orange-600">
                         ${formatCurrency(displayTotalPay)}
