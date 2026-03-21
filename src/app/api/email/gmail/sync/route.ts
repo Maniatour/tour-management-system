@@ -91,9 +91,39 @@ export async function POST(request: Request) {
       grant_type: 'refresh_token',
     }),
   })
-  const tokenData = (await tokenRes.json()) as { access_token?: string; error?: string }
+  const tokenData = (await tokenRes.json()) as {
+    access_token?: string
+    error?: string
+    error_description?: string
+  }
   if (!tokenRes.ok || !tokenData.access_token) {
-    return NextResponse.json({ error: tokenData.error || 'Failed to refresh token' }, { status: 502 })
+    const oauthErr = tokenData.error ?? ''
+    // invalid_grant: 리프레시 토큰 폐기·만료, 비밀번호 변경, OAuth 클라이언트 불일치, 사용자가 앱 연결 해제 등
+    if (oauthErr === 'invalid_grant') {
+      const connId = (conn as { id?: string }).id
+      const connEmail = (conn as { email?: string }).email
+      try {
+        const del = client.from('gmail_connections').delete()
+        if (connId) await del.eq('id', connId)
+        else if (connEmail) await del.eq('email', connEmail)
+      } catch {
+        /* ignore */
+      }
+      return NextResponse.json(
+        {
+          error:
+            'Gmail 인증이 만료되었거나 취소되었습니다. 아래 「다시 연결」을 눌러 Google 계정을 다시 승인해 주세요. (Google Cloud 콘솔에서 OAuth 클라이언트 ID/비밀번호가 바뀌었으면 재연결이 필요합니다.)',
+          code: 'invalid_grant',
+        },
+        { status: 401 }
+      )
+    }
+    return NextResponse.json(
+      {
+        error: tokenData.error_description || tokenData.error || 'Failed to refresh token',
+      },
+      { status: 502 }
+    )
   }
 
   const accessToken = tokenData.access_token

@@ -4,6 +4,12 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Calculator, DollarSign, TrendingUp, TrendingDown, AlertCircle, RefreshCw } from 'lucide-react'
 import { useLocale } from 'next-intl'
+import {
+  hotelAmountForSettlement,
+  isHotelBookingIncludedInSettlement,
+  isTicketBookingIncludedInSettlement,
+  ticketExpenseForSettlement
+} from '@/lib/bookingSettlement'
 
 interface ProductOption {
   id: string
@@ -358,7 +364,6 @@ export default function PricingSection({
         .from('ticket_bookings')
         .select('expense, status')
         .eq('tour_id', tourId)
-        .in('status', ['confirmed', 'paid'])
 
       // 실제 오류인 경우에만 로그 출력 (빈 객체는 완전히 무시)
       // Supabase는 데이터가 없을 때 빈 객체를 반환할 수 있으므로, message나 code가 있는 경우에만 오류로 처리
@@ -368,12 +373,11 @@ export default function PricingSection({
       }
       // 빈 객체 {}는 무시 (로그 출력 안 함)
 
-      // 2-3. 호텔 부킹 비용 (tour_hotel_bookings)
+      // 2-3. 호텔 부킹 비용 (tour_hotel_bookings.total_price 합, 정산과 동일)
       const { data: hotelBookingsData, error: hotelBookingsError } = await supabase
         .from('tour_hotel_bookings')
-        .select('total_price, status')
+        .select('total_price, unit_price, rooms, status')
         .eq('tour_id', tourId)
-        .in('status', ['confirmed', 'paid'])
 
       // 실제 오류인 경우에만 로그 출력 (빈 객체는 완전히 무시)
       // Supabase는 데이터가 없을 때 빈 객체를 반환할 수 있으므로, message나 code가 있는 경우에만 오류로 처리
@@ -385,11 +389,12 @@ export default function PricingSection({
 
       // 3. 투어 총 지출 계산 (모든 소스 합산)
       const tourExpenses = (expensesData || []).reduce((sum: number, expense: any) => sum + (expense?.amount || 0), 0)
-      const ticketBookingsCosts = (ticketBookingsData || []).reduce((sum: number, booking: any) => sum + (booking?.expense || 0), 0)
-      const hotelBookingsCosts = (hotelBookingsData || []).reduce((sum: number, booking: any) => {
-        // total_price만 사용 (total_cost 컬럼은 존재하지 않음)
-        return sum + (booking?.total_price || 0)
-      }, 0)
+      const ticketBookingsCosts = (ticketBookingsData || [])
+        .filter((b: any) => isTicketBookingIncludedInSettlement(b.status))
+        .reduce((sum: number, booking: any) => sum + ticketExpenseForSettlement(booking), 0)
+      const hotelBookingsCosts = (hotelBookingsData || [])
+        .filter((b: any) => isHotelBookingIncludedInSettlement(b.status))
+        .reduce((sum: number, booking: any) => sum + hotelAmountForSettlement(booking), 0)
       
       // 2-4. 가이드비 및 드라이버 비 (tourData에서 가져온 값 사용)
       const guideFee = (tourData as any).guide_fee || 0
@@ -785,7 +790,14 @@ export default function PricingSection({
         if (isOTAChannel) {
           const totalCustomerPayment = calculateTotalCustomerPayment()
           const salePriceTimesPax = formData.productPriceTotal
-          const depositFromDb = isExistingPricingLoaded && (formData.depositAmount ?? 0) > 0 && Math.abs((formData.depositAmount ?? 0) - totalCustomerPayment) > 0.01
+          /** 불포함(현장/추가 결제) 금액이 있으면 고객 총 결제 = 판매·옵션 등 + 불포함. 보증금(실제 지불액)은 불포함을 제외한 금액, 잔액(투어 당일) = 불포함 합. */
+          const notIncludedTotal =
+            (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+          const depositPortion =
+            notIncludedTotal > 0
+              ? Math.max(0, totalCustomerPayment - notIncludedTotal)
+              : totalCustomerPayment
+          const depositFromDb = isExistingPricingLoaded && (formData.depositAmount ?? 0) > 0 && Math.abs((formData.depositAmount ?? 0) - depositPortion) > 0.01
           if (hasPaymentRecordsRef.current || depositFromDb) {
             // 입금 내역 합 또는 DB 저장값 유지; depositAmount는 건드리지 않음. 채널 결제 금액만 판매가×인원으로 설정 가능
             const channelPaymentBase = Math.max(0, salePriceTimesPax - returnedAmount)
@@ -814,19 +826,20 @@ export default function PricingSection({
               : (formData.commission_amount ?? 0)
             const commissionToSet = isExistingPricingLoaded ? (formData.commission_amount ?? 0) : calculatedCommission
             const same =
-              Math.abs((formData.depositAmount ?? 0) - totalCustomerPayment) < 0.01 &&
+              Math.abs((formData.depositAmount ?? 0) - depositPortion) < 0.01 &&
               Math.abs((formData.onlinePaymentAmount ?? 0) - salePriceTimesPax) < 0.01 &&
-              Math.abs((formData.commission_amount ?? 0) - commissionToSet) < 0.01
+              Math.abs((formData.commission_amount ?? 0) - commissionToSet) < 0.01 &&
+              Math.abs((formData.onSiteBalanceAmount ?? 0) - (notIncludedTotal > 0 ? notIncludedTotal : 0)) < 0.01
             if (!same) {
               setFormData((prev: typeof formData) => ({
                 ...prev,
-                depositAmount: totalCustomerPayment,
+                depositAmount: depositPortion,
                 onlinePaymentAmount: salePriceTimesPax,
                 commission_base_price: salePriceTimesPax,
                 commission_percent: (prev.commission_percent != null && prev.commission_percent > 0) ? prev.commission_percent : commissionPercent,
                 commission_amount: isExistingPricingLoaded ? (prev.commission_amount ?? 0) : calculatedCommission,
-                onSiteBalanceAmount: 0,
-                balanceAmount: 0
+                onSiteBalanceAmount: notIncludedTotal > 0 ? notIncludedTotal : 0,
+                balanceAmount: notIncludedTotal > 0 ? notIncludedTotal : 0
               }))
             }
           }

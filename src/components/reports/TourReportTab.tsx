@@ -3,6 +3,12 @@
 import React, { useState, useEffect } from 'react'
 import { Calendar, DollarSign, TrendingUp, Users } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import {
+  hotelAmountForSettlement,
+  isHotelBookingIncludedInSettlement,
+  isTicketBookingIncludedInSettlement,
+  ticketExpenseForSettlement
+} from '@/lib/bookingSettlement'
 
 interface TourReportTabProps {
   dateRange: { start: string; end: string }
@@ -95,8 +101,8 @@ export default function TourReportTab({ dateRange, period }: TourReportTabProps)
         for (let i = 0; i < tourIds.length; i += BATCH_SIZE) {
           const batch = tourIds.slice(i, i + BATCH_SIZE)
           const [tickets, hotels] = await Promise.all([
-            supabase.from('ticket_bookings').select('tour_id, expense').in('tour_id', batch).in('status', ['confirmed', 'paid']),
-            supabase.from('tour_hotel_bookings').select('tour_id, total_price').in('tour_id', batch).in('status', ['confirmed', 'paid'])
+            supabase.from('ticket_bookings').select('tour_id, expense, status').in('tour_id', batch),
+            supabase.from('tour_hotel_bookings').select('tour_id, total_price, unit_price, rooms, status').in('tour_id', batch)
           ])
           if (tickets.data?.length) ticketBookingsRows.push(...tickets.data)
           if (hotels.data?.length) hotelBookingsRows.push(...hotels.data)
@@ -130,12 +136,14 @@ export default function TourReportTab({ dateRange, period }: TourReportTabProps)
 
       const ticketCostsMap = new Map<string, number>()
       ;(ticketBookingsRows || []).forEach((b: any) => {
-        ticketCostsMap.set(b.tour_id, (ticketCostsMap.get(b.tour_id) || 0) + (b.expense || 0))
+        if (!isTicketBookingIncludedInSettlement(b.status)) return
+        ticketCostsMap.set(b.tour_id, (ticketCostsMap.get(b.tour_id) || 0) + ticketExpenseForSettlement(b))
       })
 
       const hotelCostsMap = new Map<string, number>()
       ;(hotelBookingsRows || []).forEach((b: any) => {
-        hotelCostsMap.set(b.tour_id, (hotelCostsMap.get(b.tour_id) || 0) + (b.total_price || 0))
+        if (!isHotelBookingIncludedInSettlement(b.status)) return
+        hotelCostsMap.set(b.tour_id, (hotelCostsMap.get(b.tour_id) || 0) + hotelAmountForSettlement(b))
       })
 
       const tourStats = tours.map((tour: any) => {

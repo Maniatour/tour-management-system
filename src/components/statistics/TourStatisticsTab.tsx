@@ -22,6 +22,12 @@ import { useReservationData } from '@/hooks/useReservationData'
 import AdvancedCharts from './AdvancedCharts'
 import { generateTourStatisticsPDF, generateChartPDF } from '@/utils/pdfExport'
 import { supabase } from '@/lib/supabase'
+import {
+  hotelAmountForSettlement,
+  isHotelBookingIncludedInSettlement,
+  isTicketBookingIncludedInSettlement,
+  ticketExpenseForSettlement
+} from '@/lib/bookingSettlement'
 import TourExpenseManager from '../TourExpenseManager'
 
 interface TourStatisticsData {
@@ -324,23 +330,23 @@ async function getTourFinancialStats(tourId: string) {
     console.log(`투어 ${tourId}의 모든 지출 데이터:`, expenses)
     console.log(`투어 ${tourId}의 지출 개수:`, expenses?.length || 0)
 
-    // 입장권 부킹: tour_id(text)로만 연결
-    const TICKET_STATUSES = ['confirmed', 'paid', 'Confirmed', 'Confirm', 'completed']
-    const { data: ticketBookingsData, error: ticketError } = await supabase
+    const { data: ticketBookingsRaw, error: ticketError } = await supabase
       .from('ticket_bookings')
-      .select('id, expense, ea')
+      .select('id, expense, ea, status')
       .eq('tour_id', tourId)
-      .in('status', TICKET_STATUSES)
-    const ticketBookings = ticketBookingsData || []
+    const ticketBookings = (ticketBookingsRaw || []).filter((b) =>
+      isTicketBookingIncludedInSettlement(b.status)
+    )
     if (ticketError) console.error('입장권 부킹 조회 오류:', ticketError)
     if (ticketBookings.length > 0) console.log('입장권 부킹:', ticketBookings.length, '건')
 
-    // 호텔 부킹 가져오기
-    const { data: hotelBookings, error: hotelError } = await supabase
+    const { data: hotelBookingsRaw, error: hotelError } = await supabase
       .from('tour_hotel_bookings')
-      .select('total_price')
+      .select('total_price, unit_price, rooms, status')
       .eq('tour_id', tourId)
-      .eq('status', 'confirmed')
+    const hotelBookings = (hotelBookingsRaw || []).filter((b) =>
+      isHotelBookingIncludedInSettlement(b.status)
+    )
 
     if (hotelError) {
       console.error('호텔 부킹 조회 오류:', hotelError)
@@ -430,9 +436,11 @@ async function getTourFinancialStats(tourId: string) {
     const totalPayments = filteredReservationPricing?.reduce((sum, pricing) => sum + (pricing.total_price || 0), 0) || 0
     const totalExpenses = expenses?.reduce((sum, expense) => sum + (expense.amount || 0), 0) || 0
     const totalFees = (tour?.guide_fee || 0) + (tour?.assistant_fee || 0)
-    const totalTicketCosts = ticketBookings?.reduce((sum, booking) => sum + (booking.expense || 0), 0) || 0
+    const totalTicketCosts =
+      ticketBookings?.reduce((sum, booking) => sum + ticketExpenseForSettlement(booking), 0) || 0
     const totalTicketEa = ticketBookings?.reduce((sum, booking) => sum + (booking.ea ?? 0), 0) || 0
-    const totalHotelCosts = hotelBookings?.reduce((sum, booking) => sum + (booking.total_price || 0), 0) || 0
+    const totalHotelCosts =
+      hotelBookings?.reduce((sum, booking) => sum + hotelAmountForSettlement(booking), 0) || 0
     const totalBookingCosts = totalTicketCosts + totalHotelCosts
     const totalExpensesWithFeesAndBookings = totalExpenses + totalFees + totalBookingCosts
     const profit = totalOperatingProfit - totalExpensesWithFeesAndBookings
@@ -565,20 +573,22 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
         .select('*')
         .eq('tour_id', tourId)
 
-      // 입장권 부킹 상세 조회 (통계와 동일하게 paid·confirmed 등 모두 포함)
-      const TICKET_STATUSES = ['confirmed', 'paid', 'Confirmed', 'Confirm', 'completed']
-      const { data: ticketBookings, error: ticketError } = await supabase
+      // 입장권 부킹 상세 (expense 합 — 정산 기준과 동일)
+      const { data: ticketBookingsRaw, error: ticketError } = await supabase
         .from('ticket_bookings')
         .select('*')
         .eq('tour_id', tourId)
-        .in('status', TICKET_STATUSES)
+      const ticketBookings = (ticketBookingsRaw || []).filter((b) =>
+        isTicketBookingIncludedInSettlement(b.status)
+      )
 
-      // 호텔 부킹 상세 조회
-      const { data: hotelBookings, error: hotelError } = await supabase
+      const { data: hotelBookingsRaw, error: hotelError } = await supabase
         .from('tour_hotel_bookings')
         .select('*')
         .eq('tour_id', tourId)
-        .eq('status', 'confirmed')
+      const hotelBookings = (hotelBookingsRaw || []).filter((b) =>
+        isHotelBookingIncludedInSettlement(b.status)
+      )
 
       // 투어 수수료 조회 (가이드/어시스턴트 이름 포함)
       const { data: tour, error: tourError } = await supabase
@@ -1604,7 +1614,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                                     <div className="flex justify-between">
                                       <span className="text-gray-600">입장권 소계</span>
                                       <span className="font-medium text-red-600">
-                                        -${expenseDetails[tour.tourId].ticketBookings.reduce((sum: number, booking: any) => sum + (booking.expense || 0), 0).toLocaleString()}
+                                        -${expenseDetails[tour.tourId].ticketBookings.reduce((sum: number, booking: any) => sum + ticketExpenseForSettlement(booking), 0).toLocaleString()}
                                       </span>
                                     </div>
                                   )}
@@ -1614,7 +1624,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                                     <div className="flex justify-between">
                                       <span className="text-gray-600">투어호텔 소계</span>
                                       <span className="font-medium text-red-600">
-                                        -${expenseDetails[tour.tourId].hotelBookings.reduce((sum: number, booking: any) => sum + (booking.total_price || 0), 0).toLocaleString()}
+                                        -${expenseDetails[tour.tourId].hotelBookings.reduce((sum: number, booking: any) => sum + hotelAmountForSettlement(booking), 0).toLocaleString()}
                                       </span>
                                     </div>
                                   )}
@@ -1640,8 +1650,8 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                                       const totalRevenue = expenseDetails[tour.tourId].reservationPricing?.reduce((sum: number, p: any) => sum + (p.total_price || 0), 0) || 0
                                       const totalExpenses = 
                                         expenseDetails[tour.tourId].expenses.reduce((sum: number, expense: any) => sum + (expense.amount || 0), 0) +
-                                        expenseDetails[tour.tourId].ticketBookings.reduce((sum: number, booking: any) => sum + (booking.expense || 0), 0) +
-                                        expenseDetails[tour.tourId].hotelBookings.reduce((sum: number, booking: any) => sum + (booking.total_price || 0), 0) +
+                                        expenseDetails[tour.tourId].ticketBookings.reduce((sum: number, booking: any) => sum + ticketExpenseForSettlement(booking), 0) +
+                                        expenseDetails[tour.tourId].hotelBookings.reduce((sum: number, booking: any) => sum + hotelAmountForSettlement(booking), 0) +
                                         expenseDetails[tour.tourId].tourFees.guide_fee +
                                         expenseDetails[tour.tourId].tourFees.assistant_fee
                                       const netProfit = totalRevenue - totalExpenses
@@ -1652,8 +1662,8 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                                         const totalRevenue = expenseDetails[tour.tourId].reservationPricing?.reduce((sum: number, p: any) => sum + (p.total_price || 0), 0) || 0
                                         const totalExpenses = 
                                           expenseDetails[tour.tourId].expenses.reduce((sum: number, expense: any) => sum + (expense.amount || 0), 0) +
-                                          expenseDetails[tour.tourId].ticketBookings.reduce((sum: number, booking: any) => sum + (booking.expense || 0), 0) +
-                                          expenseDetails[tour.tourId].hotelBookings.reduce((sum: number, booking: any) => sum + (booking.total_price || 0), 0) +
+                                          expenseDetails[tour.tourId].ticketBookings.reduce((sum: number, booking: any) => sum + ticketExpenseForSettlement(booking), 0) +
+                                          expenseDetails[tour.tourId].hotelBookings.reduce((sum: number, booking: any) => sum + hotelAmountForSettlement(booking), 0) +
                                           expenseDetails[tour.tourId].tourFees.guide_fee +
                                           expenseDetails[tour.tourId].tourFees.assistant_fee
                                         return (totalRevenue - totalExpenses).toLocaleString()
@@ -1698,7 +1708,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                                     {expenseDetails[tour.tourId].hotelBookings.map((booking: any, idx: number) => (
                                       <div key={idx} className="flex justify-between text-sm">
                                         <span className="text-gray-600">{booking.hotel_name || '호텔'}</span>
-                                        <span className="font-medium">${booking.total_price?.toLocaleString() || 0}</span>
+                                        <span className="font-medium">${hotelAmountForSettlement(booking).toLocaleString()}</span>
                                       </div>
                                     ))}
                                   </div>

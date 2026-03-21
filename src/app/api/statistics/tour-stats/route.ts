@@ -6,9 +6,14 @@ import {
   calculateOperatingProfit,
   type ReservationPricingRow
 } from '@/lib/tourStatsCalculator'
+import {
+  hotelAmountForSettlement,
+  isHotelBookingIncludedInSettlement,
+  isTicketBookingIncludedInSettlement,
+  ticketExpenseForSettlement
+} from '@/lib/bookingSettlement'
 
 const BATCH = 150
-const TICKET_STATUSES = ['confirmed', 'paid', 'Confirmed', 'Confirm', 'completed']
 const NON_RESIDENT_OPTION_ID = '6941b5d0'
 const VALID_TOUR_STATUSES = ['Recruiting', 'Confirmed', 'Completed']
 
@@ -158,14 +163,12 @@ export async function GET(request: NextRequest) {
 
     const { data: ticketBookingsAll } = await supabase
       .from('ticket_bookings')
-      .select('tour_id, expense, ea')
+      .select('tour_id, expense, ea, status')
       .in('tour_id', tourIds)
-      .in('status', TICKET_STATUSES)
 
     const { data: hotelBookingsAll } = await supabase
       .from('tour_hotel_bookings')
-      .select('tour_id, total_price')
-      .eq('status', 'confirmed')
+      .select('tour_id, total_price, unit_price, rooms, status')
       .in('tour_id', tourIds)
 
     // 7) 상품명
@@ -263,16 +266,26 @@ export async function GET(request: NextRequest) {
       expensesByTour[row.tour_id] += row.amount || 0
     })
     const ticketByTour: Record<string, { cost: number; ea: number }> = {}
-    ;(ticketBookingsAll || []).forEach((row: { tour_id: string; expense?: number; ea?: number }) => {
+    ;(ticketBookingsAll || []).forEach((row: { tour_id: string; expense?: number; ea?: number; status?: string }) => {
+      if (!isTicketBookingIncludedInSettlement(row.status)) return
       if (!ticketByTour[row.tour_id]) ticketByTour[row.tour_id] = { cost: 0, ea: 0 }
-      ticketByTour[row.tour_id].cost += row.expense || 0
+      ticketByTour[row.tour_id].cost += ticketExpenseForSettlement(row)
       ticketByTour[row.tour_id].ea += row.ea ?? 0
     })
     const hotelByTour: Record<string, number> = {}
-    ;(hotelBookingsAll || []).forEach((row: { tour_id: string; total_price?: number }) => {
-      if (!hotelByTour[row.tour_id]) hotelByTour[row.tour_id] = 0
-      hotelByTour[row.tour_id] += row.total_price || 0
-    })
+    ;(hotelBookingsAll || []).forEach(
+      (row: {
+        tour_id: string
+        total_price?: number
+        unit_price?: number
+        rooms?: number
+        status?: string
+      }) => {
+        if (!isHotelBookingIncludedInSettlement(row.status)) return
+        if (!hotelByTour[row.tour_id]) hotelByTour[row.tour_id] = 0
+        hotelByTour[row.tour_id] += hotelAmountForSettlement(row)
+      }
+    )
 
     const pricingByReservation = reservationPricing.reduce((acc, p) => {
       acc[p.reservation_id] = p

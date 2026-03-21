@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { supabase } from '@/lib/supabase';
 import TourHotelBookingForm from './TourHotelBookingForm';
@@ -310,7 +310,16 @@ export default function TourHotelBookingList() {
   };
 
   const handleBookingClick = (bookings: TourHotelBooking[]) => {
-    setSelectedBookings(bookings);
+    const uniqueBookings = bookings.filter((booking, index, array) => {
+      const bookingKey = booking.id || `${booking.hotel}-${booking.check_in_date}-${booking.check_out_date}-${booking.reservation_name}`;
+      return (
+        array.findIndex((item) => {
+          const itemKey = item.id || `${item.hotel}-${item.check_in_date}-${item.check_out_date}-${item.reservation_name}`;
+          return itemKey === bookingKey;
+        }) === index
+      );
+    });
+    setSelectedBookings(uniqueBookings);
     setShowBookingModal(true);
   };
 
@@ -352,7 +361,10 @@ export default function TourHotelBookingList() {
             </button>
           </div>
           <button
-            onClick={() => setShowForm(true)}
+            onClick={() => {
+              setEditingBooking(null);
+              setShowForm(true);
+            }}
             className="px-2 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-xs sm:text-base flex items-center space-x-1"
           >
             <Plus size={14} />
@@ -794,16 +806,23 @@ export default function TourHotelBookingList() {
         )}
       </div>
 
-      {/* 폼 모달 */}
-      {showForm && editingBooking && (
-        <TourHotelBookingForm
-          booking={editingBooking}
-          onSave={(booking: unknown) => handleSave(booking as TourHotelBooking)}
-          onCancel={() => {
-            setShowForm(false);
-            setEditingBooking(null);
-          }}
-        />
+      {/* 폼 모달 — 상세 모달과 동일하게 화면 중앙 오버레이로 표시 */}
+      {showForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-xl">
+            <div className="p-4 sm:p-6">
+              <TourHotelBookingForm
+                key={editingBooking?.id ?? 'new-hotel-booking'}
+                {...(editingBooking ? { booking: editingBooking } : {})}
+                onSave={(booking: unknown) => handleSave(booking as TourHotelBooking)}
+                onCancel={() => {
+                  setShowForm(false);
+                  setEditingBooking(null);
+                }}
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 히스토리 모달 */}
@@ -836,8 +855,8 @@ export default function TourHotelBookingList() {
               </div>
               
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {selectedBookings.map((booking) => (
-                  <div key={booking.id} className="bg-gray-50 rounded-lg p-4">
+                {selectedBookings.map((booking, index) => (
+                  <div key={`${booking.id}-${index}`} className="bg-gray-50 rounded-lg p-4">
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1">
                         <h4 className="text-lg font-semibold text-gray-900 mb-1">

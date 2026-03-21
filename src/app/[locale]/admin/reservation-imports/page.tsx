@@ -304,7 +304,13 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
         body: JSON.stringify({ fullSync }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || res.statusText)
+      if (!res.ok) {
+        if (res.status === 401) {
+          setOptimisticConnected(false)
+          void fetchGmailStatus()
+        }
+        throw new Error(`동기화 실패: ${data?.error || res.statusText}`)
+      }
       setGmailMessage(
         fullSync
           ? `전체 재동기화 완료: ${data.queryUsed ?? 'after:날짜'} 검색, ${data.total ?? 0}건 중 새로 추가 ${data.imported ?? 0}건.`
@@ -680,8 +686,8 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                     (row.subject || '').trimStart().toLowerCase().startsWith('booking -')
                   const isKlookOrderReceived = (row.subject || '').trimStart().toLowerCase().startsWith('klook order received -')
                   const isChannelReservationEmail = isGyGBooking || isKlookOrderReceived || isBookingConfirmed(row)
-                  const isRegistered =
-                    (row.status === 'confirmed' && !!row.reservation_id) || !!row.reservation_exists_by_channel_rn
+                  /** 신규(빨강) / 처리됨(노랑): import 행의 채널 RN이 reservations.channel_rn과 일치할 때만 처리됨 */
+                  const isRegistered = !!row.reservation_exists_by_channel_rn
                   const rowBg =
                     !isChannelReservationEmail
                       ? ''
@@ -734,8 +740,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                 (row.subject || '').trimStart().toLowerCase().startsWith('booking -')
               const isKlookOrderReceived = (row.subject || '').trimStart().toLowerCase().startsWith('klook order received -')
               const isChannelReservationEmail = isGyGBooking || isKlookOrderReceived || isBookingConfirmed(row)
-              const isRegistered =
-                (row.status === 'confirmed' && !!row.reservation_id) || !!row.reservation_exists_by_channel_rn
+              const isRegistered = !!row.reservation_exists_by_channel_rn
               const cardBg =
                 !isChannelReservationEmail
                   ? 'bg-white border-gray-200'

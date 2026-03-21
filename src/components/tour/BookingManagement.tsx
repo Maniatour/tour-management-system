@@ -291,9 +291,9 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
                           </span>
                         </div>
                         {/* 오른쪽 아래: 금액 */}
-                        {booking.total_cost && booking.total_cost > 0 && (
+                        {booking.total_price != null && Number(booking.total_price) > 0 && (
                           <span className="font-semibold text-green-600">
-                            ${booking.total_cost.toFixed(2)}
+                            ${Number(booking.total_price).toFixed(2)}
                           </span>
                         )}
                       </div>

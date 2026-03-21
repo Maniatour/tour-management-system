@@ -146,6 +146,40 @@ export function getFallbackOtaAndNotIncluded(
   const requestedParts = keyToUse ? keyToUse.split('+').filter(Boolean) : [];
   const partCount = requestedParts.length;
   const requestedSet = new Set(requestedParts);
+
+  // 복수 초이스: "cid1+oid1+cid2+oid2" → 4개 이상 세그먼트일 때, DB 키가 2세그먼트(choice_id+option_id 한 쌍)인 행들의 OTA를 합산
+  if (partCount >= 4 && partCount % 2 === 0) {
+    const pairRows: { ota: number; notIncluded?: number }[] = [];
+    for (const key of Object.keys(choicesPricing)) {
+      const entry = choicesPricing[key];
+      if (!entry || typeof entry !== 'object') continue;
+      const ota = entry.ota_sale_price;
+      if (ota === undefined || ota === null) continue;
+      const num = Number(ota);
+      if (Number.isNaN(num)) continue;
+      const keyParts = key.split('+').filter(Boolean);
+      if (keyParts.length !== 2) continue;
+      const overlap = keyParts.filter((p) => requestedSet.has(p)).length;
+      if (overlap !== 2) continue;
+      const notIncluded =
+        entry.not_included_price !== undefined && entry.not_included_price !== null
+          ? Number(entry.not_included_price)
+          : undefined;
+      pairRows.push({ ota: num, notIncluded: notIncluded ?? undefined });
+    }
+    if (pairRows.length > 0) {
+      const sumOta = pairRows.reduce((s, r) => s + r.ota, 0);
+      const maxNi = pairRows.reduce((m, r) => {
+        const ni = r.notIncluded ?? 0;
+        return ni > m ? ni : m;
+      }, 0);
+      return {
+        ota_sale_price: sumOta,
+        not_included_price: maxNi > 0 ? maxNi : undefined,
+      };
+    }
+  }
+
   // 같은 구조일 때는 요청한 조합과 세그먼트 일치도(오버랩)가 가장 높은 키를 선택 (로어 vs 엑스 앤텔롭 등 다른 옵션 가격 오매칭 방지)
   let bestSameStructure: { ota: number; notIncluded?: number } | null = null;
   let bestOverlap = -1;

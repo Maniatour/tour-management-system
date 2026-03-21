@@ -19,6 +19,40 @@ interface TotalEmployeesModalProps {
   onOverdueCountChange?: (count: number) => void
 }
 
+/** 기간 내 투어 reservation_ids → prepayment_tip > 0 인 예약 가격 행 (Office Prepaid Tips 상세) */
+interface OfficePrepaidPricingDetail {
+  id: string
+  reservation_id: string
+  customer_id: string | null
+  customer_name_ko: string
+  customer_name_en: string
+  /** 기간 내 투어 중 해당 예약이 처음 등장한 투어 기준 */
+  tour_id: string | null
+  tour_date: string | null
+  tour_status: string | null
+  product_name_ko: string
+  product_name_en: string
+  total_people: number | null
+  prepayment_tip: number
+  subtotal: number | null
+  total_price: number | null
+  deposit_amount: number | null
+  balance_amount: number | null
+  prepayment_cost: number | null
+  product_price_total: number | null
+  coupon_discount: number | null
+  additional_discount: number | null
+  card_fee: number | null
+  tax: number | null
+}
+
+function normalizeTourReservationIds(raw: unknown): string[] {
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw.map((x) => String(x).trim()).filter(Boolean)
+  if (typeof raw === 'string') return raw.split(',').map((s) => s.trim()).filter(Boolean)
+  return []
+}
+
 interface EmployeeData {
   email: string
   name: string
@@ -54,6 +88,8 @@ interface EmployeeData {
     is_assistant: boolean
     guide_fee: number
     assistant_fee: number
+    /** 해당 투어 reservation_ids 기준 reservation_pricing.prepayment_tip 합 (예약당 행 합산) */
+    prepayment_tip_total: number
     prepaid_tip: number
     total_fee: number
     has_warning: boolean
@@ -68,6 +104,10 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
   const [totalGuideFee, setTotalGuideFee] = useState<number>(0)
   const [totalAssistantFee, setTotalAssistantFee] = useState<number>(0)
   const [totalPrepaidTip, setTotalPrepaidTip] = useState<number>(0)
+  /** 기간 내 투어 reservation_ids 기준 reservation_pricing.prepayment_tip 합 (예약당 1회) */
+  const [officePrepaidTipsTotal, setOfficePrepaidTipsTotal] = useState<number>(0)
+  const [officePrepaidPricingDetails, setOfficePrepaidPricingDetails] = useState<OfficePrepaidPricingDetail[]>([])
+  const [officePrepaidDetailOpen, setOfficePrepaidDetailOpen] = useState(false)
   const [totalPay, setTotalPay] = useState<number>(0)
   const [loading, setLoading] = useState(false)
   const [expandedEmployees, setExpandedEmployees] = useState<Set<string>>(new Set())
@@ -136,6 +176,8 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
     if (!startDate || !endDate) return
 
     setLoading(true)
+    setOfficePrepaidTipsTotal(0)
+    setOfficePrepaidPricingDetails([])
     try {
       // 팀 멤버 조회
       const { data: teamData, error: teamError } = await supabase
@@ -175,6 +217,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
         .select(`
           id,
           tour_date,
+          tour_status,
           tour_guide_id,
           assistant_id,
           guide_fee,
@@ -192,6 +235,152 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
         console.error('투어 fee 조회 오류:', tourError)
         return
       }
+
+      /** 예약 ID → 기간 내 투어에서 첫 매칭 투어(날짜 오름차순)의 날짜·상품·상태 */
+      const tourContextByReservationId = new Map<
+        string,
+        { tour_id: string; tour_date: string; tour_status: string | null; product_name_ko: string; product_name_en: string }
+      >()
+      for (const rawTour of tourData || []) {
+        const t = rawTour as {
+          id: string
+          tour_date: string
+          tour_status?: string | null
+          reservation_ids?: unknown
+          products?: { name_ko?: string | null; name_en?: string | null } | null
+        }
+        const product = t.products
+        const nameKo = (product?.name_ko ?? '').trim()
+        const nameEn = (product?.name_en ?? '').trim()
+        const dateStr = typeof t.tour_date === 'string' ? t.tour_date.slice(0, 10) : ''
+        const statusStr =
+          t.tour_status != null && String(t.tour_status).trim() !== '' ? String(t.tour_status) : null
+        for (const rid of normalizeTourReservationIds(t.reservation_ids)) {
+          if (!tourContextByReservationId.has(rid)) {
+            tourContextByReservationId.set(rid, {
+              tour_id: t.id,
+              tour_date: dateStr,
+              tour_status: statusStr,
+              product_name_ko: nameKo,
+              product_name_en: nameEn,
+            })
+          }
+        }
+      }
+
+      // Office Prepaid Tips: 기간 내 투어 reservation_ids(중복 제거) → reservation_pricing 에서 prepayment_tip > 0 만 합산
+      const reservationIdSet = new Set<string>()
+      for (const t of tourData || []) {
+        for (const rid of normalizeTourReservationIds((t as { reservation_ids?: unknown }).reservation_ids)) {
+          reservationIdSet.add(rid)
+        }
+      }
+      const uniqueReservationIdsForOffice = [...reservationIdSet]
+      const PRICING_BATCH = 120
+      let officePrepaidTotal = 0
+      let officePrepaidRows: OfficePrepaidPricingDetail[] = []
+
+      if (uniqueReservationIdsForOffice.length > 0) {
+        const allPricing: Record<string, unknown>[] = []
+        for (let i = 0; i < uniqueReservationIdsForOffice.length; i += PRICING_BATCH) {
+          const batch = uniqueReservationIdsForOffice.slice(i, i + PRICING_BATCH)
+          const { data: pricingBatch, error: officePricingError } = await supabase
+            .from('reservation_pricing')
+            .select(
+              'id, reservation_id, prepayment_tip, subtotal, total_price, deposit_amount, balance_amount, prepayment_cost, product_price_total, coupon_discount, additional_discount, card_fee, tax'
+            )
+            .in('reservation_id', batch)
+          if (officePricingError) {
+            console.error('Office prepaid reservation_pricing 조회 오류:', officePricingError)
+          }
+          if (pricingBatch?.length) allPricing.push(...pricingBatch)
+        }
+
+        const withTip = allPricing.filter((p) => (Number((p as { prepayment_tip?: unknown }).prepayment_tip) || 0) > 0)
+        officePrepaidTotal = withTip.reduce(
+          (s, p) => s + (Number((p as { prepayment_tip?: unknown }).prepayment_tip) || 0),
+          0
+        )
+
+        const resIdsForCustomers = [...new Set(withTip.map((p) => String((p as { reservation_id: string }).reservation_id)))]
+        const customerByResId: Record<string, string> = {}
+        const peopleByResId: Record<string, number | null> = {}
+        const customerNamesByResId: Record<string, { ko: string; en: string }> = {}
+        for (let i = 0; i < resIdsForCustomers.length; i += PRICING_BATCH) {
+          const batch = resIdsForCustomers.slice(i, i + PRICING_BATCH)
+          const { data: resvRows } = await supabase
+            .from('reservations')
+            .select('id, customer_id, total_people, customers(name_ko, name_en, name)')
+            .in('id', batch)
+          for (const r of resvRows || []) {
+            const row = r as {
+              id: string
+              customer_id: string | null
+              total_people?: number | null
+              customers?: { name_ko?: string | null; name_en?: string | null; name?: string | null } | null
+            }
+            if (row.customer_id) customerByResId[row.id] = String(row.customer_id)
+            const n = row.total_people
+            peopleByResId[row.id] = n != null && String(n) !== '' && !Number.isNaN(Number(n)) ? Number(n) : null
+            const c = row.customers
+            const combined = (c?.name ?? '').trim()
+            const ko = ((c?.name_ko ?? '').trim() || combined).trim()
+            const en = ((c?.name_en ?? '').trim() || combined).trim()
+            customerNamesByResId[row.id] = { ko, en }
+          }
+        }
+
+        officePrepaidRows = withTip.map((p) => {
+          const row = p as {
+            id: string
+            reservation_id: string
+            prepayment_tip?: number | null
+            subtotal?: number | null
+            total_price?: number | null
+            deposit_amount?: number | null
+            balance_amount?: number | null
+            prepayment_cost?: number | null
+            product_price_total?: number | null
+            coupon_discount?: number | null
+            additional_discount?: number | null
+            card_fee?: number | null
+            tax?: number | null
+          }
+          const rid = String(row.reservation_id)
+          const ctx = tourContextByReservationId.get(rid)
+          const cn = customerNamesByResId[rid]
+          return {
+            id: row.id,
+            reservation_id: rid,
+            customer_id: customerByResId[rid] ?? null,
+            customer_name_ko: cn?.ko ?? '',
+            customer_name_en: cn?.en ?? '',
+            tour_id: ctx?.tour_id ?? null,
+            tour_date: ctx?.tour_date ?? null,
+            tour_status: ctx?.tour_status ?? null,
+            product_name_ko: ctx?.product_name_ko ?? '',
+            product_name_en: ctx?.product_name_en ?? '',
+            total_people: peopleByResId[rid] ?? null,
+            prepayment_tip: Number(row.prepayment_tip) || 0,
+            subtotal: row.subtotal != null ? Number(row.subtotal) : null,
+            total_price: row.total_price != null ? Number(row.total_price) : null,
+            deposit_amount: row.deposit_amount != null ? Number(row.deposit_amount) : null,
+            balance_amount: row.balance_amount != null ? Number(row.balance_amount) : null,
+            prepayment_cost: row.prepayment_cost != null ? Number(row.prepayment_cost) : null,
+            product_price_total: row.product_price_total != null ? Number(row.product_price_total) : null,
+            coupon_discount: row.coupon_discount != null ? Number(row.coupon_discount) : null,
+            additional_discount: row.additional_discount != null ? Number(row.additional_discount) : null,
+            card_fee: row.card_fee != null ? Number(row.card_fee) : null,
+            tax: row.tax != null ? Number(row.tax) : null,
+          }
+        })
+        officePrepaidRows.sort(
+          (a, b) => b.prepayment_tip - a.prepayment_tip || a.reservation_id.localeCompare(b.reservation_id)
+        )
+      }
+
+      setOfficePrepaidTipsTotal(officePrepaidTotal)
+      setOfficePrepaidPricingDetails(officePrepaidRows)
 
       // 클라이언트 사이드에서 날짜 필터링
       const filteredAttendanceData = attendanceData?.filter(record => {
@@ -261,7 +450,10 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
               const isAssistant = tour.assistant_id === employee.email
               const tourGuideFee = tour.guide_fee ?? 0
               const tourAssistantFee = tour.assistant_fee ?? 0
-              const prepaidTip = await calculatePrepaidTip(tour, employee.email)
+              const { share: prepaidTip, prepayment_tip_total } = await calculatePrepaidTipBreakdown(
+                tour,
+                employee.email
+              )
               const total_fee = (isGuide ? tourGuideFee : 0) + (isAssistant ? tourAssistantFee : 0) + prepaidTip
               const hasWarning = (isGuide && tourGuideFee === 0) || (isAssistant && tourAssistantFee === 0)
               return {
@@ -277,6 +469,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                 is_assistant: isAssistant,
                 guide_fee: tourGuideFee,
                 assistant_fee: tourAssistantFee,
+                prepayment_tip_total,
                 prepaid_tip: prepaidTip,
                 total_fee,
                 has_warning: hasWarning
@@ -371,20 +564,27 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
   }
 
   // 투어의 prepaid 팁 (2주급 계산기와 동일: reservation_pricing 합계의 90% 후 2guide 50% / 1guide·guide+driver 가이드 100%, 없으면 tour_tip_shares)
-  const calculatePrepaidTip = async (tour: any, employeeEmail: string) => {
+  const calculatePrepaidTipBreakdown = async (
+    tour: any,
+    employeeEmail: string
+  ): Promise<{ share: number; prepayment_tip_total: number }> => {
     try {
       const isGuide = tour.tour_guide_id === employeeEmail
       const isAssistant = tour.assistant_id === employeeEmail
       let prepayment_tip_total = 0
       let prepaidTips = 0
 
-      if (tour.reservation_ids && tour.reservation_ids.length > 0) {
+      const resIds = normalizeTourReservationIds(tour.reservation_ids)
+      if (resIds.length > 0) {
         const { data: pricingData, error: pricingError } = await supabase
           .from('reservation_pricing')
           .select('prepayment_tip')
-          .in('reservation_id', tour.reservation_ids)
+          .in('reservation_id', resIds)
         if (!pricingError && pricingData) {
-          prepayment_tip_total = pricingData.reduce((sum, p) => sum + (p.prepayment_tip || 0), 0)
+          prepayment_tip_total = pricingData.reduce(
+            (sum, p) => sum + (Number((p as { prepayment_tip?: unknown }).prepayment_tip) || 0),
+            0
+          )
           const after10Percent = prepayment_tip_total * 0.9
           const is2guide = tour.team_type === '2guide'
           if (is2guide && (isGuide || isAssistant)) {
@@ -407,15 +607,15 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
           .eq('tour_id', tour.id)
           .maybeSingle()
         if (!tipShareError && tipShareData) {
-          if (isGuide) return tipShareData.guide_amount ?? 0
-          if (isAssistant) return tipShareData.assistant_amount ?? 0
+          if (isGuide) return { share: tipShareData.guide_amount ?? 0, prepayment_tip_total: 0 }
+          if (isAssistant) return { share: tipShareData.assistant_amount ?? 0, prepayment_tip_total: 0 }
         }
       }
 
-      return prepaidTips
+      return { share: prepaidTips, prepayment_tip_total }
     } catch (error) {
       console.error('Prepaid tip 계산 오류:', error)
-      return 0
+      return { share: 0, prepayment_tip_total: 0 }
     }
   }
 
@@ -779,7 +979,11 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                     <td>${tour.staff_names || '—'}</td>
                     <td style="${tour.guide_fee === 0 ? 'color: #9ca3af;' : ''}">$${formatCurrencyForPrint(tour.guide_fee)}</td>
                     <td style="${tour.assistant_fee === 0 ? 'color: #9ca3af;' : ''}">$${formatCurrencyForPrint(tour.assistant_fee)}</td>
-                    <td style="${tour.prepaid_tip === 0 ? 'color: #9ca3af;' : ''}">$${formatCurrencyForPrint(tour.prepaid_tip)}</td>
+                    <td style="${tour.prepaid_tip === 0 ? 'color: #9ca3af;' : ''}">$${formatCurrencyForPrint(tour.prepaid_tip)}${
+                      tour.prepayment_tip_total > 0
+                        ? ` <span style="font-size:10px;color:#0f766e">(pricing Σ $${formatCurrencyForPrint(tour.prepayment_tip_total)})</span>`
+                        : ''
+                    }</td>
                     <td style="${tour.total_fee === 0 ? 'color: #9ca3af;' : ''}">$${formatCurrencyForPrint(tour.total_fee)}</td>
                   </tr>
                 `).join('')}
@@ -1030,7 +1234,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
           h1 { font-size: 16px; margin: 0 0 4px 0; }
           .sub { color: #666; margin-bottom: 8px; font-size: 11px; }
           .filters { color: #374151; margin-bottom: 10px; font-size: 10px; }
-          .totals { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 12px; }
+          .totals { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-bottom: 12px; }
           .totals div { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 6px 8px; text-align: center; }
           .totals .lbl { font-size: 9px; color: #6b7280; margin-bottom: 2px; }
           .totals .amt { font-weight: 700; font-size: 12px; }
@@ -1056,6 +1260,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
           <div><div class="lbl">Guide Fee</div><div class="amt">$${formatCurrencyForPrint(displayTotalGuideFee)}</div></div>
           <div><div class="lbl">Assistant Fee</div><div class="amt">$${formatCurrencyForPrint(displayTotalAssistantFee)}</div></div>
           <div><div class="lbl">Prepaid Tip</div><div class="amt">$${formatCurrencyForPrint(displayTotalPrepaidTip)}</div></div>
+          <div><div class="lbl">Office Prepaid Tips</div><div class="amt">$${formatCurrencyForPrint(officePrepaidTipsTotal * 0.1)} <span style="font-weight:500;font-size:9px">(10%)</span><br/><span style="font-size:9px;color:#6b7280">/ $${formatCurrencyForPrint(officePrepaidTipsTotal)} total</span></div></div>
           <div><div class="lbl">Total Pay</div><div class="amt">$${formatCurrencyForPrint(displayTotalPay)}</div></div>
         </div>
         <table>
@@ -1100,6 +1305,10 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
     onOverdueCountChange?.(overdueCount)
   }, [overdueCount, onOverdueCountChange])
 
+  useEffect(() => {
+    if (!isOpen) setOfficePrepaidDetailOpen(false)
+  }, [isOpen])
+
   // 컴포넌트 마운트 시 기본 날짜 설정
   useEffect(() => {
     if (isOpen) {
@@ -1118,7 +1327,10 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
 
   if (!isOpen) return null
 
+  const officePrepaidOfficeShare = officePrepaidTipsTotal * 0.1
+
   return (
+    <>
     <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 overflow-y-auto">
       <div className="bg-white rounded-t-xl sm:rounded-lg shadow-xl max-w-6xl w-full sm:mx-4 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto flex flex-col">
         {/* 헤더 */}
@@ -1235,7 +1447,7 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
           )}
 
           {/* 통계 요약 */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 mb-4 sm:mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4 mb-4 sm:mb-6">
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
               <div className="text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">출퇴근 소계</div>
               <div className="text-lg sm:text-2xl font-bold text-blue-600">
@@ -1260,7 +1472,23 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                 ${formatCurrency(displayTotalPrepaidTip)}
               </div>
             </div>
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 sm:p-4 col-span-2 sm:col-span-1">
+            <button
+              type="button"
+              onClick={() => setOfficePrepaidDetailOpen(true)}
+              className="bg-teal-50 border border-teal-200 rounded-lg p-3 sm:p-4 text-left w-full hover:bg-teal-100/80 transition-colors focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-1"
+              title="reservation_pricing 상세 보기"
+            >
+              <div className="text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">Office Prepaid Tips</div>
+              <div className="text-sm sm:text-lg font-bold text-teal-700 leading-tight">
+                ${formatCurrency(officePrepaidOfficeShare)}{' '}
+                <span className="text-xs sm:text-sm font-semibold text-teal-600/90">(10%)</span>
+              </div>
+              <div className="mt-1 text-xs sm:text-sm font-medium text-gray-600">
+                / ${formatCurrency(officePrepaidTipsTotal)}{' '}
+                <span className="text-gray-500">(total)</span>
+              </div>
+            </button>
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 sm:p-4">
               <div className="text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">Total Pay</div>
               <div className="text-lg sm:text-2xl font-bold text-orange-600">
                 ${formatCurrency(displayTotalPay)}
@@ -1391,7 +1619,10 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                                     <span className="font-medium text-gray-900 shrink-0">{formatCurrencyWithStyle(tour.total_fee)}</span>
                                   </div>
                                   <div className="mt-1 text-[10px] text-gray-500">
-                                    {formatTourDate(tour.date)} · {formatTeamType(tour.team_type)} · G: {formatCurrencyWithStyle(tour.guide_fee)} A: {formatCurrencyWithStyle(tour.assistant_fee)} Tip: {formatCurrencyWithStyle(tour.prepaid_tip)}
+                                    {formatTourDate(tour.date)} · {formatTeamType(tour.team_type)} · G: {formatCurrencyWithStyle(tour.guide_fee)} A: {formatCurrencyWithStyle(tour.assistant_fee)} · Tip: {formatCurrencyWithStyle(tour.prepaid_tip)}
+                                    {tour.prepayment_tip_total > 0 ? (
+                                      <span className="text-teal-700"> · pricing 합 {formatCurrencyWithStyle(tour.prepayment_tip_total)}</span>
+                                    ) : null}
                                   </div>
                                 </div>
                               ))}
@@ -1592,7 +1823,12 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                                             <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">가이드</th>
                                             <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Guide Fee</th>
                                             <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Assistant Fee</th>
-                                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Prepaid Tip</th>
+                                            <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">
+                                              Prepaid Tip
+                                              <span className="block font-normal normal-case text-[10px] text-gray-400 mt-0.5">
+                                                {locale === 'ko' ? '(옆: pricing 총액)' : '(pricing total beside)'}
+                                              </span>
+                                            </th>
                                             <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Total Fee</th>
                                           </tr>
                                         </thead>
@@ -1669,24 +1905,50 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                                                   onClick={(e) => e.stopPropagation()}
                                                 />
                                               </td>
-                                              <td className="px-2 py-1">
-                                                {(tour.is_guide || tour.is_assistant) ? (
-                                                  <input
-                                                    key={`${tour.tour_id}-tip-${tour.prepaid_tip}`}
-                                                    type="number"
-                                                    min={0}
-                                                    step={0.01}
-                                                    className="w-20 px-1.5 py-0.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                                    defaultValue={(Number(tour.prepaid_tip) || 0).toFixed(2)}
-                                                    onBlur={(e) => {
-                                                      const v = parseFloat(e.target.value)
-                                                      if (!Number.isNaN(v) && v !== tour.prepaid_tip) handleTourFeeUpdate(employee.email, tour.tour_id, 'prepaid_tip', v)
-                                                    }}
-                                                    onClick={(e) => e.stopPropagation()}
-                                                  />
-                                                ) : (
-                                                  <span className="text-gray-900">{formatCurrencyWithStyle(tour.prepaid_tip)}</span>
-                                                )}
+                                              <td className="px-2 py-1 align-top">
+                                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                                  {(tour.is_guide || tour.is_assistant) ? (
+                                                    <input
+                                                      key={`${tour.tour_id}-tip-${tour.prepaid_tip}`}
+                                                      type="number"
+                                                      min={0}
+                                                      step={0.01}
+                                                      className="w-20 px-1.5 py-0.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 shrink-0"
+                                                      defaultValue={(Number(tour.prepaid_tip) || 0).toFixed(2)}
+                                                      onBlur={(e) => {
+                                                        const v = parseFloat(e.target.value)
+                                                        if (!Number.isNaN(v) && v !== tour.prepaid_tip) handleTourFeeUpdate(employee.email, tour.tour_id, 'prepaid_tip', v)
+                                                      }}
+                                                      onClick={(e) => e.stopPropagation()}
+                                                    />
+                                                  ) : (
+                                                    <span className="text-gray-900">{formatCurrencyWithStyle(tour.prepaid_tip)}</span>
+                                                  )}
+                                                  <span
+                                                    className="text-[11px] text-teal-800 leading-tight max-w-[11rem]"
+                                                    title={
+                                                      locale === 'ko'
+                                                        ? 'reservation_pricing.prepayment_tip 합계 (해당 투어 예약 전체). 몫은 왼쪽 입력란.'
+                                                        : 'Sum of reservation_pricing.prepayment_tip. Your share is in the input.'
+                                                    }
+                                                  >
+                                                    {locale === 'ko' ? (
+                                                      <>
+                                                        총{' '}
+                                                        <span className="font-semibold">
+                                                          {formatCurrencyWithStyle(tour.prepayment_tip_total ?? 0)}
+                                                        </span>
+                                                      </>
+                                                    ) : (
+                                                      <>
+                                                        Total{' '}
+                                                        <span className="font-semibold">
+                                                          {formatCurrencyWithStyle(tour.prepayment_tip_total ?? 0)}
+                                                        </span>
+                                                      </>
+                                                    )}
+                                                  </span>
+                                                </div>
                                               </td>
                                               <td className="px-2 py-1 text-gray-900 font-medium">
                                                 {formatCurrencyWithStyle(tour.total_fee)}
@@ -1737,5 +1999,141 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
         </div>
       </div>
     </div>
+
+    {officePrepaidDetailOpen && (
+      <div
+        className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="office-prepaid-detail-title"
+        onClick={() => setOfficePrepaidDetailOpen(false)}
+      >
+        <div
+          className="bg-white rounded-lg shadow-xl max-w-5xl w-full max-h-[85vh] flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between p-4 border-b border-gray-200 shrink-0">
+            <h3 id="office-prepaid-detail-title" className="text-lg font-semibold text-gray-900">
+              Office Prepaid Tips — reservation_pricing
+            </h3>
+            <button
+              type="button"
+              onClick={() => setOfficePrepaidDetailOpen(false)}
+              className="p-2 text-gray-400 hover:text-gray-600 rounded-md"
+              aria-label="닫기"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <p className="px-4 pt-3 text-sm text-gray-600">
+            기간 {startDate} ~ {endDate} · 선결제 팁 합계 ${formatCurrency(officePrepaidTipsTotal)} · 사무실 10% ${formatCurrency(officePrepaidOfficeShare)}
+          </p>
+          <div className="flex-1 overflow-auto p-4 pt-2">
+            {officePrepaidPricingDetails.length === 0 ? (
+              <p className="text-sm text-gray-500 py-6 text-center">해당 기간 투어에 연결된 예약 중 prepayment_tip &gt; 0 인 항목이 없습니다.</p>
+            ) : (
+              <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="px-2 py-2 text-left font-medium text-gray-700">
+                        {locale === 'en' ? 'Customer' : '고객'}
+                      </th>
+                      <th className="px-2 py-2 text-left font-medium text-gray-700">투어 날짜</th>
+                      <th className="px-2 py-2 text-left font-medium text-gray-700 min-w-[8rem]">상품</th>
+                      <th className="px-2 py-2 text-right font-medium text-gray-700">총 인원</th>
+                      <th className="px-2 py-2 text-left font-medium text-gray-700">투어 상태</th>
+                      <th className="px-2 py-2 text-right font-medium text-gray-700">prepayment_tip</th>
+                      <th className="px-2 py-2 text-right font-medium text-gray-700">product_total</th>
+                      <th className="px-2 py-2 text-right font-medium text-gray-700">subtotal</th>
+                      <th className="px-2 py-2 text-right font-medium text-gray-700">total_price</th>
+                      <th className="px-2 py-2 text-right font-medium text-gray-700">deposit</th>
+                      <th className="px-2 py-2 text-right font-medium text-gray-700">balance</th>
+                      <th className="px-2 py-2 text-right font-medium text-gray-700">prepay_cost</th>
+                      <th className="px-2 py-2 text-right font-medium text-gray-700">coupon</th>
+                      <th className="px-2 py-2 text-right font-medium text-gray-700">addl_disc</th>
+                      <th className="px-2 py-2 text-right font-medium text-gray-700">card_fee</th>
+                      <th className="px-2 py-2 text-right font-medium text-gray-700">tax</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {officePrepaidPricingDetails.map((row) => (
+                      <tr key={row.id} className="hover:bg-gray-50">
+                        <td className="px-2 py-1.5 text-gray-800 text-sm max-w-[12rem]">
+                          {(() => {
+                            const label =
+                              locale === 'en'
+                                ? row.customer_name_en || row.customer_name_ko
+                                : row.customer_name_ko || row.customer_name_en
+                            const title = label
+                              ? `${label} · ${row.reservation_id}`
+                              : row.reservation_id
+                            if (row.customer_id) {
+                              return (
+                                <Link
+                                  href={`/${locale}/dashboard/reservations/${row.customer_id}/${row.reservation_id}`}
+                                  className="text-blue-600 hover:underline break-words"
+                                  title={title}
+                                  onClick={() => setOfficePrepaidDetailOpen(false)}
+                                >
+                                  {label || '—'}
+                                </Link>
+                              )
+                            }
+                            return (
+                              <span className="break-words text-gray-800" title={title}>
+                                {label || '—'}
+                              </span>
+                            )
+                          })()}
+                        </td>
+                        <td className="px-2 py-1.5 whitespace-nowrap text-gray-800">
+                          {row.tour_id && row.tour_date ? (
+                            <Link
+                              href={`/${locale}/admin/tours/${row.tour_id}`}
+                              className="text-blue-600 hover:underline"
+                              onClick={() => setOfficePrepaidDetailOpen(false)}
+                            >
+                              {formatTourDate(row.tour_date)}
+                            </Link>
+                          ) : row.tour_date ? (
+                            formatTourDate(row.tour_date)
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5 text-gray-800 text-xs max-w-[14rem]">
+                          {locale === 'en'
+                            ? row.product_name_en || row.product_name_ko || '—'
+                            : row.product_name_ko || row.product_name_en || '—'}
+                        </td>
+                        <td className="px-2 py-1.5 text-right text-gray-800 tabular-nums">
+                          {row.total_people != null ? row.total_people : '—'}
+                        </td>
+                        <td className="px-2 py-1.5 text-gray-800 text-xs whitespace-nowrap">
+                          {row.tour_status ?? '—'}
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-medium text-teal-700">${formatCurrency(row.prepayment_tip)}</td>
+                        <td className="px-2 py-1.5 text-right text-gray-800">${row.product_price_total != null ? formatCurrency(row.product_price_total) : '—'}</td>
+                        <td className="px-2 py-1.5 text-right text-gray-800">${row.subtotal != null ? formatCurrency(row.subtotal) : '—'}</td>
+                        <td className="px-2 py-1.5 text-right text-gray-800">${row.total_price != null ? formatCurrency(row.total_price) : '—'}</td>
+                        <td className="px-2 py-1.5 text-right text-gray-800">${row.deposit_amount != null ? formatCurrency(row.deposit_amount) : '—'}</td>
+                        <td className="px-2 py-1.5 text-right text-gray-800">${row.balance_amount != null ? formatCurrency(row.balance_amount) : '—'}</td>
+                        <td className="px-2 py-1.5 text-right text-gray-800">${row.prepayment_cost != null ? formatCurrency(row.prepayment_cost) : '—'}</td>
+                        <td className="px-2 py-1.5 text-right text-gray-800">${row.coupon_discount != null ? formatCurrency(row.coupon_discount) : '—'}</td>
+                        <td className="px-2 py-1.5 text-right text-gray-800">${row.additional_discount != null ? formatCurrency(row.additional_discount) : '—'}</td>
+                        <td className="px-2 py-1.5 text-right text-gray-800">${row.card_fee != null ? formatCurrency(row.card_fee) : '—'}</td>
+                        <td className="px-2 py-1.5 text-right text-gray-800">${row.tax != null ? formatCurrency(row.tax) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }

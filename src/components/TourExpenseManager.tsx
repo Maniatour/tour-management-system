@@ -6,6 +6,12 @@ import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
 import OptionManagementModal from './expense/OptionManagementModal'
 import GoogleDriveReceiptImporter from './GoogleDriveReceiptImporter'
+import {
+  hotelAmountForSettlement,
+  isHotelBookingIncludedInSettlement,
+  isTicketBookingIncludedInSettlement,
+  ticketExpenseForSettlement
+} from '@/lib/bookingSettlement'
 
 interface TourExpense {
   id: string
@@ -919,38 +925,38 @@ export default function TourExpenseManager({
     }
   }
 
-  // 부킹 데이터 로드
+  // 부킹 데이터 로드 (ticket_bookings.expense 합, tour_hotel_bookings.total_price 합 — @/lib/bookingSettlement)
   const loadBookings = useCallback(async () => {
     if (!tourId) return
     
     setIsLoadingBookings(true)
     try {
       // 티켓 부킹 로드
-      const { data: tickets, error: ticketError } = await supabase
+      const { data: ticketsRaw, error: ticketError } = await supabase
         .from('ticket_bookings')
         .select('*')
         .eq('tour_id', tourId)
-        .in('status', ['confirmed', 'paid'])
 
       if (ticketError) {
         console.error('티켓 부킹 로드 오류:', ticketError)
       } else {
-        setTicketBookings(tickets || [])
-        console.log('티켓 부킹 로드됨:', tickets?.length || 0, '건')
+        const tickets = (ticketsRaw || []).filter((b) => isTicketBookingIncludedInSettlement(b.status))
+        setTicketBookings(tickets)
+        console.log('티켓 부킹 로드됨:', tickets.length, '건 (정산 포함, 취소/크레딧 제외)')
       }
 
-      // 호텔 부킹 로드
-      const { data: hotels, error: hotelError } = await supabase
+      // 호텔 부킹: tour_id로만 조회 후 취소만 제외 (status NULL·레거시 값 포함)
+      const { data: hotelsRaw, error: hotelError } = await supabase
         .from('tour_hotel_bookings')
         .select('*')
         .eq('tour_id', tourId)
-        .in('status', ['confirmed', 'paid'])
 
       if (hotelError) {
         console.error('호텔 부킹 로드 오류:', hotelError)
       } else {
-        setHotelBookings(hotels || [])
-        console.log('호텔 부킹 로드됨:', hotels?.length || 0, '건')
+        const hotels = (hotelsRaw || []).filter((b) => isHotelBookingIncludedInSettlement(b.status))
+        setHotelBookings(hotels)
+        console.log('호텔 부킹 로드됨:', hotels.length, '건 (정산 포함, 취소 제외)')
       }
     } catch (error) {
       console.error('부킹 데이터 로드 오류:', error)
@@ -1139,8 +1145,14 @@ export default function TourExpenseManager({
     const totalFees = effectiveGuideFee + effectiveAssistantFee
     
     // 부킹 비용 계산
-    const totalTicketCosts = ticketBookings.reduce((sum, booking) => sum + (booking.expense || 0), 0)
-    const totalHotelCosts = hotelBookings.reduce((sum, booking) => sum + (booking.total_cost || 0), 0)
+    const totalTicketCosts = ticketBookings.reduce(
+      (sum, booking) => sum + ticketExpenseForSettlement(booking),
+      0
+    )
+    const totalHotelCosts = hotelBookings.reduce(
+      (sum, booking) => sum + hotelAmountForSettlement(booking),
+      0
+    )
     const totalBookingCosts = totalTicketCosts + totalHotelCosts
     
     const totalExpensesWithFeesAndBookings = totalExpenses + totalFees + totalBookingCosts

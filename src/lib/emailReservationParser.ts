@@ -998,13 +998,29 @@ function extractViator(
 
   const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
 
-  // Lead Traveler Name: Rogelio Guerra → 고객 이름
-  const leadTraveler = normalized.match(/(?:Lead\s*Traveler\s*Name|Traveler\s*Name)\s*:?\s*([A-Za-z\u00C0-\u024F\s'-]+?)(?=\s*(?:Phone|Email|Tour\s*Language|\n\n|$))/im)
-  if (leadTraveler) out.customer_name = leadTraveler[1].trim()
+  // Traveler Names: Sheri Johnson, Delveton Chestnut → 대표 고객 = 첫 콤마 앞 (Viator 복수 여행자 라벨)
+  const travelerNamesPlural = normalized.match(/Traveler\s*Names\s*:?\s*([^\n]+)/im)
+  if (travelerNamesPlural) {
+    const firstOnly = travelerNamesPlural[1].trim().split(',')[0]?.trim()
+    if (firstOnly) out.customer_name = firstOnly
+  }
+  // Lead Traveler Name / Traveler Name (단수)
+  if (!out.customer_name) {
+    const leadTraveler = normalized.match(
+      /(?:Lead\s*Traveler\s*Name|Traveler\s*Name)\s*:?\s*([A-Za-z\u00C0-\u024F\s'-]+?)(?=\s*(?:Phone|Email|Tour\s*Language|\n\n|$))/im
+    )
+    if (leadTraveler) out.customer_name = leadTraveler[1].trim()
+  }
 
-  // Phone: (Alternate Phone)US+1 6507200644 → +1 6507200644
-  const phoneMatch = normalized.match(/(?:Phone|Alternate\s*Phone)\s*:?\s*\([^)]*\)\s*([A-Z]*\+?\d[\d\s.-]+)/im)
-    ?? normalized.match(/(?:Phone|Alternate\s*Phone)\s*:?\s*([A-Z]*\+?\d[\d\s.-]{10,})/im)
+  // Phone: (Alternate Phone)US+1 (843) 509-2495 Send the customer... → +1 (843) 509-2495 (괄호 포함 번호는 별도 패턴)
+  let phoneMatch = normalized.match(
+    /\bPhone\s*:?\s*\(\s*Alternate\s*Phone\s*\)\s*(?:US)?\s*(\+\d[\d\s().-]+?)(?=\s+Send\b|\s*$|\n)/im
+  )
+  if (!phoneMatch) {
+    phoneMatch =
+      normalized.match(/(?:Phone|Alternate\s*Phone)\s*:?\s*\([^)]*\)\s*([A-Z]*\+?\d[\d\s().-]+)/im)
+      ?? normalized.match(/(?:Phone|Alternate\s*Phone)\s*:?\s*([A-Z]*\+?\d[\d\s().-]{10,})/im)
+  }
   if (phoneMatch) {
     let phone = phoneMatch[1].trim()
     phone = phone.replace(/^US\s*/i, '').replace(/\s+/g, ' ').trim()
@@ -1026,6 +1042,9 @@ function extractViator(
     // Grand Canyon, Antelope Canyon and Horseshoe Bend Photo Tour → 그랜드서클 당일 투어
     else if (/Grand\s*Canyon.*Antelope.*Horseshoe\s*Bend|Antelope\s*Canyon.*Horseshoe\s*Bend/i.test(rawName)) {
       out.product_name = '그랜드서클 당일 투어'
+    } else if (/Las\s*Vegas\s*City\s*Tour\s*with\s*Hotel\s*Pick\s*Up/i.test(rawName)) {
+      out.product_id = 'MDLVN'
+      out.product_name = rawName
     }
     if (!out.product_name) out.product_name = rawName
   }
@@ -1049,6 +1068,16 @@ function extractViator(
     const full = pickupMatch[1].trim()
     const hotelNamePart = full.split(',')[0].trim()
     out.pickup_hotel = hotelNamePart || full
+  }
+
+  // Travelers: 2 Adults → 성인 인원 (Traveler Names 와 구분: 뒤에 Adults)
+  const travelersAdults = normalized.match(/\bTravelers\s*:\s*(\d+)\s*Adults?\b/i)
+  if (travelersAdults) {
+    const n = parseInt(travelersAdults[1], 10)
+    if (!Number.isNaN(n)) {
+      out.adults = n
+      out.total_people = n + (out.children ?? 0) + (out.infants ?? 0)
+    }
   }
 
   // Viator도 미국 거주자 구분·기타 입장료는 미정 기본

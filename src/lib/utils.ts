@@ -52,6 +52,42 @@ export function sanitizeTimeInput(value: string): string {
   return `${numbers.slice(0, 2)}:${numbers.slice(2, 4)}`
 }
 
+/**
+ * dynamic_pricing.date 등 DB 비교용: HTML date 입력·이메일 파싱값을 YYYY-MM-DD 로 통일
+ */
+export function normalizeTourDateForDb(input: string | undefined | null): string {
+  if (input == null || typeof input !== 'string') return ''
+  const s = input.trim()
+  if (!s) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (mdy) {
+    const mm = mdy[1].padStart(2, '0')
+    const dd = mdy[2].padStart(2, '0')
+    const yyyy = mdy[3]
+    return `${yyyy}-${mm}-${dd}`
+  }
+  const ymdSlash = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/)
+  if (ymdSlash) {
+    return `${ymdSlash[1]}-${ymdSlash[2].padStart(2, '0')}-${ymdSlash[3].padStart(2, '0')}`
+  }
+  const dmy = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/)
+  if (dmy) {
+    const dd = dmy[1].padStart(2, '0')
+    const mm = dmy[2].padStart(2, '0')
+    const yyyy = dmy[3]
+    return `${yyyy}-${mm}-${dd}`
+  }
+  const d = new Date(s)
+  if (!Number.isNaN(d.getTime())) {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+  return s
+}
+
 export function formatTimeWithAMPM(timeString: string): string {
   // HH:MM 형식의 시간을 AM/PM 형식으로 변환
   if (!timeString) return ''
