@@ -1166,6 +1166,8 @@
     "unsavedChanges": "You have unsaved changes. Close anyway?",
     "saveSuccess": "Saved.",
     "batchSettleSuccess": "Distribution completed.",
+    "hourlyRatesHistory": "Hourly rates",
+    "hourlyRatesModalTitle": "Employee hourly rate history",
     "refresh": "Refresh",
     "todayStatus": "Today's attendance",
     "selectedEmployeeStatus": "{name}'s attendance",

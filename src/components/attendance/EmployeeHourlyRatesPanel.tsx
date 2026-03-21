@@ -11,7 +11,14 @@ import {
 
 type TeamOption = { email: string; name_ko: string; position: string | null }
 
-export default function EmployeeHourlyRatesPanel() {
+type PanelVariant = 'inline' | 'modal'
+
+interface EmployeeHourlyRatesPanelProps {
+  /** 인라인(페이지 하단) vs 모달 내부 — 레이아웃·제목 중복 방지 */
+  variant?: PanelVariant
+}
+
+export default function EmployeeHourlyRatesPanel({ variant = 'inline' }: EmployeeHourlyRatesPanelProps) {
   const [rows, setRows] = useState<EmployeeRatePeriod[]>([])
   const [teamList, setTeamList] = useState<TeamOption[]>([])
   const [loading, setLoading] = useState(true)
@@ -144,13 +151,26 @@ export default function EmployeeHourlyRatesPanel() {
     return b.effective_from.localeCompare(a.effective_from)
   })
 
+  const isModal = variant === 'modal'
+  const shellClass = isModal
+    ? 'bg-transparent p-4 sm:p-6 mt-0 border-0 shadow-none rounded-none'
+    : 'bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 mt-6'
+
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 mt-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-        <h2 className="text-base sm:text-lg font-semibold text-gray-900 flex items-center gap-2">
-          <DollarSign className="w-5 h-5 text-emerald-600 shrink-0" />
-          직원별 시급 이력
-        </h2>
+    <div className={shellClass}>
+      <div
+        className={`flex flex-col sm:flex-row sm:items-center gap-3 mb-4 ${
+          isModal ? 'sm:justify-end' : 'sm:justify-between'
+        }`}
+      >
+        {!isModal ? (
+          <h2 className="text-base sm:text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <DollarSign className="w-5 h-5 text-emerald-600 shrink-0" />
+            직원별 시급 이력
+          </h2>
+        ) : (
+          <span className="sr-only">직원별 시급 이력</span>
+        )}
         <button
           type="button"
           onClick={() => {

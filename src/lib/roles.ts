@@ -133,6 +133,24 @@ export function hasPermission(userRole: UserRole, permission: keyof UserPermissi
   return ROLE_PERMISSIONS[userRole][permission]
 }
 
+/**
+ * 출석관리 — 직원별 시급 이력(민감): Office Manager, Super, Admin(OP 제외)만 UI 표시.
+ * - team.position `office manager` / `super`
+ * - `getUserRole`상 Office Manager → `manager`
+ * - `admin` 역할은 OP만 제외 (OP는 admin 권한이나 시급 이력은 비표시)
+ */
+export function canViewEmployeeHourlyRatesHistory(
+  userRole: UserRole | null,
+  userPosition: string | null
+): boolean {
+  const pos = (userPosition || '').toLowerCase().trim()
+  if (pos === 'office manager') return true
+  if (pos === 'super') return true
+  if (userRole === 'manager') return true
+  if (userRole === 'admin' && pos !== 'op') return true
+  return false
+}
+
 export function getRoleDisplayName(role: UserRole): string {
   const roleNames = {
     customer: '고객',

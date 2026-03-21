@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { Clock, CheckCircle, XCircle, Calendar, User, BarChart3, RefreshCw, Edit, Users, Plus, Calculator, DollarSign } from 'lucide-react'
+import { Clock, CheckCircle, XCircle, Calendar, User, BarChart3, RefreshCw, Edit, Users, Plus, Calculator, DollarSign, History } from 'lucide-react'
 import {
   BarChart,
   Bar,
@@ -19,7 +19,8 @@ import AttendanceEditModal from '@/components/attendance/AttendanceEditModal'
 import OfficeTipsModal from '@/components/attendance/OfficeTipsModal'
 import BiweeklyCalculatorModal from '@/components/BiweeklyCalculatorModal'
 import TotalEmployeesModal from '@/components/TotalEmployeesModal'
-import EmployeeHourlyRatesPanel from '@/components/attendance/EmployeeHourlyRatesPanel'
+import EmployeeHourlyRatesModal from '@/components/attendance/EmployeeHourlyRatesModal'
+import { canViewEmployeeHourlyRatesHistory } from '@/lib/roles'
 import TipsShareModal from '@/components/TipsShareModal'
 import BonusCalculatorModal from '@/components/BonusCalculatorModal'
 import ReservationForm from '@/components/reservation/ReservationForm'
@@ -55,8 +56,12 @@ interface MonthlyStats {
 }
 
 export default function AttendancePage() {
-  const { authUser, userPosition } = useAuth()
+  const { authUser, userPosition, userRole } = useAuth()
   const isSuper = userPosition === 'super'
+  const canViewHourlyRatesHistory = useMemo(
+    () => canViewEmployeeHourlyRatesHistory(userRole, userPosition),
+    [userRole, userPosition]
+  )
   const params = useParams()
   const locale = params.locale as string
   const t = useTranslations('attendancePage')
@@ -84,6 +89,7 @@ export default function AttendancePage() {
   const [isTipsShareModalOpen, setIsTipsShareModalOpen] = useState(false)
   const [isOfficeTipsModalOpen, setIsOfficeTipsModalOpen] = useState(false)
   const [isBonusCalculatorOpen, setIsBonusCalculatorOpen] = useState(false)
+  const [isHourlyRatesModalOpen, setIsHourlyRatesModalOpen] = useState(false)
   /** Tips 쉐어 모달에서 예약 클릭 시 예약 수정 모달용 */
   const [reservationIdForEdit, setReservationIdForEdit] = useState<string | null>(null)
   const [editingReservation, setEditingReservation] = useState<any>(null)
@@ -829,6 +835,16 @@ export default function AttendancePage() {
                 <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('tipsShare')}</span>
               </button>
             )}
+            {canViewHourlyRatesHistory && (
+              <button
+                type="button"
+                onClick={() => setIsHourlyRatesModalOpen(true)}
+                className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-teal-600 border border-teal-600 rounded-lg hover:bg-teal-700 transition-colors min-w-[3rem]"
+              >
+                <History className="w-4 h-4 shrink-0" />
+                <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('hourlyRatesHistory')}</span>
+              </button>
+            )}
             <button
               onClick={refreshData}
               className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors min-w-[3rem]"
@@ -839,8 +855,6 @@ export default function AttendancePage() {
           </div>
         </div>
       </div>
-
-      {canEditAttendance && <EmployeeHourlyRatesPanel />}
 
       {/* 오늘의 출퇴근 상태 */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
@@ -1243,6 +1257,15 @@ export default function AttendancePage() {
         isOpen={isOfficeTipsModalOpen}
         onClose={() => setIsOfficeTipsModalOpen(false)}
       />
+
+      {/* 직원별 시급 이력 (Office Manager / Super / Admin, OP 제외) */}
+      {canViewHourlyRatesHistory && (
+        <EmployeeHourlyRatesModal
+          isOpen={isHourlyRatesModalOpen}
+          onClose={() => setIsHourlyRatesModalOpen(false)}
+          title={t('hourlyRatesModalTitle')}
+        />
+      )}
 
       {/* Tips 쉐어 모달 */}
       <TipsShareModal

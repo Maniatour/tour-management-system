@@ -1175,6 +1175,8 @@
     "unsavedChanges": "저장하지 않은 변경사항이 있습니다. 닫으시겠습니까?",
     "saveSuccess": "저장되었습니다.",
     "batchSettleSuccess": "배분이 완료되었습니다.",
+    "hourlyRatesHistory": "시급 이력",
+    "hourlyRatesModalTitle": "직원별 시급 이력",
     "refresh": "새로고침",
     "todayStatus": "오늘의 출퇴근 상태",
     "selectedEmployeeStatus": "{name}의 출퇴근 상태",

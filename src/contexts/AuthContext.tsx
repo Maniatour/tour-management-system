@@ -1068,3 +1068,15 @@ export function useAuth() {
   }
   return context
 }
+
+/**
+ * 상위에 이미 AuthProvider가 있으면 그대로 통과(중복 상태·이중 구독 방지).
+ * 없을 때만 AuthProvider로 감싼다(admin 등 RSC/레이아웃 경계에서 컨텍스트 누락 시 대비).
+ */
+export function AuthProviderBoundary({ children }: { children: React.ReactNode }) {
+  const existing = useContext(AuthContext)
+  if (existing !== undefined) {
+    return <>{children}</>
+  }
+  return <AuthProvider>{children}</AuthProvider>
+}
