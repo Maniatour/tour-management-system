@@ -1,9 +1,10 @@
 'use client'
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react'
-import { DollarSign, Users, Calendar, Search, ChevronDown, ChevronRight, X, Filter, FileText } from 'lucide-react'
+import { DollarSign, Users, Calendar, ChevronDown, ChevronRight, X, Filter, FileText } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useReservationData } from '@/hooks/useReservationData'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { getChannelName, getProductName, getCustomerName, getStatusColor } from '@/utils/reservationUtils'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -111,9 +112,16 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
     choicesTotal: number
   }>>({})
   const [pricesLoading, setPricesLoading] = useState(false)
-  const [activeDetailTab, setActiveDetailTab] = useState<'reservations' | 'tours'>('reservations')
-  const [reservationSortOrder, setReservationSortOrder] = useState<'asc' | 'desc'>('asc')
-  const [tourSortOrder, setTourSortOrder] = useState<'asc' | 'desc'>('asc')
+  const CHANNEL_SETTLEMENT_UI_DEFAULT = {
+    activeDetailTab: 'reservations' as 'reservations' | 'tours',
+    reservationSortOrder: 'asc' as 'asc' | 'desc',
+    tourSortOrder: 'asc' as 'asc' | 'desc',
+  }
+  const [channelUi, setChannelUi] = useRoutePersistedState(
+    'channel-settlement-ui',
+    CHANNEL_SETTLEMENT_UI_DEFAULT
+  )
+  const { activeDetailTab, reservationSortOrder, tourSortOrder } = channelUi
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [expandedChannels, setExpandedChannels] = useState<Set<string>>(new Set())
   const [isChannelModalOpen, setIsChannelModalOpen] = useState(false)
@@ -327,12 +335,12 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
     
     return [
       {
-        type: 'OTA',
+        type: 'OTA' as const,
         label: 'OTA 채널',
         channels: otaChannels
       },
       {
-        type: 'SELF',
+        type: 'SELF' as const,
         label: '자체 채널',
         channels: selfChannels
       }
@@ -954,7 +962,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             <div className="border-b border-gray-200">
               <nav className="-mb-px flex gap-4 sm:gap-8 px-3 sm:px-6 overflow-x-auto">
                 <button
-                  onClick={() => setActiveDetailTab('reservations')}
+                  onClick={() => setChannelUi((u) => ({ ...u, activeDetailTab: 'reservations' }))}
                   className={`py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${
                     activeDetailTab === 'reservations'
                       ? 'border-blue-500 text-blue-600'
@@ -964,7 +972,7 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                   예약 내역
                 </button>
                 <button
-                  onClick={() => setActiveDetailTab('tours')}
+                  onClick={() => setChannelUi((u) => ({ ...u, activeDetailTab: 'tours' }))}
                   className={`py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap ${
                     activeDetailTab === 'tours'
                       ? 'border-blue-500 text-blue-600'
@@ -982,7 +990,12 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             {/* 정렬 버튼 */}
             <div className="px-3 sm:px-6 py-2 sm:py-3 bg-gray-50 border-b border-gray-200">
                       <button
-                        onClick={() => setReservationSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                        onClick={() =>
+                          setChannelUi((u) => ({
+                            ...u,
+                            reservationSortOrder: u.reservationSortOrder === 'asc' ? 'desc' : 'asc',
+                          }))
+                        }
                 className="inline-flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900"
                         title="등록일로 정렬"
                       >
@@ -1128,10 +1141,11 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                       >
                                        <td className="px-2 py-2 whitespace-nowrap text-xs w-20">
                                          <span className={`px-1.5 py-0.5 rounded text-xs ${getStatusColor(item.status)}`}>
-                                           {item.status === 'Confirmed' ? '확정' :
-                                            item.status === 'Pending' ? '대기' :
-                                            item.status === 'Canceled' ? '취소' :
-                                            item.status === 'Completed' ? '완료' :
+                                           {item.status === 'confirmed' ? '확정' :
+                                            item.status === 'pending' ? '대기' :
+                                            item.status === 'cancelled' ? '취소' :
+                                            item.status === 'completed' ? '완료' :
+                                            item.status === 'deleted' ? '삭제됨' :
                                             item.status}
                                          </span>
                         </td>
@@ -1420,10 +1434,11 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                             >
                                               <td className="px-2 py-2 whitespace-nowrap text-xs w-20">
                                                 <span className={`px-1.5 py-0.5 rounded text-xs ${getStatusColor(item.status)}`}>
-                                                  {item.status === 'Confirmed' ? '확정' :
-                                                   item.status === 'Pending' ? '대기' :
-                                                   item.status === 'Canceled' ? '취소' :
-                                                   item.status === 'Completed' ? '완료' :
+                                                  {item.status === 'confirmed' ? '확정' :
+                                                   item.status === 'pending' ? '대기' :
+                                                   item.status === 'cancelled' ? '취소' :
+                                                   item.status === 'completed' ? '완료' :
+                                                   item.status === 'deleted' ? '삭제됨' :
                              item.status}
                           </span>
                         </td>
@@ -1562,7 +1577,12 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
             {/* 정렬 버튼 */}
             <div className="px-3 sm:px-6 py-2 sm:py-3 bg-gray-50 border-b border-gray-200">
               <button
-                onClick={() => setTourSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                onClick={() =>
+                setChannelUi((u) => ({
+                  ...u,
+                  tourSortOrder: u.tourSortOrder === 'asc' ? 'desc' : 'asc',
+                }))
+              }
                 className="inline-flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900"
                 title="투어 날짜로 정렬"
               >
@@ -1682,10 +1702,11 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                         >
                                       <td className="px-2 py-2 whitespace-nowrap text-xs w-20">
                                         <span className={`px-1.5 py-0.5 rounded text-xs ${getStatusColor(item.status)}`}>
-                                          {item.status === 'Confirmed' ? '확정' :
-                                           item.status === 'Pending' ? '대기' :
-                                           item.status === 'Canceled' ? '취소' :
-                                           item.status === 'Completed' ? '완료' :
+                                          {item.status === 'confirmed' ? '확정' :
+                                           item.status === 'pending' ? '대기' :
+                                           item.status === 'cancelled' ? '취소' :
+                                           item.status === 'completed' ? '완료' :
+                                           item.status === 'deleted' ? '삭제됨' :
                                            item.status}
                                         </span>
                           </td>
@@ -2000,10 +2021,11 @@ export default function ChannelSettlementTab({ dateRange, selectedChannelId = ''
                                             >
                                               <td className="px-2 py-2 whitespace-nowrap text-xs w-20">
                                                 <span className={`px-1.5 py-0.5 rounded text-xs ${getStatusColor(item.status)}`}>
-                                                  {item.status === 'Confirmed' ? '확정' :
-                                                   item.status === 'Pending' ? '대기' :
-                                                   item.status === 'Canceled' ? '취소' :
-                                                   item.status === 'Completed' ? '완료' :
+                                                  {item.status === 'confirmed' ? '확정' :
+                                                   item.status === 'pending' ? '대기' :
+                                                   item.status === 'cancelled' ? '취소' :
+                                                   item.status === 'completed' ? '완료' :
+                                                   item.status === 'deleted' ? '삭제됨' :
                                item.status}
                             </span>
                           </td>

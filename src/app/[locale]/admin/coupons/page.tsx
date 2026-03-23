@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { Plus, Edit, Trash2, Search, Filter, Grid, List, Ticket } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 // 새로운 쿠폰 스키마에 맞는 타입 정의
@@ -20,18 +21,27 @@ type Coupon = {
   updated_at: string | null
 }
 
+const COUPONS_LIST_UI_DEFAULT = {
+  searchTerm: '',
+  statusFilter: 'all' as 'all' | 'active' | 'inactive',
+  selectedChannelFilter: null as string | null,
+  viewMode: 'card' as 'table' | 'card'
+}
+
 export default function CouponsPage() {
 
   const [coupons, setCoupons] = useState<Coupon[]>([])
   const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const [listUi, setListUi] = useRoutePersistedState('coupons-list', COUPONS_LIST_UI_DEFAULT)
+  const { searchTerm, statusFilter, selectedChannelFilter, viewMode } = listUi
+  const setSearchTerm = (v: string) => setListUi((prev) => ({ ...prev, searchTerm: v }))
+  const setStatusFilter = (v: 'all' | 'active' | 'inactive') => setListUi((prev) => ({ ...prev, statusFilter: v }))
+  const setSelectedChannelFilter = (v: string | null) => setListUi((prev) => ({ ...prev, selectedChannelFilter: v }))
+  const setViewMode = (v: 'table' | 'card') => setListUi((prev) => ({ ...prev, viewMode: v }))
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null)
   const [products, setProducts] = useState<{id: string, name: string}[]>([])
   const [channels, setChannels] = useState<{id: string, name: string}[]>([])
-  const [selectedChannelFilter, setSelectedChannelFilter] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useState<'table' | 'card'>('card')
 
   // 쿠폰 목록 조회
   const fetchCoupons = async () => {

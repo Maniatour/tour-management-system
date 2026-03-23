@@ -357,7 +357,7 @@ export default function VehicleAssignmentModal({
                     <div>
                       <h4 className="text-sm font-medium text-yellow-800">사용 가능한 차량이 없습니다</h4>
                       <p className="text-sm text-yellow-700 mt-1">
-                        운행 가능한 상태의 차량이 없습니다. 차량 관리 페이지에서 차량 상태를 확인해주세요.
+                        이용 가능(available) 상태의 차량이 없습니다. 차량 관리 페이지에서 차량 상태를 확인해주세요.
                       </p>
                     </div>
                   </div>

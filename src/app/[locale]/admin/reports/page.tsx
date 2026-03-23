@@ -14,6 +14,7 @@ import DepositReportTab from '@/components/reports/DepositReportTab'
 import SettlementReportTab from '@/components/reports/SettlementReportTab'
 import CashReportTab from '@/components/reports/CashReportTab'
 import EmailScheduleModal from '@/components/reports/EmailScheduleModal'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 
 interface AdminReportsProps {
   params: Promise<{ locale: string }>
@@ -84,9 +85,14 @@ export default function AdminReports({ }: AdminReportsProps) {
     refreshReservations
   } = useReservationData()
 
-  // 상태 관리
-  const [activeTab, setActiveTab] = useState<ReportTab>('comprehensive')
-  const [reportPeriod, setReportPeriod] = useState<ReportPeriod>('daily')
+  // 상태 관리 (탭·기간 — 새로고침 유지)
+  const [reportNav, setReportNav] = useRoutePersistedState(
+    'report-nav',
+    { activeTab: 'comprehensive' as ReportTab, reportPeriod: 'daily' as ReportPeriod }
+  )
+  const { activeTab, reportPeriod } = reportNav
+  const setActiveTab = (tab: ReportTab) => setReportNav((n) => ({ ...n, activeTab: tab }))
+  const setReportPeriod = (period: ReportPeriod) => setReportNav((n) => ({ ...n, reportPeriod: period }))
   
   // 적용된 커스텀 날짜 (검색 버튼 클릭 시에만 업데이트)
   const [appliedCustomStartDate, setAppliedCustomStartDate] = useState(formatTodayDate())

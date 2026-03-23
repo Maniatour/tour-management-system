@@ -3,6 +3,7 @@
 
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { Plus, Search, MapPin, Image as ImageIcon, Video, X, ChevronLeft, ChevronRight, Trash2, Copy, AlertTriangle, ChevronDown, ChevronUp, Info, Map, Table, Grid3X3, Edit2, Save, XCircle, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import NextImage from 'next/image'
 import { supabase } from '@/lib/supabase'
@@ -12,7 +13,23 @@ import PickupHotelForm from '@/components/PickupHotelForm'
 
 import { groupHotelsByGroupNumber, processPickupRequest, type PickupHotel } from '@/utils/pickupHotelUtils'
 
+type PickupHotelsListUiState = {
+  searchTerm: string
+  viewMode: 'grid' | 'table' | 'map'
+  sortField: keyof PickupHotel | null
+  sortDirection: 'asc' | 'desc'
+  groupFilter: 'integer' | 'all'
+  statusFilter: 'all' | 'active' | 'inactive'
+}
 
+const PICKUP_HOTELS_LIST_UI_DEFAULT: PickupHotelsListUiState = {
+  searchTerm: '',
+  viewMode: 'grid',
+  sortField: null,
+  sortDirection: 'asc',
+  groupFilter: 'all',
+  statusFilter: 'all',
+}
 
 // Google Maps 타입 정의
 
@@ -176,7 +193,8 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
   const [loading, setLoading] = useState(true)
 
-  const [searchTerm, setSearchTerm] = useState('')
+  const [listUi, setListUi] = useRoutePersistedState('pickup-hotels-list', PICKUP_HOTELS_LIST_UI_DEFAULT)
+  const { searchTerm, viewMode, sortField, sortDirection, groupFilter, statusFilter } = listUi
 
   const [showAddForm, setShowAddForm] = useState(false)
 
@@ -234,8 +252,6 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
   } | null>(null)
 
-  const [viewMode, setViewMode] = useState<'grid' | 'table' | 'map'>('grid')
-
   const [editingHotelId, setEditingHotelId] = useState<string | null>(null)
 
   const [editFormData, setEditFormData] = useState<Partial<PickupHotel>>({})
@@ -279,19 +295,10 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
   const [bulkEditData, setBulkEditData] = useState<{ [hotelId: string]: Partial<PickupHotel> }>({})
 
-  const [sortField, setSortField] = useState<keyof PickupHotel | null>(null)
-
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
-
   const [selectedHotelInfo, setSelectedHotelInfo] = useState<{ name: string; pickup: string; address: string; group: number | null; id: string } | null>(null)
   const [quickEditMode, setQuickEditMode] = useState(false)
   const [quickEditGroupNumber, setQuickEditGroupNumber] = useState<number | null>(null)
   
-  // 지도 필터링 상태
-  const [groupFilter, setGroupFilter] = useState<'all' | 'integer'>('all') // 기본값: 모두 보기
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
-
-
   // Supabase에서 픽업 호텔 데이터 가져오기
 
   const fetchHotels = async () => {
@@ -467,19 +474,15 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
   // 정렬 함수
 
   const handleSort = (field: keyof PickupHotel) => {
-
-    if (sortField === field) {
-
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
-
-    } else {
-
-      setSortField(field)
-
-      setSortDirection('asc')
-
-    }
-
+    setListUi((prev) => {
+      if (prev.sortField === field) {
+        return {
+          ...prev,
+          sortDirection: prev.sortDirection === 'asc' ? 'desc' : 'asc'
+        }
+      }
+      return { ...prev, sortField: field, sortDirection: 'asc' }
+    })
   }
 
 
@@ -1429,7 +1432,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
             <button
 
-              onClick={() => setViewMode('grid')}
+              onClick={() => setListUi((prev) => ({ ...prev, viewMode: 'grid' }))}
 
               className={`px-2.5 py-1.5 rounded flex items-center gap-1.5 text-sm font-medium transition-colors ${
 
@@ -1451,7 +1454,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
             <button
 
-              onClick={() => setViewMode('table')}
+              onClick={() => setListUi((prev) => ({ ...prev, viewMode: 'table' }))}
 
               className={`px-2.5 py-1.5 rounded flex items-center gap-1.5 text-sm font-medium transition-colors ${
 
@@ -1473,7 +1476,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
 
             <button
 
-              onClick={() => setViewMode('map')}
+              onClick={() => setListUi((prev) => ({ ...prev, viewMode: 'map' }))}
 
               className={`px-2.5 py-1.5 rounded flex items-center gap-1.5 text-sm font-medium transition-colors ${
 
@@ -1547,7 +1550,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
             type="text"
             placeholder="Search by hotel name, location, address..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => setListUi((prev) => ({ ...prev, searchTerm: e.target.value }))}
             className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
           />
         </div>
@@ -1556,7 +1559,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-sm text-gray-600 font-medium shrink-0">Group:</span>
             <button
-              onClick={() => setGroupFilter('integer')}
+              onClick={() => setListUi((prev) => ({ ...prev, groupFilter: 'integer' }))}
               className={`px-2.5 py-1 text-sm rounded-md transition-colors ${
                 groupFilter === 'integer'
                   ? 'bg-blue-600 text-white'
@@ -1566,7 +1569,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
               Integers
             </button>
             <button
-              onClick={() => setGroupFilter('all')}
+              onClick={() => setListUi((prev) => ({ ...prev, groupFilter: 'all' }))}
               className={`px-2.5 py-1 text-sm rounded-md transition-colors ${
                 groupFilter === 'all'
                   ? 'bg-blue-600 text-white'
@@ -1579,7 +1582,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-sm text-gray-600 font-medium shrink-0">Status:</span>
             <button
-              onClick={() => setStatusFilter('all')}
+              onClick={() => setListUi((prev) => ({ ...prev, statusFilter: 'all' }))}
               className={`px-2.5 py-1 text-sm rounded-md transition-colors ${
                 statusFilter === 'all'
                   ? 'bg-green-600 text-white'
@@ -1589,7 +1592,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
               All
             </button>
             <button
-              onClick={() => setStatusFilter('active')}
+              onClick={() => setListUi((prev) => ({ ...prev, statusFilter: 'active' }))}
               className={`px-2.5 py-1 text-sm rounded-md transition-colors ${
                 statusFilter === 'active'
                   ? 'bg-green-600 text-white'
@@ -1599,7 +1602,7 @@ export default function AdminPickupHotels({ params: _params }: AdminPickupHotels
               Active
             </button>
             <button
-              onClick={() => setStatusFilter('inactive')}
+              onClick={() => setListUi((prev) => ({ ...prev, statusFilter: 'inactive' }))}
               className={`px-2.5 py-1 text-sm rounded-md transition-colors ${
                 statusFilter === 'inactive'
                   ? 'bg-green-600 text-white'

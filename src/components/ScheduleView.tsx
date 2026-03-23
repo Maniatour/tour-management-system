@@ -3774,10 +3774,10 @@ export default function ScheduleView() {
           {/* 부킹 테이블 */}
           <div>
             <div className="overflow-visible">
-              <table className="w-full" style={{tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px`}}>
-                <tbody className="divide-y divide-gray-200">
+              <table className="w-full border-collapse" style={{tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px`}}>
+                <tbody>
                   <tr className="bg-purple-50">
-                    <td className="px-2 py-0.5 text-xs font-medium text-gray-900" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
+                    <td className="px-2 py-0.5 text-xs font-medium text-gray-900 border-t-2 border-b-2 border-gray-800" style={{width: '96px', minWidth: '96px', maxWidth: '96px'}}>
                       부킹
                     </td>
                     {monthDays.map(({ dateString }) => {
@@ -3786,7 +3786,7 @@ export default function ScheduleView() {
                       return (
                         <td 
                           key={dateString} 
-                          className="p-0 text-center text-xs relative"
+                          className="p-0 text-center text-xs relative border-t-2 border-b-2 border-gray-800"
                           style={{ width: dayColumnWidthCalc, minWidth: '40px' }}
                           onMouseEnter={() => setHoveredBookingDate(dateString)}
                           onMouseLeave={() => setHoveredBookingDate(null)}
@@ -3836,7 +3836,7 @@ export default function ScheduleView() {
                         </td>
                       )
                     })}
-                    <td className="px-2 py-0.5 text-center text-xs font-medium" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
+                    <td className="px-2 py-0.5 text-center text-xs font-medium border-t-2 border-b-2 border-gray-800" style={{width: '80px', minWidth: '80px', maxWidth: '80px'}}>
                       <div>{Object.values(bookingTotals).reduce((sum, day) => sum + day.totalCount, 0)}</div>
                     </td>
                   </tr>

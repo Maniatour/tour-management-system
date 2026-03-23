@@ -304,7 +304,7 @@ export const getFallbackColumns = (tableName: string): ColumnInfo[] => {
       { name: 'engine_oil_change_cycle', type: 'integer', nullable: true, default: null },
       { name: 'current_mileage', type: 'integer', nullable: true, default: null },
       { name: 'recent_engine_oil_change_mileage', type: 'integer', nullable: true, default: null },
-      { name: 'status', type: 'text', nullable: false, default: "'운행 가능'" },
+      { name: 'status', type: 'text', nullable: false, default: "'available'" },
       { name: 'front_tire_size', type: 'text', nullable: true, default: null },
       { name: 'rear_tire_size', type: 'text', nullable: true, default: null },
       { name: 'windshield_wiper_size', type: 'text', nullable: true, default: null },

@@ -1,24 +1,16 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useTranslations } from 'next-intl'
-import { useAuth } from '@/contexts/AuthContext'
+import { useState, useEffect, type SetStateAction } from 'react'
 import { createClientSupabase } from '@/lib/supabase'
-import { Database } from '@/lib/database.types'
 import { 
   Plus, 
   Upload, 
   FileText, 
-  Volume2, 
-  Video, 
-  Image, 
   HelpCircle,
   Edit,
   Trash2,
-  Eye,
   Download,
   Search,
-  Filter,
   MapPin,
   Clock,
   Tag,
@@ -30,13 +22,12 @@ import {
 } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useAudioPlayer } from '@/contexts/AudioPlayerContext'
-// @ts-expect-error - sonner module type declarations not found
 import { toast } from 'sonner'
 import TourMaterialUploadModal from '@/components/TourMaterialUploadModal'
 import TourMaterialEditModal from '@/components/TourMaterialEditModal'
-import AudioPlayer from '@/components/AudioPlayer'
 import GuideQuizModal from '@/components/GuideQuizModal'
 import AttractionModal from '@/components/AttractionModal'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 
 // 타입 정의 (데이터베이스에 없는 테이블들)
 type TourAttraction = {
@@ -64,6 +55,7 @@ type TourMaterial = {
   language?: string
   attraction_id?: string
   category_id?: string
+  tags?: string[] | null
   created_at: string
   updated_at: string
 }
@@ -93,20 +85,26 @@ type GuideQuiz = {
 }
 
 export default function TourMaterialsManagementPage() {
-  const t = useTranslations('admin')
-  const { user } = useAuth()
   const supabase = createClientSupabase()
   const { playTrack, currentTrack, isPlaying } = useAudioPlayer()
   
-  const [activeTab, setActiveTab] = useState<'materials' | 'quizzes' | 'attractions'>('materials')
+  const TOUR_MATERIALS_UI_DEFAULT = {
+    activeTab: 'materials' as 'materials' | 'quizzes' | 'attractions',
+    searchTerm: '',
+    selectedAttraction: '',
+    selectedCategory: '',
+  }
+  const [tmUi, setTmUi] = useRoutePersistedState('tour-materials', TOUR_MATERIALS_UI_DEFAULT)
+  const { activeTab, searchTerm, selectedAttraction, selectedCategory } = tmUi
+  const setSearchTerm = (v: SetStateAction<string>) =>
+    setTmUi((u) => ({ ...u, searchTerm: typeof v === 'function' ? (v as (s: string) => string)(u.searchTerm) : v }))
+  const setSelectedAttraction = (v: string) => setTmUi((u) => ({ ...u, selectedAttraction: v }))
+  const setSelectedCategory = (v: string) => setTmUi((u) => ({ ...u, selectedCategory: v }))
   const [materials, setMaterials] = useState<TourMaterial[]>([])
   const [quizzes, setQuizzes] = useState<GuideQuiz[]>([])
   const [attractions, setAttractions] = useState<TourAttraction[]>([])
   const [categories, setCategories] = useState<TourMaterialCategory[]>([])
   const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [selectedAttraction, setSelectedAttraction] = useState<string>('')
-  const [selectedCategory, setSelectedCategory] = useState<string>('')
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [showQuizModal, setShowQuizModal] = useState(false)
   const [showAttractionModal, setShowAttractionModal] = useState(false)
@@ -174,16 +172,6 @@ export default function TourMaterialsManagementPage() {
     }
   }
 
-  const getFileIcon = (fileType: string) => {
-    switch (fileType) {
-      case 'script': return <FileText className="w-5 h-5 text-blue-500" />
-      case 'audio': return <Volume2 className="w-5 h-5 text-green-500" />
-      case 'video': return <Video className="w-5 h-5 text-purple-500" />
-      case 'image': return <Image className="w-5 h-5 text-orange-500" />
-      default: return <FileText className="w-5 h-5 text-gray-500" />
-    }
-  }
-
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes'
     const k = 1024
@@ -192,15 +180,8 @@ export default function TourMaterialsManagementPage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
-  const formatDuration = (seconds: number | null) => {
-    if (!seconds) return '-'
-    const minutes = Math.floor(seconds / 60)
-    const remainingSeconds = seconds % 60
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
-  }
-
   // 언어를 국기 아이콘으로 표시
-  const getLanguageFlag = (language: string | null) => {
+  const getLanguageFlag = (language: string | null | undefined) => {
     switch (language?.toLowerCase()) {
       case 'ko':
         return 'KR'
@@ -424,7 +405,9 @@ export default function TourMaterialsManagementPage() {
                                     playTrack({
                                       src: getFileUrl(material.file_path),
                                       title: material.title,
-                                      duration: material.duration || undefined
+                                      ...(typeof material.duration === 'number'
+                                        ? { duration: material.duration }
+                                        : {})
                                     })
                                   }}
                                   className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
@@ -496,7 +479,7 @@ export default function TourMaterialsManagementPage() {
                                 
                                 {material.tags && material.tags.length > 0 && (
                                   <div className="flex flex-wrap gap-1">
-                                    {material.tags.map((tag, index) => (
+                                    {material.tags.map((tag: string, index: number) => (
                                       <span 
                                         key={index}
                                         className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"

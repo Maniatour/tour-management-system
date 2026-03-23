@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { Clock, CheckCircle, XCircle, Calendar, User, BarChart3, RefreshCw, Edit, Users, Plus, Calculator, DollarSign, History } from 'lucide-react'
 import {
   BarChart,
@@ -55,6 +56,11 @@ interface MonthlyStats {
   second_half_hours: number
 }
 
+const ATTENDANCE_UI_DEFAULT = {
+  selectedMonth: new Date().toISOString().slice(0, 7),
+  selectedEmployee: ''
+}
+
 export default function AttendancePage() {
   const { authUser, userPosition, userRole } = useAuth()
   const isSuper = userPosition === 'super'
@@ -68,7 +74,10 @@ export default function AttendancePage() {
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStats[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7))
+  const [attendanceUi, setAttendanceUi] = useRoutePersistedState('attendance', ATTENDANCE_UI_DEFAULT)
+  const { selectedMonth, selectedEmployee } = attendanceUi
+  const setSelectedMonth = (v: string) => setAttendanceUi((prev) => ({ ...prev, selectedMonth: v }))
+  const setSelectedEmployee = (v: string) => setAttendanceUi((prev) => ({ ...prev, selectedEmployee: v }))
   const [todayRecords, setTodayRecords] = useState<AttendanceRecord[]>([])
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null)
@@ -79,7 +88,6 @@ export default function AttendancePage() {
   /** Office Tips 버튼 표시 (super + manager / office manager + op + om) */
   const [canViewOfficeTips, setCanViewOfficeTips] = useState(false)
   const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string}>>([])
-  const [selectedEmployee, setSelectedEmployee] = useState<string>('')
   const [currentSessionForSelectedEmployee, setCurrentSessionForSelectedEmployee] = useState<AttendanceRecord | null>(null)
   const [employeeNotFound, setEmployeeNotFound] = useState(false)
   const [isAddFormOpen, setIsAddFormOpen] = useState(false)

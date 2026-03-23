@@ -43,6 +43,23 @@ export function isTicketBookingIncludedInSettlement(status: string | null | unde
   return !EXCLUDED_TICKET_STATUSES.has(s)
 }
 
+/** DB `ea` 값을 합산용 숫자로 (문자열·null 시 NaN 방지) */
+export function ticketEaAsNumber(ea: number | string | null | undefined): number {
+  const n = Number(ea ?? 0)
+  return Number.isFinite(n) ? n : 0
+}
+
+/**
+ * 투어 통계에서 “순 티켓 수량” 합산에 포함할지 여부.
+ * 정산 금액은 `isTicketBookingIncludedInSettlement`로 크레딧 등을 제외하지만,
+ * 크레딧 행의 음수 ea는 순수량 맞춤을 위해 합산에 포함합니다. 취소 행만 제외합니다.
+ */
+export function isTicketBookingEaIncludedInNetCount(status: string | null | undefined): boolean {
+  const s = (status ?? '').toLowerCase().trim()
+  if (s === 'cancelled') return false
+  return true
+}
+
 export function isHotelBookingIncludedInSettlement(status: string | null | undefined): boolean {
   const s = (status ?? '').toLowerCase().trim()
   if (!s) return true

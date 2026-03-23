@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useParams } from 'next/navigation'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { createClientSupabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 // import type { Database } from '@/lib/supabase'
@@ -155,22 +156,8 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
   
   console.log('AdminProductEdit: Auth state:', { user: !!user, authLoading })
   
-  // 세션 스토리지에서 탭 상태 복원 (새로고침 시 유지)
-  const [activeTab, setActiveTab] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const savedTab = sessionStorage.getItem(`product-edit-tab-${id}`);
-      return savedTab || 'basic';
-    }
-    return 'basic';
-  });
-  
-  // 탭 변경 시 세션 스토리지에 저장
-  const handleTabChange = useCallback((tabId: string) => {
-    setActiveTab(tabId);
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem(`product-edit-tab-${id}`, tabId);
-    }
-  }, [id]);
+  /** 경로별 sessionStorage — 새로고침 후에도 편집 탭 유지 */
+  const [activeTab, setActiveTab] = useRoutePersistedState<string>('edit-tab', 'basic')
   const [showManualModal, setShowManualModal] = useState(false)
   const [showAddOptionModal, setShowAddOptionModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
@@ -1228,7 +1215,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
             return (
               <button
                 key={tab.id}
-                onClick={() => handleTabChange(tab.id)}
+                onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center space-x-1 md:space-x-2 py-2 px-2 md:px-1 border-b-2 font-medium text-xs md:text-sm whitespace-nowrap min-w-fit ${
                   activeTab === tab.id
                     ? 'border-blue-500 text-blue-600'

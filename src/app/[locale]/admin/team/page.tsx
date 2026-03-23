@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { useTranslations } from 'next-intl'
 import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
@@ -25,19 +26,29 @@ type TeamMember = Database['public']['Tables']['team']['Row']
 type TeamMemberInsert = Database['public']['Tables']['team']['Insert']
 type TeamMemberUpdate = Database['public']['Tables']['team']['Update']
 
+const TEAM_LIST_UI_DEFAULT = {
+  searchTerm: '',
+  statusFilter: 'active' as 'active' | 'inactive' | 'all',
+  sortField: 'name_ko' as keyof TeamMember,
+  sortDirection: 'asc' as 'asc' | 'desc',
+  viewMode: 'card' as 'table' | 'card'
+}
+
 export default function AdminTeam() {
   const t = useTranslations('team')
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active')
-  const [sortField, setSortField] = useState<keyof TeamMember>('name_ko')
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [listUi, setListUi] = useRoutePersistedState('team-list', TEAM_LIST_UI_DEFAULT)
+  const { searchTerm, statusFilter, sortField, sortDirection, viewMode } = listUi
+  const setSearchTerm = (v: string) => setListUi((prev) => ({ ...prev, searchTerm: v }))
+  const setStatusFilter = (v: 'active' | 'inactive' | 'all') => setListUi((prev) => ({ ...prev, statusFilter: v }))
+  const setSortField = (v: keyof TeamMember) => setListUi((prev) => ({ ...prev, sortField: v }))
+  const setSortDirection = (v: 'asc' | 'desc') => setListUi((prev) => ({ ...prev, sortDirection: v }))
+  const setViewMode = (v: 'table' | 'card') => setListUi((prev) => ({ ...prev, viewMode: v }))
   const [showForm, setShowForm] = useState(false)
   const [editingMember, setEditingMember] = useState<TeamMember | null>(null)
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null)
-  const [viewMode, setViewMode] = useState<'table' | 'card'>('card')
   const [memberDocuments, setMemberDocuments] = useState<{[email: string]: {[type: string]: Array<{id: string, name: string, url: string, path: string, size: number, uploadedAt: string}>}}>({})
   
   // 인라인 편집 상태
@@ -805,7 +816,7 @@ export default function AdminTeam() {
                             </h3>
                             {member.languages && member.languages.length > 0 && (
                               <div className="flex space-x-1">
-                                {member.languages.map((lang, index) => (
+                                {member.languages.map((lang: string, index: number) => (
                                   <ReactCountryFlag
                                     key={index}
                                     countryCode={lang === 'KR' ? 'KR' : lang === 'EN' ? 'US' : lang === 'JP' ? 'JP' : lang === 'CN' ? 'CN' : lang === 'ES' ? 'ES' : lang === 'FR' ? 'FR' : lang === 'DE' ? 'DE' : lang === 'RU' ? 'RU' : 'US'}
@@ -1843,7 +1854,7 @@ function TeamMemberForm({
 
 // 팀원 문서 컴포넌트
 function TeamMemberDocuments({
-  memberEmail,
+  memberEmail: _memberEmail,
   onLoadDocuments,
   documents
 }: {

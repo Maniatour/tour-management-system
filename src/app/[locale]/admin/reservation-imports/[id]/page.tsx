@@ -6,7 +6,13 @@ import { ArrowLeft, Loader2, Hash, Calendar, Users, User, Mail, Phone, Globe, Ma
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { getChannelIdForPlatform } from '@/lib/platformChannelMapping'
-import { matchPickupHotelId, normalizeCustomerNameFromImport } from '@/utils/reservationUtils'
+import { isManiatourHomepageBookingEmail } from '@/lib/emailReservationParser'
+import {
+  extractPriceFromEmailBodyForImport,
+  extractViatorNetRateFromEmailBodyForImport,
+  matchPickupHotelId,
+  normalizeCustomerNameFromImport,
+} from '@/utils/reservationUtils'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { ExtractedReservationData } from '@/types/reservationImport'
@@ -19,6 +25,7 @@ interface ImportRow {
   platform_key: string | null
   received_at: string | null
   raw_body_text: string | null
+  raw_body_html?: string | null
   extracted_data: ExtractedReservationData
   status: string
   reservation_id: string | null
@@ -91,10 +98,30 @@ export default function ReservationImportDetailPage() {
       data.platform_key ||
       ((data.source_email ?? '').toLowerCase().includes('kkday') || (data.subject ?? '').trim().startsWith('[KKday]')
         ? 'kkday'
-        : null)
+        : null) ||
+      (isManiatourHomepageBookingEmail(data.source_email, data.subject) ? 'maniatour' : null)
+    const rawCombinedForGyG = `${data.subject || ''}\n${data.raw_body_text || ''}\n${data.raw_body_html || ''}`
+    // GetYourGuide: DB에 옛날 extracted_data만 있으면 고객 정보는 있는데 product_id/초이스가 비어 재파싱이 스킵되던 경우 보완
+    const gygLikelyHasVariantLine =
+      /group\s*tour\s*with|antelope\s*canyon|lower\s*antelope|grand\s*canyon\s*sunrise|horseshoe/i.test(rawCombinedForGyG)
+    const gygNeedsStructuredFields =
+      effectiveKey === 'getyourguide' &&
+      hasBody &&
+      (!ext.product_id || (!ext.import_choice_option_names?.length && gygLikelyHasVariantLine))
+    const isViatorMail =
+      data.platform_key === 'viator' || /viator\.com/i.test(String(data.source_email || ''))
+    // 옛 파싱: 당일 투어로만 저장됐는데 본문은 Lower Antelope + 00:00 일출 패턴 → 재파싱으로 MDGCSUNRISE 보정
+    const viatorSunriseWasStoredAsDayTour =
+      isViatorMail &&
+      hasBody &&
+      ext?.product_name === '그랜드서클 당일 투어' &&
+      /Shared\s*Van\s*with\s*Lower\s*Antelope|Lower\s*Antelope/i.test(rawCombinedForGyG) &&
+      /\b00\s*:\s*00\b|00:00/i.test(rawCombinedForGyG)
     const looksIncomplete =
       hasBody &&
       (((effectiveKey === 'getyourguide' && (!ext.customer_name || ext.adults == null)) ||
+        gygNeedsStructuredFields ||
+        viatorSunriseWasStoredAsDayTour ||
         (effectiveKey === 'klook' && (!ext.customer_name && !ext.customer_email && !ext.adults)) ||
         (effectiveKey === 'kkday' && (!ext.customer_name || ext.adults == null || !ext.tour_date || !ext.product_name)) ||
         (effectiveKey === 'viator' && (!ext.customer_name || !ext.pickup_hotel))) ||
@@ -112,7 +139,8 @@ export default function ReservationImportDetailPage() {
       data.platform_key ||
       ((data.source_email ?? '').toLowerCase().includes('kkday') || (data.subject ?? '').trim().startsWith('[KKday]')
         ? 'kkday'
-        : null)
+        : null) ||
+      (isManiatourHomepageBookingEmail(data.source_email, data.subject) ? 'maniatour' : null)
     const channelsSafe = (typeof channelsList !== 'undefined' && Array.isArray(channelsList)) ? channelsList : []
     const mappedChannelId = effectiveKeyForChannel ? getChannelIdForPlatform(effectiveKeyForChannel) : null
     const channelForImport = mappedChannelId
@@ -157,7 +185,12 @@ export default function ReservationImportDetailPage() {
     row?.platform_key ||
     (row && ((row.source_email ?? '').toLowerCase().includes('kkday') || (row.subject ?? '').trim().startsWith('[KKday]'))
       ? 'kkday'
-      : null)
+      : null) ||
+    (row && isManiatourHomepageBookingEmail(row.source_email, row.subject) ? 'maniatour' : null)
+
+  /** Viator만 Net Rate ↔ 채널 정산 비교 쿠폰 경로 사용 */
+  const isViatorEmailImport =
+    row?.platform_key === 'viator' || /viator\.com/i.test(String(row?.source_email ?? ''))
 
   useEffect(() => {
     if (!effectivePlatformKey || !channelsSafe.length || form.channel_id) return
@@ -168,21 +201,29 @@ export default function ReservationImportDetailPage() {
     if (channel) setForm((f) => ({ ...f, channel_id: channel.id }))
   }, [effectivePlatformKey, channelsSafe, form.channel_id])
 
-  // 픽업 호텔 매칭 실패 시 사용할 기본 id
-  const DEFAULT_PICKUP_HOTEL_ID = '518e504f-04d4-420a-bf45-f23210e38039'
-
-  // 이메일에서 추출한 픽업 호텔 문자열을 pickup_hotels 목록과 매칭해 드롭다운 id로 치환 (매칭 실패 시 기본 id 사용)
+  // 이메일에서 추출한 픽업 호텔 문자열을 pickup_hotels 목록과 매칭해 드롭다운 id로 치환.
+  // 매칭 실패 시 임의 기본 id로 넣지 않음 → 목록 로드 순서에 따라 잘못 고정되고 재매칭이 막히는 문제 방지.
   useEffect(() => {
     const raw = form.pickup_hotel
     if (!raw || !pickupHotelsList?.length) return
     const isAlreadyId = pickupHotelsList.some((h: PickupHotel) => h.id === raw)
     if (isAlreadyId) return
     const matchedId = matchPickupHotelId(raw, pickupHotelsList as Array<{ id: string; hotel?: string | null; pick_up_location?: string | null; address?: string | null }>)
-    const idToSet = matchedId ?? (pickupHotelsList.some((h: PickupHotel) => h.id === DEFAULT_PICKUP_HOTEL_ID) ? DEFAULT_PICKUP_HOTEL_ID : null)
-    if (idToSet) setForm((f) => ({ ...f, pickup_hotel: idToSet }))
+    if (matchedId) setForm((f) => (f.pickup_hotel === matchedId ? f : { ...f, pickup_hotel: matchedId }))
   }, [form.pickup_hotel, pickupHotelsList])
 
   const ext = row ? ((row as ImportRow).extracted_data || {}) as ExtractedReservationData : null
+  /** extracted_data의 product_id를 폼 state보다 우선 (상품 목록 로드 전에도 MDGCSUNRISE 등 반영) */
+  const resolvedImportProductId =
+    ext?.product_id &&
+    (!productsSafe.length || productsSafe.some((p) => p.id === ext.product_id))
+      ? ext.product_id
+      : form.product_id
+  /** 홈페이지(Wix) 예약: 채널 목록 로드 전에도 M00001(Homepage)로 초이스·가격 조회 가능하게 */
+  const resolvedImportChannelId =
+    form.channel_id ||
+    (row && isManiatourHomepageBookingEmail(row.source_email, row.subject) ? 'M00001' : '')
+
   // product_id: 이메일 파서에서 직접 설정된 값(제목 S코드 매핑) 우선, 없으면 상품명으로 매칭
   useEffect(() => {
     if (ext?.product_id && productsSafe.some((p: { id: string }) => p.id === ext.product_id)) {
@@ -199,7 +240,7 @@ export default function ReservationImportDetailPage() {
         (p.name_ko && nameLower.includes(p.name_ko.toLowerCase()))
     )
     if (matched) setForm((f) => ({ ...f, product_id: (matched as { id: string }).id }))
-  }, [ext?.product_name, productsSafe, form.product_id])
+  }, [ext?.product_id, ext?.product_name, productsSafe, form.product_id])
 
   useEffect(() => {
     let cancelled = false
@@ -568,15 +609,15 @@ export default function ReservationImportDetailPage() {
       </div>
       <ReservationForm
         formTitle="이메일에서 예약 가져오기"
-        key={`import-${row.id}-${(ext?.customer_name ?? form.customer_name) ?? ''}`}
+        key={`import-${row.id}`}
         reservation={
           row
             ? ({
                 id: `import-${row.id}`,
-                product_id: form.product_id,
+                product_id: resolvedImportProductId,
                 tour_date: form.tour_date,
                 tour_time: form.tour_time || undefined,
-                channel_id: form.channel_id,
+                channel_id: resolvedImportChannelId,
                 // 채널 RN: "ID" 단어만 있으면 잘못 파싱된 값이므로 제외, 실제 예약번호만 전달
                 channel_rn: (() => {
                   const rn = ext?.channel_rn ?? form.channel_rn
@@ -615,6 +656,18 @@ export default function ReservationImportDetailPage() {
         initialShowNewCustomerForm={Boolean(normalizeCustomerNameFromImport(ext?.customer_name) || ext?.customer_name || form.customer_name)}
         initialChoiceOptionNamesFromImport={ext?.import_choice_option_names}
         initialChoiceUndecidedGroupNamesFromImport={ext?.import_choice_undecided_groups}
+        initialViatorNetRateFromImport={
+          isViatorEmailImport
+            ? ext?.viator_net_rate_usd ??
+              extractViatorNetRateFromEmailBodyForImport(row?.raw_body_text) ??
+              extractViatorNetRateFromEmailBodyForImport(row?.raw_body_html ?? null)
+            : undefined
+        }
+        initialAmountFromImport={
+          ext?.amount ??
+          extractPriceFromEmailBodyForImport(row?.raw_body_text) ??
+          extractPriceFromEmailBodyForImport(row?.raw_body_html ?? null)
+        }
       />
     </div>
   )

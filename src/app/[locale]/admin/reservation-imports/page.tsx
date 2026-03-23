@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { Mail, ChevronRight, Loader2, FileText, CheckCircle, XCircle, RefreshCw, GripVertical, Inbox, Search, Filter } from 'lucide-react'
+import { isManiatourHomepageBookingEmail } from '@/lib/emailReservationParser'
 import { normalizeCustomerNameFromImport } from '@/utils/reservationUtils'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { ExtractedReservationData } from '@/types/reservationImport'
@@ -75,6 +77,15 @@ function productInternalName(extracted: ExtractedReservationData, products: Prod
   return matched ? ((matched.name ?? matched.name_ko ?? '').trim() || name) : name
 }
 
+const RESERVATION_IMPORTS_UI_DEFAULT = {
+  statusFilter: 'pending',
+  activeTab: 'all' as 'all' | 'booking',
+  dateEnd: todayLocal(),
+  noDateFilter: false,
+  searchQuery: '',
+  platformFilter: ''
+}
+
 export default function AdminReservationImportsPage({}: AdminReservationImportsProps) {
   const params = useParams()
   const router = useRouter()
@@ -83,15 +94,10 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const { products: productsList = [] } = useReservationData()
   const [items, setItems] = useState<ImportItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState<string>('pending')
-  /** 탭: 'all' = 전체, 'booking' = 예약 접수 메일만 */
-  const [activeTab, setActiveTab] = useState<'all' | 'booking'>('all')
+  const [listUi, setListUi] = useRoutePersistedState('reservation-imports', RESERVATION_IMPORTS_UI_DEFAULT)
+  const { statusFilter, activeTab, dateEnd, noDateFilter, searchQuery, platformFilter } = listUi
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [patchingId, setPatchingId] = useState<string | null>(null)
-  // 날짜별 페이지: 표시 기간 끝날짜(7일 단위). 기본값 = 오늘
-  const [dateEnd, setDateEnd] = useState<string>(() => todayLocal())
-  /** true면 날짜 필터 없이 최신순 1000건만 조회 (최신 메일이 안 보일 때 사용) */
-  const [noDateFilter, setNoDateFilter] = useState(false)
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteSubject, setPasteSubject] = useState('')
   const [pasteBody, setPasteBody] = useState('')
@@ -101,10 +107,6 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const [gmailSyncing, setGmailSyncing] = useState(false)
   const [gmailMessage, setGmailMessage] = useState<string | null>(null)
   const [optimisticConnected, setOptimisticConnected] = useState(false)
-  /** 검색어 (제목·발신·추출 요약 대상) */
-  const [searchQuery, setSearchQuery] = useState('')
-  /** 플랫폼 필터: '' = 전체, 'kkday' 등 = 해당 플랫폼만, 'other' = 기타(플랫폼 미지정) */
-  const [platformFilter, setPlatformFilter] = useState('')
 
   const summary = (extracted: ExtractedReservationData) => {
     const parts = []
@@ -151,13 +153,10 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const isViatorBookingSubject = (row: ImportItem) =>
     (row.subject ?? '').trim().toLowerCase().includes('please respond: new booking request:')
 
-  /** 홈페이지(maniatour) 메일: vegasmaniatour@wixsiteautomations.com */
+  /** 홈페이지(maniatour): 플랫폼 키 또는 자사 Wix 발신 vegasmaniatour@wixsiteautomations.com */
   const isManiaTourRow = (row: ImportItem) =>
-    row.platform_key === 'maniatour' || (row.source_email ?? '').toLowerCase().includes('wixsiteautomations.com')
-
-  /** 홈페이지 예약 접수: 제목 You got a new booking */
-  const isManiaTourBookingSubject = (row: ImportItem) =>
-    (row.subject ?? '').trim().toLowerCase() === 'you got a new booking'
+    row.platform_key === 'maniatour' ||
+    /vegasmaniatour@wixsiteautomations\.com/i.test(row.source_email ?? '')
 
   /** 목록에 표시할 플랫폼 (KKday / maniatour 보정 포함) */
   const displayPlatform = (row: ImportItem) =>
@@ -168,7 +167,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     Boolean(row.extracted_data?.is_booking_confirmed === true) ||
     (isKKdayRow(row) && isKKdayBookingSubject(row)) ||
     (row.platform_key === 'viator' && isViatorBookingSubject(row)) ||
-    (isManiaTourRow(row) && isManiaTourBookingSubject(row))
+    isManiatourHomepageBookingEmail(row.source_email, row.subject)
 
   const filteredItems = activeTab === 'booking'
     ? items.filter((row) => isBookingConfirmed(row))
@@ -451,7 +450,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           <span className="text-sm text-gray-600">상태:</span>
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={(e) => setListUi((prev) => ({ ...prev, statusFilter: e.target.value }))}
             className="min-h-[44px] border border-gray-300 rounded-lg px-3 py-2 text-sm touch-manipulation"
           >
             <option value="pending">대기 중</option>
@@ -530,7 +529,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
       <div className="flex gap-1 border-b border-gray-200">
         <button
           type="button"
-          onClick={() => setActiveTab('all')}
+          onClick={() => setListUi((prev) => ({ ...prev, activeTab: 'all' }))}
           onDragOver={handleTabDragOver}
           onDrop={(e) => handleTabDrop(e, 'all')}
           className={`flex-1 sm:flex-none min-h-[44px] px-4 py-3 text-sm font-medium rounded-t-lg border-b-2 transition-colors touch-manipulation ${
@@ -544,7 +543,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
         </button>
         <button
           type="button"
-          onClick={() => setActiveTab('booking')}
+          onClick={() => setListUi((prev) => ({ ...prev, activeTab: 'booking' }))}
           onDragOver={handleTabDragOver}
           onDrop={(e) => handleTabDrop(e, 'booking')}
           title="항목을 이 탭에 드래그하면 예약 접수로 분류됩니다"
@@ -580,7 +579,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           <Filter className="w-4 h-4 text-gray-400 shrink-0" aria-hidden />
           <select
             value={platformFilter}
-            onChange={(e) => setPlatformFilter(e.target.value)}
+            onChange={(e) => setListUi((prev) => ({ ...prev, platformFilter: e.target.value }))}
             className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             aria-label="플랫폼 필터"
           >
@@ -602,7 +601,13 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
         <div className="flex items-center justify-between sm:justify-start gap-2">
           <button
             type="button"
-            onClick={() => { setNoDateFilter(false); setDateEnd(addDays(dateStart, -1)); }}
+            onClick={() => {
+              setListUi((prev) => ({
+                ...prev,
+                noDateFilter: false,
+                dateEnd: addDays(addDays(prev.dateEnd, -6), -1)
+              }))
+            }}
             disabled={noDateFilter}
             className="min-h-[44px] inline-flex items-center gap-1 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 disabled:opacity-50 touch-manipulation"
           >
@@ -613,7 +618,13 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           </span>
           <button
             type="button"
-            onClick={() => { setNoDateFilter(false); setDateEnd(addDays(dateEnd, 7)); }}
+            onClick={() => {
+              setListUi((prev) => ({
+                ...prev,
+                noDateFilter: false,
+                dateEnd: addDays(prev.dateEnd, 7)
+              }))
+            }}
             disabled={noDateFilter || dateEnd >= todayLocal()}
             className="min-h-[44px] inline-flex items-center gap-1 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
           >
@@ -623,14 +634,16 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => { setNoDateFilter(true); }}
+            onClick={() => { setListUi((prev) => ({ ...prev, noDateFilter: true })) }}
             className="min-h-[44px] text-sm text-amber-600 hover:underline py-2 touch-manipulation font-medium"
           >
             최신순 전체
           </button>
           <button
             type="button"
-            onClick={() => { setNoDateFilter(false); setDateEnd(todayLocal()); }}
+            onClick={() => {
+              setListUi((prev) => ({ ...prev, noDateFilter: false, dateEnd: todayLocal() }))
+            }}
             className="min-h-[44px] text-sm text-blue-600 hover:underline py-2 touch-manipulation"
           >
             오늘 기준으로
@@ -658,7 +671,9 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           <p>검색·플랫폼 필터 조건에 맞는 항목이 없습니다.</p>
           <button
             type="button"
-            onClick={() => { setSearchQuery(''); setPlatformFilter(''); }}
+            onClick={() => {
+              setListUi((prev) => ({ ...prev, searchQuery: '', platformFilter: '' }))
+            }}
             className="mt-3 text-sm text-blue-600 hover:underline"
           >
             검색·필터 초기화

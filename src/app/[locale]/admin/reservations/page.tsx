@@ -45,6 +45,22 @@ import type {
   Channel,
   PickupHotel
 } from '@/types/reservation'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
+
+const RESERVATIONS_LIST_UI_DEFAULT = {
+  searchTerm: '',
+  viewMode: 'card' as 'card' | 'calendar',
+  selectedStatus: 'all',
+  currentPage: 1,
+  itemsPerPage: 20,
+  currentWeek: 0,
+  selectedChannel: 'all',
+  dateRange: { start: '', end: '' } as { start: string; end: string },
+  sortBy: 'created_at' as 'created_at' | 'tour_date' | 'customer_name' | 'product_name',
+  sortOrder: 'desc' as 'asc' | 'desc',
+  groupByDate: true,
+  isWeeklyStatsCollapsed: true,
+}
 
 interface AdminReservationsProps {
   params: Promise<{ locale: string }>
@@ -201,8 +217,76 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     refreshCustomers
   } = useReservationData()
 
-  // 상태 관리
-  const [searchTerm, setSearchTerm] = useState('')
+  // 상태 관리 (목록 필터 — 새로고침 유지)
+  const [reservationListUi, setReservationListUi] = useRoutePersistedState(
+    'reservations-list',
+    RESERVATIONS_LIST_UI_DEFAULT
+  )
+  const {
+    searchTerm,
+    viewMode,
+    selectedStatus,
+    currentPage,
+    itemsPerPage,
+    currentWeek,
+    selectedChannel,
+    dateRange,
+    sortBy,
+    sortOrder,
+    groupByDate,
+    isWeeklyStatsCollapsed,
+  } = reservationListUi
+  const setSearchTerm = (v: React.SetStateAction<string>) =>
+    setReservationListUi((u) => ({
+      ...u,
+      searchTerm: typeof v === 'function' ? (v as (s: string) => string)(u.searchTerm) : v,
+    }))
+  const setViewMode = (m: 'card' | 'calendar') => setReservationListUi((u) => ({ ...u, viewMode: m }))
+  const setSelectedStatus = (s: string) => setReservationListUi((u) => ({ ...u, selectedStatus: s }))
+  const setCurrentPage = (v: React.SetStateAction<number>) =>
+    setReservationListUi((u) => ({
+      ...u,
+      currentPage: typeof v === 'function' ? (v as (n: number) => number)(u.currentPage) : v,
+    }))
+  const setItemsPerPage = (v: React.SetStateAction<number>) =>
+    setReservationListUi((u) => ({
+      ...u,
+      itemsPerPage: typeof v === 'function' ? (v as (n: number) => number)(u.itemsPerPage) : v,
+    }))
+  const setCurrentWeek = (v: React.SetStateAction<number>) =>
+    setReservationListUi((u) => ({
+      ...u,
+      currentWeek: typeof v === 'function' ? (v as (n: number) => number)(u.currentWeek) : v,
+    }))
+  const setSelectedChannel = (c: string) => setReservationListUi((u) => ({ ...u, selectedChannel: c }))
+  const setDateRange = (v: React.SetStateAction<{ start: string; end: string }>) =>
+    setReservationListUi((u) => ({
+      ...u,
+      dateRange: typeof v === 'function' ? (v as (r: { start: string; end: string }) => { start: string; end: string })(u.dateRange) : v,
+    }))
+  const setSortBy = (v: React.SetStateAction<'created_at' | 'tour_date' | 'customer_name' | 'product_name'>) =>
+    setReservationListUi((u) => ({
+      ...u,
+      sortBy: typeof v === 'function' ? (v as (s: typeof u.sortBy) => typeof u.sortBy)(u.sortBy) : v,
+    }))
+  const setSortOrder = (v: React.SetStateAction<'asc' | 'desc'>) =>
+    setReservationListUi((u) => ({
+      ...u,
+      sortOrder: typeof v === 'function' ? (v as (s: 'asc' | 'desc') => 'asc' | 'desc')(u.sortOrder) : v,
+    }))
+  const setGroupByDate = (v: React.SetStateAction<boolean>) =>
+    setReservationListUi((u) => ({
+      ...u,
+      groupByDate: typeof v === 'function' ? (v as (g: boolean) => boolean)(u.groupByDate) : v,
+    }))
+  const setIsWeeklyStatsCollapsed = (v: React.SetStateAction<boolean>) =>
+    setReservationListUi((u) => ({
+      ...u,
+      isWeeklyStatsCollapsed: typeof v === 'function'
+        ? (v as (b: boolean) => boolean)(u.isWeeklyStatsCollapsed)
+        : v,
+    }))
+
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   
   // 검색어 debounce (300ms)
@@ -231,8 +315,6 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   }, [searchParams, showAddForm])
   const [newReservationId, setNewReservationId] = useState<string | null>(null)
   const [editingReservation, setEditingReservation] = useState<Reservation | null>(null)
-  const [viewMode, setViewMode] = useState<'card' | 'calendar'>('card')
-  const [selectedStatus, setSelectedStatus] = useState<string>('all')
   const [pricingModalReservation, setPricingModalReservation] = useState<Reservation | null>(null)
   const [showPricingModal, setShowPricingModal] = useState(false)
   const [showCustomerForm, setShowCustomerForm] = useState(false)
@@ -240,20 +322,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   const [selectedReservationForReview, setSelectedReservationForReview] = useState<Reservation | null>(null)
   const [showReviewModal, setShowReviewModal] = useState(false)
 
-  // 페이지네이션 상태
-  const [currentPage, setCurrentPage] = useState(1)
-  const [itemsPerPage, setItemsPerPage] = useState(20)
-  
-  // 주간 페이지네이션 상태
-  const [currentWeek, setCurrentWeek] = useState(0) // 0은 현재 주, 음수는 이전 주, 양수는 다음 주
   const [isInitialLoad, setIsInitialLoad] = useState(true) // 초기 로딩 여부 추적
   
-  // 고급 필터링 상태
-  const [selectedChannel, setSelectedChannel] = useState<string>('all')
-  const [dateRange, setDateRange] = useState<{start: string, end: string}>({start: '', end: ''})
-  const [sortBy, setSortBy] = useState<'created_at' | 'tour_date' | 'customer_name' | 'product_name'>('created_at')
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
-  const [groupByDate, setGroupByDate] = useState<boolean>(true) // 기본값을 true로 설정하여 날짜별 그룹화
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [filterModalOpen, setFilterModalOpen] = useState(false) // 필터 모달 열림 상태
 
@@ -269,9 +339,6 @@ export default function AdminReservations({ }: AdminReservationsProps) {
       return newSet
     })
   }, [])
-
-  // 주간 통계 아코디언 상태 (기본 접힘)
-  const [isWeeklyStatsCollapsed, setIsWeeklyStatsCollapsed] = useState(true)
 
   // 입금 내역 관련 상태
   const [showPaymentRecords, setShowPaymentRecords] = useState(false)

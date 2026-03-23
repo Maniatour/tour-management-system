@@ -8,7 +8,8 @@ export const PLATFORM_CHANNEL_MAP: Record<string, string> = {
   tripadvisor: 'tripadvisor',
   klook: 'klook',
   kkday: 'kkday',
-  maniatour: 'maniatour',
+  /** 자사 Wix 홈페이지 예약 — channels 테이블의 Homepage 채널 id */
+  maniatour: 'M00001',
   booking: 'booking',
   expedia: 'expedia',
   airbnb: 'airbnb',

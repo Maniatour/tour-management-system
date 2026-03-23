@@ -135,8 +135,16 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
     const t = searchParams.get('tab')
     return (t && VALID_TABS.includes(t as TabType)) ? t as TabType : 'reservations'
   })
-  const [timeRange, setTimeRange] = useState<TimeRange>('daily')
-  const [selectedChart, setSelectedChart] = useState<ChartType>('channel')
+  const [timeRange, setTimeRange] = useState<TimeRange>(() => {
+    const tr = searchParams.get('tr')
+    if (tr === 'daily' || tr === 'monthly' || tr === 'yearly') return tr
+    return 'daily'
+  })
+  const [selectedChart, setSelectedChart] = useState<ChartType>(() => {
+    const c = searchParams.get('chart')
+    if (c === 'channel' || c === 'product' || c === 'trend') return c
+    return 'channel'
+  })
   const [dateRange, setDateRange] = useState<{start: string, end: string}>(() => {
     const start = searchParams.get('start')
     const end = searchParams.get('end')
@@ -152,18 +160,20 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
   const [searchQuery, setSearchQuery] = useState<string>(() => searchParams.get('q') ?? '')
   const endDateInputRef = useRef<HTMLInputElement>(null)
 
-  // 탭/검색/기간/채널/상태 변경 시 URL 동기화 (브라우저 새로고침 시 복원용)
+  // 탭/검색/기간/채널/상태/추이단위(tr)/차트(chart) 변경 시 URL 동기화 (새로고침 시 복원용)
   useEffect(() => {
     const params = new URLSearchParams()
     params.set('tab', activeTab)
     params.set('start', dateRange.start)
     params.set('end', dateRange.end)
+    params.set('tr', timeRange)
+    params.set('chart', selectedChart)
     if (searchQuery.trim()) params.set('q', searchQuery.trim())
     if (selectedChannelId) params.set('channel', selectedChannelId)
     if (selectedStatuses.length > 0) params.set('statuses', selectedStatuses.join(','))
     const qs = params.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
-  }, [activeTab, searchQuery, dateRange, selectedChannelId, selectedStatuses, pathname, router])
+  }, [activeTab, searchQuery, dateRange, selectedChannelId, selectedStatuses, timeRange, selectedChart, pathname, router])
 
   // 통계 데이터 계산
   const statisticsData = useMemo((): StatisticsData => {

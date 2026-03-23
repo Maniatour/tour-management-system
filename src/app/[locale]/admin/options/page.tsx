@@ -8,8 +8,16 @@ import type { Database } from '@/lib/supabase'
 import { useParams } from 'next/navigation'
 import GlobalChoicesManager from '@/components/admin/GlobalChoicesManager'
 import ImageUpload from '@/components/common/ImageUpload'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 
 type Option = Database['public']['Tables']['options']['Row']
+
+const OPTIONS_LIST_UI_DEFAULT = {
+  activeTab: 'options' as 'options' | 'choices',
+  searchTerm: '',
+  selectedCategory: 'all',
+  allCardsCollapsed: false,
+}
 
 interface AdminOptionsProps {
   params: Promise<{ locale: string }>
@@ -21,15 +29,22 @@ export default function AdminOptions({ params }: AdminOptionsProps) {
   const t = useTranslations('options')
   const tCommon = useTranslations('common')
   
-  const [activeTab, setActiveTab] = useState<'options' | 'choices'>('options')
+  const [listUi, setListUi] = useRoutePersistedState('options-list', OPTIONS_LIST_UI_DEFAULT)
+  const { activeTab, searchTerm, selectedCategory, allCardsCollapsed } = listUi
+  const setActiveTab = (tab: 'options' | 'choices') => setListUi((u) => ({ ...u, activeTab: tab }))
+  const setSearchTerm = (v: React.SetStateAction<string>) =>
+    setListUi((u) => ({ ...u, searchTerm: typeof v === 'function' ? (v as (s: string) => string)(u.searchTerm) : v }))
+  const setSelectedCategory = (c: string) => setListUi((u) => ({ ...u, selectedCategory: c }))
+  const setAllCardsCollapsed = (v: boolean | ((p: boolean) => boolean)) =>
+    setListUi((u) => ({
+      ...u,
+      allCardsCollapsed: typeof v === 'function' ? v(u.allCardsCollapsed) : v,
+    }))
   const [options, setOptions] = useState<Option[]>([])
   const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingOption, setEditingOption] = useState<Option | null>(null)
   const [copyingOption, setCopyingOption] = useState<Option | null>(null)
-  const [selectedCategory, setSelectedCategory] = useState<string>('all')
-  const [allCardsCollapsed, setAllCardsCollapsed] = useState(false)
 
   useEffect(() => {
     fetchOptions()

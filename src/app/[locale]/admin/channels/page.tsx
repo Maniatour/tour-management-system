@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { Plus, Search, Edit, Trash2, Globe, Package, Grid, List, ChevronDown, ChevronRight, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import Image from 'next/image'
@@ -46,6 +47,12 @@ interface Product {
   }
 }
 
+const CHANNELS_LIST_UI_DEFAULT = {
+  searchTerm: '',
+  activeTab: 'all',
+  viewMode: 'card' as 'table' | 'card',
+}
+
 export default function AdminChannels() {
   const t = useTranslations('channels')
   
@@ -65,13 +72,15 @@ export default function AdminChannels() {
     variant_name_en?: string;
   }>>([])
 
-  const [searchTerm, setSearchTerm] = useState('')
-  const [activeTab, setActiveTab] = useState<string>('all')
+  const [listUi, setListUi] = useRoutePersistedState('channels-list', CHANNELS_LIST_UI_DEFAULT)
+  const { searchTerm, activeTab, viewMode } = listUi
+  const setSearchTerm = (v: string) => setListUi((prev) => ({ ...prev, searchTerm: v }))
+  const setActiveTab = (v: string) => setListUi((prev) => ({ ...prev, activeTab: v }))
+  const setViewMode = (v: 'table' | 'card') => setListUi((prev) => ({ ...prev, viewMode: v }))
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null)
   const [showProductSelection, setShowProductSelection] = useState(false)
   const [selectedChannelForProducts, setSelectedChannelForProducts] = useState<Channel | null>(null)
-  const [viewMode, setViewMode] = useState<'table' | 'card'>('card')
   const [bulkEditMode, setBulkEditMode] = useState(false)
   const [bulkEditData, setBulkEditData] = useState<Record<string, Partial<Channel>>>({})
 

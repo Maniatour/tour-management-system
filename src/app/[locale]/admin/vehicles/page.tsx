@@ -11,6 +11,12 @@ const VehicleTypeManagementModal = dynamic(() => import('@/components/VehicleTyp
 })
 // 렌터카 관리 모달은 더 이상 필요하지 않음
 import { supabase } from '@/lib/supabase'
+import {
+  getVehicleStatusBadgeClass,
+  getVehicleStatusLabelKo,
+  VEHICLE_STATUS_SELECT_OPTIONS,
+} from '@/lib/vehicleStatus'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 
 interface VehiclePhoto {
   id: string
@@ -73,13 +79,25 @@ interface Vehicle {
   nick?: string | null
 }
 
+const VEHICLES_UI_DEFAULT = {
+  searchTerm: '',
+  activeTab: 'company' as 'company' | 'rental_active' | 'rental_returned' | 'vehicle_types',
+}
+
 export default function VehiclesPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
+  const [vehListUi, setVehListUi] = useRoutePersistedState('vehicles-list', VEHICLES_UI_DEFAULT)
+  const { searchTerm, activeTab } = vehListUi
+  const setSearchTerm = (v: React.SetStateAction<string>) =>
+    setVehListUi((u) => ({
+      ...u,
+      searchTerm: typeof v === 'function' ? (v as (s: string) => string)(u.searchTerm) : v,
+    }))
+  const setActiveTab = (tab: 'company' | 'rental_active' | 'rental_returned' | 'vehicle_types') =>
+    setVehListUi((u) => ({ ...u, activeTab: tab }))
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<'company' | 'rental_active' | 'rental_returned' | 'vehicle_types'>('company')
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null)
   const [isVehicleTypeModalOpen, setIsVehicleTypeModalOpen] = useState(false)
   // 렌터카 관리 모달 상태 제거
@@ -322,7 +340,6 @@ export default function VehiclesPage() {
       rental_pickup_location: vehicle.rental_pickup_location || '',
       rental_return_location: vehicle.rental_return_location || '',
       rental_total_cost: 0,
-      status: 'available',
       rental_notes: vehicle.rental_notes || '',
       // 회사 차량 관련 필드들은 초기화
       year: new Date().getFullYear(),
@@ -332,7 +349,7 @@ export default function VehiclesPage() {
       engine_oil_change_cycle: 10000,
       current_mileage: 0,
       recent_engine_oil_change_mileage: 0,
-      status: '운행 가능',
+      status: 'available',
       front_tire_size: '',
       rear_tire_size: '',
       windshield_wiper_size: '',
@@ -522,36 +539,6 @@ export default function VehiclesPage() {
   }, [selectedVehicle, vehicles])
 
 
-  // 헬퍼 함수들을 useCallback으로 메모이제이션
-  const getStatusColor = useCallback((status: string) => {
-    switch (status) {
-      case '운행 가능': return 'bg-green-100 text-green-800'
-      case '수리 중': return 'bg-yellow-100 text-yellow-800'
-      case '대기 중': return 'bg-blue-100 text-blue-800'
-      case '폐차': return 'bg-gray-100 text-gray-800'
-      case '사용 종료': return 'bg-red-100 text-red-800'
-      case 'available': return 'bg-green-100 text-green-800'
-      case 'reserved': return 'bg-yellow-100 text-yellow-800'
-      case 'picked_up': return 'bg-blue-100 text-blue-800'
-      case 'in_use': return 'bg-purple-100 text-purple-800'
-      case 'returned': return 'bg-gray-100 text-gray-800'
-      case 'cancelled': return 'bg-red-100 text-red-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }, [])
-
-  const getRentalStatusText = useCallback((status: string) => {
-    switch (status) {
-      case 'available': return '사용가능'
-      case 'reserved': return '예약됨'
-      case 'picked_up': return '픽업완료'
-      case 'in_use': return '사용중'
-      case 'returned': return '반납완료'
-      case 'cancelled': return '취소됨'
-      default: return status
-    }
-  }, [])
-
   const calculateRemainingInstallment = useCallback((vehicle: Vehicle) => {
     if (!vehicle.is_installment) return 0
     
@@ -733,21 +720,19 @@ export default function VehiclesPage() {
                         {vehicle.nick ? `${vehicle.nick} (${vehicle.vehicle_number})` : vehicle.vehicle_number}
                       </h3>
                   <div className="flex items-center space-x-2">
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(vehicle.status || '운행 가능')}`}>
-                      {activeTab === 'rental_active' || activeTab === 'rental_returned' ? getRentalStatusText(vehicle.status || 'available') : (vehicle.status || '운행 가능')}
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getVehicleStatusBadgeClass(vehicle.status || 'available')}`}>
+                      {getVehicleStatusLabelKo(vehicle.status || 'available')}
                     </span>
                     {activeTab === 'company' ? (
                       <select
-                        value={vehicle.status || '운행 가능'}
+                        value={vehicle.status || 'available'}
                         onChange={(e) => handleStatusChange(vehicle.id, e.target.value)}
                         disabled={updatingStatus === vehicle.id}
                         className="text-xs border border-gray-300 rounded px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
                       >
-                        <option value="운행 가능">운행 가능</option>
-                        <option value="수리 중">수리 중</option>
-                        <option value="대기 중">대기 중</option>
-                        <option value="폐차">폐차</option>
-                        <option value="사용 종료">사용 종료</option>
+                        {VEHICLE_STATUS_SELECT_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
                       </select>
                     ) : activeTab === 'rental_active' ? (
                       <select
@@ -756,16 +741,13 @@ export default function VehiclesPage() {
                         disabled={updatingStatus === vehicle.id}
                         className="text-xs border border-gray-300 rounded px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
                       >
-                        <option value="available">사용가능</option>
-                        <option value="reserved">예약됨</option>
-                        <option value="picked_up">픽업완료</option>
-                        <option value="in_use">사용중</option>
-                        <option value="returned">반납완료</option>
-                        <option value="cancelled">취소됨</option>
+                        {VEHICLE_STATUS_SELECT_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
                       </select>
                     ) : (
                       <span className="text-xs text-gray-500 px-2 py-1 bg-gray-100 rounded">
-                        반납완료
+                        {getVehicleStatusLabelKo(vehicle.status || 'returned')}
                       </span>
                     )}
                   </div>
@@ -782,6 +764,12 @@ export default function VehiclesPage() {
                   {(activeTab === 'rental_active' || activeTab === 'rental_returned') && (
                     <>
                       <p><span className="font-medium">렌터카 회사:</span> {vehicle.rental_company || 'N/A'}</p>
+                      <p>
+                        <span className="font-medium">RN:</span>{' '}
+                        <span className="font-mono text-gray-700 break-all">
+                          {(vehicle.vin && vehicle.vin.trim()) || 'N/A'}
+                        </span>
+                      </p>
                       <p><span className="font-medium">일일 요금:</span> ${vehicle.daily_rate?.toLocaleString() || 'N/A'}</p>
                       <p><span className="font-medium">렌탈 기간:</span> {vehicle.rental_start_date || 'N/A'} ~ {vehicle.rental_end_date || 'N/A'}</p>
                       <p><span className="font-medium">총 비용:</span> ${vehicle.rental_total_cost?.toLocaleString() || 'N/A'}</p>

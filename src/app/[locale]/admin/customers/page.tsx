@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
@@ -111,6 +112,14 @@ type ReservationData = {
   created_at: string
   tour_date: string
   product_id: string
+}
+
+const CUSTOMERS_LIST_UI_DEFAULT = {
+  searchTerm: '',
+  statusFilter: 'all' as 'all' | 'active' | 'inactive',
+  sortField: 'created_at' as keyof Customer,
+  sortDirection: 'desc' as 'asc' | 'desc',
+  currentPage: 1
 }
 
 export default function AdminCustomers() {
@@ -273,11 +282,17 @@ export default function AdminCustomers() {
   const loading = customersLoading || channelsLoading || productsLoading || productOptionsLoading || optionsLoading || pickupHotelsLoading || couponsLoading
 
   const [reservationInfo, setReservationInfo] = useState<Record<string, ReservationInfo>>({})
-  const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
-  const [sortField, setSortField] = useState<keyof Customer>('created_at')
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
-  const [currentPage, setCurrentPage] = useState(1)
+  const [listUi, setListUi] = useRoutePersistedState('customers-list', CUSTOMERS_LIST_UI_DEFAULT)
+  const { searchTerm, statusFilter, sortField, sortDirection, currentPage } = listUi
+  const setSearchTerm = (v: string) => setListUi((prev) => ({ ...prev, searchTerm: v }))
+  const setStatusFilter = (v: 'all' | 'active' | 'inactive') => setListUi((prev) => ({ ...prev, statusFilter: v }))
+  const setSortField = (v: keyof Customer) => setListUi((prev) => ({ ...prev, sortField: v }))
+  const setSortDirection = (v: 'asc' | 'desc') => setListUi((prev) => ({ ...prev, sortDirection: v }))
+  const setCurrentPage = (v: number | ((prev: number) => number)) =>
+    setListUi((prev) => ({
+      ...prev,
+      currentPage: typeof v === 'function' ? (v as (p: number) => number)(prev.currentPage) : v
+    }))
   const daysPerPage = 7
   const [showForm, setShowForm] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)

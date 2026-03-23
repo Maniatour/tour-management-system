@@ -25,11 +25,44 @@ const PLATFORM_FROM_PATTERNS: { pattern: RegExp | string; key: string }[] = [
   { pattern: /booking\.com/i, key: 'booking' },
   { pattern: /expedia/i, key: 'expedia' },
   { pattern: /airbnb/i, key: 'airbnb' },
-  { pattern: /wixsiteautomations\.com/i, key: 'maniatour' },
   { pattern: /resend\.dev|resend\.com/i, key: 'resend' },
 ]
 
+/** 제목 비교용: 앞뒤 공백·연속 공백 정리 후 소문자 */
+export function normalizeEmailSubjectForMatch(subject: string | null | undefined): string {
+  return (subject ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+/**
+ * 자사 Wix 홈페이지 예약 알림: 발신 vegasmaniatour@wixsiteautomations.com + 제목 "You got a new booking"
+ * (다른 wixsiteautomations 발신은 maniatour로 분류하지 않음)
+ */
+export function isManiatourHomepageBookingEmail(
+  sourceEmail: string | null | undefined,
+  subject: string | null | undefined
+): boolean {
+  const from = (sourceEmail ?? '').toLowerCase()
+  if (!/vegasmaniatour@wixsiteautomations\.com/.test(from)) return false
+  return normalizeEmailSubjectForMatch(subject) === 'you got a new booking'
+}
+
+/**
+ * 이메일 공통 패턴 오탐(예: "Clients"에서 client만 매칭 → "s details") 또는 섹션 제목을 이름으로 넣은 경우
+ */
+export function isGarbageImportedCustomerName(raw: string | null | undefined): boolean {
+  if (raw == null || typeof raw !== 'string') return true
+  const s = raw.trim().replace(/\s+/g, ' ')
+  if (s.length < 2) return true
+  return (
+    /^s\s+details$/i.test(s) ||
+    /^clients?\s*details$/i.test(s) ||
+    /^details$/i.test(s) ||
+    /^s$/i.test(s)
+  )
+}
+
 function detectPlatform(sourceEmail: string | null, subject: string): string | null {
+  if (isManiatourHomepageBookingEmail(sourceEmail, subject)) return 'maniatour'
   const from = (sourceEmail || '').toLowerCase()
   const subj = (subject || '').toLowerCase()
   for (const { pattern, key } of PLATFORM_FROM_PATTERNS) {
@@ -113,6 +146,258 @@ function toPlainTextKlook(html: string): string {
     .replace(/&quot;/g, '"')
   s = s.replace(/[ \t]+/g, ' ').replace(/\n\s+/g, '\n').replace(/\s+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
   return s
+}
+
+/** Wix Bookings/Automations HTML: 블록 단위 줄바꿈 후 텍스트 추출 */
+function toPlainTextWix(html: string): string {
+  let s = html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+  s = s
+    .replace(/<\/(?:tr|td|div|p|th|h[1-6])>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+  s = s
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+  s = s.replace(/[ \t]+/g, ' ').replace(/\n\s+/g, '\n').replace(/\s+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+  return s
+}
+
+/**
+ * Wix에 표시된 서비스 제목(보통 When: 바로 위 줄) → 내부 상품
+ * 예: 라스베가스 > 그랜드캐년 일출 & 앤텔로프 캐년 & 홀슈 밴드 투어 → 밤도깨비 그랜드캐년 일출 투어(MDGCSUNRISE)
+ */
+function mapWixHomepageProductTitleToProduct(
+  title: string
+): Partial<Pick<ExtractedReservationData, 'product_id' | 'product_name'>> {
+  const s = title.replace(/\s+/g, ' ').trim()
+  if (!s) return {}
+  if (
+    /라스베가스\s*[>＞]\s*그랜드캐년\s*일출/i.test(s) ||
+    (/그랜드\s*캐년\s*일출/i.test(s) &&
+      /(?:앤텔로프|홀슈|밴드|Antelope|Horseshoe)/i.test(s)) ||
+    /그랜드캐년\s*일출\s*[&＆].*(?:앤텔로프|홀슈|밴드)/i.test(s) ||
+    /Las\s+Vegas\s*[>＞:]\s*[^\n]*Grand\s+Canyon\s*Sunrise/i.test(s) ||
+    /Grand\s+Canyon\s*Sunrise\s*[&＆].*(?:Antelope|Horseshoe)/i.test(s)
+  ) {
+    return { product_id: 'MDGCSUNRISE', product_name: '밤도깨비 그랜드캐년 일출 투어' }
+  }
+  return {}
+}
+
+/** Wix 홈페이지 예약 메일(자사) 전용 추출 — 레이블은 사이트 커스터마이즈에 따라 일부만 매칭될 수 있음 */
+function extractManiatour(
+  text: string,
+  _subject: string,
+  _sourceEmail: string | null,
+  _rawHtml?: string | null
+): Partial<ExtractedReservationData> {
+  const out: Partial<ExtractedReservationData> = {}
+  if (!text || text.length < 10) return out
+
+  const t = text.replace(/\r\n/g, '\n')
+  const oneLine = t.replace(/\s+/g, ' ')
+
+  const isSkippableEmail = (addr: string) =>
+    /@wixsiteautomations\.com/i.test(addr) ||
+    /@wix\.com/i.test(addr) ||
+    /@users\.wix\.com/i.test(addr) ||
+    /noreply|no-reply|donotreply/i.test(addr)
+
+  const idPatterns: RegExp[] = [
+    /(?:booking|order)\s*(?:id|#|number|reference)\s*:?\s*#?\s*([A-Za-z0-9][A-Za-z0-9-]{3,39})/i,
+    /(?:reference|confirmation)\s*(?:#|number|id)?\s*:?\s*#?\s*([A-Za-z0-9][A-Za-z0-9-]{3,39})/i,
+    /#\s*([0-9]{6,20})\b/,
+  ]
+  for (const re of idPatterns) {
+    const m = t.match(re) || oneLine.match(re)
+    if (m?.[1] && !/^(id|number|reference|booking)$/i.test(m[1])) {
+      out.channel_rn = m[1].trim()
+      break
+    }
+  }
+
+  // When: 앞 블록 = 서비스명 (줄바꿈 없이 "제목 When:" 한 줄인 경우도 \bWhen\s*: 분리로 처리)
+  const whenParts = t.split(/\bWhen\s*:/i)
+  if (whenParts.length >= 2) {
+    const beforeWhen = whenParts[0].trimEnd()
+    const lines = beforeWhen.split(/\n/).map((l) => l.trim()).filter(Boolean)
+    const productLine =
+      [...lines]
+        .reverse()
+        .find((l) =>
+          /[>＞]|라스베가스|Las\s+Vegas|그랜드|Grand|Sunrise|일출|앤텔로프|Antelope|홀슈|Horseshoe|밴드|&/i.test(l)
+        ) || lines[lines.length - 1]
+    if (productLine && productLine.length >= 4) {
+      const cleaned = productLine.replace(/\s+/g, ' ')
+      out.product_name = cleaned
+      const mapped = mapWixHomepageProductTitleToProduct(cleaned)
+      if (mapped.product_id) {
+        out.product_id = mapped.product_id
+        if (mapped.product_name) out.product_name = mapped.product_name
+      }
+    }
+  }
+
+  const serviceMatch =
+    t.match(
+      /(?:service|session|tour|experience|appointment)\s*:?\s*([^\n]+?)(?=\n\s*(?:when|date|time|client|customer|email|phone|booked)|$)/im
+    ) || t.match(/(?:booked|booked\s*service)\s*:?\s*([^\n]+)/im)
+  if (serviceMatch?.[1] && !out.product_name) {
+    out.product_name = serviceMatch[1].trim().replace(/\s+/g, ' ')
+    const mapped = mapWixHomepageProductTitleToProduct(out.product_name)
+    if (mapped.product_id) {
+      out.product_id = mapped.product_id
+      if (mapped.product_name) out.product_name = mapped.product_name
+    }
+  }
+
+  // "Name: Fuka  Sugiyama" — 반드시 Name(단어) + 콜론; Clients details 등과 구분
+  const nameFromLabel = t.match(/(?:^|[\r\n])\s*\bName\s*:\s*([^\r\n]+)/im)
+  if (nameFromLabel?.[1]) {
+    const n = nameFromLabel[1].trim().replace(/\s+/g, ' ')
+    if (n.length > 1 && !/^(when|service|tour)\b/i.test(n) && !isGarbageImportedCustomerName(n)) out.customer_name = n
+  }
+  if (!out.customer_name) {
+    // client|customer 등은 \b 로 단어 경계 — "Clients" 의 Client 에만 맞아 s details 가 잡히지 않음
+    const namePatterns: RegExp[] = [
+      /(?:\bclient\b|\bcustomer\b|\bguest\b|\bparticipant\b|\bbooked\s+by\b)\s*:?\s*([A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F\s'.-]{0,79}?)(?=\s*(?:\n|email|e-mail|phone|mobile|when|date)\b)/im,
+      /(?:^|[\r\n])\s*\bname\s*:?\s*([A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F\s'.-]{0,79}?)(?=\s*(?:\n|email|e-mail|phone))/im,
+    ]
+    for (const re of namePatterns) {
+      const m = t.match(re)
+      if (m?.[1]) {
+        const n = m[1].trim().replace(/\s+/g, ' ')
+        if (n.length > 1 && !/^(when|service|tour)\b/i.test(n) && !isGarbageImportedCustomerName(n)) {
+          out.customer_name = n
+          break
+        }
+      }
+    }
+  }
+
+  const emailRe = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g
+  let em: RegExpExecArray | null
+  while ((em = emailRe.exec(t)) !== null) {
+    if (!isSkippableEmail(em[0])) {
+      out.customer_email = em[0]
+      break
+    }
+  }
+
+  const phoneLabeled = t.match(
+    /(?:phone|mobile|tel|cell)\s*:?\s*([+()\d][+()\d\s.-]{8,})\b/im
+  )
+  if (phoneLabeled?.[1]) out.customer_phone = phoneLabeled[1].trim()
+
+  if (!out.customer_phone) {
+    const phoneLoose = t.match(
+      /(?:\+1\s*)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}\b/
+    )
+    if (phoneLoose) out.customer_phone = phoneLoose[0].trim()
+  }
+
+  const whenBlock = t.match(/when\s*:?\s*([^\n]+)/i)
+  if (whenBlock?.[1]) {
+    const w = whenBlock[1]
+    // "March 23, 2026 at 12:00 AM PDT" — at / 타임존 접미사 허용
+    const dt = w.match(
+      /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+20\d{2}\s+(?:at\s+)?(\d{1,2}):([0-5][0-9])\s*(AM|PM)\b/i
+    )
+    if (dt) {
+      const monthNames: Record<string, string> = {
+        january: '01',
+        february: '02',
+        march: '03',
+        april: '04',
+        may: '05',
+        june: '06',
+        july: '07',
+        august: '08',
+        september: '09',
+        october: '10',
+        november: '11',
+        december: '12',
+      }
+      const monthStr = monthNames[dt[1].toLowerCase()]
+      const day = w.match(/\b(\d{1,2}),?\s+20\d{2}/)?.[1]?.padStart(2, '0')
+      const year = w.match(/(20\d{2})/)?.[1]
+      const hour = parseInt(dt[2], 10)
+      const min = dt[3]
+      const isPm = (dt[4] || '').toUpperCase() === 'PM'
+      let h24 = hour
+      if (isPm && hour !== 12) h24 = hour + 12
+      if (!isPm && hour === 12) h24 = 0
+      if (monthStr && day && year) out.tour_date = `${year}-${monthStr}-${day}`
+      out.tour_time = `${String(h24).padStart(2, '0')}:${min}`
+    }
+  }
+
+  const guests =
+    t.match(/(\d+)\s*x?\s*(?:adults?|성인)(?:\s*\(|,|\s|$)/i) ||
+    t.match(/(\d+)\s*(?:guests?|people|participants?|attendees?)\b/i)
+  if (guests?.[1]) {
+    const n = parseInt(guests[1], 10)
+    if (!Number.isNaN(n) && n > 0) {
+      out.adults = n
+      out.total_people = n
+    }
+  }
+  const party = t.match(/(?:party\s*size|group\s*size|number\s*of\s*(?:people|guests?|participants?))\s*:?\s*(\d+)/i)
+  if (party?.[1] && out.adults === undefined) {
+    const n = parseInt(party[1], 10)
+    if (!Number.isNaN(n) && n > 0) {
+      out.adults = n
+      out.total_people = n
+    }
+  }
+
+  // Choose one : Antelope Canyon X x2 (314 USD) — 엑스 앤텔로프 초이스 + 수량 xN (guests보다 우선)
+  const chooseOne = t.match(
+    /Choose\s+one\s*:?\s*(.+?)(?:\s*\([\d,.\s]*\s*USD\)|\n|$)/im
+  )
+  if (chooseOne?.[1]) {
+    const raw = chooseOne[1].trim().replace(/\s+/g, ' ')
+    out.product_choices = raw
+    if (/antelope\s+canyon\s+x/i.test(raw)) {
+      out.import_choice_option_names = ['X Antelope Canyon', 'Antelope X Canyon']
+      const qty = raw.match(/\s+x\s*(\d+)\s*$/i)
+      if (qty?.[1]) {
+        const n = parseInt(qty[1], 10)
+        if (!Number.isNaN(n) && n > 0) {
+          out.adults = n
+          out.total_people = n
+        }
+      }
+    }
+  }
+
+  const amt =
+    t.match(/(?:total|amount\s*paid|paid|subtotal|price)\s*:?\s*\$?\s*([\d,]+\.?\d{0,2})\b/i) ||
+    oneLine.match(/\$\s*([\d,]+\.\d{2})\b/)
+  if (amt?.[1]) out.amount = `$${amt[1].replace(/,/g, '')}`
+
+  const noteM = t.match(
+    /(?:note|message|comments?|special\s*requests?|additional\s*(?:info|information))\s*:?\s*([^\n]+)/i
+  )
+  if (noteM?.[1]) out.special_requests = noteM[1].trim()
+
+  if (!out.import_choice_option_names?.length) {
+    const productHint = `${out.product_name || ''} ${t}`
+    if (/lower\s+antelope/i.test(productHint)) {
+      out.import_choice_option_names = ['Lower Antelope Canyon']
+    } else if (/antelope\s+canyon\s*x|antelope\s+x\s*canyon/i.test(productHint)) {
+      out.import_choice_option_names = ['X Antelope Canyon', 'Antelope X Canyon']
+    }
+  }
+
+  out.import_choice_undecided_groups = ['미국 거주자 구분', '기타 입장료']
+
+  return out
 }
 
 /** 이메일 본문에서 공통 패턴 추출 (정규식 기반) */
@@ -229,9 +514,34 @@ function extractCommonPatterns(text: string): Partial<ExtractedReservationData> 
   const refMatch = text.match(/(?:booking\s*(?:ref(?:erence)?|#|no\.?|number|id)|예약\s*(?:번호|#)|confirmation\s*#?|reference\s*number)\s*:?\s*([A-Za-z0-9_-]+)/i)
   if (refMatch) out.channel_rn = refMatch[1].trim()
 
-  // 이름 (간단 휴리스틱: "Guest name", "Customer", "Name :" 등 다음 줄/값)
-  const nameMatch = text.match(/(?:guest\s*name|customer\s*name|main\s*customer|name\s*:)\s*([A-Za-z\s]+?)(?:\n|$|,|email|phone)/im)
-  if (nameMatch) out.customer_name = nameMatch[1].trim()
+  // 이름 — 반드시 Name(단어) + 콜론 뒤 한 줄 (Clients details 오인 방지)
+  const nameLine = text.match(/(?:^|[\r\n])\s*\bName\s*:\s*([^\r\n]+)/im)
+  if (nameLine?.[1]) {
+    const n = nameLine[1].trim().replace(/\s+/g, ' ')
+    if (n.length >= 2 && !/^clients?\s*details$/i.test(n) && !/^s\s+details$/i.test(n)) out.customer_name = n
+  }
+  if (!out.customer_name) {
+    const nameMatch = text.match(
+      /(?:guest\s*name|customer\s*name|main\s*customer)\s*:?\s*([A-Za-z\u00C0-\u024F\s'.-]+?)(?=\s*(?:\r?\n|$)|,|\bemail\b|\bphone\b)/im
+    )
+    if (nameMatch) out.customer_name = nameMatch[1].trim().replace(/\s+/g, ' ')
+    if (!out.customer_name) {
+      const nameOnly = text.match(
+        /(?:^|[\r\n])\s*\bname\s*:\s*([A-Za-z\u00C0-\u024F\s'.-]+?)(?=\s*(?:\r?\n|$)|,|\bemail\b|\bphone\b)/im
+      )
+      if (nameOnly?.[1]) out.customer_name = nameOnly[1].trim().replace(/\s+/g, ' ')
+    }
+  }
+
+  // 결제 금액: 채널 전용 파서가 없거나 실패했을 때 "Price" / 줄바꿈 후 $ 금액
+  if (!out.amount) {
+    const priceLoose = text.match(/\bprice\b\s*:?\s*[\s\r\n]{0,200}\$?\s*([\d,]+\.?\d*)/i)
+    if (priceLoose) out.amount = `$${priceLoose[1].replace(/,/g, '')}`
+  }
+
+  if (out.customer_name && isGarbageImportedCustomerName(out.customer_name)) {
+    delete out.customer_name
+  }
 
   return out
 }
@@ -239,7 +549,8 @@ function extractCommonPatterns(text: string): Partial<ExtractedReservationData> 
 /** GetYourGuide 본문 상품명 → 우리 product_id (S382661은 vendor code이므로 제목이 아닌 본문 상품명으로 매칭). Zion Bryce(그랜드서클)를 먼저 검사해 밤도깨비로 오매칭 방지. */
 const GYG_BODY_PRODUCT_MAP: Array<{ pattern: RegExp | string; product_id: string }> = [
   { pattern: /Zion\s*Bryce\s*Grand\s*Canyon|Las\s*Vegas\s*>\s*Zion\s*Bryce|Zion\s*Bryce\s*&?\s*Antelope/i, product_id: 'MNGC1N' },
-  { pattern: /Grand\s*Canyon\s*Sunrise|Las\s*Vegas\s*>\s*Grand\s*Canyon\s*Sunrise/i, product_id: 'MDGCSUNRISE' },
+  // GYG 본문이 "Las Vegas: Grand Canyon Sunrise, ..." 처럼 콜론 구분인 경우가 많음 (화살표 > 외에 동일 의미)
+  { pattern: /Grand\s*Canyon\s*Sunrise|Las\s*Vegas\s*[:>]?\s*Grand\s*Canyon\s*Sunrise/i, product_id: 'MDGCSUNRISE' },
 ]
 
 /** GetYourGuide 예약 메일 전용 추출 (라벨 기반) */
@@ -320,31 +631,56 @@ function extractGetYourGuide(
   const pickup = text.match(/(?:pickup\s*|pick-up\s*)\s*:?\s*([^\n]+?)(?:\s*open\s*in\s*google|price|date|\n\n|$)/im)
   if (pickup) out.pickup_hotel = pickup[1].trim()
 
-  // Price: $ 698.88 또는 $698.88
-  const price = text.match(/(?:price|total|amount)\s*:?\s*\$?\s*([\d,]+\.?\d*)/i)
-  if (price) out.amount = `$${price[1].replace(/,/g, '')}`
+  // Price: $ 698.88 / "Price" 와 금액이 줄바꿈·표로 떨어진 경우 (HTML→텍스트 후에도 공백으로 이어짐)
+  const setAmountFromMatch = (m: RegExpMatchArray | null) => {
+    if (m?.[1]) out.amount = `$${m[1].replace(/,/g, '')}`
+  }
+  let price = text.match(/(?:price|total|amount)\s*:?\s*\$?\s*([\d,]+\.?\d*)/i)
+  setAmountFromMatch(price)
+  if (!out.amount) {
+    price = text.match(/\bprice\b\s*:?\s*[\s\r\n]{0,200}\$?\s*([\d,]+\.?\d*)/i)
+    setAmountFromMatch(price)
+  }
+  if (!out.amount) {
+    price = text.match(/\b(?:total|amount\s*paid)\b\s*:?\s*[\s\r\n]{0,200}\$?\s*([\d,]+\.?\d*)/i)
+    setAmountFromMatch(price)
+  }
 
-  // 상품명: "Las Vegas > Grand Canyon Sunrise + Antelope + Horseshoe Bend" → product_name 추출 후 본문 기준 product_id 매칭
-  const productLine = text.match(/(?:offer\s*has\s*been\s*booked|product|tour)\s*:?\s*([A-Za-z0-9\s>+&,-]+?)(?:\s*group\s*tour|with\s*lower|\n\n)/im)
+  // 상품명: "Las Vegas > Grand Canyon Sunrise + ..." 또는 "Las Vegas: Grand Canyon Sunrise, ..." (콜론은 이전 클래스에 없어 잘리던 문제 → : . 허용)
+  const productLine = text.match(/(?:offer\s*has\s*been\s*booked|product|tour)\s*:?\s*([A-Za-z0-9\s>+&,.:\-]+?)(?:\s*group\s*tour|with\s*lower|\n\n)/im)
   if (productLine) out.product_name = productLine[1].trim()
   if (!out.product_name) {
-    const arrowProduct = text.match(/([A-Za-z\s]+>\s*[A-Za-z\s+&,-]+?)(?:\s*group\s*tour|with\s*lower|number\s*of\s*participants|\n\n)/im)
+    const arrowProduct = text.match(/([A-Za-z0-9\s]+>\s*[A-Za-z0-9\s+&,.:\-]+?)(?:\s*group\s*tour|with\s*lower|number\s*of\s*participants|\n\n)/im)
     if (arrowProduct) out.product_name = arrowProduct[1].trim()
   }
-  if (out.product_name) {
+  // 라벨 없이 제목/첫 줄만 오는 경우: 본문에서 직접 상품 줄 후보 추출
+  if (!out.product_name) {
+    const loose = text.match(
+      /(Las\s+Vegas\s*[:>]\s*Grand\s+Canyon\s+Sunrise[^.\n]*)/i
+    )
+    if (loose) out.product_name = loose[1].trim()
+  }
+  const mapGyGProductId = (source: string) => {
     for (const { pattern, product_id } of GYG_BODY_PRODUCT_MAP) {
-      const match = typeof pattern === 'string' ? out.product_name.includes(pattern) : pattern.test(out.product_name)
+      const match = typeof pattern === 'string' ? source.includes(pattern) : pattern.test(source)
       if (match) {
         out.product_id = product_id
         if (product_id === 'MNGC1N') out.product_name = '그랜드서클 1박 2일 투어'
-        break
+        if (product_id === 'MDGCSUNRISE') out.product_name = '밤도깨비 그랜드캐년 일출 투어'
+        return
       }
     }
   }
+  if (out.product_name) mapGyGProductId(out.product_name)
+  // 추출 문자열이 잘렸거나 형식만 바뀐 경우 본문 전체로 재시도 (예: product_name 이 "Las Vegas" 만 남은 경우)
+  if (!out.product_id) mapGyGProductId(text)
 
   // 초이스: 이메일 본문 "Group Tour with Lower Antelope Canyon" → Lower Antelope Canyon / "Group tour with Antelope Canyon X" → Antelope X Canyon
+  const textOneLine = text.replace(/\s+/g, ' ')
   const lowerAntelope = text.match(/group\s*tour\s+with\s+(Lower\s+Antelope\s*Canyon)/i)
-  const antelopeCanyonX = text.match(/group\s*tour\s+with\s+Antelope\s*Canyon\s*X/i)
+  const antelopeCanyonX =
+    textOneLine.match(/\bgroup\s*tour\s+with\s+antelope\s+canyon\s+x\b/i) ||
+    text.match(/group\s*tour\s+with\s+Antelope\s*Canyon\s*X/is)
   if (lowerAntelope) {
     out.product_choices = 'Group Tour with Lower Antelope Canyon'
     out.import_choice_option_names = ['Lower Antelope Canyon']
@@ -1031,28 +1367,64 @@ function extractViator(
   const tourLang = normalized.match(/(?:Tour\s*[Ll]anguage)\s*:?\s*([^\n]+)/m)
   if (tourLang) out.language = normalizeLanguageToCode(tourLang[1].trim())
 
-  // Tour Name 매핑: Viator 상품명 → 우리 상품명
-  const tourNameMatch = normalized.match(/(?:Tour\s*Name)\s*:?\s*([^\n]+?)(?=\s*(?:Tour\s*Option|Hotel\s*Pickup|\n\n|$))/im)
-  if (tourNameMatch) {
-    const rawName = tourNameMatch[1].trim()
-    // Las Vegas 2 Day Zion Bryce Antelope Grand Canyon Horseshoe Bend → 그랜드서클 1박 2일 투어
-    if (/2\s*[Dd]ay.*Zion.*Bryce|Zion.*Bryce.*2\s*[Dd]ay/i.test(rawName)) {
-      out.product_name = '그랜드서클 1박 2일 투어'
-    }
-    // Grand Canyon, Antelope Canyon and Horseshoe Bend Photo Tour → 그랜드서클 당일 투어
-    else if (/Grand\s*Canyon.*Antelope.*Horseshoe\s*Bend|Antelope\s*Canyon.*Horseshoe\s*Bend/i.test(rawName)) {
-      out.product_name = '그랜드서클 당일 투어'
-    } else if (/Las\s*Vegas\s*City\s*Tour\s*with\s*Hotel\s*Pick\s*Up/i.test(rawName)) {
-      out.product_id = 'MDLVN'
-      out.product_name = rawName
-    }
-    if (!out.product_name) out.product_name = rawName
+  // Tour Name / Tour Option — HTML→텍스트 후 한 줄이 아니거나 레이블 순서가 바뀌어도 잡히도록 멀티라인·폴백
+  let rawName = ''
+  let optionRaw = ''
+  const tourNameMulti = normalized.match(
+    /Tour\s*Name\s*:?\s*([\s\S]*?)(?=\s*Tour\s*Option\s*[:：]?\s|$)/i
+  )
+  const tourOptionMulti = normalized.match(
+    /Tour\s*Option\s*:?\s*([\s\S]*?)(?=\s*(?:Hotel\s*Pickup|Pickup\s*Location|Travelers?\s*:|Lead\s*Traveler|Phone|Email|Tour\s*Language|Please\s+respond|$))/i
+  )
+  if (tourNameMulti?.[1]) rawName = tourNameMulti[1].replace(/\s+/g, ' ').trim()
+  if (tourOptionMulti?.[1]) optionRaw = tourOptionMulti[1].replace(/\s+/g, ' ').trim()
+  if (!rawName) {
+    const tourNameLine = normalized.match(/Tour\s*Name\s*:?\s*([^\n]+?)(?=\s*(?:Tour\s*Option|Hotel\s*Pickup|\n\n|$))/im)
+    if (tourNameLine) rawName = tourNameLine[1].trim()
+  }
+  if (!optionRaw) {
+    const tourOptionLine = normalized.match(/Tour\s*Option\s*:?\s*([^\n]+?)(?=\s*(?:Hotel\s*Pickup|Pickup|\n\n|$))/im)
+    if (tourOptionLine) optionRaw = tourOptionLine[1].trim()
   }
 
-  // Tour Option: Shared Van with Lower Antelope 02:00 → 로어 앤텔롭캐년 (Lower Antelope Canyon)
-  const tourOptionMatch = normalized.match(/(?:Tour\s*Option)\s*:?\s*([^\n]+?)(?=\s*(?:Hotel\s*Pickup|Pickup|\n\n|$))/im)
-  if (tourOptionMatch) {
-    const optionRaw = tourOptionMatch[1].trim()
+  const viatorGcAntelopeHorseshoeTourName =
+    /Grand\s*Canyon.*Antelope.*Horseshoe\s*Bend|Antelope\s*Canyon.*Horseshoe\s*Bend/i.test(rawName) ||
+    /Grand\s*Canyon.*Antelope.*Horseshoe\s*Bend|Antelope\s*Canyon.*Horseshoe\s*Bend/i.test(normalized)
+
+  /** 일출 투어: Lower Antelope + 자정/00:00 픽업(또는 Shared Van … 00:00). 본문 전체에서도 탐지(옵션 줄만 실패 시) */
+  const optOrBody = `${optionRaw}\n${normalized.slice(0, 12000)}`
+  const hasLowerAntelope =
+    /Lower\s*Antelope|로어\s*앤텔롭/i.test(optionRaw) || /Lower\s*Antelope|로어\s*앤텔롭/i.test(normalized)
+  const hasSunriseTime =
+    /\b00\s*:\s*00\b|00:00|\b0\s*:\s*00\b|12\s*:\s*00\s*(?:a\.?m\.?|am)\b/i.test(optOrBody) ||
+    /Shared\s*Van\s*with\s*Lower\s*Antelope[^\d]{0,30}00\s*:\s*00|Shared\s*Van\s*with\s*Lower\s*Antelope[^\d]{0,20}00:00/i.test(
+      normalized
+    )
+  const viatorSunriseLowerAntelopeOption = hasLowerAntelope && hasSunriseTime
+
+  const tourNameMatch = rawName.length > 0
+  /** Tour Name 줄 추출 실패해도 본문에 상품명이 있으면 매핑 (HTML/레이블 변형 대비) */
+  const nameForMapping = rawName || normalized.slice(0, 6000)
+
+  // Tour Name 매핑: Viator 상품명 → 우리 상품명
+  if (tourNameMatch || viatorGcAntelopeHorseshoeTourName) {
+    if (/2\s*[Dd]ay.*Zion.*Bryce|Zion.*Bryce.*2\s*[Dd]ay/i.test(nameForMapping)) {
+      out.product_name = '그랜드서클 1박 2일 투어'
+    } else if (viatorGcAntelopeHorseshoeTourName && viatorSunriseLowerAntelopeOption) {
+      out.product_id = 'MDGCSUNRISE'
+      out.product_name = '밤도깨비 그랜드캐년 일출 투어'
+      out.tour_time = '00:00'
+    } else if (viatorGcAntelopeHorseshoeTourName) {
+      out.product_name = '그랜드서클 당일 투어'
+    } else if (/Las\s*Vegas\s*City\s*Tour\s*with\s*Hotel\s*Pick\s*Up/i.test(nameForMapping)) {
+      out.product_id = 'MDLVN'
+      out.product_name = rawName || nameForMapping.trim().slice(0, 200)
+    }
+    if (!out.product_name && rawName) out.product_name = rawName
+  }
+
+  // Tour Option → 초이스 (상품이 일출로 이미 매칭된 경우에도 로어 앤텔롭 유지)
+  if (optionRaw) {
     if (/Lower\s*Antelope|로어\s*앤텔롭/i.test(optionRaw)) {
       out.import_choice_option_names = ['Lower Antelope Canyon']
     } else if (/Upper\s*Antelope|어퍼\s*앤텔롭/i.test(optionRaw)) {
@@ -1078,6 +1450,13 @@ function extractViator(
       out.adults = n
       out.total_people = n + (out.children ?? 0) + (out.infants ?? 0)
     }
+  }
+
+  // Net Rate: USD $1,048.32 — 채널 정산 금액(commission_base)과 비교용
+  const netRateMatch = normalized.match(/Net\s*Rate\s*:?\s*(?:USD\s*)?\$?\s*([\d,]+\.?\d*)/i)
+  if (netRateMatch?.[1]) {
+    const num = netRateMatch[1].replace(/,/g, '')
+    out.viator_net_rate_usd = `$${num}`
   }
 
   // Viator도 미국 거주자 구분·기타 입장료는 미정 기본
@@ -1123,6 +1502,11 @@ const CHANNEL_PARSERS: Record<string, ChannelParserConfig> = {
     extract: (text, subject, sourceEmail) =>
       extractViator(text, subject, sourceEmail),
   },
+  maniatour: {
+    preprocess: toPlainTextWix,
+    extract: (text, subject, sourceEmail, rawHtml) =>
+      extractManiatour(text, subject, sourceEmail, rawHtml ?? null),
+  },
 }
 
 /**
@@ -1149,14 +1533,25 @@ export function extractReservationFromEmail(options: {
   const plainText = bodyRaw || (html ? toPlainText(html) : '')
   const fullText = [subject, plainText].filter(Boolean).join('\n')
   const common = extractCommonPatterns(fullText)
+  // maniatour: extractCommonPatterns 의 customer_name 은 Wix/HTML에서 자주 오탐(s details 등).
+  // 채널 파서가 이름을 못 넣으면 키가 없어 스프레드 시 공통 값이 그대로 남는 문제 → 공통 이름은 제외.
+  const commonForMerge: Partial<ExtractedReservationData> =
+    platform_key === 'maniatour'
+      ? (Object.fromEntries(
+          Object.entries(common).filter(([k]) => k !== 'customer_name')
+        ) as Partial<ExtractedReservationData>)
+      : common
 
   let merged: Partial<ExtractedReservationData> = {
-    ...common,
+    ...commonForMerge,
     ...(platform_key ? { platform_key } : {}),
   }
   if (parser?.extract) {
     const channelData = parser.extract(plainText, subject, sourceEmail || null, rawHtml ?? html ?? null)
     merged = { ...merged, ...channelData }
+  }
+  if (merged.customer_name && isGarbageImportedCustomerName(merged.customer_name)) {
+    delete merged.customer_name
   }
   if (platform_key === 'klook' && (subject || '').trimStart().toLowerCase().startsWith('klook order received -')) {
     merged.is_booking_confirmed = true
@@ -1169,8 +1564,8 @@ export function extractReservationFromEmail(options: {
   if (platform_key === 'viator' && (subject || '').trim().toLowerCase().includes('please respond: new booking request:')) {
     merged.is_booking_confirmed = true
   }
-  // 홈페이지(maniatour): You got a new booking — vegasmaniatour@wixsiteautomations.com
-  if (platform_key === 'maniatour' && (subject || '').trim().toLowerCase() === 'you got a new booking') {
+  // 홈페이지(maniatour): detectPlatform에서 vegasmaniatour@ + 제목 You got a new booking 일 때만 maniatour
+  if (platform_key === 'maniatour') {
     merged.is_booking_confirmed = true
   }
 

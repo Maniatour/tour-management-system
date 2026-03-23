@@ -10,6 +10,8 @@ import TourCalendar from '@/components/TourCalendar'
 import ScheduleView from '@/components/ScheduleView'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { useAuth } from '@/contexts/AuthContext'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
+import type { SetStateAction } from 'react'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 // type ProductNameRow = Pick<Database['public']['Tables']['products']['Row'], 'id' | 'name_ko' | 'name_en'> & { name?: string | null }
@@ -33,6 +35,19 @@ type ExtendedTour = Omit<Tour, 'assignment_status'> & {
 
 type Employee = Database['public']['Tables']['team']['Row']
 type Product = Database['public']['Tables']['products']['Row']
+
+function toursDefaultGridMonthKey() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+}
+
+const ADMIN_TOURS_UI_DEFAULT = {
+  viewMode: 'calendar' as 'list' | 'calendar' | 'schedule',
+  listViewDateFilter: 'month' as 'month' | 'all' | 'scheduled',
+  gridMonthKey: toursDefaultGridMonthKey(),
+  searchTerm: '',
+  selectedStatuses: ['all'] as string[],
+}
 
 export default function AdminTours() {
   const t = useTranslations('tours')
@@ -74,11 +89,30 @@ export default function AdminTours() {
   const [tours, setTours] = useState<ExtendedTour[]>([])
   const [allReservations, setAllReservations] = useState<Database['public']['Tables']['reservations']['Row'][]>([])
   const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, Database['public']['Tables']['reservation_pricing']['Row']>>(new Map())
-  const [viewMode, setViewMode] = useState<'list' | 'calendar' | 'schedule'>('calendar')
+  const [tourUi, setTourUi] = useRoutePersistedState('admin-tours', ADMIN_TOURS_UI_DEFAULT, { storage: 'local' })
+  const { viewMode, listViewDateFilter, searchTerm, selectedStatuses } = tourUi
+  const setViewMode = (m: 'list' | 'calendar' | 'schedule') => setTourUi((u) => ({ ...u, viewMode: m }))
+  const setListViewDateFilter = (f: 'month' | 'all' | 'scheduled') => setTourUi((u) => ({ ...u, listViewDateFilter: f }))
+  const setSearchTerm = (v: SetStateAction<string>) =>
+    setTourUi((u) => ({
+      ...u,
+      searchTerm: typeof v === 'function' ? (v as (s: string) => string)(u.searchTerm) : v,
+    }))
+  const setSelectedStatuses = (v: SetStateAction<string[]>) =>
+    setTourUi((u) => ({
+      ...u,
+      selectedStatuses: typeof v === 'function' ? (v as (s: string[]) => string[])(u.selectedStatuses) : v,
+    }))
+  const gridMonth = useMemo(() => {
+    const [y, m] = tourUi.gridMonthKey.split('-').map(Number)
+    return new Date(y, m - 1, 1)
+  }, [tourUi.gridMonthKey])
+  const setGridMonthFromDate = (d: Date) =>
+    setTourUi((u) => ({
+      ...u,
+      gridMonthKey: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`,
+    }))
   const [statusOptions, setStatusOptions] = useState<string[]>([])
-  const [gridMonth, setGridMonth] = useState<Date>(new Date())
-  // 리스트 뷰 날짜 필터: 'month' = 선택한 달만, 'all' = 전체, 'scheduled' = 오늘 포함 예정
-  const [listViewDateFilter, setListViewDateFilter] = useState<'month' | 'all' | 'scheduled'>('month')
 
   // 최적화된 데이터 로딩
   const { data: toursData, loading: toursLoading } = useOptimizedData({
@@ -143,11 +177,11 @@ export default function AdminTours() {
   // month key helper was unused; removed to satisfy linter
 
   const goToPrevGridMonth = () => {
-    setGridMonth(new Date(gridMonth.getFullYear(), gridMonth.getMonth() - 1, 1))
+    setGridMonthFromDate(new Date(gridMonth.getFullYear(), gridMonth.getMonth() - 1, 1))
   }
 
   const goToNextGridMonth = () => {
-    setGridMonth(new Date(gridMonth.getFullYear(), gridMonth.getMonth() + 1, 1))
+    setGridMonthFromDate(new Date(gridMonth.getFullYear(), gridMonth.getMonth() + 1, 1))
   }
 
   const getStatusBadgeClasses = (status: string | null | undefined) => {
@@ -448,37 +482,6 @@ export default function AdminTours() {
     }
   }, [toursData, processToursData])
 
-  const [searchTerm, setSearchTerm] = useState('')
-  
-  // 로컬 스토리지에서 선택된 상태 불러오기
-  const loadSelectedStatusesFromStorage = (): string[] => {
-    if (typeof window === 'undefined') return []
-    try {
-      const saved = localStorage.getItem('tourStatusFilter')
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        return Array.isArray(parsed) ? parsed : []
-      }
-    } catch (error) {
-      console.error('Error loading status filter from localStorage:', error)
-    }
-    return []
-  }
-  
-  // 선택된 상태를 로컬 스토리지에 저장
-  const saveSelectedStatusesToStorage = (statuses: string[]) => {
-    if (typeof window === 'undefined') return
-    try {
-      localStorage.setItem('tourStatusFilter', JSON.stringify(statuses))
-    } catch (error) {
-      console.error('Error saving status filter to localStorage:', error)
-    }
-  }
-  
-  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(() => {
-    const saved = loadSelectedStatusesFromStorage()
-    return saved.length > 0 ? saved : ['all']
-  })
   const [asGuideEmail, setAsGuideEmail] = useState<string>('')
   const [showStatusFilter, setShowStatusFilter] = useState(false)
   const statusFilterRef = useRef<HTMLDivElement>(null)
@@ -744,11 +747,9 @@ export default function AdminTours() {
                         if (e.target.checked) {
                           const newStatuses = ['all']
                           setSelectedStatuses(newStatuses)
-                          saveSelectedStatusesToStorage(newStatuses)
                         } else {
                           const newStatuses: string[] = []
                           setSelectedStatuses(newStatuses)
-                          saveSelectedStatusesToStorage(newStatuses)
                         }
                       }}
                       className="mr-2"
@@ -775,7 +776,6 @@ export default function AdminTours() {
                             }
                           }
                           setSelectedStatuses(newStatuses)
-                          saveSelectedStatusesToStorage(newStatuses)
                         }}
                         className="mr-2"
                       />
@@ -819,7 +819,6 @@ export default function AdminTours() {
               onClick={() => { 
                 setSearchTerm('')
                 setSelectedStatuses(['all'])
-                saveSelectedStatusesToStorage(['all'])
                 setAsGuideEmail('')
                 setShowStatusFilter(false)
               }}

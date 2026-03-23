@@ -28,6 +28,8 @@ export interface ExtractedReservationData {
   channel_rn?: string
   pickup_hotel?: string
   amount?: string
+  /** Viator: Net Rate (USD) 문자열. 채널 정산 금액과 비교해 불일치 시 쿠폰 자동 선택에 사용 */
+  viator_net_rate_usd?: string
   /** Klook 등: 불포함 금액 (Not included / Amount not included). 예약 폼의 인원당 불포함 가격 매칭용 */
   amount_excluded?: string
   note?: string

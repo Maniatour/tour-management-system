@@ -1,15 +1,15 @@
 'use client';
 
-import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import TicketBookingList from '@/components/booking/TicketBookingList';
 import TourHotelBookingList from '@/components/booking/TourHotelBookingList';
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState';
 
 type TabType = 'tickets' | 'hotels';
 
 export default function BookingManagementPage() {
   const t = useTranslations('booking');
-  const [activeTab, setActiveTab] = useState<TabType>('tickets');
+  const [activeTab, setActiveTab] = useRoutePersistedState<TabType>('tab', 'tickets');
 
   const tabs = [
     { id: 'tickets' as TabType, name: t('tabs.tickets'), component: TicketBookingList },

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { useRouter } from 'next/navigation'
 import { MessageCircle, Calendar, Search, RefreshCw, Languages, ChevronDown, Cast, Power, PowerOff } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -72,6 +73,12 @@ interface ChatMessage {
   file_size?: number
   is_read: boolean
   created_at: string
+}
+
+const CHAT_MGMT_UI_DEFAULT = {
+  searchTerm: '',
+  filterStatus: 'all',
+  activeTab: 'upcoming' as 'upcoming' | 'past' | 'inactive'
 }
 
 interface TourInfo {
@@ -149,11 +156,13 @@ export default function ChatManagementPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [sending, setSending] = useState(false)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [filterStatus, setFilterStatus] = useState('all')
+  const [listUi, setListUi] = useRoutePersistedState('chat-management', CHAT_MGMT_UI_DEFAULT)
+  const { searchTerm, filterStatus, activeTab } = listUi
+  const setSearchTerm = (v: string) => setListUi((prev) => ({ ...prev, searchTerm: v }))
+  const setFilterStatus = (v: string) => setListUi((prev) => ({ ...prev, filterStatus: v }))
+  const setActiveTab = (v: 'upcoming' | 'past' | 'inactive') => setListUi((prev) => ({ ...prev, activeTab: v }))
   const [tourInfo, setTourInfo] = useState<TourInfo | null>(null)
   const [refreshing, setRefreshing] = useState(false)
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'inactive'>('upcoming')
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['pickup-schedule']))
   const [pickupHotels, setPickupHotels] = useState<Array<{ id: string; hotel: string; pick_up_location?: string; google_maps_link?: string; link?: string }>>([])
   const [loadingMessages, setLoadingMessages] = useState(false)
@@ -923,11 +932,9 @@ export default function ChatManagementPage() {
     setMessages([])
     setNewMessage('')
     setSending(false)
-    setSearchTerm('')
-    setFilterStatus('all')
+    setListUi(CHAT_MGMT_UI_DEFAULT)
     setTourInfo(null)
     setRefreshing(false)
-    setActiveTab('upcoming')
     setSelectedLanguage('ko')
     setShowLanguageDropdown(false)
     setTranslatedMessages({})

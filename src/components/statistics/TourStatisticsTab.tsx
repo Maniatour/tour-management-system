@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useMemo, useEffect } from 'react'
-import Link from 'next/link'
+import { useLocale } from 'next-intl'
 import { 
   BarChart3, 
   TrendingUp, 
@@ -25,10 +25,19 @@ import { supabase } from '@/lib/supabase'
 import {
   hotelAmountForSettlement,
   isHotelBookingIncludedInSettlement,
+  isTicketBookingEaIncludedInNetCount,
   isTicketBookingIncludedInSettlement,
+  ticketEaAsNumber,
   ticketExpenseForSettlement
 } from '@/lib/bookingSettlement'
 import TourExpenseManager from '../TourExpenseManager'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 
 interface TourStatisticsData {
   totalTours: number
@@ -72,6 +81,96 @@ interface TourStatisticsData {
 
 interface TourStatisticsTabProps {
   dateRange: { start: string; end: string }
+}
+
+type TourStatsFiltersState = {
+  selectedChart: 'profit' | 'expenses' | 'vehicles' | 'daily'
+  dailyMetric: 'revenue' | 'expenses' | 'profit' | 'people'
+  selectedProducts: string[]
+  tourSearch: string
+  perPersonMetric: 'none' | 'revenuePer' | 'expensesPer' | 'profitPer'
+  selectedVehicle: string
+  dateSortDir: 'asc' | 'desc'
+}
+
+const DEFAULT_TOUR_STATS_FILTERS: TourStatsFiltersState = {
+  selectedChart: 'profit',
+  dailyMetric: 'profit',
+  selectedProducts: [],
+  tourSearch: '',
+  perPersonMetric: 'none',
+  selectedVehicle: 'all',
+  dateSortDir: 'asc',
+}
+
+/** 티켓 ea vs 인원 불일치 시 빨간 표시를 하지 않는 상품(상품명 부분 일치) */
+const PRODUCT_SUBSTRINGS_EXEMPT_TICKET_EA_MISMATCH = [
+  '라스베가스 야경',
+  '데쓰밸리',
+  '데스밸리',
+  'Death Valley',
+  '공항 샌딩',
+  '공항샌딩',
+  '공항 픽업',
+  '공항픽업',
+  '드라이버 서비스',
+  '드라이버서비스',
+] as const
+
+function isProductExemptFromTicketEaMismatchCheck(productName: string): boolean {
+  const n = (productName || '').trim()
+  if (!n) return false
+  return PRODUCT_SUBSTRINGS_EXEMPT_TICKET_EA_MISMATCH.some((k) => n.includes(k))
+}
+
+function TourStatisticsTourDetailModal({
+  open,
+  onOpenChange,
+  tourId,
+  productName,
+  locale,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  tourId: string | null
+  productName: string
+  locale: string
+}) {
+  const href = tourId ? `/${locale}/admin/tours/${tourId}` : ''
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden z-[100] sm:rounded-lg"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        <DialogHeader className="flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-4 py-3 pr-12 shrink-0 text-left">
+          <DialogTitle className="text-base font-semibold leading-snug truncate flex-1 min-w-0" title={productName}>
+            {productName}
+          </DialogTitle>
+          {tourId ? (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 shrink-0 ml-2"
+            >
+              새 탭에서 열기
+              <ExternalLink size={14} aria-hidden />
+            </a>
+          ) : null}
+        </DialogHeader>
+        {tourId ? (
+          <iframe
+            key={tourId}
+            title={productName ? `${productName} 투어 상세` : '투어 상세'}
+            src={href}
+            className="w-full flex-1 min-h-0 border-0 bg-white"
+          />
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 // 날짜 포맷팅 함수 (시간대 문제 해결)
@@ -438,7 +537,11 @@ async function getTourFinancialStats(tourId: string) {
     const totalFees = (tour?.guide_fee || 0) + (tour?.assistant_fee || 0)
     const totalTicketCosts =
       ticketBookings?.reduce((sum, booking) => sum + ticketExpenseForSettlement(booking), 0) || 0
-    const totalTicketEa = ticketBookings?.reduce((sum, booking) => sum + (booking.ea ?? 0), 0) || 0
+    const totalTicketEa =
+      (ticketBookingsRaw || []).reduce((sum, booking) => {
+        if (!isTicketBookingEaIncludedInNetCount(booking.status)) return sum
+        return sum + ticketEaAsNumber(booking.ea)
+      }, 0) || 0
     const totalHotelCosts =
       hotelBookings?.reduce((sum, booking) => sum + hotelAmountForSettlement(booking), 0) || 0
     const totalBookingCosts = totalTicketCosts + totalHotelCosts
@@ -515,18 +618,27 @@ async function getTourFinancialStats(tourId: string) {
 }
 
 export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps) {
+  const locale = useLocale()
   const {
     reservations,
     products,
     loading
   } = useReservationData()
 
-  const [selectedChart, setSelectedChart] = useState<'profit' | 'expenses' | 'vehicles' | 'daily'>('profit')
-  const [dailyMetric, setDailyMetric] = useState<'revenue' | 'expenses' | 'profit' | 'people'>('profit')
-  const [selectedProducts, setSelectedProducts] = useState<string[]>([])
-  const [tourSearch, setTourSearch] = useState<string>('')
-  const [perPersonMetric, setPerPersonMetric] = useState<'none' | 'revenuePer' | 'expensesPer' | 'profitPer'>('none')
-  const [selectedVehicle, setSelectedVehicle] = useState<string>('all')
+  const [tourDetailModal, setTourDetailModal] = useState<{ tourId: string; productName: string } | null>(null)
+  const [filters, setFilters] = useRoutePersistedState<TourStatsFiltersState>(
+    'tour-filters',
+    DEFAULT_TOUR_STATS_FILTERS
+  )
+  const {
+    selectedChart,
+    dailyMetric,
+    selectedProducts,
+    tourSearch,
+    perPersonMetric,
+    selectedVehicle,
+    dateSortDir,
+  } = filters
   const [expandedExpenses, setExpandedExpenses] = useState<Record<string, boolean>>({})
   const [expenseDetails, setExpenseDetails] = useState<Record<string, any>>({})
   const [tourStatisticsData, setTourStatisticsData] = useState<TourStatisticsData>({
@@ -540,7 +652,6 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
     vehicleStats: []
   })
   const [isCalculating, setIsCalculating] = useState(false)
-  const [dateSortDir, setDateSortDir] = useState<'asc' | 'desc'>('asc')
 
   // 지출 상세 내역 토글
   const toggleExpenseDetails = async (tourId: string, tourDate?: string) => {
@@ -959,6 +1070,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
   }
 
   return (
+    <>
     <div className="space-y-4 sm:space-y-6">
       {/* 요약 통계 카드 */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-4">
@@ -1038,7 +1150,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
               value={selectedProducts}
               onChange={(e) => {
                 const options = Array.from(e.target.selectedOptions).map(o => o.value)
-                setSelectedProducts(options)
+                setFilters((f) => ({ ...f, selectedProducts: options }))
               }}
               className="w-full md:w-96 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-md h-20 sm:h-28 text-sm"
             >
@@ -1051,14 +1163,14 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">검색(상품명/날짜)</label>
             <input
               value={tourSearch}
-              onChange={(e) => setTourSearch(e.target.value)}
+              onChange={(e) => setFilters((f) => ({ ...f, tourSearch: e.target.value }))}
               placeholder="예: 그랜드, 2025. 01. 20"
               className="w-full md:w-80 px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 rounded-md text-sm"
             />
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={() => { setSelectedProducts([]); setTourSearch('') }}
+              onClick={() => setFilters((f) => ({ ...f, selectedProducts: [], tourSearch: '' }))}
               className="px-2.5 py-1.5 sm:px-3 sm:py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 text-sm"
             >필터 초기화</button>
             <div className="text-xs sm:text-sm text-gray-500">표시: {visibleTourStats.length}개</div>
@@ -1073,7 +1185,12 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
           ].map(({ key, label, icon: Icon }) => (
             <button
               key={key}
-              onClick={() => setSelectedChart(key as any)}
+              onClick={() =>
+                setFilters((f) => ({
+                  ...f,
+                  selectedChart: key as TourStatsFiltersState['selectedChart'],
+                }))
+              }
               className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-md sm:rounded-lg transition-colors text-sm ${
                 selectedChart === key
                   ? 'bg-blue-500 text-white'
@@ -1101,7 +1218,12 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                   ].map(({ key, label }) => (
                     <button
                       key={key}
-                      onClick={() => setPerPersonMetric(key as any)}
+                      onClick={() =>
+                        setFilters((f) => ({
+                          ...f,
+                          perPersonMetric: key as TourStatsFiltersState['perPersonMetric'],
+                        }))
+                      }
                       className={`px-2 py-1 text-xs ${perPersonMetric === key ? 'bg-blue-600 text-white' : 'text-gray-700'}`}
                     >{label}</button>
                   ))}
@@ -1274,7 +1396,7 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
               <div className="flex space-x-2">
                 <select
                   value={selectedVehicle}
-                  onChange={(e) => setSelectedVehicle(e.target.value)}
+                  onChange={(e) => setFilters((f) => ({ ...f, selectedVehicle: e.target.value }))}
                   className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="all">전체 차량</option>
@@ -1375,7 +1497,12 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                 ].map(({ key, label }) => (
                   <button
                     key={key}
-                    onClick={() => setDailyMetric(key as any)}
+                    onClick={() =>
+                      setFilters((f) => ({
+                        ...f,
+                        dailyMetric: key as TourStatsFiltersState['dailyMetric'],
+                      }))
+                    }
                     className={`px-3 py-1 text-sm rounded-md ${dailyMetric === key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}
                   >{label}</button>
                 ))}
@@ -1440,7 +1567,12 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
               <tr>
                 <th className="px-2 sm:px-3 py-1.5 text-left text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-tight">
                   <button
-                    onClick={() => setDateSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'))}
+                    onClick={() =>
+                      setFilters((f) => ({
+                        ...f,
+                        dateSortDir: f.dateSortDir === 'asc' ? 'desc' : 'asc',
+                      }))
+                    }
                     className="inline-flex items-center gap-0.5 text-gray-700 hover:text-gray-900"
                     title="투어 날짜로 정렬"
                   >
@@ -1484,13 +1616,17 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                     </td>
                     <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-gray-900 max-w-[120px] truncate" title={tour.productName}>
                       {tour.hasValidTourId ? (
-                        <Link 
-                          href={`/ko/admin/tours/${tour.tourId}`}
-                          className="flex items-center gap-0.5 text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setTourDetailModal({ tourId: tour.tourId, productName: tour.productName })
+                          }
+                          className="flex items-center gap-0.5 text-left text-blue-600 hover:text-blue-800 hover:underline transition-colors max-w-full"
+                          title="투어 상세 보기"
                         >
                           <span className="truncate">{tour.productName}</span>
-                          <ExternalLink size={11} className="flex-shrink-0" />
-                        </Link>
+                          <ExternalLink size={11} className="flex-shrink-0" aria-hidden />
+                        </button>
                       ) : (
                         <span className="text-gray-500 truncate block">{tour.productName}</span>
                       )}
@@ -1548,7 +1684,14 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                           <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-red-600 font-medium">
                             ${(tour.gasCost || 0).toLocaleString()}
                           </td>
-                          <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-red-600 font-medium">
+                          <td
+                            className={`px-2 sm:px-3 py-1.5 whitespace-nowrap font-medium ${
+                              !isProductExemptFromTicketEaMismatchCheck(tour.productName) &&
+                              (tour.ticketBookingsEa ?? 0) !== (tour.totalPeople ?? 0)
+                                ? 'text-red-600'
+                                : 'text-gray-900'
+                            }`}
+                          >
                             ${(tour.ticketBookingsCost || 0).toLocaleString()} ({(tour.ticketBookingsEa ?? 0)}ea)
                           </td>
                           <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-purple-600 font-medium">
@@ -1942,9 +2085,37 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                   <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-red-600">
                     ${visibleTourStats.reduce((sum, t) => sum + (t.gasCost || 0), 0).toLocaleString()}
                   </td>
-                  <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-red-600">
-                    ${visibleTourStats.reduce((sum, t) => sum + (t.ticketBookingsCost || 0), 0).toLocaleString()} ({visibleTourStats.reduce((sum, t) => sum + (t.ticketBookingsEa ?? 0), 0)}ea)
-                  </td>
+                  {(() => {
+                    const totalTicketCost = visibleTourStats.reduce(
+                      (sum, t) => sum + (t.ticketBookingsCost || 0),
+                      0
+                    )
+                    const totalTicketEa = visibleTourStats.reduce(
+                      (sum, t) => sum + (t.ticketBookingsEa ?? 0),
+                      0
+                    )
+                    const forTicketCheck = visibleTourStats.filter(
+                      (t) => !isProductExemptFromTicketEaMismatchCheck(t.productName)
+                    )
+                    const ticketEaForCheck = forTicketCheck.reduce(
+                      (sum, t) => sum + (t.ticketBookingsEa ?? 0),
+                      0
+                    )
+                    const peopleForCheck = forTicketCheck.reduce(
+                      (sum, t) => sum + (t.totalPeople || 0),
+                      0
+                    )
+                    const eaMismatch = ticketEaForCheck !== peopleForCheck
+                    return (
+                      <td
+                        className={`px-2 sm:px-3 py-1.5 whitespace-nowrap ${
+                          eaMismatch ? 'text-red-600' : 'text-gray-900'
+                        }`}
+                      >
+                        ${totalTicketCost.toLocaleString()} ({totalTicketEa}ea)
+                      </td>
+                    )
+                  })()}
                   <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-purple-600">
                     ${visibleTourStats.reduce((sum, t) => sum + (t.notIncludedPrice || 0), 0).toLocaleString()}
                   </td>
@@ -1955,6 +2126,18 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
           </table>
         </div>
       </div>
+
     </div>
+
+      <TourStatisticsTourDetailModal
+        open={tourDetailModal !== null}
+        onOpenChange={(o) => {
+          if (!o) setTourDetailModal(null)
+        }}
+        tourId={tourDetailModal?.tourId ?? null}
+        productName={tourDetailModal?.productName ?? ''}
+        locale={locale}
+      />
+    </>
   )
 }

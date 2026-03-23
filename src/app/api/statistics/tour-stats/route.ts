@@ -9,7 +9,9 @@ import {
 import {
   hotelAmountForSettlement,
   isHotelBookingIncludedInSettlement,
+  isTicketBookingEaIncludedInNetCount,
   isTicketBookingIncludedInSettlement,
+  ticketEaAsNumber,
   ticketExpenseForSettlement
 } from '@/lib/bookingSettlement'
 
@@ -266,12 +268,18 @@ export async function GET(request: NextRequest) {
       expensesByTour[row.tour_id] += row.amount || 0
     })
     const ticketByTour: Record<string, { cost: number; ea: number }> = {}
-    ;(ticketBookingsAll || []).forEach((row: { tour_id: string; expense?: number; ea?: number; status?: string }) => {
-      if (!isTicketBookingIncludedInSettlement(row.status)) return
-      if (!ticketByTour[row.tour_id]) ticketByTour[row.tour_id] = { cost: 0, ea: 0 }
-      ticketByTour[row.tour_id].cost += ticketExpenseForSettlement(row)
-      ticketByTour[row.tour_id].ea += row.ea ?? 0
-    })
+    ;(ticketBookingsAll || []).forEach(
+      (row: { tour_id: string; expense?: number; ea?: number | string | null; status?: string }) => {
+        const tid = row.tour_id
+        if (!ticketByTour[tid]) ticketByTour[tid] = { cost: 0, ea: 0 }
+        if (isTicketBookingIncludedInSettlement(row.status)) {
+          ticketByTour[tid].cost += ticketExpenseForSettlement(row)
+        }
+        if (isTicketBookingEaIncludedInNetCount(row.status)) {
+          ticketByTour[tid].ea += ticketEaAsNumber(row.ea)
+        }
+      }
+    )
     const hotelByTour: Record<string, number> = {}
     ;(hotelBookingsAll || []).forEach(
       (row: {

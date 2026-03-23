@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { translateText, detectLanguage } from '@/lib/translation'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 
 interface TeamChatRoom {
   id: string
@@ -64,18 +65,32 @@ interface TeamMember {
   is_active: boolean
 }
 
+const TEAM_CHAT_LIST_UI = {
+  searchTerm: '',
+  filterType: 'all',
+  settingsPositionTab: 'all',
+  selectedPositionTab: 'all',
+}
+
 export default function TeamChatPage() {
   const { user, simulatedUser, isSimulating } = useAuth()
+  const [listUi, setListUi] = useRoutePersistedState('team-chat-list', TEAM_CHAT_LIST_UI)
+  const { searchTerm, filterType, settingsPositionTab, selectedPositionTab } = listUi
+  const setSearchTerm = (v: React.SetStateAction<string>) =>
+    setListUi((u) => ({
+      ...u,
+      searchTerm: typeof v === 'function' ? (v as (s: string) => string)(u.searchTerm) : v,
+    }))
+  const setFilterType = (v: string) => setListUi((u) => ({ ...u, filterType: v }))
+  const setSettingsPositionTab = (v: string) => setListUi((u) => ({ ...u, settingsPositionTab: v }))
+  const setSelectedPositionTab = (v: string) => setListUi((u) => ({ ...u, selectedPositionTab: v }))
   const [selectedRoom, setSelectedRoom] = useState<TeamChatRoom | null>(null)
   const [messages, setMessages] = useState<TeamChatMessage[]>([])
   const [newMessage, setNewMessage] = useState('')
   const [sending, setSending] = useState(false)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [filterType, setFilterType] = useState('all')
   const [showCreateRoom, setShowCreateRoom] = useState(false)
   const [showRoomSettings, setShowRoomSettings] = useState(false)
   const [replyingTo, setReplyingTo] = useState<TeamChatMessage | null>(null)
-  const [settingsPositionTab, setSettingsPositionTab] = useState<string>('all')
   const [roomParticipants, setRoomParticipants] = useState<Array<{
     participant_email: string
     participant_name: string
@@ -93,7 +108,6 @@ export default function TeamChatPage() {
     description: '',
     participant_emails: [] as string[]
   })
-  const [selectedPositionTab, setSelectedPositionTab] = useState<string>('all')
   // AuthContext에서 팀 채팅 안읽은 메시지 수 가져오기 (현재 사용하지 않음)
   // const { teamChatUnreadCount } = useAuth()
 

@@ -392,11 +392,11 @@ export function useTourDetailData() {
       // 전체 차량 목록 가져오기
       console.log('전체 차량 목록 가져오기 시작')
       try {
-        // 먼저 status 필터로 시도 (운행 가능한 차량만)
+        // 먼저 status 필터로 시도 (이용 가능한 차량만)
         let { data: allVehicles, error: vehiclesError } = await supabase
           .from('vehicles')
           .select('*')
-          .eq('status', '운행 가능')
+          .eq('status', 'available')
           .order('vehicle_type', { ascending: true })
           .order('vehicle_number', { ascending: true })
 

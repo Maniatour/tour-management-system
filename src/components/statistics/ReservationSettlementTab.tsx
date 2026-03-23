@@ -18,6 +18,7 @@ import {
   Receipt
 } from 'lucide-react'
 import { useReservationData } from '@/hooks/useReservationData'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import AdvancedCharts from './AdvancedCharts'
 import { generateTourStatisticsPDF, generateChartPDF } from '@/utils/pdfExport'
 import { supabase } from '@/lib/supabase'
@@ -182,7 +183,12 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
     loading
   } = useReservationData()
 
-  const [selectedChart, setSelectedChart] = useState<'profit' | 'expenses' | 'subcategories'>('profit')
+  type SettlementChartKey = 'profit' | 'expenses' | 'subcategories'
+  const [settlementUi, setSettlementUi] = useRoutePersistedState(
+    'settlement-filters',
+    { selectedChart: 'profit' as SettlementChartKey }
+  )
+  const { selectedChart } = settlementUi
   const [expandedExpenses, setExpandedExpenses] = useState<Record<string, boolean>>({})
   const [expenseDetails, setExpenseDetails] = useState<Record<string, any>>({})
   const [settlementData, setSettlementData] = useState<ReservationSettlementData>({
@@ -543,7 +549,12 @@ export default function ReservationSettlementTab({ dateRange }: ReservationSettl
           ].map(({ key, label, icon: Icon }) => (
             <button
               key={key}
-              onClick={() => setSelectedChart(key as any)}
+              onClick={() =>
+                setSettlementUi((f) => ({
+                  ...f,
+                  selectedChart: key as SettlementChartKey,
+                }))
+              }
               className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-md sm:rounded-lg transition-colors text-sm ${
                 selectedChart === key
                   ? 'bg-blue-500 text-white'

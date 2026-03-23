@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { createClientSupabase } from '@/lib/supabase'
 import { Database } from '@/lib/database.types'
 
@@ -40,8 +41,16 @@ interface TabCounts {
   products: number
 }
 
+const DATA_REVIEW_UI_DEFAULT = {
+  activeTab: 'customers',
+  activeFilter: 'all',
+  statusFilter: 'all',
+  pricingSubTab: 'all'
+}
+
 export default function AdminDataReview({ }: AdminDataReviewProps) {
-  const [activeTab, setActiveTab] = useState<string>('customers')
+  const [navUi, setNavUi] = useRoutePersistedState('data-review', DATA_REVIEW_UI_DEFAULT)
+  const { activeTab, activeFilter, statusFilter, pricingSubTab } = navUi
   const [loading, setLoading] = useState(true)
   const [tabCounts, setTabCounts] = useState<TabCounts>({
     customers: 0,
@@ -59,9 +68,6 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
   const [filteredIssues, setFilteredIssues] = useState<ReviewIssue[]>([])
   const [editingItem, setEditingItem] = useState<any>(null)
   const [editModalOpen, setEditModalOpen] = useState(false)
-  const [activeFilter, setActiveFilter] = useState<string>('all')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [pricingSubTab, setPricingSubTab] = useState<string>('all')
 
   const supabase = createClientSupabase()
 
@@ -1055,7 +1061,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
               {tabs.map((tab) => (
                 <button
                   key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
+                  onClick={() => setNavUi((prev) => ({ ...prev, activeTab: tab.key }))}
                   className={`py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap flex-shrink-0 ${
                     activeTab === tab.key
                       ? 'border-blue-500 text-blue-600'
@@ -1091,7 +1097,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
               {activeTab === 'customers' && (
                 <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0 sm:flex-wrap">
                   <button
-                    onClick={() => setActiveFilter('all')}
+                    onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'all' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       activeFilter === 'all'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1101,7 +1107,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     전체
                   </button>
                   <button
-                    onClick={() => setActiveFilter('language')}
+                    onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'language' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       activeFilter === 'language'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1111,7 +1117,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     언어
                   </button>
                   <button
-                    onClick={() => setActiveFilter('email')}
+                    onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'email' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       activeFilter === 'email'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1121,7 +1127,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     이메일
                   </button>
                   <button
-                    onClick={() => setActiveFilter('phone')}
+                    onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'phone' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       activeFilter === 'phone'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1131,7 +1137,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     전화번호
                   </button>
                   <button
-                    onClick={() => setActiveFilter('channel')}
+                    onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'channel' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       activeFilter === 'channel'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1147,7 +1153,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
               {activeTab === 'reservationPricing' && (
                 <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0 flex-wrap">
                   <button
-                    onClick={() => setPricingSubTab('all')}
+                    onClick={() => setNavUi((prev) => ({ ...prev, pricingSubTab: 'all' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'all'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1157,7 +1163,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     전체
                   </button>
                   <button
-                    onClick={() => setPricingSubTab('reservationPricing1')}
+                    onClick={() => setNavUi((prev) => ({ ...prev, pricingSubTab: 'reservationPricing1' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'reservationPricing1'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1167,7 +1173,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     기본가격
                   </button>
                   <button
-                    onClick={() => setPricingSubTab('reservationPricing2')}
+                    onClick={() => setNavUi((prev) => ({ ...prev, pricingSubTab: 'reservationPricing2' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'reservationPricing2'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1177,7 +1183,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     옵션가격
                   </button>
                   <button
-                    onClick={() => setPricingSubTab('reservationPricing3')}
+                    onClick={() => setNavUi((prev) => ({ ...prev, pricingSubTab: 'reservationPricing3' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'reservationPricing3'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1187,7 +1193,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     소계
                   </button>
                   <button
-                    onClick={() => setPricingSubTab('reservationPricing4')}
+                    onClick={() => setNavUi((prev) => ({ ...prev, pricingSubTab: 'reservationPricing4' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'reservationPricing4'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1197,7 +1203,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     총가격
                   </button>
                   <button
-                    onClick={() => setPricingSubTab('reservationPricing5')}
+                    onClick={() => setNavUi((prev) => ({ ...prev, pricingSubTab: 'reservationPricing5' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'reservationPricing5'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1207,7 +1213,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     잔액
                   </button>
                   <button
-                    onClick={() => setPricingSubTab('reservationPricing6')}
+                    onClick={() => setNavUi((prev) => ({ ...prev, pricingSubTab: 'reservationPricing6' }))}
                     className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                       pricingSubTab === 'reservationPricing6'
                         ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1225,7 +1231,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                   {/* 기본 필터 버튼들 */}
                   <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0 flex-wrap">
                     <button
-                      onClick={() => setActiveFilter('all')}
+                      onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'all' }))}
                       className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                         activeFilter === 'all'
                           ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1235,7 +1241,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                       전체
                     </button>
                     <button
-                      onClick={() => setActiveFilter('pickup')}
+                      onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'pickup' }))}
                       className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                         activeFilter === 'pickup'
                           ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1245,7 +1251,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                       픽업
                     </button>
                     <button
-                      onClick={() => setActiveFilter('channel_rn')}
+                      onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'channel_rn' }))}
                       className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                         activeFilter === 'channel_rn'
                           ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1255,7 +1261,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                       채널
                     </button>
                     <button
-                      onClick={() => setActiveFilter('status')}
+                      onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'status' }))}
                       className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                         activeFilter === 'status'
                           ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1265,7 +1271,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                       상태
                     </button>
                     <button
-                      onClick={() => setActiveFilter('tour_id')}
+                      onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'tour_id' }))}
                       className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                         activeFilter === 'tour_id'
                           ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1275,7 +1281,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                       투어ID
                     </button>
                     <button
-                      onClick={() => setActiveFilter('choices')}
+                      onClick={() => setNavUi((prev) => ({ ...prev, activeFilter: 'choices' }))}
                       className={`px-2.5 py-1 text-xs sm:text-sm rounded-md whitespace-nowrap flex-shrink-0 ${
                         activeFilter === 'choices'
                           ? 'bg-blue-100 text-blue-700 border border-blue-200'
@@ -1291,7 +1297,7 @@ export default function AdminDataReview({ }: AdminDataReviewProps) {
                     <label className="text-xs sm:text-sm font-medium text-gray-700 shrink-0">상태:</label>
                     <select
                       value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value)}
+                      onChange={(e) => setNavUi((prev) => ({ ...prev, statusFilter: e.target.value }))}
                       className="px-2 py-1 text-xs sm:text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-0"
                     >
                       <option value="all">전체 상태</option>

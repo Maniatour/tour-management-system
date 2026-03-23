@@ -1,7 +1,7 @@
 'use client'
 /* eslint-disable */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react'
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Trash2, Eye, AlertTriangle, X, Mail, Phone, ChevronDown } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations, useLocale } from 'next-intl'
@@ -206,13 +206,43 @@ interface ReservationFormProps {
   initialChoiceOptionNamesFromImport?: string[]
   /** "미정"으로 둘 초이스 그룹명 (예: "미국 거주자 구분", "기타 입장료"). option_id __undecided__ 로 설정 */
   initialChoiceUndecidedGroupNamesFromImport?: string[]
-  /** 예약 가져오기에서 파싱한 이메일 본문 금액 (예: "$698.88"). 할인 후 상품가와 다르면 해당 금액이 되도록 퍼센트 쿠폰 자동 선택 */
-  /** @deprecated 가격 정보는 동적가격(상품·초이스·채널·날짜)에서만 로드. 이메일 금액은 사용하지 않음 */
+  /** 예약 가져오기에서 파싱한 이메일 본문 금액 (예: "$698.88"). 동적가격 합계와 다르면 채널·상품에 맞는 쿠폰을 골라 금액에 가깝게 맞춤 */
   initialAmountFromImport?: string
+  /** Viator: 이메일 Net Rate (USD). 채널 정산 금액과 다를 때만 쿠폰 자동 선택 */
+  initialViatorNetRateFromImport?: string
   /** @deprecated 가격 정보는 동적가격에서만 로드. 이메일 불포함 금액은 사용하지 않음 */
   initialNotIncludedAmountFromImport?: string
   /** 폼 제목 오버라이드 (예: 이메일에서 예약 가져오기) */
   formTitle?: string
+}
+
+/** 이메일에서 파싱한 금액 문자열 → 숫자 (Price $ 319.41 등) */
+function parseMoneyFromImportString(raw?: string | null): number | null {
+  if (raw == null || String(raw).trim() === '') return null
+  const s = String(raw).replace(/,/g, '')
+  const m = s.match(/(\d+(?:\.\d+)?)/)
+  if (!m) return null
+  const n = parseFloat(m[1])
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+/** channel_id 없음 = 채널 공통 쿠폰으로 간주 */
+function couponMatchesChannel(coupon: { channel_id?: string | null }, channelId: string | null | undefined): boolean {
+  if (!channelId) return false
+  if (coupon.channel_id == null || coupon.channel_id === '') return true
+  return coupon.channel_id === channelId
+}
+
+/** Viator 자동 9%: DB·UI에 따라 discount_type 대소문자, percentage_value 형식 차이 허용 */
+function isNinePercentCouponForViator(coupon: {
+  discount_type?: string | null
+  percentage_value?: unknown
+}): boolean {
+  const dt = String(coupon.discount_type ?? '').toLowerCase()
+  if (dt !== 'percentage') return false
+  const pv = Number(coupon.percentage_value)
+  if (!Number.isFinite(pv)) return false
+  return Math.abs(pv - 9) < 0.05
 }
 
 type RezLike = Partial<Reservation> & {
@@ -257,7 +287,8 @@ export default function ReservationForm({
   initialShowNewCustomerForm = false,
   initialChoiceOptionNamesFromImport,
   initialChoiceUndecidedGroupNamesFromImport,
-  initialAmountFromImport: _initialAmountFromImport,
+  initialAmountFromImport,
+  initialViatorNetRateFromImport,
   initialNotIncludedAmountFromImport: _initialNotIncludedAmountFromImport,
   formTitle: formTitleOverride,
 }: ReservationFormProps) {
@@ -683,8 +714,21 @@ export default function ReservationForm({
 
   // 무한 렌더링 방지를 위한 ref
   const prevPricingParams = useRef<{productId: string, tourDate: string, channelId: string, variantKey: string, selectedChoicesKey: string} | null>(null)
+  /** loadPricingInfo 중첩 호출 시 마지막 로드만 완료 처리 */
+  const pricingLoadGenerationRef = useRef(0)
   const prevCouponParams = useRef<{productId: string, tourDate: string, channelId: string} | null>(null)
+  /** 이메일 금액 기준 쿠폰 자동 적용이 이미 이 입력 조합에 대해 끝났는지 (중복 setFormData 방지) */
+  const emailCouponApplyRef = useRef<string>('')
+  /** 예약 가져오기 쿠폰 매칭을 다른 가격 useEffect 이후로 미루는 타이머 */
+  const importEmailCouponRafRef = useRef<number | null>(null)
+  const importEmailCouponTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const prevProductId = useRef<string | null>(null)
+  /** 예약 가져오기: 이메일에서 추출한 초이스 힌트가 나중에 갱신(재파싱 등)되어도 동일 상품에서 초이스를 다시 적용하기 위한 키 */
+  const importChoiceHintKey = useMemo(
+    () =>
+      `${(initialChoiceOptionNamesFromImport ?? []).join('\u001e')}\u001f${(initialChoiceUndecidedGroupNamesFromImport ?? []).join('\u001e')}`,
+    [initialChoiceOptionNamesFromImport, initialChoiceUndecidedGroupNamesFromImport]
+  )
   // 데이터베이스에서 불러온 commission_amount 값을 추적 (자동 계산에 의해 덮어쓰이지 않도록)
   const loadedCommissionAmount = useRef<number | null>(null)
   
@@ -803,11 +847,34 @@ export default function ReservationForm({
       const rn = String(rez.channel_rn).trim()
       if (rn && rn.toLowerCase() !== 'id') next.channelRN = rn
     }
-    if (rez.pickup_hotel != null) next.pickUpHotel = rez.pickup_hotel
+    if (rez.pickup_hotel != null) {
+      const hid = String(rez.pickup_hotel)
+      next.pickUpHotel = hid
+      const matched = pickupHotels.find(h => h.id === hid)
+      if (matched) {
+        next.pickUpHotelSearch = `${matched.hotel} - ${matched.pick_up_location}`
+      } else if (hid) {
+        next.pickUpHotelSearch = hid
+      }
+    }
     if (rez.event_note != null) next.eventNote = rez.event_note
     if (Object.keys(next).length === 0) return
     setFormData(prev => ({ ...prev, ...next }))
-  }, [isImportMode, (reservation as any)?.tour_date, (reservation as any)?.tour_time, (reservation as any)?.adults, (reservation as any)?.child, (reservation as any)?.infant, (reservation as any)?.total_people, (reservation as any)?.product_id, (reservation as any)?.channel_id, (reservation as any)?.channel_rn, (reservation as any)?.pickup_hotel, (reservation as any)?.event_note])
+  }, [
+    isImportMode,
+    pickupHotels,
+    (reservation as any)?.tour_date,
+    (reservation as any)?.tour_time,
+    (reservation as any)?.adults,
+    (reservation as any)?.child,
+    (reservation as any)?.infant,
+    (reservation as any)?.total_people,
+    (reservation as any)?.product_id,
+    (reservation as any)?.channel_id,
+    (reservation as any)?.channel_rn,
+    (reservation as any)?.pickup_hotel,
+    (reservation as any)?.event_note,
+  ])
 
   // initialCustomerId가 있고 reservation이 null일 때 고객 정보를 초기값으로 설정
   useEffect(() => {
@@ -2129,10 +2196,11 @@ export default function ReservationForm({
       console.log('필수 정보가 부족합니다:', { productId, tourDate, tourDateNormalized, channelId })
       return
     }
+    const loadGen = ++pricingLoadGenerationRef.current
+    setPricingLoadComplete(false)
     // 이메일 가져오기 등: reservation id가 import- 로 시작하면 아직 DB 예약이 없음 → reservation_pricing 조회 생략 후 dynamic_pricing만 사용
     const pricingReservationId =
       reservationId && !String(reservationId).startsWith('import-') ? String(reservationId) : undefined
-    if (pricingReservationId) setPricingLoadComplete(false)
     setPricingFieldsFromDb({})
 
     try {
@@ -3114,7 +3182,17 @@ export default function ReservationForm({
     } catch (error) {
       console.error('Dynamic pricing 조회 중 오류:', error)
     } finally {
-      setPricingLoadComplete(true)
+      const settleGen = loadGen
+      // 연쇄 setFormData / PricingSection useEffect 반영 후 한 번에 보이도록 완료 플래그 지연
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          window.setTimeout(() => {
+            if (settleGen === pricingLoadGenerationRef.current) {
+              setPricingLoadComplete(true)
+            }
+          }, 320)
+        })
+      })
     }
       }, [channels, reservationOptionsTotalPrice, loadProductChoices, formData.selectedChoices, formData.variantKey, formData.productChoices, reservation?.id, (reservation as any)?.channel_id])
 
@@ -3163,6 +3241,35 @@ export default function ReservationForm({
     console.log('최종 requiredOptionTotal:', total)
     return total
   }, [formData.requiredOptions, formData.selectedOptions, formData.adults, formData.child, formData.infant])
+
+  // PricingSection과 동일: 쿠폰 할인 적용 전 기준 금액 (OTA는 productPriceTotal 기준, 그 외는 상품+초이스)
+  const getCouponDiscountSubtotal = useCallback(() => {
+    const pax = formData.adults + formData.child + formData.infant
+    const notIncludedPrice = (formData.not_included_price || 0) * pax
+    const selectedChannel = channels.find(c => c.id === formData.channelId)
+    const isOTAChannel = selectedChannel && (
+      (selectedChannel as { type?: string; category?: string })?.type?.toLowerCase() === 'ota' ||
+      (selectedChannel as { category?: string })?.category === 'OTA'
+    )
+    if (isOTAChannel) {
+      return Math.max(0, (formData.productPriceTotal || 0) - notIncludedPrice)
+    }
+    const choicesTotal = formData.choicesTotal || 0
+    const requiredOptionTotal = calculateRequiredOptionTotal()
+    const optionTotal = choicesTotal > 0 ? choicesTotal : requiredOptionTotal
+    return Math.max(0, calculateProductPriceTotal() + optionTotal - notIncludedPrice)
+  }, [
+    formData.adults,
+    formData.child,
+    formData.infant,
+    formData.not_included_price,
+    formData.channelId,
+    formData.productPriceTotal,
+    formData.choicesTotal,
+    channels,
+    calculateProductPriceTotal,
+    calculateRequiredOptionTotal,
+  ])
 
   // 새로운 간결한 초이스 시스템에서는 formData.choicesTotal을 직접 사용
 
@@ -3223,7 +3330,7 @@ export default function ReservationForm({
     return 0
   }, [])
 
-  // 쿠폰 자동 선택 함수
+  // 쿠폰 자동 선택 함수 (이메일 금액 없을 때: 채널·상품·날짜에 맞는 쿠폰 중 고정 우선)
   const autoSelectCoupon = useCallback(() => {
     if (!formData.productId || !formData.tourDate || !formData.channelId) {
       return
@@ -3235,46 +3342,31 @@ export default function ReservationForm({
       channelId: formData.channelId
     })
 
-    // 투어 날짜를 Date 객체로 변환
     const tourDate = new Date(formData.tourDate)
-    
-    // 조건에 맞는 쿠폰 필터링
     const matchingCoupons = coupons.filter(coupon => {
-      // 상태가 활성인지 확인
       if (coupon.status !== 'active') return false
-      
-      // 채널이 정확히 일치하는지 확인 (null이면 매칭하지 않음)
-      if (!coupon.channel_id || coupon.channel_id !== formData.channelId) return false
-      
-      // 상품이 정확히 일치하는지 확인 (null이면 매칭하지 않음)
-      if (!coupon.product_id || coupon.product_id !== formData.productId) return false
-      
-      // 날짜 범위 확인
+      if (!couponMatchesChannel(coupon, formData.channelId)) return false
+      if (coupon.product_id && coupon.product_id !== formData.productId) return false
       if (coupon.start_date) {
         const startDate = new Date(coupon.start_date)
         if (tourDate < startDate) return false
       }
-      
       if (coupon.end_date) {
         const endDate = new Date(coupon.end_date)
         if (tourDate > endDate) return false
       }
-      
       return true
     })
 
     console.log('매칭되는 쿠폰들:', matchingCoupons)
 
-    // 가장 적합한 쿠폰 선택 (우선순위: 고정값 할인 > 퍼센트 할인)
     if (matchingCoupons.length > 0) {
       const selectedCoupon = matchingCoupons.reduce((best, current) => {
-        // 고정값 할인이 있는 쿠폰을 우선 선택
-        if (current.discount_type === 'fixed' && current.fixed_value && 
+        if (current.discount_type === 'fixed' && current.fixed_value &&
             (!best || best.discount_type !== 'fixed' || (best.fixed_value || 0) < current.fixed_value)) {
           return current
         }
-        // 고정값이 없으면 퍼센트 할인 중 가장 높은 것 선택
-        if (current.discount_type === 'percentage' && current.percentage_value && 
+        if (current.discount_type === 'percentage' && current.percentage_value &&
             (!best || best.discount_type !== 'percentage' || (best.percentage_value || 0) < current.percentage_value)) {
           return current
         }
@@ -3283,27 +3375,170 @@ export default function ReservationForm({
 
       if (selectedCoupon) {
         console.log('자동 선택된 쿠폰:', selectedCoupon)
-        
-        // 불포함 가격 계산 (쿠폰 할인 계산에서 제외)
-        const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
-        const subtotal = calculateProductPriceTotal() + calculateRequiredOptionTotal() - notIncludedPrice
+        const subtotal = getCouponDiscountSubtotal()
         const couponDiscount = calculateCouponDiscount(selectedCoupon, subtotal)
-        
         setFormData(prev => ({
           ...prev,
-          couponCode: selectedCoupon.coupon_code || '', // coupons.coupon_code를 저장 (대소문자 구분 없이 사용)
+          couponCode: selectedCoupon.coupon_code || '',
           couponDiscount: couponDiscount
         }))
       }
     } else {
-      // 매칭되는 쿠폰이 없으면 쿠폰 선택 해제
       setFormData(prev => ({
         ...prev,
         couponCode: '',
         couponDiscount: 0
       }))
     }
-  }, [formData.productId, formData.tourDate, formData.channelId, coupons, formData.adults, formData.child, formData.infant, formData.not_included_price, calculateProductPriceTotal, calculateRequiredOptionTotal, calculateCouponDiscount, setFormData])
+  }, [formData.productId, formData.tourDate, formData.channelId, coupons, getCouponDiscountSubtotal, calculateCouponDiscount, setFormData])
+
+  /** 예약 가져오기: 이메일 금액과 맞도록 쿠폰 선택 (product_id 없음 = 채널 공통 쿠폰 포함).
+   *  Viator compareSettlementToNet: 채널 정산 ≈ (할인 후 채널 결제 기준액) × (1 − 채널 수수료%) 이 값이 Net Rate와 다르면 9% 쿠폰만 적용.
+   *  할인 후 기준액 = productPriceTotal − couponDiscount − additionalDiscount (OTA commission_base와 동일) */
+  const applyCouponToMatchEmailAmount = useCallback(
+    (emailTarget: number, opts?: { compareSettlementToNet?: boolean }) => {
+      if (!formData.productId || !formData.tourDate || !formData.channelId) return
+      const compareSettlementToNet = opts?.compareSettlementToNet === true
+      const base = getCouponDiscountSubtotal()
+      const productTotal = formData.productPriceTotal || 0
+      const additionalDisc = formData.additionalDiscount || 0
+      const channelRow = channels.find(c => c.id === formData.channelId)
+      const commissionPctForKey =
+        formData.commission_percent != null && formData.commission_percent > 0
+          ? Number(formData.commission_percent)
+          : Number(
+              (channelRow as { commission_percent?: number; commission_rate?: number; commission?: number })
+                ?.commission_percent ??
+                (channelRow as { commission_rate?: number })?.commission_rate ??
+                (channelRow as { commission?: number })?.commission
+            ) || 0
+      const key = `${formData.productId}|${emailTarget.toFixed(2)}|${base.toFixed(2)}|${productTotal.toFixed(2)}|${additionalDisc.toFixed(2)}|${(formData.couponDiscount || 0).toFixed(2)}|${commissionPctForKey.toFixed(4)}|${formData.channelId}|${compareSettlementToNet ? 'net' : 'price'}`
+      if (base <= 0) return
+      if (emailCouponApplyRef.current === key) return
+
+      const tourDate = new Date(formData.tourDate)
+      const matchingCoupons = coupons.filter(coupon => {
+        if (coupon.status !== 'active') return false
+        if (!couponMatchesChannel(coupon, formData.channelId)) return false
+        if (coupon.product_id && coupon.product_id !== formData.productId) return false
+        if (coupon.start_date) {
+          const startDate = new Date(coupon.start_date)
+          if (tourDate < startDate) return false
+        }
+        if (coupon.end_date) {
+          const endDate = new Date(coupon.end_date)
+          if (tourDate > endDate) return false
+        }
+        return true
+      })
+
+      if (compareSettlementToNet) {
+        const commissionPct =
+          formData.commission_percent != null && formData.commission_percent > 0
+            ? Number(formData.commission_percent)
+            : commissionPctForKey
+        const effectivePayment = Math.max(0, productTotal - (formData.couponDiscount || 0) - additionalDisc)
+        const settlementFromFormula =
+          commissionPct > 0 && commissionPct <= 100
+            ? effectivePayment * (1 - commissionPct / 100)
+            : effectivePayment
+
+        if (Math.abs(settlementFromFormula - emailTarget) < 0.02) {
+          emailCouponApplyRef.current = key
+          return
+        }
+
+        let nineCoupon = matchingCoupons.find(c => isNinePercentCouponForViator(c))
+        if (!nineCoupon) {
+          nineCoupon = coupons.find(c => {
+            if (c.status !== 'active') return false
+            if (!couponMatchesChannel(c, formData.channelId)) return false
+            if (c.start_date) {
+              const startDate = new Date(c.start_date)
+              if (tourDate < startDate) return false
+            }
+            if (c.end_date) {
+              const endDate = new Date(c.end_date)
+              if (tourDate > endDate) return false
+            }
+            return isNinePercentCouponForViator(c)
+          })
+        }
+        if (nineCoupon) {
+          const couponDiscount = calculateCouponDiscount(nineCoupon, base)
+          console.log('Viator Net Rate: 채널정산(기준×(1-수수료%)) 불일치 → 9% 쿠폰', {
+            emailTarget,
+            commissionPct,
+            effectivePayment,
+            settlementFromFormula,
+            coupon: nineCoupon.coupon_code,
+            couponDiscount,
+          })
+          setFormData(prev => ({
+            ...prev,
+            couponCode: nineCoupon.coupon_code || '',
+            couponDiscount,
+          }))
+          emailCouponApplyRef.current = key
+        } else if (matchingCoupons.length === 0) {
+          console.warn('[Viator import] 9% 쿠폰 없음: 매칭 쿠폰 0건 (채널·상품·기간 필터). coupons 총', coupons.length)
+        } else {
+          console.warn('[Viator import] 9% 비율 쿠폰 없음. 매칭 후보:', matchingCoupons.map(c => c.coupon_code).join(', '))
+        }
+        return
+      }
+
+      if (Math.abs(base - emailTarget) < 0.02) {
+        setFormData(prev => ({ ...prev, couponCode: '', couponDiscount: 0 }))
+        emailCouponApplyRef.current = key
+        return
+      }
+
+      const errWithoutCoupon = Math.abs(base - emailTarget)
+      let best: { coupon: CouponRow | null; err: number } = { coupon: null, err: errWithoutCoupon }
+
+      for (const c of matchingCoupons) {
+        const disc = calculateCouponDiscount(c, base)
+        const err = Math.abs(base - disc - emailTarget)
+        if (err < best.err - 0.0001) best = { coupon: c, err }
+      }
+
+      if (best.coupon) {
+        const couponDiscount = calculateCouponDiscount(best.coupon, base)
+        console.log('이메일 금액에 맞춘 쿠폰:', {
+          emailTarget,
+          base,
+          productTotal,
+          additionalDisc,
+          compareSettlementToNet: false,
+          coupon: best.coupon.coupon_code,
+          err: best.err,
+          errWithoutCoupon,
+          couponDiscount,
+        })
+        setFormData(prev => ({
+          ...prev,
+          couponCode: best.coupon!.coupon_code || '',
+          couponDiscount,
+        }))
+        emailCouponApplyRef.current = key
+      }
+    },
+    [
+      formData.productId,
+      formData.tourDate,
+      formData.channelId,
+      formData.commission_percent,
+      formData.couponDiscount,
+      formData.productPriceTotal,
+      formData.additionalDiscount,
+      channels,
+      coupons,
+      getCouponDiscountSubtotal,
+      calculateCouponDiscount,
+      setFormData,
+    ]
+  )
 
   // 상품이 변경될 때 choice 데이터 로드 (편집 모드에서는 기존 데이터 보존)
   useEffect(() => {
@@ -3360,6 +3595,12 @@ export default function ReservationForm({
       }
     }
   }, [formData.productId, formData.productChoices, formData.selectedChoices, loadProductChoices, reservation?.id, isImportMode])
+
+  // 예약 가져오기(import-): 상품은 그대로인데 재파싱 등으로 initialChoiceOptionNames만 채워진 경우 — 초이스 다시 로드
+  useEffect(() => {
+    if (!isImportMode || !formData.productId) return
+    loadProductChoices(formData.productId, formData.channelId)
+  }, [isImportMode, formData.productId, formData.channelId, importChoiceHintKey, loadProductChoices])
 
   // 상품, 날짜, 채널, variant, 초이스가 변경될 때 dynamic pricing에서 가격 자동 조회 (새 예약 모달과 동일)
   useEffect(() => {
@@ -3419,29 +3660,42 @@ export default function ReservationForm({
     loadPricingInfo(productId, tourDateNorm, channelId, reservation?.id, selectedChoicesArray)
   }, [isImportMode, (reservation as any)?.product_id, (reservation as any)?.tour_date, (reservation as any)?.channel_id, reservation?.id, formData.variantKey, formData.selectedChoices, loadPricingInfo, importChoicesHydratedProductId])
 
-  // 상품, 날짜, 채널이 변경될 때 쿠폰 자동 선택 (기존 가격 정보가 로드되지 않은 경우에만)
+  // 상품·이메일 금액 변경 시 이메일 기준 쿠폰 재시도 가능하도록
   useEffect(() => {
-    if (formData.productId && formData.tourDate && formData.channelId && !isExistingPricingLoaded) {
-      const currentParams = {
-        productId: formData.productId,
-        tourDate: formData.tourDate,
-        channelId: formData.channelId
-      }
-      
-      // 이전 파라미터와 비교하여 변경된 경우에만 실행
-      if (!prevCouponParams.current || 
-          prevCouponParams.current.productId !== currentParams.productId ||
-          prevCouponParams.current.tourDate !== currentParams.tourDate ||
-          prevCouponParams.current.channelId !== currentParams.channelId) {
-        
-        console.log('쿠폰 자동 선택 실행 (기존 가격 정보 없음)')
-        prevCouponParams.current = currentParams
-        autoSelectCoupon()
-      }
-    }
-  }, [formData.productId, formData.tourDate, formData.channelId, isExistingPricingLoaded])
+    emailCouponApplyRef.current = ''
+  }, [formData.productId, initialAmountFromImport, initialViatorNetRateFromImport])
 
-  // 가격 정보는 이메일이 아닌 동적가격(상품·초이스·채널·날짜)에서만 로드 → initialAmountFromImport로 쿠폰 자동 선택하지 않음
+  // 상품, 날짜, 채널이 변경될 때 쿠폰 자동 선택 (예약 가져오기는 아래 전용 effect에서 마지막에 처리)
+  useEffect(() => {
+    if (!formData.productId || !formData.tourDate || !formData.channelId) return
+    if (isImportMode) return
+
+    if (isExistingPricingLoaded) return
+
+    const currentParams = {
+      productId: formData.productId,
+      tourDate: formData.tourDate,
+      channelId: formData.channelId
+    }
+    if (!prevCouponParams.current ||
+        prevCouponParams.current.productId !== currentParams.productId ||
+        prevCouponParams.current.tourDate !== currentParams.tourDate ||
+        prevCouponParams.current.channelId !== currentParams.channelId) {
+      console.log('쿠폰 자동 선택 실행 (기존 가격 정보 없음)')
+      prevCouponParams.current = currentParams
+      autoSelectCoupon()
+    }
+  }, [
+    formData.productId,
+    formData.tourDate,
+    formData.channelId,
+    formData.productPriceTotal,
+    formData.choicesTotal,
+    formData.not_included_price,
+    isExistingPricingLoaded,
+    isImportMode,
+    autoSelectCoupon,
+  ])
 
   // 가격 정보 자동 업데이트 (무한 렌더링 방지를 위해 useEffect 완전 제거)
   // 사용되지 않지만 향후 사용을 위해 주석 처리
@@ -3546,6 +3800,70 @@ export default function ReservationForm({
       balanceAmount: prev.onSiteBalanceAmount > 0 ? prev.onSiteBalanceAmount : newBalance
     }))
   }, [reservationOptionsTotalPrice, reservation?.id])
+
+  /** 예약 가져오기: 동적가격·초이스·productPriceTotal 동기화·PricingSection 정산 반영 후 마지막에 이메일 금액 기준 쿠폰 매칭 */
+  useEffect(() => {
+    if (!isImportMode) return
+    if (!formData.productId || !formData.tourDate || !formData.channelId) return
+    if (!pricingLoadComplete) return
+    if (importChoicesHydratedProductId !== formData.productId) return
+
+    const viatorNetParsed = parseMoneyFromImportString(initialViatorNetRateFromImport)
+    const emailParsed = parseMoneyFromImportString(initialAmountFromImport)
+    if (viatorNetParsed == null && emailParsed == null) return
+
+    if (importEmailCouponRafRef.current != null) {
+      cancelAnimationFrame(importEmailCouponRafRef.current)
+      importEmailCouponRafRef.current = null
+    }
+    if (importEmailCouponTimerRef.current != null) {
+      clearTimeout(importEmailCouponTimerRef.current)
+      importEmailCouponTimerRef.current = null
+    }
+
+    importEmailCouponRafRef.current = requestAnimationFrame(() => {
+      importEmailCouponRafRef.current = null
+      importEmailCouponTimerRef.current = setTimeout(() => {
+        importEmailCouponTimerRef.current = null
+        if (viatorNetParsed != null) {
+          applyCouponToMatchEmailAmount(viatorNetParsed, { compareSettlementToNet: true })
+        } else if (emailParsed != null) {
+          applyCouponToMatchEmailAmount(emailParsed)
+        }
+      }, 50)
+    })
+
+    return () => {
+      if (importEmailCouponRafRef.current != null) {
+        cancelAnimationFrame(importEmailCouponRafRef.current)
+        importEmailCouponRafRef.current = null
+      }
+      if (importEmailCouponTimerRef.current != null) {
+        clearTimeout(importEmailCouponTimerRef.current)
+        importEmailCouponTimerRef.current = null
+      }
+    }
+  }, [
+    isImportMode,
+    pricingLoadComplete,
+    importChoicesHydratedProductId,
+    formData.productId,
+    formData.tourDate,
+    formData.channelId,
+    formData.commission_base_price,
+    formData.onlinePaymentAmount,
+    formData.productPriceTotal,
+    formData.choicesTotal,
+    formData.not_included_price,
+    formData.adults,
+    formData.child,
+    formData.infant,
+    initialAmountFromImport,
+    initialViatorNetRateFromImport,
+    applyCouponToMatchEmailAmount,
+    coupons,
+    formData.commission_percent,
+  ])
 
   // dynamic_pricing에서 특정 choice의 가격 정보를 가져오는 함수
   const getDynamicPricingForOption = useCallback(async (choiceId: string) => {
@@ -4695,6 +5013,9 @@ export default function ReservationForm({
                 reservationOptionsTotalPrice={reservationOptionsTotalPrice}
                 isExistingPricingLoaded={isExistingPricingLoaded}
                 pricingFieldsFromDb={pricingFieldsFromDb}
+                priceCalculationPending={
+                  Boolean(formData.productId && formData.tourDate && formData.channelId) && !pricingLoadComplete
+                }
                 {...(effectiveReservationId ? { reservationId: effectiveReservationId } : {})}
                 expenseUpdateTrigger={expenseUpdateTrigger}
                 channels={channels.map(({ type, ...c }) => ({ ...c, ...(type != null ? { type } : {}) })) as any}

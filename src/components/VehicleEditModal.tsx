@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { X, Car, DollarSign, Wrench, Calendar, Upload, Trash2, Image, Images, Settings } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { VEHICLE_STATUS_SELECT_OPTIONS } from '@/lib/vehicleStatus'
 import VehicleTypeManagementModal from './VehicleTypeManagementModal'
 
 interface Vehicle {
@@ -313,7 +314,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
         // 불린 필드들
         is_installment: vehicle.is_installment || false,
         // 기타 필드들
-        status: vehicle.status || (vehicle.vehicle_category === 'rental' ? 'available' : '운행 가능'),
+        status: vehicle.status || 'available',
         vehicle_category: vehicle.vehicle_category || 'company'
       })
       if (vehicle.vehicle_image_url) {
@@ -334,7 +335,6 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
         engine_oil_change_cycle: 10000,
         current_mileage: 0,
         recent_engine_oil_change_mileage: 0,
-        status: '운행 가능',
         front_tire_size: '',
         rear_tire_size: '',
         windshield_wiper_size: '',
@@ -377,7 +377,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
       setFormData(prev => ({
         ...prev,
         [name]: value,
-        status: value === 'company' ? '운행 가능' : 'available'
+        status: 'available'
       }))
     } else if (name === 'vehicle_type') {
       // 차종 선택 시 자동으로 탑승 인원 설정 및 이미지 가져오기
@@ -389,7 +389,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
           [name]: value,
           capacity: selectedType ? selectedType.passenger_capacity : prev.capacity,
           vehicle_category: nextCategory,
-          status: nextCategory === 'company' ? '운행 가능' : 'available'
+          status: 'available'
         }
       })
       
@@ -772,7 +772,9 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700">VIN</label>
+                      <label className="block text-sm font-medium text-gray-700">
+                        {formData.vehicle_category === 'rental' ? 'RN' : 'VIN'}
+                      </label>
                       <input
                         type="text"
                         name="vin"
@@ -1015,12 +1017,9 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           onChange={handleInputChange}
                           className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                         >
-                          <option value="available">사용가능</option>
-                          <option value="reserved">예약됨</option>
-                          <option value="picked_up">픽업완료</option>
-                          <option value="in_use">사용중</option>
-                          <option value="returned">반납완료</option>
-                          <option value="cancelled">취소됨</option>
+                          {VEHICLE_STATUS_SELECT_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
                         </select>
                       </div>
                     </div>
@@ -1091,11 +1090,9 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         onChange={handleInputChange}
                         className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                       >
-                        <option value="운행 가능">운행 가능</option>
-                        <option value="수리 중">수리 중</option>
-                        <option value="대기 중">대기 중</option>
-                        <option value="폐차">폐차</option>
-                        <option value="사용 종료">사용 종료</option>
+                        {VEHICLE_STATUS_SELECT_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
                       </select>
                     </div>
 

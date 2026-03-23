@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { 
   Plus, 
   FileText, 
@@ -70,6 +71,15 @@ interface DocumentStats {
   by_category: { [key: string]: number }
 }
 
+const DOCUMENTS_LIST_UI_DEFAULT = {
+  searchQuery: '',
+  selectedCategory: 'all' as string,
+  expiryFilter: 'all' as string,
+  sortBy: 'expiry_date' as 'title' | 'expiry_date' | 'created_at',
+  sortOrder: 'asc' as 'asc' | 'desc',
+  viewMode: 'grid' as 'grid' | 'list'
+}
+
 export default function DocumentManagementPage() {
   const { user } = useAuth()
   
@@ -84,13 +94,15 @@ export default function DocumentManagementPage() {
     by_category: {}
   })
   const [loading, setLoading] = useState(true)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState<string>('all')
-  const [expiryFilter, setExpiryFilter] = useState<string>('all')
-  const [sortBy, setSortBy] = useState<'title' | 'expiry_date' | 'created_at'>('expiry_date')
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
-  
+  const [listUi, setListUi] = useRoutePersistedState('documents-list', DOCUMENTS_LIST_UI_DEFAULT)
+  const { searchQuery, selectedCategory, expiryFilter, sortBy, sortOrder, viewMode } = listUi
+  const setSearchQuery = (query: string) => setListUi((prev) => ({ ...prev, searchQuery: query }))
+  const setSelectedCategory = (category: string) => setListUi((prev) => ({ ...prev, selectedCategory: category }))
+  const setExpiryFilter = (filter: string) => setListUi((prev) => ({ ...prev, expiryFilter: filter }))
+  const setSortBy = (sort: 'title' | 'expiry_date' | 'created_at') => setListUi((prev) => ({ ...prev, sortBy: sort }))
+  const setSortOrder = (order: 'asc' | 'desc') => setListUi((prev) => ({ ...prev, sortOrder: order }))
+  const setViewMode = (mode: 'grid' | 'list') => setListUi((prev) => ({ ...prev, viewMode: mode }))
+
   // 모달 상태
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [showCategoryModal, setShowCategoryModal] = useState(false)

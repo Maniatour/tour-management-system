@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { Calendar, CheckCircle, XCircle, Clock, User, Filter, Plus } from 'lucide-react'
@@ -26,12 +27,20 @@ interface OffSchedule {
   }
 }
 
+const OFF_SCHEDULE_UI_DEFAULT = {
+  filter: 'all' as 'all' | 'pending' | 'approved' | 'rejected',
+  selectedDate: ''
+}
+
 export default function AdminOffSchedulePage() {
   const { user, userRole, loading: authLoading } = useAuth()
   const [offSchedules, setOffSchedules] = useState<OffSchedule[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all')
-  const [selectedDate, setSelectedDate] = useState('')
+  const [listUi, setListUi] = useRoutePersistedState('off-schedule', OFF_SCHEDULE_UI_DEFAULT)
+  const { filter, selectedDate } = listUi
+  const setFilter = (v: 'all' | 'pending' | 'approved' | 'rejected') =>
+    setListUi((prev) => ({ ...prev, filter: v }))
+  const setSelectedDate = (v: string) => setListUi((prev) => ({ ...prev, selectedDate: v }))
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
 
   console.log('AdminOffSchedulePage render:', { 

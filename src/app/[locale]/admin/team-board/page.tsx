@@ -5,7 +5,7 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { useTranslations } from 'next-intl'
-import { Check, Edit, Loader2, Pin, PinOff, Plus, Trash2, X } from 'lucide-react'
+import { Check, Edit, Loader2, MessageCircle, Pin, PinOff, Plus, Trash2, X } from 'lucide-react'
 
 type Announcement = {
   id: string
@@ -18,6 +18,9 @@ type Announcement = {
   tags: string[] | null
   due_by: string | null
   is_archived: boolean | null
+  is_deleted: boolean | null
+  deleted_at: string | null
+  deleted_by: string | null
   created_by: string
   created_at: string
   updated_at: string
@@ -54,7 +57,10 @@ type Issue = {
   description: string | null
   status: 'open' | 'in_progress' | 'resolved' | 'closed'
   priority: 'low' | 'medium' | 'high' | 'critical'
-  created_by: string
+  reported_by: string
+  is_deleted: boolean | null
+  deleted_at: string | null
+  deleted_by: string | null
   created_at: string
   updated_at: string
 }
@@ -71,6 +77,9 @@ type Task = {
   target_positions: string[] | null
   target_individuals: string[] | null
   tags: string[] | null
+  is_deleted: boolean | null
+  deleted_at: string | null
+  deleted_by: string | null
   created_at: string
   updated_at: string
 }
@@ -91,8 +100,50 @@ type TeamMember = {
   is_active: boolean
 }
 
+type TeamBoardComment = {
+  id: string
+  target_type: 'task' | 'announcement' | 'issue'
+  target_id: string
+  comment: string
+  created_by: string
+  created_at: string
+}
+
+type TeamBoardStatusLog = {
+  id: string
+  target_type: 'task' | 'announcement' | 'issue'
+  target_id: string
+  action: 'completed' | 'deleted' | 'restored' | 'status_changed'
+  from_state: string | null
+  to_state: string | null
+  note: string | null
+  changed_by: string
+  changed_at: string
+}
+
+const POSITION_OPTIONS = [
+  { value: 'manager', label: '매니저' },
+  { value: 'admin', label: '관리자' },
+  { value: 'tour guide', label: '가이드' },
+  { value: 'op', label: 'OP' },
+  { value: 'driver', label: '드라이버' },
+] as const
+
+const normalizePosition = (position: string | null | undefined): string => {
+  const normalized = (position || '').trim().toLowerCase()
+
+  if (!normalized) return ''
+  if (normalized === 'office manager' || normalized === 'manager') return 'manager'
+  if (normalized === 'super' || normalized === 'admin') return 'admin'
+  if (normalized === 'tour guide' || normalized === 'guide') return 'tour guide'
+  if (normalized === 'office' || normalized === 'op') return 'op'
+  if (normalized === 'driver') return 'driver'
+
+  return normalized
+}
+
 export default function TeamBoardPage() {
-  const { authUser } = useAuth()
+  const { authUser, userRole, userPosition } = useAuth()
   // supabase 클라이언트는 AuthContext에서 관리됨
   
   // useTranslations 훅을 조건부로 사용
@@ -274,6 +325,8 @@ export default function TeamBoardPage() {
   // 업무 관리 관련 상태
   const [tasks, setTasks] = useState<Task[]>([])
   const [showNewTaskModal, setShowNewTaskModal] = useState(false)
+  const [showArchivedModal, setShowArchivedModal] = useState(false)
+  const [archivedModalSection, setArchivedModalSection] = useState<'tasks' | 'announcements' | 'issues'>('tasks')
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',
@@ -288,13 +341,42 @@ export default function TeamBoardPage() {
   const [selectedTaskPositions, setSelectedTaskPositions] = useState<string[]>([])
   const [selectedTaskIndividuals, setSelectedTaskIndividuals] = useState<string[]>([])
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
-  const [activePositionTab, setActivePositionTab] = useState<string>('Office Manager')
+  const [boardComments, setBoardComments] = useState<TeamBoardComment[]>([])
+  const [statusLogs, setStatusLogs] = useState<TeamBoardStatusLog[]>([])
+  const [commentInputs, setCommentInputs] = useState<Record<string, string>>({})
+  const [expandedStatusLogs, setExpandedStatusLogs] = useState<Record<string, boolean>>({})
+  const [isCommentsFeatureEnabled, setIsCommentsFeatureEnabled] = useState(() => {
+    if (typeof window === 'undefined') return true
+    return localStorage.getItem('team_board_comments_disabled') !== 'true'
+  })
+  const [activePositionTab, setActivePositionTab] = useState<string>('manager')
   const [expandedTaskSections, setExpandedTaskSections] = useState<Record<string, boolean>>({
     'pending': true,
     'in_progress': true,
     'completed': true,
     'cancelled': true
   })
+
+  const hasAdminPermission = (permissions?: string[] | Record<string, boolean> | null) => {
+    if (!permissions) return false
+    if (Array.isArray(permissions)) {
+      return permissions.includes('canViewAdmin') || permissions.includes('canManageTeam')
+    }
+    return !!(permissions.canViewAdmin || permissions.canManageTeam)
+  }
+
+  const superAdminEmails = ['info@maniatour.com', 'wooyong.shim09@gmail.com']
+  const normalizedPosition = (userPosition || '').toLowerCase().trim()
+  const isAdminByRole = userRole === 'admin'
+  const isAdminByPosition = ['admin', 'manager', 'super', 'office manager'].includes(normalizedPosition)
+  const isSuperAdminByEmail = !!authUser?.email && superAdminEmails.includes(authUser.email.toLowerCase())
+  const isAdminUser = isSuperAdminByEmail || isAdminByRole || isAdminByPosition || hasAdminPermission(authUser?.permissions)
+  const activeTasks = tasks.filter(task => !task.is_deleted && task.status !== 'completed' && task.status !== 'cancelled')
+  const archivedTasks = tasks.filter(task => !!task.is_deleted || task.status === 'completed' || task.status === 'cancelled')
+  const activeAnnouncements = announcements.filter(announcement => !announcement.is_deleted && !announcement.is_archived)
+  const archivedAnnouncements = announcements.filter(announcement => !!announcement.is_deleted || !!announcement.is_archived)
+  const activeIssues = issues.filter(issue => !issue.is_deleted && issue.status !== 'resolved' && issue.status !== 'closed')
+  const archivedIssues = issues.filter(issue => !!issue.is_deleted || issue.status === 'resolved' || issue.status === 'closed')
 
   useEffect(() => {
     fetchAll()
@@ -303,13 +385,17 @@ export default function TeamBoardPage() {
   const fetchAll = async () => {
     try {
       setLoading(true)
-      const [{ data: anns }, { data: acks }, { data: opTodos }, { data: iss }, { data: tks }, { data: team }] = await Promise.all([
+      const [{ data: anns }, { data: acks }, { data: opTodos }, { data: iss }, { data: tks }, { data: team }, commentsRes, logsRes] = await Promise.all([
         supabase.from('team_announcements').select('*').order('is_pinned', { ascending: false }).order('created_at', { ascending: false }),
         supabase.from('team_announcement_acknowledgments').select('*'),
         supabase.from('op_todos').select('*').order('created_at', { ascending: false }),
         supabase.from('issues').select('*').order('created_at', { ascending: false }),
         supabase.from('tasks').select('*').order('created_at', { ascending: false }),
         supabase.from('team').select('*').eq('is_active', true).order('name_ko'),
+        isCommentsFeatureEnabled
+          ? supabase.from('team_board_comments').select('*').order('created_at', { ascending: true })
+          : Promise.resolve({ data: [], error: null } as any), // eslint-disable-line @typescript-eslint/no-explicit-any
+        supabase.from('team_board_status_logs').select('*').order('changed_at', { ascending: false }),
       ])
 
       // 클릭 기록 불러오기
@@ -329,8 +415,136 @@ export default function TeamBoardPage() {
       setIssues((iss || []) as unknown as Issue[])
       setTasks((tks || []) as unknown as Task[])
       setTeamMembers((team || []) as TeamMember[])
+      if (commentsRes?.error) {
+        const message = String(commentsRes.error.message || '').toLowerCase()
+        if (message.includes('team_board_comments') || message.includes('not found')) {
+          setIsCommentsFeatureEnabled(false)
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('team_board_comments_disabled', 'true')
+          }
+          setBoardComments([])
+        }
+      } else {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('team_board_comments_disabled')
+        }
+        setBoardComments(((commentsRes?.data as TeamBoardComment[]) || []) as TeamBoardComment[])
+      }
+
+      if (!logsRes?.error) {
+        setStatusLogs(((logsRes?.data as TeamBoardStatusLog[]) || []) as TeamBoardStatusLog[])
+      }
     } finally {
       setLoading(false)
+    }
+  }
+
+  const getCommentKey = (targetType: TeamBoardComment['target_type'], targetId: string) => `${targetType}:${targetId}`
+
+  const getCommentsByTarget = (targetType: TeamBoardComment['target_type'], targetId: string) =>
+    boardComments.filter(comment => comment.target_type === targetType && comment.target_id === targetId)
+
+  const setCommentInput = (targetType: TeamBoardComment['target_type'], targetId: string, value: string) => {
+    const key = getCommentKey(targetType, targetId)
+    setCommentInputs(prev => ({ ...prev, [key]: value }))
+  }
+
+  const getStatusLogsByTarget = (targetType: TeamBoardStatusLog['target_type'], targetId: string) =>
+    statusLogs.filter(log => log.target_type === targetType && log.target_id === String(targetId))
+  const getStatusLogKey = (targetType: TeamBoardStatusLog['target_type'], targetId: string) => `${targetType}:${targetId}`
+
+  const getStatusActionLabel = (action: TeamBoardStatusLog['action']) => {
+    if (action === 'completed') return '완료'
+    if (action === 'deleted') return '삭제'
+    if (action === 'restored') return '복구'
+    return '상태 변경'
+  }
+
+  const getMemberDisplayName = (email: string | null | undefined) => {
+    if (!email) return '사용자'
+    const member = teamMembers.find(teamMember => (teamMember.email || '').toLowerCase() === email.toLowerCase())
+    return member?.name_ko || email.split('@')[0]
+  }
+
+  const addStatusLog = async (payload: {
+    targetType: TeamBoardStatusLog['target_type']
+    targetId: string
+    action: TeamBoardStatusLog['action']
+    fromState?: string | null
+    toState?: string | null
+    note?: string | null
+  }) => {
+    if (!authUser?.email) return
+    try {
+      const { data, error } = await supabase
+        .from('team_board_status_logs')
+        .insert([{
+          target_type: payload.targetType,
+          target_id: String(payload.targetId),
+          action: payload.action,
+          from_state: payload.fromState ?? null,
+          to_state: payload.toState ?? null,
+          note: payload.note ?? null,
+          changed_by: authUser.email,
+        }] as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+        .select()
+        .single()
+      if (error) return
+      setStatusLogs(prev => [data as TeamBoardStatusLog, ...prev])
+    } catch {
+      // 로그 저장 실패는 핵심 기능을 막지 않음
+    }
+  }
+
+  const addComment = async (targetType: TeamBoardComment['target_type'], targetId: string) => {
+    if (!isCommentsFeatureEnabled) return
+    if (!authUser?.email) return
+    const key = getCommentKey(targetType, targetId)
+    const value = (commentInputs[key] || '').trim()
+    if (!value) return
+
+    try {
+      const { data, error } = await supabase
+        .from('team_board_comments')
+        .insert([{
+          target_type: targetType,
+          target_id: targetId,
+          comment: value,
+          created_by: authUser.email,
+        }] as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setBoardComments(prev => [...prev, data as TeamBoardComment])
+      setCommentInputs(prev => ({ ...prev, [key]: '' }))
+    } catch (e) {
+      console.error(e)
+      alert('댓글 등록 중 오류가 발생했습니다.')
+    }
+  }
+
+  const canDeleteComment = (comment: TeamBoardComment) => {
+    if (!authUser?.email) return false
+    const isAuthor = (comment.created_by || '').toLowerCase() === authUser.email.toLowerCase()
+    const isAdmin = hasAdminPermission(authUser?.permissions)
+    return isAuthor || isAdmin
+  }
+
+  const deleteComment = async (commentId: string) => {
+    if (!isCommentsFeatureEnabled) return
+    try {
+      const { error } = await supabase
+        .from('team_board_comments')
+        .delete()
+        .eq('id', commentId)
+      if (error) throw error
+
+      setBoardComments(prev => prev.filter(comment => comment.id !== commentId))
+    } catch (e) {
+      console.error(e)
+      alert('댓글 삭제 중 오류가 발생했습니다.')
     }
   }
 
@@ -366,7 +580,7 @@ export default function TeamBoardPage() {
       setNewAnnouncement({ title: '', content: '', recipients: [], priority: 'normal', tags: '', target_positions: [] })
       setSelectedTaskPositions([])
       setSelectedTaskIndividuals([])
-      setActivePositionTab('Office Manager')
+      setActivePositionTab('manager')
     } catch (e) {
       console.error(e)
       alert('공지 생성 중 오류가 발생했습니다.')
@@ -486,13 +700,20 @@ export default function TeamBoardPage() {
 
   const deleteAnnouncement = async (announcementId: string) => {
     if (!confirm('정말로 이 전달사항을 삭제하시겠습니까?')) return
+    if (!authUser?.email) return
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('team_announcements')
-        .delete()
+        .update({
+          is_deleted: true,
+          deleted_at: new Date().toISOString(),
+          deleted_by: authUser.email,
+        } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
         .eq('id', announcementId)
+        .select()
+        .single()
       if (error) throw error
-      setAnnouncements(announcements.filter(a => a.id !== announcementId))
+      setAnnouncements(announcements.map(a => a.id === announcementId ? (data as Announcement) : a))
     } catch (e) {
       console.error(e)
       alert('전달사항 삭제 중 오류가 발생했습니다.')
@@ -504,7 +725,7 @@ export default function TeamBoardPage() {
     if (!authUser?.email) return false
     // 관리자이거나 작성자인 경우
     return authUser.email === announcement.created_by || 
-           (authUser.permissions && (authUser.permissions.includes('canViewAdmin') || authUser.permissions.includes('canManageTeam')))
+           hasAdminPermission(authUser?.permissions)
   }
 
 
@@ -679,7 +900,7 @@ export default function TeamBoardPage() {
       })
       setSelectedTaskPositions([])
       setSelectedTaskIndividuals([])
-      setActivePositionTab('Office Manager')
+      setActivePositionTab('manager')
     } catch (e) {
       console.error(e)
       alert('업무 생성 중 오류가 발생했습니다.')
@@ -697,7 +918,7 @@ export default function TeamBoardPage() {
         description: newIssue.description.trim() || null,
         status: newIssue.status,
         priority: newIssue.priority,
-        created_by: authUser.email,
+        reported_by: authUser.email,
       }
       const { data, error } = await supabase
         .from('issues')
@@ -718,6 +939,234 @@ export default function TeamBoardPage() {
       alert('이슈 생성 중 오류가 발생했습니다.')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const updateIssueStatus = async (issueId: string, status: Issue['status']) => {
+    setSubmitting(true)
+    try {
+      const { data, error } = await supabase
+        .from('issues')
+        .update({ status } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+        .eq('id', issueId)
+        .select()
+        .single()
+      if (error) throw error
+
+      setIssues(prev => prev.map(issue => (issue.id === issueId ? (data as unknown as Issue) : issue)))
+    } catch (e) {
+      console.error(e)
+      alert('이슈 상태 변경 중 오류가 발생했습니다.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const completeTask = async (taskId: string) => {
+    if (!isAdminUser) return
+    try {
+      const target = tasks.find(task => String(task.id) === String(taskId))
+      const { data, error } = await supabase
+        .from('tasks')
+        .update({ status: 'completed' } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+        .eq('id', taskId)
+        .select()
+        .single()
+      if (error) throw error
+      setTasks(prev => prev.map(task => (task.id === taskId ? (data as unknown as Task) : task)))
+      await addStatusLog({
+        targetType: 'task',
+        targetId: String(taskId),
+        action: 'completed',
+        fromState: target?.status || null,
+        toState: 'completed',
+      })
+    } catch (e) {
+      console.error(e)
+      alert('업무 완료 처리 중 오류가 발생했습니다.')
+    }
+  }
+
+  const deleteTaskSoft = async (taskId: string) => {
+    if (!isAdminUser || !authUser?.email) return
+    try {
+      const target = tasks.find(task => String(task.id) === String(taskId))
+      const { data, error } = await supabase
+        .from('tasks')
+        .update({
+          is_deleted: true,
+          deleted_at: new Date().toISOString(),
+          deleted_by: authUser.email,
+        } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+        .eq('id', taskId)
+        .select()
+        .single()
+      if (error) throw error
+      setTasks(prev => prev.map(task => (task.id === taskId ? (data as unknown as Task) : task)))
+      await addStatusLog({
+        targetType: 'task',
+        targetId: String(taskId),
+        action: 'deleted',
+        fromState: target?.status || null,
+        toState: 'deleted',
+      })
+    } catch (e) {
+      console.error(e)
+      alert('업무 삭제 처리 중 오류가 발생했습니다.')
+    }
+  }
+
+  const completeAnnouncement = async (announcementId: string) => {
+    if (!isAdminUser) return
+    try {
+      const target = announcements.find(announcement => announcement.id === announcementId)
+      const { data, error } = await supabase
+        .from('team_announcements')
+        .update({ is_archived: true } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+        .eq('id', announcementId)
+        .select()
+        .single()
+      if (error) throw error
+      setAnnouncements(prev => prev.map(announcement => (announcement.id === announcementId ? (data as Announcement) : announcement)))
+      await addStatusLog({
+        targetType: 'announcement',
+        targetId: announcementId,
+        action: 'completed',
+        fromState: target?.is_archived ? 'archived' : 'active',
+        toState: 'archived',
+      })
+    } catch (e) {
+      console.error(e)
+      alert('전달사항 완료 처리 중 오류가 발생했습니다.')
+    }
+  }
+
+  const completeIssue = async (issueId: string) => {
+    if (!isAdminUser) return
+    const target = issues.find(issue => issue.id === issueId)
+    await updateIssueStatus(issueId, 'resolved')
+    await addStatusLog({
+      targetType: 'issue',
+      targetId: issueId,
+      action: 'completed',
+      fromState: target?.status || null,
+      toState: 'resolved',
+    })
+  }
+
+  const deleteIssueSoft = async (issueId: string) => {
+    if (!isAdminUser || !authUser?.email) return
+    try {
+      const target = issues.find(issue => issue.id === issueId)
+      const { data, error } = await supabase
+        .from('issues')
+        .update({
+          is_deleted: true,
+          deleted_at: new Date().toISOString(),
+          deleted_by: authUser.email,
+        } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+        .eq('id', issueId)
+        .select()
+        .single()
+      if (error) throw error
+      setIssues(prev => prev.map(issue => (issue.id === issueId ? (data as unknown as Issue) : issue)))
+      await addStatusLog({
+        targetType: 'issue',
+        targetId: issueId,
+        action: 'deleted',
+        fromState: target?.status || null,
+        toState: 'deleted',
+      })
+    } catch (e) {
+      console.error(e)
+      alert('이슈 삭제 처리 중 오류가 발생했습니다.')
+    }
+  }
+
+  const restoreTask = async (taskId: string) => {
+    if (!isAdminUser) return
+    try {
+      const { data, error } = await supabase
+        .from('tasks')
+        .update({
+          status: 'pending',
+          is_deleted: false,
+          deleted_at: null,
+          deleted_by: null,
+        } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+        .eq('id', taskId)
+        .select()
+        .single()
+      if (error) throw error
+      setTasks(prev => prev.map(task => (String(task.id) === String(taskId) ? (data as unknown as Task) : task)))
+      await addStatusLog({
+        targetType: 'task',
+        targetId: String(taskId),
+        action: 'restored',
+        fromState: 'archived_or_deleted',
+        toState: 'pending',
+      })
+    } catch (e) {
+      console.error(e)
+      alert('업무 복구 중 오류가 발생했습니다.')
+    }
+  }
+
+  const restoreAnnouncement = async (announcementId: string) => {
+    if (!isAdminUser) return
+    try {
+      const { data, error } = await supabase
+        .from('team_announcements')
+        .update({
+          is_archived: false,
+          is_deleted: false,
+          deleted_at: null,
+          deleted_by: null,
+        } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+        .eq('id', announcementId)
+        .select()
+        .single()
+      if (error) throw error
+      setAnnouncements(prev => prev.map(announcement => (announcement.id === announcementId ? (data as Announcement) : announcement)))
+      await addStatusLog({
+        targetType: 'announcement',
+        targetId: announcementId,
+        action: 'restored',
+        fromState: 'archived_or_deleted',
+        toState: 'active',
+      })
+    } catch (e) {
+      console.error(e)
+      alert('전달사항 복구 중 오류가 발생했습니다.')
+    }
+  }
+
+  const restoreIssue = async (issueId: string) => {
+    if (!isAdminUser) return
+    try {
+      const { data, error } = await supabase
+        .from('issues')
+        .update({
+          status: 'open',
+          is_deleted: false,
+          deleted_at: null,
+          deleted_by: null,
+        } as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+        .eq('id', issueId)
+        .select()
+        .single()
+      if (error) throw error
+      setIssues(prev => prev.map(issue => (issue.id === issueId ? (data as unknown as Issue) : issue)))
+      await addStatusLog({
+        targetType: 'issue',
+        targetId: issueId,
+        action: 'restored',
+        fromState: 'resolved_or_deleted',
+        toState: 'open',
+      })
+    } catch (e) {
+      console.error(e)
+      alert('이슈 복구 중 오류가 발생했습니다.')
     }
   }
 
@@ -813,16 +1262,28 @@ export default function TeamBoardPage() {
             <section className="bg-white rounded-lg shadow border p-4">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold">{t('tasks')}</h2>
-                <button
-                  onClick={() => setShowNewTaskModal(true)}
-                  className="w-8 h-8 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center justify-center transition-colors"
-                  title="새 업무 추가"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setArchivedModalSection('tasks')
+                      setShowArchivedModal(true)
+                    }}
+                    className="px-2 py-1 text-xs border rounded text-gray-700 hover:bg-gray-100"
+                    title="완료/삭제 내역 보기"
+                  >
+                    완료/삭제 보기
+                  </button>
+                  <button
+                    onClick={() => setShowNewTaskModal(true)}
+                    className="w-8 h-8 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center justify-center transition-colors"
+                    title="새 업무 추가"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
               <div className="space-y-2">
-                {['pending', 'in_progress', 'completed', 'cancelled'].map(status => (
+                {['pending', 'in_progress'].map(status => (
                   <div key={status} className="bg-gray-50 rounded-md border">
                     <button
                       onClick={() => toggleTaskSection(status)}
@@ -830,10 +1291,9 @@ export default function TeamBoardPage() {
                     >
                       <h3 className="font-medium text-sm">
                         {status === 'pending' ? '대기' : 
-                         status === 'in_progress' ? '진행중' : 
-                         status === 'completed' ? '완료' : '취소'}
+                         status === 'in_progress' ? '진행중' : '대기'}
                         <span className="ml-2 text-xs text-gray-500">
-                          ({tasks.filter(task => task.status === status).length})
+                          ({activeTasks.filter(task => task.status === status).length})
                         </span>
                       </h3>
                       <div className="flex items-center">
@@ -851,12 +1311,12 @@ export default function TeamBoardPage() {
                     
                     {expandedTaskSections[status] && (
                       <div className="px-3 pb-3 space-y-2">
-                        {tasks.filter(task => task.status === status).length === 0 ? (
+                        {activeTasks.filter(task => task.status === status).length === 0 ? (
                           <div className="text-center py-4 text-gray-500 text-sm">
                             등록된 업무가 없습니다.
                           </div>
                         ) : (
-                          tasks
+                          activeTasks
                             .filter(task => task.status === status)
                             .map(task => (
                               <div key={task.id} className="bg-white p-2 border rounded-md shadow-sm">
@@ -872,12 +1332,44 @@ export default function TeamBoardPage() {
                                      task.priority === 'medium' ? '보통' : '낮음'}
                                   </div>
                                 </div>
+                                <p className="text-xs text-gray-400 mt-1">
+                                  작성: {new Date(task.created_at).toLocaleString()}
+                                </p>
                                 {task.description && <p className="text-xs text-gray-500 mt-1">{task.description}</p>}
                                 {task.due_date && (
                                   <p className="text-xs text-gray-400 mt-1">
                                     마감: {new Date(task.due_date).toLocaleDateString()}
                                   </p>
                                 )}
+                                {isAdminUser && (
+                                  <div className="mt-2 flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => void completeTask(task.id)}
+                                      className="px-2 py-1 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-700"
+                                    >
+                                      완료
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void deleteTaskSoft(task.id)}
+                                      className="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700"
+                                    >
+                                      삭제
+                                    </button>
+                                  </div>
+                                )}
+                                <CommentThread
+                                  comments={getCommentsByTarget('task', task.id)}
+                                  value={commentInputs[getCommentKey('task', task.id)] || ''}
+                                  onChange={(value) => setCommentInput('task', task.id, value)}
+                                  onSubmit={() => addComment('task', task.id)}
+                                  onDelete={deleteComment}
+                                  canDelete={canDeleteComment}
+                                  teamMembers={teamMembers}
+                                  compact
+                                  enabled={isCommentsFeatureEnabled}
+                                />
                               </div>
                             ))
                         )}
@@ -892,16 +1384,28 @@ export default function TeamBoardPage() {
             <section className="bg-white rounded-lg shadow border p-4">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold">전달사항</h2>
-                <button
-                  onClick={() => setShowNewAnnouncement(true)}
-                  className="w-8 h-8 bg-orange-500 hover:bg-orange-600 text-white rounded-lg flex items-center justify-center transition-colors"
-                  title="새 공지"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setArchivedModalSection('announcements')
+                      setShowArchivedModal(true)
+                    }}
+                    className="px-2 py-1 text-xs border rounded text-gray-700 hover:bg-gray-100"
+                    title="완료/삭제 내역 보기"
+                  >
+                    완료/삭제 보기
+                  </button>
+                  <button
+                    onClick={() => setShowNewAnnouncement(true)}
+                    className="w-8 h-8 bg-orange-500 hover:bg-orange-600 text-white rounded-lg flex items-center justify-center transition-colors"
+                    title="새 공지"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
-              {announcements.length === 0 ? (
+              {activeAnnouncements.length === 0 ? (
                 <div className="text-sm text-gray-500">등록된 공지가 없습니다.</div>
               ) : (
                 <div className="space-y-4">
@@ -909,7 +1413,7 @@ export default function TeamBoardPage() {
                   <div>
                     <h3 className="text-sm font-medium text-gray-700 mb-3">미확인 전달사항</h3>
                     <ul className="space-y-3">
-                      {announcements.filter(a => {
+                      {activeAnnouncements.filter(a => {
                         const acks = acksByAnnouncement[a.id] || []
                         const recipients = a.recipients || []
                         if (recipients.length === 0) return true // 전체 대상인 경우
@@ -970,8 +1474,27 @@ export default function TeamBoardPage() {
                                     <span className="px-2 py-0.5 bg-green-50 text-green-700 rounded">Archived</span>
                                   ) : null}
                                 </div>
+                                <CommentThread
+                                  comments={getCommentsByTarget('announcement', a.id)}
+                                  value={commentInputs[getCommentKey('announcement', a.id)] || ''}
+                                  onChange={(value) => setCommentInput('announcement', a.id, value)}
+                                  onSubmit={() => addComment('announcement', a.id)}
+                                  onDelete={deleteComment}
+                                  canDelete={canDeleteComment}
+                                  teamMembers={teamMembers}
+                                  enabled={isCommentsFeatureEnabled}
+                                />
                               </div>
                               <div className="flex items-center space-x-2">
+                                {isAdminUser && (
+                                  <button
+                                    onClick={() => void completeAnnouncement(a.id)}
+                                    className="px-2 py-1 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-700"
+                                    title="완료 처리"
+                                  >
+                                    완료
+                                  </button>
+                                )}
                                 <button onClick={() => togglePin(a)} className="p-1 text-gray-500 hover:text-gray-700" title="핀 고정">
                                   {a.is_pinned ? <PinOff className="w-4 h-4"/> : <Pin className="w-4 h-4"/>}
                                 </button>
@@ -1009,7 +1532,7 @@ export default function TeamBoardPage() {
                   </div>
 
                   {/* 모두 확인된 전달사항 */}
-                  {announcements.filter(a => {
+                  {activeAnnouncements.filter(a => {
                     const acks = acksByAnnouncement[a.id] || []
                     const recipients = a.recipients || []
                     if (recipients.length === 0) return acks.length > 0 // 전체 대상인 경우
@@ -1018,7 +1541,7 @@ export default function TeamBoardPage() {
                     <div>
                       <h3 className="text-sm font-medium text-gray-700 mb-3">모두 확인된 전달사항</h3>
                       <ul className="space-y-3">
-                        {announcements.filter(a => {
+                        {activeAnnouncements.filter(a => {
                           const acks = acksByAnnouncement[a.id] || []
                           const recipients = a.recipients || []
                           if (recipients.length === 0) return acks.length > 0 // 전체 대상인 경우
@@ -1079,8 +1602,27 @@ export default function TeamBoardPage() {
                                       <span className="px-2 py-0.5 bg-green-50 text-green-700 rounded">Archived</span>
                                     ) : null}
                                   </div>
+                                  <CommentThread
+                                    comments={getCommentsByTarget('announcement', a.id)}
+                                    value={commentInputs[getCommentKey('announcement', a.id)] || ''}
+                                    onChange={(value) => setCommentInput('announcement', a.id, value)}
+                                    onSubmit={() => addComment('announcement', a.id)}
+                                    onDelete={deleteComment}
+                                    canDelete={canDeleteComment}
+                                    teamMembers={teamMembers}
+                                    enabled={isCommentsFeatureEnabled}
+                                  />
                                 </div>
                                 <div className="flex items-center space-x-2">
+                                  {isAdminUser && (
+                                    <button
+                                      onClick={() => void completeAnnouncement(a.id)}
+                                      className="px-2 py-1 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-700"
+                                      title="완료 처리"
+                                    >
+                                      완료
+                                    </button>
+                                  )}
                                   <button onClick={() => togglePin(a)} className="p-1 text-gray-500 hover:text-gray-700" title="핀 고정">
                                     {a.is_pinned ? <PinOff className="w-4 h-4"/> : <Pin className="w-4 h-4"/>}
                                   </button>
@@ -1125,15 +1667,40 @@ export default function TeamBoardPage() {
             <section className="bg-white rounded-lg shadow border p-4">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold">이슈</h2>
-                <button
-                  onClick={() => openWorkModal('issue')}
-                  className="w-8 h-8 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center justify-center transition-colors"
-                  title="새 이슈"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setArchivedModalSection('issues')
+                      setShowArchivedModal(true)
+                    }}
+                    className="px-2 py-1 text-xs border rounded text-gray-700 hover:bg-gray-100"
+                    title="완료/삭제 내역 보기"
+                  >
+                    완료/삭제 보기
+                  </button>
+                  <button
+                    onClick={() => openWorkModal('issue')}
+                    className="w-8 h-8 bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center justify-center transition-colors"
+                    title="새 이슈"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
-              <IssuePanel issues={issues} />
+              <IssuePanel
+                issues={activeIssues}
+                getComments={(issueId) => getCommentsByTarget('issue', issueId)}
+                getInputValue={(issueId) => commentInputs[getCommentKey('issue', issueId)] || ''}
+                onInputChange={(issueId, value) => setCommentInput('issue', issueId, value)}
+                onSubmitComment={(issueId) => addComment('issue', issueId)}
+                onDeleteComment={deleteComment}
+                canDeleteComment={canDeleteComment}
+                isAdminUser={isAdminUser}
+                onCompleteIssue={completeIssue}
+                onDeleteIssue={deleteIssueSoft}
+                teamMembers={teamMembers}
+                commentsEnabled={isCommentsFeatureEnabled}
+              />
             </section>
 
           </div>
@@ -1239,18 +1806,18 @@ export default function TeamBoardPage() {
                         <div className="border rounded">
                           {/* 탭 헤더 */}
                           <div className="flex border-b">
-                            {['Office Manager', 'Super', 'Tour Guide', 'OP', 'Driver'].map(position => (
+                            {POSITION_OPTIONS.map(({ value, label }) => (
                               <button
-                                key={position}
+                                key={value}
                                 type="button"
-                                onClick={() => setActivePositionTab(position)}
+                                onClick={() => setActivePositionTab(value)}
                                 className={`px-4 py-2 text-sm font-medium border-r last:border-r-0 transition-colors ${
-                                  activePositionTab === position
+                                  activePositionTab === value
                                     ? 'bg-blue-600 text-white'
                                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                 }`}
                               >
-                                {position}
+                                {label}
                               </button>
                             ))}
                           </div>
@@ -1259,7 +1826,7 @@ export default function TeamBoardPage() {
                           <div className="p-4 max-h-40 overflow-y-auto">
                             <div className="flex flex-wrap gap-2">
                               {teamMembers
-                                .filter(member => member.position === activePositionTab && member.is_active)
+                                .filter(member => normalizePosition(member.position) === activePositionTab && member.is_active)
                                 .map(member => (
                                   <button
                                     key={member.email}
@@ -1285,39 +1852,39 @@ export default function TeamBoardPage() {
                         </div>
                       ) : (
                         <div className="space-y-2">
-                          {['Office Manager', 'Super', 'Tour Guide', 'OP', 'Driver'].map(position => (
-                            <div key={position} className="border rounded p-3">
+                          {POSITION_OPTIONS.map(({ value, label }) => (
+                            <div key={value} className="border rounded p-3">
                               <button
                                 type="button"
                                 onClick={() => {
-                                  if (selectedTaskPositions.includes(position)) {
-                                    setSelectedTaskPositions(selectedTaskPositions.filter(pos => pos !== position))
+                                  if (selectedTaskPositions.includes(value)) {
+                                    setSelectedTaskPositions(selectedTaskPositions.filter(pos => pos !== value))
                                     // 해당 position의 모든 직원들도 선택 해제
                                     const positionMembers = teamMembers
-                                      .filter(member => member.position === position && member.is_active)
+                                      .filter(member => normalizePosition(member.position) === value && member.is_active)
                                       .map(member => member.email)
                                     setSelectedTaskIndividuals(selectedTaskIndividuals.filter(email => !positionMembers.includes(email)))
                                   } else {
-                                    setSelectedTaskPositions([...selectedTaskPositions, position])
+                                    setSelectedTaskPositions([...selectedTaskPositions, value])
                                     // 해당 position의 모든 직원들도 자동 선택
                                     const positionMembers = teamMembers
-                                      .filter(member => member.position === position && member.is_active)
+                                      .filter(member => normalizePosition(member.position) === value && member.is_active)
                                       .map(member => member.email)
                                     setSelectedTaskIndividuals([...new Set([...selectedTaskIndividuals, ...positionMembers])])
                                   }
                                 }}
                                 className={`w-full text-left px-3 py-2 text-sm font-medium rounded transition-colors ${
-                                  selectedTaskPositions.includes(position)
+                                  selectedTaskPositions.includes(value)
                                     ? 'bg-blue-600 text-white'
                                     : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                 }`}
                               >
-                                {position}
+                                {label}
                               </button>
-                              {selectedTaskPositions.includes(position) && (
+                              {selectedTaskPositions.includes(value) && (
                                 <div className="mt-2 flex flex-wrap gap-2">
                                   {teamMembers
-                                    .filter(member => member.position === position && member.is_active)
+                                    .filter(member => normalizePosition(member.position) === value && member.is_active)
                                     .map(member => (
                                       <button
                                         key={member.email}
@@ -1468,18 +2035,18 @@ export default function TeamBoardPage() {
                         <div className="border rounded">
                           {/* 탭 헤더 */}
                           <div className="flex border-b">
-                            {['Office Manager', 'Super', 'Tour Guide', 'OP', 'Driver'].map(position => (
+                            {POSITION_OPTIONS.map(({ value, label }) => (
                               <button
-                                key={position}
+                                key={value}
                                 type="button"
-                                onClick={() => setActivePositionTab(position)}
+                                onClick={() => setActivePositionTab(value)}
                                 className={`px-4 py-2 text-sm font-medium border-r last:border-r-0 transition-colors ${
-                                  activePositionTab === position
+                                  activePositionTab === value
                                     ? 'bg-blue-600 text-white'
                                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                 }`}
                               >
-                                {position}
+                                {label}
                               </button>
                             ))}
                           </div>
@@ -1488,7 +2055,7 @@ export default function TeamBoardPage() {
                           <div className="p-4 max-h-40 overflow-y-auto">
                             <div className="flex flex-wrap gap-2">
                               {teamMembers
-                                .filter(member => member.position === activePositionTab && member.is_active)
+                                .filter(member => normalizePosition(member.position) === activePositionTab && member.is_active)
                                 .map(member => (
                                   <button
                                     key={member.email}
@@ -1514,39 +2081,39 @@ export default function TeamBoardPage() {
                         </div>
                       ) : (
                         <div className="space-y-2">
-                          {['Office Manager', 'Super', 'Tour Guide', 'OP', 'Driver'].map(position => (
-                            <div key={position} className="border rounded p-3">
+                          {POSITION_OPTIONS.map(({ value, label }) => (
+                            <div key={value} className="border rounded p-3">
                               <button
                                 type="button"
                                 onClick={() => {
-                                  if (selectedTaskPositions.includes(position)) {
-                                    setSelectedTaskPositions(selectedTaskPositions.filter(pos => pos !== position))
+                                  if (selectedTaskPositions.includes(value)) {
+                                    setSelectedTaskPositions(selectedTaskPositions.filter(pos => pos !== value))
                                     // 해당 position의 모든 직원들도 선택 해제
                                     const positionMembers = teamMembers
-                                      .filter(member => member.position === position && member.is_active)
+                                      .filter(member => normalizePosition(member.position) === value && member.is_active)
                                       .map(member => member.email)
                                     setSelectedTaskIndividuals(selectedTaskIndividuals.filter(email => !positionMembers.includes(email)))
                                   } else {
-                                    setSelectedTaskPositions([...selectedTaskPositions, position])
+                                    setSelectedTaskPositions([...selectedTaskPositions, value])
                                     // 해당 position의 모든 직원들도 자동 선택
                                     const positionMembers = teamMembers
-                                      .filter(member => member.position === position && member.is_active)
+                                      .filter(member => normalizePosition(member.position) === value && member.is_active)
                                       .map(member => member.email)
                                     setSelectedTaskIndividuals([...new Set([...selectedTaskIndividuals, ...positionMembers])])
                                   }
                                 }}
                                 className={`w-full text-left px-3 py-2 text-sm font-medium rounded transition-colors ${
-                                  selectedTaskPositions.includes(position)
+                                  selectedTaskPositions.includes(value)
                                     ? 'bg-blue-600 text-white'
                                     : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                                 }`}
                               >
-                                {position}
+                                {label}
                               </button>
-                              {selectedTaskPositions.includes(position) && (
+                              {selectedTaskPositions.includes(value) && (
                                 <div className="mt-2 flex flex-wrap gap-2">
                                   {teamMembers
-                                    .filter(member => member.position === position && member.is_active)
+                                    .filter(member => normalizePosition(member.position) === value && member.is_active)
                                     .map(member => (
                                       <button
                                         key={member.email}
@@ -1983,18 +2550,18 @@ export default function TeamBoardPage() {
                     <div className="border rounded">
                       {/* 탭 헤더 */}
                       <div className="flex border-b">
-                        {['Office Manager', 'Super', 'Tour Guide', 'OP', 'Driver'].map(position => (
+                        {POSITION_OPTIONS.map(({ value, label }) => (
                           <button
-                            key={position}
+                            key={value}
                             type="button"
-                            onClick={() => setActivePositionTab(position)}
+                            onClick={() => setActivePositionTab(value)}
                             className={`px-3 py-2 text-xs font-medium border-r last:border-r-0 transition-colors ${
-                              activePositionTab === position
+                              activePositionTab === value
                                 ? 'bg-blue-600 text-white'
                                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             }`}
                           >
-                            {position}
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -2003,7 +2570,7 @@ export default function TeamBoardPage() {
                       <div className="p-3 max-h-32 overflow-y-auto">
                         <div className="flex flex-wrap gap-1">
                           {teamMembers
-                            .filter(member => member.position === activePositionTab && member.is_active)
+                            .filter(member => normalizePosition(member.position) === activePositionTab && member.is_active)
                             .map(member => (
                               <button
                                 key={member.email}
@@ -2029,39 +2596,39 @@ export default function TeamBoardPage() {
                     </div>
                   ) : (
                     <div className="space-y-1">
-                      {['Office Manager', 'Super', 'Tour Guide', 'OP', 'Driver'].map(position => (
-                        <div key={position} className="border rounded p-2">
+                      {POSITION_OPTIONS.map(({ value, label }) => (
+                        <div key={value} className="border rounded p-2">
                           <button
                             type="button"
                             onClick={() => {
-                              if (selectedTaskPositions.includes(position)) {
-                                setSelectedTaskPositions(selectedTaskPositions.filter(pos => pos !== position))
+                              if (selectedTaskPositions.includes(value)) {
+                                setSelectedTaskPositions(selectedTaskPositions.filter(pos => pos !== value))
                                 // 해당 position의 모든 직원들도 선택 해제
                                 const positionMembers = teamMembers
-                                  .filter(member => member.position === position && member.is_active)
+                                  .filter(member => normalizePosition(member.position) === value && member.is_active)
                                   .map(member => member.email)
                                 setSelectedTaskIndividuals(selectedTaskIndividuals.filter(email => !positionMembers.includes(email)))
                               } else {
-                                setSelectedTaskPositions([...selectedTaskPositions, position])
+                                setSelectedTaskPositions([...selectedTaskPositions, value])
                                 // 해당 position의 모든 직원들도 자동 선택
                                 const positionMembers = teamMembers
-                                  .filter(member => member.position === position && member.is_active)
+                                  .filter(member => normalizePosition(member.position) === value && member.is_active)
                                   .map(member => member.email)
                                 setSelectedTaskIndividuals([...new Set([...selectedTaskIndividuals, ...positionMembers])])
                               }
                             }}
                             className={`w-full text-left px-2 py-1 text-xs font-medium rounded transition-colors ${
-                              selectedTaskPositions.includes(position)
+                              selectedTaskPositions.includes(value)
                                 ? 'bg-blue-600 text-white'
                                 : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                             }`}
                           >
-                            {position}
+                            {label}
                           </button>
-                          {selectedTaskPositions.includes(position) && (
+                          {selectedTaskPositions.includes(value) && (
                             <div className="mt-1 flex flex-wrap gap-1">
                               {teamMembers
-                                .filter(member => member.position === position && member.is_active)
+                                .filter(member => normalizePosition(member.position) === value && member.is_active)
                                 .map(member => (
                                   <button
                                     key={member.email}
@@ -2096,7 +2663,7 @@ export default function TeamBoardPage() {
                   <button
                     onClick={() => {
                       setShowNewTaskModal(false)
-                      setActivePositionTab('Office Manager')
+                      setActivePositionTab('manager')
                     }}
                     className="px-3 py-1 text-xs text-gray-600 bg-gray-200 rounded hover:bg-gray-300"
                   >
@@ -2113,6 +2680,174 @@ export default function TeamBoardPage() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Completed/Deleted Modal */}
+        {showArchivedModal && (
+          <Modal onClose={() => setShowArchivedModal(false)}>
+            <h3 className="text-lg font-semibold mb-4">
+              {archivedModalSection === 'tasks'
+                ? '업무 완료/삭제 내역'
+                : archivedModalSection === 'announcements'
+                ? '전달사항 완료/삭제 내역'
+                : '이슈 완료/삭제 내역'}
+            </h3>
+
+            <div className="space-y-3">
+              {archivedModalSection === 'tasks' && (
+                archivedTasks.length === 0 ? (
+                  <p className="text-sm text-gray-500">완료/삭제된 업무가 없습니다.</p>
+                ) : (
+                  archivedTasks.map(task => (
+                    <div key={`arch-task-${task.id}`} className="border rounded p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="text-sm font-medium">{task.title}</div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            상태: {task.is_deleted ? '삭제됨' : task.status === 'completed' ? '완료됨' : '취소됨'} | 작성: {new Date(task.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                        {isAdminUser && (
+                          <button
+                            type="button"
+                            onClick={() => void restoreTask(String(task.id))}
+                            className="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700"
+                          >
+                            복구
+                          </button>
+                        )}
+                      </div>
+                      <div className="mt-2 space-y-1">
+                        {getStatusLogsByTarget('task', String(task.id))
+                          .slice(0, expandedStatusLogs[getStatusLogKey('task', String(task.id))] ? undefined : 3)
+                          .map(log => (
+                          <div key={log.id} className="text-xs text-gray-500">
+                            [{new Date(log.changed_at).toLocaleString()}] {getMemberDisplayName(log.changed_by)} - {getStatusActionLabel(log.action)}
+                          </div>
+                        ))}
+                        {getStatusLogsByTarget('task', String(task.id)).length > 3 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedStatusLogs(prev => ({
+                                ...prev,
+                                [getStatusLogKey('task', String(task.id))]: !prev[getStatusLogKey('task', String(task.id))],
+                              }))
+                            }
+                            className="text-xs text-blue-600 hover:text-blue-700"
+                          >
+                            {expandedStatusLogs[getStatusLogKey('task', String(task.id))] ? '접기' : '더보기'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )
+              )}
+
+              {archivedModalSection === 'announcements' && (
+                archivedAnnouncements.length === 0 ? (
+                  <p className="text-sm text-gray-500">완료/삭제된 전달사항이 없습니다.</p>
+                ) : (
+                  archivedAnnouncements.map(announcement => (
+                    <div key={`arch-ann-${announcement.id}`} className="border rounded p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="text-sm font-medium">{announcement.title}</div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            상태: {announcement.is_deleted ? '삭제됨' : '완료됨'} | 작성: {new Date(announcement.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                        {isAdminUser && (
+                          <button
+                            type="button"
+                            onClick={() => void restoreAnnouncement(announcement.id)}
+                            className="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700"
+                          >
+                            복구
+                          </button>
+                        )}
+                      </div>
+                      <div className="mt-2 space-y-1">
+                        {getStatusLogsByTarget('announcement', announcement.id)
+                          .slice(0, expandedStatusLogs[getStatusLogKey('announcement', announcement.id)] ? undefined : 3)
+                          .map(log => (
+                          <div key={log.id} className="text-xs text-gray-500">
+                            [{new Date(log.changed_at).toLocaleString()}] {getMemberDisplayName(log.changed_by)} - {getStatusActionLabel(log.action)}
+                          </div>
+                        ))}
+                        {getStatusLogsByTarget('announcement', announcement.id).length > 3 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedStatusLogs(prev => ({
+                                ...prev,
+                                [getStatusLogKey('announcement', announcement.id)]: !prev[getStatusLogKey('announcement', announcement.id)],
+                              }))
+                            }
+                            className="text-xs text-blue-600 hover:text-blue-700"
+                          >
+                            {expandedStatusLogs[getStatusLogKey('announcement', announcement.id)] ? '접기' : '더보기'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )
+              )}
+
+              {archivedModalSection === 'issues' && (
+                archivedIssues.length === 0 ? (
+                  <p className="text-sm text-gray-500">완료/삭제된 이슈가 없습니다.</p>
+                ) : (
+                  archivedIssues.map(issue => (
+                    <div key={`arch-issue-${issue.id}`} className="border rounded p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="text-sm font-medium">{issue.title}</div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            상태: {issue.is_deleted ? '삭제됨' : issue.status === 'resolved' ? '완료됨' : '닫힘'} | 작성: {new Date(issue.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                        {isAdminUser && (
+                          <button
+                            type="button"
+                            onClick={() => void restoreIssue(issue.id)}
+                            className="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700"
+                          >
+                            복구
+                          </button>
+                        )}
+                      </div>
+                      <div className="mt-2 space-y-1">
+                        {getStatusLogsByTarget('issue', issue.id)
+                          .slice(0, expandedStatusLogs[getStatusLogKey('issue', issue.id)] ? undefined : 3)
+                          .map(log => (
+                          <div key={log.id} className="text-xs text-gray-500">
+                            [{new Date(log.changed_at).toLocaleString()}] {getMemberDisplayName(log.changed_by)} - {getStatusActionLabel(log.action)}
+                          </div>
+                        ))}
+                        {getStatusLogsByTarget('issue', issue.id).length > 3 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedStatusLogs(prev => ({
+                                ...prev,
+                                [getStatusLogKey('issue', issue.id)]: !prev[getStatusLogKey('issue', issue.id)],
+                              }))
+                            }
+                            className="text-xs text-blue-600 hover:text-blue-700"
+                          >
+                            {expandedStatusLogs[getStatusLogKey('issue', issue.id)] ? '접기' : '더보기'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )
+              )}
+            </div>
+          </Modal>
         )}
 
         {/* History Modal */}
@@ -2355,7 +3090,33 @@ function ChecklistPanel({ opTodos, selectedDepartment, onDepartmentChange, onAdd
 
 
 
-function IssuePanel({ issues }: { issues: Issue[] }) {
+function IssuePanel({
+  issues,
+  getComments,
+  getInputValue,
+  onInputChange,
+  onSubmitComment,
+  onDeleteComment,
+  canDeleteComment,
+  isAdminUser,
+  onCompleteIssue,
+  onDeleteIssue,
+  teamMembers,
+  commentsEnabled,
+}: {
+  issues: Issue[]
+  getComments: (issueId: string) => TeamBoardComment[]
+  getInputValue: (issueId: string) => string
+  onInputChange: (issueId: string, value: string) => void
+  onSubmitComment: (issueId: string) => void
+  onDeleteComment: (commentId: string) => Promise<void>
+  canDeleteComment: (comment: TeamBoardComment) => boolean
+  isAdminUser: boolean
+  onCompleteIssue: (issueId: string) => Promise<void>
+  onDeleteIssue: (issueId: string) => Promise<void>
+  teamMembers: TeamMember[]
+  commentsEnabled: boolean
+}) {
   const statusColors = {
     open: 'bg-red-100 text-red-700',
     in_progress: 'bg-blue-100 text-blue-700',
@@ -2384,7 +3145,7 @@ function IssuePanel({ issues }: { issues: Issue[] }) {
               {issue.description && (
                 <p className="text-sm text-gray-600 mt-1">{issue.description}</p>
               )}
-              <div className="flex items-center space-x-2 mt-2">
+              <div className="flex items-center gap-2 mt-2">
                 <span className={`px-2 py-1 rounded-full text-xs ${statusColors[issue.status as keyof typeof statusColors]}`}>
                   {issue.status === 'open' ? '열림' : 
                    issue.status === 'in_progress' ? '진행중' : 
@@ -2395,14 +3156,146 @@ function IssuePanel({ issues }: { issues: Issue[] }) {
                    issue.priority === 'medium' ? '보통' : 
                    issue.priority === 'high' ? '높음' : '치명적'}
                 </span>
+                {isAdminUser && (
+                  <div className="ml-auto flex items-center gap-2">
+                    <button
+                      onClick={() => void onCompleteIssue(issue.id)}
+                      className="px-2 py-1 text-xs rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+                    >
+                      완료
+                    </button>
+                    <button
+                      onClick={() => void onDeleteIssue(issue.id)}
+                      className="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
-            <div className="text-xs text-gray-400 ml-2">
-              {new Date(issue.created_at).toLocaleDateString()}
-            </div>
+            <div className="text-xs text-gray-400 ml-2">작성: {new Date(issue.created_at).toLocaleString()}</div>
           </div>
+          <CommentThread
+            comments={getComments(issue.id)}
+            value={getInputValue(issue.id)}
+            onChange={(value) => onInputChange(issue.id, value)}
+            onSubmit={() => onSubmitComment(issue.id)}
+            onDelete={onDeleteComment}
+            canDelete={canDeleteComment}
+            teamMembers={teamMembers}
+            compact
+            enabled={commentsEnabled}
+          />
         </div>
       ))}
+    </div>
+  )
+}
+
+function CommentThread({
+  comments,
+  value,
+  onChange,
+  onSubmit,
+  onDelete,
+  canDelete,
+  teamMembers,
+  compact = false,
+  enabled = true,
+}: {
+  comments: TeamBoardComment[]
+  value: string
+  onChange: (value: string) => void
+  onSubmit: () => void
+  onDelete: (commentId: string) => Promise<void>
+  canDelete: (comment: TeamBoardComment) => boolean
+  teamMembers: TeamMember[]
+  compact?: boolean
+  enabled?: boolean
+}) {
+  const [showComposer, setShowComposer] = useState(false)
+  const hasComments = comments.length > 0
+  const showPanel = hasComments
+
+  return (
+    <div className="mt-2">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            if (!enabled) {
+              alert('댓글 기능을 사용하려면 DB 마이그레이션 적용이 필요합니다.')
+              return
+            }
+            setShowComposer(prev => !prev)
+          }}
+          className="p-1.5 rounded-full bg-white border border-gray-300 text-gray-600 hover:bg-gray-100 transition-colors"
+          title="댓글 입력"
+        >
+          <MessageCircle className="w-3.5 h-3.5" />
+        </button>
+        {enabled && (showComposer || value.trim().length > 0) && (
+          <div className="flex items-center gap-2 flex-1">
+            <input
+              type="text"
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  onSubmit()
+                  setShowComposer(false)
+                }
+              }}
+              placeholder="댓글 입력..."
+              className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                onSubmit()
+                setShowComposer(false)
+              }}
+              className="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+            >
+              등록
+            </button>
+          </div>
+        )}
+      </div>
+
+      {enabled && showPanel && (
+        <div className={`mt-2 border rounded-md bg-gray-50 ${compact ? 'p-2' : 'p-3'}`}>
+          {hasComments && (
+            <div className="space-y-1 mb-2 max-h-28 overflow-y-auto">
+              {comments.map((comment) => {
+                const author = teamMembers.find(member => (member.email || '').toLowerCase() === (comment.created_by || '').toLowerCase())
+                const authorName = author?.name_ko || (comment.created_by ? comment.created_by.split('@')[0] : '사용자')
+                return (
+                  <div key={comment.id} className="text-xs text-gray-700 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="font-medium text-gray-800 mr-1">{authorName}</span>
+                      <span>{comment.comment}</span>
+                      <span className="text-gray-400 ml-2">{new Date(comment.created_at).toLocaleString()}</span>
+                    </div>
+                    {canDelete(comment) && (
+                      <button
+                        type="button"
+                        onClick={() => void onDelete(comment.id)}
+                        className="shrink-0 px-1.5 py-0.5 rounded text-[10px] bg-red-50 text-red-600 hover:bg-red-100"
+                        title="댓글 삭제"
+                      >
+                        삭제
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

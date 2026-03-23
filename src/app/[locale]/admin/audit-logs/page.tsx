@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import { 
   Search, 
   Filter, 
@@ -31,18 +32,20 @@ interface AuditLog {
   record_name: string
 }
 
+const AUDIT_LOGS_UI_DEFAULT = {
+  searchTerm: '',
+  selectedTable: 'all',
+  selectedAction: 'all',
+  dateRange: { start: '', end: '' }
+}
+
 export default function AdminAuditLogs() {
   // const t = useTranslations('audit')
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [selectedTable, setSelectedTable] = useState('all')
-  const [selectedAction, setSelectedAction] = useState('all')
-  const [dateRange, setDateRange] = useState({
-    start: '',
-    end: ''
-  })
+  const [listUi, setListUi] = useRoutePersistedState('audit-logs', AUDIT_LOGS_UI_DEFAULT)
+  const { searchTerm, selectedTable, selectedAction, dateRange } = listUi
 
   // 감사 로그 데이터 가져오기
   useEffect(() => {
@@ -114,10 +117,7 @@ export default function AdminAuditLogs() {
 
   // 필터 초기화
   const resetFilters = () => {
-    setSelectedTable('all')
-    setSelectedAction('all')
-    setDateRange({ start: '', end: '' })
-    setSearchTerm('')
+    setListUi(AUDIT_LOGS_UI_DEFAULT)
     fetchAuditLogs()
   }
 
@@ -342,7 +342,7 @@ export default function AdminAuditLogs() {
             <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">액션</label>
             <select
               value={selectedAction}
-              onChange={(e) => setSelectedAction(e.target.value)}
+              onChange={(e) => setListUi((prev) => ({ ...prev, selectedAction: e.target.value }))}
               className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="all">모든 액션</option>
@@ -369,7 +369,12 @@ export default function AdminAuditLogs() {
             <input
               type="date"
               value={dateRange.end}
-              onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+              onChange={(e) =>
+                setListUi((prev) => ({
+                  ...prev,
+                  dateRange: { ...prev.dateRange, end: e.target.value }
+                }))
+              }
               className="w-full px-2.5 sm:px-3 py-1.5 sm:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
@@ -404,7 +409,7 @@ export default function AdminAuditLogs() {
                 type="text"
                 placeholder="검색..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => setListUi((prev) => ({ ...prev, searchTerm: e.target.value }))}
                 className="flex-1 min-w-0 px-2.5 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>

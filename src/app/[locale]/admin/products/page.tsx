@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type SetStateAction } from 'react'
 import { useTranslations } from 'next-intl'
 import { Plus, Search, Grid3x3, List, Copy, Save, X, Edit2, ChevronDown, ChevronRight, ChevronUp, Star } from 'lucide-react'
 import Link from 'next/link'
@@ -9,8 +9,18 @@ import type { Database } from '@/lib/supabase'
 import { useParams } from 'next/navigation'
 import ProductCard from '@/components/ProductCard'
 import FavoriteOrderModal from '@/components/admin/FavoriteOrderModal'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 
 type Product = Database['public']['Tables']['products']['Row']
+
+const PRODUCTS_LIST_UI_DEFAULT = {
+  searchTerm: '',
+  selectedCategory: 'all',
+  selectedSubCategory: 'all',
+  selectedStatus: 'active',
+  viewMode: 'card' as 'card' | 'table',
+  allCardsCollapsed: false,
+}
 
 interface AdminProductsProps {
   params: Promise<{ locale: string }>
@@ -24,15 +34,26 @@ export default function AdminProducts({ params: _params }: AdminProductsProps) {
   
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState<string>('all')
-  const [selectedSubCategory, setSelectedSubCategory] = useState<string>('all')
-  const [selectedStatus, setSelectedStatus] = useState<string>('active')
+  const [listUi, setListUi] = useRoutePersistedState('products-list', PRODUCTS_LIST_UI_DEFAULT)
+  const { searchTerm, selectedCategory, selectedSubCategory, selectedStatus, viewMode, allCardsCollapsed } = listUi
+  const setSearchTerm = (v: SetStateAction<string>) =>
+    setListUi((u) => ({
+      ...u,
+      searchTerm: typeof v === 'function' ? (v as (s: string) => string)(u.searchTerm) : v,
+    }))
+  const setSelectedCategory = (c: string) => setListUi((u) => ({ ...u, selectedCategory: c }))
+  const setSelectedSubCategory = (c: string) => setListUi((u) => ({ ...u, selectedSubCategory: c }))
+  const setSelectedStatus = (s: string) => setListUi((u) => ({ ...u, selectedStatus: s }))
+  const setViewMode = (m: 'card' | 'table') => setListUi((u) => ({ ...u, viewMode: m }))
+  const setAllCardsCollapsed = (v: boolean | ((p: boolean) => boolean)) =>
+    setListUi((u) => ({
+      ...u,
+      allCardsCollapsed: typeof v === 'function' ? v(u.allCardsCollapsed) : v,
+    }))
   const [categories, setCategories] = useState<{ value: string; label: string; count: number }[]>([])
   const [subCategories, setSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
   const [allSubCategories, setAllSubCategories] = useState<{ value: string; label: string; count: number }[]>([])
   const [statusCounts, setStatusCounts] = useState<{ value: string; labelKey: string; count: number }[]>([])
-  const [viewMode, setViewMode] = useState<'card' | 'table'>('card')
   const [updatingProducts, setUpdatingProducts] = useState<Set<string>>(new Set())
   const [copyingProducts, setCopyingProducts] = useState<Set<string>>(new Set())
   const [editingField, setEditingField] = useState<{ productId: string; fieldName: string } | null>(null)
@@ -57,7 +78,6 @@ export default function AdminProducts({ params: _params }: AdminProductsProps) {
     }>
   }>({})
   const [homepageChannel, setHomepageChannel] = useState<any>(null)
-  const [allCardsCollapsed, setAllCardsCollapsed] = useState(false)
   const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set())
   const [isFavoriteOrderModalOpen, setIsFavoriteOrderModalOpen] = useState(false)
 
@@ -696,7 +716,7 @@ export default function AdminProducts({ params: _params }: AdminProductsProps) {
   }
 
   // 서브카테고리 옵션 목록 (드롭다운용)
-  const getSubCategoryOptions = (category?: string | null) => {
+  const getSubCategoryOptions = (category?: string | null): { value: string; label: string }[] => {
     if (!category) {
       return allSubCategories.filter(c => c.value !== 'all').map(c => ({
         value: c.value,
@@ -706,9 +726,9 @@ export default function AdminProducts({ params: _params }: AdminProductsProps) {
     
     const filtered = products
       .filter(p => p.category === category && p.sub_category)
-      .reduce((acc, p) => {
+      .reduce((acc: { value: string; label: string }[], p) => {
         const subCat = p.sub_category!
-        if (!acc.find(item => item.value === subCat)) {
+        if (!acc.find((item: { value: string; label: string }) => item.value === subCat)) {
           acc.push({
             value: subCat,
             label: getSubCategoryLabel(subCat)
@@ -1285,7 +1305,7 @@ export default function AdminProducts({ params: _params }: AdminProductsProps) {
                                 disabled={!product.category && editingField?.fieldName !== 'sub_category'}
                               >
                                 <option value="">{t('selectNone')}</option>
-                                {getSubCategoryOptions(product.category || editingValue as string).map(opt => (
+                                {getSubCategoryOptions(product.category || editingValue as string).map((opt: { value: string; label: string }) => (
                                   <option key={opt.value} value={opt.value}>
                                     {opt.label}
                                   </option>

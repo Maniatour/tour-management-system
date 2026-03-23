@@ -128,6 +128,8 @@ interface PricingSectionProps {
   isExistingPricingLoaded?: boolean
   /** DB에서 불러온 필드면 검은색, 계산값이면 빨간색 표시 */
   pricingFieldsFromDb?: Record<string, boolean>
+  /** 동적가격 로드·정산 연쇄 계산 중이면 숫자 대신 오버레이 (깜빡임 완화) */
+  priceCalculationPending?: boolean
 }
 
 export default function PricingSection({
@@ -142,6 +144,7 @@ export default function PricingSection({
   reservationOptionsTotalPrice = 0,
   isExistingPricingLoaded,
   pricingFieldsFromDb = {},
+  priceCalculationPending = false,
   reservationId,
   expenseUpdateTrigger,
   channels = [],
@@ -1648,7 +1651,22 @@ export default function PricingSection({
   ])
 
   return (
-    <div>
+    <div className="relative">
+      {priceCalculationPending && (
+        <div
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-lg bg-white/80 backdrop-blur-[1px] min-h-[100px]"
+          aria-busy="true"
+          aria-live="polite"
+        >
+          <span
+            className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-blue-600 mb-2"
+            aria-hidden
+          />
+          <span className="text-sm text-gray-600">
+            {isKorean ? '가격·정산 계산 중…' : 'Calculating prices…'}
+          </span>
+        </div>
+      )}
       {/* 왼쪽: 제목·채널·날짜·기존가격/완료 뱃지·단독투어 / 오른쪽 끝: 저장·초기화 */}
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div className="flex flex-wrap items-center gap-2">

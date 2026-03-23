@@ -58,18 +58,34 @@ import type {
   TemplateType,
   Language
 } from '@/types/consultation'
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
+
+const CONSULTATION_LIST_UI_DEFAULT = {
+  activeTab: 'templates' as 'templates' | 'workflows' | 'logs' | 'stats',
+  searchTerm: '',
+  selectedCategory: 'all',
+  selectedProducts: [] as string[],
+  selectedChannels: [] as string[],
+  expandedProductCategories: [] as string[],
+  expandedChannelTypes: [] as string[],
+  showInactive: false,
+  showFavoritesOnly: false
+}
 
 export default function ConsultationManagementPage() {
   const { locale } = useParams()
-  const [activeTab, setActiveTab] = useState<'templates' | 'workflows' | 'logs' | 'stats'>('templates')
-  const [searchTerm, setSearchTerm] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState<string>('all')
-  const [selectedProducts, setSelectedProducts] = useState<string[]>([])
-  const [selectedChannels, setSelectedChannels] = useState<string[]>([])
-  const [expandedProductCategories, setExpandedProductCategories] = useState<string[]>([])
-  const [expandedChannelTypes, setExpandedChannelTypes] = useState<string[]>([])
-  const [showInactive, setShowInactive] = useState(false)
-  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
+  const [listUi, setListUi] = useRoutePersistedState('consultation-list', CONSULTATION_LIST_UI_DEFAULT)
+  const {
+    activeTab,
+    searchTerm,
+    selectedCategory,
+    selectedProducts,
+    selectedChannels,
+    expandedProductCategories,
+    expandedChannelTypes,
+    showInactive,
+    showFavoritesOnly
+  } = listUi
   // 언어 선택 제거 - 한 페이지에 한국어/영어 동시 표시
   
   // 모달 상태
@@ -666,7 +682,7 @@ export default function ConsultationManagementPage() {
             ].map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => setListUi((prev) => ({ ...prev, activeTab: tab.id as typeof prev.activeTab }))}
                 className={`flex items-center gap-2 py-2 px-1 border-b-2 font-medium text-sm ${
                   activeTab === tab.id
                     ? 'border-blue-500 text-blue-600'
@@ -694,7 +710,7 @@ export default function ConsultationManagementPage() {
                   type="text"
                   placeholder={locale === 'ko' ? '템플릿 검색...' : 'Search templates...'}
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => setListUi((prev) => ({ ...prev, searchTerm: e.target.value }))}
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -706,7 +722,7 @@ export default function ConsultationManagementPage() {
                  </label>
                  <div className="flex flex-wrap gap-2">
                    <button
-                     onClick={() => setSelectedCategory('all')}
+                     onClick={() => setListUi((prev) => ({ ...prev, selectedCategory: 'all' }))}
                      className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
                        selectedCategory === 'all'
                          ? 'bg-gray-800 text-white shadow-md'
@@ -718,7 +734,7 @@ export default function ConsultationManagementPage() {
                    {categories?.map(category => (
                      <button
                        key={category.id}
-                       onClick={() => setSelectedCategory(category.id)}
+                       onClick={() => setListUi((prev) => ({ ...prev, selectedCategory: category.id }))}
                        className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 flex items-center gap-2 ${
                          selectedCategory === category.id
                            ? 'text-white shadow-md'
@@ -749,7 +765,7 @@ export default function ConsultationManagementPage() {
                  <div className="mb-3">
                    <div className="flex flex-wrap gap-2">
                      <button
-                       onClick={() => setExpandedProductCategories([])}
+                       onClick={() => setListUi((prev) => ({ ...prev, expandedProductCategories: [] }))}
                        className={`px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
                          expandedProductCategories.length === 0
                            ? 'bg-gray-800 text-white shadow-md'
@@ -762,11 +778,18 @@ export default function ConsultationManagementPage() {
                        <button
                          key={category}
                          onClick={() => {
-                           if (expandedProductCategories.includes(category)) {
-                             setExpandedProductCategories(expandedProductCategories.filter(c => c !== category))
-                           } else {
-                             setExpandedProductCategories([...expandedProductCategories, category])
-                           }
+                           setListUi((prev) => {
+                             if (prev.expandedProductCategories.includes(category)) {
+                               return {
+                                 ...prev,
+                                 expandedProductCategories: prev.expandedProductCategories.filter((c) => c !== category)
+                               }
+                             }
+                             return {
+                               ...prev,
+                               expandedProductCategories: [...prev.expandedProductCategories, category]
+                             }
+                           })
                          }}
                          className={`px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
                            expandedProductCategories.includes(category)
@@ -789,21 +812,27 @@ export default function ConsultationManagementPage() {
                            <button
                              key={`${category}-${subCategory}`}
                              onClick={() => {
-                               const categoryProducts = groupedProducts[category]?.[subCategory] || []
-                               const allSelected = categoryProducts.every(product => selectedProducts.includes(product.id))
-                               
-                               if (allSelected) {
-                                 // If all products are selected, deselect them
-                                 setSelectedProducts(selectedProducts.filter(id => 
-                                   !categoryProducts.some(product => product.id === id)
-                                 ))
-                               } else {
-                                 // 일부 또는 아무것도 선택되지 않았으면 모두 선택
+                               setListUi((prev) => {
+                                 const categoryProducts = groupedProducts[category]?.[subCategory] || []
+                                 const allSelected = categoryProducts.every((product) =>
+                                   prev.selectedProducts.includes(product.id)
+                                 )
+                                 if (allSelected) {
+                                   return {
+                                     ...prev,
+                                     selectedProducts: prev.selectedProducts.filter(
+                                       (id) => !categoryProducts.some((product) => product.id === id)
+                                     )
+                                   }
+                                 }
                                  const newSelections = categoryProducts
-                                   .filter(product => !selectedProducts.includes(product.id))
-                                   .map(product => product.id)
-                                 setSelectedProducts([...selectedProducts, ...newSelections])
-                               }
+                                   .filter((product) => !prev.selectedProducts.includes(product.id))
+                                   .map((product) => product.id)
+                                 return {
+                                   ...prev,
+                                   selectedProducts: [...prev.selectedProducts, ...newSelections]
+                                 }
+                               })
                              }}
                              className={`px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
                                groupedProducts[category]?.[subCategory]?.every(product => selectedProducts.includes(product.id))
@@ -831,11 +860,18 @@ export default function ConsultationManagementPage() {
                            <button
                              key={product.id}
                              onClick={() => {
-                               if (selectedProducts.includes(product.id)) {
-                                 setSelectedProducts(selectedProducts.filter(id => id !== product.id))
-                               } else {
-                                 setSelectedProducts([...selectedProducts, product.id])
-                               }
+                               setListUi((prev) => {
+                                 if (prev.selectedProducts.includes(product.id)) {
+                                   return {
+                                     ...prev,
+                                     selectedProducts: prev.selectedProducts.filter((id) => id !== product.id)
+                                   }
+                                 }
+                                 return {
+                                   ...prev,
+                                   selectedProducts: [...prev.selectedProducts, product.id]
+                                 }
+                               })
                              }}
                              className={`px-2 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
                                selectedProducts.includes(product.id)
@@ -870,7 +906,7 @@ export default function ConsultationManagementPage() {
                  <div className="mb-3">
                    <div className="flex flex-wrap gap-2">
                      <button
-                       onClick={() => setExpandedChannelTypes([])}
+                       onClick={() => setListUi((prev) => ({ ...prev, expandedChannelTypes: [] }))}
                        className={`px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
                          expandedChannelTypes.length === 0
                            ? 'bg-gray-800 text-white shadow-md'
@@ -883,11 +919,18 @@ export default function ConsultationManagementPage() {
                        <button
                          key={type}
                          onClick={() => {
-                           if (expandedChannelTypes.includes(type)) {
-                             setExpandedChannelTypes(expandedChannelTypes.filter(t => t !== type))
-                           } else {
-                             setExpandedChannelTypes([...expandedChannelTypes, type])
-                           }
+                           setListUi((prev) => {
+                             if (prev.expandedChannelTypes.includes(type)) {
+                               return {
+                                 ...prev,
+                                 expandedChannelTypes: prev.expandedChannelTypes.filter((t) => t !== type)
+                               }
+                             }
+                             return {
+                               ...prev,
+                               expandedChannelTypes: [...prev.expandedChannelTypes, type]
+                             }
+                           })
                          }}
                          className={`px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
                            expandedChannelTypes.includes(type)
@@ -911,11 +954,18 @@ export default function ConsultationManagementPage() {
                            <button
                              key={channel.id}
                              onClick={() => {
-                               if (selectedChannels.includes(channel.id)) {
-                                 setSelectedChannels(selectedChannels.filter(id => id !== channel.id))
-                               } else {
-                                 setSelectedChannels([...selectedChannels, channel.id])
-                               }
+                               setListUi((prev) => {
+                                 if (prev.selectedChannels.includes(channel.id)) {
+                                   return {
+                                     ...prev,
+                                     selectedChannels: prev.selectedChannels.filter((id) => id !== channel.id)
+                                   }
+                                 }
+                                 return {
+                                   ...prev,
+                                   selectedChannels: [...prev.selectedChannels, channel.id]
+                                 }
+                               })
                              }}
                              className={`px-2 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
                                selectedChannels.includes(channel.id)
@@ -947,7 +997,7 @@ export default function ConsultationManagementPage() {
                 <input
                   type="checkbox"
                   checked={showInactive}
-                  onChange={(e) => setShowInactive(e.target.checked)}
+                  onChange={(e) => setListUi((prev) => ({ ...prev, showInactive: e.target.checked }))}
                   className="rounded"
                 />
                 {locale === 'ko' ? '비활성화된 항목 표시' : 'Show inactive items'}
@@ -957,7 +1007,7 @@ export default function ConsultationManagementPage() {
                 <input
                   type="checkbox"
                   checked={showFavoritesOnly}
-                  onChange={(e) => setShowFavoritesOnly(e.target.checked)}
+                  onChange={(e) => setListUi((prev) => ({ ...prev, showFavoritesOnly: e.target.checked }))}
                   className="rounded"
                 />
                 {locale === 'ko' ? '즐겨찾기만 표시' : 'Show favorites only'}

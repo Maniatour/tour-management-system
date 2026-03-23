@@ -1,3 +1,4 @@
+import { isGarbageImportedCustomerName } from '@/lib/emailReservationParser'
 import type { Database } from '@/lib/supabase'
 import type { 
   Customer, 
@@ -49,9 +50,57 @@ export function matchPickupHotelId(
 /** 이메일 추출/DB에 저장된 고객명에서 "customer-" 앞에서 끊어 반환. "LAST, FIRST" → "LAST FIRST" 정규화 (KKday 대표 여행자 등). */
 export function normalizeCustomerNameFromImport(name: string | null | undefined): string {
   if (name == null || typeof name !== 'string') return ''
+  if (isGarbageImportedCustomerName(name)) return ''
   const before = name.split(/\s*customer-/i)[0].trim()
   const base = before !== '' ? before : name.trim()
-  return base.replace(/\s*,\s*/g, ' ').trim()
+  return base
+    .replace(/\s*,\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * 예약 가져오기: DB의 extracted_data.amount 가 비었을 때 원문(HTML/텍스트)에서 고객 결제 금액 후보 추출.
+ * "Price" / "Total" 라벨 우선, 줄바꿈·태그로 분리된 경우 포함.
+ */
+export function extractPriceFromEmailBodyForImport(raw: string | null | undefined): string | undefined {
+  if (raw == null || String(raw).trim().length < 4) return undefined
+  const text = String(raw)
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const tryPatterns: RegExp[] = [
+    /\bPrice\b\s*:?\s*\$?\s*([\d,]+\.?\d*)/i,
+    /\bTotal\b\s*:?\s*\$?\s*([\d,]+\.?\d*)/i,
+    /\bAmount\s*(?:paid)?\b\s*:?\s*\$?\s*([\d,]+\.?\d*)/i,
+    /\bprice\b\s*:?\s*[\s]{0,3}\$?\s*([\d,]+\.?\d*)/i,
+  ]
+  for (const re of tryPatterns) {
+    const m = text.match(re)
+    if (m?.[1]) {
+      const n = parseFloat(String(m[1]).replace(/,/g, ''))
+      if (Number.isFinite(n) && n >= 1) return `$${String(m[1]).replace(/,/g, '')}`
+    }
+  }
+  return undefined
+}
+
+/** Viator 원문에서 Net Rate 라인 추출 (extracted_data에 없을 때 폴백) */
+export function extractViatorNetRateFromEmailBodyForImport(raw: string | null | undefined): string | undefined {
+  if (raw == null || String(raw).trim().length < 8) return undefined
+  const text = String(raw)
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const m = text.match(/Net\s*Rate\s*:?\s*(?:USD\s*)?\$?\s*([\d,]+\.?\d*)/i)
+  if (!m?.[1]) return undefined
+  const n = parseFloat(String(m[1]).replace(/,/g, ''))
+  if (!Number.isFinite(n) || n < 0.01) return undefined
+  return `$${String(m[1]).replace(/,/g, '')}`
 }
 
 // 고객 이름 가져오기
