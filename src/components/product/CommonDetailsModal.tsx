@@ -44,6 +44,7 @@ export default function CommonDetailsModal({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [usResidencyPolicyByLanguage, setUsResidencyPolicyByLanguage] = useState<Record<string, string>>({})
 
   const supabase = createClientSupabase()
   const { user } = useAuth()
@@ -54,6 +55,28 @@ export default function CommonDetailsModal({
     { code: 'ja', name: '日本語' },
     { code: 'zh', name: '中文' }
   ], [])
+  const US_RESIDENCY_MARKER = 'U.S. Residency Policy (IMPORTANT)'
+
+  const parseNoticeSections = (notice: string): { notice: string; usResidencyPolicy: string } => {
+    if (!notice) return { notice: '', usResidencyPolicy: '' }
+    const markerIndex = notice.indexOf(US_RESIDENCY_MARKER)
+    if (markerIndex < 0) return { notice: notice.trim(), usResidencyPolicy: '' }
+
+    const before = notice.slice(0, markerIndex).trim().replace(/-+\s*$/, '').trim()
+    const after = notice.slice(markerIndex + US_RESIDENCY_MARKER.length).trim()
+    return {
+      notice: before,
+      usResidencyPolicy: after
+    }
+  }
+
+  const mergeNoticeSections = (notice: string, usResidencyPolicy: string): string => {
+    const trimmedNotice = (notice || '').trim()
+    const trimmedPolicy = (usResidencyPolicy || '').trim()
+    if (!trimmedPolicy) return trimmedNotice
+    if (!trimmedNotice) return `${US_RESIDENCY_MARKER}\n${trimmedPolicy}`
+    return `${trimmedNotice}\n\n${US_RESIDENCY_MARKER}\n${trimmedPolicy}`
+  }
 
   // 현재 언어의 데이터 가져오기
   const getCurrentLanguageData = (): ProductDetailsFields => {
@@ -85,6 +108,12 @@ export default function CommonDetailsModal({
         ...prev[currentLanguage],
         [field]: value
       }
+    }))
+  }
+  const handleUsResidencyPolicyChange = (value: string) => {
+    setUsResidencyPolicyByLanguage(prev => ({
+      ...prev,
+      [currentLanguage]: value
     }))
   }
 
@@ -120,7 +149,9 @@ export default function CommonDetailsModal({
 
       if (data && data.length > 0) {
         const mapped: MultilingualProductDetails = {}
+        const usPolicyMap: Record<string, string> = {}
         data.forEach(item => {
+          const parsedNotice = parseNoticeSections(item.notice_info || '')
           mapped[item.language_code] = {
             slogan1: item.slogan1 || '',
             slogan2: item.slogan2 || '',
@@ -133,17 +164,20 @@ export default function CommonDetailsModal({
             tour_operation_info: item.tour_operation_info || '',
             preparation_info: item.preparation_info || '',
             small_group_info: item.small_group_info || '',
-            notice_info: item.notice_info || '',
+            notice_info: parsedNotice.notice,
             private_tour_info: item.private_tour_info || '',
             cancellation_policy: item.cancellation_policy || '',
             chat_announcement: item.chat_announcement || '',
             tags: item.tags || []
           }
+          usPolicyMap[item.language_code] = parsedNotice.usResidencyPolicy
         })
         setFormData(mapped)
+        setUsResidencyPolicyByLanguage(usPolicyMap)
       } else {
         // 빈 데이터로 초기화
         const emptyData: MultilingualProductDetails = {}
+        const emptyPolicyData: Record<string, string> = {}
         availableLanguages.forEach(lang => {
           emptyData[lang.code] = {
             slogan1: '',
@@ -163,8 +197,10 @@ export default function CommonDetailsModal({
             chat_announcement: '',
             tags: []
           }
+          emptyPolicyData[lang.code] = ''
         })
         setFormData(emptyData)
+        setUsResidencyPolicyByLanguage(emptyPolicyData)
       }
     } catch (error) {
       console.error('Error loading common details:', error)
@@ -211,7 +247,7 @@ export default function CommonDetailsModal({
             tour_operation_info: data.tour_operation_info,
             preparation_info: data.preparation_info,
             small_group_info: data.small_group_info,
-            notice_info: data.notice_info,
+            notice_info: mergeNoticeSections(data.notice_info, usResidencyPolicyByLanguage[langCode] || ''),
             private_tour_info: data.private_tour_info,
             cancellation_policy: data.cancellation_policy,
             chat_announcement: data.chat_announcement,
@@ -234,6 +270,7 @@ export default function CommonDetailsModal({
   if (!isOpen) return null
 
   const currentData = getCurrentLanguageData()
+  const currentUsResidencyPolicy = usResidencyPolicyByLanguage[currentLanguage] || ''
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -444,15 +481,32 @@ export default function CommonDetailsModal({
               {/* 안내사항 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  안내사항
+                  안내사항 (Payment Notice 등)
                 </label>
                 <textarea
                   value={currentData.notice_info}
                   onChange={(e) => handleInputChange('notice_info', e.target.value)}
                   rows={3}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="투어 관련 안내사항을 입력하세요"
+                  placeholder="결제 안내, 팁, 추가 비용 등 일반 안내를 입력하세요"
                 />
+              </div>
+
+              {/* U.S. Residency Policy (IMPORTANT) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  U.S. Residency Policy (IMPORTANT)
+                </label>
+                <textarea
+                  value={currentUsResidencyPolicy}
+                  onChange={(e) => handleUsResidencyPolicyChange(e.target.value)}
+                  rows={6}
+                  className="w-full px-3 py-2 border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 bg-amber-50"
+                  placeholder="예: 비미국 거주자 추가 비용, 신분증 지참, 결제/환불 정책, 확인 문구 등을 입력하세요"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  저장 시 안내사항과 함께 이메일에 포함되며, "U.S. Residency Policy (IMPORTANT)" 제목으로 정리됩니다.
+                </p>
               </div>
 
               {/* 단독투어 정보 */}

@@ -376,6 +376,24 @@ export function generateEmailContent(
   isEnglish: boolean,
   isDepartureConfirmation: boolean = false
 ) {
+  const decodeCommonEntities = (value: string | null | undefined): string => {
+    if (!value) return ''
+    let decoded = value
+    // Double-encoded 케이스(&amp;nbsp; -> &nbsp; -> 공백)까지 완화
+    for (let i = 0; i < 2; i += 1) {
+      const next = decoded
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi, "'")
+      if (next === decoded) break
+      decoded = next
+    }
+    return decoded
+  }
+
   const productName = isEnglish 
     ? (product?.customer_name_en || product?.name_en || product?.name) 
     : (product?.customer_name_ko || product?.name_ko || product?.name)
@@ -561,16 +579,16 @@ export function generateEmailContent(
     if (!productDetails) return ''
     
     const details = []
-    if (productDetails.included) details.push({ title: isEnglish ? 'Included' : '포함 사항', content: productDetails.included })
-    if (productDetails.not_included) details.push({ title: isEnglish ? 'Not Included' : '불포함 사항', content: productDetails.not_included })
-    if (productDetails.pickup_drop_info) details.push({ title: isEnglish ? 'Meeting Point' : '만남 장소', content: productDetails.pickup_drop_info })
-    if (productDetails.cancellation_policy) details.push({ title: isEnglish ? 'Cancellation Policy' : '취소 정책', content: productDetails.cancellation_policy })
-    if (productDetails.luggage_info) details.push({ title: isEnglish ? 'Luggage Info' : '수하물 정보', content: productDetails.luggage_info })
-    if (productDetails.tour_operation_info) details.push({ title: isEnglish ? 'Tour Operation Info' : '투어 운영 정보', content: productDetails.tour_operation_info })
-    if (productDetails.preparation_info) details.push({ title: isEnglish ? 'Preparation Info' : '준비 사항', content: productDetails.preparation_info })
-    if (productDetails.small_group_info) details.push({ title: isEnglish ? 'Small Group Info' : '소규모 그룹 정보', content: productDetails.small_group_info })
-    if (productDetails.notice_info) details.push({ title: isEnglish ? 'Notice' : '안내 사항', content: productDetails.notice_info })
-    if (productDetails.private_tour_info) details.push({ title: isEnglish ? 'Private Tour Info' : '프라이빗 투어 정보', content: productDetails.private_tour_info })
+    if (productDetails.included) details.push({ title: isEnglish ? 'Included' : '포함 사항', content: decodeCommonEntities(productDetails.included) })
+    if (productDetails.not_included) details.push({ title: isEnglish ? 'Not Included' : '불포함 사항', content: decodeCommonEntities(productDetails.not_included) })
+    if (productDetails.pickup_drop_info) details.push({ title: isEnglish ? 'Meeting Point' : '만남 장소', content: decodeCommonEntities(productDetails.pickup_drop_info) })
+    if (productDetails.cancellation_policy) details.push({ title: isEnglish ? 'Cancellation Policy' : '취소 정책', content: decodeCommonEntities(productDetails.cancellation_policy) })
+    if (productDetails.luggage_info) details.push({ title: isEnglish ? 'Luggage Info' : '수하물 정보', content: decodeCommonEntities(productDetails.luggage_info) })
+    if (productDetails.tour_operation_info) details.push({ title: isEnglish ? 'Tour Operation Info' : '투어 운영 정보', content: decodeCommonEntities(productDetails.tour_operation_info) })
+    if (productDetails.preparation_info) details.push({ title: isEnglish ? 'Preparation Info' : '준비 사항', content: decodeCommonEntities(productDetails.preparation_info) })
+    if (productDetails.small_group_info) details.push({ title: isEnglish ? 'Small Group Info' : '소규모 그룹 정보', content: decodeCommonEntities(productDetails.small_group_info) })
+    if (productDetails.notice_info) details.push({ title: isEnglish ? 'Notice' : '안내 사항', content: decodeCommonEntities(productDetails.notice_info) })
+    if (productDetails.private_tour_info) details.push({ title: isEnglish ? 'Private Tour Info' : '프라이빗 투어 정보', content: decodeCommonEntities(productDetails.private_tour_info) })
     
     if (details.length === 0) return ''
     
@@ -607,7 +625,6 @@ export function generateEmailContent(
         <div style="padding: 20px;">
           ${productSchedules.map((schedule: any) => {
             const title = isEnglish ? (schedule.title_en || schedule.title_ko) : (schedule.title_ko || schedule.title_en)
-            const description = isEnglish ? schedule.description_en : schedule.description_ko
             const duration = schedule.start_time && schedule.end_time ? calculateDuration(schedule.start_time, schedule.end_time) : ''
             
             return `
@@ -628,9 +645,6 @@ export function generateEmailContent(
                 <div style="margin-bottom: 8px;">
                   <span style="font-size: 15px; font-weight: 600; color: #111827;">${title || ''}</span>
                 </div>
-                ${description ? `
-                <p style="margin: 0; font-size: 13px; color: #4b5563; line-height: 1.6; white-space: pre-wrap;">${description}</p>
-                ` : ''}
               </div>
             `
           }).join('')}

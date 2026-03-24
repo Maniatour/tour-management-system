@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
-import { FileText, Save, AlertCircle, Settings, Languages, Loader2, Sparkles, Users, Copy, ChevronRight, ChevronDown, CheckSquare, Square } from 'lucide-react'
+import { Save, AlertCircle, Settings, Users, ChevronRight, ChevronDown, CheckSquare, Square } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import CommonDetailsModal from './CommonDetailsModal'
@@ -53,6 +53,7 @@ interface ProductDetailsMultilingualRow {
   cancellation_policy: string | null
   chat_announcement: string | null
   tags: string[] | null
+  section_titles?: Record<string, string> | null
   created_at: string | null
   updated_at: string | null
 }
@@ -154,7 +155,7 @@ export default function ProductDetailsTab({
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
   const [loadingChannelData, setLoadingChannelData] = useState(false)
   const [_copyFromChannel, _setCopyFromChannel] = useState<string | null>(null)
-  const [channelPricingStats, setChannelPricingStats] = useState<Record<string, Record<string, number>>>({})
+  const [_channelPricingStats, setChannelPricingStats] = useState<Record<string, Record<string, number>>>({})
   
   // 채널별 데이터 완성도 상태
   const [channelCompletionStats, setChannelCompletionStats] = useState<Record<string, {
@@ -171,6 +172,12 @@ export default function ProductDetailsTab({
   const [copyModalOpen, setCopyModalOpen] = useState(false)
   const [copyFieldName, setCopyFieldName] = useState<string | null>(null)
   const [copyTargetChannels, setCopyTargetChannels] = useState<Record<string, boolean>>({})
+  const [previewEditModalOpen, setPreviewEditModalOpen] = useState(false)
+  const [previewEditingField, setPreviewEditingField] = useState<keyof ProductDetailsFields | null>(null)
+  const [importFieldModalOpen, setImportFieldModalOpen] = useState(false)
+  const [importSourceChannelId, setImportSourceChannelId] = useState<string>('')
+  const [importingField, setImportingField] = useState(false)
+  const [sectionTitleOverridesByLanguage, setSectionTitleOverridesByLanguage] = useState<Record<string, Partial<Record<keyof ProductDetailsFields, string>>>>({})
   
   // Variant 관리 상태 (채널별 variant 선택)
   const [channelVariants, setChannelVariants] = useState<Record<string, string>>({}) // channelId -> variant_key
@@ -182,6 +189,53 @@ export default function ProductDetailsTab({
 
   const supabase = createClientSupabase()
   const { user, loading: authLoading } = useAuth()
+  const selectedChannelIds = Object.keys(selectedChannels).filter((id) => selectedChannels[id])
+
+  const decodeHtmlEntities = (value: string): string => {
+    if (!value) return ''
+    if (typeof window === 'undefined') {
+      return value
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi, "'")
+    }
+    const textarea = document.createElement('textarea')
+    textarea.innerHTML = value
+    return textarea.value
+  }
+
+  const defaultSectionTitles: Record<keyof ProductDetailsFields, string> = {
+    slogan1: '🧭 Slogan',
+    slogan2: '🧭 Slogan 2',
+    slogan3: '🧭 Slogan 3',
+    description: '📝 Description',
+    included: '✔ Included',
+    not_included: '✘ Not Included',
+    pickup_drop_info: '🚐 Pickup / Drop-off',
+    luggage_info: '🧳 Luggage Info',
+    tour_operation_info: '🚌 Tour Operation Info',
+    preparation_info: '🎒 What to Bring',
+    small_group_info: '👥 Small Group Info',
+    notice_info: '💵 Payment Notice',
+    private_tour_info: '🔒 Private Tour Info',
+    cancellation_policy: '📋 Cancellation Policy',
+    chat_announcement: '💬 Chat Announcement',
+    tags: '🏷 Tags'
+  }
+
+  const getCurrentSectionTitles = (): Partial<Record<keyof ProductDetailsFields, string>> => {
+    const currentLang = formData.currentLanguage || 'ko'
+    return sectionTitleOverridesByLanguage[currentLang] || {}
+  }
+
+  const getSectionTitle = (field: keyof ProductDetailsFields): string => {
+    const currentTitles = getCurrentSectionTitles()
+    const custom = currentTitles[field]?.trim()
+    return custom || defaultSectionTitles[field]
+  }
 
   // 로딩 상태는 부모 컴포넌트에서 관리
   useEffect(() => {
@@ -484,6 +538,7 @@ export default function ProductDetailsTab({
               cancellation_policy: string | null
               chat_announcement: string | null
               tags: string[] | null
+              section_titles?: Record<string, string> | null
             }> | null
             error: unknown
           }
@@ -505,11 +560,15 @@ export default function ProductDetailsTab({
       // 채널별 데이터를 formData에 반영
       if (data && data.length > 0) {
         const multilingualDetails: Record<string, ProductDetailsFields> = {}
+        const loadedTitlesByLanguage: Record<string, Partial<Record<keyof ProductDetailsFields, string>>> = {}
         
         // 각 언어별로 모든 채널의 데이터를 병합
         // 첫 번째 채널의 데이터를 기본으로 하고, 비어있는 필드는 다른 채널의 데이터로 채움
         data.forEach((item) => {
           const langCode = item.language_code || 'ko'
+          if (!loadedTitlesByLanguage[langCode] && item.section_titles && typeof item.section_titles === 'object') {
+            loadedTitlesByLanguage[langCode] = item.section_titles as Partial<Record<keyof ProductDetailsFields, string>>
+          }
           if (!multilingualDetails[langCode]) {
             // 첫 번째 채널의 데이터로 초기화
             multilingualDetails[langCode] = {
@@ -581,6 +640,10 @@ export default function ProductDetailsTab({
         }
 
         console.log('채널별 데이터를 formData에 반영:', multilingualDetails)
+        setSectionTitleOverridesByLanguage(prev => ({
+          ...prev,
+          ...loadedTitlesByLanguage
+        }))
         // 현재 formData와 비교하여 변경이 있을 때만 업데이트
         setFormData(prev => {
           const currentLang = prev.currentLanguage || 'ko'
@@ -1119,7 +1182,8 @@ export default function ProductDetailsTab({
           private_tour_info: toNullIfEmpty(currentDetails.private_tour_info),
           cancellation_policy: toNullIfEmpty(currentDetails.cancellation_policy),
           chat_announcement: toNullIfEmpty(currentDetails.chat_announcement),
-          tags: currentDetails.tags ?? null
+          tags: currentDetails.tags ?? null,
+          section_titles: getCurrentSectionTitles()
         }
         
         const channelIdLabel = group.channelId === 'SELF_GROUP' 
@@ -1300,6 +1364,56 @@ export default function ProductDetailsTab({
     }
   }
 
+  const resolveStoredChannelId = (channelId: string): string => {
+    const channel = channels.find(c => c.id === channelId)
+    return (channel?.type === 'self' || channel?.type === 'SELF') ? 'SELF_GROUP' : channelId
+  }
+
+  const importSectionFromChannel = async () => {
+    if (!previewEditingField || !importSourceChannelId) {
+      setSaveMessage('가져올 채널을 선택해주세요.')
+      setSaveMessageType('error')
+      setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 2500)
+      return
+    }
+
+    const currentLang = formData.currentLanguage || 'ko'
+    const sourceStoredChannelId = resolveStoredChannelId(importSourceChannelId)
+    const sourceVariantKey = channelVariants[importSourceChannelId] || 'default'
+
+    setImportingField(true)
+    try {
+      const { data, error } = await supabase
+        .from('product_details_multilingual')
+        .select(previewEditingField)
+        .eq('product_id', productId)
+        .eq('channel_id', sourceStoredChannelId)
+        .eq('language_code', currentLang)
+        .eq('variant_key', sourceVariantKey)
+        .maybeSingle() as { data: Record<string, string | null> | null; error: { message?: string; code?: string } | null }
+
+      if (error && error.code !== 'PGRST116') {
+        throw new Error(error.message || '채널 데이터 조회 실패')
+      }
+      if (!data) {
+        throw new Error('선택한 채널/variant에 해당 섹션 데이터가 없습니다.')
+      }
+
+      const incoming = (data[previewEditingField] || '') as string
+      handleInputChange(previewEditingField, incoming)
+      setImportFieldModalOpen(false)
+      setSaveMessage('섹션 내용을 가져왔습니다. 저장 버튼을 눌러 반영하세요.')
+      setSaveMessageType('success')
+      setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 3000)
+    } catch (error) {
+      setSaveMessage(`가져오기 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`)
+      setSaveMessageType('error')
+      setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 3500)
+    } finally {
+      setImportingField(false)
+    }
+  }
+
   // 상품 세부정보 로드 함수
   const loadProductDetails = useCallback(async () => {
     if (isNewProduct) return
@@ -1333,6 +1447,7 @@ export default function ProductDetailsTab({
         cancellation_policy: string | null
         chat_announcement: string | null
         tags: string[] | null
+        section_titles?: Record<string, string> | null
       }> | { channel_id: string | null; language_code: string | null; slogan1: string | null; slogan2: string | null; slogan3: string | null; description: string | null; included: string | null; not_included: string | null; pickup_drop_info: string | null; luggage_info: string | null; tour_operation_info: string | null; preparation_info: string | null; small_group_info: string | null; notice_info: string | null; private_tour_info: string | null; cancellation_policy: string | null; chat_announcement: string | null; tags: string[] | null } | null = null
       let detailsError: { code?: string } | null = null
 
@@ -1370,6 +1485,7 @@ export default function ProductDetailsTab({
               cancellation_policy: string | null
               chat_announcement: string | null
               tags: string[] | null
+              section_titles?: Record<string, string> | null
             }> | null
             error: unknown
           }
@@ -1456,6 +1572,7 @@ export default function ProductDetailsTab({
 
       // 다국어 데이터를 언어별로 매핑
       const multilingualDetails: Record<string, ProductDetailsFields> = {}
+      const loadedTitlesByLanguage: Record<string, Partial<Record<keyof ProductDetailsFields, string>>> = {}
       
       console.log('매핑 전 detailsData:', detailsData)
       console.log('매핑 전 detailsData 타입:', Array.isArray(detailsData) ? '배열' : typeof detailsData)
@@ -1469,6 +1586,9 @@ export default function ProductDetailsTab({
           console.log(`[${index}] 언어 ${langCode} 데이터 매핑:`, item)
           console.log(`[${index}] item.channel_id:`, item.channel_id)
           console.log(`[${index}] item.language_code:`, item.language_code)
+          if (item.section_titles && typeof item.section_titles === 'object') {
+            loadedTitlesByLanguage[langCode] = item.section_titles as Partial<Record<keyof ProductDetailsFields, string>>
+          }
           multilingualDetails[langCode] = {
             slogan1: item.slogan1 ?? '',
             slogan2: item.slogan2 ?? '',
@@ -1509,8 +1629,12 @@ export default function ProductDetailsTab({
           cancellation_policy: string | null
           chat_announcement: string | null
           tags: string[] | null
+          section_titles?: Record<string, string> | null
         }
         const langCode = item.language_code || 'ko'
+        if (item.section_titles && typeof item.section_titles === 'object') {
+          loadedTitlesByLanguage[langCode] = item.section_titles as Partial<Record<keyof ProductDetailsFields, string>>
+        }
         multilingualDetails[langCode] = {
           slogan1: item.slogan1 ?? '',
           slogan2: item.slogan2 ?? '',
@@ -1579,6 +1703,10 @@ export default function ProductDetailsTab({
           useCommonDetails: !!productData?.use_common_details
         }
       })
+      setSectionTitleOverridesByLanguage(prev => ({
+        ...prev,
+        ...loadedTitlesByLanguage
+      }))
 
       console.log('상품 세부정보 로드 완료:', multilingualDetails)
     } catch (error) {
@@ -2201,7 +2329,8 @@ export default function ProductDetailsTab({
         private_tour_info: toNullIfEmpty(currentDetails.private_tour_info),
         cancellation_policy: toNullIfEmpty(currentDetails.cancellation_policy),
         chat_announcement: toNullIfEmpty(currentDetails.chat_announcement),
-        tags: currentDetails.tags ?? null
+        tags: currentDetails.tags ?? null,
+        section_titles: getCurrentSectionTitles()
       }
       
       console.log('저장할 상세 정보:', {
@@ -2302,6 +2431,9 @@ export default function ProductDetailsTab({
     }
   }
 
+  // 채널 간 전체 복사는 현재 미사용
+  void _copyChannelData
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -2313,347 +2445,150 @@ export default function ProductDetailsTab({
 
   return (
     <div className="space-y-8">
-      {/* 새로운 채널별 세부정보 관리 UI */}
-      <div className="bg-white border border-gray-200 rounded-lg">
-        {/* 헤더 */}
-        <div className="border-b border-gray-200 p-2 md:p-4">
-          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4 w-full lg:w-auto">
-              <h3 className="text-sm font-medium text-gray-900 flex items-center">
-                <Users className="h-3.5 w-3.5 mr-2" />
-                {t('channelDetailsTitle')}
-              </h3>
-              {/* 언어 선택 스위치 */}
-              <div className="flex items-center space-x-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-                <Languages className="h-3 w-3 text-gray-500 flex-shrink-0" />
-                <div className="flex space-x-1 bg-gray-100 p-0.5 rounded-lg min-w-max">
-                  {availableLanguages.map((lang) => (
-                    <button
-                      key={lang}
-                      type="button"
-                      onClick={() => handleLanguageChange(lang)}
-                      className={`px-1.5 py-0.5 text-[10px] font-medium rounded-md transition-colors ${
-                        (formData.currentLanguage || 'ko') === lang
-                          ? 'bg-white text-blue-600 shadow-sm'
-                          : 'text-gray-600 hover:text-gray-900'
-                      }`}
-                    >
-                      {lang === 'ko' ? t('langKorean') :
-                       lang === 'en' ? t('langEnglish') :
-                       lang === 'ja' ? t('langJapanese') :
-                       lang === 'zh' ? t('langChinese') : lang}
-                    </button>
-                  ))}
-                </div>
-              </div>
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-gray-700" />
+            <h3 className="text-base font-semibold text-gray-900">고객 노출 내용 편집기</h3>
+            <span className="text-xs text-gray-500">채널 / Variant 기준</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center space-x-1 bg-gray-100 p-1 rounded-lg">
+              {availableLanguages.map((lang) => (
+                <button
+                  key={lang}
+                  type="button"
+                  onClick={() => handleLanguageChange(lang)}
+                  className={`px-2 py-1 text-xs rounded ${
+                    (formData.currentLanguage || 'ko') === lang
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  {lang === 'ko' ? 'KO' : lang.toUpperCase()}
+                </button>
+              ))}
             </div>
-            <div className="flex flex-wrap items-center gap-1.5 w-full lg:w-auto">
-              {/* 번역 버튼 */}
-              <button
-                type="button"
-                onClick={translateCurrentLanguageDetails}
-                disabled={translating || (formData.currentLanguage || 'ko') !== 'ko'}
-                className="flex-1 sm:flex-none flex items-center justify-center px-2 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-[11px]"
-                title={t('translateTitle')}
-              >
-                {translating ? (
-                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                ) : (
-                  <Languages className="h-3 w-3 mr-1" />
-                )}
-                {translating ? t('translateLoading') : t('translate')}
-              </button>
-              {/* AI 추천 버튼 */}
-              <button
-                type="button"
-                onClick={suggestDescription}
-                disabled={suggesting}
-                className="flex-1 sm:flex-none flex items-center justify-center px-2 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-[11px]"
-                title={t('aiSuggestTitle')}
-              >
-                {suggesting ? (
-                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                ) : (
-                  <Sparkles className="h-3 w-3 mr-1" />
-                )}
-                {suggesting ? t('aiSuggestLoading') : t('aiSuggest')}
-              </button>
-              {/* 새로고침 버튼 */}
-              <button
-                onClick={() => loadSelectedChannelData()}
-                disabled={loadingChannelData}
-                className="flex-1 sm:flex-none flex items-center justify-center px-2 py-1.5 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 text-[11px]"
-              >
-                {loadingChannelData ? (
-                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                ) : (
-                  <FileText className="h-3 w-3 mr-1" />
-                )}
-                {t('refresh')}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={translateCurrentLanguageDetails}
+              disabled={translating || (formData.currentLanguage || 'ko') !== 'ko'}
+              className="px-3 py-1.5 text-xs bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
+            >
+              {translating ? '번역 중...' : 'KO→다국어 번역'}
+            </button>
+            <button
+              type="button"
+              onClick={suggestDescription}
+              disabled={suggesting}
+              className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {suggesting ? '생성 중...' : 'AI 설명 추천'}
+            </button>
+            <button
+              onClick={() => loadSelectedChannelData()}
+              disabled={loadingChannelData}
+              className="px-3 py-1.5 text-xs bg-gray-600 text-white rounded hover:bg-gray-700 disabled:opacity-50"
+            >
+              {loadingChannelData ? '새로고침 중...' : '새로고침'}
+            </button>
           </div>
         </div>
 
-        {/* 좌우 분할 레이아웃 (모바일에서는 상하 배치) */}
-        <div className="flex flex-col lg:flex-row lg:h-[800px]">
-          {/* 왼쪽: 채널 선택 및 공통 세부정보 (모바일에서는 상단) */}
-          <div className="w-full lg:w-1/3 border-b lg:border-b-0 lg:border-r border-gray-200 p-4 overflow-y-auto max-h-[400px] lg:max-h-full">
-            <div className="space-y-6">
-              {/* 공통 세부정보 섹션 */}
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                  <Settings className="h-4 w-4 mr-2" />
-                  {t('commonDetailsTitle')}
-                </h4>
-                
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-700">{t('useCommonDetails')}</span>
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={formData.useCommonDetails}
-                        onChange={(e) => setFormData(prev => ({ ...prev, useCommonDetails: e.target.checked }))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                    </label>
-                  </div>
-                  
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-700">카테고리</span>
-                    <span className="text-sm font-medium text-gray-900">{subCategory}</span>
-                  </div>
-                  
-                  <button
-                    onClick={() => setIsCommonModalOpen(true)}
-                    className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-                  >
-                    공통 세부정보 관리
-                  </button>
-                </div>
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+          <div className="xl:col-span-3 border border-gray-200 rounded-lg p-3 space-y-4 max-h-[78vh] overflow-y-auto">
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
+              <h4 className="text-sm font-semibold text-gray-900 flex items-center">
+                <Settings className="h-4 w-4 mr-1.5" />
+                공통 세부정보 관리
+              </h4>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-700">{t('useCommonDetails')}</span>
+                <input
+                  type="checkbox"
+                  checked={formData.useCommonDetails}
+                  onChange={(e) => setFormData(prev => ({ ...prev, useCommonDetails: e.target.checked }))}
+                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                />
               </div>
+              <p className="text-xs text-gray-500">카테고리: {subCategory}</p>
+              <button
+                onClick={() => setIsCommonModalOpen(true)}
+                className="w-full px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                공통 세부정보 열기
+              </button>
+            </div>
 
-              {/* 채널 선택 섹션 */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="font-medium text-gray-900">{t('channelSelect')}</h4>
-                  <span className="text-sm text-gray-500">
-                    {(() => {
-                      const selectedChannelIds = Object.keys(selectedChannels).filter(id => selectedChannels[id])
-                      const selectedChannelsData = selectedChannelIds.map(id => {
-                        const channel = channels.find(c => c.id === id)
-                        return { id, type: channel?.type || 'unknown' }
-                      })
-                      const selfChannels = selectedChannelsData.filter(c => c.type === 'self' || c.type === 'SELF')
-                      const otaChannels = selectedChannelsData.filter(c => c.type !== 'self' && c.type !== 'SELF')
-                      
-                      const parts: string[] = []
-                      if (selfChannels.length > 0) {
-                        parts.push(t('selfGroupSelected'))
-                      }
-                      if (otaChannels.length > 0) {
-                        parts.push(t('otaCountSelected', { count: otaChannels.length }))
-                      }
-                      return parts.length > 0 ? parts.join(', ') + t('selectedSuffix') : t('selectedCount', { count: 0 })
-                    })()}
-                  </span>
-                </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-gray-900">채널 선택</h4>
+                <span className="text-xs text-gray-500">{selectedChannelIds.length}개 선택됨</span>
+              </div>
+              <div className="flex gap-1">
+                <button onClick={() => setCompletionFilter('all')} className={`px-2 py-1 text-xs rounded ${completionFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>{t('filterAll')}</button>
+                <button onClick={() => setCompletionFilter('incomplete')} className={`px-2 py-1 text-xs rounded ${completionFilter === 'incomplete' ? 'bg-yellow-600 text-white' : 'bg-gray-100 text-gray-700'}`}>{t('filterIncomplete')}</button>
+                <button onClick={() => setCompletionFilter('empty')} className={`px-2 py-1 text-xs rounded ${completionFilter === 'empty' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-700'}`}>{t('filterEmpty')}</button>
+              </div>
+            </div>
 
-                {/* 완성도 필터 */}
-                <div className="mb-3 flex space-x-2">
-                  <button
-                    onClick={() => setCompletionFilter('all')}
-                    className={`px-2 py-1 text-xs rounded ${
-                      completionFilter === 'all'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {t('filterAll')}
-                  </button>
-                  <button
-                    onClick={() => setCompletionFilter('incomplete')}
-                    className={`px-2 py-1 text-xs rounded ${
-                      completionFilter === 'incomplete'
-                        ? 'bg-yellow-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {t('filterIncomplete')}
-                  </button>
-                  <button
-                    onClick={() => setCompletionFilter('empty')}
-                    className={`px-2 py-1 text-xs rounded ${
-                      completionFilter === 'empty'
-                        ? 'bg-red-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {t('filterEmpty')}
-                  </button>
-                </div>
-
-
-              {/* 채널 그룹들 */}
+            <div className="space-y-2">
               {channelGroups.map((group) => {
                 const isSelfGroup = group.type === 'self' || group.type === 'SELF'
-                const selectedChannelsInGroup = group.channels.filter(channel => selectedChannels[channel.id])
                 const allSelected = group.channels.every(channel => selectedChannels[channel.id])
-                const someSelected = selectedChannelsInGroup.length > 0 && !allSelected
-                
+                const someSelected = group.channels.some(channel => selectedChannels[channel.id]) && !allSelected
                 return (
                   <div key={group.type} className="border border-gray-200 rounded-lg">
-                    <div
-                      className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50"
-                      onClick={() => toggleGroupExpansion(group.type)}
-                    >
-                      <div className="flex items-center space-x-2">
-                        {expandedGroups[group.type] ? (
-                          <ChevronDown className="h-4 w-4 text-gray-500" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 text-gray-500" />
-                        )}
-                        <span className="font-medium text-gray-900">
-                          {isSelfGroup ? t('selfGroupLabel') : group.type}
-                        </span>
-                        <span className="text-sm text-gray-500">({group.channels.length})</span>
-                        {isSelfGroup && (
-                          <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
-                            {t('singleDetailsShare')}
-                          </span>
-                        )}
-                      </div>
+                    <div className="flex items-center justify-between p-2 bg-gray-50">
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          toggleGroupSelection(group.type)
-                        }}
-                        className="p-1 hover:bg-gray-200 rounded"
-                        title={isSelfGroup ? t('selfGroupSelectAllTitle') : t('groupSelectAllTitle')}
+                        type="button"
+                        className="flex items-center gap-1 text-sm font-medium text-gray-800"
+                        onClick={() => toggleGroupExpansion(group.type)}
                       >
-                        {allSelected ? (
-                          <CheckSquare className="h-4 w-4 text-blue-600" />
-                        ) : someSelected ? (
-                          <div className="h-4 w-4 border-2 border-blue-600 bg-blue-100 rounded" />
-                        ) : (
-                          <Square className="h-4 w-4 text-gray-400" />
-                        )}
+                        {expandedGroups[group.type] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        <span>{isSelfGroup ? t('selfGroupLabel') : group.type}</span>
+                        <span className="text-xs text-gray-500">({group.channels.length})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleGroupSelection(group.type)}
+                        className="p-1 rounded hover:bg-gray-200"
+                      >
+                        {allSelected ? <CheckSquare className="h-4 w-4 text-blue-600" /> : someSelected ? <div className="h-4 w-4 rounded border-2 border-blue-600 bg-blue-100" /> : <Square className="h-4 w-4 text-gray-400" />}
                       </button>
                     </div>
-                    
                     {expandedGroups[group.type] && (
-                      <div className="border-t border-gray-200 p-2 space-y-1">
-                        {isSelfGroup && (
-                          <div className="bg-blue-50 border border-blue-200 rounded p-2 mb-2">
-                            <p className="text-xs text-blue-700">
-                              ℹ️ {t('selfGroupHint')}
-                            </p>
-                          </div>
-                        )}
+                      <div className="p-2 space-y-2">
                         {group.channels.map((channel) => {
-                          // 채널 통계 포맷팅 함수
-                          const formatPricingStats = (stats: Record<string, number> | undefined) => {
-                            if (!stats || Object.keys(stats).length === 0) return null;
-                            
-                            const sortedYears = Object.keys(stats).sort();
-                            return sortedYears.map(year => {
-                              const daysCount = stats[year];
-                              const isLeapYear = (parseInt(year) % 4 === 0 && parseInt(year) % 100 !== 0) || (parseInt(year) % 400 === 0);
-                              const totalDays = isLeapYear ? 366 : 365;
-                              return `${year} (${daysCount}/${totalDays})`;
-                            }).join(', ');
-                          };
-
-                          // 채널 ID로 먼저 찾고, 없으면 채널 이름으로 찾기
-                          let stats = channelPricingStats[channel.id];
-                          if (!stats || Object.keys(stats).length === 0) {
-                            // ID로 찾지 못하면 이름으로 찾기
-                            stats = channelPricingStats[channel.name];
-                          }
-                          const statsText = formatPricingStats(stats);
-
-                          // 완성도 정보
                           const completion = channelCompletionStats[channel.id]
-                          const completionPercentage = completion?.percentage ?? 0
-                          const completionColor = completionPercentage === 0 
-                            ? 'bg-red-100 text-red-700 border-red-300' 
-                            : completionPercentage < 50 
-                            ? 'bg-yellow-100 text-yellow-700 border-yellow-300'
-                            : completionPercentage < 100
-                            ? 'bg-blue-100 text-blue-700 border-blue-300'
-                            : 'bg-green-100 text-green-700 border-green-300'
-
-                          const isSelected = selectedChannels[channel.id] || false
-                          const variants = productVariantsByChannel[channel.id] || []
+                          const percent = completion?.percentage ?? 0
+                          if (completionFilter === 'empty' && percent > 0) return null
+                          if (completionFilter === 'incomplete' && percent === 100) return null
+                          const isSelected = !!selectedChannels[channel.id]
+                          const variants = productVariantsByChannel[channel.id] || [{ variant_key: 'default' }]
                           const selectedVariant = channelVariants[channel.id] || 'default'
-                          
-                          // 필터링: 완성도 필터 적용
-                          if (completionFilter === 'empty' && completionPercentage > 0) return null
-                          if (completionFilter === 'incomplete' && completionPercentage === 100) return null
-                          
                           return (
-                            <div key={channel.id} className="space-y-1">
-                              <label
-                                className={`flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer ${
-                                  completionPercentage === 0 ? 'border-l-4 border-red-500 bg-red-50' : ''
-                                }`}
-                              >
+                            <div key={channel.id} className={`rounded border p-2 ${isSelected ? 'border-blue-300 bg-blue-50' : 'border-gray-200'}`}>
+                              <label className="flex items-center gap-2 cursor-pointer">
                                 <input
                                   type="checkbox"
                                   checked={isSelected}
                                   onChange={() => toggleChannelSelection(channel.id)}
-                                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
                                 />
-                                <div className="flex flex-col flex-1">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-sm text-gray-700">{channel.name}</span>
-                                  {completion && (
-                                    <span className={`text-xs px-2 py-0.5 rounded font-medium border ${completionColor}`}>
-                                      {completion.completed}/{completion.total} ({completion.percentage}%)
-                                    </span>
-                                  )}
-                                </div>
-                                {statsText && (
-                                  <span className="text-xs text-gray-500 mt-0.5">{statsText}</span>
-                                )}
-                                {completion && completion.missingFields.length > 0 && (
-                                  <span className="text-xs text-gray-400 mt-0.5">
-                                    {t('missingLabel')} {completion.missingFields.slice(0, 3).join(', ')}
-                                    {completion.missingFields.length > 3 && ` ${t('missingMore', { count: completion.missingFields.length - 3 })}`}
-                                  </span>
-                                )}
-                              </div>
-                              {isSelfGroup && selectedChannels[channel.id] && (
-                                <span className="text-xs text-blue-600">({t('groupLabel')})</span>
-                              )}
-                            </label>
-                            
-                            {/* Variant 선택 (채널이 선택되었을 때만 표시) */}
-                            {isSelected && variants.length > 0 && (
-                              <div className="ml-6 mb-2">
-                                <label className="block text-xs font-medium text-gray-700 mb-1">
-                                  Variant
-                                </label>
+                                <span className="text-sm text-gray-800">{channel.name}</span>
+                                {completion && <span className="ml-auto text-[11px] text-gray-500">{completion.completed}/{completion.total}</span>}
+                              </label>
+                              {isSelected && variants.length > 0 && (
                                 <select
                                   value={selectedVariant}
                                   onChange={async (e) => {
                                     const newVariantKey = e.target.value
-                                    // Variant 상태 업데이트
-                                    setChannelVariants(prev => ({
-                                      ...prev,
-                                      [channel.id]: newVariantKey
-                                    }))
-                                    // Variant 변경 시 해당 variant의 데이터 즉시 로드
-                                    // 상태 업데이트를 기다리지 않고 직접 variant 값을 사용하여 로드
-                                    const updatedVariants = {
-                                      ...channelVariants,
-                                      [channel.id]: newVariantKey
-                                    }
-                                    // 업데이트된 variant 값을 직접 전달하여 즉시 데이터 로드
+                                    const updatedVariants = { ...channelVariants, [channel.id]: newVariantKey }
+                                    setChannelVariants(updatedVariants)
                                     await loadSelectedChannelData(updatedVariants)
                                   }}
-                                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                  className="mt-2 w-full px-2 py-1 text-xs border border-gray-300 rounded"
                                 >
                                   {variants.map((variant) => (
                                     <option key={variant.variant_key} value={variant.variant_key}>
@@ -2661,372 +2596,99 @@ export default function ProductDetailsTab({
                                     </option>
                                   ))}
                                 </select>
-                              </div>
-                            )}
-                          </div>
-                          );
+                              )}
+                            </div>
+                          )
                         })}
                       </div>
                     )}
                   </div>
                 )
               })}
-              </div>
             </div>
           </div>
 
-          {/* 오른쪽: 입력 섹션 (모바일에서는 하단) */}
-          <div className="flex-1 p-2 md:p-4 overflow-y-auto">
-            {Object.keys(selectedChannels).filter(id => selectedChannels[id]).length === 0 ? (
-              <div className="flex items-center justify-center h-full text-gray-500">
-                <div className="text-center">
-                  <Users className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                  <p className="text-lg font-medium">{t('selectChannelPrompt')}</p>
-                  <p className="text-sm mt-1">{t('selectChannelHint')}</p>
-                </div>
+          <div className="xl:col-span-9 border border-gray-200 rounded-lg p-4 space-y-4 max-h-[78vh] overflow-y-auto">
+            {selectedChannelIds.length === 0 ? (
+              <div className="h-full min-h-[320px] flex items-center justify-center text-gray-500 text-sm">
+                왼쪽에서 채널을 선택하면 고객에게 보여질 내용을 바로 편집할 수 있습니다.
               </div>
             ) : (
-              <div className="space-y-4">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <p className="text-sm text-blue-700">
-                    {t('saveToChannelsHint', { count: Object.keys(selectedChannels).filter(id => selectedChannels[id]).length })}
-                  </p>
+              <>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                  <p className="text-xs text-slate-700 mb-2">현재 편집 대상</p>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedChannelIds.map((channelId) => {
+                      const channel = channels.find((c) => c.id === channelId)
+                      const variantKey = channelVariants[channelId] || 'default'
+                      const variantName = (productVariantsByChannel[channelId] || []).find(v => v.variant_key === variantKey)
+                      return (
+                        <span key={`${channelId}-${variantKey}`} className="inline-flex items-center rounded-full bg-slate-200 text-slate-800 px-2.5 py-1 text-xs">
+                          {channel?.name || channelId} · {variantName?.variant_name_ko || variantName?.variant_name_en || variantKey}
+                        </span>
+                      )
+                    })}
+                  </div>
                 </div>
 
-                {/* 기존 입력 폼들 - 여기에 기존의 모든 입력 필드들이 들어갑니다 */}
-                {/* 슬로건 섹션 */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-md font-medium text-gray-900">{t('slogan')}</h4>
-                    <button
-                      onClick={() => openCopyModal('slogan')}
-                      className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
-                      title={t('copyToChannels')}
-                    >
-                      <Copy className="h-3 w-3" />
-                      <span>{t('copy')}</span>
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {tDetails('slogan1')}
-                      </label>
-                      <input
-                        type="text"
-                        value={getValue('slogan1', true)}
-                        onChange={(e) => handleInputChange('slogan1', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder={tDetails('placeholderSlogan1')}
-                      />
+                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                  <h4 className="text-sm font-semibold text-gray-900 mb-3">고객에게 보이는 미리보기</h4>
+                  <div className="mb-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-indigo-900">핵심 안내 편집</p>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {tDetails('slogan2')}
-                      </label>
-                      <input
-                        type="text"
-                        value={getValue('slogan2', true)}
-                        onChange={(e) => handleInputChange('slogan2', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder={tDetails('placeholderSlogan2')}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {tDetails('slogan3')}
-                      </label>
-                      <input
-                        type="text"
-                        value={getValue('slogan3', true)}
-                        onChange={(e) => handleInputChange('slogan3', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder={tDetails('placeholderSlogan3')}
-                      />
-                    </div>
+                    <p className="mt-1 text-[11px] text-indigo-700">
+                      아래 카드(섹션)를 클릭해 고객 노출 내용을 바로 수정하세요.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 text-sm">
+                    {[
+                      { key: 'slogan1' as keyof ProductDetailsFields },
+                      { key: 'description' as keyof ProductDetailsFields },
+                      { key: 'included' as keyof ProductDetailsFields },
+                      { key: 'not_included' as keyof ProductDetailsFields },
+                      { key: 'notice_info' as keyof ProductDetailsFields },
+                      { key: 'pickup_drop_info' as keyof ProductDetailsFields },
+                      { key: 'preparation_info' as keyof ProductDetailsFields },
+                      { key: 'cancellation_policy' as keyof ProductDetailsFields }
+                    ].map((section) => {
+                      const raw = String(getValue(section.key, true) || '')
+                      const plain = decodeHtmlEntities(raw.replace(/<[^>]*>/g, '')).trim()
+                      return (
+                        <button
+                          key={section.key}
+                          type="button"
+                          onClick={() => {
+                            setPreviewEditingField(section.key)
+                            setPreviewEditModalOpen(true)
+                          }}
+                          className="text-left border border-gray-200 rounded-lg p-3 hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-semibold text-gray-900">{getSectionTitle(section.key)}</span>
+                            <span className="text-[11px] text-blue-600">클릭해서 수정</span>
+                          </div>
+                          <div className="text-gray-700 whitespace-pre-wrap text-xs leading-5 max-h-24 overflow-hidden">
+                            {plain || '내용 없음'}
+                          </div>
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
 
-                {/* 상품 설명 */}
-                <div className="space-y-4">
-                  <h4 className="text-md font-medium text-gray-900">{tDetails('description')}</h4>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {t('detailDescription')}
-                    </label>
-                    <LightRichEditor
-                      value={getValue('description', true) as string}
-                      onChange={(value) => handleInputChange('description', value || '')}
-                      height={150}
-                      placeholder={tDetails('placeholderDescription')}
-                      enableResize={true}
-                    />
-                  </div>
-                </div>
-
-                {/* 포함/불포함 정보 */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-md font-medium text-gray-900">포함/불포함 정보</h4>
-                    <button
-                      onClick={() => openCopyModal('included_not_included')}
-                      className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
-                      title="포함/불포함 정보를 다른 채널에 복사"
-                    >
-                      <Copy className="h-3 w-3" />
-                      <span>복사</span>
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        포함 사항
-                      </label>
-                      <LightRichEditor
-                        value={getValue('included', true) as string}
-                        onChange={(value) => handleInputChange('included', value || '')}
-                        height={150}
-                        placeholder="포함되는 사항들을 입력해주세요"
-                        enableResize={true}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {tDetails('notIncluded')}
-                      </label>
-                      <LightRichEditor
-                        value={getValue('not_included', true) as string}
-                        onChange={(value) => handleInputChange('not_included', value || '')}
-                        height={150}
-                        placeholder={tDetails('placeholderNotIncluded')}
-                        enableResize={true}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* 픽업/드롭 정보 */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-md font-medium text-gray-900">{t('pickupDropInfo')}</h4>
-                    <button
-                      onClick={() => openCopyModal('pickup_drop_info')}
-                      className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
-                      title={t('copyToChannels')}
-                    >
-                      <Copy className="h-3 w-3" />
-                      <span>{t('copy')}</span>
-                    </button>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {tDetails('pickupDropInfo')}
-                    </label>
-                    <LightRichEditor
-                      value={getValue('pickup_drop_info', true) as string}
-                      onChange={(value) => handleInputChange('pickup_drop_info', value || '')}
-                      height={120}
-                      placeholder={tDetails('placeholderPickupDrop')}
-                      enableResize={true}
-                    />
-                  </div>
-                </div>
-
-                {/* 수하물 정보 */}
-                <div className="space-y-4">
-                  <h4 className="text-md font-medium text-gray-900">{t('luggageInfo')}</h4>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {tDetails('luggageInfo')}
-                    </label>
-                    <LightRichEditor
-                      value={getValue('luggage_info', true) as string}
-                      onChange={(value) => handleInputChange('luggage_info', value || '')}
-                      height={120}
-                      placeholder={tDetails('placeholderLuggage')}
-                      enableResize={true}
-                    />
-                  </div>
-                </div>
-
-                {/* 투어 운영 정보 */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-md font-medium text-gray-900">투어 운영 정보</h4>
-                    <button
-                      onClick={() => openCopyModal('tour_operation_info')}
-                      className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
-                      title="투어 운영 정보를 다른 채널에 복사"
-                    >
-                      <Copy className="h-3 w-3" />
-                      <span>복사</span>
-                    </button>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      투어 운영 관련 정보
-                    </label>
-                    <LightRichEditor
-                      value={getValue('tour_operation_info', true) as string}
-                      onChange={(value) => handleInputChange('tour_operation_info', value || '')}
-                      height={120}
-                      placeholder="투어 운영에 대한 정보를 입력해주세요"
-                      enableResize={true}
-                    />
-                  </div>
-                </div>
-
-                {/* 준비 사항 */}
-                <div className="space-y-4">
-                  <h4 className="text-md font-medium text-gray-900">{t('preparationInfo')}</h4>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {tDetails('preparationInfo')}
-                    </label>
-                    <LightRichEditor
-                      value={getValue('preparation_info', true) as string}
-                      onChange={(value) => handleInputChange('preparation_info', value || '')}
-                      height={120}
-                      placeholder={tDetails('placeholderPreparation')}
-                      enableResize={true}
-                    />
-                  </div>
-                </div>
-
-                {/* 소그룹 정보 */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-md font-medium text-gray-900">{t('smallGroupInfo')}</h4>
-                    <button
-                      onClick={() => openCopyModal('small_group_info')}
-                      className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
-                      title={t('copyToChannels')}
-                    >
-                      <Copy className="h-3 w-3" />
-                      <span>{t('copy')}</span>
-                    </button>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {tDetails('smallGroupInfo')}
-                    </label>
-                    <LightRichEditor
-                      value={getValue('small_group_info', true) as string}
-                      onChange={(value) => handleInputChange('small_group_info', value || '')}
-                      height={120}
-                      placeholder={tDetails('placeholderSmallGroup')}
-                      enableResize={true}
-                    />
-                  </div>
-                </div>
-
-                {/* 안내사항 */}
-                <div className="space-y-4">
-                  <h4 className="text-md font-medium text-gray-900">{tDetails('noticeInfo')}</h4>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {tDetails('noticeInfo')}
-                    </label>
-                    <LightRichEditor
-                      value={getValue('notice_info', true) as string}
-                      onChange={(value) => handleInputChange('notice_info', value || '')}
-                      height={120}
-                      placeholder={tDetails('placeholderNotice')}
-                      enableResize={true}
-                    />
-                  </div>
-                </div>
-
-                {/* 단독투어 정보 */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-md font-medium text-gray-900">{tDetails('privateTourInfo')}</h4>
-                    <button
-                      onClick={() => openCopyModal('private_tour_info')}
-                      className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
-                      title={t('copyToChannels')}
-                    >
-                      <Copy className="h-3 w-3" />
-                      <span>{t('copy')}</span>
-                    </button>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {tDetails('privateTourInfo')}
-                    </label>
-                    <LightRichEditor
-                      value={getValue('private_tour_info', true) as string}
-                      onChange={(value) => {
-                        const processedValue = value == null ? '' : (typeof value === 'string' ? value : String(value))
-                        handleInputChange('private_tour_info', processedValue)
-                      }}
-                      height={120}
-                      placeholder={tDetails('placeholderPrivateTour')}
-                      enableResize={true}
-                    />
-                  </div>
-                </div>
-
-                {/* 취소 정책 */}
-                <div className="space-y-4">
-                  <h4 className="text-md font-medium text-gray-900">{tDetails('cancellationPolicy')}</h4>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {tDetails('cancellationPolicy')}
-                    </label>
-                    <LightRichEditor
-                      value={getValue('cancellation_policy', true) as string}
-                      onChange={(value) => handleInputChange('cancellation_policy', value || '')}
-                      height={150}
-                      placeholder={tDetails('placeholderCancellation')}
-                      enableResize={true}
-                    />
-                  </div>
-                </div>
-
-                {/* 채팅 공지 */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-md font-medium text-gray-900">{tDetails('sectionChatAnnouncement')}</h4>
-                    <button
-                      onClick={() => openCopyModal('chat_announcement')}
-                      className="flex items-center space-x-1 px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
-                      title={t('copyToChannels')}
-                    >
-                      <Copy className="h-3 w-3" />
-                      <span>{t('copy')}</span>
-                    </button>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {tDetails('chatAnnouncementLabel')}
-                    </label>
-                    <LightRichEditor
-                      value={getValue('chat_announcement', true) as string}
-                      onChange={(value) => {
-                        const processedValue = value == null ? '' : (typeof value === 'string' ? value : String(value))
-                        handleInputChange('chat_announcement', processedValue)
-                      }}
-                      height={120}
-                      placeholder={tDetails('placeholderChatAnnouncement')}
-                      enableResize={true}
-                    />
-                  </div>
-                </div>
-
-                {/* 채널별 저장 버튼 - 입력 폼 하단 */}
-                <div className="flex justify-end pt-6 border-t border-gray-200 mt-6">
+                <div className="flex justify-end pt-2 border-t border-gray-200">
                   <button
                     onClick={saveSelectedChannelsDetails}
-                    disabled={saving || Object.keys(selectedChannels).filter(id => selectedChannels[id]).length === 0}
+                    disabled={saving || selectedChannelIds.length === 0}
                     className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Save className="h-4 w-4 mr-2" />
                     {saving ? t('saveLoading') : t('saveSelectedChannels')}
                   </button>
                 </div>
-
-              </div>
+              </>
             )}
           </div>
         </div>
@@ -3130,6 +2792,139 @@ export default function ProductDetailsTab({
           loadCommon()
         }}
       />
+
+      {previewEditModalOpen && previewEditingField && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-gray-900">
+                {getSectionTitle(previewEditingField)}
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setPreviewEditModalOpen(false)
+                  setPreviewEditingField(null)
+                }}
+                className="text-gray-400 hover:text-gray-600 text-xl"
+              >
+                ×
+              </button>
+            </div>
+            <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => previewEditingField && openCopyModal(previewEditingField)}
+                className="px-3 py-1.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-700"
+              >
+                Duplicate to channels
+              </button>
+              <button
+                type="button"
+                onClick={() => setImportFieldModalOpen(true)}
+                className="px-3 py-1.5 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                Import from another channel
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto">
+              <div className="mb-4">
+                <label className="block text-xs font-medium text-gray-700 mb-1">섹션 제목</label>
+                <input
+                  type="text"
+                  value={getCurrentSectionTitles()[previewEditingField] ?? ''}
+                  onChange={(e) => {
+                    const currentLang = formData.currentLanguage || 'ko'
+                    setSectionTitleOverridesByLanguage(prev => ({
+                      ...prev,
+                      [currentLang]: {
+                        ...(prev[currentLang] || {}),
+                        [previewEditingField]: e.target.value
+                      }
+                    }))
+                  }}
+                  placeholder={defaultSectionTitles[previewEditingField]}
+                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                />
+                <p className="mt-1 text-[11px] text-gray-500">
+                  비워두면 기본 제목을 사용합니다.
+                </p>
+              </div>
+              <LightRichEditor
+                value={String(getValue(previewEditingField, true) || '')}
+                onChange={(value) => handleInputChange(previewEditingField, value || '')}
+                height={300}
+                placeholder="고객에게 보여질 내용을 입력하세요"
+                enableResize={true}
+              />
+            </div>
+            <div className="px-5 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPreviewEditModalOpen(false)
+                  setPreviewEditingField(null)
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {importFieldModalOpen && previewEditingField && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-lg w-full max-w-lg">
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900">섹션 가져오기 (Import)</h3>
+              <button
+                type="button"
+                onClick={() => setImportFieldModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <p className="text-xs text-gray-600">선택한 채널의 동일 섹션 내용을 현재 편집 중인 섹션에 가져옵니다.</p>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">소스 채널</label>
+                <select
+                  value={importSourceChannelId}
+                  onChange={(e) => setImportSourceChannelId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                >
+                  <option value="">채널 선택</option>
+                  {channels.map(channel => (
+                    <option key={channel.id} value={channel.id}>
+                      {channel.name} ({(productVariantsByChannel[channel.id] || []).find(v => v.variant_key === (channelVariants[channel.id] || 'default'))?.variant_name_ko || (channelVariants[channel.id] || 'default')})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setImportFieldModalOpen(false)}
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 text-sm"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={importSectionFromChannel}
+                disabled={importingField || !importSourceChannelId}
+                className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 text-sm"
+              >
+                {importingField ? '가져오는 중...' : '가져오기'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 복사 모달 */}
       {copyModalOpen && copyFieldName && (
