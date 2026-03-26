@@ -18,6 +18,10 @@ interface Vehicle {
   nick?: string | null
   vehicle_type: string | null
   status: string | null
+  vehicle_category?: string | null
+  rental_company?: string | null
+  rental_start_date?: string | null
+  rental_end_date?: string | null
 }
 
 interface TeamAndVehicleAssignmentProps {
@@ -77,6 +81,7 @@ function MemberSelectWithTabs({
   const t = useTranslations('tours.teamAndVehicle')
   const [isOpen, setIsOpen] = useState(false)
   const [tab, setTab] = useState<'active' | 'inactive'>('active')
+  const [searchQuery, setSearchQuery] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -91,6 +96,21 @@ function MemberSelectWithTabs({
   }, [isOpen])
 
   const members = tab === 'active' ? activeMembers : inactiveMembers
+  const normalizedQuery = searchQuery.trim().toLowerCase()
+  const filteredMembers = normalizedQuery
+    ? members.filter((member) => {
+        const displayName = getDisplayName(member).toLowerCase()
+        const email = (member.email || '').toLowerCase()
+        const nameKo = (member.name_ko || '').toLowerCase()
+        const nickName = (member.nick_name || '').toLowerCase()
+        return (
+          displayName.includes(normalizedQuery) ||
+          email.includes(normalizedQuery) ||
+          nameKo.includes(normalizedQuery) ||
+          nickName.includes(normalizedQuery)
+        )
+      })
+    : members
   const displayText = value ? getTeamMemberName(value) : placeholder
 
   return (
@@ -122,24 +142,33 @@ function MemberSelectWithTabs({
               {t('memberTabInactive')}
             </button>
           </div>
+          <div className="px-2 pb-1">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="이름/닉네임/이메일 검색"
+              className="w-full text-sm border border-gray-300 rounded px-2 py-1.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
           {/* 선택 해제 */}
           <button
             type="button"
-            onClick={() => { onChange(''); setIsOpen(false); }}
+            onClick={() => { onChange(''); setIsOpen(false); setSearchQuery(''); }}
             className="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-50"
           >
             {placeholder}
           </button>
           {/* 탭별 목록 */}
           <div className="max-h-48 overflow-y-auto">
-            {members.length === 0 ? (
+            {filteredMembers.length === 0 ? (
               <div className="px-3 py-2 text-sm text-gray-400">{tab === 'active' ? t('memberTabActive') : t('memberTabInactive')} 팀원 없음</div>
             ) : (
-              members.map((member) => (
+              filteredMembers.map((member) => (
                 <button
                   key={member.email}
                   type="button"
-                  onClick={() => { onChange(member.email); setIsOpen(false); }}
+                  onClick={() => { onChange(member.email); setIsOpen(false); setSearchQuery(''); }}
                   className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${value === member.email ? 'bg-blue-50 text-blue-800' : 'text-gray-900'}`}
                 >
                   {getDisplayName(member)}
@@ -191,6 +220,13 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
   const t = useTranslations('tours.teamAndVehicle')
   const [isSaving, setIsSaving] = useState(false)
 
+  const isMemberActive = (member: TeamMember): boolean => {
+    if (typeof member.is_active === 'boolean') return member.is_active
+    if (member.is_active == null) return false
+    const normalized = String(member.is_active).trim().toLowerCase()
+    return normalized === 'true' || normalized === '1' || normalized === 't' || normalized === 'yes'
+  }
+
   const positionFilter = (member: TeamMember) => {
     if (!member.position) return true
     const position = member.position.toLowerCase()
@@ -205,7 +241,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
   /** 활성 팀원만 (가이드/드라이버 포지션) */
   const getFilteredTeamMembersActive = (excludeEmail?: string) =>
     teamMembers.filter((m) => {
-      if (String(m.is_active).toLowerCase() !== 'true') return false
+      if (!isMemberActive(m)) return false
       if (excludeEmail && m.email === excludeEmail) return false
       return positionFilter(m)
     })
@@ -213,7 +249,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
   /** 비활성 팀원만 (가이드/드라이버 포지션) */
   const getFilteredTeamMembersInactive = (excludeEmail?: string) =>
     teamMembers.filter((m) => {
-      if (String(m.is_active).toLowerCase() === 'true') return false
+      if (isMemberActive(m)) return false
       if (excludeEmail && m.email === excludeEmail) return false
       return positionFilter(m)
     })
@@ -224,9 +260,32 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
   }
 
   const guideDriverCount = teamMembers.filter((m) => {
-    if (String(m.is_active).toLowerCase() !== 'true') return false
+    if (!isMemberActive(m)) return false
     return positionFilter(m)
   }).length
+
+  const formatRentalDateShort = (dateStr?: string | null) => {
+    if (!dateStr) return ''
+    const raw = String(dateStr).slice(0, 10)
+    const [year, month, day] = raw.split('-')
+    if (!year || !month || !day) return ''
+    const m = Number(month)
+    const d = Number(day)
+    if (Number.isNaN(m) || Number.isNaN(d)) return ''
+    return `${m}/${d}`
+  }
+
+  const getVehicleOptionLabel = (vehicle: Vehicle) => {
+    const baseLabel = `${(vehicle.nick && vehicle.nick.trim()) || vehicle.vehicle_number || '번호 없음'} - ${vehicle.vehicle_type || '타입 없음'}`
+    if (vehicle.vehicle_category === 'company') return baseLabel
+
+    const start = formatRentalDateShort(vehicle.rental_start_date)
+    const end = formatRentalDateShort(vehicle.rental_end_date)
+    if (start && end) {
+      return `${baseLabel} (${start}~${end})`
+    }
+    return baseLabel
+  }
 
   const handleSave = async () => {
     setIsSaving(true)
@@ -434,7 +493,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                   <option value="">{t('selectVehicle')}</option>
                   {vehicles.map((vehicle) => (
                     <option key={vehicle.id} value={vehicle.id}>
-                      {(vehicle.nick && vehicle.nick.trim()) || vehicle.vehicle_number || '번호 없음'} - {vehicle.vehicle_type || '타입 없음'}
+                      {getVehicleOptionLabel(vehicle)}
                     </option>
                   ))}
                 </select>

@@ -1,13 +1,72 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Fragment, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { supabase } from '@/lib/supabase';
 import TicketBookingForm from './TicketBookingForm';
 import BookingHistory from './BookingHistory';
-import { Grid, Calendar as CalendarIcon, Plus, Search, Calendar, Table } from 'lucide-react';
+import { Grid, Calendar as CalendarIcon, Plus, Search, Calendar, Table, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+
+/** 입장권 부킹 달력에 표시하는 투어(상품 product_id)만 */
+const TICKET_CALENDAR_TOUR_PRODUCT_IDS: string[] = [
+  'MDGCSUNRISE',
+  'MDGC1D',
+  'MNGC1N',
+  'MNGC2N',
+  'MNGC3N',
+  'MNCUSTOM',
+  'MNM1',
+  'MDGC1DPRVT',
+  'MDGCSUNRPRVT',
+  'MNGC1NPRVT',
+  'MNGC2NPRVT',
+];
+
+/** RN#별 테이블 뷰에서 그룹을 시각적으로 구분 */
+const RN_TABLE_GROUP_STYLES: Array<{
+  headerRow: string;
+  rowStripe: string;
+  mobileSection: string;
+  mobileHeader: string;
+}> = [
+  {
+    headerRow: 'bg-indigo-100 border-y border-indigo-200 shadow-sm',
+    rowStripe: 'border-l-[6px] border-indigo-600',
+    mobileSection: 'rounded-xl border-2 border-indigo-200 bg-indigo-50/40 shadow-md overflow-hidden',
+    mobileHeader: 'bg-indigo-100 border-b-2 border-indigo-300 px-3 py-2.5',
+  },
+  {
+    headerRow: 'bg-emerald-100 border-y border-emerald-200 shadow-sm',
+    rowStripe: 'border-l-[6px] border-emerald-600',
+    mobileSection: 'rounded-xl border-2 border-emerald-200 bg-emerald-50/40 shadow-md overflow-hidden',
+    mobileHeader: 'bg-emerald-100 border-b-2 border-emerald-300 px-3 py-2.5',
+  },
+  {
+    headerRow: 'bg-amber-100 border-y border-amber-200 shadow-sm',
+    rowStripe: 'border-l-[6px] border-amber-600',
+    mobileSection: 'rounded-xl border-2 border-amber-200 bg-amber-50/40 shadow-md overflow-hidden',
+    mobileHeader: 'bg-amber-100 border-b-2 border-amber-300 px-3 py-2.5',
+  },
+  {
+    headerRow: 'bg-rose-100 border-y border-rose-200 shadow-sm',
+    rowStripe: 'border-l-[6px] border-rose-600',
+    mobileSection: 'rounded-xl border-2 border-rose-200 bg-rose-50/40 shadow-md overflow-hidden',
+    mobileHeader: 'bg-rose-100 border-b-2 border-rose-300 px-3 py-2.5',
+  },
+  {
+    headerRow: 'bg-violet-100 border-y border-violet-200 shadow-sm',
+    rowStripe: 'border-l-[6px] border-violet-600',
+    mobileSection: 'rounded-xl border-2 border-violet-200 bg-violet-50/40 shadow-md overflow-hidden',
+    mobileHeader: 'bg-violet-100 border-b-2 border-violet-300 px-3 py-2.5',
+  },
+  {
+    headerRow: 'bg-sky-100 border-y border-sky-200 shadow-sm',
+    rowStripe: 'border-l-[6px] border-sky-600',
+    mobileSection: 'rounded-xl border-2 border-sky-200 bg-sky-50/40 shadow-md overflow-hidden',
+    mobileHeader: 'bg-sky-100 border-b-2 border-sky-300 px-3 py-2.5',
+  },
+];
 
 interface TicketBooking {
   id: string;
@@ -40,9 +99,46 @@ interface TicketBooking {
   } | undefined;
 }
 
+function sortBookingsByCheckInThenTime(a: TicketBooking, b: TicketBooking): number {
+  const da = a.check_in_date ? new Date(a.check_in_date).getTime() : 0;
+  const db = b.check_in_date ? new Date(b.check_in_date).getTime() : 0;
+  if (da !== db) return da - db;
+  const c = (a.time || '').localeCompare(b.time || '');
+  if (c !== 0) return c;
+  return a.id.localeCompare(b.id);
+}
+
+/**
+ * RN#별 테이블: 체크인 날짜·시간 순으로 정렬한 뒤 RN#으로 묶음.
+ * RN#이 비어 있으면 행마다 별도 그룹(라벨은 모두 "RN# 없음").
+ */
+function buildTicketRnGroups(bookings: TicketBooking[]): { key: string; label: string; rows: TicketBooking[] }[] {
+  const dateSorted = [...bookings].sort(sortBookingsByCheckInThenTime);
+
+  const map = new Map<string, TicketBooking[]>();
+  for (const b of dateSorted) {
+    const trimmed = b.rn_number?.trim();
+    const k = trimmed ? trimmed : `__empty_rn__:${b.id}`;
+    if (!map.has(k)) map.set(k, []);
+    map.get(k)!.push(b);
+  }
+
+  const groups = [...map.entries()].map(([key, rows]) => {
+    const rowsSorted = [...rows].sort(sortBookingsByCheckInThenTime);
+    const label = key.startsWith('__empty_rn__:') ? 'RN# 없음' : key;
+    const first = rowsSorted[0];
+    const groupSortKey = `${first.check_in_date || ''}\0${first.time || ''}\0${first.id}\0${key}`;
+    return { key, label, rows: rowsSorted, groupSortKey };
+  });
+
+  groups.sort((a, b) => a.groupSortKey.localeCompare(b.groupSortKey));
+  return groups.map(({ key, label, rows }) => ({ key, label, rows }));
+}
+
 interface TourEvent {
   id: string;
   tour_date: string;
+  product_id?: string | null;
   reservation_ids: string[];
   total_reservations: number;
   total_people: number;
@@ -56,7 +152,6 @@ interface TourEvent {
 }
 
 export default function TicketBookingList() {
-  const router = useRouter();
   const locale = useLocale();
   const t = useTranslations('booking.calendar');
   const [bookings, setBookings] = useState<TicketBooking[]>([]);
@@ -72,6 +167,10 @@ export default function TicketBookingList() {
   const [showHistory, setShowHistory] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState<string>('');
   const [viewMode, setViewMode] = useState<'card' | 'calendar' | 'table'>('calendar');
+  /** 테이블 뷰 전용: 전체 행 / RN# 그룹 */
+  const [ticketTableLayout, setTicketTableLayout] = useState<'flat' | 'byRn'>('flat');
+  const [listPage, setListPage] = useState(1);
+  const [listPageSize, setListPageSize] = useState(50);
   const [sortField, setSortField] = useState<'date' | 'submit_on' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [teamMemberMap, setTeamMemberMap] = useState<Map<string, string>>(new Map());
@@ -80,6 +179,7 @@ export default function TicketBookingList() {
   const [openStatusDropdown, setOpenStatusDropdown] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
   const statusButtonRefs = useRef<Map<string, HTMLSpanElement>>(new Map());
+  const [tourDetailModalTourId, setTourDetailModalTourId] = useState<string | null>(null);
 
   // 상품 이름을 로케일에 따라 반환하는 함수
   const getProductName = (product: { name?: string; name_en?: string; name_ko?: string } | undefined) => {
@@ -146,12 +246,23 @@ export default function TicketBookingList() {
           .from('ticket_bookings')
           .select('*')
           .order('submit_on', { ascending: false })
+          .order('id', { ascending: false })
           .range(offset, offset + PAGE_SIZE - 1)
         if (pageError) throw pageError
         if (!page?.length) break
         bookingsData = (bookingsData || []).concat(page)
         if (page.length < PAGE_SIZE) break
         offset += PAGE_SIZE
+      }
+
+      // submit_on 동률 시 페이지 경계에서 행이 겹칠 수 있음 → id 기준 중복 제거
+      if (bookingsData?.length) {
+        const seen = new Set<string>()
+        bookingsData = bookingsData.filter((b: TicketBooking) => {
+          if (seen.has(b.id)) return false
+          seen.add(b.id)
+          return true
+        })
       }
 
       // supplier_ticket_purchases를 통해 supplier_product 정보 조회 (배치)
@@ -337,11 +448,13 @@ export default function TicketBookingList() {
         .select(`
           id,
           tour_date,
+          product_id,
           reservation_ids,
           products (
             name
           )
         `)
+        .in('product_id', TICKET_CALENDAR_TOUR_PRODUCT_IDS)
         .gte('tour_date', startDate.toISOString().split('T')[0])
         .lte('tour_date', endDate.toISOString().split('T')[0])
         .order('tour_date', { ascending: true });
@@ -513,6 +626,15 @@ export default function TicketBookingList() {
       document.removeEventListener('click', handleClickOutside);
     };
   }, [openStatusDropdown]);
+
+  useEffect(() => {
+    if (!tourDetailModalTourId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setTourDetailModalTourId(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [tourDetailModalTourId]);
 
   useEffect(() => {
     fetchTourEvents();
@@ -729,6 +851,21 @@ export default function TicketBookingList() {
     return 0;
   });
 
+  const listTotalPages = Math.max(1, Math.ceil(sortedBookings.length / listPageSize) || 1);
+  const listPageEffective = Math.min(listPage, listTotalPages);
+  const pagedSortedBookings = useMemo(() => {
+    const start = (listPageEffective - 1) * listPageSize;
+    return sortedBookings.slice(start, start + listPageSize);
+  }, [sortedBookings, listPageEffective, listPageSize]);
+
+  useEffect(() => {
+    setListPage(1);
+  }, [searchTerm, statusFilter, dateFilter, tourFilter, futureEventFilter, cancelDeadlineFilter]);
+
+  useEffect(() => {
+    setListPage((p) => Math.min(Math.max(1, p), listTotalPages));
+  }, [listTotalPages]);
+
   const handleSort = (field: 'date' | 'submit_on') => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -777,7 +914,7 @@ export default function TicketBookingList() {
   ];
 
   const handleTourClick = (tourId: string) => {
-    router.push(`/ko/admin/tours/${tourId}`);
+    setTourDetailModalTourId(tourId);
   };
 
   const getStatusColor = (status: string) => {
@@ -857,6 +994,60 @@ export default function TicketBookingList() {
   const handleBookingClick = (bookings: TicketBooking[]) => {
     setSelectedBookings(bookings);
     setShowBookingModal(true);
+  };
+
+  const renderTicketMobileCard = (booking: TicketBooking) => {
+    const cancelDueDate = getCancelDueDate(booking);
+    const isOverdue = cancelDueDate ? new Date(cancelDueDate) < new Date() : false;
+    return (
+      <div
+        key={booking.id}
+        className="border border-gray-200 rounded-xl p-3 bg-white shadow-sm space-y-2"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full flex-shrink-0 ${getStatusColor(booking.status)}`}>
+            {getStatusText(booking.status)}
+          </span>
+          <span className="text-xs font-medium text-gray-700 truncate">{booking.company}</span>
+        </div>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+          <span className="text-gray-500">날짜</span>
+          <span className="font-medium">{booking.check_in_date ? new Date(booking.check_in_date).toISOString().split('T')[0] : '-'}</span>
+          <span className="text-gray-500">시간</span>
+          <span className="font-medium">{booking.time?.replace(/:\d{2}$/, '') || '-'}</span>
+          <span className="text-gray-500">수량</span>
+          <span className="font-medium">{booking.ea}개</span>
+          {cancelDueDate && (
+            <>
+              <span className="text-gray-500">Cancel Due</span>
+              <span className={isOverdue ? 'text-red-600 font-semibold' : 'font-medium'}>{cancelDueDate}</span>
+            </>
+          )}
+          <span className="text-gray-500">RN#</span>
+          <span className="font-medium truncate">{booking.rn_number?.trim() || '—'}</span>
+          <span className="text-gray-500">비용</span>
+          <span className="font-medium">${booking.expense ?? '-'}</span>
+          <span className="text-gray-500">제출일</span>
+          <span className="font-medium">{booking.submit_on ? new Date(booking.submit_on).toISOString().split('T')[0] : '-'}</span>
+        </div>
+        <div className="flex flex-wrap gap-1.5 pt-2 border-t border-gray-100">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleEdit(booking); }}
+            className="px-2 py-1 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700"
+          >
+            편집
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleViewHistory(booking.id); }}
+            className="px-2 py-1 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700"
+          >
+            히스토리
+          </button>
+        </div>
+      </div>
+    );
   };
 
   if (loading) {
@@ -1037,6 +1228,33 @@ export default function TicketBookingList() {
       <div className="px-3 sm:px-6 pb-4">
         {viewMode === 'table' ? (
           <>
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <span className="text-xs font-medium text-gray-600">테이블 표시</span>
+              <div className="inline-flex rounded-lg border border-gray-200 p-0.5 bg-white shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setTicketTableLayout('flat')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    ticketTableLayout === 'flat'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  전체
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTicketTableLayout('byRn')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    ticketTableLayout === 'byRn'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  RN#별
+                </button>
+              </div>
+            </div>
             {/* 상태 설명 - 모바일에서 접기 가능 */}
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3">
               <div className="text-xs font-semibold text-gray-700 mb-2">상태 설명:</div>
@@ -1107,57 +1325,30 @@ export default function TicketBookingList() {
                       ? '검색 조건에 맞는 부킹이 없습니다.'
                       : '등록된 입장권 부킹이 없습니다.'}
                   </div>
-                ) : sortedBookings.map((booking) => {
-                  const cancelDueDate = getCancelDueDate(booking);
-                  const isOverdue = cancelDueDate ? new Date(cancelDueDate) < new Date() : false;
-                  return (
-                    <div
-                      key={booking.id}
-                      className="border border-gray-200 rounded-xl p-3 bg-white shadow-sm space-y-2"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full flex-shrink-0 ${getStatusColor(booking.status)}`}>
-                          {getStatusText(booking.status)}
-                        </span>
-                        <span className="text-xs font-medium text-gray-700 truncate">{booking.company}</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                        <span className="text-gray-500">날짜</span>
-                        <span className="font-medium">{booking.check_in_date ? new Date(booking.check_in_date).toISOString().split('T')[0] : '-'}</span>
-                        <span className="text-gray-500">시간</span>
-                        <span className="font-medium">{booking.time?.replace(/:\d{2}$/, '') || '-'}</span>
-                        <span className="text-gray-500">수량</span>
-                        <span className="font-medium">{booking.ea}개</span>
-                        {cancelDueDate && (
-                          <>
-                            <span className="text-gray-500">Cancel Due</span>
-                            <span className={isOverdue ? 'text-red-600 font-semibold' : 'font-medium'}>{cancelDueDate}</span>
-                          </>
-                        )}
-                        <span className="text-gray-500">비용</span>
-                        <span className="font-medium">${booking.expense ?? '-'}</span>
-                        <span className="text-gray-500">제출일</span>
-                        <span className="font-medium">{booking.submit_on ? new Date(booking.submit_on).toISOString().split('T')[0] : '-'}</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 pt-2 border-t border-gray-100">
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); handleEdit(booking); }}
-                          className="px-2 py-1 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700"
-                        >
-                          편집
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); handleViewHistory(booking.id); }}
-                          className="px-2 py-1 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700"
-                        >
-                          히스토리
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+                ) : ticketTableLayout === 'byRn' ? (
+                  <div className="space-y-5">
+                    {buildTicketRnGroups(pagedSortedBookings).map((g, gi) => {
+                      const totalEa = g.rows.reduce((s, b) => s + b.ea, 0);
+                      const totalPrice = g.rows.reduce((s, b) => s + (Number(b.total_price) || 0), 0);
+                      const palette = RN_TABLE_GROUP_STYLES[gi % RN_TABLE_GROUP_STYLES.length];
+                      return (
+                        <div key={g.key} className={palette.mobileSection}>
+                          <div className={`${palette.mobileHeader} text-xs`}>
+                            <div className="text-sm font-bold text-neutral-900 tracking-tight">RN# {g.label}</div>
+                            <div className="mt-1 text-neutral-700 font-medium">
+                              {g.rows.length}건 · 수량 합 {totalEa}개 · 총액 ${totalPrice}
+                            </div>
+                          </div>
+                          <div className="space-y-2.5 p-2.5 bg-white/80">
+                            {g.rows.map((booking) => renderTicketMobileCard(booking))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  pagedSortedBookings.map((booking) => renderTicketMobileCard(booking))
+                )}
               </div>
               {/* 데스크톱 테이블 */}
               <div className="hidden sm:block overflow-x-auto">
@@ -1269,18 +1460,18 @@ export default function TicketBookingList() {
                       }
                     });
                     
-                    return sortedBookings.map((booking) => {
-                      const cancelDueDate = getCancelDueDate(booking);
-                      const bgColor = cancelDueDate 
-                        ? (cancelDueColorMap.get(cancelDueDate) || 'bg-white')
+                    const renderDesktopRow = (booking: TicketBooking, rnRowStripe = '') => {
+                      const cancelDueDateRow = getCancelDueDate(booking);
+                      const bgColor = cancelDueDateRow 
+                        ? (cancelDueColorMap.get(cancelDueDateRow) || 'bg-white')
                         : 'bg-white';
-                      const hoverColor = cancelDueDate
+                      const hoverColor = cancelDueDateRow
                         ? (hoverColors[backgroundColors.indexOf(bgColor)] || 'hover:bg-gray-50')
                         : 'hover:bg-gray-50';
                       
                       return (
-                        <tr key={booking.id} className={`${bgColor} ${hoverColor} transition-colors`}>
-                      <td className={`px-2 py-1.5 whitespace-nowrap text-xs sticky left-0 ${bgColor} z-10`}>
+                        <tr key={booking.id} className={`${bgColor} ${hoverColor} transition-colors ${rnRowStripe ? 'border-b border-neutral-200/90' : ''}`}>
+                      <td className={`px-2 py-1.5 whitespace-nowrap text-xs sticky left-0 ${bgColor} z-10 ${rnRowStripe}`}>
                         <div className="relative z-50">
                           <span 
                             ref={(el) => {
@@ -1466,7 +1657,38 @@ export default function TicketBookingList() {
                       </td>
                         </tr>
                       );
-                    });
+                    };
+
+                    if (ticketTableLayout === 'byRn') {
+                      return buildTicketRnGroups(pagedSortedBookings).flatMap((g, gi) => {
+                        const totalEa = g.rows.reduce((s, b) => s + b.ea, 0);
+                        const totalPrice = g.rows.reduce((s, b) => s + (Number(b.total_price) || 0), 0);
+                        const palette = RN_TABLE_GROUP_STYLES[gi % RN_TABLE_GROUP_STYLES.length];
+                        const nodes: React.ReactNode[] = [];
+                        if (gi > 0) {
+                          nodes.push(
+                            <tr key={`rn-gap-${g.key}`} className="pointer-events-none" aria-hidden>
+                              <td colSpan={15} className="h-3 bg-neutral-300 p-0 border-y-2 border-neutral-400" />
+                            </tr>
+                          );
+                        }
+                        nodes.push(
+                          <Fragment key={g.key}>
+                            <tr className={palette.headerRow}>
+                              <td colSpan={15} className="px-3 py-2.5 text-xs border-0">
+                                <span className="text-sm font-bold text-neutral-900 tracking-tight">RN# {g.label}</span>
+                                <span className="text-neutral-800 font-medium ml-3">
+                                  {g.rows.length}건 · 수량 합 {totalEa}개 · 총액 ${totalPrice}
+                                </span>
+                              </td>
+                            </tr>
+                            {g.rows.map((b) => renderDesktopRow(b, palette.rowStripe))}
+                          </Fragment>
+                        );
+                        return nodes;
+                      });
+                    }
+                    return pagedSortedBookings.map((b) => renderDesktopRow(b));
                   })()}
                 </tbody>
               </table>
@@ -1604,7 +1826,7 @@ export default function TicketBookingList() {
 
                         return (
                           <div
-                            key={index}
+                            key={`cal-${dateString}-${index}`}
                             className={`min-h-[72px] sm:min-h-[100px] lg:min-h-[160px] p-1 sm:p-2 border border-gray-200 ${
                               isCurrentMonth ? 'bg-white' : 'bg-gray-50'
                             } ${isToday ? 'ring-2 ring-blue-500' : ''}`}
@@ -1620,7 +1842,7 @@ export default function TicketBookingList() {
                               <div className="space-y-1 mb-2">
                                 {dayTours.map((tour, tourIndex) => (
                   <div
-                    key={tourIndex}
+                    key={`${dateString}-tour-${tour.id}-${tourIndex}`}
                     className="px-0.5 sm:px-1 py-0.5 bg-purple-100 text-purple-800 rounded text-[8px] sm:text-[10px] font-medium cursor-pointer hover:bg-purple-200 transition-colors truncate"
                     title={`${getProductName(tour.products)} - ${t('adults')}:${tour.adults}${t('people')}, ${t('children')}:${tour.child}${t('people')}, ${t('infants')}:${tour.infant}${t('people')} (${t('total')} ${tour.total_people}${t('people')}) (Click for details)`}
                     onClick={() => handleTourClick(tour.id)}
@@ -1697,9 +1919,13 @@ export default function TicketBookingList() {
 
                                     return (
                                       <div
-                                        key={company}
+                                        key={`${dateString}-supplier-${company}-${firstBooking.id}`}
                                         className={`px-0.5 py-0 rounded truncate ${companyBgColor} text-[7px] sm:text-[10px] lg:text-[12px] cursor-pointer hover:opacity-80`}
-                                        title={`${company} - ${companyBookings.map(b => `${b.category} (${b.ea}${t('items')})`).join(', ')}`}
+                                        title={`${company} - ${companyBookings.map((b) => {
+                                          const rn = b.rn_number?.trim();
+                                          const label = rn ? `RN# ${rn}` : 'RN# 없음';
+                                          return `${label} (${b.ea}${t('items')})`;
+                                        }).join(', ')}`}
                                         onClick={() => handleBookingClick(companyBookings)}
                                       >
                                         <div className="block sm:hidden">
@@ -1774,7 +2000,7 @@ export default function TicketBookingList() {
         ) : (
           /* 카드뷰 - 모바일 컴팩트 */
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
-            {filteredBookings.map((booking) => (
+            {pagedSortedBookings.map((booking) => (
               <div key={booking.id} className="bg-white rounded-xl sm:rounded-lg shadow-sm sm:shadow-md border border-gray-200 hover:shadow-md sm:hover:shadow-lg transition-shadow">
                 <div className="p-3 sm:p-4 lg:p-6">
                   {/* 카드 헤더 - 모바일 컴팩트 */}
@@ -1889,6 +2115,91 @@ export default function TicketBookingList() {
           </div>
         )}
 
+        {sortedBookings.length > 0 && viewMode !== 'calendar' && (
+          <div className="mt-4 flex flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50/90 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+            <p className="text-xs text-gray-600 sm:text-sm">
+              전체 <span className="font-semibold text-gray-800">{sortedBookings.length}</span>건 중{' '}
+              <span className="font-semibold text-gray-800">
+                {(listPageEffective - 1) * listPageSize + 1}
+              </span>
+              –
+              <span className="font-semibold text-gray-800">
+                {Math.min(listPageEffective * listPageSize, sortedBookings.length)}
+              </span>
+              번째
+            </p>
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <label className="flex items-center gap-1.5 text-xs text-gray-600 sm:text-sm">
+                <span className="whitespace-nowrap">페이지당</span>
+                <select
+                  value={listPageSize}
+                  onChange={(e) => {
+                    setListPageSize(Number(e.target.value));
+                    setListPage(1);
+                  }}
+                  className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs font-medium text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
+                >
+                  <option value={25}>25건</option>
+                  <option value={50}>50건</option>
+                  <option value={100}>100건</option>
+                  <option value={200}>200건</option>
+                </select>
+              </label>
+              <div className="flex items-center gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setListPage(1)}
+                  disabled={listPageEffective <= 1}
+                  className="rounded p-1.5 text-gray-600 hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-30"
+                  title="첫 페이지"
+                >
+                  <ChevronsLeft className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setListPage((p) => {
+                      const cur = Math.min(Math.max(1, p), listTotalPages);
+                      return Math.max(1, cur - 1);
+                    })
+                  }
+                  disabled={listPageEffective <= 1}
+                  className="rounded p-1.5 text-gray-600 hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-30"
+                  title="이전"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="min-w-[5.5rem] px-2 text-center text-xs font-medium tabular-nums text-gray-800 sm:text-sm">
+                  {listPageEffective} / {listTotalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setListPage((p) => {
+                      const cur = Math.min(Math.max(1, p), listTotalPages);
+                      return Math.min(listTotalPages, cur + 1);
+                    })
+                  }
+                  disabled={listPageEffective >= listTotalPages}
+                  className="rounded p-1.5 text-gray-600 hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-30"
+                  title="다음"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setListPage(listTotalPages)}
+                  disabled={listPageEffective >= listTotalPages}
+                  className="rounded p-1.5 text-gray-600 hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-30"
+                  title="마지막 페이지"
+                >
+                  <ChevronsRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {filteredBookings.length === 0 && (
           <div className="text-center py-12 text-gray-500">
             <div className="text-lg font-medium mb-2">
@@ -1972,11 +2283,75 @@ export default function TicketBookingList() {
                 </button>
               </div>
               
-              {/* 선택된 예약들을 시간순으로 정렬하여 표시 */}
-              <div className="space-y-1">
-                {selectedBookings
-                  .sort((a, b) => a.time.localeCompare(b.time)) // 시간순 정렬
-                  .map((booking) => (
+              {/* RN#별 그룹 → 그룹 내 시간순 */}
+              <div className="space-y-4">
+                {(() => {
+                  const rnGroupKey = (b: TicketBooking) => {
+                    const v = b.rn_number?.trim();
+                    return v ? v : '__empty_rn__';
+                  };
+                  const rnGroupLabel = (key: string) =>
+                    key === '__empty_rn__' ? 'RN# 없음' : key;
+
+                  const map = new Map<string, TicketBooking[]>();
+                  for (const b of selectedBookings) {
+                    const k = rnGroupKey(b);
+                    const list = map.get(k);
+                    if (list) list.push(b);
+                    else map.set(k, [b]);
+                  }
+
+                  const sortedKeys = [...map.keys()].sort((a, b) => {
+                    if (a === '__empty_rn__') return 1;
+                    if (b === '__empty_rn__') return -1;
+                    return a.localeCompare(b, undefined, { numeric: true });
+                  });
+
+                  return sortedKeys.map((key) => {
+                    const groupBookings = (map.get(key) || []).slice().sort((a, b) => a.time.localeCompare(b.time));
+                    const finalized = groupBookings.filter((b) => {
+                      const s = b.status?.toLowerCase();
+                      return s === 'confirmed' || s === 'completed';
+                    });
+                    const finalBooking =
+                      finalized.length === 0
+                        ? null
+                        : finalized.reduce((best, b) => {
+                            const tB = new Date(b.updated_at).getTime();
+                            const tBest = new Date(best.updated_at).getTime();
+                            return tB >= tBest ? b : best;
+                          });
+                    const finalTimeDisplay = finalBooking?.time
+                      ? finalBooking.time.replace(/:\d{2}$/, '')
+                      : null;
+                    return (
+                      <div key={`modal-rn-${key}`} className="space-y-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-md bg-gray-100 border border-gray-200 px-3 py-2">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+                            <span className="text-sm font-semibold text-gray-800 shrink-0">
+                              RN#: {rnGroupLabel(key)}
+                            </span>
+                            {finalBooking ? (
+                              <span className="text-xs text-gray-600">
+                                <span className="text-gray-500">시간</span>{' '}
+                                <span className="font-medium text-gray-800">
+                                  {finalTimeDisplay || '—'}
+                                </span>
+                                <span className="mx-1.5 text-gray-300">·</span>
+                                <span className="text-gray-500">수량</span>{' '}
+                                <span className="font-medium text-gray-800">{finalBooking.ea}개</span>
+                                <span className="mx-1.5 text-gray-300">·</span>
+                                <span className="text-gray-500">가격</span>{' '}
+                                <span className="font-medium text-gray-800">${finalBooking.total_price}</span>
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-400">확정/완료 없음</span>
+                            )}
+                          </div>
+                          <span className="text-xs text-gray-500 shrink-0">{groupBookings.length}건</span>
+                        </div>
+                        <div className="space-y-1 pl-0 sm:pl-1">
+                          {groupBookings.map((booking) => (
                     <div key={booking.id} className={`rounded border p-2 hover:opacity-90 transition-opacity ${
                       booking.status === 'pending' ? 'bg-yellow-50 border-yellow-200' :
                       booking.status === 'confirmed' ? 'bg-green-50 border-green-200' :
@@ -1986,7 +2361,7 @@ export default function TicketBookingList() {
                       'bg-gray-50 border-gray-200'
                     }`}>
                       <div className="flex items-center justify-between">
-                        {/* 왼쪽: 기본 정보 */}
+                        {/* 왼쪽: 기본 정보 (그룹 헤더에 RN# 표시됨) */}
                         <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 text-sm">
                           <div>
                             <div className="text-gray-500 text-xs">제출일</div>
@@ -2087,8 +2462,63 @@ export default function TicketBookingList() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 투어 상세 (달력·테이블에서 투어 클릭 시) */}
+      {tourDetailModalTourId && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-2 sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ticket-tour-detail-modal-title"
+          onClick={() => setTourDetailModalTourId(null)}
+        >
+          <div
+            className="flex h-[min(92vh,900px)] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
+              <h3 id="ticket-tour-detail-modal-title" className="text-lg font-semibold text-gray-900 truncate pr-2">
+                투어 상세
+              </h3>
+              <div className="flex shrink-0 items-center gap-2">
+                <a
+                  href={`/${locale}/admin/tours/${tourDetailModalTourId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap"
+                >
+                  새 탭에서 열기
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setTourDetailModalTourId(null)}
+                  className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
+                  aria-label="닫기"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 bg-gray-50">
+              <iframe
+                key={tourDetailModalTourId}
+                title="투어 상세"
+                src={`/${locale}/admin/tours/${tourDetailModalTourId}`}
+                className="h-full w-full min-h-[60vh] border-0"
+              />
             </div>
           </div>
         </div>

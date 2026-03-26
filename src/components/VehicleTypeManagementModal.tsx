@@ -109,76 +109,63 @@ export default function VehicleTypeManagementModal({
         return
       }
 
-      // 2. 모든 차종의 사진을 배치로 한 번에 조회 (최적화)
-      const typeIds = typesData.map(t => t.id)
-      let photosByTypeId = new Map<string, any[]>()
-      
-      try {
-        // 배치 크기 제한: 한 번에 너무 많은 ID를 조회하면 URL이 너무 길어져 500 에러 발생
-        // Supabase PostgREST 제한을 고려하여 배치 크기를 20개로 제한 (더 안전)
-        const BATCH_SIZE = 20
-        
-        // 배치로 나눠서 조회
-        for (let i = 0; i < typeIds.length; i += BATCH_SIZE) {
-          const batchIds = typeIds.slice(i, i + BATCH_SIZE)
-          
-          try {
-            // vehicle_type_id 인덱스를 활용하여 빠른 조회
-            const { data: batchPhotos, error: photosError } = await supabase
-              .from('vehicle_type_photos')
-              .select(`
-                id,
-                vehicle_type_id,
-                photo_url,
-                photo_name,
-                description,
-                is_primary,
-                display_order,
-                created_at,
-                updated_at
-              `)
-              .in('vehicle_type_id', batchIds)
-              // 주의: order by는 URL을 더 길게 만들어 500 에러를 유발할 수 있으므로 제거
-              // 클라이언트 사이드에서 정렬 처리
-              .limit(1000)
+      // 목록은 즉시 표시, 썸네일은 병렬 조회 후 반영
+      const skeleton: VehicleType[] = typesData.map((t) => ({ ...t, photos: [] }))
+      setVehicleTypes(skeleton)
+      setLoading(false)
 
-            if (!photosError && batchPhotos && batchPhotos.length > 0) {
-              // vehicle_type_id별로 그룹화 및 정렬 (클라이언트 사이드)
+      // 2. 모든 차종의 사진 — 배치를 병렬로 조회해 RTT 누적 제거
+      const typeIds = typesData.map(t => t.id)
+      const photosByTypeId = new Map<string, any[]>()
+
+      const TYPE_PHOTO_BATCH = 40
+      const typeIdChunks: string[][] = []
+      for (let i = 0; i < typeIds.length; i += TYPE_PHOTO_BATCH) {
+        typeIdChunks.push(typeIds.slice(i, i + TYPE_PHOTO_BATCH))
+      }
+
+      try {
+        await Promise.all(
+          typeIdChunks.map(async (batchIds) => {
+            try {
+              const { data: batchPhotos, error: photosError } = await supabase
+                .from('vehicle_type_photos')
+                .select(`
+                  id,
+                  vehicle_type_id,
+                  photo_url,
+                  photo_name,
+                  description,
+                  is_primary,
+                  display_order,
+                  created_at,
+                  updated_at
+                `)
+                .in('vehicle_type_id', batchIds)
+                .limit(1000)
+              if (photosError || !batchPhotos?.length) return
               batchPhotos
                 .sort((a, b) => {
-                  // 먼저 vehicle_type_id로 정렬
                   if (a.vehicle_type_id !== b.vehicle_type_id) {
                     return a.vehicle_type_id.localeCompare(b.vehicle_type_id)
                   }
-                  // 같은 vehicle_type_id 내에서 is_primary 우선, 그 다음 display_order
                   if (a.is_primary && !b.is_primary) return -1
                   if (!a.is_primary && b.is_primary) return 1
                   return (a.display_order || 0) - (b.display_order || 0)
                 })
-                .forEach(photo => {
+                .forEach((photo) => {
                   if (!photosByTypeId.has(photo.vehicle_type_id)) {
                     photosByTypeId.set(photo.vehicle_type_id, [])
                   }
                   photosByTypeId.get(photo.vehicle_type_id)!.push(photo)
                 })
+            } catch (batchError) {
+              console.warn('차종 사진 배치 조회 실패:', batchError)
             }
-          } catch (batchError) {
-            // 개별 배치 실패는 조용히 무시하고 다음 배치 계속 진행
-            console.warn(`차종 사진 배치 조회 실패 (${i}-${i + BATCH_SIZE}):`, batchError)
-          }
-        }
-
-        if (!photosError && allTypePhotos && allTypePhotos.length > 0) {
-          // vehicle_type_id별로 그룹화
-          allTypePhotos.forEach(photo => {
-            if (!photosByTypeId.has(photo.vehicle_type_id)) {
-              photosByTypeId.set(photo.vehicle_type_id, [])
-            }
-            photosByTypeId.get(photo.vehicle_type_id)!.push(photo)
           })
-        }
-      } catch (photoError) {
-        // vehicle_type_photos 조회 실패는 조용히 무시 (500 에러 등)
+        )
+      } catch (_photoError) {
+        // vehicle_type_photos 조회 실패는 무시
       }
 
       // 3. 각 차종에 사진 할당

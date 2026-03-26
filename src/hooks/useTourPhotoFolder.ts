@@ -29,16 +29,11 @@ export function useTourPhotoFolder(tourId: string) {
         // 폴더가 없으면 생성
         setFolderStatus('creating')
         
-        const folderInfo = JSON.stringify({
-          tourId: tourId,
-          createdAt: new Date().toISOString(),
-          autoCreated: true,
-          folderType: 'tour-photos'
-        })
+        const folderInfo = `Tour folder for ${tourId}\nCreated: ${new Date().toISOString()}\nAutoCreated: true`
 
         const { error } = await supabase.storage
           .from('tour-photos')
-          .upload(`${tourId}/.folder_info.json`, new Blob([folderInfo], { type: 'application/json' }), {
+          .upload(`${tourId}/folder.info`, new Blob([folderInfo], { type: 'text/plain' }), {
             upsert: true
           })
 
@@ -69,15 +64,11 @@ export function useTourPhotoFolder(tourId: string) {
       const ensureFolder = async () => {
         setFolderStatus('creating')
         
-        const folderInfo = JSON.stringify({
-          tourId: tourId,
-          createdAt: new Date().toISOString(),
-          retryCreated: true
-        })
+        const folderInfo = `Tour folder for ${tourId}\nCreated: ${new Date().toISOString()}\nRetryCreated: true`
 
         const { error } = await supabase.storage
           .from('tour-photos')
-          .upload(`${tourId}/.folder_info.json`, new Blob([folderInfo], { type: 'application/json' }), {
+          .upload(`${tourId}/folder.info`, new Blob([folderInfo], { type: 'text/plain' }), {
             upsert: true
           })
 

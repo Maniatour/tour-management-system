@@ -744,8 +744,27 @@ export default function TourDetailPage() {
     if (!vehicle) {
       return vehicleId
     }
-    
-    return `${vehicle.vehicle_number || t('detail.noNumber')} - ${vehicle.vehicle_type || t('detail.noType')}`
+
+    const formatRentalDateShort = (dateStr?: string | null) => {
+      if (!dateStr) return ''
+      const raw = String(dateStr).slice(0, 10)
+      const [year, month, day] = raw.split('-')
+      if (!year || !month || !day) return ''
+      const m = Number(month)
+      const d = Number(day)
+      if (Number.isNaN(m) || Number.isNaN(d)) return ''
+      return `${m}/${d}`
+    }
+
+    const baseLabel = `${(vehicle as any).nick?.trim() || vehicle.vehicle_number || t('detail.noNumber')} - ${vehicle.vehicle_type || t('detail.noType')}`
+    if ((vehicle as any).vehicle_category === 'company') return baseLabel
+
+    const start = formatRentalDateShort((vehicle as any).rental_start_date)
+    const end = formatRentalDateShort((vehicle as any).rental_end_date)
+    if (start && end) {
+      return `${baseLabel} (${start}~${end})`
+    }
+    return baseLabel
   }
 
   // 채널 정보 가져오기 함수

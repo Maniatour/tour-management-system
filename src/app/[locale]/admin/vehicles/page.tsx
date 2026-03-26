@@ -105,9 +105,7 @@ export default function VehiclesPage() {
   const fetchVehicles = useCallback(async () => {
     try {
       setLoading(true)
-      
-      // 1. 먼저 vehicles만 빠르게 가져오기 (인덱스 활용 최적화)
-      // 필요한 컬럼만 선택하여 네트워크 전송량 최소화
+
       const { data: vehiclesData, error: vehiclesError } = await supabase
         .from('vehicles')
         .select(`
@@ -153,7 +151,6 @@ export default function VehiclesPage() {
           created_at,
           updated_at
         `)
-        // 인덱스가 있는 created_at으로 정렬 (인덱스 활용)
         .order('created_at', { ascending: false })
 
       if (vehiclesError) {
@@ -165,138 +162,168 @@ export default function VehiclesPage() {
         setVehicles([])
         return
       }
-      
-      // 2. vehicle_image_url이 있는 차량은 즉시 사진 설정 (빠른 처리)
-      const vehiclesWithLegacyPhotos = vehiclesData.map(vehicle => {
+
+      const vehiclesWithLegacyPhotos: Vehicle[] = vehiclesData.map((vehicle) => {
         if (vehicle.vehicle_image_url) {
           return {
             ...vehicle,
-            photos: [{
-              id: 'legacy',
-              vehicle_id: vehicle.id,
-              photo_url: vehicle.vehicle_image_url,
-              is_primary: true,
-              display_order: 0
-            }]
+            photos: [
+              {
+                id: 'legacy',
+                vehicle_id: vehicle.id,
+                photo_url: vehicle.vehicle_image_url,
+                is_primary: true,
+                display_order: 0,
+                created_at: vehicle.created_at,
+                updated_at: vehicle.updated_at,
+              },
+            ],
+            typePhotos: [],
           }
         }
-        return { ...vehicle, photos: [] }
+        return { ...vehicle, photos: [], typePhotos: [] }
       })
 
-      // 2.5 차종(vehicle_type)별 사진 조회 — 차량 카드에서 차종 사진 우선 표시
-      const uniqueTypeNames = [...new Set(vehiclesWithLegacyPhotos.map(v => v.vehicle_type).filter(Boolean))] as string[]
-      const typeNameToPhotos = new Map<string, { photo_url: string; is_primary?: boolean; display_order?: number }[]>()
-      if (uniqueTypeNames.length > 0) {
+      // 첫 페인트: 목록·탭·카드 UI를 먼저 보여 주고, 차종/갤러리 사진은 뒤이어 합성
+      setVehicles(vehiclesWithLegacyPhotos)
+      setLoading(false)
+
+      type TypePhotoRow = {
+        photo_url: string
+        is_primary?: boolean
+        display_order?: number
+      }
+
+      const loadTypePhotosByName = async (): Promise<Map<string, TypePhotoRow[]>> => {
+        const typeNameToPhotos = new Map<string, TypePhotoRow[]>()
+        const uniqueTypeNames = [
+          ...new Set(vehiclesWithLegacyPhotos.map((v) => v.vehicle_type).filter(Boolean)),
+        ] as string[]
+        if (uniqueTypeNames.length === 0) return typeNameToPhotos
+
         try {
           const { data: typesData } = await supabase
             .from('vehicle_types')
             .select('id, name')
             .in('name', uniqueTypeNames)
-          const typeIds = (typesData || []).map(t => t.id)
-          if (typeIds.length > 0) {
-            const BATCH_SIZE = 20
-            for (let i = 0; i < typeIds.length; i += BATCH_SIZE) {
-              const batchIds = typeIds.slice(i, i + BATCH_SIZE)
+          const typeIds = (typesData || []).map((t) => t.id)
+          if (typeIds.length === 0) return typeNameToPhotos
+
+          const idToName = new Map((typesData || []).map((t) => [t.id, t.name]))
+          const TYPE_BATCH = 40
+          const chunks: string[][] = []
+          for (let i = 0; i < typeIds.length; i += TYPE_BATCH) {
+            chunks.push(typeIds.slice(i, i + TYPE_BATCH))
+          }
+
+          await Promise.all(
+            chunks.map(async (batchIds) => {
               const { data: typePhotosData } = await supabase
                 .from('vehicle_type_photos')
                 .select('vehicle_type_id, photo_url, is_primary, display_order')
                 .in('vehicle_type_id', batchIds)
-              if (typePhotosData?.length) {
-                const idToName = new Map((typesData || []).map(t => [t.id, t.name]))
-                typePhotosData.forEach(p => {
-                  const name = idToName.get(p.vehicle_type_id)
-                  if (!name) return
-                  if (!typeNameToPhotos.has(name)) typeNameToPhotos.set(name, [])
-                  typeNameToPhotos.get(name)!.push({
-                    photo_url: p.photo_url,
-                    is_primary: p.is_primary,
-                    display_order: p.display_order ?? 0
-                  })
+              if (!typePhotosData?.length) return
+              typePhotosData.forEach((p) => {
+                const name = idToName.get(p.vehicle_type_id)
+                if (!name) return
+                if (!typeNameToPhotos.has(name)) typeNameToPhotos.set(name, [])
+                typeNameToPhotos.get(name)!.push({
+                  photo_url: p.photo_url,
+                  is_primary: p.is_primary,
+                  display_order: p.display_order ?? 0,
                 })
-              }
-            }
-            // 차종별 사진 정렬: is_primary 우선, 그 다음 display_order
-            typeNameToPhotos.forEach((arr, _key) => {
-              arr.sort((a, b) => {
-                if (a.is_primary && !b.is_primary) return -1
-                if (!a.is_primary && b.is_primary) return 1
-                return (a.display_order ?? 0) - (b.display_order ?? 0)
               })
             })
-          }
-        } catch (_e) {
-          // 차종 사진 조회 실패 시 무시 (기존 차량/차량 사진으로 표시)
-        }
-      }
-      vehiclesWithLegacyPhotos.forEach(v => {
-        v.typePhotos = typeNameToPhotos.get(v.vehicle_type) || []
-      })
-      
-      // 3. vehicle_image_url이 없는 차량들만 vehicle_photos 배치 조회 (최적화)
-      const vehiclesWithoutLegacyPhotos = vehiclesWithLegacyPhotos.filter(v => !v.vehicle_image_url)
-      
-      if (vehiclesWithoutLegacyPhotos.length > 0) {
-        const vehicleIds = vehiclesWithoutLegacyPhotos.map(v => v.id)
-        
-        try {
-          // 배치 크기: URL 길이 제한으로 500 방지 (UUID 1개당 ~36자, 8개면 쿼리스트링이 안전한 수준)
-          const BATCH_SIZE = 8
-          const photosByVehicleId = new Map<string, any[]>()
-          
-          for (let i = 0; i < vehicleIds.length; i += BATCH_SIZE) {
-            const batchIds = vehicleIds.slice(i, i + BATCH_SIZE)
-            
-            try {
-              const { data: batchPhotos, error: photosError } = await supabase
-                .from('vehicle_photos')
-                .select('id, vehicle_id, photo_url, photo_name, is_primary, display_order')
-                .in('vehicle_id', batchIds)
-                .limit(500)
+          )
 
-              if (!photosError && batchPhotos && batchPhotos.length > 0) {
-                // vehicle_id별로 그룹화 및 정렬 (클라이언트 사이드)
+          typeNameToPhotos.forEach((arr) => {
+            arr.sort((a, b) => {
+              if (a.is_primary && !b.is_primary) return -1
+              if (!a.is_primary && b.is_primary) return 1
+              return (a.display_order ?? 0) - (b.display_order ?? 0)
+            })
+          })
+        } catch (_e) {
+          /* 차종 사진 없이 진행 */
+        }
+        return typeNameToPhotos
+      }
+
+      const loadVehiclePhotos = async (): Promise<Map<string, VehiclePhoto[]>> => {
+        const photosByVehicleId = new Map<string, VehiclePhoto[]>()
+        const vehicleIds = vehiclesWithLegacyPhotos.filter((v) => !v.vehicle_image_url).map((v) => v.id)
+        if (vehicleIds.length === 0) return photosByVehicleId
+
+        const VEHICLE_BATCH = 32
+        const chunks: string[][] = []
+        for (let i = 0; i < vehicleIds.length; i += VEHICLE_BATCH) {
+          chunks.push(vehicleIds.slice(i, i + VEHICLE_BATCH))
+        }
+
+        try {
+          await Promise.all(
+            chunks.map(async (batchIds) => {
+              try {
+                const { data: batchPhotos, error: photosError } = await supabase
+                  .from('vehicle_photos')
+                  .select('id, vehicle_id, photo_url, photo_name, is_primary, display_order, created_at, updated_at')
+                  .in('vehicle_id', batchIds)
+                  .limit(500)
+                if (photosError || !batchPhotos?.length) return
                 batchPhotos
                   .sort((a, b) => {
-                    // 먼저 vehicle_id로 정렬
-                    if (a.vehicle_id !== b.vehicle_id) {
-                      return a.vehicle_id.localeCompare(b.vehicle_id)
-                    }
-                    // 같은 vehicle_id 내에서 is_primary 우선, 그 다음 display_order
+                    if (a.vehicle_id !== b.vehicle_id) return a.vehicle_id.localeCompare(b.vehicle_id)
                     if (a.is_primary && !b.is_primary) return -1
                     if (!a.is_primary && b.is_primary) return 1
                     return (a.display_order || 0) - (b.display_order || 0)
                   })
-                  .forEach(photo => {
+                  .forEach((photo) => {
                     if (!photosByVehicleId.has(photo.vehicle_id)) {
                       photosByVehicleId.set(photo.vehicle_id, [])
                     }
-                    photosByVehicleId.get(photo.vehicle_id)!.push(photo)
+                    photosByVehicleId.get(photo.vehicle_id)!.push(photo as VehiclePhoto)
                   })
+              } catch (batchError) {
+                console.warn('차량 사진 배치 조회 실패:', batchError)
               }
-            } catch (batchError) {
-              // 개별 배치 실패는 조용히 무시하고 다음 배치 계속 진행
-              console.warn(`차량 사진 배치 조회 실패 (${i}-${i + BATCH_SIZE}):`, batchError)
-            }
-          }
-
-          // 각 차량에 사진 할당
-          vehiclesWithoutLegacyPhotos.forEach(vehicle => {
-            const vehiclePhotos = photosByVehicleId.get(vehicle.id) || []
-            if (vehiclePhotos.length > 0) {
-              vehicle.photos = vehiclePhotos.sort((a, b) => {
-                if (a.is_primary && !b.is_primary) return -1
-                if (!a.is_primary && b.is_primary) return 1
-                return (a.display_order || 0) - (b.display_order || 0)
-              })
-            }
-          })
+            })
+          )
         } catch (photoError) {
-          // 전체 vehicle_photos 조회 실패는 조용히 무시 (500 에러 등)
-          console.warn('차량 사진 조회 중 오류 발생 (무시됨):', photoError)
+          console.warn('차량 사진 조회 중 오류 (무시):', photoError)
         }
+
+        photosByVehicleId.forEach((list) => {
+          list.sort((a, b) => {
+            if (a.is_primary && !b.is_primary) return -1
+            if (!a.is_primary && b.is_primary) return 1
+            return (a.display_order || 0) - (b.display_order || 0)
+          })
+        })
+        return photosByVehicleId
       }
-      
-      setVehicles(vehiclesWithLegacyPhotos)
+
+      try {
+        const [typeNameToPhotos, photosByVehicleId] = await Promise.all([
+          loadTypePhotosByName(),
+          loadVehiclePhotos(),
+        ])
+
+        const enriched: Vehicle[] = vehiclesWithLegacyPhotos.map((v) => {
+          const typePhotos = typeNameToPhotos.get(v.vehicle_type) || []
+          if (v.vehicle_image_url) {
+            return { ...v, typePhotos }
+          }
+          const gallery = photosByVehicleId.get(v.id)
+          const photos =
+            gallery && gallery.length > 0
+              ? gallery
+              : v.photos
+          return { ...v, typePhotos, photos }
+        })
+        setVehicles(enriched)
+      } catch (e) {
+        console.warn('차량 카드 사진 보강 실패:', e)
+      }
     } catch (error) {
       console.error('차량 목록을 불러오는 중 오류가 발생했습니다:', error)
       setVehicles([])
