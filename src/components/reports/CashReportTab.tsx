@@ -1,8 +1,10 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { DollarSign, TrendingUp, TrendingDown, Wallet, Calendar } from 'lucide-react'
+import React, { useState, useEffect, useCallback } from 'react'
+import { DollarSign, TrendingUp, TrendingDown, Wallet, Calendar, Plus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { Button } from '@/components/ui/button'
+import CashLedgerReportEditModals, { type CashLedgerEditTarget } from '@/components/reports/CashLedgerReportEditModals'
 
 interface CashReportTabProps {
   dateRange: { start: string; end: string }
@@ -11,6 +13,7 @@ interface CashReportTabProps {
 
 type CashDetailRow = {
   source: 'cash_transactions' | 'payment_records' | 'company_expenses' | 'reservation_expenses'
+  rowId: string
   occurred_at: string
   transaction_type: 'deposit' | 'withdrawal'
   amount: number
@@ -19,18 +22,19 @@ type CashDetailRow = {
   payment_status?: string | null
   reservation_id?: string | null
   payment_method?: string | null
+  balance: number
 }
 
 export default function CashReportTab({ dateRange, period }: CashReportTabProps) {
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [editTarget, setEditTarget] = useState<CashLedgerEditTarget | null>(null)
+  const [addCashOpen, setAddCashOpen] = useState(false)
 
-  useEffect(() => {
-    loadCashStats()
-  }, [dateRange, period])
+  const dismissEdit = useCallback(() => setEditTarget(null), [])
 
-  const loadCashStats = async () => {
-    setLoading(true)
+  const loadCashStats = async (options?: { soft?: boolean }) => {
+    if (!options?.soft) setLoading(true)
     try {
       const toNumber = (v: unknown) => {
         if (typeof v === 'number') return v
@@ -78,14 +82,14 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         // 기간 내 현금 거래 조회
         supabase
           .from('cash_transactions')
-          .select('transaction_type, amount, transaction_date, category, description')
+          .select('id, transaction_type, amount, transaction_date, category, description')
           .gte('transaction_date', startISO)
           .lte('transaction_date', endISO)
           .order('transaction_date', { ascending: false }),
         // 2026년 1월 1일부터의 모든 거래 조회 (잔액 계산용)
         supabase
           .from('cash_transactions')
-          .select('transaction_type, amount, transaction_date')
+          .select('id, transaction_type, amount, transaction_date')
           .gte('transaction_date', baseDate + 'T00:00:00')
           .order('transaction_date', { ascending: true }),
         // payment_records에서 현금 입금 조회 (PAYM032 + PAYM001)
@@ -99,10 +103,11 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         // 2026년 1월 1일부터의 현금 입금 (잔액 계산용)
         supabase
           .from('payment_records')
-          .select('amount')
+          .select('id, amount, submit_on')
           .in('payment_method', ['PAYM032', 'PAYM001'])
           .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
-          .gte('submit_on', baseDate + 'T00:00:00'),
+          .gte('submit_on', baseDate + 'T00:00:00')
+          .order('submit_on', { ascending: true }),
         // 기간 내 company_expenses 현금 지출 (Cash, cash 모두 포함)
         supabase
           .from('company_expenses')
@@ -114,9 +119,10 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         // 2026년 1월 1일부터 company_expenses 현금 지출 (잔액 계산용)
         supabase
           .from('company_expenses')
-          .select('amount')
+          .select('id, amount, submit_on')
           .in('payment_method', ['Cash', 'cash'])
-          .gte('submit_on', baseDate + 'T00:00:00'),
+          .gte('submit_on', baseDate + 'T00:00:00')
+          .order('submit_on', { ascending: true }),
         // 기간 내 reservation_expenses 현금 지출
         supabase
           .from('reservation_expenses')
@@ -128,9 +134,10 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         // 2026년 1월 1일부터 reservation_expenses 현금 지출 (잔액 계산용)
         supabase
           .from('reservation_expenses')
-          .select('amount')
+          .select('id, amount, submit_on')
           .ilike('payment_method', 'Cash')
           .gte('submit_on', baseDate + 'T00:00:00')
+          .order('submit_on', { ascending: true })
       ])
 
       const periodTransactions = periodTransactionsResult.data
@@ -185,6 +192,69 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
 
       const finalBalance = totalBalance + allCashPaymentsTotal - allCompanyExpensesTotal - allReservationExpensesTotal
 
+      const sourceOrder: Record<string, number> = {
+        cash_transactions: 0,
+        payment_records: 1,
+        company_expenses: 2,
+        reservation_expenses: 3
+      }
+
+      type LedgerLine = {
+        source: CashDetailRow['source']
+        sourceId: string
+        occurred_at: string
+        transaction_type: 'deposit' | 'withdrawal'
+        amount: number
+      }
+
+      const ledgerLines: LedgerLine[] = [
+        ...(allTransactions || []).map((t: any) => ({
+          source: 'cash_transactions' as const,
+          sourceId: String(t.id),
+          occurred_at: t.transaction_date,
+          transaction_type: t.transaction_type as 'deposit' | 'withdrawal',
+          amount: toNumber(t.amount)
+        })),
+        ...(allCashPayments || []).map((p: any) => ({
+          source: 'payment_records' as const,
+          sourceId: String(p.id),
+          occurred_at: p.submit_on,
+          transaction_type: 'deposit' as const,
+          amount: toNumber(p.amount)
+        })),
+        ...(allCompanyExpenses || []).map((p: any) => ({
+          source: 'company_expenses' as const,
+          sourceId: String(p.id),
+          occurred_at: p.submit_on,
+          transaction_type: 'withdrawal' as const,
+          amount: toNumber(p.amount)
+        })),
+        ...(allReservationExpenses || []).map((p: any) => ({
+          source: 'reservation_expenses' as const,
+          sourceId: String(p.id),
+          occurred_at: p.submit_on,
+          transaction_type: 'withdrawal' as const,
+          amount: toNumber(p.amount)
+        }))
+      ]
+
+      ledgerLines.sort((a, b) => {
+        const cmp = String(a.occurred_at).localeCompare(String(b.occurred_at))
+        if (cmp !== 0) return cmp
+        const oa = sourceOrder[a.source] ?? 99
+        const ob = sourceOrder[b.source] ?? 99
+        if (oa !== ob) return oa - ob
+        return a.sourceId.localeCompare(b.sourceId)
+      })
+
+      const balanceAfterByKey = new Map<string, number>()
+      let runningLedger = 0
+      for (const line of ledgerLines) {
+        if (line.transaction_type === 'deposit') runningLedger += line.amount
+        else runningLedger -= line.amount
+        balanceAfterByKey.set(`${line.source}:${line.sourceId}`, runningLedger)
+      }
+
       // 카테고리별 집계
       const categoryMap = new Map<string, { deposits: number; withdrawals: number }>()
       ;(periodTransactions || []).forEach(t => {
@@ -213,6 +283,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
       const details: CashDetailRow[] = [
         ...(periodTransactions || []).map((t: any) => ({
           source: 'cash_transactions' as const,
+          rowId: String(t.id),
           occurred_at: t.transaction_date,
           transaction_type: t.transaction_type,
           amount: toNumber(t.amount),
@@ -220,10 +291,12 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           description: t.description || '',
           payment_status: null,
           reservation_id: null,
-          payment_method: null
+          payment_method: null,
+          balance: balanceAfterByKey.get(`cash_transactions:${t.id}`) ?? Number.NaN
         })),
         ...(cashPayments || []).map((p: any) => ({
           source: 'payment_records' as const,
+          rowId: String(p.id),
           occurred_at: p.submit_on,
           transaction_type: 'deposit' as const,
           amount: toNumber(p.amount),
@@ -231,10 +304,12 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           description: p.note || '',
           payment_status: p.payment_status || null,
           reservation_id: p.reservation_id || null,
-          payment_method: p.payment_method || null
+          payment_method: p.payment_method || null,
+          balance: balanceAfterByKey.get(`payment_records:${p.id}`) ?? Number.NaN
         })),
         ...(periodCompanyExpenses || []).map((p: any) => ({
           source: 'company_expenses' as const,
+          rowId: String(p.id),
           occurred_at: p.submit_on,
           transaction_type: 'withdrawal' as const,
           amount: toNumber(p.amount),
@@ -242,10 +317,12 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           description: [p.paid_to, p.description].filter(Boolean).join(' - ') || '',
           payment_status: null,
           reservation_id: null,
-          payment_method: null
+          payment_method: null,
+          balance: balanceAfterByKey.get(`company_expenses:${p.id}`) ?? Number.NaN
         })),
         ...(periodReservationExpenses || []).map((p: any) => ({
           source: 'reservation_expenses' as const,
+          rowId: String(p.id),
           occurred_at: p.submit_on,
           transaction_type: 'withdrawal' as const,
           amount: toNumber(p.amount),
@@ -253,7 +330,8 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           description: p.note || `${p.paid_to || ''} - ${p.paid_for || ''}`.trim() || '',
           payment_status: null,
           reservation_id: p.reservation_id || null,
-          payment_method: null
+          payment_method: null,
+          balance: balanceAfterByKey.get(`reservation_expenses:${p.id}`) ?? Number.NaN
         }))
       ].sort((a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at)))
 
@@ -280,9 +358,13 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
     } catch (error) {
       console.error('현금 통계 로드 오류:', error)
     } finally {
-      setLoading(false)
+      if (!options?.soft) setLoading(false)
     }
   }
+
+  useEffect(() => {
+    loadCashStats()
+  }, [dateRange, period])
 
   if (loading) {
     return (
@@ -411,9 +493,27 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
 
       {/* 상세 거래 내역 */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">상세 거래 내역</h3>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-2">
+          <h3 className="text-lg font-semibold text-gray-900">상세 거래 내역</h3>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="shrink-0 gap-1.5 w-fit"
+            onClick={() => {
+              setEditTarget(null)
+              setAddCashOpen(true)
+            }}
+            title="현금 거래 추가"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            <span>현금 거래 추가</span>
+          </Button>
+        </div>
         <p className="text-sm text-gray-500 mb-4">
           선택한 기간 내 현금 거래(cash_transactions), 현금 입금(payment_records), 회사 지출(company_expenses), 예약 지출(reservation_expenses)의 현금 내역을 함께 표시합니다.
+          잔액 열은 {stats.balance.baseDate} 이후 동일 원장을 일시·출처 순으로 합산한 누적 잔액(해당 거래 반영 후)입니다.
+          행을 클릭하면 해당 건을 수정할 수 있습니다. + 버튼으로 현금 관리(cash_transactions) 거래를 바로 추가할 수 있습니다.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -422,6 +522,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap" style={{ minWidth: '11rem' }}>일시</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap" style={{ minWidth: '4.5rem' }}>구분</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">금액</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">잔액</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap" style={{ minWidth: '7rem' }}>카테고리</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">설명/메모</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">출처</th>
@@ -432,13 +533,30 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
             <tbody className="divide-y divide-gray-200">
               {(stats.details || []).length === 0 ? (
                 <tr>
-                  <td className="px-4 py-6 text-sm text-gray-500" colSpan={8}>
+                  <td className="px-4 py-6 text-sm text-gray-500" colSpan={9}>
                     해당 기간에 거래 내역이 없습니다.
                   </td>
                 </tr>
               ) : (
-                (stats.details as CashDetailRow[]).map((row, idx) => (
-                  <tr key={idx}>
+                (stats.details as CashDetailRow[]).map((row) => (
+                  <tr
+                    key={`${row.source}-${row.rowId}`}
+                    className="cursor-pointer hover:bg-gray-50 transition-colors"
+                    role="button"
+                    tabIndex={0}
+                    title="클릭하여 수정"
+                    onClick={() => {
+                      setAddCashOpen(false)
+                      setEditTarget({ source: row.source, id: row.rowId })
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        setAddCashOpen(false)
+                        setEditTarget({ source: row.source, id: row.rowId })
+                      }
+                    }}
+                  >
                     <td className="px-4 py-3 text-sm whitespace-nowrap">
                       {row.occurred_at ? new Date(row.occurred_at).toLocaleString() : '-'}
                     </td>
@@ -460,6 +578,17 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
                     >
                       ${Number(row.amount || 0).toLocaleString()}
                     </td>
+                    <td
+                      className={`px-4 py-3 text-sm font-medium whitespace-nowrap ${
+                        Number.isFinite(row.balance)
+                          ? row.balance >= 0
+                            ? 'text-gray-900'
+                            : 'text-red-600'
+                          : 'text-gray-400'
+                      }`}
+                    >
+                      {Number.isFinite(row.balance) ? `$${row.balance.toLocaleString()}` : '—'}
+                    </td>
                     <td className="px-4 py-3 text-sm whitespace-nowrap">{row.category || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-700 min-w-0">{row.description || '-'}</td>
                     <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
@@ -474,6 +603,14 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           </table>
         </div>
       </div>
+
+      <CashLedgerReportEditModals
+        target={editTarget}
+        onDismiss={dismissEdit}
+        onSaved={() => loadCashStats({ soft: true })}
+        addCashOpen={addCashOpen}
+        onAddCashDismiss={() => setAddCashOpen(false)}
+      />
     </div>
   )
 }

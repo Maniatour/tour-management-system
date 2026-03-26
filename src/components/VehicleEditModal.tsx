@@ -701,15 +701,15 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+      <div className="flex min-h-screen items-end justify-center px-2 pt-2 pb-4 text-center sm:items-center sm:p-4">
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={onClose}></div>
 
-        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
-          <form onSubmit={handleSubmit}>
-            <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-medium text-gray-900 flex items-center">
-                  <Car className="w-5 h-5 mr-2" />
+        <div className="relative z-10 inline-block w-full max-w-4xl align-bottom text-left sm:align-middle">
+          <form onSubmit={handleSubmit} className="flex max-h-[min(92vh,900px)] flex-col overflow-hidden rounded-lg bg-white shadow-xl">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-3 pb-2 sm:px-4 sm:pt-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="flex items-center text-base font-semibold text-gray-900">
+                  <Car className="mr-1.5 h-4 w-4 shrink-0" />
                   {vehicle ? (vehicle.id ? '차량 정보 수정' : '새 차량 추가 (복사)') : '새 차량 추가'}
                 </h3>
                 <button
@@ -717,22 +717,22 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                   onClick={onClose}
                   className="text-gray-400 hover:text-gray-600"
                 >
-                  <X className="w-6 h-6" />
+                  <X className="h-5 w-5" />
                 </button>
               </div>
 
               {/* 렌터카일 때는 1열 레이아웃, 회사 차량일 때는 2열 레이아웃 */}
-              <div className={`grid gap-6 ${formData.vehicle_category === 'rental' ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2'}`}>
+              <div className={`grid gap-3 ${formData.vehicle_category === 'rental' ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-2'}`}>
                 {/* 기본 정보 */}
-                <div className="space-y-4">
-                  <h4 className="text-md font-medium text-gray-900 flex items-center">
-                    <Car className="w-4 h-4 mr-2" />
+                <div className="space-y-2">
+                  <h4 className="flex items-center text-sm font-semibold text-gray-900">
+                    <Car className="mr-1.5 h-3.5 w-3.5 shrink-0" />
                     기본 정보
                   </h4>
                   
                   {/* 차량 카테고리 선택 */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">차량 카테고리 *</label>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">차량 카테고리 *</label>
                     <div className="flex space-x-4">
                       <label className="flex items-center">
                         <input
@@ -759,7 +759,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-sm font-medium text-gray-700">차량 번호 *</label>
                       <input
@@ -768,7 +768,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         value={formData.vehicle_number}
                         onChange={handleInputChange}
                         required
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                       />
                     </div>
                     <div>
@@ -780,7 +780,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         name="vin"
                         value={formData.vin}
                         onChange={handleInputChange}
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                       />
                     </div>
                   </div>
@@ -793,7 +793,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                       value={formData.nick ?? ''}
                       onChange={handleInputChange}
                       placeholder="예: 1번차, 빨간버스"
-                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                      className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                     />
                     <p className="mt-1 text-xs text-gray-500">입력 시 달력/일정 뷰에 이 이름으로 표시됩니다. 비워두면 차량 번호가 표시됩니다.</p>
                   </div>
@@ -815,7 +815,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                       value={formData.vehicle_type}
                       onChange={handleInputChange}
                       required
-                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                      className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                     >
                       <option value="">차종을 선택하세요</option>
                       {vehicleTypes.map((type) => (
@@ -840,7 +840,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                       onChange={handleInputChange}
                       required
                       min="1"
-                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                      className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                     />
                   </div>
 
@@ -857,11 +857,11 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           required
                           min="1900"
                           max={new Date().getFullYear() + 1}
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="block text-sm font-medium text-gray-700">구매시 마일리지 (miles)</label>
                           <input
@@ -870,7 +870,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                             value={formData.mileage_at_purchase}
                             onChange={handleInputChange}
                             min="0"
-                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                            className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                           />
                         </div>
                         <div>
@@ -882,7 +882,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                             onChange={handleInputChange}
                             min="0"
                             step="0.01"
-                            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                            className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                           />
                         </div>
                       </div>
@@ -894,7 +894,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="purchase_date"
                           value={formData.purchase_date}
                           onChange={handleInputChange}
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                     </>
@@ -906,21 +906,21 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                       name="memo"
                       value={formData.memo}
                       onChange={handleInputChange}
-                      rows={3}
-                      className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                      rows={2}
+                      className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                     />
                   </div>
                 </div>
 
                 {/* 렌터카 정보 (렌터카 선택시에만 표시) */}
                 {formData.vehicle_category === 'rental' && (
-                  <div className="space-y-4">
-                    <h4 className="text-md font-medium text-gray-900 flex items-center">
-                      <Calendar className="w-4 h-4 mr-2" />
+                  <div className="space-y-2">
+                    <h4 className="flex items-center text-sm font-semibold text-gray-900">
+                      <Calendar className="mr-1.5 h-3.5 w-3.5 shrink-0" />
                       렌터카 정보
                     </h4>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                       <div>
                         <label className="block text-sm font-medium text-gray-700">렌터카 회사 *</label>
                         <input
@@ -929,7 +929,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           value={formData.rental_company}
                           onChange={handleInputChange}
                           required
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                           placeholder="예: Hertz, Enterprise, Budget"
                         />
                       </div>
@@ -943,13 +943,13 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           onChange={handleInputChange}
                           min="0"
                           step="0.01"
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                           placeholder="0.00"
                         />
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                       <div>
                         <label className="block text-sm font-medium text-gray-700">렌탈 시작일</label>
                         <input
@@ -957,7 +957,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="rental_start_date"
                           value={formData.rental_start_date}
                           onChange={handleInputChange}
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                       <div>
@@ -967,12 +967,12 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="rental_end_date"
                           value={formData.rental_end_date}
                           onChange={handleInputChange}
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                       <div>
                         <label className="block text-sm font-medium text-gray-700">픽업 장소</label>
                         <input
@@ -980,7 +980,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="rental_pickup_location"
                           value={formData.rental_pickup_location}
                           onChange={handleInputChange}
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                       <div>
@@ -990,12 +990,12 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="rental_return_location"
                           value={formData.rental_return_location}
                           onChange={handleInputChange}
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                       <div>
                         <label className="block text-sm font-medium text-gray-700">총 비용 ($)</label>
                         <input
@@ -1005,7 +1005,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           onChange={handleInputChange}
                           min="0"
                           step="0.01"
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                           placeholder="0.00"
                         />
                       </div>
@@ -1015,7 +1015,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="status"
                           value={formData.status}
                           onChange={handleInputChange}
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         >
                           {VEHICLE_STATUS_SELECT_OPTIONS.map((opt) => (
                             <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -1030,8 +1030,8 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         name="rental_notes"
                         value={formData.rental_notes}
                         onChange={handleInputChange}
-                        rows={3}
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        rows={2}
+                        className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                       />
                     </div>
                   </div>
@@ -1039,9 +1039,9 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
 
                 {/* 관리 정보 (회사 차량일 때만 표시) */}
                 {formData.vehicle_category === 'company' && (
-                  <div className="space-y-4">
-                    <h4 className="text-md font-medium text-gray-900 flex items-center">
-                      <Wrench className="w-4 h-4 mr-2" />
+                  <div className="space-y-2">
+                    <h4 className="flex items-center text-sm font-semibold text-gray-900">
+                      <Wrench className="mr-1.5 h-3.5 w-3.5 shrink-0" />
                       관리 정보
                     </h4>
 
@@ -1053,7 +1053,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         value={formData.engine_oil_change_cycle}
                         onChange={handleInputChange}
                         min="0"
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                       />
                     </div>
 
@@ -1065,7 +1065,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         value={formData.current_mileage}
                         onChange={handleInputChange}
                         min="0"
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                       />
                     </div>
 
@@ -1077,7 +1077,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         value={formData.recent_engine_oil_change_mileage}
                         onChange={handleInputChange}
                         min="0"
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                       />
                       <p className="mt-1 text-xs text-gray-500">엔진오일 교체 비용 등록 시 자동 업데이트됩니다</p>
                     </div>
@@ -1088,7 +1088,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         name="status"
                         value={formData.status}
                         onChange={handleInputChange}
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                       >
                         {VEHICLE_STATUS_SELECT_OPTIONS.map((opt) => (
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -1096,7 +1096,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                       </select>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-sm font-medium text-gray-700">앞타이어 사이즈</label>
                         <input
@@ -1105,7 +1105,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           value={formData.front_tire_size}
                           onChange={handleInputChange}
                           placeholder="예: 205/55R16"
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                       <div>
@@ -1116,7 +1116,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           value={formData.rear_tire_size}
                           onChange={handleInputChange}
                           placeholder="예: 205/55R16"
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                     </div>
@@ -1129,11 +1129,11 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                         value={formData.windshield_wiper_size}
                         onChange={handleInputChange}
                         placeholder="예: 26인치"
-                        className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-sm font-medium text-gray-700">헤드라이트 모델</label>
                         <input
@@ -1141,7 +1141,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="headlight_model"
                           value={formData.headlight_model}
                           onChange={handleInputChange}
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                       <div>
@@ -1151,7 +1151,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="headlight_model_name"
                           value={formData.headlight_model_name}
                           onChange={handleInputChange}
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                     </div>
@@ -1161,9 +1161,9 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
 
               {/* 할부 정보 (회사 차량일 때만 표시) */}
               {formData.vehicle_category === 'company' && (
-                <div className="mt-6 space-y-4">
-                  <h4 className="text-md font-medium text-gray-900 flex items-center">
-                    <DollarSign className="w-4 h-4 mr-2" />
+                <div className="mt-3 space-y-2">
+                  <h4 className="flex items-center text-sm font-semibold text-gray-900">
+                    <DollarSign className="mr-1.5 h-3.5 w-3.5 shrink-0" />
                     할부 정보
                   </h4>
 
@@ -1179,7 +1179,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                   </div>
 
                   {formData.is_installment && (
-                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
                       <div>
                         <label className="block text-sm font-medium text-gray-700">할부 금액 (USD)</label>
                         <input
@@ -1189,7 +1189,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           onChange={handleInputChange}
                           min="0"
                           step="0.01"
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                       <div>
@@ -1201,7 +1201,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           onChange={handleInputChange}
                           min="0"
                           step="0.01"
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                       <div>
@@ -1213,7 +1213,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           onChange={handleInputChange}
                           min="0"
                           step="0.01"
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                       <div>
@@ -1225,7 +1225,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           onChange={handleInputChange}
                           min="0"
                           step="0.01"
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                       <div>
@@ -1235,7 +1235,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="payment_due_date"
                           value={formData.payment_due_date}
                           onChange={handleInputChange}
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                       <div>
@@ -1245,7 +1245,7 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="installment_start_date"
                           value={formData.installment_start_date}
                           onChange={handleInputChange}
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                       <div>
@@ -1255,14 +1255,14 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           name="installment_end_date"
                           value={formData.installment_end_date}
                           onChange={handleInputChange}
-                          className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                          className="mt-0.5 block w-full rounded-md border-gray-300 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
                       </div>
                     </div>
                   )}
 
                   {formData.is_installment && (
-                    <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-md">
+                    <div className="grid grid-cols-2 gap-2 rounded-md bg-gray-50 p-2">
                       <div>
                         <label className="block text-sm font-medium text-gray-700">총 납부 금액</label>
                         <p className="mt-1 text-sm text-gray-900">${calculateTotalPayment().toLocaleString()} (자동 계산)</p>
@@ -1277,29 +1277,29 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
               )}
 
               {/* 차량 이미지 - 모든 차량 타입에 대해 표시 */}
-              <div className="mt-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-md font-medium text-gray-900 flex items-center">
-                    <Upload className="w-4 h-4 mr-2" />
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="flex items-center text-sm font-semibold text-gray-900">
+                    <Upload className="mr-1.5 h-3.5 w-3.5 shrink-0" />
                     차량 이미지 ({vehiclePhotos.length + imagePreviews.length}장)
                   </h4>
                   {formData.vehicle_type && (
-                    <div className="flex space-x-2">
+                    <div className="flex flex-shrink-0 flex-wrap gap-1.5">
                       <button
                         type="button"
                         onClick={() => setShowPhotoGallery(true)}
-                        className="inline-flex items-center px-3 py-2 border border-blue-300 rounded-md shadow-sm text-sm font-medium text-blue-700 bg-white hover:bg-blue-50"
+                        className="inline-flex items-center rounded-md border border-blue-300 bg-white px-2 py-1 text-xs font-medium text-blue-700 shadow-sm hover:bg-blue-50"
                       >
-                        <Images className="w-4 h-4 mr-2" />
+                        <Images className="mr-1 h-3.5 w-3.5" />
                         사진 갤러리
                       </button>
                       {imagePreviews.length > 0 && (
                         <button
                           type="button"
                           onClick={handleSaveTemplate}
-                          className="inline-flex items-center px-3 py-2 border border-green-300 rounded-md shadow-sm text-sm font-medium text-green-700 bg-white hover:bg-green-50"
+                          className="inline-flex items-center rounded-md border border-green-300 bg-white px-2 py-1 text-xs font-medium text-green-700 shadow-sm hover:bg-green-50"
                         >
-                          <Image className="w-4 h-4 mr-2" />
+                          <Image className="mr-1 h-3.5 w-3.5" />
                           템플릿 저장
                         </button>
                       )}
@@ -1311,15 +1311,15 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                 {vehiclePhotos.length > 0 && (
                   <div className="space-y-2">
                     <h5 className="text-sm font-medium text-gray-700">기존 사진</h5>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
                       {vehiclePhotos.map((photo) => (
                         <div key={photo.id} className="relative group">
                           <img
                             src={photo.photo_url}
                             alt={photo.photo_name || '차량 사진'}
-                            className="w-full h-24 object-cover rounded-lg"
+                            className="h-20 w-full rounded-md object-cover"
                           />
-                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded-lg flex items-center justify-center">
+                          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-black bg-opacity-0 transition-all duration-200 group-hover:bg-opacity-50">
                             <div className="opacity-0 group-hover:opacity-100 flex space-x-1">
                               <button
                                 type="button"
@@ -1356,18 +1356,18 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
 
                 {/* 새로 추가할 사진들 */}
                 <div
-                  className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center"
+                  className="rounded-lg border-2 border-dashed border-gray-300 p-3 text-center"
                   onPaste={handlePasteImage}
                 >
                   {imagePreviews.length > 0 ? (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
                         {imagePreviews.map((preview, index) => (
                           <div key={index} className="relative group">
                             <img
                               src={preview}
                               alt={`새 사진 ${index + 1}`}
-                              className="w-full h-24 object-cover rounded-lg"
+                              className="h-20 w-full rounded-md object-cover"
                             />
                             <button
                               type="button"
@@ -1379,9 +1379,9 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           </div>
                         ))}
                       </div>
-                      <div className="flex justify-center space-x-2">
-                        <label className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer">
-                          <Upload className="w-4 h-4 mr-2" />
+                      <div className="flex justify-center gap-2">
+                        <label className="inline-flex cursor-pointer items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50">
+                          <Upload className="mr-1 h-3.5 w-3.5" />
                           사진 추가
                           <input
                             type="file"
@@ -1397,19 +1397,19 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                             setImagePreviews([])
                             setImageFiles([])
                           }}
-                          className="inline-flex items-center px-4 py-2 border border-red-300 rounded-md shadow-sm text-sm font-medium text-red-700 bg-white hover:bg-red-50"
+                          className="inline-flex items-center rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 shadow-sm hover:bg-red-50"
                         >
-                          <Trash2 className="w-4 h-4 mr-2" />
+                          <Trash2 className="mr-1 h-3.5 w-3.5" />
                           모두 삭제
                         </button>
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-4">
-                      <Upload className="mx-auto h-12 w-12 text-gray-400" />
+                    <div className="space-y-2">
+                      <Upload className="mx-auto h-8 w-8 text-gray-400" />
                       <div>
-                        <label className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer">
-                          <Upload className="w-4 h-4 mr-2" />
+                        <label className="inline-flex cursor-pointer items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50">
+                          <Upload className="mr-1 h-3.5 w-3.5" />
                           사진 추가 (여러 장 선택 가능)
                           <input
                             type="file"
@@ -1420,25 +1420,25 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                           />
                         </label>
                       </div>
-                      <p className="text-sm text-gray-500">차량 사진을 업로드하세요</p>
-                      <p className="text-xs text-gray-400">팁: Ctrl+V로 클립보드의 이미지를 직접 붙여넣을 수 있습니다!</p>
+                      <p className="text-xs text-gray-500">차량 사진을 업로드하세요</p>
+                      <p className="text-[11px] text-gray-400">Ctrl+V로 이미지 붙여넣기</p>
                     </div>
                   )}
                 </div>
               </div>
             </div>
 
-            <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+            <div className="flex flex-shrink-0 flex-row-reverse gap-2 border-t border-gray-200 bg-gray-50 px-3 py-2 sm:px-4">
               <button
                 type="submit"
-                className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
+                className="inline-flex justify-center rounded-md border border-transparent bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
               >
                 저장
               </button>
               <button
                 type="button"
                 onClick={onClose}
-                className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                className="inline-flex justify-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
               >
                 취소
               </button>
@@ -1449,10 +1449,10 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
 
       {/* 사진 갤러리 모달 */}
       {showPhotoGallery && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-4xl max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-gray-900">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-3">
+          <div className="max-h-[82vh] max-w-4xl overflow-y-auto rounded-lg bg-white p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-gray-900">
                 {formData.vehicle_type} 사진 갤러리
               </h3>
               <button
@@ -1460,12 +1460,12 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                 onClick={() => setShowPhotoGallery(false)}
                 className="text-gray-400 hover:text-gray-600"
               >
-                <X className="w-6 h-6" />
+                <X className="h-5 w-5" />
               </button>
             </div>
 
             {vehiclePhotoTemplates.length > 0 ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4">
                 {vehiclePhotoTemplates.map((template) => (
                   <div
                     key={template.id}
@@ -1479,14 +1479,14 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                     <img
                       src={template.photo_url}
                       alt={template.photo_name || '차량 사진'}
-                      className="w-full h-24 object-cover"
+                      className="h-20 w-full object-cover"
                     />
-                    <div className="p-2">
-                      <p className="text-xs text-gray-600 truncate">
+                    <div className="p-1.5">
+                      <p className="truncate text-[11px] text-gray-600">
                         {template.photo_name || template.vehicle_model}
                       </p>
                       {template.is_default && (
-                        <span className="inline-block px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full mt-1">
+                        <span className="mt-0.5 inline-block rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] text-blue-800">
                           기본
                         </span>
                       )}
@@ -1495,9 +1495,9 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8">
-                <Image className="mx-auto h-12 w-12 text-gray-400" />
-                <p className="mt-2 text-sm text-gray-500">
+              <div className="py-6 text-center">
+                <Image className="mx-auto h-9 w-9 text-gray-400" />
+                <p className="mt-1.5 text-xs text-gray-500">
                   {formData.vehicle_type} 타입의 사진이 없습니다.
                 </p>
                 <p className="text-xs text-gray-400">
@@ -1506,11 +1506,11 @@ export default function VehicleEditModal({ vehicle, onSave, onClose }: VehicleEd
               </div>
             )}
 
-            <div className="mt-6 flex justify-end">
+            <div className="mt-3 flex justify-end">
               <button
                 type="button"
                 onClick={() => setShowPhotoGallery(false)}
-                className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
               >
                 닫기
               </button>

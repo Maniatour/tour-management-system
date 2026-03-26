@@ -10,6 +10,56 @@ import { useLocale } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
 import ReactCountryFlag from 'react-country-flag'
 import DateNoteModal from './DateNoteModal'
+import dynamic from 'next/dynamic'
+
+const VehicleEditModal = dynamic(() => import('@/components/VehicleEditModal'), {
+  ssr: false,
+  loading: () => null,
+})
+
+const SCHEDULE_VEHICLE_EDIT_SELECT = `
+  id,
+  vehicle_number,
+  vin,
+  vehicle_type,
+  capacity,
+  year,
+  mileage_at_purchase,
+  purchase_amount,
+  purchase_date,
+  memo,
+  engine_oil_change_cycle,
+  current_mileage,
+  recent_engine_oil_change_mileage,
+  status,
+  front_tire_size,
+  rear_tire_size,
+  windshield_wiper_size,
+  headlight_model,
+  headlight_model_name,
+  is_installment,
+  installment_amount,
+  interest_rate,
+  monthly_payment,
+  additional_payment,
+  payment_due_date,
+  installment_start_date,
+  installment_end_date,
+  vehicle_image_url,
+  color,
+  vehicle_category,
+  rental_company,
+  daily_rate,
+  rental_start_date,
+  rental_end_date,
+  rental_pickup_location,
+  rental_return_location,
+  rental_total_cost,
+  rental_notes,
+  nick,
+  created_at,
+  updated_at
+`
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Tour = any
@@ -158,6 +208,9 @@ export default function ScheduleView() {
   const [hoveredGuideRow, setHoveredGuideRow] = useState<string | null>(null)
   const [draggedProductRow, setDraggedProductRow] = useState<string | null>(null)
   const [dragOverProductRow, setDragOverProductRow] = useState<string | null>(null)
+  const [vehicleRowOrderForMonth, setVehicleRowOrderForMonth] = useState<string[] | null>(null)
+  const [draggedVehicleRowId, setDraggedVehicleRowId] = useState<string | null>(null)
+  const [dragOverVehicleRowId, setDragOverVehicleRowId] = useState<string | null>(null)
   const [shareTeamMembersSetting, setShareTeamMembersSetting] = useState(false)
   
   // 날짜별 노트 상태
@@ -177,6 +230,9 @@ export default function ScheduleView() {
   // 차량·날짜 셀 클릭 시 투어 배정 모달
   const [showVehicleAssignModal, setShowVehicleAssignModal] = useState(false)
   const [vehicleAssignTarget, setVehicleAssignTarget] = useState<{ vehicleId: string; dateString: string } | null>(null)
+  const [showVehicleEditModal, setShowVehicleEditModal] = useState(false)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [vehicleEditModalVehicle, setVehicleEditModalVehicle] = useState<any>(null)
   // 상품 색상 프리셋 선택 모달 (상품별로 클릭 시 열림)
   const [colorPresetModal, setColorPresetModal] = useState<{ productId: string; productName: string } | null>(null)
 
@@ -1098,6 +1154,133 @@ export default function ScheduleView() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  const openVehicleEditFromSchedule = useCallback(
+    async (vehicleId: string) => {
+      if (!isSuperAdmin) return
+      try {
+        const { data, error } = await supabase
+          .from('vehicles')
+          .select(SCHEDULE_VEHICLE_EDIT_SELECT)
+          .eq('id', vehicleId)
+          .single()
+        if (error) throw error
+        if (!data) throw new Error('차량을 찾을 수 없습니다.')
+        const row = data as {
+          id: string
+          vehicle_image_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        const withPhotos = row.vehicle_image_url
+          ? {
+              ...row,
+              photos: [
+                {
+                  id: 'legacy',
+                  vehicle_id: row.id,
+                  photo_url: row.vehicle_image_url,
+                  is_primary: true,
+                  display_order: 0,
+                  created_at: row.created_at,
+                  updated_at: row.updated_at,
+                },
+              ],
+              typePhotos: [],
+            }
+          : { ...row, photos: [], typePhotos: [] }
+        setVehicleEditModalVehicle(withPhotos)
+        setShowVehicleEditModal(true)
+      } catch (e) {
+        console.error('스케줄에서 차량 조회 오류:', e)
+        alert(e instanceof Error ? e.message : '차량 정보를 불러오지 못했습니다.')
+      }
+    },
+    [isSuperAdmin]
+  )
+
+  const handleVehicleEditModalSave = useCallback(
+    async (vehicleData: Record<string, unknown>) => {
+      const id = vehicleEditModalVehicle?.id as string | undefined
+      if (!id) return
+      const allowedFields = [
+        'vehicle_number',
+        'vin',
+        'vehicle_type',
+        'capacity',
+        'year',
+        'mileage_at_purchase',
+        'purchase_amount',
+        'purchase_date',
+        'memo',
+        'engine_oil_change_cycle',
+        'current_mileage',
+        'recent_engine_oil_change_mileage',
+        'status',
+        'front_tire_size',
+        'rear_tire_size',
+        'windshield_wiper_size',
+        'headlight_model',
+        'headlight_model_name',
+        'is_installment',
+        'installment_amount',
+        'interest_rate',
+        'monthly_payment',
+        'additional_payment',
+        'payment_due_date',
+        'installment_start_date',
+        'installment_end_date',
+        'vehicle_image_url',
+        'vehicle_category',
+        'rental_company',
+        'daily_rate',
+        'rental_start_date',
+        'rental_end_date',
+        'rental_pickup_location',
+        'rental_return_location',
+        'rental_total_cost',
+        'rental_notes',
+        'nick',
+      ]
+      const cleanedData = { ...vehicleData }
+      const dateFields = [
+        'purchase_date',
+        'insurance_start_date',
+        'insurance_end_date',
+        'rental_start_date',
+        'rental_end_date',
+      ] as const
+      dateFields.forEach((field) => {
+        if (cleanedData[field] === '' || cleanedData[field] === null) {
+          cleanedData[field] = null
+        }
+      })
+      const filteredData = Object.keys(cleanedData)
+        .filter((key) => allowedFields.includes(key))
+        .reduce(
+          (obj, key) => {
+            const value = cleanedData[key]
+            obj[key] = value === '' ? null : value
+            return obj
+          },
+          {} as Record<string, unknown>
+        )
+      try {
+        const { error } = await supabase.from('vehicles').update(filteredData).eq('id', id)
+        if (error) throw error
+        await fetchData()
+        setShowVehicleEditModal(false)
+        setVehicleEditModalVehicle(null)
+        showMessage('저장 완료', '차량 정보가 저장되었습니다.', 'success')
+      } catch (error) {
+        console.error('스케줄에서 차량 저장 오류:', error)
+        alert(
+          `차량 저장 중 오류가 발생했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`
+        )
+      }
+    },
+    [vehicleEditModalVehicle, fetchData, showMessage]
+  )
 
   // 로컬 임시 저장
   const LOCAL_DRAFT_KEY = 'schedule_pending_draft'
@@ -2454,6 +2637,103 @@ export default function ScheduleView() {
     return result
   }, [monthVehiclesWithColors.vehicleList, monthDays, tours, teamMembers, productColors, defaultPresetIds])
 
+  const vehicleScheduleMonthKey = useMemo(
+    () =>
+      `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`,
+    [currentDate]
+  )
+
+  useEffect(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('schedule_vehicle_row_order') : null
+      if (!raw) {
+        setVehicleRowOrderForMonth(null)
+        return
+      }
+      const all = JSON.parse(raw) as Record<string, string[]>
+      setVehicleRowOrderForMonth(all[vehicleScheduleMonthKey] ?? null)
+    } catch {
+      setVehicleRowOrderForMonth(null)
+    }
+  }, [vehicleScheduleMonthKey])
+
+  /** 해당 월에 투어가 1건이라도 배차된 차량만, 저장된 행 순서 적용 */
+  const orderedVehiclesForScheduleTable = useMemo(() => {
+    type Veh = (typeof monthVehiclesWithColors.vehicleList)[number]
+    const assigned = monthVehiclesWithColors.vehicleList.filter(
+      (v) => (vehicleScheduleData[v.id]?.totalDays ?? 0) > 0
+    )
+    const assignedIds = assigned.map((v) => v.id)
+    if (assignedIds.length === 0) return [] as Veh[]
+
+    const baseOrder = vehicleRowOrderForMonth ?? assignedIds
+    const validOrder = baseOrder.filter((id) => assignedIds.includes(id))
+    const missing = assigned.filter((v) => !validOrder.includes(v.id))
+    const finalIds = [...validOrder, ...missing.map((v) => v.id)]
+    return finalIds
+      .map((id) => assigned.find((v) => v.id === id))
+      .filter((v): v is Veh => v != null)
+  }, [monthVehiclesWithColors.vehicleList, vehicleScheduleData, vehicleRowOrderForMonth])
+
+  const handleVehicleRowDragStart = useCallback((e: React.DragEvent, vehicleId: string) => {
+    setDraggedVehicleRowId(vehicleId)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/vehicle-row', vehicleId)
+    const target = e.currentTarget as HTMLElement
+    if (target) {
+      e.dataTransfer.setDragImage(target, 12, 12)
+    }
+  }, [])
+
+  const handleVehicleRowDragOver = useCallback(
+    (e: React.DragEvent, vehicleId: string) => {
+      e.preventDefault()
+      if (draggedVehicleRowId && draggedVehicleRowId !== vehicleId) {
+        e.dataTransfer.dropEffect = 'move'
+        setDragOverVehicleRowId(vehicleId)
+      }
+    },
+    [draggedVehicleRowId]
+  )
+
+  const handleVehicleRowDrop = useCallback(
+    (e: React.DragEvent, targetVehicleId: string) => {
+      e.preventDefault()
+      setDragOverVehicleRowId(null)
+      const sourceId = e.dataTransfer.getData('text/vehicle-row')
+      if (!sourceId || sourceId === targetVehicleId) {
+        setDraggedVehicleRowId(null)
+        return
+      }
+      const ids = orderedVehiclesForScheduleTable.map((v) => v.id)
+      const from = ids.indexOf(sourceId)
+      const to = ids.indexOf(targetVehicleId)
+      if (from === -1 || to === -1) {
+        setDraggedVehicleRowId(null)
+        return
+      }
+      const next = [...ids]
+      next.splice(from, 1)
+      next.splice(to, 0, sourceId)
+      setVehicleRowOrderForMonth(next)
+      try {
+        const raw = localStorage.getItem('schedule_vehicle_row_order')
+        const all: Record<string, string[]> = raw ? JSON.parse(raw) : {}
+        all[vehicleScheduleMonthKey] = next
+        localStorage.setItem('schedule_vehicle_row_order', JSON.stringify(all))
+      } catch {
+        /* ignore */
+      }
+      setDraggedVehicleRowId(null)
+    },
+    [orderedVehiclesForScheduleTable, vehicleScheduleMonthKey]
+  )
+
+  const handleVehicleRowDragEnd = useCallback(() => {
+    setDraggedVehicleRowId(null)
+    setDragOverVehicleRowId(null)
+  }, [])
+
   // 날짜별 차량 배차 합계 (차량 스케줄 테이블 일별 합계 행용)
   const vehicleDailyTotals = useMemo(() => {
     const totals: Record<string, number> = {}
@@ -3674,6 +3954,17 @@ export default function ScheduleView() {
                               ? `linear-gradient(135deg, ${getColorFromClass(colorValues[0])} 0%, ${getColorFromClass(colorValues[0])} 100%)`
                               : `linear-gradient(135deg, ${colorValues.map(color => getColorFromClass(color)).join(', ')})`)
                             : undefined
+                          const mdRowTours = tours.filter(tourItem =>
+                            tourItem.tour_date === tour.startDate &&
+                            (tour.dayData.role === 'guide'
+                              ? tourItem.tour_guide_id === teamMemberId
+                              : tourItem.assistant_id === teamMemberId)
+                          )
+                          const hasUnassignedVehicleMd = mdRowTours.some(t => !t.tour_car_id || String(t.tour_car_id).trim().length === 0)
+                          const assignedCarIdMd = mdRowTours.find(t => t.tour_car_id && String(t.tour_car_id).trim())?.tour_car_id
+                          const vehicleColorClassMd = assignedCarIdMd
+                            ? monthVehiclesWithColors.vehicleIdToColor.get(String(assignedCarIdMd).trim())
+                            : null
                           return (
                             <div
                               key={`md-overlay-${idx}-${tour.startDate}`}
@@ -3681,73 +3972,44 @@ export default function ScheduleView() {
                               style={{ left: `calc(${visibleStartIdx} * (100% / ${monthDays.length}))`, width: `calc(${spanDays} * (100% / ${monthDays.length}))` }}
                             >
                               <div
-                                className={`w-full h-full rounded px-2 py-0 text-[10px] flex items-center justify-center gap-1 cursor-pointer hover:opacity-90 transition-opacity ${tour.dayData.assignedPeople === 0 ? 'bg-gray-400 text-white' : ''}`}
+                                className={`relative w-full h-full rounded px-2 py-0 text-[10px] flex items-center justify-center gap-1 cursor-pointer hover:opacity-90 transition-opacity ${tour.dayData.assignedPeople === 0 ? 'bg-gray-400 text-white' : ''}`}
                                 style={{ 
                                   background: tour.dayData.assignedPeople > 0 && hasColors ? gradient : undefined,
-                                  color: (() => {
-                                    const guideTours = tours.filter(tourItem => 
-                                      tourItem.tour_date === tour.startDate && 
-                                      (tour.dayData.role === 'guide' 
-                                        ? tourItem.tour_guide_id === teamMemberId 
-                                        : tourItem.assistant_id === teamMemberId)
-                                    )
-                                    const hasUnassignedVehicle = guideTours.some(t => !t.tour_car_id || String(t.tour_car_id).trim().length === 0)
-                                    if (hasUnassignedVehicle) return '#dc2626'
-                                    if (tour.dayData.assignedPeople > 0 && hasColors && colorValues[0])
-                                      return getProductDisplayProps(colorValues[0]).style?.color
-                                    return undefined
-                                  })()
+                                  color:
+                                    tour.dayData.assignedPeople > 0 && hasColors && colorValues[0]
+                                      ? getProductDisplayProps(colorValues[0]).style?.color
+                                      : undefined
                                 }}
                                 draggable
                                 onDragStart={(e) => {
-                                  const guideTours = tours.filter(tourItem => 
-                                    tourItem.tour_date === tour.startDate && 
-                                    (tour.dayData.role === 'guide' 
-                                      ? tourItem.tour_guide_id === teamMemberId 
-                                      : tourItem.assistant_id === teamMemberId)
-                                  )
-                                  if (guideTours.length > 0) {
-                                    handleDragStart(e, guideTours[0])
+                                  if (mdRowTours.length > 0) {
+                                    handleDragStart(e, mdRowTours[0])
                                   }
                                 }}
                                 onDoubleClick={() => {
-                                  const guideTours = tours.filter(tourItem => 
-                                    tourItem.tour_date === tour.startDate && 
-                                    (tour.dayData.role === 'guide' 
-                                      ? tourItem.tour_guide_id === teamMemberId 
-                                      : tourItem.assistant_id === teamMemberId)
-                                  )
-                                  if (guideTours.length > 0) {
-                                    handleTourDoubleClick(guideTours[0].id)
+                                  if (mdRowTours.length > 0) {
+                                    handleTourDoubleClick(mdRowTours[0].id)
                                   }
                                 }}
                                 title={guide.team_member_name}
                               >
-                                {(() => {
-                                  const guideTours = tours.filter(tourItem => 
-                                    tourItem.tour_date === tour.startDate && 
-                                    (tour.dayData.role === 'guide' 
-                                      ? tourItem.tour_guide_id === teamMemberId 
-                                      : tourItem.assistant_id === teamMemberId)
-                                  )
-                                  const hasPrivateTour = guideTours.some(tourItem => 
-                                    tourItem.is_private_tour === 'TRUE' || tourItem.is_private_tour === true
-                                  )
-                                  
-                                  return (
-                                    <>
-                                      {hasPrivateTour && <span>🔒</span>}
-                                      <span>
-                                        {tour.dayData.role === 'assistant' 
-                                          ? (tour.dayData.guideInitials || 'A')
-                                          : (tour.dayData.assignedPeople || '')}
-                                      </span>
-                                      {tour.extendsToNextMonth && (
-                                        <span className="text-xs opacity-75">→</span>
-                                      )}
-                                    </>
-                                  )
-                                })()}
+                                {hasUnassignedVehicleMd && (
+                                  <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 bg-white rounded-full" />
+                                )}
+                                {!hasUnassignedVehicleMd && vehicleColorClassMd && (
+                                  <span className={`absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full border border-white ${vehicleColorClassMd}`} />
+                                )}
+                                {mdRowTours.some(tourItem => tourItem.is_private_tour === 'TRUE' || tourItem.is_private_tour === true) && (
+                                  <span>🔒</span>
+                                )}
+                                <span>
+                                  {tour.dayData.role === 'assistant'
+                                    ? (tour.dayData.guideInitials || 'A')
+                                    : (tour.dayData.assignedPeople || '')}
+                                </span>
+                                {tour.extendsToNextMonth && (
+                                  <span className="text-xs opacity-75">→</span>
+                                )}
                               </div>
                             </div>
                           )
@@ -3843,12 +4105,12 @@ export default function ScheduleView() {
                 </tbody>
               </table>
             </div>
-            {/* 차량별 스케줄 테이블 (부킹 아래, 가이드 스케줄과 동일 형식) */}
-            {monthVehiclesWithColors.vehicleList.length > 0 && (
+            {/* 차량별 스케줄 테이블 (부킹 아래 — 해당 월 배차 있는 차량만, 행 드래그로 순서 변경) */}
+            {orderedVehiclesForScheduleTable.length > 0 && (
               <div className="mt-1 overflow-visible">
                 <table className="w-full" style={{ tableLayout: 'fixed', minWidth: `${dynamicMinTableWidthPx}px` }}>
                   <tbody className="divide-y divide-gray-200">
-                    {monthVehiclesWithColors.vehicleList.map(({ id, label, colorClass, rental_start_date, rental_end_date }) => {
+                    {orderedVehiclesForScheduleTable.map(({ id, label, colorClass, rental_start_date, rental_end_date }) => {
                       const data = vehicleScheduleData[id]
                       if (!data) return null
                       const allNames = new Set<string>()
@@ -3865,11 +4127,69 @@ export default function ScheduleView() {
                         ? `${sortedNames.join(', ')}\n총 ${sortedNames.length}명`
                         : label
                       return (
-                        <tr key={id} className="hover:bg-gray-50/50">
-                          <td className="px-1 py-0.5 text-xs text-gray-900" style={{ width: '96px', minWidth: '96px', maxWidth: '96px' }} title={vehicleNameTooltip}>
-                            <div className="flex items-center gap-1 cursor-help">
+                        <tr
+                          key={id}
+                          className={`hover:bg-gray-50/50 ${
+                            draggedVehicleRowId === id ? 'opacity-50 bg-blue-50/80' : ''
+                          } ${dragOverVehicleRowId === id ? 'border-t-2 border-blue-500' : ''}`}
+                        >
+                          <td
+                            className="px-1 py-0.5 text-xs leading-tight text-gray-900 select-none"
+                            style={{ width: '96px', minWidth: '96px', maxWidth: '96px' }}
+                            onDragOver={(e) => {
+                              if (draggedVehicleRowId) {
+                                handleVehicleRowDragOver(e, id)
+                              }
+                            }}
+                            onDrop={(e) => {
+                              if (e.dataTransfer.getData('text/vehicle-row')) {
+                                e.preventDefault()
+                                handleVehicleRowDrop(e, id)
+                              }
+                            }}
+                          >
+                            <div className="flex items-center gap-0.5">
+                              <span
+                                className="cursor-grab text-[8px] text-gray-400 hover:text-gray-600 active:cursor-grabbing"
+                                title="드래그하여 차량 행 순서 변경"
+                                draggable
+                                onDragStart={(e) => handleVehicleRowDragStart(e, id)}
+                                onDragEnd={handleVehicleRowDragEnd}
+                              >
+                                ⠿
+                              </span>
                               <span className={`flex-shrink-0 w-2 h-2 rounded-full border border-white ${colorClass}`} />
-                              <span className="truncate font-medium">{label}</span>
+                              <div
+                                className={`min-w-0 flex-1 truncate font-medium ${isSuperAdmin ? 'cursor-pointer hover:text-blue-700' : 'cursor-help'}`}
+                                title={
+                                  isSuperAdmin
+                                    ? `${vehicleNameTooltip}\n클릭하여 차량 정보 수정`
+                                    : vehicleNameTooltip
+                                }
+                                role={isSuperAdmin ? 'button' : undefined}
+                                tabIndex={isSuperAdmin ? 0 : undefined}
+                                onClick={
+                                  isSuperAdmin
+                                    ? (e) => {
+                                        e.stopPropagation()
+                                        void openVehicleEditFromSchedule(id)
+                                      }
+                                    : undefined
+                                }
+                                onKeyDown={
+                                  isSuperAdmin
+                                    ? (e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                          e.preventDefault()
+                                          e.stopPropagation()
+                                          void openVehicleEditFromSchedule(id)
+                                        }
+                                      }
+                                    : undefined
+                                }
+                              >
+                                {label}
+                              </div>
                             </div>
                           </td>
                           {monthDays.map(({ dateString }) => {
@@ -3904,12 +4224,24 @@ export default function ScheduleView() {
                                   setShowVehicleAssignModal(true)
                                 }}
                                 onDragOver={(e) => {
+                                  if (draggedVehicleRowId) {
+                                    handleVehicleRowDragOver(e, id)
+                                    return
+                                  }
                                   e.preventDefault()
                                   e.dataTransfer.dropEffect = 'move'
                                   setDragOverCell(vehicleCellKey)
                                 }}
                                 onDragLeave={handleDragLeave}
-                                onDrop={(e) => handleVehicleCellDrop(e, id, dateString)}
+                                onDrop={(e) => {
+                                  if (e.dataTransfer.getData('text/vehicle-row')) {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    handleVehicleRowDrop(e, id)
+                                    return
+                                  }
+                                  handleVehicleCellDrop(e, id, dateString)
+                                }}
                               >
                                 <div className="relative h-[22px]" style={{ overflow: 'hidden' }}>
                                   {count > 0 ? (
@@ -3942,7 +4274,21 @@ export default function ScheduleView() {
                               </td>
                             )
                           })}
-                          <td className="px-1 py-0.5 text-center text-xs font-medium" style={{ width: '80px', minWidth: '80px', maxWidth: '80px' }}>
+                          <td
+                            className="px-1 py-0.5 text-center text-xs font-medium"
+                            style={{ width: '80px', minWidth: '80px', maxWidth: '80px' }}
+                            onDragOver={(e) => {
+                              if (draggedVehicleRowId) {
+                                handleVehicleRowDragOver(e, id)
+                              }
+                            }}
+                            onDrop={(e) => {
+                              if (e.dataTransfer.getData('text/vehicle-row')) {
+                                e.preventDefault()
+                                handleVehicleRowDrop(e, id)
+                              }
+                            }}
+                          >
                             {data.totalDays > 0 ? data.totalDays : '-'}
                           </td>
                         </tr>
@@ -5042,6 +5388,17 @@ export default function ScheduleView() {
             </div>
           </div>
         </div>
+      )}
+
+      {showVehicleEditModal && (
+        <VehicleEditModal
+          vehicle={vehicleEditModalVehicle}
+          onSave={handleVehicleEditModalSave}
+          onClose={() => {
+            setShowVehicleEditModal(false)
+            setVehicleEditModalVehicle(null)
+          }}
+        />
       )}
 
     </div>
