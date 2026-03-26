@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
-import { ChevronLeft, ChevronRight, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import { useLocale } from 'next-intl'
@@ -11,6 +11,12 @@ import { useAuth } from '@/contexts/AuthContext'
 import ReactCountryFlag from 'react-country-flag'
 import DateNoteModal from './DateNoteModal'
 import dynamic from 'next/dynamic'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 const VehicleEditModal = dynamic(() => import('@/components/VehicleEditModal'), {
   ssr: false,
@@ -201,6 +207,7 @@ export default function ScheduleView() {
   const [confirmModalContent, setConfirmModalContent] = useState({ title: '', message: '', onConfirm: () => {}, buttonText: '확인', buttonColor: 'bg-red-500 hover:bg-red-600' })
   const [showGuideModal, setShowGuideModal] = useState(false)
   const [guideModalContent, setGuideModalContent] = useState({ title: '', content: '', tourId: '' })
+  const [tourDetailModal, setTourDetailModal] = useState<{ tourId: string; title: string } | null>(null)
   
   // 행 드래그앤드롭 상태 (가이드/상품)
   const [draggedGuideRow, setDraggedGuideRow] = useState<string | null>(null)
@@ -2192,12 +2199,24 @@ export default function ScheduleView() {
     }
   }
 
-  // 투어 상세 페이지로 이동
-  const handleTourDoubleClick = (tourId: string) => {
-    const pathLocale = locale || (typeof window !== 'undefined' ? window.location.pathname.split('/')[1] : '')
-    const href = `/${pathLocale}/admin/tours/${tourId}`
-    window.location.href = href
-  }
+  const getTourDetailModalTitle = useCallback(
+    (tourId: string) => {
+      const tour = tours.find((t: Tour) => t.id === tourId)
+      if (!tour) return '투어 상세'
+      const productName = products.find((p: Product) => p.id === tour.product_id)?.name || '투어'
+      const [, m, d] = (tour.tour_date || '').split('-')
+      const datePart = m && d ? `${m}/${d}` : ''
+      return datePart ? `${datePart} ${productName}` : productName
+    },
+    [tours, products]
+  )
+
+  const openTourDetailModal = useCallback(
+    (tourId: string) => {
+      setTourDetailModal({ tourId, title: getTourDetailModalTitle(tourId) })
+    },
+    [getTourDetailModalTitle]
+  )
 
   // 미 배정된 투어들을 가이드/어시스턴트 배정 카드로 변환
   const unassignedTourCards = useMemo(() => {
@@ -3661,7 +3680,7 @@ export default function ScheduleView() {
                                             }}
                                             onDoubleClick={() => {
                                               if (guideTours.length > 0) {
-                                                handleTourDoubleClick(guideTours[0].id)
+                                                openTourDetailModal(guideTours[0].id)
                                               }
                                             }}
                                             onClick={() => {
@@ -3711,7 +3730,7 @@ export default function ScheduleView() {
                                           }}
                                           onDoubleClick={() => {
                                             if (guideTours.length > 0) {
-                                              handleTourDoubleClick(guideTours[0].id)
+                                              openTourDetailModal(guideTours[0].id)
                                             }
                                           }}
                                           onClick={() => {
@@ -3799,7 +3818,7 @@ export default function ScheduleView() {
                                           }}
                                           onDoubleClick={() => {
                                             if (assistantTours.length > 0) {
-                                              handleTourDoubleClick(assistantTours[0].id)
+                                              openTourDetailModal(assistantTours[0].id)
                                             }
                                           }}
                                           onClick={() => {
@@ -3849,7 +3868,7 @@ export default function ScheduleView() {
                                           }}
                                           onDoubleClick={() => {
                                             if (assistantTours.length > 0) {
-                                              handleTourDoubleClick(assistantTours[0].id)
+                                              openTourDetailModal(assistantTours[0].id)
                                             }
                                           }}
                                           onClick={() => {
@@ -3988,7 +4007,7 @@ export default function ScheduleView() {
                                 }}
                                 onDoubleClick={() => {
                                   if (mdRowTours.length > 0) {
-                                    handleTourDoubleClick(mdRowTours[0].id)
+                                    openTourDetailModal(mdRowTours[0].id)
                                   }
                                 }}
                                 title={guide.team_member_name}
@@ -4356,7 +4375,7 @@ export default function ScheduleView() {
                   draggable
                   onDragStart={(e) => handleUnassignedTourCardDragStart(e, card)}
                   onDragEnd={handleUnassignedTourDragEnd}
-                  onDoubleClick={() => handleTourDoubleClick(card.tour.id)}
+                  onDoubleClick={() => openTourDetailModal(card.tour.id)}
                   title={getTourSummary(card.tour)}
                 >
                   <div className="flex items-center space-x-2">
@@ -4887,9 +4906,8 @@ export default function ScheduleView() {
               <button
                 onClick={() => {
                   if (guideModalContent.tourId) {
-                    const pathLocale = locale || (typeof window !== 'undefined' ? window.location.pathname.split('/')[1] : '')
-                    const href = `/${pathLocale}/admin/tours/${guideModalContent.tourId}`
-                    window.location.href = href
+                    setShowGuideModal(false)
+                    openTourDetailModal(guideModalContent.tourId)
                   }
                 }}
                 disabled={!guideModalContent.tourId}
@@ -4898,7 +4916,7 @@ export default function ScheduleView() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                 </svg>
-                투어 상세 수정
+                투어 상세 열기
               </button>
               <button
                 onClick={() => setShowGuideModal(false)}
@@ -4910,6 +4928,39 @@ export default function ScheduleView() {
           </div>
         </div>
       )}
+
+      {/* 투어 상세 (스케줄 뷰에서 페이지 이동 없이 확인) */}
+      <Dialog open={!!tourDetailModal} onOpenChange={(open) => { if (!open) setTourDetailModal(null) }}>
+        <DialogContent
+          className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] p-0 gap-0 flex flex-col overflow-hidden z-[100] sm:rounded-lg"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <DialogHeader className="flex flex-row items-center justify-between space-y-0 border-b border-gray-200 px-4 py-3 pr-12 shrink-0 text-left">
+            <DialogTitle className="text-base font-semibold leading-snug truncate flex-1 min-w-0" title={tourDetailModal?.title}>
+              {tourDetailModal?.title ?? '투어 상세'}
+            </DialogTitle>
+            {tourDetailModal?.tourId ? (
+              <a
+                href={`/${locale}/admin/tours/${tourDetailModal.tourId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 shrink-0 ml-2"
+              >
+                새 탭에서 열기
+                <ExternalLink size={14} aria-hidden />
+              </a>
+            ) : null}
+          </DialogHeader>
+          {tourDetailModal?.tourId ? (
+            <iframe
+              key={tourDetailModal.tourId}
+              title={tourDetailModal.title ? `${tourDetailModal.title} 투어 상세` : '투어 상세'}
+              src={`/${locale}/admin/tours/${tourDetailModal.tourId}`}
+              className="w-full flex-1 min-h-0 border-0 bg-white"
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       {/* 일괄 오프 스케줄 모달 */}
       {showBatchOffModal && (
