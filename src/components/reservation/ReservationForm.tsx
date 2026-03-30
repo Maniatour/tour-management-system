@@ -1,11 +1,17 @@
 'use client'
 /* eslint-disable */
 
-import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import { Trash2, Eye, AlertTriangle, X, Mail, Phone, ChevronDown } from 'lucide-react'
+import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
+import { Trash2, Eye, AlertTriangle, X, Mail, Phone, ChevronDown, Globe, Store } from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { useTranslations, useLocale } from 'next-intl'
 import { sanitizeTimeInput, timeToHHmm, normalizeTourDateForDb } from '@/lib/utils'
+import {
+  resolveImportChannelVariantKey,
+  channelProductsIncludeVariantKey,
+  mapSemanticVariantToChannelProductKey,
+  canonicalVariantKey,
+} from '@/lib/resolveImportChannelVariant'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 import CustomerForm from '@/components/CustomerForm'
@@ -22,6 +28,7 @@ import ReservationOptionsSection from '@/components/reservation/ReservationOptio
 import ReviewManagementSection from '@/components/reservation/ReviewManagementSection'
 import ReservationFollowUpSection from '@/components/reservation/ReservationFollowUpSection'
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
+import { findSimilarCustomersInList } from '@/lib/customerSimilarity'
 import { getOptionalOptionsForProduct } from '@/utils/reservationUtils'
 import { getFallbackOtaSalePrice, getFallbackOtaAndNotIncluded } from '@/utils/choicePricingMatcher'
 import { getCountryFromPhone } from '@/utils/phoneUtils'
@@ -210,6 +217,10 @@ interface ReservationFormProps {
   initialAmountFromImport?: string
   /** Viator: 이메일 Net Rate (USD). 채널 정산 금액과 다를 때만 쿠폰 자동 선택 */
   initialViatorNetRateFromImport?: string
+  /** Klook 등: 파싱된 채널 variant 표시문 (예: All Inclusive). 채널 버튼에 "Klook - …" 로 보이게 함 */
+  initialChannelVariantLabelFromImport?: string
+  /** 예약 가져오기: extracted_data.channel_variant_key → dynamic_pricing.variant_key 와 일치시키기 위함 */
+  initialVariantKeyFromImport?: string
   /** @deprecated 가격 정보는 동적가격에서만 로드. 이메일 불포함 금액은 사용하지 않음 */
   initialNotIncludedAmountFromImport?: string
   /** 폼 제목 오버라이드 (예: 이메일에서 예약 가져오기) */
@@ -262,6 +273,7 @@ type RezLike = Partial<Reservation> & {
   selected_options?: { [optionId: string]: string[] }
   selected_option_prices?: { [key: string]: number }
   is_private_tour?: boolean
+  variant_key?: string
 }
 
 export default function ReservationForm({ 
@@ -289,6 +301,8 @@ export default function ReservationForm({
   initialChoiceUndecidedGroupNamesFromImport,
   initialAmountFromImport,
   initialViatorNetRateFromImport,
+  initialChannelVariantLabelFromImport,
+  initialVariantKeyFromImport,
   initialNotIncludedAmountFromImport: _initialNotIncludedAmountFromImport,
   formTitle: formTitleOverride,
 }: ReservationFormProps) {
@@ -321,50 +335,11 @@ export default function ReservationForm({
   const [pendingCustomerData, setPendingCustomerData] = useState<any>(null)
   const resolvedCustomerIdRef = useRef<string | null>(null)
   
-  // 비슷한 이름을 찾는 함수
-  const findSimilarCustomers = useCallback((name: string, email?: string, phone?: string): Customer[] => {
-    if (!name.trim()) return []
-    
-    const nameLower = name.toLowerCase().trim()
-    const similarCustomers: Customer[] = []
-    
-    for (const c of customers) {
-      const customerNameLower = c.name.toLowerCase().trim()
-      
-      // 정확히 일치하는 경우
-      if (customerNameLower === nameLower) {
-        similarCustomers.push(c)
-        continue
-      }
-      
-      // 이름이 포함되는 경우 (양방향)
-      if (customerNameLower.includes(nameLower) || nameLower.includes(customerNameLower)) {
-        // 이미 추가되지 않은 경우만 추가
-        if (!similarCustomers.find(sc => sc.id === c.id)) {
-          similarCustomers.push(c)
-        }
-        continue
-      }
-      
-      // 이메일이 일치하는 경우
-      if (email && c.email && c.email.toLowerCase() === email.toLowerCase()) {
-        if (!similarCustomers.find(sc => sc.id === c.id)) {
-          similarCustomers.push(c)
-        }
-        continue
-      }
-      
-      // 전화번호가 일치하는 경우
-      if (phone && c.phone && c.phone === phone) {
-        if (!similarCustomers.find(sc => sc.id === c.id)) {
-          similarCustomers.push(c)
-        }
-        continue
-      }
-    }
-    
-    return similarCustomers
-  }, [customers])
+  const findSimilarCustomers = useCallback(
+    (name: string, email?: string, phone?: string): Customer[] =>
+      findSimilarCustomersInList(customers, name, email, phone),
+    [customers]
+  )
   
   const [formData, setFormDataState] = useState<{
     customerId: string
@@ -623,7 +598,21 @@ export default function ReservationForm({
         : 'self'
     })(),
     channelSearch: '',
-    variantKey: (reservation as any)?.variant_key || (rez as any)?.variant_key || 'default',
+    variantKey: (() => {
+      const raw = (reservation as any)?.variant_key ?? rez.variant_key
+      if (
+        typeof (reservation as any)?.id === 'string' &&
+        (reservation as any).id.startsWith('import-')
+      ) {
+        const r = resolveImportChannelVariantKey(
+          raw != null && raw !== '' ? String(raw) : undefined,
+          initialChannelVariantLabelFromImport
+        )
+        const v = (r && r !== '' ? r : undefined) || (raw != null && raw !== '' ? String(raw) : undefined) || 'default'
+        return v
+      }
+      return raw || 'default'
+    })(),
     // 예약 가져오기(import) 시 채널 RN은 이메일에서 추출한 예약번호만. "ID" 단어만 있으면 빈칸
     channelRN: (() => {
       const rn = isImportMode ? (rez as any).channel_rn : (reservation?.channelRN ?? rez.channel_rn)
@@ -695,6 +684,41 @@ export default function ReservationForm({
   const [reservationPricingId, setReservationPricingId] = useState<string | null>(null)
   /** 이메일 가져오기: product_choices 로드·이메일 기반 초이스 매칭까지 끝난 productId (이 값이 맞을 때만 loadPricingInfo 실행) */
   const [importChoicesHydratedProductId, setImportChoicesHydratedProductId] = useState<string | null>(null)
+  /** 채널 버튼/모달에 "Klook - All Inclusive" 형태로 보이기 위해 channel_products variant명 로드 */
+  const [channelProductVariantsForDisplay, setChannelProductVariantsForDisplay] = useState<
+    Array<{ variant_key: string; variant_name_ko?: string | null; variant_name_en?: string | null }>
+  >([])
+
+  /** 채널 모달·동적가격: 시맨틱(all_inclusive) → 실제 DB variant_key(variant_…) */
+  const importPreferredVariantKey = useMemo(() => {
+    if (!isImportMode) return undefined
+    const raw =
+      resolveImportChannelVariantKey(
+        String(initialVariantKeyFromImport ?? '').trim() ||
+          String((reservation as { variant_key?: string })?.variant_key ?? '').trim() ||
+          undefined,
+        initialChannelVariantLabelFromImport
+      )?.trim() ||
+      String(initialVariantKeyFromImport ?? '').trim() ||
+      String((reservation as { variant_key?: string })?.variant_key ?? '').trim() ||
+      undefined
+    if (!raw || raw === 'default') return undefined
+    if (channelProductVariantsForDisplay.length > 0) {
+      const dbKey = mapSemanticVariantToChannelProductKey(
+        channelProductVariantsForDisplay,
+        raw,
+        initialChannelVariantLabelFromImport
+      )
+      if (dbKey) return dbKey
+    }
+    return raw
+  }, [
+    isImportMode,
+    initialVariantKeyFromImport,
+    (reservation as { variant_key?: string })?.variant_key,
+    initialChannelVariantLabelFromImport,
+    channelProductVariantsForDisplay,
+  ])
 
   // savePricingInfo 등에서 항상 최신 formData 참조용 (제출 시 배칭 전 최신값 반영용)
   const formDataRef = useRef(formData)
@@ -729,6 +753,116 @@ export default function ReservationForm({
       `${(initialChoiceOptionNamesFromImport ?? []).join('\u001e')}\u001f${(initialChoiceUndecidedGroupNamesFromImport ?? []).join('\u001e')}`,
     [initialChoiceOptionNamesFromImport, initialChoiceUndecidedGroupNamesFromImport]
   )
+
+  useEffect(() => {
+    const cid = formData.channelId
+    const pid = formData.productId
+    if (!cid || !pid) {
+      setChannelProductVariantsForDisplay([])
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const { data, error } = await supabase
+        .from('channel_products')
+        .select('variant_key, variant_name_ko, variant_name_en')
+        .eq('channel_id', cid)
+        .eq('product_id', pid)
+        .eq('is_active', true)
+        .order('variant_key')
+      if (cancelled) return
+      if (error) {
+        setChannelProductVariantsForDisplay([])
+        return
+      }
+      const rows = (data || []).map(
+        (item: { variant_key?: string; variant_name_ko?: string | null; variant_name_en?: string | null }) => ({
+          variant_key: item.variant_key || 'default',
+          variant_name_ko: item.variant_name_ko ?? null,
+          variant_name_en: item.variant_name_en ?? null,
+        })
+      )
+      setChannelProductVariantsForDisplay(rows)
+
+      // 예약 가져오기: 동적가격 variant_key는 variant_… 실키 — fetch 직후 맞춰야 가격 effect가 시맨틱(all_inclusive)으로 먼저 조회하지 않음
+      if (!cancelled && isImportMode && rows.length > 0) {
+        const rawSemantic =
+          resolveImportChannelVariantKey(
+            String(initialVariantKeyFromImport ?? '').trim() ||
+              String((reservation as { variant_key?: string })?.variant_key ?? '').trim() ||
+              undefined,
+            initialChannelVariantLabelFromImport
+          )?.trim() ||
+          String(initialVariantKeyFromImport ?? '').trim() ||
+          String((reservation as { variant_key?: string })?.variant_key ?? '').trim() ||
+          ''
+        const dbKey = mapSemanticVariantToChannelProductKey(
+          rows,
+          rawSemantic,
+          initialChannelVariantLabelFromImport
+        )
+        if (dbKey) {
+          setFormData((prev) => {
+            const cur = prev.variantKey || ''
+            if (cur === dbKey) return prev
+            const curInRows = rows.some((r) => r.variant_key === cur)
+            const c = canonicalVariantKey(cur)
+            const semanticOnly = c === 'all_inclusive' || c === 'with_exclusions'
+            if (curInRows && !semanticOnly) return prev
+            return { ...prev, variantKey: dbKey }
+          })
+          prevPricingParams.current = null
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    formData.channelId,
+    formData.productId,
+    isImportMode,
+    initialVariantKeyFromImport,
+    initialChannelVariantLabelFromImport,
+    (reservation as { variant_key?: string })?.variant_key,
+    setFormData,
+  ])
+
+  const selectedChannelDisplayTitle = useMemo(() => {
+    if (!formData.channelId) return ''
+    const ch = channels.find((c: { id: string }) => c.id === formData.channelId)
+    if (!ch) return formData.channelId
+    const vk = formData.variantKey || 'default'
+    const prettyFromKey = (key: string) =>
+      key
+        .split('_')
+        .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : ''))
+        .join(' ')
+    const variantKeys = channelProductVariantsForDisplay.map((v) => v.variant_key)
+    const vkRow = channelProductsIncludeVariantKey(variantKeys, vk) ?? vk
+    const pv = channelProductVariantsForDisplay.find((v) => v.variant_key === vkRow)
+    const dbLabel = (pv?.variant_name_ko || pv?.variant_name_en)?.trim()
+    if (dbLabel) return `${ch.name} - ${dbLabel}`
+    // variant 목록 로드 전에는 import 라벨만 쓰면 실제 variantKey(with_exclusions)와 어긋나 "All Inclusive" 버튼 + 모달 "With Exclusions" 불일치가 남
+    if (channelProductVariantsForDisplay.length === 0 && vk && vk !== 'default') {
+      return `${ch.name} - ${prettyFromKey(vk)}`
+    }
+    if (isImportMode && initialChannelVariantLabelFromImport?.trim()) {
+      return `${ch.name} - ${initialChannelVariantLabelFromImport.trim()}`
+    }
+    if (vk && vk !== 'default') {
+      return `${ch.name} - ${prettyFromKey(vk)}`
+    }
+    return ch.name
+  }, [
+    formData.channelId,
+    formData.variantKey,
+    channelProductVariantsForDisplay,
+    channels,
+    isImportMode,
+    initialChannelVariantLabelFromImport,
+  ])
+
   // 데이터베이스에서 불러온 commission_amount 값을 추적 (자동 계산에 의해 덮어쓰이지 않도록)
   const loadedCommissionAmount = useRef<number | null>(null)
   
@@ -2265,7 +2399,65 @@ export default function ReservationForm({
         if (data?.length) return { data, error: null }
         return { data: null, error: null }
       }
-      
+
+      /** 예약 가져오기 등: UI·파서 라벨(예: Klook - All Inclusive)과 시맨틱 키 → channel_products.variant_key로 해석. 가격 조회가 채널 로드보다 먼저 돌아도 동적가격 행이 맞게 조회됨 */
+      const resolveVariantKeyForDynamicPricing = async (): Promise<string> => {
+        const vk =
+          (formDataRef.current.variantKey && String(formDataRef.current.variantKey).trim()) ||
+          (formData.variantKey && String(formData.variantKey).trim()) ||
+          'default'
+        const importLike =
+          isImportMode ||
+          (reservationId && String(reservationId).startsWith('import-')) ||
+          !!(initialChannelVariantLabelFromImport && String(initialChannelVariantLabelFromImport).trim()) ||
+          !!(initialVariantKeyFromImport && String(initialVariantKeyFromImport).trim())
+        if (!importLike) return vk || 'default'
+
+        const { data: cpData, error: cpErr } = await (supabase as any)
+          .from('channel_products')
+          .select('variant_key, variant_name_ko, variant_name_en')
+          .eq('channel_id', channelId)
+          .eq('product_id', productId)
+          .eq('is_active', true)
+          .order('variant_key')
+        if (cpErr || !cpData?.length) return vk || 'default'
+        const rows = (cpData as Array<{ variant_key?: string; variant_name_ko?: string | null; variant_name_en?: string | null }>).map(
+          (item) => ({
+            variant_key: item.variant_key || 'default',
+            variant_name_ko: item.variant_name_ko ?? null,
+            variant_name_en: item.variant_name_en ?? null,
+          })
+        )
+        const rawSemantic =
+          resolveImportChannelVariantKey(
+            String(initialVariantKeyFromImport ?? '').trim() ||
+              (vk && vk !== 'default' ? vk : undefined) ||
+              undefined,
+            initialChannelVariantLabelFromImport
+          )?.trim() || vk
+        const dbKey = mapSemanticVariantToChannelProductKey(rows, rawSemantic, initialChannelVariantLabelFromImport)
+        const resolved = (dbKey || vk || 'default').trim() || 'default'
+        if (resolved !== vk) {
+          console.log('ReservationForm: loadPricingInfo variant_key 재해석 (라벨/시맨틱 → DB)', {
+            vk,
+            rawSemantic,
+            resolved,
+            label: initialChannelVariantLabelFromImport,
+          })
+        }
+        return resolved
+      }
+      const variantKeyForDp = await resolveVariantKeyForDynamicPricing()
+      if (
+        (isImportMode || (reservationId && String(reservationId).startsWith('import-'))) &&
+        variantKeyForDp &&
+        variantKeyForDp !== (formDataRef.current.variantKey || 'default')
+      ) {
+        setFormData((prev) =>
+          prev.variantKey === variantKeyForDp ? prev : { ...prev, variantKey: variantKeyForDp }
+        )
+      }
+
       // 1. 먼저 reservation_pricing에서 기존 가격 정보 확인 (편집 모드인 경우)
       // 단, 폼에서 채널을 변경한 경우에는 기존 가격(이전 채널 기준)을 쓰지 않고 dynamic_pricing에서 새 채널 가격 로드
       const reservationChannelId = (reservation as any)?.channelId ?? (reservation as any)?.channel_id ?? (rez as any)?.channel_id ?? null
@@ -2344,17 +2536,16 @@ export default function ReservationForm({
 
           // 저장된 상품 단가가 없을 때만 dynamic_pricing/choices_pricing으로 채움 (있으면 덮어쓰지 않음)
           if (productId && tourDateNormalized && channelId && !hasSavedProductPrices) {
-            const variantKey = formData.variantKey || 'default'
             let dpRows: any[] | null = null
-            let rCh = await queryDynamicPricingByVariant(DP_SELECT_CHOICES, variantKey)
+            let rCh = await queryDynamicPricingByVariant(DP_SELECT_CHOICES, variantKeyForDp)
             dpRows = rCh.data
             if (!dpRows?.length) {
-              if (variantKey !== 'default') {
+              if (variantKeyForDp !== 'default') {
                 rCh = await queryDynamicPricingByVariant(DP_SELECT_CHOICES, 'default')
                 dpRows = rCh.data
               }
             }
-            if (!dpRows?.length) {
+            if (!dpRows?.length && variantKeyForDp === 'default') {
               const rAny = await queryDynamicPricingAnyVariant(DP_SELECT_CHOICES)
               dpRows = rAny.data
             }
@@ -2563,22 +2754,29 @@ export default function ReservationForm({
       let commissionPercent = 0
       let notIncludedPrice = 0
 
-      console.log('Dynamic pricing 조회 시작:', { productId, tourDate, tourDateNormalized, channelId })
-        
-        const variantKey = formData.variantKey || 'default'
+      console.log('Dynamic pricing 조회 시작:', {
+        productId,
+        tourDate,
+        tourDateNormalized,
+        channelId,
+        variantKey: variantKeyForDp,
+        variantKeyForm: formDataRef.current.variantKey || formData.variantKey || 'default',
+      })
+        // variantKeyForDp: channel_products로 라벨·시맨틱 해석 후 조회 (순서와 무관)
         let pricingData: any[] | null = null
         let pricingError: any = null
-        let dpRes = await queryDynamicPricingByVariant(DP_SELECT_FULL, variantKey)
+        let dpRes = await queryDynamicPricingByVariant(DP_SELECT_FULL, variantKeyForDp)
         pricingData = dpRes.data
         pricingError = dpRes.error
         if ((!pricingData || pricingData.length === 0) && !pricingError) {
-          if (variantKey !== 'default') {
+          if (variantKeyForDp !== 'default') {
             dpRes = await queryDynamicPricingByVariant(DP_SELECT_FULL, 'default')
             if (dpRes.error) pricingError = dpRes.error
             else if (dpRes.data?.length) pricingData = dpRes.data
           }
         }
-        if ((!pricingData || pricingData.length === 0) && !pricingError) {
+        // variant_key를 특정했는데(all_inclusive 등) 해당 행이 없을 때 임의 variant로 채우면 With Exclusions 가격이 들어가는 버그
+        if ((!pricingData || pricingData.length === 0) && !pricingError && variantKeyForDp === 'default') {
           dpRes = await queryDynamicPricingAnyVariant(DP_SELECT_FULL)
           if (dpRes.error) pricingError = dpRes.error
           else if (dpRes.data?.length) pricingData = dpRes.data
@@ -3194,7 +3392,7 @@ export default function ReservationForm({
         })
       })
     }
-      }, [channels, reservationOptionsTotalPrice, loadProductChoices, formData.selectedChoices, formData.variantKey, formData.productChoices, reservation?.id, (reservation as any)?.channel_id])
+      }, [channels, reservationOptionsTotalPrice, loadProductChoices, formData.selectedChoices, formData.variantKey, formData.productChoices, reservation?.id, (reservation as any)?.channel_id, isImportMode, initialVariantKeyFromImport, initialChannelVariantLabelFromImport])
 
   // 가격 계산 함수들
   const calculateProductPriceTotal = useCallback(() => {
@@ -3595,6 +3793,25 @@ export default function ReservationForm({
       }
     }
   }, [formData.productId, formData.productChoices, formData.selectedChoices, loadProductChoices, reservation?.id, isImportMode])
+
+  // 예약 가져오기: resolveImportChannelVariantKey 반영 후 variantKey 동기화 (가격 effect가 같은 틱에서 올바른 variant 사용)
+  useLayoutEffect(() => {
+    if (!isImportMode) return
+    const raw =
+      (initialVariantKeyFromImport && String(initialVariantKeyFromImport).trim()) ||
+      (String((reservation as { variant_key?: string })?.variant_key ?? '').trim()) ||
+      ''
+    const vk = (
+      resolveImportChannelVariantKey(raw || undefined, initialChannelVariantLabelFromImport) ||
+      raw ||
+      ''
+    ).trim()
+    if (!vk || vk === 'default') return
+    const cur = formDataRef.current.variantKey || 'default'
+    if (cur === vk) return
+    setFormData((prev) => ({ ...prev, variantKey: vk }))
+    prevPricingParams.current = null
+  }, [isImportMode, initialVariantKeyFromImport, (reservation as { variant_key?: string })?.variant_key, initialChannelVariantLabelFromImport, setFormData])
 
   // 예약 가져오기(import-): 상품은 그대로인데 재파싱 등으로 initialChoiceOptionNames만 채워진 경우 — 초이스 다시 로드
   useEffect(() => {
@@ -4913,10 +5130,12 @@ export default function ReservationForm({
                         <button
                           type="button"
                           onClick={() => setShowChannelModal(true)}
+                          title={formData.channelId ? selectedChannelDisplayTitle : undefined}
                           className="w-full px-3 py-1.5 text-xs font-medium bg-sky-100 text-sky-800 border border-sky-200 rounded-lg hover:bg-sky-200 text-left truncate"
                         >
                           {formData.channelId
-                            ? (channels.find((c: { id: string }) => c.id === formData.channelId)?.name ?? formData.channelId)
+                            ? selectedChannelDisplayTitle ||
+                              (channels.find((c: { id: string }) => c.id === formData.channelId)?.name ?? formData.channelId)
                             : t('form.openChannelSelect')}
                         </button>
                       </div>
@@ -5117,6 +5336,12 @@ export default function ReservationForm({
                 t={t}
                 layout="modal"
                 onAccordionToggle={setChannelAccordionExpanded}
+                selectedChannelTitleOverride={
+                  formData.channelId ? selectedChannelDisplayTitle : undefined
+                }
+                {...(isImportMode && importPreferredVariantKey
+                  ? { importPreferredVariantKey }
+                  : {})}
               />
             </div>
             <div className="p-2 border-t border-gray-200 flex justify-end flex-shrink-0">
@@ -5160,8 +5385,20 @@ export default function ReservationForm({
               </p>
               <div className="text-sm space-y-1">
                 <div><strong>이름:</strong> {pendingCustomerData?.name}</div>
-                {pendingCustomerData?.email && <div><strong>이메일:</strong> {pendingCustomerData.email}</div>}
-                {pendingCustomerData?.phone && <div><strong>전화번호:</strong> {pendingCustomerData.phone}</div>}
+                <div><strong>이메일:</strong> {pendingCustomerData?.email?.trim() || '—'}</div>
+                <div><strong>전화번호:</strong> {pendingCustomerData?.phone?.trim() || '—'}</div>
+                <div>
+                  <strong>언어:</strong>{' '}
+                  {LANGUAGE_OPTIONS.find((o) => o.value === pendingCustomerData?.language)?.label ||
+                    pendingCustomerData?.language ||
+                    '—'}
+                </div>
+                <div>
+                  <strong>채널:</strong>{' '}
+                  {pendingCustomerData?.channel_id
+                    ? channels.find((ch) => ch.id === pendingCustomerData.channel_id)?.name || '—'
+                    : '—'}
+                </div>
               </div>
             </div>
 
@@ -5171,7 +5408,14 @@ export default function ReservationForm({
               </p>
               
               <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-200 rounded-lg p-2">
-                {similarCustomers.map((similarCustomer) => (
+                {similarCustomers.map((similarCustomer) => {
+                  const langLabel =
+                    LANGUAGE_OPTIONS.find((o) => o.value === similarCustomer.language)?.label ||
+                    (similarCustomer.language?.trim() ? similarCustomer.language : null) ||
+                    '—'
+                  const channelLabel =
+                    channels.find((ch) => ch.id === similarCustomer.channel_id)?.name || '—'
+                  return (
                   <div
                     key={similarCustomer.id}
                     className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
@@ -5190,35 +5434,54 @@ export default function ReservationForm({
                       }
                     }}
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
                         <div className="font-medium text-gray-900 mb-1">
-                          {similarCustomer.name}
+                          {similarCustomer.name?.trim() || '—'}
                         </div>
-                        <div className="text-xs text-gray-400 font-mono mb-1">
+                        <div className="text-xs text-gray-400 font-mono mb-2">
                           ID: {similarCustomer.id}
                         </div>
-                        {similarCustomer.email && (
-                          <div className="text-sm text-gray-600 flex items-center space-x-1">
-                            <Mail className="h-3 w-3" />
-                            <span>{similarCustomer.email}</span>
+                        <div className="text-sm text-gray-600 space-y-1.5">
+                          <div className="flex items-start gap-2">
+                            <Mail className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-gray-400" />
+                            <span>
+                              <span className="text-gray-500">이메일 </span>
+                              {similarCustomer.email?.trim() || '—'}
+                            </span>
                           </div>
-                        )}
-                        {similarCustomer.phone && (
-                          <div className="text-sm text-gray-600 flex items-center space-x-1 mt-1">
-                            <Phone className="h-3 w-3" />
-                            <span>{similarCustomer.phone}</span>
+                          <div className="flex items-start gap-2">
+                            <Phone className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-gray-400" />
+                            <span>
+                              <span className="text-gray-500">전화번호 </span>
+                              {similarCustomer.phone?.trim() || '—'}
+                            </span>
                           </div>
-                        )}
+                          <div className="flex items-start gap-2">
+                            <Globe className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-gray-400" />
+                            <span>
+                              <span className="text-gray-500">언어 </span>
+                              {langLabel}
+                            </span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <Store className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-gray-400" />
+                            <span>
+                              <span className="text-gray-500">채널 </span>
+                              {channelLabel}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="ml-4">
+                      <div className="flex-shrink-0">
                         <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
                           선택
                         </span>
                       </div>
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
 

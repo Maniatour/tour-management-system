@@ -22,9 +22,11 @@ import {
   Receipt,
   X,
   Upload,
-  XCircle
+  XCircle,
+  Store
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { findSimilarCustomersInList } from '@/lib/customerSimilarity'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import InvoiceModal from '@/components/customer/InvoiceModal'
@@ -2468,6 +2470,20 @@ function FileUploadInput({
   )
 }
 
+/** 비슷한 고객 모달에서 언어 코드 → 표시명 */
+const CUSTOMER_LANG_LABELS: { value: string; label: string }[] = [
+  { value: 'KR', label: '한국어' },
+  { value: 'EN', label: 'English' },
+  { value: 'JA', label: '日本語' },
+  { value: 'ZH', label: '中文' },
+  { value: 'ES', label: 'Español' },
+  { value: 'FR', label: 'Français' },
+  { value: 'DE', label: 'Deutsch' },
+  { value: 'IT', label: 'Italiano' },
+  { value: 'PT', label: 'Português' },
+  { value: 'RU', label: 'Русский' },
+]
+
 // 고객 폼 컴포넌트
 function CustomerForm({ 
   customer, 
@@ -2675,50 +2691,11 @@ function CustomerForm({
     setSelectedChannelType(channelType)
   }, [defaultFormData, channels, determineChannelType])
 
-  // 비슷한 이름을 찾는 함수
-  const findSimilarCustomers = useCallback((name: string, email?: string, phone?: string): Customer[] => {
-    if (!name.trim()) return []
-    
-    const nameLower = name.toLowerCase().trim()
-    const similarCustomers: Customer[] = []
-    
-    for (const c of customers) {
-      const customerNameLower = c.name.toLowerCase().trim()
-      
-      // 정확히 일치하는 경우
-      if (customerNameLower === nameLower) {
-        similarCustomers.push(c)
-        continue
-      }
-      
-      // 이름이 포함되는 경우 (양방향)
-      if (customerNameLower.includes(nameLower) || nameLower.includes(customerNameLower)) {
-        // 이미 추가되지 않은 경우만 추가
-        if (!similarCustomers.find(sc => sc.id === c.id)) {
-          similarCustomers.push(c)
-        }
-        continue
-      }
-      
-      // 이메일이 일치하는 경우
-      if (email && c.email && c.email.toLowerCase() === email.toLowerCase()) {
-        if (!similarCustomers.find(sc => sc.id === c.id)) {
-          similarCustomers.push(c)
-        }
-        continue
-      }
-      
-      // 전화번호가 일치하는 경우
-      if (phone && c.phone && c.phone === phone) {
-        if (!similarCustomers.find(sc => sc.id === c.id)) {
-          similarCustomers.push(c)
-        }
-        continue
-      }
-    }
-    
-    return similarCustomers
-  }, [customers])
+  const findSimilarCustomers = useCallback(
+    (name: string, email?: string, phone?: string): Customer[] =>
+      findSimilarCustomersInList(customers, name, email, phone),
+    [customers]
+  )
 
   // 중복 고객 확인 모달 상태
   const [showDuplicateModal, setShowDuplicateModal] = useState(false)
@@ -3224,8 +3201,20 @@ function CustomerForm({
               </p>
               <div className="text-sm space-y-1">
                 <div><strong>이름:</strong> {pendingFormData?.name}</div>
-                {pendingFormData?.email && <div><strong>이메일:</strong> {pendingFormData.email}</div>}
-                {pendingFormData?.phone && <div><strong>전화번호:</strong> {pendingFormData.phone}</div>}
+                <div><strong>이메일:</strong> {pendingFormData?.email?.trim() || '—'}</div>
+                <div><strong>전화번호:</strong> {pendingFormData?.phone?.trim() || '—'}</div>
+                <div>
+                  <strong>언어:</strong>{' '}
+                  {CUSTOMER_LANG_LABELS.find((o) => o.value === pendingFormData?.language)?.label ||
+                    pendingFormData?.language ||
+                    '—'}
+                </div>
+                <div>
+                  <strong>채널:</strong>{' '}
+                  {pendingFormData?.channel_id
+                    ? channels.find((ch) => ch.id === pendingFormData.channel_id)?.name || '—'
+                    : '—'}
+                </div>
               </div>
             </div>
 
@@ -3235,7 +3224,14 @@ function CustomerForm({
               </p>
               
               <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-200 rounded-lg p-2">
-                {similarCustomers.map((similarCustomer) => (
+                {similarCustomers.map((similarCustomer) => {
+                  const langLabel =
+                    CUSTOMER_LANG_LABELS.find((o) => o.value === similarCustomer.language)?.label ||
+                    (similarCustomer.language?.trim() ? similarCustomer.language : null) ||
+                    '—'
+                  const channelLabel =
+                    channels.find((ch) => ch.id === similarCustomer.channel_id)?.name || '—'
+                  return (
                   <div
                     key={similarCustomer.id}
                     className="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
@@ -3246,35 +3242,54 @@ function CustomerForm({
                       setPendingFormData(null)
                     }}
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
                         <div className="font-medium text-gray-900 mb-1">
-                          {similarCustomer.name}
+                          {similarCustomer.name?.trim() || '—'}
                         </div>
-                        <div className="text-xs text-gray-400 font-mono mb-1">
+                        <div className="text-xs text-gray-400 font-mono mb-2">
                           ID: {similarCustomer.id}
                         </div>
-                        {similarCustomer.email && (
-                          <div className="text-sm text-gray-600 flex items-center space-x-1">
-                            <Mail className="h-3 w-3" />
-                            <span>{similarCustomer.email}</span>
+                        <div className="text-sm text-gray-600 space-y-1.5">
+                          <div className="flex items-start gap-2">
+                            <Mail className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-gray-400" />
+                            <span>
+                              <span className="text-gray-500">이메일 </span>
+                              {similarCustomer.email?.trim() || '—'}
+                            </span>
                           </div>
-                        )}
-                        {similarCustomer.phone && (
-                          <div className="text-sm text-gray-600 flex items-center space-x-1 mt-1">
-                            <Phone className="h-3 w-3" />
-                            <span>{similarCustomer.phone}</span>
+                          <div className="flex items-start gap-2">
+                            <Phone className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-gray-400" />
+                            <span>
+                              <span className="text-gray-500">전화번호 </span>
+                              {similarCustomer.phone?.trim() || '—'}
+                            </span>
                           </div>
-                        )}
+                          <div className="flex items-start gap-2">
+                            <Globe className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-gray-400" />
+                            <span>
+                              <span className="text-gray-500">언어 </span>
+                              {langLabel}
+                            </span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <Store className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-gray-400" />
+                            <span>
+                              <span className="text-gray-500">채널 </span>
+                              {channelLabel}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="ml-4">
+                      <div className="flex-shrink-0">
                         <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
                           선택
                         </span>
                       </div>
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
 

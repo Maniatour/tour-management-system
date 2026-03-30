@@ -34,6 +34,23 @@ type TeamMember = {
   phone?: string | null
 }
 
+/** 픽업 호텔 미지정 예약을 한 그룹으로 묶기 위한 키 (DB id와 충돌하지 않도록 함) */
+const GUIDE_UNASSIGNED_PICKUP_HOTEL_KEY = '__guide_pickup_hotel_unassigned__'
+
+function groupReservationsByPickupHotel(reservations: ReservationRow[]) {
+  return reservations.reduce(
+    (acc, reservation) => {
+      const raw = reservation.pickup_hotel
+      const hotelId =
+        raw != null && String(raw).trim() !== '' ? raw : GUIDE_UNASSIGNED_PICKUP_HOTEL_KEY
+      if (!acc[hotelId]) acc[hotelId] = []
+      acc[hotelId].push(reservation)
+      return acc
+    },
+    {} as Record<string, ReservationRow[]>
+  )
+}
+
 export default function GuideTourDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -79,6 +96,8 @@ export default function GuideTourDetailPage() {
   // 모바일 최적화를 위한 상태
   const [activeTab, setActiveTab] = useState<'overview' | 'schedule' | 'bookings' | 'photos' | 'chat' | 'expenses' | 'report'>('overview')
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['tour-info', 'pickup-schedule', 'chat']))
+  /** 가이드 모바일(lg 미만): 부킹·사진·정산·리포트 섹션은 항상 펼침 */
+  const [isGuideMobileLayout, setIsGuideMobileLayout] = useState(false)
   const [isReportModalOpen, setIsReportModalOpen] = useState(false)
   const [calculatedTourTimes, setCalculatedTourTimes] = useState<{
     startTime: string;
@@ -369,6 +388,14 @@ export default function GuideTourDetailPage() {
     loadTourData()
   }, [loadTourData])
 
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)')
+    const sync = () => setIsGuideMobileLayout(mq.matches)
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
+
   // 고객 정보 조회 함수
   const getCustomerInfo = (customerId: string) => {
     return customers.find(c => c.id === customerId)
@@ -611,37 +638,51 @@ export default function GuideTourDetailPage() {
     icon: Icon, 
     children,
     headerButton,
+    alwaysExpanded = false,
   }: { 
     id: string
     title: string
     icon: React.ComponentType<{ className?: string }>
     children: React.ReactNode
     headerButton?: React.ReactNode
+    /** 모바일 가이드 전용: 접기 없이 항상 본문 표시 */
+    alwaysExpanded?: boolean
   }) => {
-    const isExpanded = expandedSections.has(id)
+    const isExpanded = alwaysExpanded || expandedSections.has(id)
+    const handleToggle = () => {
+      if (alwaysExpanded) return
+      toggleSection(id)
+    }
     
     return (
       <div className="bg-white rounded-lg shadow mb-3 sm:mb-4">
         <div className="flex items-center justify-between p-3 sm:p-4">
           <button
-            onClick={() => toggleSection(id)}
-            className="flex items-center flex-1 text-left hover:bg-gray-50 transition-colors rounded -ml-3 sm:-ml-4 px-3 sm:px-4 py-2 -my-2"
+            type="button"
+            onClick={handleToggle}
+            disabled={alwaysExpanded}
+            className={`flex items-center flex-1 text-left rounded -ml-3 sm:-ml-4 px-3 sm:px-4 py-2 -my-2 ${
+              alwaysExpanded ? 'cursor-default' : 'hover:bg-gray-50 transition-colors'
+            }`}
           >
             <Icon className="w-5 h-5 text-gray-400 mr-3" />
             <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
           </button>
           <div className="flex items-center space-x-2">
             {headerButton}
-            <button
-              onClick={() => toggleSection(id)}
-              className="p-1 hover:bg-gray-50 rounded transition-colors"
-            >
-              {isExpanded ? (
-                <ChevronUp className="w-5 h-5 text-gray-400" />
-              ) : (
-                <ChevronDown className="w-5 h-5 text-gray-400" />
-              )}
-            </button>
+            {!alwaysExpanded && (
+              <button
+                type="button"
+                onClick={handleToggle}
+                className="p-1 hover:bg-gray-50 rounded transition-colors"
+              >
+                {isExpanded ? (
+                  <ChevronUp className="w-5 h-5 text-gray-400" />
+                ) : (
+                  <ChevronDown className="w-5 h-5 text-gray-400" />
+                )}
+              </button>
+            )}
           </div>
         </div>
         {isExpanded && (
@@ -1074,19 +1115,7 @@ export default function GuideTourDetailPage() {
             title={t('pickupSchedule')} 
             icon={Clock}
             headerButton={(() => {
-              // 픽업 호텔별로 그룹화 및 정렬
-              const groupedByHotel = reservations
-                .filter(reservation => reservation.pickup_hotel)
-                .reduce((acc, reservation) => {
-                  const hotelId = reservation.pickup_hotel
-                  if (hotelId && !acc[hotelId]) {
-                    acc[hotelId] = []
-                  }
-                  if (hotelId) {
-                    acc[hotelId].push(reservation)
-                  }
-                  return acc
-                }, {} as Record<string, typeof reservations>)
+              const groupedByHotel = groupReservationsByPickupHotel(reservations)
 
               const getActualPickupDateTime = (pickupTime: string | null) => {
                 if (!pickupTime) return new Date(tour.tour_date + 'T00:00:00').getTime()
@@ -1109,6 +1138,7 @@ export default function GuideTourDetailPage() {
 
               const hotelLocations: string[] = []
               sortedHotelEntries.forEach(([hotelId]) => {
+                if (hotelId === GUIDE_UNASSIGNED_PICKUP_HOTEL_KEY) return
                 const hotel = pickupHotels.find(h => h.id === hotelId)
                 if (hotel) {
                   if (hotel.pin) {
@@ -1132,6 +1162,7 @@ export default function GuideTourDetailPage() {
 
                 return (
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation()
                       window.open(url, '_blank')
@@ -1148,19 +1179,7 @@ export default function GuideTourDetailPage() {
           >
             <div className="space-y-4">
               {(() => {
-                // 픽업 호텔별로 그룹화
-                const groupedByHotel = reservations
-                  .filter(reservation => reservation.pickup_hotel)
-                  .reduce((acc, reservation) => {
-                    const hotelId = reservation.pickup_hotel
-                    if (hotelId && !acc[hotelId]) {
-                      acc[hotelId] = []
-                    }
-                    if (hotelId) {
-                      acc[hotelId].push(reservation)
-                    }
-                    return acc
-                  }, {} as Record<string, typeof reservations>)
+                const groupedByHotel = groupReservationsByPickupHotel(reservations)
 
                 // 호텔 그룹을 실제 픽업 날짜+시간으로 정렬 (21시 이후는 전날로 계산)
                 const getActualPickupDateTime = (pickupTime: string | null) => {
@@ -1186,6 +1205,7 @@ export default function GuideTourDetailPage() {
                 // 모든 픽업 호텔을 경유지로 하는 구글맵 URL 생성
                 const hotelLocations: string[] = []
                 sortedHotelEntries.forEach(([hotelId]) => {
+                  if (hotelId === GUIDE_UNASSIGNED_PICKUP_HOTEL_KEY) return
                   const hotel = pickupHotels.find(h => h.id === hotelId)
                   if (hotel) {
                     // pin(좌표)이 있으면 우선 사용, 없으면 address 사용
@@ -1199,6 +1219,7 @@ export default function GuideTourDetailPage() {
 
                 return sortedHotelEntries.map(([hotelId, hotelReservations]) => {
                   const hotel = pickupHotels.find(h => h.id === hotelId)
+                  const isUnassignedHotel = hotelId === GUIDE_UNASSIGNED_PICKUP_HOTEL_KEY
                   const sortedReservations = hotelReservations.sort((a, b) => {
                     return getActualPickupDateTime(a.pickup_time) - getActualPickupDateTime(b.pickup_time)
                   })
@@ -1235,16 +1256,18 @@ export default function GuideTourDetailPage() {
                         {/* 2줄: 호텔 정보 */}
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-2">
-                            <Hotel className="w-4 h-4 text-blue-600" />
-                            <span className="font-semibold text-gray-900">
-                              {hotel?.hotel || t('noHotelInfo')}
+                            <Hotel className={`w-4 h-4 ${isUnassignedHotel ? 'text-amber-600' : 'text-blue-600'}`} />
+                            <span className={`font-semibold ${isUnassignedHotel ? 'text-amber-900' : 'text-gray-900'}`}>
+                              {isUnassignedHotel ? t('pickupHotelUnassigned') : (hotel?.hotel || t('noHotelInfo'))}
                             </span>
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              isUnassignedHotel ? 'bg-amber-100 text-amber-900' : 'bg-blue-100 text-blue-800'
+                            }`}>
                               <Users className="w-3 h-3 mr-1" />
                               {sortedReservations.reduce((sum, r) => sum + (r.total_people || 0), 0)}
                             </span>
                           </div>
-                          {(hotel?.link || (hotel as PickupHotel & { pin?: string })?.pin) && (
+                          {!isUnassignedHotel && (hotel?.link || (hotel as PickupHotel & { pin?: string })?.pin) && (
                             <a 
                               href={hotel?.link || `https://www.google.com/maps?q=${(hotel as PickupHotel & { pin?: string })?.pin}`}
                               target="_blank"
@@ -1258,7 +1281,7 @@ export default function GuideTourDetailPage() {
                         </div>
 
                         {/* 3줄: 픽업 위치 정보 */}
-                        {hotel?.pick_up_location && (
+                        {!isUnassignedHotel && hotel?.pick_up_location && (
                           <div className="flex items-center space-x-2">
                             <MapPin className="w-4 h-4 text-red-500" />
                             <span className="text-xs text-gray-600">{hotel.pick_up_location}</span>
@@ -1395,7 +1418,7 @@ export default function GuideTourDetailPage() {
                   )
                 })
               })()}
-              {reservations.filter(reservation => reservation.pickup_hotel).length === 0 && (
+              {reservations.length === 0 && (
                 <p className="text-gray-500 text-center py-4">{t('noPickupSchedule')}</p>
               )}
             </div>
@@ -1434,7 +1457,7 @@ export default function GuideTourDetailPage() {
 
         {/* 부킹 관리 - 부킹 탭에만 표시 */}
         <div className={`${activeTab === 'bookings' ? 'block' : 'hidden'} lg:block`}>
-        <AccordionSection id="bookings" title={t('bookingManagement')} icon={Hotel}>
+        <AccordionSection id="bookings" title={t('bookingManagement')} icon={Hotel} alwaysExpanded={isGuideMobileLayout}>
           {/* 호텔 부킹 */}
           {tourHotelBookings.length > 0 && (
             <div className="mb-6">
@@ -1525,7 +1548,7 @@ export default function GuideTourDetailPage() {
 
         {/* 투어 사진 - 사진 탭에만 표시 */}
         <div className={`${activeTab === 'photos' ? 'block' : 'hidden'} lg:block`}>
-          <AccordionSection id="photos" title={t('tourPhotos')} icon={Camera}>
+          <AccordionSection id="photos" title={t('tourPhotos')} icon={Camera} alwaysExpanded={isGuideMobileLayout}>
           <TourPhotoUpload tourId={tour.id} uploadedBy={currentUserEmail || ''} />
           </AccordionSection>
         </div>
@@ -1552,14 +1575,14 @@ export default function GuideTourDetailPage() {
 
         {/* 정산 관리 - 정산 탭에만 표시 */}
         <div className={`${activeTab === 'expenses' ? 'block' : 'hidden'} lg:block`}>
-          <AccordionSection id="expenses" title={t('expenseManagement')} icon={Calculator}>
+          <AccordionSection id="expenses" title={t('expenseManagement')} icon={Calculator} alwaysExpanded={isGuideMobileLayout}>
           <TourExpenseManager tourId={tour.id} tourDate={tour.tour_date} submittedBy={currentUserEmail || ''} reservationIds={tour.reservation_ids || []} />
           </AccordionSection>
         </div>
 
         {/* 투어 리포트 - 리포트 탭에만 표시 */}
         <div className={`${activeTab === 'report' ? 'block' : 'hidden'} lg:block`}>
-          <AccordionSection id="report" title={t('tourReport')} icon={FileText}>
+          <AccordionSection id="report" title={t('tourReport')} icon={FileText} alwaysExpanded={isGuideMobileLayout}>
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-medium text-gray-900">{t('reportManagement')}</h3>

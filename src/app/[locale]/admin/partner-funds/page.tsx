@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import PartnerFundsManagement from '@/components/PartnerFundsManagement'
+import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import { Users, Lock } from 'lucide-react'
 
 export default function PartnerFundsPage() {
@@ -61,9 +62,23 @@ export default function PartnerFundsPage() {
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-2">
           <Users className="w-8 h-8 text-blue-600" />
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">파트너 자금 관리</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex flex-wrap items-center gap-x-1">
+            <AccountingTerm termKey="파트너">파트너</AccountingTerm>{' '}
+            <AccountingTerm termKey="파트너자금">자금</AccountingTerm> 관리
+          </h1>
         </div>
-        <p className="text-gray-600">파트너 간 자금 입출금 및 대출 관리를 합니다.</p>
+        <p className="text-gray-600">
+          <AccountingTerm termKey="파트너">파트너</AccountingTerm> 간{' '}
+          <AccountingTerm termKey="파트너자금">자금</AccountingTerm> 입출금 및 대출 관리를 합니다. 종합 리포트 ›{' '}
+          <strong>
+            <AccountingTerm termKey="명세대조">명세 대조</AccountingTerm>
+          </strong>
+          에서 개인 사용으로 표시하고 <AccountingTerm termKey="파트너">파트너</AccountingTerm>를 지정한 항목은 여기로{' '}
+          <strong>
+            <AccountingTerm termKey="출금">출금</AccountingTerm>
+          </strong>
+          이 자동 반영됩니다(회사·투어·예약 지출에서 개인+파트너 지정 시 동일).
+        </p>
       </div>
 
       {/* 메인 컨텐츠 */}

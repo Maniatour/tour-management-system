@@ -551,6 +551,12 @@ const GYG_BODY_PRODUCT_MAP: Array<{ pattern: RegExp | string; product_id: string
   { pattern: /Zion\s*Bryce\s*Grand\s*Canyon|Las\s*Vegas\s*>\s*Zion\s*Bryce|Zion\s*Bryce\s*&?\s*Antelope/i, product_id: 'MNGC1N' },
   // GYG 본문이 "Las Vegas: Grand Canyon Sunrise, ..." 처럼 콜론 구분인 경우가 많음 (화살표 > 외에 동일 의미)
   { pattern: /Grand\s*Canyon\s*Sunrise|Las\s*Vegas\s*[:>]?\s*Grand\s*Canyon\s*Sunrise/i, product_id: 'MDGCSUNRISE' },
+  /** "Las Vegas: Grand Canyon, Antelope, Horseshoe, Lake Powell" + Shared Tour for Antelope X (One Day Grand Circle) → 그랜드서클 당일 */
+  {
+    pattern:
+      /Grand\s*Canyon[\s\S]{0,300}?Antelope[\s\S]{0,300}?Horseshoe[\s\S]{0,300}?Lake\s*Powell/i,
+    product_id: 'MDGC1D',
+  },
 ]
 
 /** GetYourGuide 예약 메일 전용 추출 (라벨 기반) */
@@ -562,14 +568,23 @@ function extractGetYourGuide(
   const out: Partial<ExtractedReservationData> = {}
   if (!text || text.length < 10) return out
 
-  // 예약 접수 이메일: 발신 GetYourGuide + 제목 "Booking -"로 시작
+  // 예약 접수 이메일: 발신 GetYourGuide + 제목 "Booking - …" 또는 "Urgent : New Booking received - …"
   const fromGyG = (sourceEmail || '').toLowerCase().includes('getyourguide')
-  const subjectBooking = (subject || '').trimStart().toLowerCase().startsWith('booking -')
-  if (fromGyG && subjectBooking) out.is_booking_confirmed = true
+  const subTrim = (subject || '').trimStart()
+  const subjectBooking = subTrim.toLowerCase().startsWith('booking -')
+  const subjectUrgentNew = /^urgent\s*:\s*new\s*booking\s*received\s*-/i.test(subTrim)
+  if (fromGyG && (subjectBooking || subjectUrgentNew)) out.is_booking_confirmed = true
 
   // 제목 "Booking - S382661 - GYGZGZ56LA5F" → GYGZGZ56LA5F = channel_rn (S382661은 vendor code, 상품은 본문 상품명으로 매칭)
   const subjectMatch = subject.match(/Booking\s*[-–]\s*[A-Z0-9]+\s*[-–]\s*([A-Z0-9]{8,20})/i)
   if (subjectMatch) out.channel_rn = subjectMatch[1].trim()
+  // "Urgent : New Booking received - S382661 - GYGN6N7ZBWF8" 동일 구조
+  if (!out.channel_rn) {
+    const urgentSubjectRef = subject.match(
+      /Urgent\s*:\s*New\s*Booking\s*received\s*[-–]\s*[A-Z0-9]+\s*[-–]\s*([A-Z0-9]{8,20})/i
+    )
+    if (urgentSubjectRef) out.channel_rn = urgentSubjectRef[1].trim()
+  }
 
   // Reference number: 본문 "Reference number: GYGZGZ56LA5F"
   if (!out.channel_rn) {
@@ -667,6 +682,7 @@ function extractGetYourGuide(
         out.product_id = product_id
         if (product_id === 'MNGC1N') out.product_name = '그랜드서클 1박 2일 투어'
         if (product_id === 'MDGCSUNRISE') out.product_name = '밤도깨비 그랜드캐년 일출 투어'
+        if (product_id === 'MDGC1D') out.product_name = '그랜드서클 당일 투어'
         return
       }
     }
@@ -676,16 +692,22 @@ function extractGetYourGuide(
   if (!out.product_id) mapGyGProductId(text)
 
   // 초이스: 이메일 본문 "Group Tour with Lower Antelope Canyon" → Lower Antelope Canyon / "Group tour with Antelope Canyon X" → Antelope X Canyon
+  // GYG: "Shared Tour for Antelope X (One Day Grand Circle Tour)" → 엑스 앤텔롭 (Group tour 문구 없음)
   const textOneLine = text.replace(/\s+/g, ' ')
   const lowerAntelope = text.match(/group\s*tour\s+with\s+(Lower\s+Antelope\s*Canyon)/i)
   const antelopeCanyonX =
     textOneLine.match(/\bgroup\s*tour\s+with\s+antelope\s+canyon\s+x\b/i) ||
     text.match(/group\s*tour\s+with\s+Antelope\s*Canyon\s*X/is)
+  const sharedTourAntelopeX =
+    /\bshared\s*tour\s+for\s+antelope\s+x\b/i.test(textOneLine) ||
+    /\bantelope\s+x\s*\(\s*one\s+day\s+grand\s+circle\s+tour\s*\)/i.test(textOneLine)
   if (lowerAntelope) {
     out.product_choices = 'Group Tour with Lower Antelope Canyon'
     out.import_choice_option_names = ['Lower Antelope Canyon']
-  } else if (antelopeCanyonX) {
-    out.product_choices = 'Group Tour with Antelope Canyon X'
+  } else if (antelopeCanyonX || sharedTourAntelopeX) {
+    out.product_choices = sharedTourAntelopeX
+      ? 'Shared Tour for Antelope X (One Day Grand Circle Tour)'
+      : 'Group Tour with Antelope Canyon X'
     // 상품 옵션명이 "Antelope X Canyon" 또는 "X Antelope Canyon"인 경우 모두 매칭
     out.import_choice_option_names = ['X Antelope Canyon', 'Antelope X Canyon']
   }
@@ -697,6 +719,26 @@ function extractGetYourGuide(
       if (raw) out.product_choices = `Group Tour with ${raw}`
     }
   }
+
+  // 객실 종류: "Single Room ( 1 Person in 1 Hotel Room)" 등 → 초이스 1인 1실 (미추출 시 기본값이 2인 1실로 잡히는 것 방지)
+  const pushImportChoiceName = (name: string) => {
+    if (!out.import_choice_option_names) out.import_choice_option_names = []
+    if (!out.import_choice_option_names.includes(name)) out.import_choice_option_names.push(name)
+  }
+  const gygSingleOccupancy =
+    /1\s*Person\s+in\s*1\s*Hotel\s*Room/i.test(text) ||
+    /Single\s+Room\s*\(\s*1\s*Person\s+in\s*1\s*Hotel\s*Room\s*\)/i.test(text)
+  const gygDoubleOccupancy =
+    /2\s*Persons?\s+in\s*1\s*Hotel\s*Room/i.test(text) ||
+    /Double\s+Room\s*\(\s*2\s*Persons?\s+in\s*1\s*Hotel\s*Room\s*\)/i.test(text)
+  if (gygSingleOccupancy && !gygDoubleOccupancy) {
+    pushImportChoiceName('1인 1실')
+    pushImportChoiceName('Single Room')
+  } else if (gygDoubleOccupancy && !gygSingleOccupancy) {
+    pushImportChoiceName('2인 1실')
+    pushImportChoiceName('Double Room')
+  }
+
   // 미국 거주자 구분·기타 입장료는 항상 미정 기본 선택 (import_choice_undecided_groups)
   out.import_choice_undecided_groups = ['미국 거주자 구분', '기타 입장료']
 
@@ -761,11 +803,53 @@ const KLOOK_LABEL_PATTERNS = [
   'Pay on site',
   'To be paid on site',
   'Amount to pay on site',
+  'Package',
 ]
 
 /** Klook Activity URL의 activity ID → 우리 투어명 매핑 (예약 가져오기 시 상품 매칭용) */
 const KLOOK_ACTIVITY_ID_TO_TOUR_NAME: Record<string, string> = {
   '78944': '밤도깨비 그랜드캐년 일출 투어',
+  /** 동일 일출 상품의 다른 Klook 액티비티 URL — 채널 variant만 다를 수 있음 */
+  '113386': '밤도깨비 그랜드캐년 일출 투어',
+}
+
+/** Activity ID → 내부 product_id (상품명 유사 매칭 오류 방지, 예: 일출 vs 비일출) */
+const KLOOK_ACTIVITY_ID_TO_PRODUCT_ID: Record<string, string> = {
+  '113386': 'MDGCSUNRISE',
+  '78944': 'MDGCSUNRISE',
+}
+
+/** Activity URL이 이 ID면 klook 채널 variant는 항상 All Inclusive (불포함 금액이 잡혀도 With Exclusions로 두지 않음) */
+const KLOOK_ACTIVITY_IDS_FORCE_ALL_INCLUSIVE = new Set<string>([
+  '113386',
+  /** 동일 일출 상품의 다른 액티비티 URL — 113386과 동일하게 All Inclusive 고정 */
+  '78944',
+])
+
+/** Klook: 불포함 금액이 있으면 With Exclusions 채널 variant, 없으면 All Inclusive */
+function inferKlookChannelVariant(amountExcluded: string | undefined): { key: string; label: string } {
+  const raw = amountExcluded?.trim()
+  if (raw) {
+    const num = parseFloat(raw.replace(/[$,]/g, ''))
+    if (Number.isFinite(num) && num > 0) {
+      return { key: 'with_exclusions', label: 'With Exclusions' }
+    }
+  }
+  return { key: 'all_inclusive', label: 'All Inclusive' }
+}
+
+/** Klook 본문 Package 줄 → canyon_choice 매칭용 option_name (DB choice_options와 동일) */
+function klookPackageToImportChoiceOptionNames(packageRaw: string | undefined): string[] | undefined {
+  const s = packageRaw?.trim()
+  if (!s) return undefined
+  // 엑스 앤텔롭 / Antelope X (Lower 보다 먼저 분기할 필요는 없으나 X 패턴을 우선)
+  if (/\bantelope\s*x\b|antelope\s+x\s+canyon|x\s*[-–]?\s*antelope|엑스\s*앤텔롭/i.test(s)) {
+    return ['Antelope X Canyon']
+  }
+  if (/lower\s*antelope|로어\s*앤텔롭/i.test(s)) {
+    return ['Lower Antelope Canyon']
+  }
+  return undefined
 }
 
 /** Activity URL에서 activity ID 추출 (예: https://www.klook.com/en-US/activity/78944 → 78944) */
@@ -1202,11 +1286,23 @@ function extractKlook(
   const activityUrlRaw =
     v('activity url')?.trim() ??
     normalizedText.match(/Activity\s*URL\s*:\s*([^\s\n]+)/i)?.[1]?.trim()
+  let parsedKlookActivityId: string | null = null
   if (activityUrlRaw) {
-    const activityId = parseKlookActivityIdFromUrl(activityUrlRaw)
-    if (activityId && KLOOK_ACTIVITY_ID_TO_TOUR_NAME[activityId]) {
-      out.product_name = KLOOK_ACTIVITY_ID_TO_TOUR_NAME[activityId]
+    parsedKlookActivityId = parseKlookActivityIdFromUrl(activityUrlRaw)
+    if (parsedKlookActivityId && KLOOK_ACTIVITY_ID_TO_TOUR_NAME[parsedKlookActivityId]) {
+      out.product_name = KLOOK_ACTIVITY_ID_TO_TOUR_NAME[parsedKlookActivityId]
     }
+    if (parsedKlookActivityId && KLOOK_ACTIVITY_ID_TO_PRODUCT_ID[parsedKlookActivityId]) {
+      out.product_id = KLOOK_ACTIVITY_ID_TO_PRODUCT_ID[parsedKlookActivityId]
+    }
+  }
+
+  // Package: Lower Antelope Canyon 등 → 로어/엑스 앤텔롭 초이스 (채널 variant와 별도로 본문 옵션 반영)
+  const packageRaw =
+    v('package')?.trim() ?? normalizedText.match(/Package\s*:\s*([^\n]+)/i)?.[1]?.trim()
+  const packageChoices = klookPackageToImportChoiceOptionNames(packageRaw)
+  if (packageChoices?.length) {
+    out.import_choice_option_names = packageChoices
   }
 
   // WhatsApp → emergency_contact (비상연락처). 값만 정규화 (예: "+818050339362")
@@ -1227,6 +1323,14 @@ function extractKlook(
 
   // Klook 채널: 미국 거주자 구분·기타 입장료는 항상 미정 기본 선택 (상품-초이스)
   out.import_choice_undecided_groups = ['미국 거주자 구분', '기타 입장료']
+
+  const klookVariant = inferKlookChannelVariant(out.amount_excluded)
+  out.channel_variant_key = klookVariant.key
+  out.channel_variant_label = klookVariant.label
+  if (parsedKlookActivityId && KLOOK_ACTIVITY_IDS_FORCE_ALL_INCLUSIVE.has(parsedKlookActivityId)) {
+    out.channel_variant_key = 'all_inclusive'
+    out.channel_variant_label = 'All Inclusive'
+  }
 
   // 밤도깨비 그랜드캐년 일출 투어는 투어 시간을 00:00(자정)으로 고정
   if (out.product_name === '밤도깨비 그랜드캐년 일출 투어') {

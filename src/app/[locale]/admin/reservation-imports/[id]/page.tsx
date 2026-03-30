@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Loader2, Hash, Calendar, Users, User, Mail, Phone, Globe, MapPin, DollarSign, ChevronDown, ChevronUp, FileText } from 'lucide-react'
+import { ArrowLeft, Loader2, Hash, Calendar, Users, User, Mail, Phone, Globe, MapPin, DollarSign, ChevronDown, ChevronUp, FileText, RefreshCw } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { getChannelIdForPlatform } from '@/lib/platformChannelMapping'
@@ -13,6 +13,7 @@ import {
   matchPickupHotelId,
   normalizeCustomerNameFromImport,
 } from '@/utils/reservationUtils'
+import { resolveImportChannelVariantKey } from '@/lib/resolveImportChannelVariant'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { ExtractedReservationData } from '@/types/reservationImport'
@@ -42,6 +43,9 @@ export default function ReservationImportDetailPage() {
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [rejecting, setRejecting] = useState(false)
+  const [reparsing, setReparsing] = useState(false)
+  /** 재파싱 후 폼이 새 extracted_data(상품·초이스)를 다시 받도록 */
+  const [reparseKey, setReparseKey] = useState(0)
   const [showEmailBody, setShowEmailBody] = useState(true)
   const [emailBodyView, setEmailBodyView] = useState<'preview' | 'code'>('preview')
   const isEmailHtml = Boolean(
@@ -213,6 +217,12 @@ export default function ReservationImportDetailPage() {
   }, [form.pickup_hotel, pickupHotelsList])
 
   const ext = row ? ((row as ImportRow).extracted_data || {}) as ExtractedReservationData : null
+  /** 라벨(All Inclusive)과 키(with_exclusions) 불일치 시 키 보정 — 폼 초기값·동적가격·채널 모달 공통 */
+  const resolvedImportVariantKey =
+    ext != null
+      ? resolveImportChannelVariantKey(ext.channel_variant_key, ext.channel_variant_label) ??
+        (ext.channel_variant_key?.trim() || undefined)
+      : undefined
   /** extracted_data의 product_id를 폼 state보다 우선 (상품 목록 로드 전에도 MDGCSUNRISE 등 반영) */
   const resolvedImportProductId =
     ext?.product_id &&
@@ -306,14 +316,28 @@ export default function ReservationImportDetailPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error || res.statusText)
-      if (data.reservation_id) {
-        router.push(`/${locale}/admin/reservations/${data.reservation_id}`)
-      } else {
-        router.push(`/${locale}/admin/reservation-imports`)
-      }
+      // 저장 후에는 예약 상세가 아니라 이메일 목록(예약 가져오기)으로 이동
+      router.push(`/${locale}/admin/reservation-imports`)
     },
     [id, locale, row, user?.email, router]
   )
+
+  /** 저장된 원문으로 파서를 다시 돌려 extracted_data 갱신 (상품 매핑·파서 수정 반영용). pending만 가능. */
+  const handleReparse = async () => {
+    if (!row || row.status !== 'pending' || !id) return
+    setReparsing(true)
+    try {
+      const reparseRes = await fetch(`/api/reservation-imports/${id}/reparse`, { method: 'POST' })
+      const data = await reparseRes.json()
+      if (!reparseRes.ok) throw new Error((data as { error?: string })?.error || '재파싱 실패')
+      setReparseKey((k) => k + 1)
+      await loadImport()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '재파싱 실패')
+    } finally {
+      setReparsing(false)
+    }
+  }
 
   const handleReject = async () => {
     if (!row || row.status !== 'pending') return
@@ -380,8 +404,12 @@ export default function ReservationImportDetailPage() {
           {/* 상단: 플랫폼 · 제목 */}
           <div className="px-4 py-2 border-b border-gray-100 bg-amber-50 flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-amber-800 uppercase tracking-wide">
-                {effectivePlatformKey || '이메일'}
+              <span className="text-xs font-medium text-amber-800 tracking-wide">
+                {effectivePlatformKey === 'klook'
+                  ? (ext?.channel_variant_label?.trim()
+                      ? `Klook - ${ext.channel_variant_label.trim()}`
+                      : 'Klook')
+                  : (effectivePlatformKey || '이메일')}
               </span>
               {row.subject && (
                 <span className="text-xs text-gray-500 truncate max-w-[280px]" title={row.subject}>
@@ -595,21 +623,33 @@ export default function ReservationImportDetailPage() {
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-2 mb-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <p className="text-sm text-gray-600">이메일에서 가져온 내용을 확인·수정한 뒤 저장하면 예약으로 생성됩니다.</p>
-        <button
-          type="button"
-          onClick={handleReject}
-          disabled={rejecting}
-          className="shrink-0 px-3 py-1.5 border border-gray-300 text-gray-700 rounded-md text-sm hover:bg-gray-50 disabled:opacity-50"
-        >
-          {rejecting ? <Loader2 className="w-4 h-4 animate-spin inline" /> : null}
-          무시
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={handleReparse}
+            disabled={reparsing || row.status !== 'pending'}
+            title="저장된 이메일 본문으로 추출 로직을 다시 실행합니다. 파서·상품 매핑을 바꾼 뒤에 사용하세요."
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-blue-200 text-blue-800 bg-blue-50/80 rounded-md text-sm hover:bg-blue-100 disabled:opacity-50"
+          >
+            {reparsing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            본문 다시 파싱
+          </button>
+          <button
+            type="button"
+            onClick={handleReject}
+            disabled={rejecting}
+            className="px-3 py-1.5 border border-gray-300 text-gray-700 rounded-md text-sm hover:bg-gray-50 disabled:opacity-50"
+          >
+            {rejecting ? <Loader2 className="w-4 h-4 animate-spin inline" /> : null}
+            무시
+          </button>
+        </div>
       </div>
       <ReservationForm
         formTitle="이메일에서 예약 가져오기"
-        key={`import-${row.id}`}
+        key={`import-${row.id}-${reparseKey}`}
         reservation={
           row
             ? ({
@@ -618,6 +658,7 @@ export default function ReservationImportDetailPage() {
                 tour_date: form.tour_date,
                 tour_time: form.tour_time || undefined,
                 channel_id: resolvedImportChannelId,
+                variant_key: resolvedImportVariantKey,
                 // 채널 RN: "ID" 단어만 있으면 잘못 파싱된 값이므로 제외, 실제 예약번호만 전달
                 channel_rn: (() => {
                   const rn = ext?.channel_rn ?? form.channel_rn
@@ -663,6 +704,8 @@ export default function ReservationImportDetailPage() {
               extractViatorNetRateFromEmailBodyForImport(row?.raw_body_html ?? null)
             : undefined
         }
+        initialChannelVariantLabelFromImport={ext?.channel_variant_label}
+        initialVariantKeyFromImport={resolvedImportVariantKey ?? ext?.channel_variant_key}
         initialAmountFromImport={
           ext?.amount ??
           extractPriceFromEmailBodyForImport(row?.raw_body_text) ??

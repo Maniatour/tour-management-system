@@ -57,6 +57,14 @@ function localDateToUtcEnd(ymd: string): string {
   return end.toISOString()
 }
 
+/** GetYourGuide 예약 접수 제목: "Booking - …" 또는 "Urgent : New Booking received - …" */
+function isGyGReservationSubject(subject: string | null | undefined): boolean {
+  const t = (subject ?? '').trimStart()
+  const lower = t.toLowerCase()
+  if (lower.startsWith('booking -')) return true
+  return /^urgent\s*:\s*new\s*booking\s*received\s*-\s*[a-z0-9]+\s*-\s*[a-z0-9]+/i.test(t)
+}
+
 /** 추출 데이터 + 상품 목록으로 내부 상품명(name) 반환. 매칭 실패 시 추출된 product_name 그대로 반환 */
 function productInternalName(extracted: ExtractedReservationData, products: Product[] | null | undefined): string {
   const list = products ?? []
@@ -78,7 +86,8 @@ function productInternalName(extracted: ExtractedReservationData, products: Prod
 }
 
 const RESERVATION_IMPORTS_UI_DEFAULT = {
-  statusFilter: 'pending',
+  /** API: active = pending + confirmed (예약 저장 후에도 목록에 유지) */
+  statusFilter: 'active',
   activeTab: 'all' as 'all' | 'booking',
   dateEnd: todayLocal(),
   noDateFilter: false,
@@ -94,7 +103,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const { products: productsList = [] } = useReservationData()
   const [items, setItems] = useState<ImportItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [listUi, setListUi] = useRoutePersistedState('reservation-imports', RESERVATION_IMPORTS_UI_DEFAULT)
+  const [listUi, setListUi] = useRoutePersistedState('reservation-imports-v2', RESERVATION_IMPORTS_UI_DEFAULT)
   const { statusFilter, activeTab, dateEnd, noDateFilter, searchQuery, platformFilter } = listUi
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [patchingId, setPatchingId] = useState<string | null>(null)
@@ -158,16 +167,30 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     row.platform_key === 'maniatour' ||
     /vegasmaniatour@wixsiteautomations\.com/i.test(row.source_email ?? '')
 
-  /** 목록에 표시할 플랫폼 (KKday / maniatour 보정 포함) */
-  const displayPlatform = (row: ImportItem) =>
-    isKKdayRow(row) ? 'kkday' : isManiaTourRow(row) ? 'maniatour' : (row.platform_key ?? '-')
+  /** 목록에 표시할 플랫폼 (KKday / maniatour 보정 포함). Klook은 variant까지 표시 */
+  const displayPlatform = (row: ImportItem) => {
+    if (isKKdayRow(row)) return 'kkday'
+    if (isManiaTourRow(row)) return 'maniatour'
+    const base = row.platform_key ?? '-'
+    if (base === 'klook') {
+      const label = (row.extracted_data?.channel_variant_label ?? '').trim()
+      if (label) return `Klook - ${label}`
+      return 'Klook'
+    }
+    return base
+  }
 
-  /** 예약 접수 여부 (파서 자동 + 사용자 드래그 분류 + KKday/Viator/maniatour 제목 보정) */
+  /** GetYourGuide 발신 + 예약 접수 제목 (DB에 is_booking_confirmed 없을 때 목록·탭 보정) */
+  const isGyGBookingRow = (row: ImportItem) =>
+    (row.source_email || '').toLowerCase().includes('getyourguide') && isGyGReservationSubject(row.subject)
+
+  /** 예약 접수 여부 (파서 자동 + 사용자 드래그 분류 + KKday/Viator/maniatour/GYG 제목 보정) */
   const isBookingConfirmed = (row: ImportItem) =>
     Boolean(row.extracted_data?.is_booking_confirmed === true) ||
     (isKKdayRow(row) && isKKdayBookingSubject(row)) ||
     (row.platform_key === 'viator' && isViatorBookingSubject(row)) ||
-    isManiatourHomepageBookingEmail(row.source_email, row.subject)
+    isManiatourHomepageBookingEmail(row.source_email, row.subject) ||
+    isGyGBookingRow(row)
 
   const filteredItems = activeTab === 'booking'
     ? items.filter((row) => isBookingConfirmed(row))
@@ -186,7 +209,11 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     if (platformFilter === 'other') {
       if (platform !== '-') return false
     } else if (platformFilter) {
-      if (platform !== platformFilter) return false
+      if (platformFilter === 'klook') {
+        if ((row.platform_key || '').toLowerCase() !== 'klook') return false
+      } else if (platform !== platformFilter) {
+        return false
+      }
     }
     return true
   })
@@ -453,8 +480,9 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
             onChange={(e) => setListUi((prev) => ({ ...prev, statusFilter: e.target.value }))}
             className="min-h-[44px] border border-gray-300 rounded-lg px-3 py-2 text-sm touch-manipulation"
           >
-            <option value="pending">대기 중</option>
-            <option value="confirmed">확정됨</option>
+            <option value="active">대기 + 예약 생성됨</option>
+            <option value="pending">대기 중만</option>
+            <option value="confirmed">예약 생성됨만</option>
             <option value="rejected">무시됨</option>
           </select>
         </div>
@@ -696,15 +724,16 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {searchedAndFilteredItems.map((row) => {
-                  const isGyGBooking =
-                    (row.source_email || '').toLowerCase().includes('getyourguide') &&
-                    (row.subject || '').trimStart().toLowerCase().startsWith('booking -')
                   const isKlookOrderReceived = (row.subject || '').trimStart().toLowerCase().startsWith('klook order received -')
-                  const isChannelReservationEmail = isGyGBooking || isKlookOrderReceived || isBookingConfirmed(row)
+                  const isChannelReservationEmail = isGyGBookingRow(row) || isKlookOrderReceived || isBookingConfirmed(row)
                   /** 신규(빨강) / 처리됨(노랑): import 행의 채널 RN이 reservations.channel_rn과 일치할 때만 처리됨 */
                   const isRegistered = !!row.reservation_exists_by_channel_rn
-                  const rowBg =
-                    !isChannelReservationEmail
+                  /** 예약 저장 완료된 이메일 행 — 목록에 남기고 노란색 표시 */
+                  const isSavedToReservation =
+                    row.status === 'confirmed' || !!row.reservation_id
+                  const rowBg = isSavedToReservation
+                    ? 'bg-amber-50/90 border-l-4 border-l-amber-500'
+                    : !isChannelReservationEmail
                       ? ''
                       : isRegistered
                         ? 'bg-amber-50/90 border-l-4 border-l-amber-500'
@@ -750,14 +779,14 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           {/* 모바일: 카드 리스트 (터치 친화) */}
           <div className="md:hidden space-y-2">
             {searchedAndFilteredItems.map((row) => {
-              const isGyGBooking =
-                (row.source_email || '').toLowerCase().includes('getyourguide') &&
-                (row.subject || '').trimStart().toLowerCase().startsWith('booking -')
               const isKlookOrderReceived = (row.subject || '').trimStart().toLowerCase().startsWith('klook order received -')
-              const isChannelReservationEmail = isGyGBooking || isKlookOrderReceived || isBookingConfirmed(row)
+              const isChannelReservationEmail = isGyGBookingRow(row) || isKlookOrderReceived || isBookingConfirmed(row)
               const isRegistered = !!row.reservation_exists_by_channel_rn
-              const cardBg =
-                !isChannelReservationEmail
+              const isSavedToReservation =
+                row.status === 'confirmed' || !!row.reservation_id
+              const cardBg = isSavedToReservation
+                ? 'bg-amber-50/90 border-l-4 border-l-amber-500 border-amber-200'
+                : !isChannelReservationEmail
                   ? 'bg-white border-gray-200'
                   : isRegistered
                     ? 'bg-amber-50/90 border-l-4 border-l-amber-500 border-gray-200'

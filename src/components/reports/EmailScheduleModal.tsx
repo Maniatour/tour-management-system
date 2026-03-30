@@ -90,7 +90,7 @@ export default function EmailScheduleModal({ isOpen, onClose }: EmailScheduleMod
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div className="fixed inset-0 z-[10050] overflow-y-auto overscroll-contain">
       {/* 배경 오버레이 */}
       <div 
         className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
@@ -98,13 +98,13 @@ export default function EmailScheduleModal({ isOpen, onClose }: EmailScheduleMod
       />
       
       {/* 모달 컨테이너 */}
-      <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="flex min-h-full items-center justify-center p-3 sm:p-4">
+        <div className="relative bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[min(90vh,100dvh)] overflow-y-auto mx-auto">
           {/* 헤더 */}
-          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
-            <div className="flex items-center space-x-2">
-              <Mail size={24} className="text-blue-600" />
-              <h2 className="text-xl font-semibold text-gray-900">자동 이메일 리포트 설정</h2>
+          <div className="sticky top-0 bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2 z-10">
+            <div className="flex items-center gap-2 min-w-0">
+              <Mail className="h-6 w-6 text-blue-600 shrink-0" aria-hidden />
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900 truncate">자동 이메일 리포트 설정</h2>
             </div>
             <button
               onClick={onClose}
@@ -201,7 +201,7 @@ export default function EmailScheduleModal({ isOpen, onClose }: EmailScheduleMod
           </div>
 
           {/* 푸터 */}
-          <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end">
+          <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-4 sm:px-6 py-3 sm:py-4 flex justify-end [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))]">
             <button
               onClick={onClose}
               className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"

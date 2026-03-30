@@ -223,16 +223,19 @@ export default function ComprehensiveReportTab({
         supabase
           .from('tour_expenses')
           .select('amount, paid_for')
+          .eq('exclude_from_pnl', false)
           .gte('submit_on', startISO)
           .lte('submit_on', endISO),
         supabase
           .from('reservation_expenses')
           .select('amount, paid_for')
+          .eq('exclude_from_pnl', false)
           .gte('submit_on', startISO)
           .lte('submit_on', endISO),
         supabase
           .from('company_expenses')
           .select('amount, category')
+          .eq('exclude_from_pnl', false)
           .gte('submit_on', startISO)
           .lte('submit_on', endISO),
         supabase
@@ -495,47 +498,47 @@ export default function ComprehensiveReportTab({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 min-w-0">
       {/* 요약 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-lg text-white">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+        <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-4 sm:p-6 rounded-lg text-white">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-blue-100 text-sm font-medium">총 예약</p>
-              <p className="text-3xl font-bold mt-2">{stats.reservations.total.toLocaleString()}</p>
+              <p className="text-2xl sm:text-3xl font-bold mt-2">{stats.reservations.total.toLocaleString()}</p>
               <p className="text-blue-100 text-sm mt-1">{stats.reservations.totalPeople.toLocaleString()}명</p>
             </div>
             <Users className="h-12 w-12 text-blue-200" />
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-green-500 to-green-600 p-6 rounded-lg text-white">
+        <div className="bg-gradient-to-br from-green-500 to-green-600 p-4 sm:p-6 rounded-lg text-white">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-green-100 text-sm font-medium">총 수익</p>
-              <p className="text-3xl font-bold mt-2">${stats.settlement.totalRevenue.toLocaleString()}</p>
+              <p className="text-2xl sm:text-3xl font-bold mt-2">${stats.settlement.totalRevenue.toLocaleString()}</p>
               <p className="text-green-100 text-sm mt-1">순이익: ${stats.settlement.netProfit.toLocaleString()}</p>
             </div>
             <DollarSign className="h-12 w-12 text-green-200" />
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-red-500 to-red-600 p-6 rounded-lg text-white">
+        <div className="bg-gradient-to-br from-red-500 to-red-600 p-4 sm:p-6 rounded-lg text-white">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-red-100 text-sm font-medium">총 지출</p>
-              <p className="text-3xl font-bold mt-2">${stats.settlement.totalExpenses.toLocaleString()}</p>
+              <p className="text-2xl sm:text-3xl font-bold mt-2">${stats.settlement.totalExpenses.toLocaleString()}</p>
               <p className="text-red-100 text-sm mt-1">투어: ${stats.tours.totalExpenses.toLocaleString()}</p>
             </div>
             <TrendingUp className="h-12 w-12 text-red-200" />
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-6 rounded-lg text-white">
+        <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-4 sm:p-6 rounded-lg text-white">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-purple-100 text-sm font-medium">순이익률</p>
-              <p className="text-3xl font-bold mt-2">{stats.settlement.profitMargin.toFixed(1)}%</p>
+              <p className="text-2xl sm:text-3xl font-bold mt-2">{stats.settlement.profitMargin.toFixed(1)}%</p>
               <p className="text-purple-100 text-sm mt-1">입금: ${stats.deposits.total.toLocaleString()}</p>
             </div>
             <Receipt className="h-12 w-12 text-purple-200" />
@@ -544,9 +547,9 @@ export default function ComprehensiveReportTab({
       </div>
 
       {/* 상세 통계 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* 예약 통계 */}
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
             <Users size={20} />
             <span>예약 통계</span>
@@ -579,7 +582,7 @@ export default function ComprehensiveReportTab({
         </div>
 
         {/* 투어 통계 */}
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
             <Calendar size={20} />
             <span>투어 통계</span>
@@ -605,8 +608,8 @@ export default function ComprehensiveReportTab({
         </div>
 
         {/* 지출 통계 */}
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
               <TrendingUp size={20} />
               <span>지출 통계</span>
@@ -672,7 +675,7 @@ export default function ComprehensiveReportTab({
         </div>
 
         {/* 입금 통계 */}
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
             <CreditCard size={20} />
             <span>입금 통계</span>
@@ -698,7 +701,7 @@ export default function ComprehensiveReportTab({
 
         {/* 현금 관리 통계 */}
         {stats.cash && (
-          <div className="bg-white border border-gray-200 rounded-lg p-6">
+          <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
               <Wallet size={20} />
               <span>현금 관리</span>

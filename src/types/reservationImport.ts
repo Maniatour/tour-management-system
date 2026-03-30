@@ -36,6 +36,10 @@ export interface ExtractedReservationData {
   special_requests?: string
   /** 플랫폼 식별용 (채널 매핑에 사용) */
   platform_key?: string
+  /** Klook: channel_products.variant_key에 대응 (불포함 금액 유무 등으로 추정) */
+  channel_variant_key?: string
+  /** Klook: 목록·상세 표시 (예: All Inclusive, With Exclusions) */
+  channel_variant_label?: string
   /** 예약 접수 이메일 여부 (GetYourGuide: "Booking -", Klook: "Klook Order Received -"로 제목 시작 시 목록 강조) */
   is_booking_confirmed?: boolean
   /** 이메일에서 파싱한 초이스 옵션명 (상품 초이스 매칭용, 예: "Lower Antelope Canyon") */

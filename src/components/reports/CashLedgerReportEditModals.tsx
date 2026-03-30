@@ -318,7 +318,7 @@ export default function CashLedgerReportEditModals({
           </DialogHeader>
           {(cashRow || addCashOpen) && (
             <form onSubmit={submitCash} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="cr_transaction_date">거래일자 *</Label>
                   <Input
@@ -481,7 +481,7 @@ export default function CashLedgerReportEditModals({
               }}
               className="space-y-4"
             >
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="cr_pr_amount">금액 *</Label>
                   <Input
@@ -622,7 +622,7 @@ export default function CashLedgerReportEditModals({
               }}
               className="space-y-4"
             >
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="cr_ce_amount">금액 *</Label>
                   <Input
@@ -646,7 +646,7 @@ export default function CashLedgerReportEditModals({
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="cr_ce_paid_to">결제처 *</Label>
                   <Input id="cr_ce_paid_to" name="paid_to" defaultValue={(companyRow.paid_to as string) || ''} required />
@@ -758,7 +758,7 @@ export default function CashLedgerReportEditModals({
               }}
               className="space-y-4"
             >
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="cr_re_amount">금액 *</Label>
                   <Input
@@ -786,7 +786,7 @@ export default function CashLedgerReportEditModals({
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="cr_re_paid_to">결제처</Label>
                   <Input id="cr_re_paid_to" name="paid_to" defaultValue={(reservationRow.paid_to as string) || ''} />

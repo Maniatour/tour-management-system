@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
+import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -27,6 +28,8 @@ interface PartnerFundTransaction {
   created_by: string
   created_at: string
   updated_at: string
+  /** 명세/지출 동기화 시 출처 키 (수동 입력은 보통 null) */
+  external_source_key?: string | null
 }
 
 interface TransactionFormData {
@@ -420,13 +423,17 @@ export default function PartnerFundsManagement() {
             </div>
             <div className="mt-2 space-y-1 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-600">입금:</span>
+                <span className="text-gray-600">
+                  <AccountingTerm termKey="입금">입금</AccountingTerm>:
+                </span>
                 <span className="text-green-600 font-medium">
                   ${transactions.filter(t => t.partner === 'partner1' && t.transaction_type === 'deposit').reduce((sum, t) => sum + t.amount, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">출금:</span>
+                <span className="text-gray-600">
+                  <AccountingTerm termKey="출금">출금</AccountingTerm>:
+                </span>
                 <span className="text-red-600 font-medium">
                   ${transactions.filter(t => t.partner === 'partner1' && t.transaction_type === 'withdrawal').reduce((sum, t) => sum + t.amount, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
@@ -450,13 +457,17 @@ export default function PartnerFundsManagement() {
             </div>
             <div className="mt-2 space-y-1 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-600">입금:</span>
+                <span className="text-gray-600">
+                  <AccountingTerm termKey="입금">입금</AccountingTerm>:
+                </span>
                 <span className="text-green-600 font-medium">
                   ${transactions.filter(t => t.partner === 'partner2' && t.transaction_type === 'deposit').reduce((sum, t) => sum + t.amount, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">출금:</span>
+                <span className="text-gray-600">
+                  <AccountingTerm termKey="출금">출금</AccountingTerm>:
+                </span>
                 <span className="text-red-600 font-medium">
                   ${transactions.filter(t => t.partner === 'partner2' && t.transaction_type === 'withdrawal').reduce((sum, t) => sum + t.amount, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
@@ -494,13 +505,17 @@ export default function PartnerFundsManagement() {
             </div>
             <div className="mt-2 space-y-1 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-600">입금:</span>
+                <span className="text-gray-600">
+                  <AccountingTerm termKey="입금">입금</AccountingTerm>:
+                </span>
                 <span className="text-green-600 font-medium">
                   ${transactions.filter(t => t.partner === 'erica' && t.transaction_type === 'deposit').reduce((sum, t) => sum + t.amount, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-600">출금:</span>
+                <span className="text-gray-600">
+                  <AccountingTerm termKey="출금">출금</AccountingTerm>:
+                </span>
                 <span className="text-red-600 font-medium">
                   ${transactions.filter(t => t.partner === 'erica' && t.transaction_type === 'withdrawal').reduce((sum, t) => sum + t.amount, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
@@ -520,7 +535,10 @@ export default function PartnerFundsManagement() {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="min-w-0">
                   <CardTitle className="text-base sm:text-lg">입출금 기록</CardTitle>
-                  <CardDescription className="text-xs sm:text-sm hidden sm:block">파트너 간 자금 입출금 내역을 관리합니다.</CardDescription>
+                  <CardDescription className="text-xs sm:text-sm hidden sm:block">
+                    <AccountingTerm termKey="파트너">파트너</AccountingTerm> 간{' '}
+                    <AccountingTerm termKey="파트너자금">자금</AccountingTerm> 입출금 내역을 관리합니다.
+                  </CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Dialog open={isBulkAddDialogOpen} onOpenChange={setIsBulkAddDialogOpen}>
@@ -579,7 +597,9 @@ export default function PartnerFundsManagement() {
                               <TableHeader>
                                 <TableRow>
                                   <TableHead className="w-32">날짜 *</TableHead>
-                                  <TableHead className="w-32">파트너 *</TableHead>
+                                  <TableHead className="w-32">
+                                    <AccountingTerm termKey="파트너">파트너</AccountingTerm> *
+                                  </TableHead>
                                   <TableHead className="w-32">유형 *</TableHead>
                                   <TableHead className="w-32">금액 *</TableHead>
                                   <TableHead>설명</TableHead>
@@ -731,7 +751,10 @@ export default function PartnerFundsManagement() {
                   <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                       <DialogTitle>{editingTransaction ? '거래 수정' : '거래 추가'}</DialogTitle>
-                      <DialogDescription>파트너 간 자금 거래를 기록합니다.</DialogDescription>
+                      <DialogDescription>
+                        <AccountingTerm termKey="파트너">파트너</AccountingTerm> 간{' '}
+                        <AccountingTerm termKey="파트너자금">자금</AccountingTerm> 거래를 기록합니다.
+                      </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">
                       <div className="grid grid-cols-2 gap-4">
@@ -925,6 +948,14 @@ export default function PartnerFundsManagement() {
                           <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs text-gray-600 border-t border-gray-100 pt-3">
                             <span className="text-gray-400">설명</span>
                             <span className="truncate">{transaction.description || '-'}</span>
+                            {transaction.external_source_key && (
+                              <>
+                                <span className="text-gray-400">연동</span>
+                                <Badge variant="secondary" className="w-fit font-normal text-[10px]">
+                                  개인지출 동기화
+                                </Badge>
+                              </>
+                            )}
                             <span className="text-gray-400">밸런스</span>
                             <span className="font-medium text-gray-900">
                               ${balanceAtDate.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -977,10 +1008,13 @@ export default function PartnerFundsManagement() {
                     <TableHeader>
                       <TableRow className="h-10">
                         <TableHead className="py-2">날짜</TableHead>
-                        <TableHead className="py-2">파트너</TableHead>
+                        <TableHead className="py-2">
+                          <AccountingTerm termKey="파트너">파트너</AccountingTerm>
+                        </TableHead>
                         <TableHead className="py-2">유형</TableHead>
                         <TableHead className="py-2">금액</TableHead>
                         <TableHead className="py-2">설명</TableHead>
+                        <TableHead className="py-2 whitespace-nowrap">연동</TableHead>
                         <TableHead className="py-2">밸런스</TableHead>
                         <TableHead className="text-right py-2">작업</TableHead>
                       </TableRow>
@@ -1019,6 +1053,15 @@ export default function PartnerFundsManagement() {
                             ${transaction.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </TableCell>
                           <TableCell className="py-1 text-sm">{transaction.description || '-'}</TableCell>
+                          <TableCell className="py-1 text-xs">
+                            {transaction.external_source_key ? (
+                              <Badge variant="secondary" className="font-normal" title={transaction.external_source_key}>
+                                개인지출 동기화
+                              </Badge>
+                            ) : (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </TableCell>
                           <TableCell className="font-medium py-1 text-sm">
                             ${calculateBalanceAtDate(transaction.transaction_date, transaction.partner).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </TableCell>

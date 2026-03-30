@@ -220,6 +220,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         slogan1: string
         slogan2: string
         slogan3: string
+        greeting: string
         description: string
         included: string
         not_included: string
@@ -228,7 +229,9 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         tour_operation_info: string
         preparation_info: string
         small_group_info: string
+        companion_recruitment_info: string
         notice_info: string
+        important_notes: string
         private_tour_info: string
         cancellation_policy: string
         chat_announcement: string
@@ -243,6 +246,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         slogan1: boolean
         slogan2: boolean
         slogan3: boolean
+        greeting: boolean
         description: boolean
         included: boolean
         not_included: boolean
@@ -251,7 +255,9 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         tour_operation_info: boolean
         preparation_info: boolean
         small_group_info: boolean
+        companion_recruitment_info: boolean
         notice_info: boolean
+        important_notes: boolean
         private_tour_info: boolean
         cancellation_policy: boolean
         chat_announcement: boolean
@@ -320,6 +326,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         slogan1: '',
         slogan2: '',
         slogan3: '',
+        greeting: '',
         description: '',
         included: '',
         not_included: '',
@@ -328,7 +335,9 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         tour_operation_info: '',
         preparation_info: '',
         small_group_info: '',
+        companion_recruitment_info: '',
         notice_info: '',
+        important_notes: '',
         private_tour_info: '',
         cancellation_policy: '',
         chat_announcement: '',
@@ -343,6 +352,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         slogan1: false,
         slogan2: false,
         slogan3: false,
+        greeting: false,
         description: false,
         included: false,
         not_included: false,
@@ -351,7 +361,9 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
         tour_operation_info: false,
         preparation_info: false,
         small_group_info: false,
+        companion_recruitment_info: false,
         notice_info: false,
+        important_notes: false,
         private_tour_info: false,
         cancellation_policy: false,
         chat_announcement: false,
@@ -706,6 +718,8 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     slogan3: (item as any).slogan3 || '',
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    greeting: (item as any).greeting || '',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     description: (item as any).description || '',
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     included: (item as any).included || '',
@@ -722,7 +736,11 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     small_group_info: (item as any).small_group_info || '',
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    companion_recruitment_info: (item as any).companion_recruitment_info || '',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     notice_info: (item as any).notice_info || '',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    important_notes: (item as any).important_notes || '',
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     private_tour_info: (item as any).private_tour_info || '',
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -744,6 +762,8 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   slogan3: (detailsData as any).slogan3 || '',
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  greeting: (detailsData as any).greeting || '',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   description: (detailsData as any).description || '',
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   included: (detailsData as any).included || '',
@@ -760,7 +780,11 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   small_group_info: (detailsData as any).small_group_info || '',
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  companion_recruitment_info: (detailsData as any).companion_recruitment_info || '',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   notice_info: (detailsData as any).notice_info || '',
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  important_notes: (detailsData as any).important_notes || '',
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   private_tour_info: (detailsData as any).private_tour_info || '',
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -778,6 +802,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                   slogan1: '',
                   slogan2: '',
                   slogan3: '',
+                  greeting: '',
                   description: '',
                   included: '',
                   not_included: '',
@@ -786,7 +811,9 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                   tour_operation_info: '',
                   preparation_info: '',
                   small_group_info: '',
+                  companion_recruitment_info: '',
                   notice_info: '',
+                  important_notes: '',
                   private_tour_info: '',
                   cancellation_policy: '',
                   chat_announcement: '',
@@ -800,6 +827,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                 slogan1: '',
                 slogan2: '',
                 slogan3: '',
+                greeting: '',
                 description: '',
                 included: '',
                 not_included: '',
@@ -808,7 +836,9 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                 tour_operation_info: '',
                 preparation_info: '',
                 small_group_info: '',
+                companion_recruitment_info: '',
                 notice_info: '',
+                important_notes: '',
                 private_tour_info: '',
                 cancellation_policy: '',
                 chat_announcement: '',
@@ -827,6 +857,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                   slogan1: false,
                   slogan2: false,
                   slogan3: false,
+                  greeting: false,
                   description: false,
                   included: false,
                   not_included: false,
@@ -835,7 +866,9 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
                   tour_operation_info: false,
                   preparation_info: false,
                   small_group_info: false,
+                  companion_recruitment_info: false,
                   notice_info: false,
+                  important_notes: false,
                   private_tour_info: false,
                   cancellation_policy: false,
                   chat_announcement: false,

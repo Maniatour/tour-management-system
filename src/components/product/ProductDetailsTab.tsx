@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { Save, AlertCircle, Settings, Users, ChevronRight, ChevronDown, CheckSquare, Square } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
@@ -14,6 +14,7 @@ interface ProductDetailsFields {
   slogan1: string
   slogan2: string
   slogan3: string
+  greeting: string
   description: string
   included: string
   not_included: string
@@ -22,7 +23,9 @@ interface ProductDetailsFields {
   tour_operation_info: string
   preparation_info: string
   small_group_info: string
+  companion_recruitment_info: string
   notice_info: string
+  important_notes: string
   private_tour_info: string
   cancellation_policy: string
   chat_announcement: string
@@ -40,6 +43,7 @@ interface ProductDetailsMultilingualRow {
   slogan1: string | null
   slogan2: string | null
   slogan3: string | null
+  greeting: string | null
   description: string | null
   included: string | null
   not_included: string | null
@@ -48,7 +52,9 @@ interface ProductDetailsMultilingualRow {
   tour_operation_info: string | null
   preparation_info: string | null
   small_group_info: string | null
+  companion_recruitment_info: string | null
   notice_info: string | null
+  important_notes: string | null
   private_tour_info: string | null
   cancellation_policy: string | null
   chat_announcement: string | null
@@ -68,6 +74,7 @@ interface ProductDetailsFormData {
       slogan1: boolean
       slogan2: boolean
       slogan3: boolean
+      greeting: boolean
       description: boolean
       included: boolean
       not_included: boolean
@@ -76,7 +83,9 @@ interface ProductDetailsFormData {
       tour_operation_info: boolean
       preparation_info: boolean
       small_group_info: boolean
+      companion_recruitment_info: boolean
       notice_info: boolean
+      important_notes: boolean
       private_tour_info: boolean
       cancellation_policy: boolean
       chat_announcement: boolean
@@ -104,10 +113,6 @@ interface ChannelGroup {
   channels: Channel[]
 }
 
-interface ChannelSelection {
-  [channelId: string]: boolean
-}
-
 export default function ProductDetailsTab({
   productId,
   isNewProduct,
@@ -132,6 +137,9 @@ export default function ProductDetailsTab({
     if (field === 'private_tour_info') return t('privateTourInfo')
     if (field === 'cancellation_policy') return t('cancellationPolicy')
     if (field === 'chat_announcement') return t('chatAnnouncement')
+    if (field === 'greeting') return t('greeting')
+    if (field === 'companion_recruitment_info') return t('companionRecruitmentInfo')
+    if (field === 'important_notes') return t('importantNotes')
     return field
   }
 
@@ -151,7 +159,8 @@ export default function ProductDetailsTab({
   // 채널 관련 상태
   const [channels, setChannels] = useState<Channel[]>([])
   const [channelGroups, setChannelGroups] = useState<ChannelGroup[]>([])
-  const [selectedChannels, setSelectedChannels] = useState<ChannelSelection>({})
+  /** 채널별 선택된 variant_key 목록 (다중 선택 가능) */
+  const [selectedChannelVariants, setSelectedChannelVariants] = useState<Record<string, string[]>>({})
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
   const [loadingChannelData, setLoadingChannelData] = useState(false)
   const [_copyFromChannel, _setCopyFromChannel] = useState<string | null>(null)
@@ -172,15 +181,17 @@ export default function ProductDetailsTab({
   const [copyModalOpen, setCopyModalOpen] = useState(false)
   const [copyFieldName, setCopyFieldName] = useState<string | null>(null)
   const [copyTargetChannels, setCopyTargetChannels] = useState<Record<string, boolean>>({})
+  const [copySourceLanguage, setCopySourceLanguage] = useState<string>('ko')
   const [previewEditModalOpen, setPreviewEditModalOpen] = useState(false)
   const [previewEditingField, setPreviewEditingField] = useState<keyof ProductDetailsFields | null>(null)
   const [importFieldModalOpen, setImportFieldModalOpen] = useState(false)
   const [importSourceChannelId, setImportSourceChannelId] = useState<string>('')
+  const [importSourceLanguage, setImportSourceLanguage] = useState<string>('ko')
+  const [importChannelStats, setImportChannelStats] = useState<Record<string, { plainLen: number; hasContent: boolean }>>({})
+  const [importStatsLoading, setImportStatsLoading] = useState(false)
   const [importingField, setImportingField] = useState(false)
   const [sectionTitleOverridesByLanguage, setSectionTitleOverridesByLanguage] = useState<Record<string, Partial<Record<keyof ProductDetailsFields, string>>>>({})
   
-  // Variant 관리 상태 (채널별 variant 선택)
-  const [channelVariants, setChannelVariants] = useState<Record<string, string>>({}) // channelId -> variant_key
   const [productVariantsByChannel, setProductVariantsByChannel] = useState<Record<string, Array<{
     variant_key: string;
     variant_name_ko?: string | null;
@@ -189,7 +200,28 @@ export default function ProductDetailsTab({
 
   const supabase = createClientSupabase()
   const { user, loading: authLoading } = useAuth()
-  const selectedChannelIds = Object.keys(selectedChannels).filter((id) => selectedChannels[id])
+
+  const selectedPairCount = useMemo(
+    () => Object.values(selectedChannelVariants).reduce((sum, arr) => sum + (arr?.length ?? 0), 0),
+    [selectedChannelVariants]
+  )
+
+  const selectedPairsForDisplay = useMemo(() => {
+    const out: { channelId: string; variantKey: string }[] = []
+    for (const [channelId, vks] of Object.entries(selectedChannelVariants)) {
+      for (const vk of vks || []) {
+        out.push({ channelId, variantKey: vk })
+      }
+    }
+    return out
+  }, [selectedChannelVariants])
+
+  /** Import/복사 등 단일 variant가 필요할 때: 해당 채널에서 첫 번째로 선택된 variant */
+  const getPrimaryVariantForChannel = (channelId: string): string => {
+    const arr = selectedChannelVariants[channelId]
+    if (arr && arr.length > 0) return arr[0]
+    return 'default'
+  }
 
   const decodeHtmlEntities = (value: string): string => {
     if (!value) return ''
@@ -207,10 +239,33 @@ export default function ProductDetailsTab({
     return textarea.value
   }
 
+  /** Import 미리보기용: HTML 제거 후 글자 수 */
+  const plainTextLenForImport = (raw: string): number => {
+    if (!raw) return 0
+    return raw.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').trim().length
+  }
+
+  const rowFieldValueToString = (row: Record<string, unknown> | undefined, field: keyof ProductDetailsFields): string => {
+    if (!row) return ''
+    const v = row[field as string]
+    if (v == null) return ''
+    if (Array.isArray(v)) return v.filter(Boolean).join(', ')
+    return String(v)
+  }
+
+  const langLabel = (code: string) => {
+    if (code === 'ko') return 'KO · 한국어'
+    if (code === 'en') return 'EN · English'
+    if (code === 'ja') return 'JA · 日本語'
+    if (code === 'zh') return 'ZH · 中文'
+    return code.toUpperCase()
+  }
+
   const defaultSectionTitles: Record<keyof ProductDetailsFields, string> = {
     slogan1: '🧭 Slogan',
     slogan2: '🧭 Slogan 2',
     slogan3: '🧭 Slogan 3',
+    greeting: '👋 인사말',
     description: '📝 Description',
     included: '✔ Included',
     not_included: '✘ Not Included',
@@ -219,7 +274,9 @@ export default function ProductDetailsTab({
     tour_operation_info: '🚌 Tour Operation Info',
     preparation_info: '🎒 What to Bring',
     small_group_info: '👥 Small Group Info',
+    companion_recruitment_info: '🤝 동행모집 안내',
     notice_info: '💵 Payment Notice',
+    important_notes: '⚠️ IMPORTANT NOTES',
     private_tour_info: '🔒 Private Tour Info',
     cancellation_policy: '📋 Cancellation Policy',
     chat_announcement: '💬 Chat Announcement',
@@ -461,57 +518,46 @@ export default function ProductDetailsTab({
     }
   }, [productId, supabase]);
 
-  // 선택된 채널들의 세부 정보 로드
-  const loadSelectedChannelData = useCallback(async (overrideVariants?: Record<string, string>) => {
-    const selectedChannelIds = Object.keys(selectedChannels).filter(id => selectedChannels[id])
-    if (selectedChannelIds.length === 0) {
-      // 채널이 선택되지 않았으면 일반 데이터 로드 (loadProductDetails는 나중에 호출)
+  // 선택된 채널·variant 쌍의 세부 정보 로드 (같은 stored channel에 여러 variant면 각각 조회 후 병합)
+  const loadSelectedChannelData = useCallback(async (overrideSelected?: Record<string, string[]>) => {
+    const sel = overrideSelected ?? selectedChannelVariants
+    const selectedIds = Object.keys(sel).filter((id) => (sel[id]?.length ?? 0) > 0)
+    if (selectedIds.length === 0) {
       return
     }
 
     setLoadingChannelData(true)
     try {
-      // overrideVariants가 제공되면 사용, 아니면 현재 channelVariants 사용
-      const variantsToUse = overrideVariants || channelVariants
+      const queries: { channel_id: string; variant_key: string }[] = []
 
-      // self 채널과 OTA 채널을 분리
-      const selectedChannelsData = selectedChannelIds.map(id => {
-        const channel = channels.find(c => c.id === id)
-        return { id, type: channel?.type || 'unknown' }
-      })
-
-      const selfChannels = selectedChannelsData.filter(c => c.type === 'self' || c.type === 'SELF')
-      const otaChannels = selectedChannelsData.filter(c => c.type !== 'self' && c.type !== 'SELF')
-
-      // 조회할 channel_id 목록 생성
-      const channelIdsToQuery: string[] = []
-      const variantKeysByChannel: Record<string, string> = {} // channelId -> variant_key
-      
-      // self 채널이 선택된 경우 'SELF_GROUP' 추가
-      if (selfChannels.length > 0) {
-        channelIdsToQuery.push('SELF_GROUP')
-        // self 채널의 variant는 첫 번째 선택된 self 채널의 variant 사용
-        const firstSelfChannelId = selfChannels[0].id
-        variantKeysByChannel['SELF_GROUP'] = variantsToUse[firstSelfChannelId] || 'default'
+      for (const channelId of selectedIds) {
+        const channel = channels.find((c) => c.id === channelId)
+        const vks = sel[channelId] || []
+        const isSelf = channel?.type === 'self' || channel?.type === 'SELF'
+        for (const vk of vks) {
+          queries.push({
+            channel_id: isSelf ? 'SELF_GROUP' : channelId,
+            variant_key: vk
+          })
+        }
       }
-      
-      // OTA 채널들의 개별 ID 추가
-      otaChannels.forEach(channel => {
-        channelIdsToQuery.push(channel.id)
-        variantKeysByChannel[channel.id] = variantsToUse[channel.id] || 'default'
+
+      const seen = new Set<string>()
+      const uniqueQueries = queries.filter((q) => {
+        const k = `${q.channel_id}\t${q.variant_key}`
+        if (seen.has(k)) return false
+        seen.add(k)
+        return true
       })
 
-      if (channelIdsToQuery.length === 0) {
+      if (uniqueQueries.length === 0) {
         setLoadingChannelData(false)
         return
       }
 
-      // 각 채널별로 variant_key를 포함하여 조회
-      // 여러 채널이 선택된 경우 각각 조회해야 함
       let allData: any[] = []
-      
-      for (const channelId of channelIdsToQuery) {
-        const variantKey = variantKeysByChannel[channelId] || 'default'
+
+      for (const { channel_id: channelId, variant_key: variantKey } of uniqueQueries) {
         const { data: channelData, error: channelError } = await supabase
           .from('product_details_multilingual')
           .select('*')
@@ -525,6 +571,7 @@ export default function ProductDetailsTab({
               slogan1: string | null
               slogan2: string | null
               slogan3: string | null
+              greeting: string | null
               description: string | null
               included: string | null
               not_included: string | null
@@ -533,7 +580,9 @@ export default function ProductDetailsTab({
               tour_operation_info: string | null
               preparation_info: string | null
               small_group_info: string | null
+              companion_recruitment_info: string | null
               notice_info: string | null
+              important_notes: string | null
               private_tour_info: string | null
               cancellation_policy: string | null
               chat_announcement: string | null
@@ -575,6 +624,7 @@ export default function ProductDetailsTab({
               slogan1: item.slogan1 ?? '',
               slogan2: item.slogan2 ?? '',
               slogan3: item.slogan3 ?? '',
+              greeting: item.greeting ?? '',
               description: item.description ?? '',
               included: item.included ?? '',
               not_included: item.not_included ?? '',
@@ -583,7 +633,9 @@ export default function ProductDetailsTab({
               tour_operation_info: item.tour_operation_info ?? '',
               preparation_info: item.preparation_info ?? '',
               small_group_info: item.small_group_info ?? '',
+              companion_recruitment_info: item.companion_recruitment_info ?? '',
               notice_info: item.notice_info ?? '',
+              important_notes: item.important_notes ?? '',
               private_tour_info: item.private_tour_info ?? '',
               cancellation_policy: item.cancellation_policy ?? '',
               chat_announcement: item.chat_announcement ?? '',
@@ -598,6 +650,7 @@ export default function ProductDetailsTab({
               slogan1: hasValue(existing.slogan1) ? existing.slogan1 : (item.slogan1 ?? ''),
               slogan2: hasValue(existing.slogan2) ? existing.slogan2 : (item.slogan2 ?? ''),
               slogan3: hasValue(existing.slogan3) ? existing.slogan3 : (item.slogan3 ?? ''),
+              greeting: hasValue(existing.greeting) ? existing.greeting : (item.greeting ?? ''),
               description: hasValue(existing.description) ? existing.description : (item.description ?? ''),
               included: hasValue(existing.included) ? existing.included : (item.included ?? ''),
               not_included: hasValue(existing.not_included) ? existing.not_included : (item.not_included ?? ''),
@@ -606,7 +659,9 @@ export default function ProductDetailsTab({
               tour_operation_info: hasValue(existing.tour_operation_info) ? existing.tour_operation_info : (item.tour_operation_info ?? ''),
               preparation_info: hasValue(existing.preparation_info) ? existing.preparation_info : (item.preparation_info ?? ''),
               small_group_info: hasValue(existing.small_group_info) ? existing.small_group_info : (item.small_group_info ?? ''),
+              companion_recruitment_info: hasValue(existing.companion_recruitment_info) ? existing.companion_recruitment_info : (item.companion_recruitment_info ?? ''),
               notice_info: hasValue(existing.notice_info) ? existing.notice_info : (item.notice_info ?? ''),
+              important_notes: hasValue(existing.important_notes) ? existing.important_notes : (item.important_notes ?? ''),
               private_tour_info: hasValue(existing.private_tour_info) ? existing.private_tour_info : (item.private_tour_info ?? ''),
               cancellation_policy: hasValue(existing.cancellation_policy) ? existing.cancellation_policy : (item.cancellation_policy ?? ''),
               chat_announcement: hasValue(existing.chat_announcement) ? existing.chat_announcement : (item.chat_announcement ?? ''),
@@ -623,6 +678,7 @@ export default function ProductDetailsTab({
             slogan1: '',
             slogan2: '',
             slogan3: '',
+            greeting: '',
             description: '',
             included: '',
             not_included: '',
@@ -631,7 +687,9 @@ export default function ProductDetailsTab({
             tour_operation_info: '',
             preparation_info: '',
             small_group_info: '',
+            companion_recruitment_info: '',
             notice_info: '',
+            important_notes: '',
             private_tour_info: '',
             cancellation_policy: '',
             chat_announcement: '',
@@ -667,64 +725,58 @@ export default function ProductDetailsTab({
     } finally {
       setLoadingChannelData(false)
     }
-  }, [selectedChannels, productId, supabase, setFormData, channels, channelVariants])
+  }, [selectedChannelVariants, productId, supabase, setFormData, channels])
 
-  // 채널별 variant 목록 로드
+  // 상품에 연결된 채널별 variant 목록 — channel_products를 product_id 기준으로 한 번에 조회
+  // (선택된 채널만 개별 조회하면 비동기 타이밍에 드롭다운이 [{ default }] 폴백만 보이는 문제가 있었음)
   useEffect(() => {
+    if (isNewProduct || !productId) {
+      setProductVariantsByChannel({})
+      return
+    }
+
+    let cancelled = false
+
     const loadChannelVariants = async () => {
-      const selectedChannelIds = Object.keys(selectedChannels).filter(id => selectedChannels[id])
-      if (selectedChannelIds.length === 0) {
-        setProductVariantsByChannel({})
-        return
-      }
-
-      const variantsByChannel: Record<string, Array<{
-        variant_key: string;
-        variant_name_ko?: string | null;
-        variant_name_en?: string | null;
-      }>> = {}
-
-      const newChannelVariants: Record<string, string> = { ...channelVariants }
-
       try {
-        for (const channelId of selectedChannelIds) {
-          const { data, error } = await supabase
-            .from('channel_products')
-            .select('variant_key, variant_name_ko, variant_name_en')
-            .eq('product_id', productId)
-            .eq('channel_id', channelId)
-            .eq('is_active', true)
-            .order('variant_key')
+        const { data, error } = await supabase
+          .from('channel_products')
+          .select('channel_id, variant_key, variant_name_ko, variant_name_en')
+          .eq('product_id', productId)
+          .eq('is_active', true)
+          .order('channel_id', { ascending: true })
+          .order('variant_key', { ascending: true })
 
-          if (error) {
-            console.error(`채널 ${channelId} variant 로드 실패:`, error)
-            continue
-          }
-
-          const variants = (data || []).map((item: any) => ({
-            variant_key: item.variant_key || 'default',
-            variant_name_ko: item.variant_name_ko,
-            variant_name_en: item.variant_name_en
-          }))
-
-          variantsByChannel[channelId] = variants.length > 0 ? variants : [{ variant_key: 'default' }]
-          
-          // 기본 variant 선택 (아직 선택되지 않은 경우)
-          if (!channelVariants[channelId]) {
-            newChannelVariants[channelId] = variants.length > 0 && variants.find(v => v.variant_key === 'default')
-              ? 'default'
-              : variants.length > 0
-              ? variants[0].variant_key
-              : 'default'
-          }
+        if (error) {
+          console.error('상품 채널 variant 로드 실패:', error)
+          return
         }
 
-        setProductVariantsByChannel(variantsByChannel)
-        
-        // 새로운 variant가 설정된 경우에만 업데이트
-        if (Object.keys(newChannelVariants).length > Object.keys(channelVariants).length ||
-            Object.keys(newChannelVariants).some(key => newChannelVariants[key] !== channelVariants[key])) {
-          setChannelVariants(newChannelVariants)
+        const variantsByChannel: Record<string, Array<{
+          variant_key: string
+          variant_name_ko?: string | null
+          variant_name_en?: string | null
+        }>> = {}
+
+        for (const row of data || []) {
+          const r = row as {
+            channel_id?: string | null
+            variant_key?: string | null
+            variant_name_ko?: string | null
+            variant_name_en?: string | null
+          }
+          const cid = r.channel_id
+          if (!cid) continue
+          if (!variantsByChannel[cid]) variantsByChannel[cid] = []
+          variantsByChannel[cid].push({
+            variant_key: r.variant_key || 'default',
+            variant_name_ko: r.variant_name_ko ?? null,
+            variant_name_en: r.variant_name_en ?? null
+          })
+        }
+
+        if (!cancelled) {
+          setProductVariantsByChannel(variantsByChannel)
         }
       } catch (error) {
         console.error('Variant 목록 로드 중 오류:', error)
@@ -732,39 +784,67 @@ export default function ProductDetailsTab({
     }
 
     loadChannelVariants()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedChannels, productId, supabase])
-
-  // 채널 선택 토글
-  const toggleChannelSelection = (channelId: string) => {
-    setSelectedChannels(prev => ({
-      ...prev,
-      [channelId]: !prev[channelId]
-    }))
-    
-    // 채널 선택 해제 시 variant도 제거
-    if (selectedChannels[channelId]) {
-      setChannelVariants(prev => {
-        const newVariants = { ...prev }
-        delete newVariants[channelId]
-        return newVariants
-      })
+    return () => {
+      cancelled = true
     }
+  }, [productId, isNewProduct, supabase])
+
+  // channel_products 목록이 바뀌면 선택 중인 variant_key 중 무효한 것 제거
+  useEffect(() => {
+    setSelectedChannelVariants((prev) => {
+      let next = { ...prev }
+      let changed = false
+      for (const channelId of Object.keys(next)) {
+        const list = productVariantsByChannel[channelId]
+        const validKeys = new Set(
+          (list && list.length > 0 ? list : [{ variant_key: 'default' }]).map((v) => v.variant_key)
+        )
+        const filtered = (next[channelId] || []).filter((vk) => validKeys.has(vk))
+        if (filtered.length !== (next[channelId]?.length ?? 0)) {
+          changed = true
+          if (filtered.length === 0) delete next[channelId]
+          else next[channelId] = filtered
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [productVariantsByChannel])
+
+  const toggleChannelVariant = (channelId: string, variantKey: string) => {
+    setSelectedChannelVariants((prev) => {
+      const cur = new Set(prev[channelId] || [])
+      if (cur.has(variantKey)) cur.delete(variantKey)
+      else cur.add(variantKey)
+      const arr = Array.from(cur).sort()
+      const next = { ...prev }
+      if (arr.length === 0) delete next[channelId]
+      else next[channelId] = arr
+      return next
+    })
   }
 
-  // 그룹 전체 선택/해제
+  // 그룹 전체: 각 채널의 모든 variant 선택 ↔ 전체 해제
   const toggleGroupSelection = (groupType: string) => {
-    const group = channelGroups.find(g => g.type === groupType)
+    const group = channelGroups.find((g) => g.type === groupType)
     if (!group) return
 
-    const allSelected = group.channels.every(channel => selectedChannels[channel.id])
-    
-    setSelectedChannels(prev => {
-      const newSelection = { ...prev }
-      group.channels.forEach(channel => {
-        newSelection[channel.id] = !allSelected
+    const allSelected = group.channels.every((channel) => {
+      const variants = productVariantsByChannel[channel.id] || [{ variant_key: 'default' }]
+      const sel = selectedChannelVariants[channel.id] || []
+      return variants.length > 0 && variants.every((v) => sel.includes(v.variant_key))
+    })
+
+    setSelectedChannelVariants((prev) => {
+      const next = { ...prev }
+      group.channels.forEach((channel) => {
+        if (allSelected) {
+          delete next[channel.id]
+        } else {
+          const variants = productVariantsByChannel[channel.id] || [{ variant_key: 'default' }]
+          next[channel.id] = variants.map((v) => v.variant_key)
+        }
       })
-      return newSelection
+      return next
     })
   }
 
@@ -781,17 +861,17 @@ export default function ProductDetailsTab({
     if (!fieldName || toChannelIds.length === 0) return
 
     try {
-      const selectedChannelIds = Object.keys(selectedChannels).filter(id => selectedChannels[id])
-      if (selectedChannelIds.length === 0) {
+      const hasSelection = Object.values(selectedChannelVariants).some((arr) => (arr?.length ?? 0) > 0)
+      if (!hasSelection) {
         setSaveMessage(t('msgSelectChannelsToCopy'))
         setSaveMessageType('error')
         setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 3000)
         return
       }
 
-      // 현재 언어의 필드 값 가져오기
-      const currentLang = formData.currentLanguage || 'ko'
-      const currentDetails = getCurrentLanguageDetails()
+      // 복사 모달에서 고른 언어의 필드 값 (해당 language_code 행에 덮어씀)
+      const copyLang = copySourceLanguage || formData.currentLanguage || 'ko'
+      const currentDetails = getDetailsForLanguage(copyLang)
       
       // 복사할 필드 목록 결정
       const fieldsToCopy: string[] = []
@@ -829,7 +909,7 @@ export default function ProductDetailsTab({
 
       const copyPromises = channelGroupsToSave.map(async (group) => {
         const targetVariantKey = group.channelIds.length === 1
-          ? (channelVariants[group.channelIds[0]] || 'default')
+          ? getPrimaryVariantForChannel(group.channelIds[0])
           : 'default'
 
         // 기존 데이터 확인
@@ -838,7 +918,7 @@ export default function ProductDetailsTab({
           .select('id')
           .eq('product_id', productId)
           .eq('channel_id', group.channelId)
-          .eq('language_code', currentLang)
+          .eq('language_code', copyLang)
           .eq('variant_key', targetVariantKey)
           .maybeSingle() as { data: { id: string } | null; error: { code?: string } | null }
 
@@ -871,7 +951,7 @@ export default function ProductDetailsTab({
           const insertData: any = {
             product_id: productId,
             channel_id: group.channelId,
-            language_code: currentLang,
+            language_code: copyLang,
             variant_key: targetVariantKey
           }
           fieldsToCopy.forEach(field => {
@@ -903,12 +983,12 @@ export default function ProductDetailsTab({
   // 복사 모달 열기
   const openCopyModal = (fieldName: string) => {
     setCopyFieldName(fieldName)
-    // 현재 선택되지 않은 모든 채널을 복사 대상으로 초기화
-    const allChannelIds = channels.map(c => c.id)
-    const selectedChannelIds = Object.keys(selectedChannels).filter(id => selectedChannels[id])
+    setCopySourceLanguage(formData.currentLanguage || 'ko')
+    // 현재 variant가 하나도 선택되지 않은 채널만 복사 대상으로 초기화
+    const allChannelIds = channels.map((c) => c.id)
     const unselectedChannels: Record<string, boolean> = {}
-    allChannelIds.forEach(id => {
-      if (!selectedChannelIds.includes(id)) {
+    allChannelIds.forEach((id) => {
+      if ((selectedChannelVariants[id]?.length ?? 0) === 0) {
         unselectedChannels[id] = false
       }
     })
@@ -928,11 +1008,13 @@ export default function ProductDetailsTab({
       
       // 복사 소스의 variant_key 가져오기
       const sourceVariantKey = actualFromChannelId === 'SELF_GROUP'
-        ? (channelVariants[Object.keys(selectedChannels).find(id => {
-            const ch = channels.find(c => c.id === id)
-            return ch?.type === 'self' || ch?.type === 'SELF'
-          }) || ''] || 'default')
-        : (channelVariants[actualFromChannelId] || 'default')
+        ? getPrimaryVariantForChannel(
+            Object.keys(selectedChannelVariants).find((id) => {
+              const ch = channels.find((c) => c.id === id)
+              return ch?.type === 'self' || ch?.type === 'SELF'
+            }) || ''
+          )
+        : getPrimaryVariantForChannel(actualFromChannelId)
       
       const { data: sourceData, error: fetchError } = await supabase
         .from('product_details_multilingual')
@@ -974,7 +1056,7 @@ export default function ProductDetailsTab({
         const copyPromises = channelGroupsToSave.map(async (group) => {
           // 복사 대상의 variant_key 가져오기
           const targetVariantKey = group.channelIds.length === 1
-            ? (channelVariants[group.channelIds[0]] || 'default')
+            ? getPrimaryVariantForChannel(group.channelIds[0])
             : 'default'
           
           for (const sourceItem of sourceData as Array<{
@@ -983,6 +1065,7 @@ export default function ProductDetailsTab({
             slogan1: string | null
             slogan2: string | null
             slogan3: string | null
+            greeting: string | null
             description: string | null
             included: string | null
             not_included: string | null
@@ -991,7 +1074,9 @@ export default function ProductDetailsTab({
             tour_operation_info: string | null
             preparation_info: string | null
             small_group_info: string | null
+            companion_recruitment_info: string | null
             notice_info: string | null
+            important_notes: string | null
             private_tour_info: string | null
             cancellation_policy: string | null
             chat_announcement: string | null
@@ -1005,6 +1090,7 @@ export default function ProductDetailsTab({
               slogan1: sourceItem.slogan1,
               slogan2: sourceItem.slogan2,
               slogan3: sourceItem.slogan3,
+              greeting: sourceItem.greeting,
               description: sourceItem.description,
               included: sourceItem.included,
               not_included: sourceItem.not_included,
@@ -1013,7 +1099,9 @@ export default function ProductDetailsTab({
               tour_operation_info: sourceItem.tour_operation_info,
               preparation_info: sourceItem.preparation_info,
               small_group_info: sourceItem.small_group_info,
+              companion_recruitment_info: sourceItem.companion_recruitment_info,
               notice_info: sourceItem.notice_info,
+              important_notes: sourceItem.important_notes,
               private_tour_info: sourceItem.private_tour_info,
               cancellation_policy: sourceItem.cancellation_policy,
               chat_announcement: sourceItem.chat_announcement,
@@ -1095,10 +1183,9 @@ export default function ProductDetailsTab({
     }
   }
 
-  // 선택된 채널들에 세부 정보 저장
+  // 선택된 채널·variant 쌍마다 세부 정보 저장 (self는 SELF_GROUP+variant별로 중복 제거)
   const saveSelectedChannelsDetails = async () => {
-    const selectedChannelIds = Object.keys(selectedChannels).filter(id => selectedChannels[id])
-    if (selectedChannelIds.length === 0) {
+    if (selectedPairCount === 0) {
       setSaveMessage(t('msgSelectChannelsToSave'))
       setSaveMessageType('error')
       setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 3000)
@@ -1113,37 +1200,30 @@ export default function ProductDetailsTab({
       const currentLang = formData.currentLanguage || 'ko'
       const currentDetails = getCurrentLanguageDetails()
 
-      // self 채널과 OTA 채널을 분리
-      const selectedChannelsData = selectedChannelIds.map(id => {
-        const channel = channels.find(c => c.id === id)
-        return { id, type: channel?.type || 'unknown' }
-      })
-
-      const selfChannels = selectedChannelsData.filter(c => c.type === 'self' || c.type === 'SELF')
-      const otaChannels = selectedChannelsData.filter(c => c.type !== 'self' && c.type !== 'SELF')
-
-      // 저장할 채널 그룹 정의
-      const channelGroupsToSave: Array<{ channelIds: string[], channelId: string, channelType: string }> = []
-
-      // self 채널들은 하나의 그룹으로 처리 (channel_id = 'SELF_GROUP')
-      if (selfChannels.length > 0) {
-        channelGroupsToSave.push({
-          channelIds: selfChannels.map(c => c.id),
-          channelId: 'SELF_GROUP', // self 채널들은 모두 같은 channel_id를 사용
-          channelType: 'self'
-        })
+      const rawTargets: { storedChannelId: string; variantKey: string }[] = []
+      for (const channelId of Object.keys(selectedChannelVariants)) {
+        const vks = selectedChannelVariants[channelId] || []
+        if (vks.length === 0) continue
+        const channel = channels.find((c) => c.id === channelId)
+        if (!channel) continue
+        const isSelf = channel.type === 'self' || channel.type === 'SELF'
+        for (const vk of vks) {
+          rawTargets.push({
+            storedChannelId: isSelf ? 'SELF_GROUP' : channelId,
+            variantKey: vk
+          })
+        }
       }
 
-      // OTA 채널들은 각각 개별적으로 저장
-      otaChannels.forEach(channel => {
-        channelGroupsToSave.push({
-          channelIds: [channel.id],
-          channelId: channel.id, // 각 OTA 채널은 고유한 channel_id 사용
-          channelType: channel.type
-        })
+      const seen = new Set<string>()
+      const saveTargets = rawTargets.filter((t) => {
+        const k = `${t.storedChannelId}\t${t.variantKey}`
+        if (seen.has(k)) return false
+        seen.add(k)
+        return true
       })
 
-      const savePromises = channelGroupsToSave.map(async (group) => {
+      const savePromises = saveTargets.map(async ({ storedChannelId: groupChannelId, variantKey: groupVariantKey }) => {
         // 빈 문자열을 null로 변환하는 헬퍼 함수
         // HTML 태그만 있는 빈 문자열도 처리
         const toNullIfEmpty = (value: string | null | undefined): string | null => {
@@ -1156,20 +1236,16 @@ export default function ProductDetailsTab({
           
           return value
         }
-        
-        // 선택된 variant 가져오기 (각 채널별로)
-        const groupVariantKey = group.channelIds.length === 1 
-          ? (channelVariants[group.channelIds[0]] || 'default')
-          : 'default' // 여러 채널이면 default 사용
-        
+
         const detailsData = {
           product_id: productId,
-          channel_id: group.channelId, // self 채널은 'SELF_GROUP', OTA는 개별 channel_id
+          channel_id: groupChannelId, // self 채널은 'SELF_GROUP', OTA는 개별 channel_id
           language_code: currentLang,
-          variant_key: groupVariantKey, // variant_key 추가
+          variant_key: groupVariantKey,
           slogan1: toNullIfEmpty(currentDetails.slogan1),
           slogan2: toNullIfEmpty(currentDetails.slogan2),
           slogan3: toNullIfEmpty(currentDetails.slogan3),
+          greeting: toNullIfEmpty(currentDetails.greeting),
           description: toNullIfEmpty(currentDetails.description),
           included: toNullIfEmpty(currentDetails.included),
           not_included: toNullIfEmpty(currentDetails.not_included),
@@ -1178,7 +1254,9 @@ export default function ProductDetailsTab({
           tour_operation_info: toNullIfEmpty(currentDetails.tour_operation_info),
           preparation_info: toNullIfEmpty(currentDetails.preparation_info),
           small_group_info: toNullIfEmpty(currentDetails.small_group_info),
+          companion_recruitment_info: toNullIfEmpty(currentDetails.companion_recruitment_info),
           notice_info: toNullIfEmpty(currentDetails.notice_info),
+          important_notes: toNullIfEmpty(currentDetails.important_notes),
           private_tour_info: toNullIfEmpty(currentDetails.private_tour_info),
           cancellation_policy: toNullIfEmpty(currentDetails.cancellation_policy),
           chat_announcement: toNullIfEmpty(currentDetails.chat_announcement),
@@ -1186,13 +1264,13 @@ export default function ProductDetailsTab({
           section_titles: getCurrentSectionTitles()
         }
         
-        const channelIdLabel = group.channelId === 'SELF_GROUP' 
-          ? `self 채널 그룹 (${group.channelIds.length}개)` 
-          : group.channelId
+        const channelIdLabel =
+          groupChannelId === 'SELF_GROUP'
+            ? `self 채널 그룹 · variant ${groupVariantKey}`
+            : `${groupChannelId} · variant ${groupVariantKey}`
 
         console.log(`채널 그룹 ${channelIdLabel} 저장할 상세 정보:`, {
-          channelIds: group.channelIds,
-          channelId: group.channelId,
+          channelId: groupChannelId,
           variant_key: groupVariantKey,
           private_tour_info: detailsData.private_tour_info,
           private_tour_info_type: typeof detailsData.private_tour_info,
@@ -1216,7 +1294,7 @@ export default function ProductDetailsTab({
           .from('product_details_multilingual')
           .select('id')
           .eq('product_id', productId)
-          .eq('channel_id', group.channelId)
+          .eq('channel_id', groupChannelId)
           .eq('language_code', currentLang)
           .eq('variant_key', groupVariantKey)
           .maybeSingle()
@@ -1246,7 +1324,7 @@ export default function ProductDetailsTab({
               .from('product_details_multilingual')
               .select('private_tour_info, chat_announcement')
               .eq('product_id', productId)
-              .eq('channel_id', group.channelId)
+              .eq('channel_id', groupChannelId)
               .eq('language_code', currentLang)
               .eq('variant_key', groupVariantKey)
               .maybeSingle() as { data: { private_tour_info: string | null; chat_announcement: string | null } | null; error: unknown }
@@ -1276,7 +1354,7 @@ export default function ProductDetailsTab({
                 .select('id')
                 .eq('product_id', productId)
                 .eq('language_code', currentLang)
-                .eq('channel_id', group.channelId)
+                .eq('channel_id', groupChannelId)
                 .eq('variant_key', groupVariantKey)
                 .maybeSingle()
 
@@ -1304,7 +1382,7 @@ export default function ProductDetailsTab({
                     .from('product_details_multilingual')
                     .select('private_tour_info, chat_announcement')
                     .eq('product_id', productId)
-                    .eq('channel_id', group.channelId)
+                    .eq('channel_id', groupChannelId)
                     .eq('language_code', currentLang)
                     .eq('variant_key', groupVariantKey)
                     .maybeSingle() as { data: { private_tour_info: string | null; chat_announcement: string | null } | null; error: unknown }
@@ -1332,7 +1410,7 @@ export default function ProductDetailsTab({
 
       await Promise.all(savePromises)
 
-      setSaveMessage(`${selectedChannelIds.length}개 채널의 세부 정보가 성공적으로 저장되었습니다!`)
+      setSaveMessage(`${saveTargets.length}개 채널·variant 행에 세부 정보가 저장되었습니다!`)
       setTimeout(() => setSaveMessage(''), 3000)
       
       // 저장 후 데이터 새로고침
@@ -1369,6 +1447,63 @@ export default function ProductDetailsTab({
     return (channel?.type === 'self' || channel?.type === 'SELF') ? 'SELF_GROUP' : channelId
   }
 
+  // Import 모달: 소스 언어·채널별로 해당 섹션 필드 존재 여부·글자 수(태그 제외 순문자 기준)
+  useEffect(() => {
+    if (!importFieldModalOpen || !previewEditingField || !productId || isNewProduct || channels.length === 0) {
+      return
+    }
+
+    const field = previewEditingField
+    let cancelled = false
+    setImportStatsLoading(true)
+
+    ;(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('product_details_multilingual')
+          .select(`channel_id, variant_key, ${String(field)}`)
+          .eq('product_id', productId)
+          .eq('language_code', importSourceLanguage)
+
+        if (cancelled) return
+        if (error) {
+          console.error('Import 소스 통계 로드 실패:', error)
+          setImportChannelStats({})
+          return
+        }
+
+        const rows = (data || []) as Array<Record<string, unknown>>
+        const stats: Record<string, { plainLen: number; hasContent: boolean }> = {}
+        for (const ch of channels) {
+          const sid = resolveStoredChannelId(ch.id)
+          const vk = (selectedChannelVariants[ch.id]?.[0]) || 'default'
+          const row = rows.find(
+            (r) => String(r.channel_id) === sid && String(r.variant_key || 'default') === vk
+          )
+          const raw = rowFieldValueToString(row, field)
+          const plainLen = plainTextLenForImport(raw)
+          stats[ch.id] = { plainLen, hasContent: plainLen > 0 }
+        }
+        setImportChannelStats(stats)
+      } finally {
+        if (!cancelled) setImportStatsLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    importFieldModalOpen,
+    previewEditingField,
+    importSourceLanguage,
+    productId,
+    isNewProduct,
+    supabase,
+    channels,
+    selectedChannelVariants
+  ])
+
   const importSectionFromChannel = async () => {
     if (!previewEditingField || !importSourceChannelId) {
       setSaveMessage('가져올 채널을 선택해주세요.')
@@ -1377,9 +1512,9 @@ export default function ProductDetailsTab({
       return
     }
 
-    const currentLang = formData.currentLanguage || 'ko'
+    const targetLang = formData.currentLanguage || 'ko'
     const sourceStoredChannelId = resolveStoredChannelId(importSourceChannelId)
-    const sourceVariantKey = channelVariants[importSourceChannelId] || 'default'
+    const sourceVariantKey = getPrimaryVariantForChannel(importSourceChannelId)
 
     setImportingField(true)
     try {
@@ -1388,7 +1523,7 @@ export default function ProductDetailsTab({
         .select(previewEditingField)
         .eq('product_id', productId)
         .eq('channel_id', sourceStoredChannelId)
-        .eq('language_code', currentLang)
+        .eq('language_code', importSourceLanguage)
         .eq('variant_key', sourceVariantKey)
         .maybeSingle() as { data: Record<string, string | null> | null; error: { message?: string; code?: string } | null }
 
@@ -1396,13 +1531,21 @@ export default function ProductDetailsTab({
         throw new Error(error.message || '채널 데이터 조회 실패')
       }
       if (!data) {
-        throw new Error('선택한 채널/variant에 해당 섹션 데이터가 없습니다.')
+        throw new Error('선택한 채널/variant·언어에 해당 섹션 데이터가 없습니다.')
       }
 
-      const incoming = (data[previewEditingField] || '') as string
+      const incoming = rowFieldValueToString(data as Record<string, unknown>, previewEditingField)
+      if (plainTextLenForImport(incoming) === 0) {
+        throw new Error('가져올 텍스트가 비어 있습니다.')
+      }
       handleInputChange(previewEditingField, incoming)
       setImportFieldModalOpen(false)
-      setSaveMessage('섹션 내용을 가져왔습니다. 저장 버튼을 눌러 반영하세요.')
+      const cross = importSourceLanguage !== targetLang
+      setSaveMessage(
+        cross
+          ? `[${importSourceLanguage.toUpperCase()}] → [${targetLang.toUpperCase()}] 섹션 내용을 가져왔습니다. 저장 버튼을 눌러 반영하세요.`
+          : '섹션 내용을 가져왔습니다. 저장 버튼을 눌러 반영하세요.'
+      )
       setSaveMessageType('success')
       setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 3000)
     } catch (error) {
@@ -1434,6 +1577,7 @@ export default function ProductDetailsTab({
         slogan1: string | null
         slogan2: string | null
         slogan3: string | null
+        greeting: string | null
         description: string | null
         included: string | null
         not_included: string | null
@@ -1442,13 +1586,15 @@ export default function ProductDetailsTab({
         tour_operation_info: string | null
         preparation_info: string | null
         small_group_info: string | null
+        companion_recruitment_info: string | null
         notice_info: string | null
+        important_notes: string | null
         private_tour_info: string | null
         cancellation_policy: string | null
         chat_announcement: string | null
         tags: string[] | null
         section_titles?: Record<string, string> | null
-      }> | { channel_id: string | null; language_code: string | null; slogan1: string | null; slogan2: string | null; slogan3: string | null; description: string | null; included: string | null; not_included: string | null; pickup_drop_info: string | null; luggage_info: string | null; tour_operation_info: string | null; preparation_info: string | null; small_group_info: string | null; notice_info: string | null; private_tour_info: string | null; cancellation_policy: string | null; chat_announcement: string | null; tags: string[] | null } | null = null
+      }> | { channel_id: string | null; language_code: string | null; slogan1: string | null; slogan2: string | null; slogan3: string | null; greeting: string | null; description: string | null; included: string | null; not_included: string | null; pickup_drop_info: string | null; luggage_info: string | null; tour_operation_info: string | null; preparation_info: string | null; small_group_info: string | null; companion_recruitment_info: string | null; notice_info: string | null; important_notes: string | null; private_tour_info: string | null; cancellation_policy: string | null; chat_announcement: string | null; tags: string[] | null } | null = null
       let detailsError: { code?: string } | null = null
 
       if (productData?.use_common_details && productData.sub_category) {
@@ -1472,6 +1618,7 @@ export default function ProductDetailsTab({
               slogan1: string | null
               slogan2: string | null
               slogan3: string | null
+              greeting: string | null
               description: string | null
               included: string | null
               not_included: string | null
@@ -1480,7 +1627,9 @@ export default function ProductDetailsTab({
               tour_operation_info: string | null
               preparation_info: string | null
               small_group_info: string | null
+              companion_recruitment_info: string | null
               notice_info: string | null
+              important_notes: string | null
               private_tour_info: string | null
               cancellation_policy: string | null
               chat_announcement: string | null
@@ -1593,6 +1742,7 @@ export default function ProductDetailsTab({
             slogan1: item.slogan1 ?? '',
             slogan2: item.slogan2 ?? '',
             slogan3: item.slogan3 ?? '',
+            greeting: item.greeting ?? '',
             description: item.description ?? '',
             included: item.included ?? '',
             not_included: item.not_included ?? '',
@@ -1601,7 +1751,9 @@ export default function ProductDetailsTab({
             tour_operation_info: item.tour_operation_info ?? '',
             preparation_info: item.preparation_info ?? '',
             small_group_info: item.small_group_info ?? '',
+            companion_recruitment_info: item.companion_recruitment_info ?? '',
             notice_info: item.notice_info ?? '',
+            important_notes: item.important_notes ?? '',
             private_tour_info: item.private_tour_info ?? '',
             cancellation_policy: item.cancellation_policy ?? '',
             chat_announcement: item.chat_announcement ?? '',
@@ -1616,6 +1768,7 @@ export default function ProductDetailsTab({
           slogan1: string | null
           slogan2: string | null
           slogan3: string | null
+          greeting: string | null
           description: string | null
           included: string | null
           not_included: string | null
@@ -1624,7 +1777,9 @@ export default function ProductDetailsTab({
           tour_operation_info: string | null
           preparation_info: string | null
           small_group_info: string | null
+          companion_recruitment_info: string | null
           notice_info: string | null
+          important_notes: string | null
           private_tour_info: string | null
           cancellation_policy: string | null
           chat_announcement: string | null
@@ -1639,6 +1794,7 @@ export default function ProductDetailsTab({
           slogan1: item.slogan1 ?? '',
           slogan2: item.slogan2 ?? '',
           slogan3: item.slogan3 ?? '',
+          greeting: item.greeting ?? '',
           description: item.description ?? '',
           included: item.included ?? '',
           not_included: item.not_included ?? '',
@@ -1647,7 +1803,9 @@ export default function ProductDetailsTab({
           tour_operation_info: item.tour_operation_info ?? '',
           preparation_info: item.preparation_info ?? '',
           small_group_info: item.small_group_info ?? '',
+          companion_recruitment_info: item.companion_recruitment_info ?? '',
           notice_info: item.notice_info ?? '',
+          important_notes: item.important_notes ?? '',
           private_tour_info: item.private_tour_info ?? '',
           cancellation_policy: item.cancellation_policy ?? '',
           chat_announcement: item.chat_announcement ?? '',
@@ -1663,6 +1821,7 @@ export default function ProductDetailsTab({
           slogan1: '',
           slogan2: '',
           slogan3: '',
+          greeting: '',
           description: '',
           included: '',
           not_included: '',
@@ -1671,7 +1830,9 @@ export default function ProductDetailsTab({
           tour_operation_info: '',
           preparation_info: '',
           small_group_info: '',
+          companion_recruitment_info: '',
           notice_info: '',
+          important_notes: '',
           private_tour_info: '',
           cancellation_policy: '',
           chat_announcement: '',
@@ -1744,6 +1905,7 @@ export default function ProductDetailsTab({
       // 필수 필드 목록
       const requiredFields = [
         'slogan1', 'slogan2', 'slogan3',
+        'greeting',
         'description',
         'included', 'not_included',
         'pickup_drop_info',
@@ -1751,7 +1913,9 @@ export default function ProductDetailsTab({
         'tour_operation_info',
         'preparation_info',
         'small_group_info',
+        'companion_recruitment_info',
         'notice_info',
+        'important_notes',
         'private_tour_info',
         'cancellation_policy',
         'chat_announcement'
@@ -1845,29 +2009,24 @@ export default function ProductDetailsTab({
     }
   }, [channels.length, isNewProduct, productId, loadChannelPricingStats, loadChannelCompletionStats])
 
-  // 채널 선택 변경 시 데이터 로드
+  // 채널·variant 선택 변경 시 데이터 로드
   useEffect(() => {
-    const selectedChannelIds = Object.keys(selectedChannels).filter(id => selectedChannels[id])
-    if (selectedChannelIds.length === 0) {
-      // 채널이 선택되지 않았으면 일반 데이터 로드
+    const hasSelection = Object.values(selectedChannelVariants).some((arr) => (arr?.length ?? 0) > 0)
+    if (!hasSelection) {
       loadProductDetails()
     } else {
-      // 채널이 선택되었으면 채널별 데이터 로드
       loadSelectedChannelData()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedChannels])
+  }, [selectedChannelVariants])
 
-  // 현재 언어의 상세 정보 가져오기
-  const getCurrentLanguageDetails = (): ProductDetailsFields => {
-    const currentLang = formData.currentLanguage || 'ko'
-    const existingDetails = formData.productDetails?.[currentLang] || {}
-    
-    // 각 필드가 없으면 기본값을 사용하도록 보장
-    const details: ProductDetailsFields = {
+  const getDetailsForLanguage = (lang: string): ProductDetailsFields => {
+    const existingDetails = formData.productDetails?.[lang] || {}
+    return {
       slogan1: existingDetails.slogan1 ?? '',
       slogan2: existingDetails.slogan2 ?? '',
       slogan3: existingDetails.slogan3 ?? '',
+      greeting: existingDetails.greeting ?? '',
       description: existingDetails.description ?? '',
       included: existingDetails.included ?? '',
       not_included: existingDetails.not_included ?? '',
@@ -1876,14 +2035,23 @@ export default function ProductDetailsTab({
       tour_operation_info: existingDetails.tour_operation_info ?? '',
       preparation_info: existingDetails.preparation_info ?? '',
       small_group_info: existingDetails.small_group_info ?? '',
+      companion_recruitment_info: existingDetails.companion_recruitment_info ?? '',
       notice_info: existingDetails.notice_info ?? '',
+      important_notes: existingDetails.important_notes ?? '',
       private_tour_info: existingDetails.private_tour_info ?? '',
       cancellation_policy: existingDetails.cancellation_policy ?? '',
       chat_announcement: existingDetails.chat_announcement ?? '',
       tags: existingDetails.tags ?? []
     }
-    
+  }
+
+  // 현재 언어의 상세 정보 가져오기
+  const getCurrentLanguageDetails = (): ProductDetailsFields => {
+    const currentLang = formData.currentLanguage || 'ko'
+    const details = getDetailsForLanguage(currentLang)
+
     // 디버깅: 현재 언어의 상세 정보 확인
+    const existingDetails = formData.productDetails?.[currentLang] || {}
     console.log('=== ProductDetailsTab Debug ===')
     console.log('currentLang:', currentLang)
     console.log('formData.productDetails:', formData.productDetails)
@@ -1892,7 +2060,7 @@ export default function ProductDetailsTab({
     console.log('existingDetails.chat_announcement:', existingDetails.chat_announcement, 'type:', typeof existingDetails.chat_announcement, 'hasField:', 'chat_announcement' in existingDetails)
     console.log('details.private_tour_info:', details.private_tour_info, 'length:', details.private_tour_info?.length)
     console.log('details.chat_announcement:', details.chat_announcement, 'length:', details.chat_announcement?.length)
-    
+
     return details
   }
 
@@ -1901,6 +2069,7 @@ export default function ProductDetailsTab({
     slogan1: boolean
     slogan2: boolean
     slogan3: boolean
+    greeting: boolean
     description: boolean
     included: boolean
     not_included: boolean
@@ -1909,7 +2078,9 @@ export default function ProductDetailsTab({
     tour_operation_info: boolean
     preparation_info: boolean
     small_group_info: boolean
+    companion_recruitment_info: boolean
     notice_info: boolean
+    important_notes: boolean
     private_tour_info: boolean
     cancellation_policy: boolean
     chat_announcement: boolean
@@ -1920,6 +2091,7 @@ export default function ProductDetailsTab({
       slogan1: false,
       slogan2: false,
       slogan3: false,
+      greeting: false,
       description: false,
       included: false,
       not_included: false,
@@ -1928,7 +2100,9 @@ export default function ProductDetailsTab({
       tour_operation_info: false,
       preparation_info: false,
       small_group_info: false,
+      companion_recruitment_info: false,
       notice_info: false,
+      important_notes: false,
       private_tour_info: false,
       cancellation_policy: false,
       chat_announcement: false,
@@ -1967,6 +2141,7 @@ export default function ProductDetailsTab({
             slogan1: item.slogan1 || '',
             slogan2: item.slogan2 || '',
             slogan3: item.slogan3 || '',
+            greeting: (item as ProductDetailsMultilingualRow).greeting || '',
             description: item.description || '',
             included: item.included || '',
             not_included: item.not_included || '',
@@ -1975,7 +2150,9 @@ export default function ProductDetailsTab({
             tour_operation_info: item.tour_operation_info || '',
             preparation_info: item.preparation_info || '',
             small_group_info: item.small_group_info || '',
+            companion_recruitment_info: (item as ProductDetailsMultilingualRow).companion_recruitment_info || '',
             notice_info: item.notice_info || '',
+            important_notes: (item as ProductDetailsMultilingualRow).important_notes || '',
             private_tour_info: item.private_tour_info || '',
             cancellation_policy: item.cancellation_policy || '',
             chat_announcement: item.chat_announcement || '',
@@ -2006,7 +2183,7 @@ export default function ProductDetailsTab({
     
     // 채널이 선택된 경우 또는 강제로 채널 데이터를 사용하는 경우
     // 공통 정보를 사용하지 않고 채널별 데이터만 사용
-    const hasSelectedChannels = Object.keys(selectedChannels).filter(id => selectedChannels[id]).length > 0
+    const hasSelectedChannels = selectedPairCount > 0
     
     if (forceChannelData || hasSelectedChannels) {
       // 채널별 데이터만 사용
@@ -2114,6 +2291,7 @@ export default function ProductDetailsTab({
         slogan1: currentDetails.slogan1,
         slogan2: currentDetails.slogan2,
         slogan3: currentDetails.slogan3,
+        greeting: currentDetails.greeting,
         description: currentDetails.description,
         included: currentDetails.included,
         not_included: currentDetails.not_included,
@@ -2122,7 +2300,9 @@ export default function ProductDetailsTab({
         tour_operation_info: currentDetails.tour_operation_info,
         preparation_info: currentDetails.preparation_info,
         small_group_info: currentDetails.small_group_info,
+        companion_recruitment_info: currentDetails.companion_recruitment_info,
         notice_info: currentDetails.notice_info,
+        important_notes: currentDetails.important_notes,
         private_tour_info: currentDetails.private_tour_info,
         cancellation_policy: currentDetails.cancellation_policy,
         chat_announcement: currentDetails.chat_announcement
@@ -2142,6 +2322,7 @@ export default function ProductDetailsTab({
                 slogan1: '',
                 slogan2: '',
                 slogan3: '',
+                greeting: '',
                 description: '',
                 included: '',
                 not_included: '',
@@ -2150,7 +2331,9 @@ export default function ProductDetailsTab({
                 tour_operation_info: '',
                 preparation_info: '',
                 small_group_info: '',
+                companion_recruitment_info: '',
                 notice_info: '',
+                important_notes: '',
                 private_tour_info: '',
                 cancellation_policy: '',
                 chat_announcement: '',
@@ -2317,6 +2500,7 @@ export default function ProductDetailsTab({
         slogan1: toNullIfEmpty(currentDetails.slogan1),
         slogan2: toNullIfEmpty(currentDetails.slogan2),
         slogan3: toNullIfEmpty(currentDetails.slogan3),
+        greeting: toNullIfEmpty(currentDetails.greeting),
         description: toNullIfEmpty(currentDetails.description),
         included: toNullIfEmpty(currentDetails.included),
         not_included: toNullIfEmpty(currentDetails.not_included),
@@ -2325,7 +2509,9 @@ export default function ProductDetailsTab({
         tour_operation_info: toNullIfEmpty(currentDetails.tour_operation_info),
         preparation_info: toNullIfEmpty(currentDetails.preparation_info),
         small_group_info: toNullIfEmpty(currentDetails.small_group_info),
+        companion_recruitment_info: toNullIfEmpty(currentDetails.companion_recruitment_info),
         notice_info: toNullIfEmpty(currentDetails.notice_info),
+        important_notes: toNullIfEmpty(currentDetails.important_notes),
         private_tour_info: toNullIfEmpty(currentDetails.private_tour_info),
         cancellation_policy: toNullIfEmpty(currentDetails.cancellation_policy),
         chat_announcement: toNullIfEmpty(currentDetails.chat_announcement),
@@ -2523,7 +2709,7 @@ export default function ProductDetailsTab({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-semibold text-gray-900">채널 선택</h4>
-                <span className="text-xs text-gray-500">{selectedChannelIds.length}개 선택됨</span>
+                <span className="text-xs text-gray-500">{selectedPairCount}개 쌍 선택</span>
               </div>
               <div className="flex gap-1">
                 <button onClick={() => setCompletionFilter('all')} className={`px-2 py-1 text-xs rounded ${completionFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>{t('filterAll')}</button>
@@ -2535,8 +2721,14 @@ export default function ProductDetailsTab({
             <div className="space-y-2">
               {channelGroups.map((group) => {
                 const isSelfGroup = group.type === 'self' || group.type === 'SELF'
-                const allSelected = group.channels.every(channel => selectedChannels[channel.id])
-                const someSelected = group.channels.some(channel => selectedChannels[channel.id]) && !allSelected
+                const allSelected = group.channels.every((channel) => {
+                  const variants = productVariantsByChannel[channel.id] || [{ variant_key: 'default' }]
+                  const sel = selectedChannelVariants[channel.id] || []
+                  return variants.length > 0 && variants.every((v) => sel.includes(v.variant_key))
+                })
+                const someSelected =
+                  group.channels.some((channel) => (selectedChannelVariants[channel.id]?.length ?? 0) > 0) &&
+                  !allSelected
                 return (
                   <div key={group.type} className="border border-gray-200 rounded-lg">
                     <div className="flex items-center justify-between p-2 bg-gray-50">
@@ -2564,39 +2756,44 @@ export default function ProductDetailsTab({
                           const percent = completion?.percentage ?? 0
                           if (completionFilter === 'empty' && percent > 0) return null
                           if (completionFilter === 'incomplete' && percent === 100) return null
-                          const isSelected = !!selectedChannels[channel.id]
+                          const sel = selectedChannelVariants[channel.id] || []
+                          const hasAny = sel.length > 0
                           const variants = productVariantsByChannel[channel.id] || [{ variant_key: 'default' }]
-                          const selectedVariant = channelVariants[channel.id] || 'default'
                           return (
-                            <div key={channel.id} className={`rounded border p-2 ${isSelected ? 'border-blue-300 bg-blue-50' : 'border-gray-200'}`}>
-                              <label className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => toggleChannelSelection(channel.id)}
-                                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                                />
-                                <span className="text-sm text-gray-800">{channel.name}</span>
-                                {completion && <span className="ml-auto text-[11px] text-gray-500">{completion.completed}/{completion.total}</span>}
-                              </label>
-                              {isSelected && variants.length > 0 && (
-                                <select
-                                  value={selectedVariant}
-                                  onChange={async (e) => {
-                                    const newVariantKey = e.target.value
-                                    const updatedVariants = { ...channelVariants, [channel.id]: newVariantKey }
-                                    setChannelVariants(updatedVariants)
-                                    await loadSelectedChannelData(updatedVariants)
-                                  }}
-                                  className="mt-2 w-full px-2 py-1 text-xs border border-gray-300 rounded"
-                                >
-                                  {variants.map((variant) => (
-                                    <option key={variant.variant_key} value={variant.variant_key}>
-                                      {variant.variant_name_ko || variant.variant_name_en || variant.variant_key}
-                                    </option>
-                                  ))}
-                                </select>
-                              )}
+                            <div
+                              key={channel.id}
+                              className={`rounded border p-2 ${hasAny ? 'border-blue-300 bg-blue-50' : 'border-gray-200'}`}
+                            >
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <span className="text-sm font-medium text-gray-800">{channel.name}</span>
+                                {completion && (
+                                  <span className="ml-auto text-[11px] text-gray-500">
+                                    {completion.completed}/{completion.total}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="space-y-1.5 pl-0.5">
+                                {variants.map((variant) => {
+                                  const checked = sel.includes(variant.variant_key)
+                                  return (
+                                    <label
+                                      key={`${channel.id}-${variant.variant_key}`}
+                                      className="flex items-center gap-2 cursor-pointer text-xs text-gray-700"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() => toggleChannelVariant(channel.id, variant.variant_key)}
+                                        className="h-3.5 w-3.5 text-blue-600 border-gray-300 rounded"
+                                      />
+                                      <span>
+                                        {variant.variant_name_ko || variant.variant_name_en || variant.variant_key}
+                                        <span className="text-gray-400 ml-1">({variant.variant_key})</span>
+                                      </span>
+                                    </label>
+                                  )
+                                })}
+                              </div>
                             </div>
                           )
                         })}
@@ -2609,21 +2806,25 @@ export default function ProductDetailsTab({
           </div>
 
           <div className="xl:col-span-9 border border-gray-200 rounded-lg p-4 space-y-4 max-h-[78vh] overflow-y-auto">
-            {selectedChannelIds.length === 0 ? (
+            {selectedPairCount === 0 ? (
               <div className="h-full min-h-[320px] flex items-center justify-center text-gray-500 text-sm">
-                왼쪽에서 채널을 선택하면 고객에게 보여질 내용을 바로 편집할 수 있습니다.
+                왼쪽에서 채널·variant 쌍을 선택하면 고객에게 보여질 내용을 바로 편집할 수 있습니다.
               </div>
             ) : (
               <>
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
-                  <p className="text-xs text-slate-700 mb-2">현재 편집 대상</p>
+                  <p className="text-xs text-slate-700 mb-2">현재 편집 대상 (선택된 채널·variant — 내용은 병합 표시)</p>
                   <div className="flex flex-wrap gap-2">
-                    {selectedChannelIds.map((channelId) => {
+                    {selectedPairsForDisplay.map(({ channelId, variantKey }) => {
                       const channel = channels.find((c) => c.id === channelId)
-                      const variantKey = channelVariants[channelId] || 'default'
-                      const variantName = (productVariantsByChannel[channelId] || []).find(v => v.variant_key === variantKey)
+                      const variantName = (productVariantsByChannel[channelId] || []).find(
+                        (v) => v.variant_key === variantKey
+                      )
                       return (
-                        <span key={`${channelId}-${variantKey}`} className="inline-flex items-center rounded-full bg-slate-200 text-slate-800 px-2.5 py-1 text-xs">
+                        <span
+                          key={`${channelId}-${variantKey}`}
+                          className="inline-flex items-center rounded-full bg-slate-200 text-slate-800 px-2.5 py-1 text-xs"
+                        >
                           {channel?.name || channelId} · {variantName?.variant_name_ko || variantName?.variant_name_en || variantKey}
                         </span>
                       )
@@ -2645,10 +2846,13 @@ export default function ProductDetailsTab({
                   <div className="grid grid-cols-1 gap-3 text-sm">
                     {[
                       { key: 'slogan1' as keyof ProductDetailsFields },
+                      { key: 'greeting' as keyof ProductDetailsFields },
                       { key: 'description' as keyof ProductDetailsFields },
                       { key: 'included' as keyof ProductDetailsFields },
                       { key: 'not_included' as keyof ProductDetailsFields },
+                      { key: 'companion_recruitment_info' as keyof ProductDetailsFields },
                       { key: 'notice_info' as keyof ProductDetailsFields },
+                      { key: 'important_notes' as keyof ProductDetailsFields },
                       { key: 'pickup_drop_info' as keyof ProductDetailsFields },
                       { key: 'preparation_info' as keyof ProductDetailsFields },
                       { key: 'cancellation_policy' as keyof ProductDetailsFields }
@@ -2681,7 +2885,7 @@ export default function ProductDetailsTab({
                 <div className="flex justify-end pt-2 border-t border-gray-200">
                   <button
                     onClick={saveSelectedChannelsDetails}
-                    disabled={saving || selectedChannelIds.length === 0}
+                    disabled={saving || selectedPairCount === 0}
                     className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Save className="h-4 w-4 mr-2" />
@@ -2741,7 +2945,7 @@ export default function ProductDetailsTab({
       )}
 
       {/* 저장 버튼 및 메시지 - 채널별 세부정보 관리 섹션이 없을 때만 표시 */}
-      {Object.keys(selectedChannels).filter(id => selectedChannels[id]).length === 0 && (
+      {selectedPairCount === 0 && (
         <div className="flex justify-between items-center">
           <div></div>
           <div className="flex items-center space-x-4">
@@ -2767,7 +2971,7 @@ export default function ProductDetailsTab({
       )}
       
       {/* 채널 선택 시 메시지만 표시하는 영역 */}
-      {Object.keys(selectedChannels).filter(id => selectedChannels[id]).length > 0 && (
+      {selectedPairCount > 0 && (
         <div className="flex justify-between items-center">
           <div></div>
           <div className="flex items-center space-x-4">
@@ -2821,7 +3025,10 @@ export default function ProductDetailsTab({
               </button>
               <button
                 type="button"
-                onClick={() => setImportFieldModalOpen(true)}
+                onClick={() => {
+                  setImportSourceLanguage(formData.currentLanguage || 'ko')
+                  setImportFieldModalOpen(true)
+                }}
                 className="px-3 py-1.5 text-xs rounded bg-emerald-600 text-white hover:bg-emerald-700"
               >
                 Import from another channel
@@ -2876,8 +3083,8 @@ export default function ProductDetailsTab({
 
       {importFieldModalOpen && previewEditingField && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-lg w-full max-w-lg">
-            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div className="bg-white rounded-lg w-full max-w-lg max-h-[85vh] flex flex-col">
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between shrink-0">
               <h3 className="text-sm font-semibold text-gray-900">섹션 가져오기 (Import)</h3>
               <button
                 type="button"
@@ -2887,25 +3094,79 @@ export default function ProductDetailsTab({
                 ×
               </button>
             </div>
-            <div className="p-5 space-y-3">
-              <p className="text-xs text-gray-600">선택한 채널의 동일 섹션 내용을 현재 편집 중인 섹션에 가져옵니다.</p>
+            <div className="p-5 space-y-3 overflow-y-auto flex-1">
+              <p className="text-xs text-gray-600">
+                소스 채널·언어에 저장된 동일 섹션을 불러와,{' '}
+                <span className="font-medium text-gray-800">현재 편집 언어({langLabel(formData.currentLanguage || 'ko')})</span>
+                로 붙여넣습니다. 다른 언어에서 가져오면 번역 없이 그대로 복사됩니다.
+              </p>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">소스 채널</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">소스 언어 (가져올 DB 데이터)</label>
                 <select
-                  value={importSourceChannelId}
-                  onChange={(e) => setImportSourceChannelId(e.target.value)}
+                  value={importSourceLanguage}
+                  onChange={(e) => setImportSourceLanguage(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
                 >
-                  <option value="">채널 선택</option>
-                  {channels.map(channel => (
-                    <option key={channel.id} value={channel.id}>
-                      {channel.name} ({(productVariantsByChannel[channel.id] || []).find(v => v.variant_key === (channelVariants[channel.id] || 'default'))?.variant_name_ko || (channelVariants[channel.id] || 'default')})
+                  {availableLanguages.map((lang) => (
+                    <option key={lang} value={lang}>
+                      {langLabel(lang)}
                     </option>
                   ))}
                 </select>
               </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-gray-700">소스 채널</label>
+                  {importStatsLoading && (
+                    <span className="text-[11px] text-gray-400">불러오는 중…</span>
+                  )}
+                </div>
+                <div className="border border-gray-200 rounded-lg max-h-56 overflow-y-auto divide-y divide-gray-100">
+                  {channels.map((channel) => {
+                    const st = importChannelStats[channel.id]
+                    const pv = getPrimaryVariantForChannel(channel.id)
+                    const variantLabel =
+                      (productVariantsByChannel[channel.id] || []).find((v) => v.variant_key === pv)
+                        ?.variant_name_ko ||
+                      (productVariantsByChannel[channel.id] || []).find((v) => v.variant_key === pv)
+                        ?.variant_name_en ||
+                      pv
+                    const badge =
+                      st === undefined ? (
+                        <span className="text-[11px] text-gray-400">확인 중…</span>
+                      ) : st.hasContent ? (
+                        <span className="text-[11px] text-emerald-700 tabular-nums">
+                          내용 있음 · 순문자 약 {st.plainLen.toLocaleString()}자
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-amber-700">내용 없음</span>
+                      )
+                    return (
+                      <label
+                        key={channel.id}
+                        className={`flex items-start gap-2 px-3 py-2 cursor-pointer hover:bg-gray-50 ${
+                          importSourceChannelId === channel.id ? 'bg-emerald-50' : ''
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="importSourceChannel"
+                          checked={importSourceChannelId === channel.id}
+                          onChange={() => setImportSourceChannelId(channel.id)}
+                          className="mt-0.5 h-4 w-4 text-emerald-600 border-gray-300"
+                        />
+                        <span className="flex-1 min-w-0 text-sm text-gray-800">
+                          <span className="font-medium">{channel.name}</span>
+                          <span className="text-gray-500 text-xs"> · {variantLabel}</span>
+                          <span className="block text-[11px] text-gray-600 mt-0.5">{badge}</span>
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
-            <div className="px-5 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-2">
+            <div className="px-5 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => setImportFieldModalOpen(false)}
@@ -2916,7 +3177,12 @@ export default function ProductDetailsTab({
               <button
                 type="button"
                 onClick={importSectionFromChannel}
-                disabled={importingField || !importSourceChannelId}
+                disabled={
+                  importingField ||
+                  importStatsLoading ||
+                  !importSourceChannelId ||
+                  !importChannelStats[importSourceChannelId]?.hasContent
+                }
                 className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 text-sm"
               >
                 {importingField ? '가져오는 중...' : '가져오기'}
@@ -2946,9 +3212,26 @@ export default function ProductDetailsTab({
               </button>
             </div>
             
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-gray-600 mb-3">
               {t('copyModalIntro')}
             </p>
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-3 py-2 mb-4">
+              {t('copyModalLanguageHint')}
+            </p>
+            <div className="mb-4">
+              <label className="block text-xs font-medium text-gray-700 mb-1">{t('copyModalSourceLanguage')}</label>
+              <select
+                value={copySourceLanguage}
+                onChange={(e) => setCopySourceLanguage(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              >
+                {availableLanguages.map((lang) => (
+                  <option key={lang} value={lang}>
+                    {langLabel(lang)}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <div className="space-y-2 mb-4 max-h-96 overflow-y-auto">
               {channelGroups.map((group) => (
@@ -2958,8 +3241,8 @@ export default function ProductDetailsTab({
                   </div>
                   <div className="space-y-2">
                     {group.channels.map((channel) => {
-                      const isSelected = selectedChannels[channel.id]
-                      if (isSelected) return null // 이미 선택된 채널은 제외
+                      const isSelected = (selectedChannelVariants[channel.id]?.length ?? 0) > 0
+                      if (isSelected) return null // 이미 variant를 고른 채널은 제외
                       
                       return (
                         <label key={channel.id} className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded">

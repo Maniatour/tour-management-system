@@ -192,7 +192,8 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
-  const status = searchParams.get('status') || 'pending'
+  /** pending | confirmed | rejected | active (대기+예약 생성됨, 무시 제외) */
+  const status = searchParams.get('status') || 'active'
   const fromUtc = searchParams.get('from_utc')
   const toUtc = searchParams.get('to_utc')
   const fromDate = searchParams.get('from_date')
@@ -202,7 +203,15 @@ export async function GET(request: NextRequest) {
   let query = client
     .from('reservation_imports')
     .select('id, message_id, source_email, platform_key, subject, received_at, extracted_data, status, reservation_id, created_at')
-    .eq('status', status)
+
+  if (status === 'active') {
+    query = query.in('status', ['pending', 'confirmed'])
+  } else if (status === 'pending' || status === 'confirmed' || status === 'rejected') {
+    query = query.eq('status', status)
+  } else {
+    query = query.in('status', ['pending', 'confirmed'])
+  }
+  query = query
     .order('received_at', { ascending: false, nullsFirst: false })
     .order('id', { ascending: false })
     .limit(1000)

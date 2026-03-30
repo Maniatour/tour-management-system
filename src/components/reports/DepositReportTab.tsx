@@ -204,15 +204,15 @@ export default function DepositReportTab({ dateRange, period }: DepositReportTab
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 min-w-0">
       {/* 요약 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-green-50 p-6 rounded-lg">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+        <div className="bg-green-50 p-4 sm:p-6 rounded-lg">
           <div className="flex items-center space-x-3">
             <DollarSign className="h-8 w-8 text-green-600" />
             <div>
               <p className="text-sm text-gray-600">총 입금액</p>
-              <p className="text-3xl font-bold text-gray-900">${stats.total.toLocaleString()}</p>
+              <p className="text-2xl sm:text-3xl font-bold text-gray-900 break-all">${stats.total.toLocaleString()}</p>
             </div>
           </div>
         </div>
@@ -221,16 +221,16 @@ export default function DepositReportTab({ dateRange, period }: DepositReportTab
             <CreditCard className="h-8 w-8 text-blue-600" />
             <div>
               <p className="text-sm text-gray-600">입금 건수</p>
-              <p className="text-3xl font-bold text-gray-900">{stats.count}</p>
+              <p className="text-2xl sm:text-3xl font-bold text-gray-900">{stats.count}</p>
             </div>
           </div>
         </div>
-        <div className="bg-purple-50 p-6 rounded-lg">
+        <div className="bg-purple-50 p-4 sm:p-6 rounded-lg">
           <div className="flex items-center space-x-3">
             <TrendingUp className="h-8 w-8 text-purple-600" />
             <div>
               <p className="text-sm text-gray-600">평균 입금액</p>
-              <p className="text-3xl font-bold text-gray-900">
+              <p className="text-2xl sm:text-3xl font-bold text-gray-900 break-all">
                 ${stats.count > 0 ? (stats.total / stats.count).toFixed(0) : 0}
               </p>
             </div>
@@ -258,7 +258,7 @@ export default function DepositReportTab({ dateRange, period }: DepositReportTab
                     />
                   </div>
                 </div>
-                <span className="ml-4 text-sm font-semibold text-gray-900">
+                <span className="sm:ml-4 text-sm font-semibold text-gray-900 shrink-0 text-right">
                   ${item.amount.toLocaleString()}
                 </span>
               </div>
@@ -267,15 +267,15 @@ export default function DepositReportTab({ dateRange, period }: DepositReportTab
       </div>
 
       {/* 채널별 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">채널별 입금</h3>
+      <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">채널별 입금</h3>
         <div className="space-y-3">
           {stats.byChannel
             .sort((a: any, b: any) => b.amount - a.amount)
             .map((item: any, idx: number) => (
-              <div key={idx} className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="flex justify-between mb-1">
+              <div key={idx} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between gap-2 mb-1">
                     <span className="text-sm font-medium text-gray-700">{item.channel}</span>
                     <span className="text-sm text-gray-500">{item.percentage.toFixed(1)}%</span>
                   </div>
@@ -286,7 +286,7 @@ export default function DepositReportTab({ dateRange, period }: DepositReportTab
                     />
                   </div>
                 </div>
-                <span className="ml-4 text-sm font-semibold text-gray-900">
+                <span className="sm:ml-4 text-sm font-semibold text-gray-900 shrink-0 text-right">
                   ${item.amount.toLocaleString()}
                 </span>
               </div>
@@ -295,10 +295,10 @@ export default function DepositReportTab({ dateRange, period }: DepositReportTab
       </div>
 
       {/* 상태별 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">상태별 입금</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full">
+      <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">상태별 입금</h3>
+        <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 touch-pan-x">
+          <table className="w-full min-w-[280px]">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">상태</th>
@@ -322,10 +322,10 @@ export default function DepositReportTab({ dateRange, period }: DepositReportTab
       </div>
 
       {/* 최근 입금 내역 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">최근 입금 내역</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full">
+      <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">최근 입금 내역</h3>
+        <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 touch-pan-x">
+          <table className="w-full min-w-[520px] text-xs sm:text-sm">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">날짜</th>

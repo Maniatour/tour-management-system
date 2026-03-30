@@ -62,7 +62,10 @@ interface ProductDetails {
   tour_operation_info: string | null
   preparation_info: string | null
   small_group_info: string | null
+  greeting: string | null
+  companion_recruitment_info: string | null
   notice_info: string | null
+  important_notes: string | null
   private_tour_info: string | null
   cancellation_policy: string | null
   chat_announcement: string | null
@@ -1550,6 +1553,23 @@ export default function ProductDetailPage() {
                       </div>
                     )}
 
+                    {productDetails?.greeting && (
+                      <div className="bg-white rounded-xl shadow-sm border border-emerald-200 p-6">
+                        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-200">
+                          <div className="p-2 bg-emerald-100 rounded-lg">
+                            <Info className="h-5 w-5 text-emerald-600" />
+                          </div>
+                          <h3 className="text-xl font-semibold text-gray-900">{isEnglish ? 'Greeting' : '인사말'}</h3>
+                        </div>
+                        <div
+                          className="text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                          dangerouslySetInnerHTML={{
+                            __html: markdownToHtml(productDetails.greeting || '')
+                          }}
+                        />
+                      </div>
+                    )}
+
                     {/* 투어 소개 섹션 */}
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                       <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-200">
@@ -2165,6 +2185,26 @@ export default function ProductDetailPage() {
                               </div>
                             </div>
                           )}
+
+                          {productDetails?.companion_recruitment_info && (
+                            <div className="group relative overflow-hidden bg-white border border-teal-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
+                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-teal-400 via-teal-500 to-teal-600"></div>
+                              <div className="p-6">
+                                <div className="flex items-center gap-3 mb-4">
+                                  <div className="p-2 bg-gradient-to-br from-teal-100 to-teal-200 rounded-lg">
+                                    <Users2 className="w-5 h-5 text-teal-600" />
+                                  </div>
+                                  <h4 className="text-lg font-semibold text-gray-900">{isEnglish ? 'Companion recruitment' : '동행모집 안내'}</h4>
+                                </div>
+                                <div
+                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                                  dangerouslySetInnerHTML={{
+                                    __html: markdownToHtml(productDetails.companion_recruitment_info || '')
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          )}
                           
                           {productDetails?.notice_info && (
                             <div className="group relative overflow-hidden bg-white border border-red-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
@@ -2189,7 +2229,7 @@ export default function ProductDetailPage() {
                         
                         {!productDetails?.pickup_drop_info && !productDetails?.luggage_info && 
                          !productDetails?.tour_operation_info && !productDetails?.preparation_info && 
-                         !productDetails?.small_group_info && !productDetails?.notice_info && (
+                         !productDetails?.small_group_info && !productDetails?.companion_recruitment_info && !productDetails?.notice_info && (
                           <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
                             <div className="text-gray-400 mb-2 text-4xl">🚌</div>
                             <p className="text-gray-600">{isEnglish ? 'No logistics information available' : '운영 정보가 없습니다'}</p>
@@ -2202,6 +2242,25 @@ export default function ProductDetailPage() {
                     {activeDetailTab === 'policy' && (
                       <div className="space-y-6">
                         <div className="grid grid-cols-1 gap-6">
+                          {productDetails?.important_notes && (
+                            <div className="group relative overflow-hidden bg-white border border-amber-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
+                              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600"></div>
+                              <div className="p-6">
+                                <div className="flex items-center gap-3 mb-4">
+                                  <div className="p-2 bg-gradient-to-br from-amber-100 to-amber-200 rounded-lg">
+                                    <AlertTriangle className="w-5 h-5 text-amber-600" />
+                                  </div>
+                                  <h4 className="text-lg font-semibold text-gray-900">IMPORTANT NOTES</h4>
+                                </div>
+                                <div
+                                  className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                                  dangerouslySetInnerHTML={{
+                                    __html: markdownToHtml(productDetails.important_notes || '')
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          )}
                           {productDetails?.private_tour_info && (
                             <div className="group relative overflow-hidden bg-white border border-purple-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
                               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-400 via-purple-500 to-purple-600"></div>
@@ -2263,7 +2322,7 @@ export default function ProductDetailPage() {
                           )}
                         </div>
                         
-                        {!productDetails?.private_tour_info && !productDetails?.cancellation_policy && 
+                        {!productDetails?.important_notes && !productDetails?.private_tour_info && !productDetails?.cancellation_policy && 
                          !productDetails?.chat_announcement && (
                           <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
                             <div className="text-gray-400 mb-2 text-4xl">📋</div>

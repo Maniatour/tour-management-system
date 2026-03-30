@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { channelProductsIncludeVariantKey } from '@/lib/resolveImportChannelVariant'
 
 interface Channel {
   id: string
@@ -24,6 +25,10 @@ interface ChannelSectionProps {
   t: (key: string) => string
   layout?: 'modal' | 'page'
   onAccordionToggle?: (isExpanded: boolean) => void
+  /** 선택된 채널 줄 전체 표시 (예: "Klook - All Inclusive"). 있으면 채널명만 대신 사용 */
+  selectedChannelTitleOverride?: string
+  /** 예약 가져오기: extracted channel_variant_key — variant 목록 로드 후 이 키로 맞춤 (with_exclusions로 덮어쓰기 방지) */
+  importPreferredVariantKey?: string
 }
 
 export default function ChannelSection({
@@ -32,9 +37,13 @@ export default function ChannelSection({
   channels,
   t,
   layout = 'modal',
-  onAccordionToggle
+  onAccordionToggle,
+  selectedChannelTitleOverride,
+  importPreferredVariantKey,
 }: ChannelSectionProps) {
   const [isExpanded, setIsExpanded] = useState(layout === 'modal')
+  /** 채널·상품 바뀌면 이메일 기준 variant를 다시 한 번 적용할 수 있게 */
+  const importVariantApplyGenerationRef = useRef(0)
   const [productVariants, setProductVariants] = useState<Array<{
     variant_key: string;
     variant_name_ko?: string | null;
@@ -106,6 +115,25 @@ export default function ChannelSection({
     loadAllChannelVariants()
   }, [channels])
 
+  useEffect(() => {
+    importVariantApplyGenerationRef.current += 1
+  }, [formData.channelId, formData.productId])
+
+  const variantSelectValue = useMemo(() => {
+    const keys = productVariants.map((v) => v.variant_key)
+    if (!keys.length) return formData.variantKey || 'default'
+    let cur = String(formData.variantKey ?? '').trim()
+    if (cur === 'default' && !keys.includes('default')) cur = ''
+    const curDb = cur ? channelProductsIncludeVariantKey(keys, cur) : undefined
+    if (curDb) return curDb
+    const p = importPreferredVariantKey?.trim()
+    const pDb = p ? channelProductsIncludeVariantKey(keys, p) : undefined
+    if (p && pDb) return pDb
+    // import에서 온 키가 DB 목록에 없으면 첫 옵션으로 바꾸지 않음(실제 폼 값 유지 — 표시만 어긋날 수 있음)
+    if (p && !pDb && cur) return cur
+    return keys[0] ?? 'default'
+  }, [productVariants, formData.variantKey, importPreferredVariantKey])
+
   // 채널과 상품이 선택되었을 때 variant 목록 로드
   useEffect(() => {
     const loadVariants = async () => {
@@ -113,6 +141,8 @@ export default function ChannelSection({
         setProductVariants([])
         return
       }
+
+      const applyGeneration = importVariantApplyGenerationRef.current
 
       try {
         const { data, error } = await supabase
@@ -136,15 +166,37 @@ export default function ChannelSection({
         }))
 
         setProductVariants(variants.length > 0 ? variants : [{ variant_key: 'default' }])
-        
-        // 기본 variant 선택 (아직 선택되지 않은 경우)
-        if (!formData.variantKey && variants.length > 0) {
-          const defaultVariant = variants.find(v => v.variant_key === 'default') || variants[0]
-          setFormData((prev: any) => ({
-            ...prev,
-            variantKey: defaultVariant.variant_key
-          }))
-        }
+
+        if (variants.length === 0) return
+
+        const keys = variants.map((v) => v.variant_key)
+        const preferred = importPreferredVariantKey?.trim()
+        const preferredDb = preferred ? channelProductsIncludeVariantKey(keys, preferred) : undefined
+
+        setFormData((prev: any) => {
+          if (applyGeneration !== importVariantApplyGenerationRef.current) return prev
+
+          let cur = String(prev.variantKey ?? '').trim()
+          if (cur === 'default' && !keys.includes('default')) cur = ''
+
+          const curDb = cur ? channelProductsIncludeVariantKey(keys, cur) : undefined
+          const curValid = cur !== '' && (!!curDb || keys.includes(cur))
+
+          // 예약 가져오기: 목록에 있는 표기로 맞춤 (all-inclusive vs all_inclusive)
+          if (preferred && preferredDb) {
+            if (prev.variantKey !== preferredDb) return { ...prev, variantKey: preferredDb }
+            return prev
+          }
+          // 이메일 기준 variant가 이 상품·채널 channel_products에 없음 → 첫 행(with_exclusions)으로 덮어쓰지 않음
+          if (preferred && !preferredDb) {
+            return prev
+          }
+
+          if (curValid) return prev
+
+          const fallback = variants.find((v) => v.variant_key === 'default') || variants[0]
+          return { ...prev, variantKey: fallback.variant_key }
+        })
       } catch (error) {
         console.error('Variant 목록 로드 중 오류:', error)
         setProductVariants([{ variant_key: 'default' }])
@@ -152,7 +204,7 @@ export default function ChannelSection({
     }
 
     loadVariants()
-  }, [formData.channelId, formData.productId, formData.variantKey, setFormData])
+  }, [formData.channelId, formData.productId, setFormData, importPreferredVariantKey])
   
   const handleToggle = () => {
     const newExpanded = !isExpanded
@@ -211,7 +263,9 @@ export default function ChannelSection({
                         🌐
                       </div>
                     )}
-                    <span className="text-sm text-blue-900 font-medium">{selectedChannel.name}</span>
+                    <span className="text-sm text-blue-900 font-medium">
+                      {selectedChannelTitleOverride?.trim() || selectedChannel.name}
+                    </span>
                   </div>
                 ) : null
               })()}
@@ -231,7 +285,7 @@ export default function ChannelSection({
                 Variant
               </label>
               <select
-                value={formData.variantKey || 'default'}
+                value={variantSelectValue}
                 onChange={(e) => setFormData((prev: any) => ({
                   ...prev,
                   variantKey: e.target.value

@@ -159,15 +159,15 @@ export default function SettlementReportTab({ dateRange, period }: SettlementRep
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 min-w-0">
       {/* 요약 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-green-50 p-6 rounded-lg">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+        <div className="bg-green-50 p-4 sm:p-6 rounded-lg">
           <div className="flex items-center space-x-3">
             <DollarSign className="h-8 w-8 text-green-600" />
             <div>
               <p className="text-sm text-gray-600">총 수익</p>
-              <p className="text-3xl font-bold text-gray-900">${stats.revenue.total.toLocaleString()}</p>
+              <p className="text-2xl sm:text-3xl font-bold text-gray-900 break-all">${stats.revenue.total.toLocaleString()}</p>
             </div>
           </div>
         </div>
@@ -180,12 +180,12 @@ export default function SettlementReportTab({ dateRange, period }: SettlementRep
             </div>
           </div>
         </div>
-        <div className="bg-blue-50 p-6 rounded-lg">
+        <div className="bg-blue-50 p-4 sm:p-6 rounded-lg">
           <div className="flex items-center space-x-3">
             <Receipt className="h-8 w-8 text-blue-600" />
             <div>
               <p className="text-sm text-gray-600">순이익</p>
-              <p className="text-3xl font-bold text-gray-900">${stats.profit.net.toLocaleString()}</p>
+              <p className="text-2xl sm:text-3xl font-bold text-gray-900 break-all">${stats.profit.net.toLocaleString()}</p>
             </div>
           </div>
         </div>
@@ -194,15 +194,15 @@ export default function SettlementReportTab({ dateRange, period }: SettlementRep
             <PieChart className="h-8 w-8 text-purple-600" />
             <div>
               <p className="text-sm text-gray-600">순이익률</p>
-              <p className="text-3xl font-bold text-gray-900">{stats.profit.margin.toFixed(1)}%</p>
+              <p className="text-2xl sm:text-3xl font-bold text-gray-900">{stats.profit.margin.toFixed(1)}%</p>
             </div>
           </div>
         </div>
       </div>
 
       {/* 수익 상세 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">수익 상세</h3>
+      <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">수익 상세</h3>
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <span className="text-gray-600">예약 수익</span>
@@ -243,8 +243,8 @@ export default function SettlementReportTab({ dateRange, period }: SettlementRep
       </div>
 
       {/* 정산 요약 */}
-      <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-lg text-white">
-        <h3 className="text-lg font-semibold mb-4">정산 요약</h3>
+      <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-4 sm:p-6 rounded-lg text-white">
+        <h3 className="text-base sm:text-lg font-semibold mb-4">정산 요약</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <p className="text-blue-100 text-sm">총 수익</p>

@@ -206,10 +206,10 @@ export default function TourReportTab({ dateRange, period }: TourReportTabProps)
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 min-w-0">
       {/* 요약 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-blue-50 p-6 rounded-lg">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+        <div className="bg-blue-50 p-4 sm:p-6 rounded-lg">
           <div className="flex items-center space-x-3">
             <Calendar className="h-8 w-8 text-blue-600" />
             <div>
@@ -218,7 +218,7 @@ export default function TourReportTab({ dateRange, period }: TourReportTabProps)
             </div>
           </div>
         </div>
-        <div className="bg-green-50 p-6 rounded-lg">
+        <div className="bg-green-50 p-4 sm:p-6 rounded-lg">
           <div className="flex items-center space-x-3">
             <DollarSign className="h-8 w-8 text-green-600" />
             <div>
@@ -236,7 +236,7 @@ export default function TourReportTab({ dateRange, period }: TourReportTabProps)
             </div>
           </div>
         </div>
-        <div className="bg-purple-50 p-6 rounded-lg">
+        <div className="bg-purple-50 p-4 sm:p-6 rounded-lg">
           <div className="flex items-center space-x-3">
             <Users className="h-8 w-8 text-purple-600" />
             <div>
@@ -248,10 +248,10 @@ export default function TourReportTab({ dateRange, period }: TourReportTabProps)
       </div>
 
       {/* 투어별 상세 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">투어별 상세</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full">
+      <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">투어별 상세</h3>
+        <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 touch-pan-x">
+          <table className="w-full min-w-[800px] text-xs sm:text-sm">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">투어 날짜</th>

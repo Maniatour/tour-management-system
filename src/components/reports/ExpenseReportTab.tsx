@@ -192,21 +192,21 @@ export default function ExpenseReportTab({ dateRange, period }: ExpenseReportTab
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 min-w-0">
       {/* 요약 */}
-      <div className="bg-red-50 p-6 rounded-lg">
+      <div className="bg-red-50 p-4 sm:p-6 rounded-lg">
         <div className="flex items-center space-x-3">
           <TrendingUp className="h-8 w-8 text-red-600" />
           <div>
             <p className="text-sm text-gray-600">총 지출</p>
-            <p className="text-3xl font-bold text-gray-900">${stats.total.toLocaleString()}</p>
+            <p className="text-2xl sm:text-3xl font-bold text-gray-900 break-all">${stats.total.toLocaleString()}</p>
           </div>
         </div>
       </div>
 
       {/* 카테고리별 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+      <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
           <PieChart size={20} />
           <span>카테고리별 지출</span>
         </h3>
@@ -214,11 +214,11 @@ export default function ExpenseReportTab({ dateRange, period }: ExpenseReportTab
           {stats.byCategory
             .sort((a: any, b: any) => b.amount - a.amount)
             .map((item: any, idx: number) => (
-              <div key={idx} className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="flex justify-between mb-1">
-                    <span className="text-sm font-medium text-gray-700">{item.category}</span>
-                    <span className="text-sm text-gray-500">{item.percentage.toFixed(1)}%</span>
+              <div key={idx} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between gap-2 mb-1">
+                    <span className="text-sm font-medium text-gray-700 truncate">{item.category}</span>
+                    <span className="text-sm text-gray-500 shrink-0">{item.percentage.toFixed(1)}%</span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
@@ -227,7 +227,7 @@ export default function ExpenseReportTab({ dateRange, period }: ExpenseReportTab
                     />
                   </div>
                 </div>
-                <span className="ml-4 text-sm font-semibold text-gray-900">
+                <span className="sm:ml-4 text-sm font-semibold text-gray-900 shrink-0 text-right">
                   ${item.amount.toLocaleString()}
                 </span>
               </div>
@@ -236,13 +236,13 @@ export default function ExpenseReportTab({ dateRange, period }: ExpenseReportTab
       </div>
 
       {/* 유형별 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">유형별 지출</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">유형별 지출</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
           {stats.byType.map((item: any, idx: number) => (
-            <div key={idx} className="bg-gray-50 p-4 rounded-lg">
-              <p className="text-sm text-gray-600">{item.type}</p>
-              <p className="text-2xl font-bold text-gray-900 mt-1">${item.amount.toLocaleString()}</p>
+            <div key={idx} className="bg-gray-50 p-3 sm:p-4 rounded-lg min-w-0">
+              <p className="text-xs sm:text-sm text-gray-600 line-clamp-2">{item.type}</p>
+              <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-1 break-all">${item.amount.toLocaleString()}</p>
               <p className="text-xs text-gray-500 mt-1">{item.percentage.toFixed(1)}%</p>
             </div>
           ))}
@@ -250,10 +250,10 @@ export default function ExpenseReportTab({ dateRange, period }: ExpenseReportTab
       </div>
 
       {/* 결제 방법별 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">결제 방법별 지출</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full">
+      <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">결제 방법별 지출</h3>
+        <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 touch-pan-x">
+          <table className="w-full min-w-[320px]">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">결제 방법</th>

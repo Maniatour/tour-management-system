@@ -209,6 +209,7 @@ export interface ProductDetailsTranslationFields {
   slogan1?: string
   slogan2?: string
   slogan3?: string
+  greeting?: string
   description?: string
   included?: string
   not_included?: string
@@ -217,7 +218,9 @@ export interface ProductDetailsTranslationFields {
   tour_operation_info?: string
   preparation_info?: string
   small_group_info?: string
+  companion_recruitment_info?: string
   notice_info?: string
+  important_notes?: string
   private_tour_info?: string
   cancellation_policy?: string
   chat_announcement?: string

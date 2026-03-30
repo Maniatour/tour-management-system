@@ -3,7 +3,9 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { DollarSign, TrendingUp, TrendingDown, Wallet, Calendar, Plus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getDefaultLedgerBaseDate, getFiscalReportingSettings } from '@/lib/fiscal-settings'
 import { Button } from '@/components/ui/button'
+import { AccountingTerm } from '@/components/ui/AccountingTerm'
 import CashLedgerReportEditModals, { type CashLedgerEditTarget } from '@/components/reports/CashLedgerReportEditModals'
 
 interface CashReportTabProps {
@@ -30,10 +32,15 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
   const [loading, setLoading] = useState(true)
   const [editTarget, setEditTarget] = useState<CashLedgerEditTarget | null>(null)
   const [addCashOpen, setAddCashOpen] = useState(false)
+  const [ledgerBaseDate, setLedgerBaseDate] = useState<string>(getDefaultLedgerBaseDate())
 
   const dismissEdit = useCallback(() => setEditTarget(null), [])
 
-  const loadCashStats = async (options?: { soft?: boolean }) => {
+  useEffect(() => {
+    getFiscalReportingSettings().then((s) => setLedgerBaseDate(s.ledgerBaseDate))
+  }, [])
+
+  const loadCashStats = useCallback(async (options?: { soft?: boolean }) => {
     if (!options?.soft) setLoading(true)
     try {
       const toNumber = (v: unknown) => {
@@ -45,8 +52,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         return 0
       }
 
-      // 기준일: 2026년 1월 1일
-      const baseDate = '2026-01-01'
+      const baseDate = ledgerBaseDate
       
       // 날짜 유효성 검사
       if (!dateRange.start || !dateRange.end) {
@@ -86,7 +92,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           .gte('transaction_date', startISO)
           .lte('transaction_date', endISO)
           .order('transaction_date', { ascending: false }),
-        // 2026년 1월 1일부터의 모든 거래 조회 (잔액 계산용)
+        // 원장 기준일부터의 모든 거래 조회 (잔액 계산용)
         supabase
           .from('cash_transactions')
           .select('id, transaction_type, amount, transaction_date')
@@ -100,7 +106,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           .in('payment_status', ['Deposit Received', 'Balance Received', 'Partner Received', "Customer's CC Charged", 'Commission Received !'])
           .gte('submit_on', startISO)
           .lte('submit_on', endISO),
-        // 2026년 1월 1일부터의 현금 입금 (잔액 계산용)
+        // 원장 기준일부터의 현금 입금 (잔액 계산용)
         supabase
           .from('payment_records')
           .select('id, amount, submit_on')
@@ -116,7 +122,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           .gte('submit_on', startISO)
           .lte('submit_on', endISO)
           .order('submit_on', { ascending: false }),
-        // 2026년 1월 1일부터 company_expenses 현금 지출 (잔액 계산용)
+        // 원장 기준일부터 company_expenses 현금 지출 (잔액 계산용)
         supabase
           .from('company_expenses')
           .select('id, amount, submit_on')
@@ -131,7 +137,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
           .gte('submit_on', startISO)
           .lte('submit_on', endISO)
           .order('submit_on', { ascending: false }),
-        // 2026년 1월 1일부터 reservation_expenses 현금 지출 (잔액 계산용)
+        // 원장 기준일부터 reservation_expenses 현금 지출 (잔액 계산용)
         supabase
           .from('reservation_expenses')
           .select('id, amount, submit_on')
@@ -174,7 +180,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
       const totalDeposits = periodDeposits + cashPaymentsTotal
       const netCashFlow = totalDeposits - periodWithdrawals
 
-      // 2026년 1월 1일부터의 총 잔액 계산
+      // 원장 기준일부터의 총 잔액 계산
       const totalBalance = (allTransactions || []).reduce((balance, t) => {
         if (t.transaction_type === 'deposit') {
           return balance + toNumber((t as any).amount)
@@ -183,7 +189,7 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
         }
       }, 0)
 
-      // payment_records에서 2026년 1월 1일부터의 현금 입금도 포함 (이미 병렬 쿼리로 조회됨)
+      // payment_records에서 원장 기준일부터의 현금 입금도 포함 (이미 병렬 쿼리로 조회됨)
       const allCashPaymentsTotal = (allCashPayments || [])
         .reduce((sum, p) => sum + toNumber((p as any).amount), 0)
       // company_expenses, reservation_expenses 현금 지출은 잔액에서 차감
@@ -360,11 +366,11 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
     } finally {
       if (!options?.soft) setLoading(false)
     }
-  }
+  }, [dateRange, period, ledgerBaseDate])
 
   useEffect(() => {
     loadCashStats()
-  }, [dateRange, period])
+  }, [loadCashStats])
 
   if (loading) {
     return (
@@ -379,47 +385,49 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 min-w-0">
       {/* 요약 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-green-50 p-6 rounded-lg">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+        <div className="bg-green-50 p-4 sm:p-6 rounded-lg">
           <div className="flex items-center space-x-3">
             <TrendingUp className="h-8 w-8 text-green-600" />
             <div>
               <p className="text-sm text-gray-600">기간 내 입금</p>
-              <p className="text-3xl font-bold text-gray-900">${stats.period.deposits.toLocaleString()}</p>
+              <p className="text-2xl sm:text-3xl font-bold text-gray-900 break-all">${stats.period.deposits.toLocaleString()}</p>
               <p className="text-xs text-gray-500 mt-1">
                 현금 거래: ${stats.period.transactions.toLocaleString()}
               </p>
             </div>
           </div>
         </div>
-        <div className="bg-red-50 p-6 rounded-lg">
+        <div className="bg-red-50 p-4 sm:p-6 rounded-lg">
           <div className="flex items-center space-x-3">
             <TrendingDown className="h-8 w-8 text-red-600" />
             <div>
-              <p className="text-sm text-gray-600">기간 내 출금</p>
-              <p className="text-3xl font-bold text-gray-900">${stats.period.withdrawals.toLocaleString()}</p>
+              <p className="text-sm text-gray-600">
+                기간 내 <AccountingTerm termKey="출금">출금</AccountingTerm>
+              </p>
+              <p className="text-2xl sm:text-3xl font-bold text-gray-900 break-all">${stats.period.withdrawals.toLocaleString()}</p>
             </div>
           </div>
         </div>
-        <div className="bg-blue-50 p-6 rounded-lg">
+        <div className="bg-blue-50 p-4 sm:p-6 rounded-lg">
           <div className="flex items-center space-x-3">
             <DollarSign className="h-8 w-8 text-blue-600" />
             <div>
               <p className="text-sm text-gray-600">순 현금 흐름</p>
-              <p className="text-3xl font-bold text-gray-900">
+              <p className="text-2xl sm:text-3xl font-bold text-gray-900 break-all">
                 ${stats.period.netFlow.toLocaleString()}
               </p>
             </div>
           </div>
         </div>
-        <div className="bg-purple-50 p-6 rounded-lg">
+        <div className="bg-purple-50 p-4 sm:p-6 rounded-lg">
           <div className="flex items-center space-x-3">
             <Wallet className="h-8 w-8 text-purple-600" />
             <div>
               <p className="text-sm text-gray-600">현재 잔액</p>
-              <p className="text-3xl font-bold text-gray-900">${stats.balance.total.toLocaleString()}</p>
+              <p className="text-2xl sm:text-3xl font-bold text-gray-900 break-all">${stats.balance.total.toLocaleString()}</p>
               <p className="text-xs text-gray-500 mt-1">
                 ({stats.balance.baseDate} 기준)
               </p>
@@ -429,24 +437,30 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
       </div>
 
       {/* 잔액 정보 */}
-      <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-6 rounded-lg text-white">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold mb-2">현금 잔액</h3>
-            <p className="text-4xl font-bold">${stats.balance.total.toLocaleString()}</p>
-            <p className="text-purple-100 text-sm mt-2">
+      <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-4 sm:p-6 rounded-lg text-white">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-base sm:text-lg font-semibold mb-2 flex flex-wrap items-center gap-x-1">
+              <AccountingTerm termKey="현금관리">현금</AccountingTerm> <AccountingTerm termKey="잔액">잔액</AccountingTerm>
+            </h3>
+            <p className="text-3xl sm:text-4xl font-bold break-all">${stats.balance.total.toLocaleString()}</p>
+            <p className="text-purple-100 text-xs sm:text-sm mt-2">
               {stats.balance.baseDate}부터의 모든 거래 기준
             </p>
           </div>
-          <Calendar className="h-16 w-16 text-purple-200" />
+          <Calendar className="h-12 w-12 sm:h-16 sm:w-16 text-purple-200 shrink-0 opacity-90" aria-hidden />
         </div>
         <div className="mt-4 pt-4 border-t border-purple-400 grid grid-cols-2 gap-4">
           <div>
-            <p className="text-purple-100 text-sm">기간 내 입금</p>
+            <p className="text-purple-100 text-sm">
+              기간 내 <AccountingTerm termKey="입금">입금</AccountingTerm>
+            </p>
             <p className="text-2xl font-bold">${stats.period.deposits.toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-purple-100 text-sm">기간 내 출금</p>
+            <p className="text-purple-100 text-sm">
+              기간 내 <AccountingTerm termKey="출금">출금</AccountingTerm>
+            </p>
             <p className="text-2xl font-bold">${stats.period.withdrawals.toLocaleString()}</p>
           </div>
         </div>
@@ -454,15 +468,19 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
 
       {/* 카테고리별 통계 */}
       {stats.byCategory.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">카테고리별 현금 흐름</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full">
+        <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6">
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">카테고리별 현금 흐름</h3>
+          <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 touch-pan-x">
+            <table className="w-full min-w-[360px]">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">카테고리</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">입금</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">출금</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <AccountingTerm termKey="입금">입금</AccountingTerm>
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                    <AccountingTerm termKey="출금">출금</AccountingTerm>
+                  </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">순액</th>
                 </tr>
               </thead>
@@ -492,14 +510,14 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
       )}
 
       {/* 상세 거래 내역 */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6">
+      <div className="bg-white border border-gray-200 rounded-lg p-4 sm:p-6">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-2">
-          <h3 className="text-lg font-semibold text-gray-900">상세 거래 내역</h3>
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900">상세 거래 내역</h3>
           <Button
             type="button"
             size="sm"
             variant="outline"
-            className="shrink-0 gap-1.5 w-fit"
+            className="shrink-0 gap-1.5 w-full sm:w-fit min-h-[44px] sm:min-h-0"
             onClick={() => {
               setEditTarget(null)
               setAddCashOpen(true)
@@ -510,19 +528,23 @@ export default function CashReportTab({ dateRange, period }: CashReportTabProps)
             <span>현금 거래 추가</span>
           </Button>
         </div>
-        <p className="text-sm text-gray-500 mb-4">
-          선택한 기간 내 현금 거래(cash_transactions), 현금 입금(payment_records), 회사 지출(company_expenses), 예약 지출(reservation_expenses)의 현금 내역을 함께 표시합니다.
-          잔액 열은 {stats.balance.baseDate} 이후 동일 원장을 일시·출처 순으로 합산한 누적 잔액(해당 거래 반영 후)입니다.
-          행을 클릭하면 해당 건을 수정할 수 있습니다. + 버튼으로 현금 관리(cash_transactions) 거래를 바로 추가할 수 있습니다.
+        <p className="text-xs sm:text-sm text-gray-500 mb-4 leading-relaxed">
+          선택한 기간 내 현금 거래(cash_transactions), 현금 <AccountingTerm termKey="입금">입금</AccountingTerm>(payment_records), 회사 지출(company_expenses), 예약 지출(reservation_expenses)의 현금 내역을 함께 표시합니다.{' '}
+          <AccountingTerm termKey="잔액">잔액</AccountingTerm> 열은 {stats.balance.baseDate} 이후 동일{' '}
+          <AccountingTerm termKey="원장">원장</AccountingTerm>을 일시·출처 순으로 합산한 누적{' '}
+          <AccountingTerm termKey="잔액">잔액</AccountingTerm>(해당 거래 반영 후)입니다. 행을 클릭하면 해당 건을 수정할 수 있습니다. + 버튼으로{' '}
+          <AccountingTerm termKey="현금관리">현금 관리</AccountingTerm>(cash_transactions) 거래를 바로 추가할 수 있습니다.
         </p>
-        <div className="overflow-x-auto">
-          <table className="w-full">
+        <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 touch-pan-x">
+          <table className="w-full min-w-[800px] text-xs sm:text-sm">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap" style={{ minWidth: '11rem' }}>일시</th>
+                <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap" style={{ minWidth: '11rem' }}>일시</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap" style={{ minWidth: '4.5rem' }}>구분</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">금액</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">잔액</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap">
+                  <AccountingTerm termKey="잔액">잔액</AccountingTerm>
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap" style={{ minWidth: '7rem' }}>카테고리</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">설명/메모</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">출처</th>

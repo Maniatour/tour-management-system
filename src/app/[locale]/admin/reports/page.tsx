@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react'
-import { Calendar, BarChart3, TrendingUp, Users, Package, Receipt, DollarSign, CreditCard, FileText, Mail, Download, Clock, Search } from 'lucide-react'
+import { Calendar, BarChart3, TrendingUp, Users, Package, Receipt, DollarSign, CreditCard, FileText, Mail, Download, Clock, Search, Landmark, PieChart } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { useReservationData } from '@/hooks/useReservationData'
 import { useAuth } from '@/contexts/AuthContext'
@@ -13,15 +13,27 @@ import ExpenseReportTab from '@/components/reports/ExpenseReportTab'
 import DepositReportTab from '@/components/reports/DepositReportTab'
 import SettlementReportTab from '@/components/reports/SettlementReportTab'
 import CashReportTab from '@/components/reports/CashReportTab'
+import StatementReconciliationTab from '@/components/reports/StatementReconciliationTab'
+import PnlUnifiedReportTab from '@/components/reports/PnlUnifiedReportTab'
 import EmailScheduleModal from '@/components/reports/EmailScheduleModal'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
+import { AccountingTerm } from '@/components/ui/AccountingTerm'
 
 interface AdminReportsProps {
   params: Promise<{ locale: string }>
 }
 
 type ReportPeriod = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'yesterday' | 'lastWeek' | 'lastMonth' | 'lastYear'
-type ReportTab = 'comprehensive' | 'reservations' | 'tours' | 'expenses' | 'deposits' | 'settlement' | 'cash'
+type ReportTab =
+  | 'comprehensive'
+  | 'reservations'
+  | 'tours'
+  | 'expenses'
+  | 'deposits'
+  | 'settlement'
+  | 'cash'
+  | 'reconciliation'
+  | 'pnl'
 
 export default function AdminReports({ }: AdminReportsProps) {
   const t = useTranslations('reports')
@@ -265,12 +277,12 @@ export default function AdminReports({ }: AdminReportsProps) {
   }
 
   return (
-    <div className="space-y-6 max-w-[1920px] mx-auto px-4 overflow-x-hidden">
+    <div className="space-y-4 sm:space-y-6 max-w-[1920px] mx-auto px-3 sm:px-4 min-w-0 overflow-x-hidden pb-[max(1.5rem,env(safe-area-inset-bottom,0px))]">
       {/* 헤더 */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">종합 통계 리포트</h1>
-          <p className="text-sm text-gray-600 mt-1">
+      <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-start">
+        <div className="min-w-0">
+          <h1 className="text-lg sm:text-2xl font-bold text-gray-900 leading-tight">종합 통계 리포트</h1>
+          <p className="text-xs sm:text-sm text-gray-600 mt-1 break-words">
             {reportPeriod === 'daily' ? '일별' : 
              reportPeriod === 'yesterday' ? '어제' :
              reportPeriod === 'weekly' ? '주별' : 
@@ -279,54 +291,60 @@ export default function AdminReports({ }: AdminReportsProps) {
              reportPeriod === 'lastMonth' ? '지난달' :
              reportPeriod === 'yearly' ? '연간' : 
              reportPeriod === 'lastYear' ? '작년' : '기간 선택'} 리포트
-            ({dateRange.start} ~ {dateRange.end})
+            <span className="block sm:inline sm:before:content-['_'] sm:before:whitespace-pre">
+              ({dateRange.start} ~ {dateRange.end})
+            </span>
           </p>
         </div>
-        <div className="flex items-center space-x-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end sm:items-center w-full sm:w-auto shrink-0">
           <button
+            type="button"
             onClick={() => setIsEmailScheduleModalOpen(true)}
-            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center space-x-2"
+            className="bg-purple-600 text-white px-3 py-2.5 sm:px-4 rounded-lg hover:bg-purple-700 flex items-center justify-center gap-2 text-sm min-h-[44px] sm:min-h-0"
           >
-            <Mail size={20} />
-            <span>이메일 리포트 설정</span>
+            <Mail size={18} className="shrink-0 sm:w-5 sm:h-5" />
+            <span className="truncate">이메일 설정</span>
           </button>
           <button
+            type="button"
             onClick={handleGenerateReport}
             disabled={isGeneratingReport}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2 disabled:opacity-50"
+            className="bg-blue-600 text-white px-3 py-2.5 sm:px-4 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2 disabled:opacity-50 text-sm min-h-[44px] sm:min-h-0"
           >
             {isGeneratingReport ? (
               <>
-                <Clock className="animate-spin" size={20} />
+                <Clock className="animate-spin shrink-0" size={18} />
                 <span>생성 중...</span>
               </>
             ) : (
               <>
-                <Download size={20} />
-                <span>리포트 다운로드</span>
+                <Download size={18} className="shrink-0 sm:w-5 sm:h-5" />
+                <span className="truncate">다운로드</span>
               </>
             )}
           </button>
           <button
+            type="button"
             onClick={refreshReservations}
-            className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 flex items-center space-x-2"
+            className="bg-gray-600 text-white px-3 py-2.5 sm:px-4 rounded-lg hover:bg-gray-700 flex items-center justify-center gap-2 text-sm min-h-[44px] sm:min-h-0"
           >
-            <BarChart3 size={20} />
-            <span>데이터 새로고침</span>
+            <BarChart3 size={18} className="shrink-0 sm:w-5 sm:h-5" />
+            <span className="truncate">새로고침</span>
           </button>
         </div>
       </div>
 
       {/* 리포트 기간 선택 */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-        <div className="flex flex-wrap items-center gap-4">
-          <label className="text-sm font-medium text-gray-700">리포트 기간:</label>
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 sm:p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
+          <label className="text-xs sm:text-sm font-medium text-gray-700 shrink-0">리포트 기간</label>
           <div className="flex flex-wrap gap-2">
             {(['daily', 'weekly', 'monthly', 'yearly', 'custom'] as ReportPeriod[]).map((period) => (
               <button
+                type="button"
                 key={period}
                 onClick={() => handlePeriodChange(period)}
-                className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                className={`px-3 py-2.5 sm:py-2 text-xs sm:text-sm rounded-md transition-colors min-h-[40px] sm:min-h-0 ${
                   reportPeriod === period
                     ? 'bg-blue-500 text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -339,8 +357,7 @@ export default function AdminReports({ }: AdminReportsProps) {
               </button>
             ))}
           </div>
-          <div className="flex flex-wrap gap-2 ml-2 border-l pl-4">
-            {/* 어제, 오늘, 지난주, 지난달, 이번달, 작년, 올해 (주황 스타일) */}
+          <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-4 lg:ml-0">
             {[
               { period: 'yesterday' as ReportPeriod, label: '어제' },
               { period: 'daily' as ReportPeriod, label: '오늘' },
@@ -351,9 +368,10 @@ export default function AdminReports({ }: AdminReportsProps) {
               { period: 'yearly' as ReportPeriod, label: '올해' }
             ].map(({ period, label }) => (
               <button
+                type="button"
                 key={label}
                 onClick={() => handlePeriodChange(period)}
-                className={`px-4 py-2 text-sm rounded-md transition-colors ${
+                className={`px-3 py-2.5 sm:py-2 text-xs sm:text-sm rounded-md transition-colors min-h-[40px] sm:min-h-0 ${
                   reportPeriod === period
                     ? 'bg-orange-500 text-white'
                     : 'bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200'
@@ -364,33 +382,33 @@ export default function AdminReports({ }: AdminReportsProps) {
             ))}
           </div>
           
-          {/* 커스텀 날짜 선택 */}
           {reportPeriod === 'custom' && (
-            <div className="flex items-center gap-2 ml-4">
-              <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600">시작일:</label>
+            <div className="flex flex-col gap-3 w-full sm:flex-row sm:flex-wrap sm:items-end pt-2 border-t border-gray-100 lg:border-t-0 lg:ml-2 lg:pt-0 lg:flex-1 lg:min-w-[min(100%,20rem)]">
+              <div className="flex flex-col gap-1 flex-1 min-w-0 sm:min-w-[140px]">
+                <label className="text-xs text-gray-600">시작일</label>
                 <input
                   type="date"
                   value={customStartDate}
                   onChange={(e) => setCustomStartDate(e.target.value)}
                   max={customEndDate}
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm min-h-[44px]"
                 />
               </div>
-              <span className="text-gray-400">~</span>
-              <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600">종료일:</label>
+              <span className="hidden sm:inline text-gray-400 pb-2">~</span>
+              <div className="flex flex-col gap-1 flex-1 min-w-0 sm:min-w-[140px]">
+                <label className="text-xs text-gray-600">종료일</label>
                 <input
                   type="date"
                   value={customEndDate}
                   onChange={(e) => setCustomEndDate(e.target.value)}
                   min={customStartDate}
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm min-h-[44px]"
                 />
               </div>
               <button
+                type="button"
                 onClick={handleCustomSearch}
-                className="ml-2 px-4 py-2 bg-blue-500 text-white text-sm rounded-md hover:bg-blue-600 transition-colors flex items-center gap-2"
+                className="w-full sm:w-auto px-4 py-2.5 bg-blue-500 text-white text-sm rounded-md hover:bg-blue-600 transition-colors flex items-center justify-center gap-2 min-h-[44px]"
               >
                 <Search size={16} />
                 <span>검색</span>
@@ -401,9 +419,12 @@ export default function AdminReports({ }: AdminReportsProps) {
       </div>
 
       {/* 탭 네비게이션 */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8 px-6 overflow-x-auto">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div className="border-b border-gray-200 bg-gray-50/80 sm:bg-transparent">
+          <nav
+            className="-mb-px flex gap-1 sm:gap-0 sm:space-x-6 px-2 sm:px-4 overflow-x-auto overscroll-x-contain scroll-smooth touch-pan-x py-1 [scrollbar-width:thin]"
+            aria-label="리포트 탭"
+          >
             {[
               { key: 'comprehensive', label: '종합 리포트', icon: FileText },
               { key: 'reservations', label: '예약 통계/정산', icon: Users },
@@ -411,19 +432,34 @@ export default function AdminReports({ }: AdminReportsProps) {
               { key: 'expenses', label: '지출 통계', icon: TrendingUp },
               { key: 'deposits', label: '입금 통계', icon: CreditCard },
               { key: 'settlement', label: '정산 통계', icon: Receipt },
-              { key: 'cash', label: '현금 관리', icon: DollarSign }
+              { key: 'cash', label: '현금 관리', icon: DollarSign },
+              { key: 'reconciliation', label: '명세 대조', icon: Landmark },
+              { key: 'pnl', label: '통합 PNL', icon: PieChart }
             ].map(({ key, label, icon: Icon }) => (
               <button
+                type="button"
                 key={key}
                 onClick={() => setActiveTab(key as ReportTab)}
-                className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+                className={`flex shrink-0 items-center gap-1.5 sm:gap-2 py-3 sm:py-4 px-2 sm:px-3 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap min-h-[44px] sm:min-h-[48px] ${
                   activeTab === key
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                <Icon size={20} />
-                <span>{label}</span>
+                <Icon className="h-[18px] w-[18px] shrink-0 sm:h-5 sm:w-5" aria-hidden />
+                <span>
+                  {key === 'pnl' ? (
+                    <>
+                      통합 <AccountingTerm termKey="PNL">PNL</AccountingTerm>
+                    </>
+                  ) : key === 'reconciliation' ? (
+                    <AccountingTerm termKey="명세대조">{label}</AccountingTerm>
+                  ) : key === 'cash' ? (
+                    <AccountingTerm termKey="현금관리">{label}</AccountingTerm>
+                  ) : (
+                    label
+                  )}
+                </span>
               </button>
             ))}
           </nav>
@@ -431,7 +467,7 @@ export default function AdminReports({ }: AdminReportsProps) {
       </div>
 
       {/* 탭 내용 */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 sm:p-5 lg:p-6 min-w-0">
         {activeTab === 'comprehensive' && (
           <ComprehensiveReportTab 
             dateRange={dateRange} 
@@ -482,6 +518,8 @@ export default function AdminReports({ }: AdminReportsProps) {
             period={reportPeriod}
           />
         )}
+        {activeTab === 'reconciliation' && <StatementReconciliationTab />}
+        {activeTab === 'pnl' && <PnlUnifiedReportTab dateRange={dateRange} />}
       </div>
 
       {/* 이메일 스케줄 모달 */}
