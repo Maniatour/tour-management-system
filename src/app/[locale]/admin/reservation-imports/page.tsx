@@ -21,6 +21,7 @@ interface ImportItem {
   status: string
   reservation_id: string | null
   reservation_exists_by_channel_rn?: boolean
+  reservation_exists_by_customer_match?: boolean
   created_at: string | null
 }
 
@@ -727,7 +728,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                   const isKlookOrderReceived = (row.subject || '').trimStart().toLowerCase().startsWith('klook order received -')
                   const isChannelReservationEmail = isGyGBookingRow(row) || isKlookOrderReceived || isBookingConfirmed(row)
                   /** 신규(빨강) / 처리됨(노랑): import 행의 채널 RN이 reservations.channel_rn과 일치할 때만 처리됨 */
-                  const isRegistered = !!row.reservation_exists_by_channel_rn
+                  const isRegistered = !!(row.reservation_exists_by_channel_rn || row.reservation_exists_by_customer_match)
                   /** 예약 저장 완료된 이메일 행 — 목록에 남기고 노란색 표시 */
                   const isSavedToReservation =
                     row.status === 'confirmed' || !!row.reservation_id
@@ -781,7 +782,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
             {searchedAndFilteredItems.map((row) => {
               const isKlookOrderReceived = (row.subject || '').trimStart().toLowerCase().startsWith('klook order received -')
               const isChannelReservationEmail = isGyGBookingRow(row) || isKlookOrderReceived || isBookingConfirmed(row)
-              const isRegistered = !!row.reservation_exists_by_channel_rn
+              const isRegistered = !!(row.reservation_exists_by_channel_rn || row.reservation_exists_by_customer_match)
               const isSavedToReservation =
                 row.status === 'confirmed' || !!row.reservation_id
               const cardBg = isSavedToReservation

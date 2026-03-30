@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { supabaseAdmin } from '@/lib/supabase'
 import { extractReservationFromEmail } from '@/lib/emailReservationParser'
-import type { ReservationImportInsert } from '@/types/reservationImport'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/database.types'
+import type { ReservationImportInsert, ExtractedReservationData } from '@/types/reservationImport'
+import { normalizeCustomerNameFromImport } from '@/utils/reservationUtils'
 
 /** 직접 페이로드: 테스트 또는 다른 제공자에서 POST */
 interface DirectInboundPayload {
@@ -185,6 +188,119 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * Viator 등: `BR-1376645191` vs `1376645191` 처럼 접두사만 다른 동일 예약을 매칭하기 위한 표기 변형.
+ * (이메일 파서는 BR- 형태, DB에는 숫자만 저장된 경우가 흔함)
+ */
+function expandChannelRnMatchVariants(rn: string): string[] {
+  const t = rn.trim()
+  if (!t) return []
+  const out = new Set<string>([t])
+  const br = /^BR-(\d+)$/i.exec(t)
+  if (br) out.add(br[1])
+  if (/^\d+$/.test(t) && t.length >= 5) out.add(`BR-${t}`)
+  return [...out]
+}
+
+function channelRnMatchesExistingSet(channelRn: string | undefined | null, existing: Set<string>): boolean {
+  if (!channelRn?.trim()) return false
+  return expandChannelRnMatchVariants(channelRn).some((v) => existing.has(v))
+}
+
+/** @ 앞 로컬파트만 (자사 홈 등 이메일 앞자리 비교용) */
+function normalizeEmailLocalPart(email: string | null | undefined): string {
+  if (email == null || typeof email !== 'string') return ''
+  const s = email.trim().toLowerCase()
+  const at = s.indexOf('@')
+  if (at <= 0) return ''
+  const local = s.slice(0, at).replace(/\./g, '')
+  return local
+}
+
+/**
+ * 고객명 + (전화 / 이메일) 정규화 키.
+ * - 긴 전화: 숫자만 전체·끝 10자리 (OTA 등)
+ * - 짧은 전화·홈페이지: 이름 + 끝 4자리 (채널 RN 없을 때)
+ * - 이름 + 이메일 로컬파트 (홈페이지 예약)
+ */
+function expandCustomerIdentityKeys(
+  name: string | null | undefined,
+  phone: string | null | undefined,
+  email: string | null | undefined
+): string[] {
+  const n = normalizeCustomerNameFromImport(name ?? '')
+  if (!n) return []
+  const nameKey = n.toLowerCase()
+  const d = String(phone ?? '').replace(/\D/g, '')
+  const keys = new Set<string>()
+
+  if (d.length >= 4) {
+    keys.add(`${nameKey}|p4:${d.slice(-4)}`)
+  }
+  if (d.length >= 8) {
+    keys.add(`${nameKey}|${d}`)
+    if (d.length >= 10) keys.add(`${nameKey}|${d.slice(-10)}`)
+  }
+
+  const local = normalizeEmailLocalPart(email)
+  if (local.length >= 2) {
+    keys.add(`${nameKey}|em:${local}`)
+  }
+
+  return [...keys]
+}
+
+function extractedDataMatchesCustomerIdentity(
+  ext: ExtractedReservationData | undefined | null,
+  identityKeys: Set<string>
+): boolean {
+  if (!ext) return false
+  for (const k of expandCustomerIdentityKeys(ext.customer_name, ext.customer_phone, ext.customer_email)) {
+    if (identityKeys.has(k)) return true
+  }
+  return false
+}
+
+/** 삭제되지 않은 예약의 고객(name+phone) 조합 키 집합 (페이지네이션으로 전부 적재) */
+async function fetchReservationCustomerIdentityKeys(client: SupabaseClient<Database>): Promise<Set<string>> {
+  const keys = new Set<string>()
+  const pageSize = 1000
+  let offset = 0
+  for (;;) {
+    const { data, error } = await client
+      .from('reservations')
+      .select('customer_name, customer_email, customer_phone, customer:customers(name, phone, email)')
+      .not('status', 'eq', 'deleted')
+      .range(offset, offset + pageSize - 1)
+
+    if (error) {
+      console.error('[reservation-imports] customer identity keys:', error.message)
+      break
+    }
+    const rows = (data ?? []) as Array<{
+      customer_name?: string | null
+      customer_email?: string | null
+      customer_phone?: string | null
+      customer: { name?: string; phone?: string | null; email?: string | null } | null
+    }>
+    for (const row of rows) {
+      const c = row.customer
+      if (c) {
+        for (const k of expandCustomerIdentityKeys(c.name, c.phone, c.email)) {
+          keys.add(k)
+        }
+      }
+      for (const k of expandCustomerIdentityKeys(row.customer_name, row.customer_phone, row.customer_email)) {
+        keys.add(k)
+      }
+    }
+    if (rows.length < pageSize) break
+    offset += pageSize
+    if (offset > 200000) break
+  }
+  return keys
+}
+
+/**
  * GET /api/reservation-imports
  * 목록 (status, from_utc, to_utc 또는 from_date, to_date).
  * from_utc/to_utc: 로컬 기준 날짜를 브라우저에서 UTC ISO로 변환해 보낸 값 (라스베가스 등 타임존 정확 반영).
@@ -238,27 +354,47 @@ export async function GET(request: NextRequest) {
     .map((r: { extracted_data?: { channel_rn?: string } }) => r.extracted_data?.channel_rn)
     .filter((rn: string | undefined): rn is string => typeof rn === 'string' && rn.trim().length > 0)
   const uniqueChannelRns = [...new Set(channelRns)]
+  const lookupChannelRns = [...new Set(uniqueChannelRns.flatMap(expandChannelRnMatchVariants))]
 
   let existingChannelRns = new Set<string>()
-  if (uniqueChannelRns.length > 0) {
+  if (lookupChannelRns.length > 0) {
     const { data: resRows } = await client
       .from('reservations')
       .select('channel_rn')
-      .in('channel_rn', uniqueChannelRns)
+      .in('channel_rn', lookupChannelRns)
       .not('channel_rn', 'is', null)
     if (resRows?.length) {
       resRows.forEach((r: { channel_rn?: string | null }) => {
-        if (r.channel_rn) existingChannelRns.add(r.channel_rn.trim())
+        const cr = r.channel_rn?.trim()
+        if (!cr) return
+        expandChannelRnMatchVariants(cr).forEach((v) => existingChannelRns.add(v))
       })
     }
   }
 
-  const data = list.map((r: { extracted_data?: { channel_rn?: string }; reservation_id?: string | null }) => {
+  const listNeedsCustomerMatch = list.some((r: { extracted_data?: ExtractedReservationData }) => {
+    const ext = r.extracted_data
+    const n = normalizeCustomerNameFromImport(String(ext?.customer_name ?? ''))
+    if (n.length === 0) return false
+    const d = String(ext?.customer_phone ?? '').replace(/\D/g, '')
+    if (d.length >= 4) return true
+    const em = normalizeEmailLocalPart(ext?.customer_email)
+    return em.length >= 2
+  })
+
+  let existingCustomerIdentityKeys = new Set<string>()
+  if (listNeedsCustomerMatch) {
+    existingCustomerIdentityKeys = await fetchReservationCustomerIdentityKeys(client as SupabaseClient<Database>)
+  }
+
+  const data = list.map((r: { extracted_data?: ExtractedReservationData; reservation_id?: string | null }) => {
     const channelRn = r.extracted_data?.channel_rn?.trim()
-    const existsByChannelRn = !!channelRn && existingChannelRns.has(channelRn)
+    const existsByChannelRn = channelRnMatchesExistingSet(channelRn, existingChannelRns)
+    const existsByCustomerMatch = extractedDataMatchesCustomerIdentity(r.extracted_data, existingCustomerIdentityKeys)
     return {
       ...r,
       reservation_exists_by_channel_rn: existsByChannelRn,
+      reservation_exists_by_customer_match: existsByCustomerMatch,
     }
   })
 

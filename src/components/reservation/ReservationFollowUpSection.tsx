@@ -435,7 +435,7 @@ export default function ReservationFollowUpSection({
   }
 
   return (
-    <div id="follow-up-section" className="space-y-3 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50">
+    <div id="follow-up-section" className="space-y-3 max-lg:overflow-y-auto lg:overflow-visible border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50">
       <h3 className="text-sm font-medium text-gray-900 flex items-center gap-2">
         <MessageSquare className="w-4 h-4" />
         {title}

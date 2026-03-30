@@ -4812,8 +4812,8 @@ export default function ReservationForm({
           <div className={`flex-1 min-h-0 overflow-x-hidden p-3 sm:p-0 sm:space-y-6 ${isModal ? 'overflow-y-auto' : 'lg:overflow-hidden lg:flex lg:flex-col lg:min-h-0'} ${isModal ? '' : 'lg:pb-0'} pb-2`}>
           <div className={`grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4 lg:gap-4 lg:grid-rows-1 lg:min-h-0 ${isModal ? 'lg:h-auto' : 'lg:flex-1 lg:h-[calc(100vh-var(--header-height,4rem)-6rem)] lg:max-h-[calc(100vh-var(--header-height,4rem)-6rem)]'}`}>
             {/* 1열: 고객 정보 + Follow up */}
-            <div className="lg:col-span-1 lg:flex lg:flex-col lg:gap-4 max-lg:contents">
-            <div id="customer-section" className={`space-y-4 overflow-y-auto border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-1 lg:h-auto lg:flex-none`}>
+            <div className="lg:col-span-1 lg:flex lg:flex-col lg:gap-4 lg:min-h-0 lg:h-full lg:overflow-y-auto max-lg:contents">
+            <div id="customer-section" className={`space-y-4 max-lg:overflow-y-auto lg:overflow-visible border border-gray-200 rounded-xl p-3 sm:p-4 bg-gray-50/50 max-lg:order-1 lg:h-auto lg:flex-none`}>
               <div>
                 <h3 className="text-sm font-medium text-gray-900 mb-2">
                   고객 정보
@@ -5007,7 +5007,7 @@ export default function ReservationForm({
 
             {/* Follow up - 1열 고객 정보 아래 */}
             {layout === 'page' && reservation && effectiveReservationId && (
-              <div id="follow-up-section" className="max-lg:order-9 max-lg:mt-4">
+              <div className="max-lg:order-9 max-lg:mt-4 lg:shrink-0">
                 <ReservationFollowUpSection reservationId={effectiveReservationId} status={formData.status as string} />
               </div>
             )}

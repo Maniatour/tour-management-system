@@ -246,7 +246,7 @@ export function useReservationData() {
     not_included_price?: number
     currency?: string
   }>>(new Map())
-  const [toursMap, setToursMap] = useState<Map<string, {
+  type TourMapRow = {
     id: string
     tour_status: string | null
     tour_guide_id: string | null
@@ -255,7 +255,10 @@ export function useReservationData() {
     tour_car_id: string | null
     tour_date: string | null
     tour_start_datetime: string | null
-  }>>(new Map())
+    product_id: string | null
+  }
+
+  const [toursMap, setToursMap] = useState<Map<string, TourMapRow>>(new Map())
 
   const loading = reservationsLoading || customersLoading || productsLoading || channelsLoading || productOptionsLoading || optionChoicesLoading || optionsLoading || pickupHotelsLoading || couponsLoading
 
@@ -361,40 +364,66 @@ export function useReservationData() {
     return map
   }
 
+  const TOUR_LIST_SELECT =
+    'id, tour_status, tour_guide_id, assistant_id, reservation_ids, tour_car_id, tour_date, tour_start_datetime, product_id'
+
+  const parseTourRow = (tour: Record<string, unknown>): TourMapRow => {
+    const resIds = Array.isArray(tour.reservation_ids)
+      ? (tour.reservation_ids as string[])
+      : tour.reservation_ids
+        ? String(tour.reservation_ids)
+            .split(',')
+            .map((id: string) => id.trim())
+            .filter(Boolean)
+        : []
+    return {
+      id: tour.id as string,
+      tour_status: tour.tour_status as string | null,
+      tour_guide_id: tour.tour_guide_id as string | null,
+      assistant_id: tour.assistant_id as string | null,
+      reservation_ids: resIds,
+      tour_car_id: tour.tour_car_id as string | null,
+      tour_date: tour.tour_date as string | null,
+      tour_start_datetime: tour.tour_start_datetime as string | null,
+      product_id: (tour.product_id as string | null) ?? null,
+    }
+  }
+
+  const mergeTourMaps = (...maps: Array<Map<string, TourMapRow>>): Map<string, TourMapRow> => {
+    const out = new Map<string, TourMapRow>()
+    for (const m of maps) {
+      m.forEach((v, k) => out.set(k, v))
+    }
+    return out
+  }
+
   const fetchToursMap = async (tourIds: string[]) => {
-    const toursMap = new Map<string, {
-      id: string
-      tour_status: string | null
-      tour_guide_id: string | null
-      assistant_id: string | null
-      reservation_ids: string[]
-      tour_car_id: string | null
-      tour_date: string | null
-      tour_start_datetime: string | null
-    }>()
+    const toursMap = new Map<string, TourMapRow>()
     for (let i = 0; i < tourIds.length; i += CHUNK_SIZE) {
       const chunk = tourIds.slice(i, i + CHUNK_SIZE)
-      const { data } = await supabase
-        .from('tours')
-        .select('id, tour_status, tour_guide_id, assistant_id, reservation_ids, tour_car_id, tour_date, tour_start_datetime')
-        .in('id', chunk)
+      const { data } = await supabase.from('tours').select(TOUR_LIST_SELECT).in('id', chunk)
       if (data) {
         data.forEach((tour: Record<string, unknown>) => {
-          const resIds = Array.isArray(tour.reservation_ids)
-            ? tour.reservation_ids as string[]
-            : tour.reservation_ids
-              ? String(tour.reservation_ids).split(',').map((id: string) => id.trim()).filter(Boolean)
-              : []
-          toursMap.set(tour.id as string, {
-            id: tour.id as string,
-            tour_status: tour.tour_status as string | null,
-            tour_guide_id: tour.tour_guide_id as string | null,
-            assistant_id: tour.assistant_id as string | null,
-            reservation_ids: resIds,
-            tour_car_id: tour.tour_car_id as string | null,
-            tour_date: tour.tour_date as string | null,
-            tour_start_datetime: tour.tour_start_datetime as string | null
-          })
+          const row = parseTourRow(tour)
+          toursMap.set(row.id, row)
+        })
+      }
+    }
+    return toursMap
+  }
+
+  /** 예약 row의 tour_id가 비어 있어도 tours.reservation_ids에만 포함된 배정을 찾기 */
+  const fetchToursOverlappingReservationIds = async (reservationIds: string[]) => {
+    const toursMap = new Map<string, TourMapRow>()
+    const unique = [...new Set(reservationIds.filter((id) => id && String(id).trim()))]
+    if (unique.length === 0) return toursMap
+    for (let i = 0; i < unique.length; i += CHUNK_SIZE) {
+      const chunk = unique.slice(i, i + CHUNK_SIZE)
+      const { data } = await supabase.from('tours').select(TOUR_LIST_SELECT).overlaps('reservation_ids', chunk)
+      if (data) {
+        data.forEach((tour: Record<string, unknown>) => {
+          const row = parseTourRow(tour)
+          toursMap.set(row.id, row)
         })
       }
     }
@@ -452,14 +481,15 @@ export function useReservationData() {
       const firstResIds = firstMapped.map(r => r.id)
       const firstTourIds = [...new Set(firstMapped.map(r => r.tourId).filter(id => id && id.trim() && id !== 'null' && id !== 'undefined'))]
 
-      const [firstPricingMap, firstToursMap] = await Promise.all([
+      const [firstPricingMap, firstToursById, firstToursByOverlap] = await Promise.all([
         fetchPricingMap(firstResIds),
-        fetchToursMap(firstTourIds)
+        fetchToursMap(firstTourIds),
+        fetchToursOverlappingReservationIds(firstResIds),
       ])
 
       setReservations(firstMapped)
       setReservationPricingMap(firstPricingMap)
-      setToursMap(firstToursMap)
+      setToursMap(mergeTourMaps(firstToursById, firstToursByOverlap))
       setLoadingProgress({ current: firstMapped.length, total: firstMapped.length })
       setReservationsLoading(false)
 
@@ -515,12 +545,16 @@ export function useReservationData() {
       const restResIds = restMapped.map(r => r.id)
       const restTourIds = [...new Set(restMapped.map(r => r.tourId).filter(id => id && id.trim() && id !== 'null' && id !== 'undefined'))]
 
-      const [restPricingMap, restToursMap] = await Promise.all([fetchPricingMap(restResIds), fetchToursMap(restTourIds)])
+      const [restPricingMap, restToursById, restToursByOverlap] = await Promise.all([
+        fetchPricingMap(restResIds),
+        fetchToursMap(restTourIds),
+        fetchToursOverlappingReservationIds(restResIds),
+      ])
       const totalCount = firstMapped.length + restMapped.length
 
       setReservations(prev => [...prev, ...restMapped])
       setReservationPricingMap(prev => new Map([...prev, ...restPricingMap]))
-      setToursMap(prev => new Map([...prev, ...restToursMap]))
+      setToursMap(prev => mergeTourMaps(prev, restToursById, restToursByOverlap))
       setLoadingProgress({ current: totalCount, total: totalCount })
     } catch (error) {
       console.warn('Error fetching reservations:', error)

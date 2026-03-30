@@ -217,6 +217,18 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     refreshCustomers
   } = useReservationData()
 
+  /** DB tour_id 없이도 tours.reservation_ids에만 연결된 경우 카드/배지용 */
+  const tourIdByReservationId = useMemo(() => {
+    const m = new Map<string, string>()
+    hookToursMap.forEach((tour, tourId) => {
+      for (const rid of tour.reservation_ids || []) {
+        const id = String(rid ?? '').trim()
+        if (id && !m.has(id)) m.set(id, tourId)
+      }
+    })
+    return m
+  }, [hookToursMap])
+
   // 상태 관리 (목록 필터 — 새로고침 유지)
   const [reservationListUi, setReservationListUi] = useRoutePersistedState(
     'reservations-list',
@@ -667,7 +679,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
           // 관련 예약 찾기 (O(1) 조회)
           const reservation = reservationByTourId.get(tourId)
-          const productId = reservation?.productId || null
+          const productId = reservation?.productId || tour.product_id || null
           const tourDate = tour.tour_date || reservation?.tourDate || ''
           
           // allDateTotalPeople: 같은 tour_date + product_id를 가진 모든 예약의 total_people 합산
@@ -737,7 +749,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     const hasPayment = (r: Reservation) => reservationIdsWithPayments.has(r.id)
     const hasTourAssigned = (r: Reservation) => {
       const id = r.tourId?.trim?.()
-      return !!(id && id !== '' && id !== 'null' && id !== 'undefined')
+      if (id && id !== '' && id !== 'null' && id !== 'undefined') return true
+      return tourIdByReservationId.has(r.id)
     }
     const hasPricing = (r: Reservation) => {
       const p = reservationPricingMap.get(r.id)
@@ -782,7 +795,8 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     reservationPricingMap,
     reservationIdsWithPayments,
     products,
-    optionChoices
+    optionChoices,
+    tourIdByReservationId,
   ])
 
   // 필터링 및 정렬 로직 - useMemo로 최적화
@@ -864,8 +878,9 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         return aValue < bValue ? 1 : -1
       }
     })
-    
-    return filtered
+
+    // 소스에 동일 예약 id가 중복되면 카드 key가 겹침 → id당 한 건만 유지 (정렬 순서상 나중 항목 유지)
+    return [...new Map(filtered.map((r) => [r.id, r])).values()]
   }, [reservations, customers, products, channels, debouncedSearchTerm, selectedStatus, selectedChannel, dateRange, sortBy, sortOrder, customerIdFromUrl])
   
   const filteredReservations = filteredAndSortedReservations
@@ -2275,7 +2290,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {reservations.map((reservation) => (
                       <ReservationCardItem
-                        key={`${reservation.id}-${tourInfoMap.size}`}
+                        key={reservation.id}
                         reservation={reservation}
                         customers={(customers as Customer[]) || []}
                         products={(products as Array<{ id: string; name: string; sub_category?: string }>) || []}
@@ -2308,6 +2323,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                         getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
                         choicesCacheRef={choicesCacheRef}
                         showResidentStatusIcon={false}
+                        linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
                       />
                     ))}
                   </div>
@@ -2338,7 +2354,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {paginatedReservations.map((reservation) => (
                   <ReservationCardItem
-                    key={`${reservation.id}-${tourInfoMap.size}`}
+                    key={reservation.id}
                     reservation={reservation}
                     customers={(customers as Customer[]) || []}
                     products={(products as Array<{ id: string; name: string; sub_category?: string }>) || []}
@@ -2371,6 +2387,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
                     getSelectedChoicesFromNewSystem={getSelectedChoicesNormalized}
                     choicesCacheRef={choicesCacheRef}
                     showResidentStatusIcon={false}
+                    linkedTourId={tourIdByReservationId.get(reservation.id) ?? null}
                   />
                 ))}
               </div>
@@ -2565,6 +2582,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         choicesCacheRef={choicesCacheRef}
         emailDropdownOpen={emailDropdownOpen}
         sendingEmail={sendingEmail}
+        tourIdByReservationId={tourIdByReservationId}
       />
 
       {/* 픽업 시간 수정 모달 */}

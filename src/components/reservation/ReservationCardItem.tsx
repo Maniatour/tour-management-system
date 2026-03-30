@@ -108,6 +108,8 @@ interface ReservationCardItemProps {
     }
   }>>>
   showResidentStatusIcon?: boolean
+  /** reservations.tour_id가 비어 있을 때 tours.reservation_ids 기준 투어 ID */
+  linkedTourId?: string | null
 }
 
 export const ReservationCardItem = React.memo(function ReservationCardItem({
@@ -142,10 +144,19 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
   getGroupColorClasses,
   getSelectedChoicesFromNewSystem,
   choicesCacheRef,
-  showResidentStatusIcon = false
+  showResidentStatusIcon = false,
+  linkedTourId = null
 }: ReservationCardItemProps) {
   const t = useTranslations('reservations')
   const router = useRouter()
+
+  const normalizeTourId = (raw: string | null | undefined) => {
+    const s = (raw || '').trim()
+    if (!s || s === 'null' || s === 'undefined') return ''
+    return s
+  }
+  const effectiveTourId =
+    normalizeTourId(reservation.tourId) || normalizeTourId(linkedTourId) || normalizeTourId((reservation as { tour_id?: string }).tour_id)
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [followUpModalOpen, setFollowUpModalOpen] = useState(false)
@@ -504,17 +515,16 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
             return null
           }
           
-          const tourId = reservation.tourId || (reservation as any).tour_id
-          if (!tourId || tourId.trim() === '' || tourId === 'null' || tourId === 'undefined') {
+          if (!effectiveTourId) {
             return null
           }
           
           // tourInfoMap이 아직 준비되지 않았거나 해당 tourId가 없는 경우
-          if (tourInfoMap.size === 0 || !tourInfoMap.has(tourId)) {
+          if (tourInfoMap.size === 0 || !tourInfoMap.has(effectiveTourId)) {
             return null
           }
           
-          const tourInfo = tourInfoMap.get(tourId)!
+          const tourInfo = tourInfoMap.get(effectiveTourId)!
           
           // tourInfo에서 이미 계산된 인원 수 사용
           const assignedTourTotalPeople = tourInfo.totalPeople
@@ -533,7 +543,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
               <div 
                 onClick={(e) => {
                   e.stopPropagation()
-                  router.push(`/${locale}/admin/tours/${tourId}`)
+                  router.push(`/${locale}/admin/tours/${effectiveTourId}`)
                 }}
                 className="bg-white border border-gray-200 rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:border-blue-300 transition-colors"
               >
@@ -553,7 +563,7 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                   </div>
                 </div>
                 <div className="text-[10px] text-gray-500 mb-2 font-mono">
-                  ID: {tourId}
+                  ID: {effectiveTourId}
                 </div>
                 
                 <div className="flex flex-wrap items-center gap-2 mt-2">
@@ -801,6 +811,8 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     prevProps.sendingEmail === nextProps.sendingEmail &&
     prevProps.reservation.status === nextProps.reservation.status &&
     prevProps.reservation.tourId === nextProps.reservation.tourId &&
+    prevProps.linkedTourId === nextProps.linkedTourId &&
+    prevProps.tourInfoMap === nextProps.tourInfoMap &&
     prevProps.reservationPricingMap.get(prevProps.reservation.id) === nextProps.reservationPricingMap.get(nextProps.reservation.id)
   )
 })

@@ -80,6 +80,8 @@ interface ReservationActionRequiredModalProps {
   }>>>
   emailDropdownOpen: string | null
   sendingEmail: string | null
+  /** tours.reservation_ids만으로 연결된 경우 투어 배정으로 간주 */
+  tourIdByReservationId?: Map<string, string>
 }
 
 const TABS: { id: ActionRequiredTabId; labelKey: string; icon: React.ElementType }[] = [
@@ -125,7 +127,8 @@ export default function ReservationActionRequiredModal({
   getSelectedChoicesFromNewSystem,
   choicesCacheRef,
   emailDropdownOpen,
-  sendingEmail
+  sendingEmail,
+  tourIdByReservationId
 }: ReservationActionRequiredModalProps) {
   const t = useTranslations('reservations')
   const [activeTab, setActiveTab] = useState<ActionRequiredTabId>('status')
@@ -184,12 +187,19 @@ export default function ReservationActionRequiredModal({
     load()
   }, [isOpen, reservations])
 
-  const hasTourAssigned = useCallback((r: Reservation) => {
-    const id = r.tourId?.trim?.()
-    return !!(id && id !== '' && id !== 'null' && id !== 'undefined')
-  }, [])
+  const hasTourAssigned = useCallback(
+    (r: Reservation) => {
+      const id = r.tourId?.trim?.()
+      if (id && id !== '' && id !== 'null' && id !== 'undefined') return true
+      return tourIdByReservationId?.has(r.id) ?? false
+    },
+    [tourIdByReservationId]
+  )
 
   const filteredByTab = useMemo(() => {
+    // 동일 id가 배열에 중복되면 탭 목록·카드 key가 겹침 → id 기준으로 한 건만 유지
+    const list = [...new Map(reservations.map((r) => [r.id, r])).values()]
+
     const statusPending = (r: Reservation) => (r.status === 'pending' || (r.status as string)?.toLowerCase?.() === 'pending')
     const statusConfirmed = (r: Reservation) => (r.status === 'confirmed' || (r.status as string)?.toLowerCase?.() === 'confirmed')
     const hasPayment = (r: Reservation) => reservationIdsWithPayments.has(r.id)
@@ -233,24 +243,24 @@ export default function ReservationActionRequiredModal({
       return s.toLowerCase() === 'cancelled' || s.toLowerCase() === 'canceled'
     }
 
-    const statusList = reservations.filter(r =>
+    const statusList = list.filter(r =>
       tourDateWithin7Days(r) && statusPending(r)
     )
-    const tourList = reservations.filter(r =>
+    const tourList = list.filter(r =>
       statusConfirmed(r) && !hasTourAssigned(r) && isManiaTourOrService(r)
     )
-    const noPricing = reservations.filter(r => !hasPricing(r) && isNotCancelled(r))
-    const pricingMismatch = reservations.filter(r =>
+    const noPricing = list.filter(r => !hasPricing(r) && isNotCancelled(r))
+    const pricingMismatch = list.filter(r =>
       hasPricing(r) && !storedTotalMatchesDynamic(r) && isNotCancelled(r)
     )
     const pricingList = [...new Map([...noPricing.map(r => [r.id, r]), ...pricingMismatch.map(r => [r.id, r])]).values()]
-    const depositNoTour = reservations.filter(r => hasPayment(r) && !hasTourAssigned(r))
-    const confirmedNoDeposit = reservations.filter(r => statusConfirmed(r) && !hasPayment(r))
+    const depositNoTour = list.filter(r => hasPayment(r) && !hasTourAssigned(r))
+    const confirmedNoDeposit = list.filter(r => statusConfirmed(r) && !hasPayment(r))
     const depositList = [...new Map([...depositNoTour.map(r => [r.id, r]), ...confirmedNoDeposit.map(r => [r.id, r])]).values()]
-    const balanceList = reservations.filter(r => tourDateBeforeToday(r) && getBalance(r) > 0)
+    const balanceList = list.filter(r => tourDateBeforeToday(r) && getBalance(r) > 0)
 
     // 취소된 예약: 최신 상태 변경 순(updated_at 기준, 없으면 addedTime). 투어날짜가 지난 것은 제외
-    const followUpCancelList = reservations
+    const followUpCancelList = list
       .filter(r => isCancelled(r))
       .filter(r => !tourDateBeforeToday(r))
       .slice()
@@ -459,6 +469,7 @@ export default function ReservationActionRequiredModal({
                     getSelectedChoicesFromNewSystem={getSelectedChoicesFromNewSystem}
                     choicesCacheRef={choicesCacheRef}
                     showResidentStatusIcon={false}
+                    linkedTourId={tourIdByReservationId?.get(reservation.id) ?? null}
                   />
                 ))}
               </div>
