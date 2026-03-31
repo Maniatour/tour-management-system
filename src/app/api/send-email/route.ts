@@ -737,21 +737,23 @@ export function generateEmailContent(
             
             return `
               <div style="padding: 15px; margin-bottom: 15px; background: #f0fdf4; border-left: 4px solid #10b981; border-radius: 4px;">
-                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap;">
-                  ${schedule.start_time ? `
-                  <span style="font-size: 16px; font-weight: 600; color: #059669;">
-                    ${formatTime(schedule.start_time)}
-                    ${schedule.end_time ? ` - ${formatTime(schedule.end_time)}` : ''}
-                  </span>
-                  ` : ''}
-                  ${duration ? `
-                  <span style="display: inline-flex; align-items: center; padding: 4px 10px; background: #d1fae5; color: #065f46; border-radius: 12px; font-size: 12px; font-weight: 600;">
-                    ${duration}
-                  </span>
-                  ` : ''}
-                </div>
-                <div style="margin-bottom: 8px;">
-                  <span style="font-size: 15px; font-weight: 600; color: #111827;">${title || ''}</span>
+                <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+                  <div style="display: flex; align-items: center; gap: 10px; flex-shrink: 0;">
+                    ${schedule.start_time ? `
+                    <span style="font-size: 16px; font-weight: 600; color: #059669; white-space: nowrap;">
+                      ${formatTime(schedule.start_time)}
+                      ${schedule.end_time ? ` - ${formatTime(schedule.end_time)}` : ''}
+                    </span>
+                    ` : ''}
+                    ${duration ? `
+                    <span style="display: inline-flex; align-items: center; padding: 4px 10px; background: #d1fae5; color: #065f46; border-radius: 12px; font-size: 12px; font-weight: 600; white-space: nowrap;">
+                      ${duration}
+                    </span>
+                    ` : ''}
+                  </div>
+                  <div style="font-size: 15px; font-weight: 600; color: #111827; text-align: right; flex: 1 1 160px; min-width: 0;">
+                    ${title || ''}
+                  </div>
                 </div>
               </div>
             `
@@ -872,7 +874,7 @@ export function generateEmailContent(
         <p style="margin: 0; font-size: 16px; opacity: 0.9;">${isEnglish ? `Reservation ID: ${reservation.id}` : `예약 번호: ${reservation.id}`}</p>
       </div>
       <div style="padding: 25px;">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+        <div style="display: flex; flex-direction: column; gap: 20px; margin-bottom: 20px;">
           <div>
             <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;">${isEnglish ? 'Customer Name' : '고객명'}</div>
             <div style="font-size: 16px; font-weight: 600; color: #111827;">${customer.name}</div>
@@ -881,8 +883,6 @@ export function generateEmailContent(
             <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;">${isEnglish ? 'Tour Date' : '투어 날짜'}</div>
             <div style="font-size: 16px; font-weight: 600; color: #111827;">${tourDate}</div>
           </div>
-        </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
           <div>
             <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;">${isEnglish ? 'Product' : '상품'}</div>
             <div style="font-size: 16px; font-weight: 600; color: #111827;">${productName}</div>
@@ -899,15 +899,15 @@ export function generateEmailContent(
         </div>
         ${reservation.pickup_time || (pickupHotelRow && pickupHotelRow.hotel) ? `
         <div style="padding: 15px; background: #eff6ff; border-radius: 6px; border-left: 4px solid #3b82f6;">
-          <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start;">
+          <div style="display: flex; flex-direction: column; gap: 16px; align-items: stretch;">
             ${reservation.pickup_time ? `
-            <div style="flex: 1; min-width: 140px;">
+            <div>
               <div style="font-size: 12px; color: #1e40af; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;">${isEnglish ? 'Pickup Time' : '픽업 시간'}</div>
               <div style="font-size: 18px; font-weight: 700; color: #1e40af;">${formatTime(reservation.pickup_time)}</div>
             </div>
             ` : ''}
             ${pickupHotelRow && pickupHotelRow.hotel ? `
-            <div style="flex: 1; min-width: 180px;">
+            <div>
               <div style="font-size: 12px; color: #1e40af; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;">${isEnglish ? 'Pickup Hotel' : '픽업 호텔'}</div>
               <div style="font-size: 16px; font-weight: 700; color: #1e293b;">${escapeEmailText(pickupHotelRow.hotel)}</div>
               ${pickupHotelRow.pick_up_location ? `
