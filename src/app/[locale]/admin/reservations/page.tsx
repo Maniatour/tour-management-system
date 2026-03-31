@@ -5,6 +5,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { X, Search, SlidersHorizontal } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
+import { generateReservationId } from '@/lib/entityIds'
 import { updateReservation, type ReservationUpdatePayload } from '@/lib/reservationUpdate'
 import type { Database } from '@/lib/supabase'
 import CustomerForm from '@/components/CustomerForm'
@@ -318,7 +319,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
   useEffect(() => {
     const addParam = searchParams.get('add')
     if (addParam === 'true' && !showAddForm) {
-      const newId = crypto.randomUUID()
+      const newId = generateReservationId()
       setNewReservationId(newId)
       setShowAddForm(true)
       // URL에서 add 파라미터 제거 (뒤로가기 시 모달이 다시 열리지 않도록)
@@ -2138,7 +2139,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
         }}
         onAddReservation={() => {
           // 새 예약 ID 생성
-          const newId = crypto.randomUUID()
+          const newId = generateReservationId()
           setNewReservationId(newId)
           setShowAddForm(true)
           console.log('새 예약 모달 오픈, 예약 ID 생성:', newId)

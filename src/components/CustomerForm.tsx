@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import type { Database } from '@/lib/supabase'
+import { generateCustomerId } from '@/lib/entityIds'
 
 type Customer = Database['public']['Tables']['customers']['Row']
 type CustomerInsert = Database['public']['Tables']['customers']['Insert']
@@ -21,13 +22,6 @@ export default function CustomerForm({
   onCancel, 
   onDelete 
 }: CustomerFormProps) {
-  // 랜덤 ID 생성 함수 (useCallback으로 메모이제이션)
-  const generateRandomId = useCallback(() => {
-    const timestamp = Date.now().toString(36)
-    const randomStr = Math.random().toString(36).substring(2, 8)
-    return `CUST_${timestamp}_${randomStr}`.toUpperCase()
-  }, [])
-
   // useMemo로 기본 formData를 customer prop에 따라 계산
   const defaultFormData = useMemo<CustomerInsert>(() => {
     if (customer) {
@@ -64,7 +58,7 @@ export default function CustomerForm({
     } else {
       // 새 고객 추가 모드일 때 기본값
       const defaultFormData = {
-        id: generateRandomId(),
+        id: generateCustomerId(),
         name: '',
         phone: '',
         emergency_contact: '',
@@ -78,7 +72,7 @@ export default function CustomerForm({
       }
       return defaultFormData
     }
-  }, [customer, generateRandomId])
+  }, [customer])
 
   // useState로 formData 상태 관리
   const [formData, setFormData] = useState<CustomerInsert>(defaultFormData)

@@ -21,6 +21,7 @@ import { useLocale } from 'next-intl'
 
 interface Tour {
   id: string
+  product_id: string | null
   tour_date: string
   tour_status: string | null
   products?: {
@@ -121,6 +122,7 @@ export default function AdminTourReports({ params }: AdminTourReportsProps) {
         </div>
         <TourReportForm
           tourId={selectedTourId}
+          productId={tours.find((t) => t.id === selectedTourId)?.product_id ?? undefined}
           onSuccess={handleFormSuccess}
           onCancel={handleFormCancel}
           locale={locale}

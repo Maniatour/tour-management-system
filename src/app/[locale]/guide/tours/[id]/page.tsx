@@ -1619,37 +1619,46 @@ export default function GuideTourDetailPage() {
                 </svg>
               </button>
             </div>
-          <TourReportSection tourId={tour.id} />
+          <TourReportSection tourId={tour.id} productId={tour.product_id} />
           </div>
           </AccordionSection>
         </div>
       </div>
 
-      {/* 투어 리포트 추가 모달 */}
+      {/* 투어 리포트 추가 모달 — z-index를 가이드 하단 푸터(z-50)보다 위로 (안 그러면 버튼이 푸터에 가려짐) */}
       {isReportModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+        <div
+          className="modal-inset-below-chrome bg-black/50"
+          aria-modal="true"
+          role="presentation"
+        >
+          {/* 헤더·모바일 푸터 바깥 영역만 사용 / sm+: 카드형 */}
+          <div className="flex h-full max-h-full w-full max-w-none flex-col overflow-hidden bg-white sm:mx-auto sm:h-auto sm:max-h-[min(90vh,calc(100dvh-var(--header-height)-1.5rem))] sm:max-w-4xl sm:rounded-lg sm:shadow-xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-3 py-3 sm:px-4 md:px-6 md:py-4">
               <h3 className="text-lg font-semibold text-gray-900">{t('addTourReport')}</h3>
               <button
+                type="button"
                 onClick={() => setIsReportModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
+                className="text-gray-400 transition-colors hover:text-gray-600"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
-            
-            <TourReportForm 
-              tourId={tour.id}
-              onSuccess={() => {
-                setIsReportModalOpen(false)
-                // 리포트 목록 새로고침을 위해 TourReportSection이 자동으로 업데이트됨
-              }}
-              onCancel={() => setIsReportModalOpen(false)}
-              locale={locale}
-            />
+
+            <div className="flex min-h-0 flex-1 flex-col">
+              <TourReportForm
+                tourId={tour.id}
+                productId={tour.product_id ?? undefined}
+                variant="modal"
+                onSuccess={() => {
+                  setIsReportModalOpen(false)
+                }}
+                onCancel={() => setIsReportModalOpen(false)}
+                locale={locale}
+              />
+            </div>
           </div>
         </div>
       )}

@@ -71,6 +71,7 @@ export const TourReport: React.FC<TourReportProps> = ({
         <div data-tour-report-section>
           <TourReportSection
             tourId={tour.id}
+            productId={tour.product_id ?? product?.id}
             tourName={productName || ''}
             tourDate={tour.tour_date}
             canCreateReport={isStaff}

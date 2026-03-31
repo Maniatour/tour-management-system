@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { autoCreateOrUpdateTour } from '@/lib/tourAutoCreation'
+import { generateCustomerId, generateReservationId } from '@/lib/entityIds'
 
 /** 선택된 초이스 (reservation_choices 저장용) */
 interface SelectedChoiceItem {
@@ -109,6 +110,7 @@ export async function POST(
         const { data: newCustomer, error: insertCustomerError } = await client
           .from('customers')
           .insert({
+            id: generateCustomerId(),
             name: body.customer_name,
             email: body.customer_email,
             phone: body.customer_phone ?? null,
@@ -131,7 +133,7 @@ export async function POST(
     }
   }
 
-  const reservationId = `reservation_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  const reservationId = generateReservationId()
   const child = body.child ?? 0
   const infant = body.infant ?? 0
   const totalPeople = body.total_people ?? body.adults + child + infant

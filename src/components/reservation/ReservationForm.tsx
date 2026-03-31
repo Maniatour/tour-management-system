@@ -13,6 +13,7 @@ import {
   canonicalVariantKey,
 } from '@/lib/resolveImportChannelVariant'
 import { supabase } from '@/lib/supabase'
+import { generateCustomerId } from '@/lib/entityIds'
 import type { Database } from '@/lib/supabase'
 import CustomerForm from '@/components/CustomerForm'
 import CustomerSection from '@/components/reservation/CustomerSection'
@@ -4513,10 +4514,7 @@ export default function ReservationForm({
           return
         }
         
-        // 랜덤 ID 생성
-        const timestamp = Date.now().toString(36)
-        const randomStr = Math.random().toString(36).substring(2, 8)
-        const newCustomerId = `CUST_${timestamp}_${randomStr}`.toUpperCase()
+        const newCustomerId = generateCustomerId()
         
         const customerData = {
           id: newCustomerId,
@@ -5654,9 +5652,7 @@ export default function ReservationForm({
                 onClick={async () => {
                   // 새로 추가하기
                   if (pendingCustomerData) {
-                    const timestamp = Date.now().toString(36)
-                    const randomStr = Math.random().toString(36).substring(2, 8)
-                    const newCustomerId = `CUST_${timestamp}_${randomStr}`.toUpperCase()
+                    const newCustomerId = generateCustomerId()
                     
                     const customerData = {
                       ...pendingCustomerData,

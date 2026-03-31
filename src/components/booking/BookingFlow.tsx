@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Calendar, Users, CreditCard, ShoppingCart, ArrowLeft, ArrowRight, Check, X, ChevronLeft, ChevronRight, Lock, Ticket, Loader2, Minus, Plus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { generateReservationId } from '@/lib/entityIds'
 import { useLocale } from 'next-intl'
 import LoginForm from '@/components/auth/LoginForm'
 import SignUpForm from '@/components/auth/SignUpForm'
@@ -289,7 +290,7 @@ function PaymentForm({
 
     // Payment Intent 생성
     try {
-      const reservationId = `reservation_${Date.now()}_${Math.random().toString(36).substring(2)}`
+      const reservationId = generateReservationId()
       
       const response = await fetch('/api/payment/create-payment-intent', {
         method: 'POST',
@@ -1757,7 +1758,7 @@ export default function BookingFlow({ product, productChoices, onClose, onComple
       const totalPrice = calculateTotalPrice()
       
       // 1. 예약 기본 정보 생성
-      const reservationId = `reservation_${Date.now()}_${Math.random().toString(36).substring(2)}`
+      const reservationId = generateReservationId()
       
       const reservationData = {
         id: reservationId,

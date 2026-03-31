@@ -452,8 +452,8 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
        <div className="min-h-screen bg-gray-50">
          {/* 상단 헤더는 [locale] 레이아웃의 기존 Navigation 사용 (가이드/관리자 메뉴 포함) */}
 
-         {/* 메인 컨텐츠 - 모바일 좌우 여백 축소, 푸터 높이만큼 하단 여백 */}
-         <main className="max-w-7xl mx-auto px-2 sm:px-2 lg:px-4 pt-2 sm:pt-4 main-safe-area">
+         {/* 메인: main-safe-area로 고정 푸터(lg 미만) 높이 + safe-area 만큼 하단 여백 확보 */}
+         <main className="main-safe-area max-w-7xl mx-auto px-2 pt-2 sm:px-2 sm:pt-4 lg:px-4">
            {children}
          </main>
 
@@ -461,8 +461,14 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
         <GlobalAudioPlayer />
 
         {/* 모바일 푸터 네비게이션 */}
-        <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 sm:hidden z-50" style={{ height: 'var(--footer-height)' }}>
-        <div className="grid grid-cols-5 h-full py-2">
+        <footer
+          className="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-200 bg-white lg:hidden"
+          style={{
+            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+            minHeight: 'calc(var(--footer-height) + env(safe-area-inset-bottom, 0px))',
+          }}
+        >
+        <div className="grid h-[var(--footer-height)] grid-cols-5 shrink-0 py-2">
           <button
             onClick={() => {
               const currentLocale = pathname.split('/')[1] || 'ko'

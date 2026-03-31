@@ -2670,7 +2670,16 @@
         "generated": "Report generated successfully",
         "error": "Failed to generate report",
         "noReports": "No reports available",
-        "reportAfterTour": "Reports can be created after the tour is completed"
+        "reportAfterTour": "Reports can be created after the tour is completed",
+        "hasReports": "A report has already been submitted.",
+        "clickListButton": "Use the eye button below to open the list.",
+        "writeReport": "Write report",
+        "backToList": "Back to list",
+        "reportList": "Report list",
+        "close": "Close",
+        "reportSubmitted": "Report submitted.",
+        "editFeatureComingSoon": "Editing is not available yet.",
+        "reportDeleted": "Report deleted."
     },
     "tourHeader": {
         "tour": "Tour",

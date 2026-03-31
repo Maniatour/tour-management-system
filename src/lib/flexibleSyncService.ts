@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { generateCustomerId, generateReservationId, generateTourId } from './entityIds'
 import { readSheetDataDynamic } from './googleSheets'
 
 // 하드코딩된 매핑 제거 - 실제 데이터베이스 스키마 기반으로 동적 매핑 생성
@@ -365,6 +366,7 @@ const processCustomerWithDb = async (db: any, customerData: Record<string, unkno
     const { data: newCustomer, error } = await db
       .from('customers')
       .insert({
+        id: generateCustomerId(),
         name: (typeof customerData.customer_name === 'string' && customerData.customer_name.trim() !== '')
           ? customerData.customer_name.trim()
           : 'Unknown',
@@ -452,6 +454,7 @@ const buildReservationCustomerEmailToIdMap = async (
     const payload = slice.map((email) => {
       const s = stubByEmail.get(email)!
       return {
+        id: generateCustomerId(),
         name: s.name,
         email,
         phone: s.phone,
@@ -1026,12 +1029,29 @@ export const flexibleSync = async (
           try {
             // team 테이블은 PK가 email이므로 id를 생성하지 않음
             if (targetTable !== 'team') {
-              // Node 18+ 환경
-              row.id = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto?.randomUUID ? (globalThis as { crypto: { randomUUID: () => string } }).crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`
+              if (targetTable === 'tours') {
+                row.id = generateTourId()
+              } else if (targetTable === 'reservations') {
+                row.id = generateReservationId()
+              } else if (targetTable === 'customers') {
+                row.id = generateCustomerId()
+              } else {
+                row.id = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto?.randomUUID
+                  ? (globalThis as { crypto: { randomUUID: () => string } }).crypto.randomUUID()
+                  : `${Date.now()}_${Math.random().toString(36).slice(2)}`
+              }
             }
           } catch {
             if (targetTable !== 'team') {
-              row.id = `${Date.now()}_${Math.random().toString(36).slice(2)}`
+              if (targetTable === 'tours') {
+                row.id = generateTourId()
+              } else if (targetTable === 'reservations') {
+                row.id = generateReservationId()
+              } else if (targetTable === 'customers') {
+                row.id = generateCustomerId()
+              } else {
+                row.id = `${Date.now()}_${Math.random().toString(36).slice(2)}`
+              }
             }
           }
         }

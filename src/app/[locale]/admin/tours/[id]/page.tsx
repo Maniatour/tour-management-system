@@ -2,10 +2,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { supabase } from '@/lib/supabase'
+import { generateTourId } from '@/lib/entityIds'
 import type { Database } from '@/lib/supabase'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import VehicleAssignmentModal from '@/components/VehicleAssignmentModal'
@@ -200,6 +201,10 @@ export default function TourDetailPage() {
   const [isAssistantFeeFromTour, setIsAssistantFeeFromTour] = useState<boolean>(false)
   const [isGuideFeeFromDefault, setIsGuideFeeFromDefault] = useState<boolean>(false)
   const [isAssistantFeeFromDefault, setIsAssistantFeeFromDefault] = useState<boolean>(false)
+  /** DB에서 투어 수수료 행을 읽은 뒤에만 기본 가이드비를 채움 (비동기 레이스 방지) */
+  const [feesHydrated, setFeesHydrated] = useState(false)
+  const activeTourIdRef = useRef<string | undefined>(undefined)
+  activeTourIdRef.current = tourData.tour?.id
 
   // 핸들러 함수들
   const handlePrivateTourToggle = () => {
@@ -536,7 +541,8 @@ export default function TourDetailPage() {
 
   // 투어별 저장된 수수료 로드
   const loadTourFees = useCallback(async () => {
-    if (!tourData.tour?.id) return
+    const tourId = tourData.tour?.id
+    if (!tourId) return
 
     if (isTourCancelled(tourData.tour.tour_status)) {
       setGuideFee(0)
@@ -545,6 +551,7 @@ export default function TourDetailPage() {
       setIsAssistantFeeFromTour(false)
       setIsGuideFeeFromDefault(false)
       setIsAssistantFeeFromDefault(false)
+      if (activeTourIdRef.current === tourId) setFeesHydrated(true)
       return
     }
 
@@ -552,7 +559,7 @@ export default function TourDetailPage() {
       const { data: tour, error } = await supabase
         .from('tours')
         .select('guide_fee, assistant_fee')
-        .eq('id', tourData.tour.id)
+        .eq('id', tourId)
         .single()
 
       if (error) {
@@ -560,24 +567,28 @@ export default function TourDetailPage() {
         return
       }
 
+      if (activeTourIdRef.current !== tourId) return
+
       if (tour) {
-        // 저장된 수수료가 있으면 사용
-        const tourData = tour as { 
+        // 저장된 수수료가 있으면 사용 (0은 스키마 기본값이므로 '저장된 금액'으로 보지 않음 → 가이드비 관리 기본값 로드 허용)
+        const row = tour as { 
           guide_fee: number | null; 
           assistant_fee: number | null; 
         }
-        if (tourData.guide_fee !== null && tourData.guide_fee !== undefined) {
-          setGuideFee(tourData.guide_fee)
-          setIsGuideFeeFromTour(true)
+        if (row.guide_fee !== null && row.guide_fee !== undefined) {
+          setGuideFee(Number(row.guide_fee))
+          setIsGuideFeeFromTour(Number(row.guide_fee) > 0)
         }
-        if (tourData.assistant_fee !== null && tourData.assistant_fee !== undefined) {
-          setAssistantFee(tourData.assistant_fee)
-          setIsAssistantFeeFromTour(true)
+        if (row.assistant_fee !== null && row.assistant_fee !== undefined) {
+          setAssistantFee(Number(row.assistant_fee))
+          setIsAssistantFeeFromTour(Number(row.assistant_fee) > 0)
         }
-        console.log('투어 수수료 로드됨:', tourData)
+        console.log('투어 수수료 로드됨:', row)
       }
     } catch (error) {
       console.error('투어 수수료 로드 오류:', error)
+    } finally {
+      if (activeTourIdRef.current === tourId) setFeesHydrated(true)
     }
   }, [tourData.tour?.id, tourData.tour?.tour_status])
 
@@ -867,6 +878,11 @@ export default function TourDetailPage() {
     }
   }, [tourData.selectedVehicleId, loadMileage])
 
+  // 투어 전환 시 수수료 하이드레이션 리셋 (loadTourFees 완료 전에 기본값 덮어쓰기 방지)
+  useEffect(() => {
+    setFeesHydrated(false)
+  }, [tourData.tour?.id])
+
   // 투어 수수료 및 가이드비 로드 useEffect
   useEffect(() => {
     if (tourData.tour?.id) {
@@ -879,33 +895,39 @@ export default function TourDetailPage() {
 
   useEffect(() => {
     // teamType과 tour.team_type이 일치할 때만 가이드 수수료 로딩
-    if (tourData.tour?.product_id && tourData.teamType && tourData.tour?.team_type) {
-      console.log('팀 타입 로딩 완료, 가이드 수수료 로딩 시작:', {
-        teamType: tourData.teamType,
-        tourTeamType: tourData.tour.team_type,
-        isGuideFeeFromTour,
-        isAssistantFeeFromTour
-      })
-      
-      // teamType과 tour.team_type이 일치하는지 확인
-      if (tourData.teamType !== tourData.tour.team_type) {
-        console.log('⚠️ 팀 타입 불일치 감지, 기본값 로드하지 않음:', {
-          localTeamType: tourData.teamType,
-          tourTeamType: tourData.tour.team_type
-        })
-        return
-      }
-      
-      // 저장된 수수료가 없을 때만 기본값 로드
-      if (!isGuideFeeFromTour && !isAssistantFeeFromTour) {
-        setTimeout(() => {
-          loadGuideCosts()
-        }, 100)
-      } else {
-        console.log('저장된 수수료가 있으므로 기본값 로드하지 않음')
-      }
+    if (!feesHydrated) return undefined
+    if (!(tourData.tour?.product_id && tourData.teamType && tourData.tour?.team_type)) {
+      return undefined
     }
-  }, [tourData.tour?.product_id, tourData.teamType, tourData.tour?.team_type, loadGuideCosts, isGuideFeeFromTour, isAssistantFeeFromTour])
+
+    console.log('팀 타입 로딩 완료, 가이드 수수료 로딩 시작:', {
+      teamType: tourData.teamType,
+      tourTeamType: tourData.tour.team_type,
+      isGuideFeeFromTour,
+      isAssistantFeeFromTour
+    })
+
+    if (tourData.teamType !== tourData.tour.team_type) {
+      console.log('⚠️ 팀 타입 불일치 감지, 기본값 로드하지 않음:', {
+        localTeamType: tourData.teamType,
+        tourTeamType: tourData.tour.team_type
+      })
+      return undefined
+    }
+
+    let timeoutId: number | undefined
+    if (!isGuideFeeFromTour || !isAssistantFeeFromTour) {
+      timeoutId = window.setTimeout(() => {
+        loadGuideCosts()
+      }, 100)
+    } else {
+      console.log('저장된 수수료가 있으므로 기본값 로드하지 않음')
+    }
+
+    return () => {
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId)
+    }
+  }, [feesHydrated, tourData.tour?.product_id, tourData.teamType, tourData.tour?.team_type, loadGuideCosts, isGuideFeeFromTour, isAssistantFeeFromTour])
 
 
   const handleAssignReservation = async (reservationId: string) => {
@@ -984,7 +1006,7 @@ export default function TourDetailPage() {
     if (!confirm('같은 상품/날짜로 새 투어를 생성하시겠습니까?')) return
 
     try {
-      const tourId = `tour_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      const tourId = generateTourId()
       const { data: newTour, error } = await supabase
         .from('tours')
         .insert({

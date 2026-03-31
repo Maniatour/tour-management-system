@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { createTourPhotosBucket } from './tourPhotoBucket'
+import { generateTourId } from './entityIds'
 
 export interface TourAutoCreationResult {
   success: boolean
@@ -122,8 +123,7 @@ export async function autoCreateOrUpdateTour(
       }
     } else {
       // 5. 기존 투어가 없는 경우: 새 투어 생성
-      // TEXT 형식의 ID를 명시적으로 생성
-      const tourId = `tour_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      const tourId = generateTourId()
       
       const { data: newTour, error: createError } = await supabase
         .from('tours')

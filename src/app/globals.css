@@ -126,6 +126,32 @@
   }
 }
 
+/*
+ * 고정 네비·하단 푸터를 덮지 않는 모달 영역 (가이드 등)
+ * --header-height / --footer-height 는 :root 와 동기
+ */
+.modal-inset-below-chrome {
+  position: fixed;
+  inset-inline: 0;
+  top: var(--header-height);
+  bottom: calc(var(--footer-height) + env(safe-area-inset-bottom, 0px));
+  z-index: 100;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+@media (min-width: 640px) {
+  .modal-inset-below-chrome {
+    align-items: center;
+    padding: 1rem;
+  }
+}
+@media (min-width: 1024px) {
+  .modal-inset-below-chrome {
+    bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
 /* 다크모드 지원 (향후 확장용) */
 @media (prefers-color-scheme: dark) {
   /* 다크모드 스타일은 향후 추가 */

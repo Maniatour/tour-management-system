@@ -7,6 +7,7 @@ import { useLocale } from 'next-intl'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { supabase } from '@/lib/supabase'
+import { generateReservationId } from '@/lib/entityIds'
 
 interface CartCheckoutProps {
   isOpen: boolean
@@ -347,7 +348,7 @@ export default function CartCheckout({ isOpen, onClose, onSuccess }: CartCheckou
       const transactionId = result.transactionId
 
       for (const item of items) {
-        const reservationId = `reservation_${Date.now()}_${Math.random().toString(36).substring(2)}`
+        const reservationId = generateReservationId()
         reservationIds.push(reservationId)
 
         // 예약 데이터 생성

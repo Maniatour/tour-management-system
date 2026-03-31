@@ -18,7 +18,6 @@ import {
   Star, 
   MessageSquare, 
   AlertTriangle, 
-  Package, 
   Lightbulb, 
   MessageCircle, 
   Handshake,
@@ -27,40 +26,14 @@ import {
   Trash2
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { displayCourseName, type CourseForMainStops } from '@/lib/tourReportMainStops'
 
-// 옵션 상수들을 TourReportForm에서 가져옴
-const MAIN_STOPS_OPTIONS = [
-  { ko: '그랜드 캐니언', en: 'Grand Canyon' },
-  { ko: '앤텔로프 캐니언', en: 'Antelope Canyon' },
-  { ko: '브라이스 캐니언', en: 'Bryce Canyon' },
-  { ko: '자이온 국립공원', en: 'Zion National Park' },
-  { ko: '모뉴먼트 밸리', en: 'Monument Valley' },
-  { ko: '아치스 국립공원', en: 'Arches National Park' },
-  { ko: '캐피톨 리프', en: 'Capitol Reef' },
-  { ko: '코랄 핑크 샌듄스', en: 'Coral Pink Sand Dunes' },
-  { ko: '호스슈 벤드', en: 'Horseshoe Bend' },
-  { ko: '글렌 캐니언', en: 'Glen Canyon' },
-  { ko: '페이지', en: 'Page' },
-  { ko: '라스베가스', en: 'Las Vegas' },
-  { ko: '로스앤젤레스', en: 'Los Angeles' }
-]
+const COURSE_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
-const ACTIVITIES_OPTIONS = [
-  { ko: '하이킹', en: 'Hiking' },
-  { ko: '사진 촬영', en: 'Photography' },
-  { ko: '관광', en: 'Sightseeing' },
-  { ko: '식사', en: 'Dining' },
-  { ko: '쇼핑', en: 'Shopping' },
-  { ko: '선셋 관람', en: 'Sunset Viewing' },
-  { ko: '선라이즈 관람', en: 'Sunrise Viewing' },
-  { ko: '헬리콥터 투어', en: 'Helicopter Tour' },
-  { ko: '보트 투어', en: 'Boat Tour' },
-  { ko: '버스 투어', en: 'Bus Tour' },
-  { ko: '걷기 투어', en: 'Walking Tour' },
-  { ko: '자전거 투어', en: 'Bike Tour' },
-  { ko: '캠핑', en: 'Camping' },
-  { ko: '피크닉', en: 'Picnic' }
-]
+function looksLikeCourseId(s: string) {
+  return COURSE_ID_RE.test(s)
+}
 
 const INCIDENTS_OPTIONS = [
   { ko: '교통 지연', en: 'Traffic Delay' },
@@ -92,7 +65,7 @@ interface TourReport {
   customer_count: number | null
   weather: string | null
   main_stops_visited: string[]
-  activities_completed: string[]
+  main_stop_substitutions?: Record<string, string> | null
   overall_mood: string | null
   guest_comments: string | null
   incidents_delays_health: string[]
@@ -159,6 +132,7 @@ export default function TourReportList({
 }: TourReportListProps) {
   const { user } = useAuth()
   const [reports, setReports] = useState<TourReport[]>([])
+  const [stopCourseById, setStopCourseById] = useState<Map<string, CourseForMainStops>>(new Map())
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [weatherFilter, setWeatherFilter] = useState<string>('all')
@@ -221,21 +195,35 @@ export default function TourReportList({
       onDelete?.(reportId)
     } catch (error) {
       console.error('Error deleting tour report:', error)
-      toast.error('리포트 삭제 중 오류가 발생했습니다.')
+      const msg =
+        typeof error === 'object' &&
+        error !== null &&
+        'message' in error &&
+        typeof (error as { message?: unknown }).message === 'string'
+          ? (error as { message: string }).message
+          : ''
+      if (msg.toLowerCase().includes('row-level security') || msg.toLowerCase().includes('permission')) {
+        toast.error('삭제 권한이 없거나 삭제 가능 기간(투어 다음날까지)이 지났습니다.')
+      } else {
+        toast.error('리포트 삭제 중 오류가 발생했습니다.')
+      }
     }
   }
 
-  const filteredReports = reports.filter(report => {
-    const matchesSearch = searchTerm === '' || 
-      report.user_email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      report.tours?.products?.name_ko?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      report.tours?.products?.name_en?.toLowerCase().includes(searchTerm.toLowerCase())
+  const shouldShowFilters = !tourId
+  const filteredReports = shouldShowFilters
+    ? reports.filter(report => {
+        const matchesSearch = searchTerm === '' || 
+          report.user_email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          report.tours?.products?.name_ko?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          report.tours?.products?.name_en?.toLowerCase().includes(searchTerm.toLowerCase())
 
-    const matchesWeather = weatherFilter === 'all' || report.weather === weatherFilter
-    const matchesMood = moodFilter === 'all' || report.overall_mood === moodFilter
+        const matchesWeather = weatherFilter === 'all' || report.weather === weatherFilter
+        const matchesMood = moodFilter === 'all' || report.overall_mood === moodFilter
 
-    return matchesSearch && matchesWeather && matchesMood
-  })
+        return matchesSearch && matchesWeather && matchesMood
+      })
+    : reports
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('ko-KR', {
@@ -260,69 +248,71 @@ export default function TourReportList({
 
   return (
     <div className="space-y-4 md:space-y-6">
-      {/* 필터 및 검색 */}
-      <Card>
-        <CardHeader className="p-4 md:p-6">
-          <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
-            <FileText className="w-5 h-5" />
-            투어 리포트 목록
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-4 md:p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">검색</label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  placeholder="이메일, 상품명으로 검색..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
+      {/* 필터 및 검색 (전체 리포트 화면에서만 표시) */}
+      {shouldShowFilters && (
+        <Card>
+          <CardHeader className="p-4 md:p-6">
+            <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
+              <FileText className="w-5 h-5" />
+              투어 리포트 목록
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 md:p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">검색</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Input
+                    placeholder="이메일, 상품명으로 검색..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">날씨</label>
+                <Select value={weatherFilter} onValueChange={setWeatherFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="날씨 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">전체</SelectItem>
+                    {Object.entries(WEATHER_LABELS).map(([value, { label, icon }]) => (
+                      <SelectItem key={value} value={value}>
+                        {icon} {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">분위기</label>
+                <Select value={moodFilter} onValueChange={setMoodFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="분위기 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">전체</SelectItem>
+                    {Object.entries(MOOD_LABELS).map(([value, { label, icon }]) => (
+                      <SelectItem key={value} value={value}>
+                        {icon} {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-end">
+                <Button onClick={fetchReports} variant="outline" className="w-full h-10">
+                  <Filter className="w-4 h-4 mr-2" />
+                  새로고침
+                </Button>
               </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">날씨</label>
-              <Select value={weatherFilter} onValueChange={setWeatherFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="날씨 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체</SelectItem>
-                  {Object.entries(WEATHER_LABELS).map(([value, { label, icon }]) => (
-                    <SelectItem key={value} value={value}>
-                      {icon} {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">분위기</label>
-              <Select value={moodFilter} onValueChange={setMoodFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="분위기 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체</SelectItem>
-                  {Object.entries(MOOD_LABELS).map(([value, { label, icon }]) => (
-                    <SelectItem key={value} value={value}>
-                      {icon} {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-end">
-              <Button onClick={fetchReports} variant="outline" className="w-full h-10">
-                <Filter className="w-4 h-4 mr-2" />
-                새로고침
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 리포트 목록 */}
       <div className="space-y-4">
@@ -440,28 +430,39 @@ export default function TourReportList({
                   <div className="mb-4">
                     <p className="text-sm font-medium mb-2">주요 정류장:</p>
                     <div className="flex flex-wrap gap-1">
-                      {report.main_stops_visited.map((stop) => (
-                        <Badge key={stop} variant="secondary" className="text-xs">
-                          {stop}
-                        </Badge>
-                      ))}
+                      {report.main_stops_visited.map((stop) => {
+                        const c = stopCourseById.get(stop)
+                        const label = c ? displayCourseName(c, locale) : stop
+                        return (
+                          <Badge key={stop} variant="secondary" className="text-xs">
+                            {label}
+                          </Badge>
+                        )
+                      })}
                     </div>
                   </div>
                 )}
 
-                {/* 완료된 활동 */}
-                {report.activities_completed.length > 0 && (
-                  <div className="mb-4">
-                    <p className="text-sm font-medium mb-2">완료된 활동:</p>
-                    <div className="flex flex-wrap gap-1">
-                      {report.activities_completed.map((activity) => (
-                        <Badge key={activity} variant="outline" className="text-xs">
-                          {activity}
-                        </Badge>
-                      ))}
+                {report.main_stop_substitutions &&
+                  Object.keys(report.main_stop_substitutions).length > 0 && (
+                    <div className="mb-4">
+                      <p className="text-sm font-medium mb-2 text-amber-800">
+                        {locale === 'en' ? 'Alternative stops / notes:' : '대체 방문·메모:'}
+                      </p>
+                      <ul className="space-y-1 text-sm text-gray-700">
+                        {Object.entries(report.main_stop_substitutions).map(([cid, note]) => {
+                          if (!note?.trim()) return null
+                          const c = stopCourseById.get(cid)
+                          const point = c ? displayCourseName(c, locale) : cid
+                          return (
+                            <li key={cid} className="rounded bg-amber-50/80 px-2 py-1">
+                              <span className="font-medium">{point}</span>: {note}
+                            </li>
+                          )
+                        })}
+                      </ul>
                     </div>
-                  </div>
-                )}
+                  )}
 
                 {/* 문제사항 */}
                 {report.incidents_delays_health.length > 0 && (

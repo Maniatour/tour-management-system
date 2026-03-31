@@ -2716,7 +2716,16 @@
         "generated": "리포트가 성공적으로 생성되었습니다",
         "error": "리포트 생성에 실패했습니다",
         "noReports": "리포트가 없습니다",
-        "reportAfterTour": "투어 완료 후 리포트를 작성할 수 있습니다"
+        "reportAfterTour": "투어 완료 후 리포트를 작성할 수 있습니다",
+        "hasReports": "이미 제출된 리포트가 있습니다.",
+        "clickListButton": "아래 눈 모양 버튼을 눌러 목록에서 확인하세요.",
+        "writeReport": "리포트 작성",
+        "backToList": "목록으로",
+        "reportList": "리포트 목록",
+        "close": "닫기",
+        "reportSubmitted": "리포트가 제출되었습니다.",
+        "editFeatureComingSoon": "편집 기능은 준비 중입니다.",
+        "reportDeleted": "리포트가 삭제되었습니다."
     },
     "tourHeader": {
         "tour": "투어",

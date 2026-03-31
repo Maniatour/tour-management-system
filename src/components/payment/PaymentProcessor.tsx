@@ -3,6 +3,7 @@
 import React, { useState } from 'react'
 import { CreditCard, CheckCircle, AlertCircle, Loader, Shield, Lock } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { generateReservationId } from '@/lib/entityIds'
 
 interface PaymentData {
   method: 'card' | 'bank_transfer' | 'paypal' | 'cash'
@@ -144,7 +145,7 @@ export default function PaymentProcessor({
       
       for (const item of items) {
         const reservationData = {
-          id: `reservation_${Date.now()}_${Math.random().toString(36).substring(2)}`,
+          id: generateReservationId(),
           product_id: item.productId,
           customer_name: customerInfo.name,
           customer_email: customerInfo.email,

@@ -425,7 +425,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                 <div className="flex items-center space-x-2 relative flex-shrink-0">
                   <input
                     type="number"
-                    value={guideFee || ''}
+                    value={Number.isFinite(guideFee) ? guideFee : ''}
                     onChange={(e) => onGuideFeeChange(Number(e.target.value) || 0)}
                     className={`text-sm border rounded px-2 py-1 w-24 pl-6 ${
                       isGuideFeeFromDefault ? 'text-blue-600 bg-blue-50 border-blue-300' : 
@@ -469,7 +469,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                   <div className="flex items-center space-x-2 relative flex-shrink-0">
                     <input
                       type="number"
-                      value={assistantFee || ''}
+                      value={Number.isFinite(assistantFee) ? assistantFee : ''}
                       onChange={(e) => onAssistantFeeChange(Number(e.target.value) || 0)}
                       className={`text-sm border rounded px-2 py-1 w-24 pl-6 ${
                         isAssistantFeeFromDefault ? 'text-blue-600 bg-blue-50 border-blue-300' : 

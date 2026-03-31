@@ -26,6 +26,7 @@ import {
   Store
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { generateReservationId, generateCustomerId } from '@/lib/entityIds'
 import { findSimilarCustomersInList } from '@/lib/customerSimilarity'
 import { useOptimizedData } from '@/hooks/useOptimizedData'
 import ReservationForm from '@/components/reservation/ReservationForm'
@@ -325,7 +326,7 @@ export default function AdminCustomers() {
   // 예약 추가 함수
   const handleAddReservation = (customer: Customer) => {
     // 새 예약 ID 생성
-    const newId = crypto.randomUUID()
+    const newId = generateReservationId()
     setNewReservationId(newId)
     setSelectedCustomerForReservation(customer)
     setShowReservationForm(true)
@@ -2513,13 +2514,6 @@ function CustomerForm({
 }) {
   const t = useTranslations('customers')
   
-  // 랜덤 ID 생성 함수 (useCallback으로 메모이제이션)
-  const generateRandomId = useCallback(() => {
-    const timestamp = Date.now().toString(36)
-    const randomStr = Math.random().toString(36).substring(2, 8)
-    return `CUST_${timestamp}_${randomStr}`.toUpperCase()
-  }, [])
-
   // useMemo로 기본 formData를 customer prop에 따라 계산
   const defaultFormData = useMemo<CustomerInsert>(() => {
     console.log('=== useMemo 실행됨 ===')
@@ -2575,7 +2569,7 @@ function CustomerForm({
     } else {
       // 새 고객 추가 모드일 때 기본값
       const defaultFormData = {
-        id: generateRandomId(),
+        id: generateCustomerId(),
         name: '',
         phone: '',
         emergency_contact: '',
@@ -2593,7 +2587,7 @@ function CustomerForm({
       console.log('기본 formData 계산:', defaultFormData)
       return defaultFormData
     }
-  }, [customer, generateRandomId])
+  }, [customer])
 
   // useState로 formData 상태 관리
   const [formData, setFormData] = useState<CustomerInsert>(defaultFormData)

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { generateReservationId } from '@/lib/entityIds'
 
 // 예약 생성
 export async function POST(request: NextRequest) {
@@ -45,8 +46,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
-    // 예약 ID 생성
-    const reservationId = `reservation_${Date.now()}_${Math.random().toString(36).substring(2)}`
+    const reservationId = generateReservationId()
 
     // 예약 데이터 생성
     const reservationData = {
