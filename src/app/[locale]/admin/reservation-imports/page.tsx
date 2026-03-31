@@ -3,12 +3,13 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
-import { Mail, ChevronRight, Loader2, FileText, CheckCircle, XCircle, RefreshCw, GripVertical, Inbox, Search, Filter } from 'lucide-react'
-import { isManiatourHomepageBookingEmail } from '@/lib/emailReservationParser'
+import { Mail, ChevronRight, Loader2, FileText, CheckCircle, XCircle, RefreshCw, GripVertical, Inbox, Search, Filter, Ban } from 'lucide-react'
+import { isManiatourHomepageBookingEmail, isCancellationRequestEmailSubject } from '@/lib/emailReservationParser'
 import { normalizeCustomerNameFromImport } from '@/utils/reservationUtils'
 import { useReservationData } from '@/hooks/useReservationData'
 import type { ExtractedReservationData } from '@/types/reservationImport'
 import type { Product } from '@/types/reservation'
+import { ReservationCancellationImportModal } from '@/components/reservation/ReservationCancellationImportModal'
 
 interface ImportItem {
   id: string
@@ -22,7 +23,33 @@ interface ImportItem {
   reservation_id: string | null
   reservation_exists_by_channel_rn?: boolean
   reservation_exists_by_customer_match?: boolean
+  /** 취소 메일만: 채널 RN으로 예약 상태 조회 결과 */
+  cancellation_list_badge?: 'needed' | 'done' | null
   created_at: string | null
+}
+
+/** 취소 알림 메일 목록 뱃지 (API cancellation_list_badge) */
+function CancellationImportListBadge({ row }: { row: ImportItem }) {
+  if (!isCancellationRequestEmailSubject(row.subject)) return null
+  const badge = row.cancellation_list_badge ?? 'needed'
+  if (badge === 'done') {
+    return (
+      <span
+        className="shrink-0 text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded"
+        title="채널 RN과 일치하는 예약이 모두 취소(또는 삭제) 처리됨"
+      >
+        취소 됨
+      </span>
+    )
+  }
+  return (
+    <span
+      className="shrink-0 text-[10px] font-semibold text-rose-800 bg-rose-100 px-1.5 py-0.5 rounded"
+      title="채널 RN 미매칭·또는 예약이 아직 취소 상태가 아님. 모달에서 처리하세요."
+    >
+      취소 필요
+    </span>
+  )
 }
 
 interface AdminReservationImportsProps {
@@ -89,7 +116,7 @@ function productInternalName(extracted: ExtractedReservationData, products: Prod
 const RESERVATION_IMPORTS_UI_DEFAULT = {
   /** API: active = pending + confirmed (예약 저장 후에도 목록에 유지) */
   statusFilter: 'active',
-  activeTab: 'all' as 'all' | 'booking',
+  activeTab: 'all' as 'all' | 'booking' | 'cancellation',
   dateEnd: todayLocal(),
   noDateFilter: false,
   searchQuery: '',
@@ -117,6 +144,9 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   const [gmailSyncing, setGmailSyncing] = useState(false)
   const [gmailMessage, setGmailMessage] = useState<string | null>(null)
   const [optimisticConnected, setOptimisticConnected] = useState(false)
+  const [cancellationModalId, setCancellationModalId] = useState<string | null>(null)
+
+  const cancellationImportFromUrl = searchParams.get('cancellationImport')
 
   const summary = (extracted: ExtractedReservationData) => {
     const parts = []
@@ -148,6 +178,23 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
       .catch(() => setItems([]))
       .finally(() => setLoading(false))
   }, [statusFilter, dateStart, dateEnd, noDateFilter])
+
+  useEffect(() => {
+    if (!cancellationImportFromUrl) return
+    setCancellationModalId(cancellationImportFromUrl)
+    router.replace(`/${locale}/admin/reservation-imports`, { scroll: false })
+  }, [cancellationImportFromUrl, locale, router])
+
+  const openImportRow = useCallback(
+    (row: ImportItem) => {
+      if (isCancellationRequestEmailSubject(row.subject)) {
+        setCancellationModalId(row.id)
+        return
+      }
+      router.push(`/${locale}/admin/reservation-imports/${row.id}`)
+    },
+    [locale, router]
+  )
 
   /** KKday 메일인지 (platform_key 또는 발신/제목으로 판별, 기존에 파서 적용 전 저장된 행 보정) */
   const isKKdayRow = (row: ImportItem) =>
@@ -193,9 +240,12 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
     isManiatourHomepageBookingEmail(row.source_email, row.subject) ||
     isGyGBookingRow(row)
 
-  const filteredItems = activeTab === 'booking'
-    ? items.filter((row) => isBookingConfirmed(row))
-    : items
+  const filteredItems =
+    activeTab === 'booking'
+      ? items.filter((row) => isBookingConfirmed(row))
+      : activeTab === 'cancellation'
+        ? items.filter((row) => isCancellationRequestEmailSubject(row.subject))
+        : items
 
   /** 검색 + 플랫폼 필터 적용한 목록 (표시용) */
   const searchedAndFilteredItems = filteredItems.filter((row) => {
@@ -220,6 +270,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
   })
 
   const bookingCount = items.filter((row) => isBookingConfirmed(row)).length
+  const cancellationCount = items.filter((row) => isCancellationRequestEmailSubject(row.subject)).length
 
   /** 플랫폼 필터 옵션 (전체 + 주요 플랫폼 + 기타) */
   const PLATFORM_FILTER_OPTIONS: { value: string; label: string }[] = [
@@ -554,14 +605,14 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
         플랫폼에서 수신된 이메일로 자동 추출된 예약 후보입니다. 항목을 클릭해 정보를 보완한 뒤 예약으로 생성하세요.
       </p>
 
-      {/* 탭: 전체 / 예약 접수 (드래그하여 분류) - 모바일 터치 영역 확대 */}
-      <div className="flex gap-1 border-b border-gray-200">
+      {/* 탭: 전체 / 예약 접수 / 취소 관련 */}
+      <div className="flex flex-wrap gap-1 border-b border-gray-200">
         <button
           type="button"
           onClick={() => setListUi((prev) => ({ ...prev, activeTab: 'all' }))}
           onDragOver={handleTabDragOver}
           onDrop={(e) => handleTabDrop(e, 'all')}
-          className={`flex-1 sm:flex-none min-h-[44px] px-4 py-3 text-sm font-medium rounded-t-lg border-b-2 transition-colors touch-manipulation ${
+          className={`flex-1 sm:flex-none min-h-[44px] px-3 sm:px-4 py-3 text-sm font-medium rounded-t-lg border-b-2 transition-colors touch-manipulation ${
             activeTab === 'all'
               ? 'border-blue-600 text-blue-600 bg-blue-50/50'
               : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -576,7 +627,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           onDragOver={handleTabDragOver}
           onDrop={(e) => handleTabDrop(e, 'booking')}
           title="항목을 이 탭에 드래그하면 예약 접수로 분류됩니다"
-          className={`flex-1 sm:flex-none min-h-[44px] px-4 py-3 text-sm font-medium rounded-t-lg border-b-2 transition-colors flex items-center justify-center gap-1.5 touch-manipulation ${
+          className={`flex-1 sm:flex-none min-h-[44px] px-3 sm:px-4 py-3 text-sm font-medium rounded-t-lg border-b-2 transition-colors flex items-center justify-center gap-1.5 touch-manipulation ${
             activeTab === 'booking'
               ? 'border-blue-600 text-blue-600 bg-blue-50/50'
               : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -586,9 +637,23 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           예약 접수
           <span className="text-gray-500 font-normal">({bookingCount})</span>
         </button>
+        <button
+          type="button"
+          onClick={() => setListUi((prev) => ({ ...prev, activeTab: 'cancellation' }))}
+          title="제목에 cancelled/canceled가 포함된 취소·취소 요청 메일만 표시합니다. 행을 누르면 모달에서 처리합니다."
+          className={`flex-1 sm:flex-none min-h-[44px] px-3 sm:px-4 py-3 text-sm font-medium rounded-t-lg border-b-2 transition-colors flex items-center justify-center gap-1.5 touch-manipulation ${
+            activeTab === 'cancellation'
+              ? 'border-rose-600 text-rose-700 bg-rose-50/60'
+              : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          }`}
+        >
+          <Ban className="w-4 h-4 shrink-0" aria-hidden />
+          취소 관련
+          <span className="text-gray-500 font-normal">({cancellationCount})</span>
+        </button>
       </div>
       <p className="text-xs text-gray-500 mt-1">
-        예약 접수 메일만 보려면 &quot;예약 접수&quot; 탭을 선택하세요. 목록에서 행을 드래그해 해당 탭에 놓으면 분류됩니다.
+        &quot;예약 접수&quot;는 접수 메일만, &quot;취소 관련&quot;은 취소 알림만 표시합니다. 예약 접수 분류는 전체·예약 접수 탭 사이에 행을 드래그해 설정할 수 있습니다.
       </p>
 
       {/* 검색 + 플랫폼 필터 */}
@@ -692,7 +757,13 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
       ) : filteredItems.length === 0 ? (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center text-gray-600">
           <Inbox className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-          <p>{activeTab === 'booking' ? '예약 접수로 분류된 메일이 없습니다. 목록에서 항목을 드래그해 이 탭에 놓아 보관하세요.' : '해당 기간 항목이 없습니다.'}</p>
+          <p>
+            {activeTab === 'booking'
+              ? '예약 접수로 분류된 메일이 없습니다. 목록에서 항목을 드래그해 이 탭에 놓아 보관하세요.'
+              : activeTab === 'cancellation'
+                ? '이 기간에 취소 관련 제목(cancelled/canceled) 메일이 없습니다.'
+                : '해당 기간 항목이 없습니다.'}
+          </p>
         </div>
       ) : searchedAndFilteredItems.length === 0 ? (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-8 text-center text-gray-600">
@@ -748,7 +819,7 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                       onDragStart={(e) => handleDragStart(e, row.id)}
                       onDragEnd={handleDragEnd}
                       className={`hover:bg-gray-50 cursor-pointer ${rowBg} ${isDragging ? 'opacity-50' : ''} ${isPatching ? 'opacity-70' : ''}`}
-                      onClick={() => router.push(`/${locale}/admin/reservation-imports/${row.id}`)}
+                      onClick={() => openImportRow(row)}
                     >
                       <td
                         className="px-2 py-3 text-gray-400 cursor-grab active:cursor-grabbing"
@@ -760,8 +831,11 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                       <td className="px-3 py-3 w-28 text-sm text-gray-600 whitespace-nowrap">
                         {formatDate(row.received_at ?? row.created_at)}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-900 min-w-[320px] max-w-[480px] truncate" title={row.subject ?? ''}>
-                        {row.subject ?? '-'}
+                      <td className="px-4 py-3 text-sm text-gray-900 min-w-[320px] max-w-[480px]" title={row.subject ?? ''}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <CancellationImportListBadge row={row} />
+                          <span className="truncate">{row.subject ?? '-'}</span>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-600">{displayPlatform(row)}</td>
                       <td className="px-4 py-3 text-sm text-gray-700 max-w-[280px] truncate" title={summary(row.extracted_data)}>
@@ -798,13 +872,16 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
                   key={row.id}
                   role="button"
                   tabIndex={0}
-                  onClick={() => router.push(`/${locale}/admin/reservation-imports/${row.id}`)}
-                  onKeyDown={(e) => e.key === 'Enter' && router.push(`/${locale}/admin/reservation-imports/${row.id}`)}
+                  onClick={() => openImportRow(row)}
+                  onKeyDown={(e) => e.key === 'Enter' && openImportRow(row)}
                   className={`min-h-[72px] rounded-lg border p-4 active:bg-gray-50 ${cardBg} ${isPatching ? 'opacity-70' : ''}`}
                 >
                   <div className="flex items-start gap-3">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 line-clamp-2">{row.subject ?? '-'}</p>
+                      <div className="flex items-start gap-2">
+                        <CancellationImportListBadge row={row} />
+                        <p className="text-sm font-medium text-gray-900 line-clamp-2 flex-1">{row.subject ?? '-'}</p>
+                      </div>
                       <p className="text-xs text-gray-500 mt-1">{formatDate(row.received_at ?? row.created_at)}</p>
                       {(displayPlatform(row) !== '-' || summary(row.extracted_data) !== '-') && (
                         <p className="text-xs text-gray-600 mt-1 truncate">
@@ -822,6 +899,14 @@ export default function AdminReservationImportsPage({}: AdminReservationImportsP
           </div>
         </>
       )}
+
+      <ReservationCancellationImportModal
+        importId={cancellationModalId}
+        locale={locale}
+        products={productsList}
+        onClose={() => setCancellationModalId(null)}
+        onResolved={loadList}
+      />
     </div>
   )
 }

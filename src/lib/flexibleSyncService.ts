@@ -62,7 +62,6 @@ const coerceStringToStringArray = (raw: unknown): string[] => {
 
 // 데이터 타입 변환 함수
 const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
-  console.log(`convertDataTypes called with tableName: ${tableName}`)
   const converted = { ...data }
 
   // 숫자 필드 변환 (소수 가능 — float/numeric)
@@ -184,8 +183,6 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
 
   // tour_hotel_bookings 및 ticket_bookings 테이블 특별 처리
   if (tableName === 'tour_hotel_bookings' || tableName === 'ticket_bookings') {
-    console.log('Processing tour_hotel_bookings data:', Object.keys(converted))
-    
     // 존재하지 않는 필드 제거
     let validFields: string[] = []
     
@@ -222,12 +219,10 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
       }
     })
     
-    if (removedFields.length > 0) {
+    if (process.env.NODE_ENV === 'development' && removedFields.length > 0) {
       console.log('Removed invalid fields:', removedFields)
     }
-    
-    console.log('Final converted data keys:', Object.keys(converted))
-    
+
     // submit_on 필드가 있으면 타임스탬프로 변환
     if (converted.submit_on !== undefined && converted.submit_on !== null && converted.submit_on !== '') {
       // Google Sheets 에러 값 체크
@@ -343,45 +338,170 @@ const convertDataTypes = (data: Record<string, unknown>, tableName: string) => {
   return converted
 }
 
-// 고객 정보 처리
-const processCustomer = async (customerData: Record<string, unknown>) => {
+/** 동기화용: 주입된 DB 클라이언트로 고객 1명 조회 또는 생성 (email 중복 시 첫 행만 사용) */
+const processCustomerWithDb = async (db: any, customerData: Record<string, unknown>): Promise<string | null> => {
   try {
     if (!customerData.customer_email || typeof customerData.customer_email !== 'string') return null
+    const email = customerData.customer_email.trim()
+    if (!email) return null
 
-    // 기존 고객 확인
-    const { data: existingCustomer } = await supabase
+    const { data: existingList, error: selErr } = await db
       .from('customers')
       .select('id')
-      .eq('email', customerData.customer_email as string)
-      .single()
+      .eq('email', email)
+      .limit(1)
 
-    if (existingCustomer) {
-      return (existingCustomer as { id: string }).id
+    if (selErr) {
+      console.error('Customer lookup error:', selErr)
+      return null
+    }
+    if (existingList?.length) {
+      return (existingList[0] as { id: string }).id
     }
 
-    // 새 고객 생성
-    const { data: newCustomer, error } = await (supabase as any) // eslint-disable-line @typescript-eslint/no-explicit-any
+    const phoneVal = customerData.customer_phone
+    const phone =
+      phoneVal != null && String(phoneVal).trim() !== '' ? String(phoneVal) : null
+    const { data: newCustomer, error } = await db
       .from('customers')
       .insert({
-        name: (customerData.customer_name as string) || 'Unknown',
-        email: customerData.customer_email as string,
-        phone: (customerData.customer_phone as string) || null,
+        name: (typeof customerData.customer_name === 'string' && customerData.customer_name.trim() !== '')
+          ? customerData.customer_name.trim()
+          : 'Unknown',
+        email,
+        phone,
         language: 'ko',
         created_at: new Date().toISOString()
       })
       .select('id')
-      .single()
+      .maybeSingle()
 
     if (error) {
       console.error('Customer creation error:', error)
       return null
     }
-
-    return (newCustomer as { id: string }).id
+    return newCustomer ? (newCustomer as { id: string }).id : null
   } catch (error) {
     console.error('Error processing customer:', error)
     return null
   }
+}
+
+/**
+ * reservations 동기화 전용: 시트에 등장하는 customer_email을 모아 한 번에 조회·배치 insert.
+ * 행마다 processCustomer 호출(N+1)을 없애 속도와 타임아웃을 개선합니다.
+ */
+const buildReservationCustomerEmailToIdMap = async (
+  db: any,
+  rows: Record<string, unknown>[],
+  onProgress?: (event: {
+    type: 'start' | 'progress' | 'complete' | 'info' | 'warn' | 'error'
+    message?: string
+  }) => void
+): Promise<Map<string, string>> => {
+  const map = new Map<string, string>()
+  const stubByEmail = new Map<string, { name: string; phone: string | null }>()
+
+  for (const row of rows) {
+    const raw = row.customer_email
+    if (!raw || typeof raw !== 'string') continue
+    const email = raw.trim()
+    if (!email) continue
+    if (stubByEmail.has(email)) continue
+    const nameRaw = row.customer_name
+    const name =
+      typeof nameRaw === 'string' && nameRaw.trim() !== '' ? nameRaw.trim() : 'Unknown'
+    const phoneRaw = row.customer_phone
+    const phone =
+      phoneRaw != null && String(phoneRaw).trim() !== '' ? String(phoneRaw) : null
+    stubByEmail.set(email, { name, phone })
+  }
+
+  if (stubByEmail.size === 0) return map
+
+  const uniqueEmails = [...stubByEmail.keys()]
+  const SELECT_CHUNK = 150
+  const INSERT_CHUNK = 80
+
+  for (let i = 0; i < uniqueEmails.length; i += SELECT_CHUNK) {
+    const chunk = uniqueEmails.slice(i, i + SELECT_CHUNK)
+    const { data, error } = await db.from('customers').select('id, email').in('email', chunk)
+    if (error) {
+      console.error('고객 이메일 배치 조회 실패:', error)
+      onProgress?.({ type: 'warn', message: `고객 이메일 일부 조회 실패: ${error.message}` })
+      continue
+    }
+    for (const c of data || []) {
+      const em = c.email != null ? String(c.email).trim() : ''
+      if (em && c.id && !map.has(em)) {
+        map.set(em, c.id as string)
+      }
+    }
+  }
+
+  let missing = uniqueEmails.filter((e) => !map.has(e))
+  if (missing.length === 0) {
+    onProgress?.({ type: 'info', message: `고객 이메일 매핑 완료 (기존 DB ${map.size}명)` })
+    return map
+  }
+
+  onProgress?.({ type: 'info', message: `신규 고객 후보 ${missing.length}명 — 배치 생성 시도` })
+
+  for (let i = 0; i < missing.length; i += INSERT_CHUNK) {
+    const slice = missing.slice(i, i + INSERT_CHUNK)
+    const payload = slice.map((email) => {
+      const s = stubByEmail.get(email)!
+      return {
+        name: s.name,
+        email,
+        phone: s.phone,
+        language: 'ko',
+        created_at: new Date().toISOString()
+      }
+    })
+
+    const { data: inserted, error: insErr } = await db.from('customers').insert(payload).select('id, email')
+
+    if (!insErr && inserted?.length) {
+      for (const c of inserted) {
+        const em = c.email != null ? String(c.email).trim() : ''
+        if (em && c.id) map.set(em, c.id as string)
+      }
+    } else {
+      if (insErr) {
+        console.warn('고객 배치 insert 실패, 건별 처리:', insErr.message)
+        onProgress?.({ type: 'warn', message: `고객 배치 생성 일부 실패, 건별 재시도 중` })
+      }
+      for (const email of slice) {
+        if (map.has(email)) continue
+        const s = stubByEmail.get(email)!
+        const id = await processCustomerWithDb(db, {
+          customer_email: email,
+          customer_name: s.name,
+          customer_phone: s.phone
+        })
+        if (id) map.set(email, id)
+      }
+    }
+  }
+
+  missing = uniqueEmails.filter((e) => !map.has(e))
+  if (missing.length > 0) {
+    for (let i = 0; i < missing.length; i += SELECT_CHUNK) {
+      const chunk = missing.slice(i, i + SELECT_CHUNK)
+      const { data } = await db.from('customers').select('id, email').in('email', chunk)
+      for (const c of data || []) {
+        const em = c.email != null ? String(c.email).trim() : ''
+        if (em && c.id && !map.has(em)) map.set(em, c.id as string)
+      }
+    }
+  }
+
+  onProgress?.({
+    type: 'info',
+    message: `고객 이메일 ${stubByEmail.size}종 → customer_id 연결 ${map.size}건`
+  })
+  return map
 }
 
 // 마지막 동기화 시간 조회 (사용하지 않음 - 전체 동기화만 지원)
@@ -432,12 +552,10 @@ export const flexibleSync = async (
   }) => void,
   // 주입 가능한 Supabase 클라이언트 (JWT 포함)
   injectedSupabaseClient?: unknown,
-  jwtToken?: string
+  _jwtToken?: string
 ) => {
   try {
     const db = (injectedSupabaseClient as any) || (supabase as any) // eslint-disable-line @typescript-eslint/no-explicit-any
-    console.log(`Starting flexible sync for spreadsheet: ${spreadsheetId}, sheet: ${sheetName}, table: ${targetTable}`)
-    console.log(`Target table type: ${typeof targetTable}, value: "${targetTable}"`)
     
     onProgress?.({ type: 'info', message: `동기화 시작 - 스프레드시트: ${spreadsheetId}, 시트: ${sheetName}, 테이블: ${targetTable}` })
     
@@ -447,7 +565,6 @@ export const flexibleSync = async (
     // 구글 시트에서 데이터 읽기 (동적 범위 사용)
     onProgress?.({ type: 'info', message: '구글 시트에서 데이터 읽는 중...' })
     const sheetData = await readSheetDataDynamic(spreadsheetId, sheetName)
-    console.log(`Read ${sheetData.length} rows from Google Sheet`)
     onProgress?.({ type: 'info', message: `구글 시트에서 ${sheetData.length}개 행을 읽었습니다.` })
 
     if (sheetData.length === 0) {
@@ -511,7 +628,6 @@ export const flexibleSync = async (
       .map((row, index) => {
         // 빈 행 체크 (변환 전 - Google Sheets 컬럼명 기준)
         if (isRowEmpty(row)) {
-          console.log(`행 ${index + 1} 건너뜀: 빈 행`)
           return null
         }
 
@@ -526,15 +642,8 @@ export const flexibleSync = async (
           }
         })
 
-        // 첫 번째 행에 대한 디버그 로그
-        if (index === 0) {
-          console.log('First row mapping:', {
-            originalRow: Object.keys(row),
-            originalRowValues: row,
-            columnMapping: columnMapping,
-            transformedBeforeConversion: Object.keys(transformed),
-            transformedValues: transformed
-          })
+        if (process.env.NODE_ENV === 'development' && index === 0) {
+          console.log('First row mapping:', { keys: Object.keys(transformed) })
         }
 
         const converted = convertDataTypes(transformed, targetTable)
@@ -564,14 +673,10 @@ export const flexibleSync = async (
           }
         }
         
-        // 첫 번째 행에 대한 디버그 로그
-        if (index === 0) {
-          console.log('First row after conversion:', {
-            keys: Object.keys(converted),
-            values: converted
-          })
+        if (process.env.NODE_ENV === 'development' && index === 0) {
+          console.log('First row after conversion:', { keys: Object.keys(converted) })
         }
-        
+
         return converted
       })
       .filter((row): row is Record<string, unknown> => {
@@ -620,9 +725,13 @@ export const flexibleSync = async (
 
     const totalRows = transformedData.length
     const mode: 'incremental' | 'full' = 'full'
-    console.log(`Transformed ${totalRows} rows (${mode} sync)`)
     onProgress?.({ type: 'info', message: `데이터 변환 완료 - ${totalRows}개 행 (${mode} 동기화)` })
     onProgress?.({ type: 'start', total: totalRows, mode })
+
+    let reservationCustomerMap: Map<string, string> | null = null
+    if (targetTable === 'reservations') {
+      reservationCustomerMap = await buildReservationCustomerEmailToIdMap(db, transformedData, onProgress)
+    }
 
     // 대상 테이블의 컬럼 존재 여부 확인 (샘플 1행 조회)
     let tableColumns: Set<string> | null = null
@@ -678,10 +787,6 @@ export const flexibleSync = async (
               resetSuccess += batchIds.length
             }
             
-            // 배치 간 짧은 지연 (서버 부하 방지)
-            if (i + RESET_BATCH_SIZE < tourIdsToSync.length) {
-              await new Promise(resolve => setTimeout(resolve, 50))
-            }
           }
           
           if (resetFailed > 0) {
@@ -795,31 +900,7 @@ export const flexibleSync = async (
       */
     }
     
-    // 동기화 실행 (배치 upsert로 성능 개선, ID가 없으면 생성)
-    onProgress?.({ type: 'info', message: '데이터베이스에 동기화 시작...' })
-    
-    // 현재 사용자 정보 확인
-    onProgress?.({ type: 'info', message: '현재 사용자 정보를 확인합니다...' })
-    try {
-      let userEmail = ''
-      if (jwtToken) {
-        const { data: { user } } = await db.auth.getUser(jwtToken)
-        userEmail = user?.email || ''
-      } else {
-        const { data: { user } } = await db.auth.getUser()
-        userEmail = user?.email || ''
-      }
-      onProgress?.({ type: 'info', message: `현재 사용자: ${userEmail || 'unknown'}` })
-      
-      // is_staff 함수 테스트
-      const { data: staffCheck } = await db.rpc('is_staff', { p_email: userEmail || '' })
-      onProgress?.({ type: 'info', message: `Staff 권한: ${staffCheck ? 'YES' : 'NO'}` })
-    } catch {
-      onProgress?.({ type: 'warn', message: '사용자 정보 확인 실패' })
-    }
-    
-    // RLS 정책을 우회하기 위해 직접 SQL 실행 (exec_sql 함수가 없으므로 제거)
-    onProgress?.({ type: 'info', message: 'RLS 정책을 우회하여 동기화를 진행합니다...' })
+    onProgress?.({ type: 'info', message: '데이터베이스에 쓰기 시작 (서비스 롤 upsert)...' })
     
     const results = {
       inserted: 0,
@@ -828,14 +909,14 @@ export const flexibleSync = async (
       errorDetails: [] as string[]
     }
     let processed = 0
-    // 최적화된 배치 크기 설정 (대용량 데이터에 맞게 조정)
-    // 예약 테이블은 statement timeout 방지를 위해 작은 배치 사용 (Supabase 기본 8초 제한)
+    // 예약/가격: 고객 이메일은 사전 배치 처리됨 → upsert 배치를 다소 키움 (타임아웃 시 50~80으로 낮추기)
     const isReservationsTable = targetTable === 'reservations' || targetTable === 'reservation_pricing'
     const baseBatchSize = isReservationsTable
-      ? 50
+      ? 100
       : totalRows > 20000 ? 1000 : totalRows > 10000 ? 500 : totalRows > 5000 ? 300 : 150
     const batchSize = Math.min(baseBatchSize, totalRows)
     const rowsBuffer: Record<string, unknown>[] = []
+    let flushCount = 0
 
     const flush = async () => {
       if (rowsBuffer.length === 0) return
@@ -862,12 +943,7 @@ export const flexibleSync = async (
           }
           return row
         })
-        
-        // 최적화된 지연 시간 (대용량 데이터의 경우 지연 최소화)
-        // 9500개 이상 처리 시 지연을 최소화하여 속도 개선
-        const delayMs = totalRows > 5000 ? 5 : Math.min(30, Math.max(5, Math.floor(rowsBuffer.length / 20)))
-        await new Promise(resolve => setTimeout(resolve, delayMs))
-        
+
         // RLS 정책 우회를 위한 upsert 실행
         const { error } = await executeUpsertWithRLSBypass(db, targetTable, payload)
         if (error) {
@@ -912,9 +988,13 @@ export const flexibleSync = async (
             onProgress?.({ type: 'warn', message: '데이터 타입 오류: 잘못된 형식의 데이터가 있습니다.' })
           }
         } else {
-          // 구분이 어려우므로 processed 만큼을 모두 updated로 간주
           results.updated += rowsBuffer.length
-          onProgress?.({ type: 'info', message: `${rowsBuffer.length}개 행 배치 처리 완료` })
+          flushCount += 1
+          const throttle =
+            totalRows < 400 || flushCount <= 1 || flushCount % 8 === 0 || results.updated >= totalRows
+          if (throttle) {
+            onProgress?.({ type: 'info', message: `DB 반영 ${results.updated}/${totalRows}행 (배치 ${flushCount})` })
+          }
         }
       } catch (err: unknown) {
         console.error('Upsert batch exception:', err)
@@ -956,11 +1036,12 @@ export const flexibleSync = async (
           }
         }
 
-        // 고객 정보 처리 (reservations 테이블인 경우)
-        if (targetTable === 'reservations' && row.customer_email) {
-          const customerId = await processCustomer(row)
-          if (customerId) {
-            row.customer_id = customerId
+        // 고객 정보: 사전에 일괄 매핑한 customer_id 적용 (행마다 DB 호출 없음)
+        if (targetTable === 'reservations' && row.customer_email && reservationCustomerMap) {
+          const em = typeof row.customer_email === 'string' ? row.customer_email.trim() : ''
+          if (em) {
+            const customerId = reservationCustomerMap.get(em)
+            if (customerId) row.customer_id = customerId
           }
         }
 
@@ -979,11 +1060,11 @@ export const flexibleSync = async (
             results.errorDetails.push(skipMsg)
             onProgress?.({ type: 'warn', message: skipMsg })
             processed++
-            onProgress?.({ type: 'progress', processed, total: totalRows, inserted: results.inserted, updated: results.updated, errors: results.errors })
+            if (processed === totalRows || totalRows < 250 || processed % 40 === 0) {
+              onProgress?.({ type: 'progress', processed, total: totalRows, inserted: results.inserted, updated: results.updated, errors: results.errors })
+            }
             if (rowsBuffer.length >= batchSize) {
               await flush()
-              const batchDelayMs = totalRows > 5000 ? 10 : Math.min(50, Math.max(10, Math.floor(batchSize / 10)))
-              await new Promise(resolve => setTimeout(resolve, batchDelayMs))
             }
             continue
           }
@@ -1006,13 +1087,11 @@ export const flexibleSync = async (
         }
       }
       processed++
-      onProgress?.({ type: 'progress', processed, total: totalRows, inserted: results.inserted, updated: results.updated, errors: results.errors })
+      if (processed === totalRows || totalRows < 250 || processed % 40 === 0) {
+        onProgress?.({ type: 'progress', processed, total: totalRows, inserted: results.inserted, updated: results.updated, errors: results.errors })
+      }
       if (rowsBuffer.length >= batchSize) {
         await flush()
-        // 최적화된 배치 간 지연 시간 (대용량 데이터의 경우 지연 최소화)
-        // 9500개 이상 처리 시 배치 간 지연을 최소화
-        const batchDelayMs = totalRows > 5000 ? 10 : Math.min(50, Math.max(10, Math.floor(batchSize / 10)))
-        await new Promise(resolve => setTimeout(resolve, batchDelayMs))
       }
     }
 
@@ -1023,7 +1102,6 @@ export const flexibleSync = async (
     // 동기화 완료
     onProgress?.({ type: 'info', message: '동기화가 완료되었습니다.' })
 
-    console.log('Flexible sync completed:', results)
     onProgress?.({ type: 'info', message: '동기화 히스토리 저장 중...' })
     
     // 동기화 히스토리 저장

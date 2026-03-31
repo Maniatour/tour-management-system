@@ -7,6 +7,7 @@ import TourExpenseManager from '@/components/TourExpenseManager'
 import TipsShareModal from '@/components/TipsShareModal'
 import { DollarSign } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { isTourCancelled } from '@/utils/tourStatusUtils'
 
 interface TourFinanceProps {
   tour: any
@@ -25,6 +26,7 @@ export const TourFinance: React.FC<TourFinanceProps> = ({
   onReservationClick
 }) => {
   const t = useTranslations('tours.tourFinance')
+  const tourFeesCancelled = isTourCancelled(tour?.tour_status)
   const [hasPrepaidTip, setHasPrepaidTip] = useState(false)
   const [isTipsShareModalOpen, setIsTipsShareModalOpen] = useState(false)
   const [checkingTip, setCheckingTip] = useState(true)
@@ -94,8 +96,9 @@ export const TourFinance: React.FC<TourFinanceProps> = ({
           reservationIds={tour.reservation_ids || []}
           userRole={userRole}
           onExpenseUpdated={onExpenseUpdated}
-          tourGuideFee={tour.guide_fee}
-          tourAssistantFee={tour.assistant_fee}
+          tourGuideFee={tourFeesCancelled ? 0 : tour.guide_fee}
+          tourAssistantFee={tourFeesCancelled ? 0 : tour.assistant_fee}
+          tourStatus={tour?.tour_status}
         />
       </div>
 

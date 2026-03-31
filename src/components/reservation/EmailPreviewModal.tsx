@@ -1,7 +1,28 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { X, Mail, Eye, Loader2, Send, Copy, Check, Printer } from 'lucide-react'
+import ProductDetailFieldEditModal from '@/components/reservation/ProductDetailFieldEditModal'
+import {
+  isProductDetailEmailEditableField,
+  type ProductDetailEmailEditableField,
+} from '@/lib/fetchProductDetailsForEmail'
+
+type ProductDetailEditPayload = {
+  context: {
+    productId: string
+    channelId: string | null
+    variantKey: string
+    languageCode: string
+    channelName: string | null
+    productDisplayName: string
+    sourceLabel: string
+  }
+  fieldValues: Record<ProductDetailEmailEditableField, string>
+  sectionTitles?: Record<string, string>
+  /** DB customer_page_visibility (필드명 → false 이면 고객 페이지 숨김) */
+  customerPageVisibility?: Record<string, unknown> | null
+}
 
 interface EmailPreviewModalProps {
   isOpen: boolean
@@ -36,8 +57,42 @@ export default function EmailPreviewModal({
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [productDetailEdit, setProductDetailEdit] =
+    useState<ProductDetailEditPayload | null>(null)
+  const [editingField, setEditingField] =
+    useState<ProductDetailEmailEditableField | null>(null)
+  const previewBodyRef = useRef<HTMLDivElement>(null)
 
   const showCopyPrintToolbar = emailType === 'confirmation' || emailType === 'departure'
+
+  /** 미리보기 전용: 복사·인쇄 시 수정 버튼·data-pd-field 등 고객용 HTML에 넣지 않을 마크업 제거 */
+  const stripAdminPreviewMarkupFromEmailHtml = (html: string): string => {
+    try {
+      const doc = new DOMParser().parseFromString(html, 'text/html')
+      doc.querySelectorAll('button[data-pd-field]').forEach((el) => el.remove())
+      doc.querySelectorAll('[data-pd-field]').forEach((el) => {
+        el.removeAttribute('data-pd-field')
+        const st = el.getAttribute('style')
+        if (st) {
+          const cleaned = st
+            .replace(/cursor\s*:\s*pointer\s*;?/gi, '')
+            .replace(/;\s*;/g, ';')
+            .replace(/^\s*;\s*|\s*;\s*$/g, '')
+            .trim()
+          if (cleaned) el.setAttribute('style', cleaned)
+          else el.removeAttribute('style')
+        }
+      })
+      doc.querySelectorAll('.email-preview-product-details').forEach((el) => {
+        el.classList.remove('email-preview-product-details')
+      })
+      const doctypeMatch = html.match(/<!DOCTYPE[\s\S]*?>/i)
+      const doctype = doctypeMatch ? doctypeMatch[0] : '<!DOCTYPE html>'
+      return `${doctype}\n${doc.documentElement.outerHTML}`
+    } catch {
+      return html
+    }
+  }
 
   // HTML → 텍스트 (PickupScheduleEmailPreviewModal과 동일한 핵심 로직, 범용 정리)
   const htmlToText = (html: string): string => {
@@ -80,7 +135,9 @@ export default function EmailPreviewModal({
   const handleCopyText = async () => {
     if (!emailContent) return
     try {
-      let textContent = htmlToText(emailContent.html)
+      let textContent = htmlToText(
+        stripAdminPreviewMarkupFromEmailHtml(emailContent.html)
+      )
       textContent = textContent.replace(/\n/g, '\r\n')
       await navigator.clipboard.writeText(textContent)
       setCopied(true)
@@ -88,7 +145,9 @@ export default function EmailPreviewModal({
     } catch (error) {
       console.error('텍스트 복사 실패:', error)
       const textArea = document.createElement('textarea')
-      textArea.value = htmlToText(emailContent.html).replace(/\n/g, '\r\n')
+      textArea.value = htmlToText(
+        stripAdminPreviewMarkupFromEmailHtml(emailContent.html)
+      ).replace(/\n/g, '\r\n')
       textArea.style.position = 'fixed'
       textArea.style.opacity = '0'
       document.body.appendChild(textArea)
@@ -106,9 +165,10 @@ export default function EmailPreviewModal({
 
   const handleCopyHtml = async () => {
     if (!emailContent) return
+    const cleanHtml = stripAdminPreviewMarkupFromEmailHtml(emailContent.html)
     try {
-      const htmlBlob = new Blob([emailContent.html], { type: 'text/html' })
-      const textBlob = new Blob([emailContent.html], { type: 'text/plain' })
+      const htmlBlob = new Blob([cleanHtml], { type: 'text/html' })
+      const textBlob = new Blob([cleanHtml], { type: 'text/plain' })
       const clipboardItem = new ClipboardItem({
         'text/html': htmlBlob,
         'text/plain': textBlob
@@ -119,13 +179,13 @@ export default function EmailPreviewModal({
     } catch (error) {
       console.error('HTML 복사 실패:', error)
       try {
-        await navigator.clipboard.writeText(emailContent.html)
+        await navigator.clipboard.writeText(cleanHtml)
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
         alert('일부 환경에서는 서식 없이 복사됩니다. 이메일 작성 시 붙여넣기를 확인해 주세요.')
       } catch {
         const textArea = document.createElement('textarea')
-        textArea.value = emailContent.html
+        textArea.value = cleanHtml
         textArea.style.position = 'fixed'
         textArea.style.opacity = '0'
         document.body.appendChild(textArea)
@@ -150,9 +210,10 @@ export default function EmailPreviewModal({
       return
     }
     const subject = (emailContent.subject || 'Email').replace(/</g, '&lt;')
+    const printHtml = stripAdminPreviewMarkupFromEmailHtml(emailContent.html)
     w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>${subject}</title>
 <style>body{font-family:system-ui,sans-serif;padding:16px;max-width:600px;margin:0 auto;} @media print { body { padding: 8px; } }</style></head><body>
-${emailContent.html}
+${printHtml}
 </body></html>`)
     w.document.close()
     setTimeout(() => {
@@ -165,70 +226,93 @@ ${emailContent.html}
     }, 250)
   }
 
-  // 이메일 미리보기 로드
-  useEffect(() => {
+  const loadEmailPreview = useCallback(async () => {
     if (!isOpen || !reservationId) return
 
-    const loadEmailPreview = async () => {
-      setLoading(true)
-      try {
-        let response: Response
+    setLoading(true)
+    try {
+      let response: Response
 
-        if (emailType === 'pickup') {
-          if (!pickupTime || !tourDate) {
-            alert('픽업 시간과 투어 날짜가 필요합니다.')
-            setLoading(false)
-            return
-          }
-
-          response = await fetch('/api/preview-pickup-schedule-notification', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              reservationId,
-              pickupTime: pickupTime.includes(':') 
-                ? pickupTime 
-                : `${pickupTime}:00`,
-              tourDate
-            })
-          })
-        } else {
-          // 예약 확인 이메일 또는 투어 출발 확정 이메일
-          const type = emailType === 'confirmation' ? 'both' : 'voucher'
-          response = await fetch('/api/preview-email', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              reservationId,
-              type
-            })
-          })
+      if (emailType === 'pickup') {
+        if (!pickupTime || !tourDate) {
+          alert('픽업 시간과 투어 날짜가 필요합니다.')
+          setLoading(false)
+          return
         }
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}))
-          throw new Error(errorData.error || `이메일 미리보기 로드 실패 (${response.status})`)
-        }
-
-        const data = await response.json()
-        if (!data.emailContent) {
-          throw new Error('이메일 내용을 받을 수 없습니다.')
-        }
-        setEmailContent(data.emailContent)
-      } catch (error) {
-        console.error('이메일 미리보기 로드 오류:', error)
-        alert('이메일 미리보기를 불러오는 중 오류가 발생했습니다.')
-      } finally {
-        setLoading(false)
+        response = await fetch('/api/preview-pickup-schedule-notification', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            reservationId,
+            pickupTime: pickupTime.includes(':') ? pickupTime : `${pickupTime}:00`,
+            tourDate,
+          }),
+        })
+      } else {
+        const type = emailType === 'confirmation' ? 'both' : 'voucher'
+        response = await fetch('/api/preview-email', {
+          method: 'POST',
+          cache: 'no-store',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            reservationId,
+            type,
+          }),
+        })
       }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(
+          errorData.error || `이메일 미리보기 로드 실패 (${response.status})`
+        )
+      }
+
+      const data = await response.json()
+      if (!data.emailContent) {
+        throw new Error('이메일 내용을 받을 수 없습니다.')
+      }
+      setEmailContent(data.emailContent)
+      if (data.productDetailEdit && emailType !== 'pickup') {
+        setProductDetailEdit(data.productDetailEdit as ProductDetailEditPayload)
+      }
+    } catch (error) {
+      console.error('이메일 미리보기 로드 오류:', error)
+      alert('이메일 미리보기를 불러오는 중 오류가 발생했습니다.')
+    } finally {
+      setLoading(false)
+    }
+  }, [isOpen, reservationId, emailType, pickupTime, tourDate])
+
+  useEffect(() => {
+    loadEmailPreview()
+  }, [loadEmailPreview])
+
+  useEffect(() => {
+    if (emailType === 'pickup') return
+    if (!productDetailEdit) return
+    const root = previewBodyRef.current
+    if (!root) return
+
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null
+      const el = t?.closest('[data-pd-field]') as HTMLElement | null
+      if (!el) return
+      const field = el.getAttribute('data-pd-field')
+      if (!field || !isProductDetailEmailEditableField(field)) return
+      e.preventDefault()
+      e.stopPropagation()
+      setEditingField(field)
     }
 
-    loadEmailPreview()
-  }, [isOpen, reservationId, emailType, pickupTime, tourDate])
+    root.addEventListener('click', onClick)
+    return () => root.removeEventListener('click', onClick)
+  }, [emailContent, productDetailEdit, emailType])
 
   const handleSend = async () => {
     setSending(true)
@@ -300,6 +384,15 @@ ${emailContent.html}
                 </div>
               </div>
 
+              {productDetailEdit &&
+                (emailType === 'confirmation' || emailType === 'departure') && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    상품 상세 정보의 각 제목을 클릭하거나 옆의{' '}
+                    <span className="font-semibold">수정</span>을 누르면, 이 예약에
+                    쓰인 채널·언어·variant의 해당 섹션만 데이터베이스에 바로 저장됩니다.
+                  </div>
+                )}
+
               {/* 이메일 내용 미리보기 */}
               <div className="border rounded-lg overflow-hidden bg-white">
                 <div className="bg-gray-100 px-4 py-2 border-b">
@@ -359,13 +452,14 @@ ${emailContent.html}
                     )}
                   </div>
                 </div>
-                <div 
+                <div
+                  ref={previewBodyRef}
                   className="p-4"
                   dangerouslySetInnerHTML={{ __html: emailContent.html }}
-                  style={{ 
+                  style={{
                     maxWidth: '600px',
                     margin: '0 auto',
-                    backgroundColor: '#ffffff'
+                    backgroundColor: '#ffffff',
                   }}
                 />
               </div>
@@ -407,6 +501,26 @@ ${emailContent.html}
           </button>
         </div>
       </div>
+
+      {productDetailEdit && editingField && (
+        <ProductDetailFieldEditModal
+          isOpen={!!editingField}
+          onClose={() => setEditingField(null)}
+          productId={productDetailEdit.context.productId}
+          channelId={productDetailEdit.context.channelId}
+          variantKey={productDetailEdit.context.variantKey}
+          languageCode={productDetailEdit.context.languageCode}
+          field={editingField}
+          initialValue={
+            productDetailEdit.fieldValues[editingField] ?? ''
+          }
+          sourceLabel={productDetailEdit.context.sourceLabel}
+          isEnglish={productDetailEdit.context.languageCode === 'en'}
+          sectionTitles={productDetailEdit.sectionTitles ?? {}}
+          customerPageVisibility={productDetailEdit.customerPageVisibility ?? null}
+          onSaved={() => void loadEmailPreview()}
+        />
+      )}
     </div>
   )
 }

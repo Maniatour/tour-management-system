@@ -589,27 +589,16 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
             })
           }
 
-          // 3. 상품 세부정보 로드 (공통 여부 반영)
+          // 3. 상품 세부정보 로드 (채널별 product_details_multilingual만 사용)
           let detailsData: unknown = null
           let detailsError: { code?: string } | null = null
-          if (productData?.use_common_details) {
-            const { data: commonData, error: commonError } = await supabase
-              .from('product_details_common_multilingual')
-              .select('*')
-              .eq('sub_category', productData.sub_category)
-              .maybeSingle()
-            detailsData = commonData
-            detailsError = commonError
-          } else {
-            // 다국어 데이터를 모두 가져와서 언어별로 매핑
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const { data: ownData, error: ownError } = await (supabase as any)
-              .from('product_details_multilingual')
-              .select('*')
-              .eq('product_id', id)
-            detailsData = ownData
-            detailsError = ownError
-          }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: ownData, error: ownError } = await (supabase as any)
+            .from('product_details_multilingual')
+            .select('*')
+            .eq('product_id', id)
+          detailsData = ownData
+          detailsError = ownError
 
           if (detailsError && detailsError.code !== 'PGRST116') { // PGRST116은 데이터가 없을 때 발생
             throw detailsError
@@ -697,7 +686,7 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
             customerNameEn: productData.customer_name_en || '',
             tags: productData.tags || [],
             transportationMethods: productData.transportation_methods || [],
-            useCommonDetails: !!productData.use_common_details,
+            useCommonDetails: false,
             team_type: productData.team_type || null,
             homepagePricingType: (productData as any).homepage_pricing_type || 'separate',
             // product_details 데이터 설정 (다국어 지원)
@@ -1349,7 +1338,6 @@ export default function AdminProductEdit({ }: AdminProductEditProps) {
               <ProductDetailsTab
                 productId={id}
                 isNewProduct={isNewProduct}
-                subCategory={formData.subCategory}
                 formData={{
                   useCommonDetails: formData.useCommonDetails,
                   productDetails: formData.productDetails,

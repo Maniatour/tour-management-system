@@ -2,13 +2,13 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
-import { Save, AlertCircle, Settings, Users, ChevronRight, ChevronDown, CheckSquare, Square } from 'lucide-react'
+import { Save, AlertCircle, Users, ChevronRight, ChevronDown, CheckSquare, Square } from 'lucide-react'
 import { createClientSupabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
-import CommonDetailsModal from './CommonDetailsModal'
 import { translateProductDetailsFields, type ProductDetailsTranslationFields } from '@/lib/translationService'
 import { suggestTourDescription } from '@/lib/chatgptService'
 import LightRichEditor from '@/components/LightRichEditor'
+import { isProductDetailVisibleOnCustomerPage } from '@/lib/fetchProductDetailsForEmail'
 
 interface ProductDetailsFields {
   slogan1: string
@@ -34,34 +34,6 @@ interface ProductDetailsFields {
 
 interface MultilingualProductDetails {
   [languageCode: string]: ProductDetailsFields
-}
-
-interface ProductDetailsMultilingualRow {
-  id: string
-  product_id: string
-  language_code: string
-  slogan1: string | null
-  slogan2: string | null
-  slogan3: string | null
-  greeting: string | null
-  description: string | null
-  included: string | null
-  not_included: string | null
-  pickup_drop_info: string | null
-  luggage_info: string | null
-  tour_operation_info: string | null
-  preparation_info: string | null
-  small_group_info: string | null
-  companion_recruitment_info: string | null
-  notice_info: string | null
-  important_notes: string | null
-  private_tour_info: string | null
-  cancellation_policy: string | null
-  chat_announcement: string | null
-  tags: string[] | null
-  section_titles?: Record<string, string> | null
-  created_at: string | null
-  updated_at: string | null
 }
 
 interface ProductDetailsFormData {
@@ -97,7 +69,6 @@ interface ProductDetailsFormData {
 interface ProductDetailsTabProps {
   productId: string
   isNewProduct: boolean
-  subCategory: string
   formData: ProductDetailsFormData
   setFormData: React.Dispatch<React.SetStateAction<ProductDetailsFormData>>
 }
@@ -116,7 +87,6 @@ interface ChannelGroup {
 export default function ProductDetailsTab({
   productId,
   isNewProduct,
-  subCategory,
   formData,
   setFormData
 }: ProductDetailsTabProps) {
@@ -147,9 +117,7 @@ export default function ProductDetailsTab({
   const [saveMessageType, setSaveMessageType] = useState<'success' | 'error' | null>(null)
   const [saveMessage, setSaveMessage] = useState('')
   const [loading, setLoading] = useState(true)
-  const [commonPreview, setCommonPreview] = useState<MultilingualProductDetails | null>(null)
   const [availableLanguages] = useState(['ko', 'en', 'ja', 'zh'])
-  const [isCommonModalOpen, setIsCommonModalOpen] = useState(false)
   const [translating, setTranslating] = useState(false)
   const [translationError, setTranslationError] = useState<string | null>(null)
   const [suggesting, setSuggesting] = useState(false)
@@ -191,7 +159,11 @@ export default function ProductDetailsTab({
   const [importStatsLoading, setImportStatsLoading] = useState(false)
   const [importingField, setImportingField] = useState(false)
   const [sectionTitleOverridesByLanguage, setSectionTitleOverridesByLanguage] = useState<Record<string, Partial<Record<keyof ProductDetailsFields, string>>>>({})
-  
+  /** 언어별 고객 상품 페이지 섹션 숨김 (해당 필드만 false 로 저장, 없으면 표시) */
+  const [customerPageVisibilityByLanguage, setCustomerPageVisibilityByLanguage] = useState<
+    Record<string, Partial<Record<keyof ProductDetailsFields, boolean>>>
+  >({})
+
   const [productVariantsByChannel, setProductVariantsByChannel] = useState<Record<string, Array<{
     variant_key: string;
     variant_name_ko?: string | null;
@@ -293,6 +265,38 @@ export default function ProductDetailsTab({
     const custom = currentTitles[field]?.trim()
     return custom || defaultSectionTitles[field]
   }
+
+  const visibilityRowToPartial = (
+    raw: unknown
+  ): Partial<Record<keyof ProductDetailsFields, boolean>> => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+    const out: Partial<Record<keyof ProductDetailsFields, boolean>> = {}
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (
+        v === false &&
+        Object.prototype.hasOwnProperty.call(defaultSectionTitles, k)
+      ) {
+        out[k as keyof ProductDetailsFields] = false
+      }
+    }
+    return out
+  }
+
+  const getCustomerPageVisibilityForSave = (): Record<string, boolean> => {
+    const currentLang = formData.currentLanguage || 'ko'
+    const vis = customerPageVisibilityByLanguage[currentLang] || {}
+    const out: Record<string, boolean> = {}
+    for (const k of Object.keys(vis) as (keyof ProductDetailsFields)[]) {
+      if (vis[k] === false) out[k] = false
+    }
+    return out
+  }
+
+  const isCustomerPageFieldVisible = (field: keyof ProductDetailsFields): boolean =>
+    isProductDetailVisibleOnCustomerPage(
+      customerPageVisibilityByLanguage[formData.currentLanguage || 'ko'] ?? null,
+      field
+    )
 
   // 로딩 상태는 부모 컴포넌트에서 관리
   useEffect(() => {
@@ -588,6 +592,7 @@ export default function ProductDetailsTab({
               chat_announcement: string | null
               tags: string[] | null
               section_titles?: Record<string, string> | null
+              customer_page_visibility?: unknown
             }> | null
             error: unknown
           }
@@ -610,13 +615,25 @@ export default function ProductDetailsTab({
       if (data && data.length > 0) {
         const multilingualDetails: Record<string, ProductDetailsFields> = {}
         const loadedTitlesByLanguage: Record<string, Partial<Record<keyof ProductDetailsFields, string>>> = {}
-        
+        const loadedCustomerPageVisibilityByLanguage: Record<
+          string,
+          Partial<Record<keyof ProductDetailsFields, boolean>>
+        > = {}
+
         // 각 언어별로 모든 채널의 데이터를 병합
         // 첫 번째 채널의 데이터를 기본으로 하고, 비어있는 필드는 다른 채널의 데이터로 채움
         data.forEach((item) => {
           const langCode = item.language_code || 'ko'
           if (!loadedTitlesByLanguage[langCode] && item.section_titles && typeof item.section_titles === 'object') {
             loadedTitlesByLanguage[langCode] = item.section_titles as Partial<Record<keyof ProductDetailsFields, string>>
+          }
+          if (
+            !loadedCustomerPageVisibilityByLanguage[langCode] &&
+            item.customer_page_visibility
+          ) {
+            loadedCustomerPageVisibilityByLanguage[langCode] = visibilityRowToPartial(
+              item.customer_page_visibility
+            )
           }
           if (!multilingualDetails[langCode]) {
             // 첫 번째 채널의 데이터로 초기화
@@ -701,6 +718,10 @@ export default function ProductDetailsTab({
         setSectionTitleOverridesByLanguage(prev => ({
           ...prev,
           ...loadedTitlesByLanguage
+        }))
+        setCustomerPageVisibilityByLanguage((prev) => ({
+          ...prev,
+          ...loadedCustomerPageVisibilityByLanguage,
         }))
         // 현재 formData와 비교하여 변경이 있을 때만 업데이트
         setFormData(prev => {
@@ -1261,7 +1282,8 @@ export default function ProductDetailsTab({
           cancellation_policy: toNullIfEmpty(currentDetails.cancellation_policy),
           chat_announcement: toNullIfEmpty(currentDetails.chat_announcement),
           tags: currentDetails.tags ?? null,
-          section_titles: getCurrentSectionTitles()
+          section_titles: getCurrentSectionTitles(),
+          customer_page_visibility: getCustomerPageVisibilityForSave(),
         }
         
         const channelIdLabel =
@@ -1562,15 +1584,6 @@ export default function ProductDetailsTab({
     if (isNewProduct) return
 
     try {
-      // 상품 기본 정보에서 공통 세부정보 사용 여부 확인
-      const { data: productData, error: productError } = await supabase
-        .from('products')
-        .select('use_common_details, sub_category')
-        .eq('id', productId)
-        .single() as { data: { use_common_details: boolean | null; sub_category: string | null } | null, error: unknown }
-
-      if (productError) throw productError
-
       let detailsData: Array<{
         channel_id: string | null
         language_code: string | null
@@ -1594,20 +1607,11 @@ export default function ProductDetailsTab({
         chat_announcement: string | null
         tags: string[] | null
         section_titles?: Record<string, string> | null
-      }> | { channel_id: string | null; language_code: string | null; slogan1: string | null; slogan2: string | null; slogan3: string | null; greeting: string | null; description: string | null; included: string | null; not_included: string | null; pickup_drop_info: string | null; luggage_info: string | null; tour_operation_info: string | null; preparation_info: string | null; small_group_info: string | null; companion_recruitment_info: string | null; notice_info: string | null; important_notes: string | null; private_tour_info: string | null; cancellation_policy: string | null; chat_announcement: string | null; tags: string[] | null } | null = null
+        customer_page_visibility?: unknown
+      }> | null = null
       let detailsError: { code?: string } | null = null
 
-      if (productData?.use_common_details && productData.sub_category) {
-        // 공통 세부정보 사용
-        const { data: commonData, error: commonError } = await supabase
-          .from('product_details_common_multilingual')
-          .select('*')
-          .eq('sub_category', productData.sub_category)
-          .maybeSingle()
-        detailsData = commonData ? { ...commonData, channel_id: null } : null
-        detailsError = commonError
-      } else {
-        // 개별 세부정보 사용 - 모든 데이터를 로드한 후 channel_id가 NULL인 것을 우선 사용
+        // 채널별 product_details_multilingual — channel_id NULL 행을 언어별 기본으로 두고 병합
         const { data: allData, error: allError } = await supabase
           .from('product_details_multilingual')
           .select('*')
@@ -1635,6 +1639,7 @@ export default function ProductDetailsTab({
               chat_announcement: string | null
               tags: string[] | null
               section_titles?: Record<string, string> | null
+              customer_page_visibility?: unknown
             }> | null
             error: unknown
           }
@@ -1713,7 +1718,6 @@ export default function ProductDetailsTab({
           detailsData = null
           detailsError = null
         }
-      }
 
       if (detailsError && detailsError.code !== 'PGRST116') { // PGRST116은 데이터가 없을 때 발생
         throw detailsError
@@ -1722,7 +1726,11 @@ export default function ProductDetailsTab({
       // 다국어 데이터를 언어별로 매핑
       const multilingualDetails: Record<string, ProductDetailsFields> = {}
       const loadedTitlesByLanguage: Record<string, Partial<Record<keyof ProductDetailsFields, string>>> = {}
-      
+      const loadedCustomerPageVisibilityByLanguage: Record<
+        string,
+        Partial<Record<keyof ProductDetailsFields, boolean>>
+      > = {}
+
       console.log('매핑 전 detailsData:', detailsData)
       console.log('매핑 전 detailsData 타입:', Array.isArray(detailsData) ? '배열' : typeof detailsData)
       console.log('매핑 전 detailsData 길이:', Array.isArray(detailsData) ? detailsData.length : 'N/A')
@@ -1737,6 +1745,11 @@ export default function ProductDetailsTab({
           console.log(`[${index}] item.language_code:`, item.language_code)
           if (item.section_titles && typeof item.section_titles === 'object') {
             loadedTitlesByLanguage[langCode] = item.section_titles as Partial<Record<keyof ProductDetailsFields, string>>
+          }
+          if (item.customer_page_visibility) {
+            loadedCustomerPageVisibilityByLanguage[langCode] = visibilityRowToPartial(
+              item.customer_page_visibility
+            )
           }
           multilingualDetails[langCode] = {
             slogan1: item.slogan1 ?? '',
@@ -1785,10 +1798,16 @@ export default function ProductDetailsTab({
           chat_announcement: string | null
           tags: string[] | null
           section_titles?: Record<string, string> | null
+          customer_page_visibility?: unknown
         }
         const langCode = item.language_code || 'ko'
         if (item.section_titles && typeof item.section_titles === 'object') {
           loadedTitlesByLanguage[langCode] = item.section_titles as Partial<Record<keyof ProductDetailsFields, string>>
+        }
+        if (item.customer_page_visibility) {
+          loadedCustomerPageVisibilityByLanguage[langCode] = visibilityRowToPartial(
+            item.customer_page_visibility
+          )
         }
         multilingualDetails[langCode] = {
           slogan1: item.slogan1 ?? '',
@@ -1854,19 +1873,23 @@ export default function ProductDetailsTab({
         // 데이터가 실제로 변경되었는지 확인
         if (currentDetails && newDetails && 
             JSON.stringify(currentDetails) === JSON.stringify(newDetails) &&
-            prev.useCommonDetails === !!productData?.use_common_details) {
+            prev.useCommonDetails === false) {
           return prev // 변경사항이 없으면 이전 상태 반환
         }
         
         return {
           ...prev,
           productDetails: multilingualDetails,
-          useCommonDetails: !!productData?.use_common_details
+          useCommonDetails: false
         }
       })
       setSectionTitleOverridesByLanguage(prev => ({
         ...prev,
         ...loadedTitlesByLanguage
+      }))
+      setCustomerPageVisibilityByLanguage((prev) => ({
+        ...prev,
+        ...loadedCustomerPageVisibilityByLanguage,
       }))
 
       console.log('상품 세부정보 로드 완료:', multilingualDetails)
@@ -2064,52 +2087,6 @@ export default function ProductDetailsTab({
     return details
   }
 
-  // 현재 언어의 공통 정보 사용 여부 가져오기
-  const getCurrentLanguageUseCommon = (): {
-    slogan1: boolean
-    slogan2: boolean
-    slogan3: boolean
-    greeting: boolean
-    description: boolean
-    included: boolean
-    not_included: boolean
-    pickup_drop_info: boolean
-    luggage_info: boolean
-    tour_operation_info: boolean
-    preparation_info: boolean
-    small_group_info: boolean
-    companion_recruitment_info: boolean
-    notice_info: boolean
-    important_notes: boolean
-    private_tour_info: boolean
-    cancellation_policy: boolean
-    chat_announcement: boolean
-    tags: boolean
-  } => {
-    const currentLang = formData.currentLanguage || 'ko'
-    return formData.useCommonForField?.[currentLang] || {
-      slogan1: false,
-      slogan2: false,
-      slogan3: false,
-      greeting: false,
-      description: false,
-      included: false,
-      not_included: false,
-      pickup_drop_info: false,
-      luggage_info: false,
-      tour_operation_info: false,
-      preparation_info: false,
-      small_group_info: false,
-      companion_recruitment_info: false,
-      notice_info: false,
-      important_notes: false,
-      private_tour_info: false,
-      cancellation_policy: false,
-      chat_announcement: false,
-      tags: false
-    }
-  }
-
   // 언어 변경 핸들러
   const handleLanguageChange = (newLanguage: string) => {
     setFormData(prev => ({
@@ -2118,82 +2095,14 @@ export default function ProductDetailsTab({
     }))
   }
 
-  // 공통 세부정보 프리뷰 로드 함수
-  const loadCommon = useCallback(async () => {
-    if (!formData.useCommonDetails || !subCategory) {
-      setCommonPreview(null)
-      return
-    }
-    // setLoadingCommon(true)
-    try {
-      const { data, error } = await supabase
-        .from('product_details_common_multilingual')
-        .select('*')
-        .eq('sub_category', subCategory)
-        .in('language_code', availableLanguages) as { data: ProductDetailsMultilingualRow[] | null, error: unknown }
-
-      if (error) throw error
-
-      if (data && data.length > 0) {
-        const mapped: MultilingualProductDetails = {}
-        data.forEach(item => {
-          mapped[item.language_code] = {
-            slogan1: item.slogan1 || '',
-            slogan2: item.slogan2 || '',
-            slogan3: item.slogan3 || '',
-            greeting: (item as ProductDetailsMultilingualRow).greeting || '',
-            description: item.description || '',
-            included: item.included || '',
-            not_included: item.not_included || '',
-            pickup_drop_info: item.pickup_drop_info || '',
-            luggage_info: item.luggage_info || '',
-            tour_operation_info: item.tour_operation_info || '',
-            preparation_info: item.preparation_info || '',
-            small_group_info: item.small_group_info || '',
-            companion_recruitment_info: (item as ProductDetailsMultilingualRow).companion_recruitment_info || '',
-            notice_info: item.notice_info || '',
-            important_notes: (item as ProductDetailsMultilingualRow).important_notes || '',
-            private_tour_info: item.private_tour_info || '',
-            cancellation_policy: item.cancellation_policy || '',
-            chat_announcement: item.chat_announcement || '',
-            tags: item.tags || []
-          }
-        })
-        setCommonPreview(mapped)
-      } else {
-        setCommonPreview(null)
-      }
-    } catch (error) {
-      console.error('Error loading common details:', error)
-      setCommonPreview(null)
-    } finally {
-      // setLoadingCommon(false)
-    }
-  }, [formData.useCommonDetails, subCategory, availableLanguages, supabase])
-
-  // 공통 세부정보 프리뷰 로드
-  useEffect(() => {
-    loadCommon()
-  }, [loadCommon])
-
   const getValue = (field: keyof ProductDetailsFields, forceChannelData = false) => {
-    const currentLang = formData.currentLanguage || 'ko'
     const currentDetails = getCurrentLanguageDetails()
-    const currentUseCommon = getCurrentLanguageUseCommon()
-    
-    // 채널이 선택된 경우 또는 강제로 채널 데이터를 사용하는 경우
-    // 공통 정보를 사용하지 않고 채널별 데이터만 사용
     const hasSelectedChannels = selectedPairCount > 0
-    
+
     if (forceChannelData || hasSelectedChannels) {
-      // 채널별 데이터만 사용
       return currentDetails[field] ?? ''
     }
-    
-    // 각 필드별로 공통 정보 사용 여부 확인
-    if (currentUseCommon[field]) {
-      return (commonPreview?.[currentLang]?.[field] ?? '') as string
-    }
+
     return currentDetails[field] ?? ''
   }
 
@@ -2431,14 +2340,6 @@ export default function ProductDetailsTab({
       return
     }
 
-    // 공통 세부정보 사용 시 개별 저장 차단
-    if (formData.useCommonDetails) {
-      setSaveMessage(t('msgCommonDetailsNoIndividualSave'))
-      setSaveMessageType('error')
-      setTimeout(() => { setSaveMessage(''); setSaveMessageType(null) }, 3000)
-      return
-    }
-
     // AuthContext를 통한 인증 확인
     if (authLoading) {
       setSaveMessage(t('msgAuthChecking'))
@@ -2516,7 +2417,8 @@ export default function ProductDetailsTab({
         cancellation_policy: toNullIfEmpty(currentDetails.cancellation_policy),
         chat_announcement: toNullIfEmpty(currentDetails.chat_announcement),
         tags: currentDetails.tags ?? null,
-        section_titles: getCurrentSectionTitles()
+        section_titles: getCurrentSectionTitles(),
+        customer_page_visibility: getCustomerPageVisibilityForSave(),
       }
       
       console.log('저장할 상세 정보:', {
@@ -2680,32 +2582,14 @@ export default function ProductDetailsTab({
             </button>
           </div>
         </div>
+        <p className="text-xs text-gray-600">
+          예약 확인·출발 확정 이메일은 &quot;저장&quot;된 동일 채널·variant 행을
+          사용합니다. 예약 관리 이메일 미리보기에서 수정한 내용도 이곳과 같은 DB
+          필드에 반영됩니다.
+        </p>
 
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
           <div className="xl:col-span-3 border border-gray-200 rounded-lg p-3 space-y-4 max-h-[78vh] overflow-y-auto">
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
-              <h4 className="text-sm font-semibold text-gray-900 flex items-center">
-                <Settings className="h-4 w-4 mr-1.5" />
-                공통 세부정보 관리
-              </h4>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-700">{t('useCommonDetails')}</span>
-                <input
-                  type="checkbox"
-                  checked={formData.useCommonDetails}
-                  onChange={(e) => setFormData(prev => ({ ...prev, useCommonDetails: e.target.checked }))}
-                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                />
-              </div>
-              <p className="text-xs text-gray-500">카테고리: {subCategory}</p>
-              <button
-                onClick={() => setIsCommonModalOpen(true)}
-                className="w-full px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-              >
-                공통 세부정보 열기
-              </button>
-            </div>
-
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-semibold text-gray-900">채널 선택</h4>
@@ -2869,9 +2753,16 @@ export default function ProductDetailsTab({
                           }}
                           className="text-left border border-gray-200 rounded-lg p-3 hover:border-blue-300 hover:bg-blue-50 transition-colors"
                         >
-                          <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center justify-between mb-1 gap-2">
                             <span className="font-semibold text-gray-900">{getSectionTitle(section.key)}</span>
-                            <span className="text-[11px] text-blue-600">클릭해서 수정</span>
+                            <span className="flex items-center gap-1.5 shrink-0">
+                              {!isCustomerPageFieldVisible(section.key) && (
+                                <span className="text-[10px] font-medium text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded">
+                                  고객 페이지 미노출
+                                </span>
+                              )}
+                              <span className="text-[11px] text-blue-600">클릭해서 수정</span>
+                            </span>
                           </div>
                           <div className="text-gray-700 whitespace-pre-wrap text-xs leading-5 max-h-24 overflow-hidden">
                             {plain || '내용 없음'}
@@ -2960,7 +2851,7 @@ export default function ProductDetailsTab({
             <button
               type="button"
               onClick={(e) => handleSave(e)}
-              disabled={saving || isNewProduct || formData.useCommonDetails}
+              disabled={saving || isNewProduct}
               className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save className="h-4 w-4 mr-2" />
@@ -2986,16 +2877,6 @@ export default function ProductDetailsTab({
           </div>
         </div>
       )}
-
-      <CommonDetailsModal
-        isOpen={isCommonModalOpen}
-        onClose={() => setIsCommonModalOpen(false)}
-        subCategory={subCategory}
-        onSave={() => {
-          // 공통 세부정보가 저장되면 프리뷰를 다시 로드
-          loadCommon()
-        }}
-      />
 
       {previewEditModalOpen && previewEditingField && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -3057,6 +2938,28 @@ export default function ProductDetailsTab({
                   비워두면 기본 제목을 사용합니다.
                 </p>
               </div>
+              <label className="flex items-start gap-2 cursor-pointer rounded-lg border border-gray-200 bg-slate-50 px-3 py-2.5 mb-4">
+                <input
+                  type="checkbox"
+                  checked={isCustomerPageFieldVisible(previewEditingField)}
+                  onChange={(e) => {
+                    const currentLang = formData.currentLanguage || 'ko'
+                    setCustomerPageVisibilityByLanguage((prev) => {
+                      const cur = { ...(prev[currentLang] || {}) }
+                      if (e.target.checked) delete cur[previewEditingField]
+                      else cur[previewEditingField] = false
+                      return { ...prev, [currentLang]: cur }
+                    })
+                  }}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-800 leading-snug">
+                  <span className="font-medium">고객 상품 페이지에 표시</span>
+                  <span className="block text-[11px] text-gray-500 mt-0.5 font-normal">
+                    끄면 공개 상품 페이지에서 이 섹션만 숨깁니다.
+                  </span>
+                </span>
+              </label>
               <LightRichEditor
                 value={String(getValue(previewEditingField, true) || '')}
                 onChange={(value) => handleInputChange(previewEditingField, value || '')}

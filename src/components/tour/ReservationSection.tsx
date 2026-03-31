@@ -1,5 +1,6 @@
 import React from 'react'
 import { ReservationCard } from './ReservationCard'
+import { getReservationPartySize } from '@/utils/reservationUtils'
 
 interface Reservation {
   id: string
@@ -76,13 +77,11 @@ export const ReservationSection: React.FC<ReservationSectionProps> = ({
     })
   }, [reservations])
 
-  // 총 인원 계산
-  const totalPeople = uniqueReservations.reduce((sum, reservation) => {
-    const adults = reservation.adults || 0
-    const children = reservation.children || 0
-    const infants = reservation.infants || 0
-    return sum + adults + children + infants
-  }, 0)
+  // 총 인원 계산 (성인+아동+유아; DB 필드명 child/infant 호환)
+  const totalPeople = uniqueReservations.reduce(
+    (sum, reservation) => sum + getReservationPartySize(reservation as Record<string, unknown>),
+    0
+  )
 
   return (
     <div className="mb-4">

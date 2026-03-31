@@ -3,7 +3,7 @@ import { useParams } from 'next/navigation'
 import { useLocale } from 'next-intl'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
-import { calculateAssignedPeople } from '@/utils/tourUtils'
+import { calculateAssignedPeople, getDefaultTeamTypeForProduct, sumPeopleSameProductDate } from '@/utils/tourUtils'
 import { useAuth } from '@/contexts/AuthContext'
 
 // 타입 정의
@@ -13,8 +13,16 @@ type PickupHotel = Database['public']['Tables']['pickup_hotels']['Row']
 type Vehicle = Database['public']['Tables']['vehicles']['Row']
 type ProductRow = { id: string; name_ko?: string | null; name_en?: string | null; [k: string]: unknown }
 type CustomerRow = { id: string; name?: string | null; email?: string | null; language?: string | null; [k: string]: unknown }
-/** team 테이블의 email, name_ko, name_en, display_name (가이드/어시스턴트 표시명 참조용) */
-type TeamMember = { email: string; name_ko: string; name_en?: string | null; display_name?: string | null }
+/** team 테이블 (팀 구성 드롭다운: position·is_active·nick_name 필요) */
+type TeamMember = {
+  email: string
+  name_ko: string
+  name_en?: string | null
+  display_name?: string | null
+  nick_name?: string | null
+  position?: string | null
+  is_active?: boolean | null
+}
 
 // 확장된 예약 타입 (고객 정보 포함)
 type ExtendedReservationRow = ReservationRow & {
@@ -308,7 +316,7 @@ export function useTourDetailData() {
       console.log('전체 팀 멤버 목록 가져오기 시작')
       const { data: allTeamMembers, error: teamMembersError } = await supabase
         .from('team')
-        .select('email, name_ko, name_en, display_name')
+        .select('email, name_ko, name_en, display_name, nick_name, position, is_active')
         .order('name_ko')
 
       if (teamMembersError) {
@@ -320,6 +328,13 @@ export function useTourDetailData() {
 
       // 팀 구성 정보 가져오기
       const tour = tourData as TourRow
+      const productFromTour = (tourData as { products?: ProductRow | null }).products ?? null
+      if (tour.team_type) {
+        setTeamType(tour.team_type as '1guide' | '2guide' | 'guide+driver')
+      } else {
+        setTeamType(getDefaultTeamTypeForProduct(productFromTour?.name_ko, productFromTour?.name_en))
+      }
+
       if (tour.tour_guide_id || tour.assistant_id) {
         console.log('팀 구성 정보 가져오기 시작')
         
@@ -381,11 +396,6 @@ export function useTourDetailData() {
             // 데이터가 없는 경우에도 assistant_id 값은 유지
             setSelectedAssistant(tour.assistant_id || '')
           }
-        }
-        
-        // 팀 타입 설정
-        if (tour.team_type) {
-          setTeamType(tour.team_type as '1guide' | '2guide' | 'guide+driver')
         }
       }
 
@@ -997,22 +1007,16 @@ export function useTourDetailData() {
     return calculateAssignedPeople(tour as any, allReservations as any)
   }, [tour, allReservations])
 
-  const getTotalPeopleFiltered = useMemo(() => {
+  /** 같은 상품·날짜 예약 중 취소가 아닌 인원 (대기·확정·모집중 등 전부) */
+  const getTotalPeopleNonCancelled = useMemo(() => {
     if (!tour || !allReservations || allReservations.length === 0) return 0
-    return allReservations
-      .filter((r) => r.product_id === tour.product_id && r.tour_date === tour.tour_date)
-      .filter((r) => {
-        const s = (r.status || '').toString().toLowerCase()
-        return s === 'confirmed' || s === 'recruiting'
-      })
-      .reduce((sum: number, r) => sum + (r.total_people || 0), 0)
+    return sumPeopleSameProductDate(tour, allReservations as any[], 'nonCancelled')
   }, [tour, allReservations])
 
-  const getTotalPeopleAll = useMemo(() => {
+  /** 같은 상품·날짜 취소 예약 인원 */
+  const getTotalCancelledPeople = useMemo(() => {
     if (!tour || !allReservations || allReservations.length === 0) return 0
-    return allReservations
-      .filter((r) => r.product_id === tour.product_id && r.tour_date === tour.tour_date)
-      .reduce((sum: number, r) => sum + (r.total_people || 0), 0)
+    return sumPeopleSameProductDate(tour, allReservations as any[], 'cancelled')
   }, [tour, allReservations])
 
   // 유틸리티 함수들
@@ -1236,8 +1240,8 @@ export function useTourDetailData() {
     // 함수들
     toggleSection,
     getTotalAssignedPeople,
-    getTotalPeopleFiltered,
-    getTotalPeopleAll,
+    getTotalPeopleNonCancelled,
+    getTotalCancelledPeople,
     getCustomerName,
     getCustomerLanguage,
     getPickupHotelName,

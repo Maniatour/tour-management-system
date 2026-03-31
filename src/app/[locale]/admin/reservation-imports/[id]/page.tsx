@@ -4,9 +4,8 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Loader2, Hash, Calendar, Users, User, Mail, Phone, Globe, MapPin, DollarSign, ChevronDown, ChevronUp, FileText, RefreshCw } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import { supabase } from '@/lib/supabase'
 import { getChannelIdForPlatform } from '@/lib/platformChannelMapping'
-import { isManiatourHomepageBookingEmail } from '@/lib/emailReservationParser'
+import { isManiatourHomepageBookingEmail, isCancellationRequestEmailSubject } from '@/lib/emailReservationParser'
 import {
   extractPriceFromEmailBodyForImport,
   extractViatorNetRateFromEmailBodyForImport,
@@ -48,6 +47,7 @@ export default function ReservationImportDetailPage() {
   const [reparseKey, setReparseKey] = useState(0)
   const [showEmailBody, setShowEmailBody] = useState(true)
   const [emailBodyView, setEmailBodyView] = useState<'preview' | 'code'>('preview')
+  const [showProcessedNotice, setShowProcessedNotice] = useState(false)
   const isEmailHtml = Boolean(
     row?.raw_body_text &&
     (row.raw_body_text.trimStart().startsWith('<') || /<\/html>|<\/body>|<body/i.test(row.raw_body_text))
@@ -267,6 +267,20 @@ export default function ReservationImportDetailPage() {
     run()
     return () => { cancelled = true }
   }, [loadImport])
+
+  useEffect(() => {
+    if (row && row.status !== 'pending') {
+      setShowProcessedNotice(true)
+    }
+  }, [row?.id, row?.status])
+
+  /** 취소 요청 메일은 상세 대신 목록에서 모달로 처리 */
+  useEffect(() => {
+    if (notFound || loading || dataLoading || !row || !id) return
+    if (!isCancellationRequestEmailSubject(row.subject)) return
+    router.replace(`/${locale}/admin/reservation-imports?cancellationImport=${encodeURIComponent(id)}`)
+  }, [notFound, loading, dataLoading, row, id, locale, router])
+
   if (notFound) {
     return (
       <div className="p-6 max-w-2xl mx-auto">
@@ -362,28 +376,16 @@ export default function ReservationImportDetailPage() {
     )
   }
 
-  if (row.status !== 'pending') {
+  if (isCancellationRequestEmailSubject(row.subject)) {
     return (
-      <div className="space-y-4">
-        <button
-          type="button"
-          onClick={() => router.push(`/${locale}/admin/reservation-imports`)}
-          className="flex items-center gap-1 text-sm text-blue-600 hover:underline"
-        >
-          <ArrowLeft className="w-4 h-4" /> 목록으로
-        </button>
-        <p className="text-gray-600">이미 처리된 항목입니다. (상태: {row.status})</p>
-        {row.reservation_id && (
-          <a
-            href={`/${locale}/admin/reservations/${row.reservation_id}`}
-            className="text-blue-600 hover:underline"
-          >
-            예약 보기 →
-          </a>
-        )}
+      <div className="flex flex-col items-center justify-center py-16 gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <p className="text-sm text-gray-600">취소 메일은 목록에서 모달로 열립니다…</p>
       </div>
     )
   }
+
+  const isImportProcessed = row.status !== 'pending'
 
   return (
     <div className="space-y-6">
@@ -629,7 +631,7 @@ export default function ReservationImportDetailPage() {
           <button
             type="button"
             onClick={handleReparse}
-            disabled={reparsing || row.status !== 'pending'}
+            disabled={reparsing || isImportProcessed}
             title="저장된 이메일 본문으로 추출 로직을 다시 실행합니다. 파서·상품 매핑을 바꾼 뒤에 사용하세요."
             className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-blue-200 text-blue-800 bg-blue-50/80 rounded-md text-sm hover:bg-blue-100 disabled:opacity-50"
           >
@@ -639,7 +641,7 @@ export default function ReservationImportDetailPage() {
           <button
             type="button"
             onClick={handleReject}
-            disabled={rejecting}
+            disabled={rejecting || isImportProcessed}
             className="px-3 py-1.5 border border-gray-300 text-gray-700 rounded-md text-sm hover:bg-gray-50 disabled:opacity-50"
           >
             {rejecting ? <Loader2 className="w-4 h-4 animate-spin inline" /> : null}
@@ -711,7 +713,43 @@ export default function ReservationImportDetailPage() {
           extractPriceFromEmailBodyForImport(row?.raw_body_text) ??
           extractPriceFromEmailBodyForImport(row?.raw_body_html ?? null)
         }
+        importSubmitDisabled={isImportProcessed}
       />
+
+      {showProcessedNotice && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="import-processed-notice-title"
+        >
+          <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6 space-y-4 border border-gray-100">
+            <h2 id="import-processed-notice-title" className="text-base font-semibold text-gray-900">
+              안내
+            </h2>
+            <p className="text-sm text-gray-600 leading-relaxed">
+              처리된 항목입니다. (상태: {row.status})
+            </p>
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+              {row.reservation_id ? (
+                <a
+                  href={`/${locale}/admin/reservations/${row.reservation_id}`}
+                  className="text-sm text-blue-600 hover:underline mr-auto"
+                >
+                  생성된 예약 보기 →
+                </a>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setShowProcessedNotice(false)}
+                className="px-4 py-2 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

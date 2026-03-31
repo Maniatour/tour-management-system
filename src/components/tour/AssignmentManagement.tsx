@@ -4,6 +4,7 @@ import { ReservationSection } from './ReservationSection'
 import { supabase } from '@/lib/supabase'
 import { ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
 import { getStatusColor, getStatusText, getAssignmentStatusColor, getAssignmentStatusText } from '@/utils/tourStatusUtils'
+import { getReservationPartySize } from '@/utils/reservationUtils'
 import AutoAssignModal from './modals/AutoAssignModal'
 
 interface Reservation {
@@ -373,13 +374,11 @@ export const AssignmentManagement: React.FC<AssignmentManagementProps> = ({
                        return acc
                      }, { status: {} as Record<string, number>, assignmentStatus: {} as Record<string, number> })
                      
-                     // 총 인원 계산
-                     const totalPeople = reservations.reduce((sum, reservation) => {
-                       const adults = reservation.adults || 0
-                       const children = reservation.children || 0
-                       const infants = reservation.infants || 0
-                       return sum + adults + children + infants
-                     }, 0)
+                     // 총 인원 계산 (성인+아동+유아; child/infant 필드 호환)
+                     const totalPeople = reservations.reduce(
+                       (sum, reservation) => sum + getReservationPartySize(reservation as Record<string, unknown>),
+                       0
+                     )
                      
                      return (
                        <div key={tourId} className="border rounded-lg p-3 bg-gray-50">

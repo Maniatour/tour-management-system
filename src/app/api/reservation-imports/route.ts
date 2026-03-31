@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { supabaseAdmin } from '@/lib/supabase'
-import { extractReservationFromEmail } from '@/lib/emailReservationParser'
+import {
+  extractReservationFromEmail,
+  isCancellationRequestEmailSubject,
+  extractChannelRnForCancellationLookup,
+} from '@/lib/emailReservationParser'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
 import type { ReservationImportInsert, ExtractedReservationData } from '@/types/reservationImport'
 import { normalizeCustomerNameFromImport } from '@/utils/reservationUtils'
+import { expandChannelRnMatchVariants } from '@/utils/channelRnMatch'
 
 /** 직접 페이로드: 테스트 또는 다른 제공자에서 POST */
 interface DirectInboundPayload {
@@ -187,20 +192,6 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ id: inserted.id, status: 'pending' })
 }
 
-/**
- * Viator 등: `BR-1376645191` vs `1376645191` 처럼 접두사만 다른 동일 예약을 매칭하기 위한 표기 변형.
- * (이메일 파서는 BR- 형태, DB에는 숫자만 저장된 경우가 흔함)
- */
-function expandChannelRnMatchVariants(rn: string): string[] {
-  const t = rn.trim()
-  if (!t) return []
-  const out = new Set<string>([t])
-  const br = /^BR-(\d+)$/i.exec(t)
-  if (br) out.add(br[1])
-  if (/^\d+$/.test(t) && t.length >= 5) out.add(`BR-${t}`)
-  return [...out]
-}
-
 function channelRnMatchesExistingSet(channelRn: string | undefined | null, existing: Set<string>): boolean {
   if (!channelRn?.trim()) return false
   return expandChannelRnMatchVariants(channelRn).some((v) => existing.has(v))
@@ -350,6 +341,60 @@ export async function GET(request: NextRequest) {
   }
   const list = rows ?? []
 
+  /** 취소 메일 목록 뱃지: 채널 RN으로 예약 조회 후 처리 필요/완료 */
+  const cancellationBadgeByImportId = new Map<string, 'needed' | 'done'>()
+  const cancellationMetaList: Array<{ id: string; variantSet: Set<string> }> = []
+
+  for (const r of list) {
+    const row = r as { id: string; subject?: string | null; extracted_data?: ExtractedReservationData }
+    if (!isCancellationRequestEmailSubject(row.subject)) continue
+
+    const ext = row.extracted_data
+    const fromExt = ext?.channel_rn?.trim()
+    const rnRaw =
+      fromExt && fromExt.toLowerCase() !== 'id'
+        ? fromExt
+        : extractChannelRnForCancellationLookup(String(row.subject ?? ''), '')
+
+    if (!rnRaw?.trim()) {
+      cancellationBadgeByImportId.set(row.id, 'needed')
+      continue
+    }
+    cancellationMetaList.push({
+      id: row.id,
+      variantSet: new Set(expandChannelRnMatchVariants(rnRaw.trim())),
+    })
+  }
+
+  const allCancelVariants = [...new Set(cancellationMetaList.flatMap((m) => [...m.variantSet]))]
+  if (allCancelVariants.length > 0) {
+    const { data: cancelResRows } = await client
+      .from('reservations')
+      .select('channel_rn, status')
+      .in('channel_rn', allCancelVariants)
+      .not('channel_rn', 'is', null)
+
+    const resList = (cancelResRows ?? []) as Array<{ channel_rn: string | null; status: string | null }>
+
+    const resMatchesImportVariants = (resRn: string | null, variantSet: Set<string>): boolean => {
+      if (!resRn?.trim()) return false
+      return expandChannelRnMatchVariants(resRn.trim()).some((v) => variantSet.has(v))
+    }
+
+    for (const m of cancellationMetaList) {
+      const matched = resList.filter((row) => resMatchesImportVariants(row.channel_rn, m.variantSet))
+      if (matched.length === 0) {
+        cancellationBadgeByImportId.set(m.id, 'needed')
+      } else {
+        const allDone = matched.every((row) => {
+          const s = String(row.status || '').toLowerCase()
+          return s === 'cancelled' || s === 'deleted'
+        })
+        cancellationBadgeByImportId.set(m.id, allDone ? 'done' : 'needed')
+      }
+    }
+  }
+
   const channelRns = list
     .map((r: { extracted_data?: { channel_rn?: string } }) => r.extracted_data?.channel_rn)
     .filter((rn: string | undefined): rn is string => typeof rn === 'string' && rn.trim().length > 0)
@@ -387,14 +432,18 @@ export async function GET(request: NextRequest) {
     existingCustomerIdentityKeys = await fetchReservationCustomerIdentityKeys(client as SupabaseClient<Database>)
   }
 
-  const data = list.map((r: { extracted_data?: ExtractedReservationData; reservation_id?: string | null }) => {
+  const data = list.map((r: { id: string; subject?: string | null; extracted_data?: ExtractedReservationData; reservation_id?: string | null }) => {
     const channelRn = r.extracted_data?.channel_rn?.trim()
     const existsByChannelRn = channelRnMatchesExistingSet(channelRn, existingChannelRns)
     const existsByCustomerMatch = extractedDataMatchesCustomerIdentity(r.extracted_data, existingCustomerIdentityKeys)
+    const cancellationListBadge = isCancellationRequestEmailSubject(r.subject)
+      ? (cancellationBadgeByImportId.get(r.id) ?? 'needed')
+      : null
     return {
       ...r,
       reservation_exists_by_channel_rn: existsByChannelRn,
       reservation_exists_by_customer_match: existsByCustomerMatch,
+      cancellation_list_badge: cancellationListBadge,
     }
   })
 

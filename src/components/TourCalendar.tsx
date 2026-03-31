@@ -6,6 +6,7 @@ import type { Database } from '@/lib/supabase'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTranslations, useLocale } from 'next-intl'
+import { isReservationCancelledStatus } from '@/utils/tourUtils'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 
@@ -439,10 +440,11 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
 
   // 성능 최적화를 위한 메모이제이션된 사전 계산 (예약 4500+건 고려)
 
-  // 2) (product_id, tour_date) -> 해당일 같은 투어의 총 인원 합계 (상태 무관)
-  const productDateKeyToTotalPeopleAll = useMemo(() => {
+  // (product_id, tour_date) -> 취소가 아닌 예약 인원 합계 (대기·확정·모집중 등)
+  const productDateKeyToNonCancelledPeople = useMemo(() => {
     const map = new Map<string, number>()
     for (const res of allReservations) {
+      if (isReservationCancelledStatus(res.status)) continue
       const productId = (res.product_id ? String(res.product_id) : '').trim()
       const date = (res.tour_date ? String(res.tour_date) : '').trim()
       const key = `${productId}__${date}`
@@ -452,12 +454,11 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
     return map
   }, [allReservations])
 
-  // 3) (product_id, tour_date) -> Recruiting/Confirmed만 합산 (대소문자 무관)
-  const productDateKeyToTotalPeopleFiltered = useMemo(() => {
+  // (product_id, tour_date) -> 취소 예약 인원 합계
+  const productDateKeyToCancelledPeople = useMemo(() => {
     const map = new Map<string, number>()
     for (const res of allReservations) {
-      const status = (res.status || '').toString().toLowerCase()
-      if (status !== 'confirmed' && status !== 'recruiting') continue
+      if (!isReservationCancelledStatus(res.status)) continue
       const productId = (res.product_id ? String(res.product_id) : '').trim()
       const date = (res.tour_date ? String(res.tour_date) : '').trim()
       const key = `${productId}__${date}`
@@ -497,26 +498,18 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
     return []
   }, [])
 
-  // 투어별 배정 인원 계산: reservation_ids에 있는 예약들 중 confirmed/recruiting 상태만 total_people 합계
+  // 투어별 배정 인원: reservation_ids 예약 중 취소가 아닌 total_people 합계
   const getAssignedPeople = useCallback((tour: ExtendedTour) => {
     const ids = normalizeReservationIds(tour.reservation_ids as unknown)
     if (ids.length === 0) return 0
-    
-    // 중복 제거
     const uniqueIds = [...new Set(ids)]
     let total = 0
-    
     for (const id of uniqueIds) {
-      const reservation = allReservations.find(r => String(r.id).trim() === String(id).trim())
-      if (reservation) {
-        // confirmed 또는 recruiting 상태의 예약만 계산
-        const status = (reservation.status || '').toString().toLowerCase()
-        if (status === 'confirmed' || status === 'recruiting') {
-          total += reservation.total_people || 0
-        }
+      const reservation = allReservations.find((r) => String(r.id).trim() === String(id).trim())
+      if (reservation && !isReservationCancelledStatus(reservation.status)) {
+        total += reservation.total_people || 0
       }
     }
-    
     return total
   }, [allReservations, normalizeReservationIds])
 
@@ -544,16 +537,15 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
   }, [reservationPricingMap, normalizeReservationIds])
 
   // 같은 상품/날짜의 전체 인원 계산 (Recruiting/Confirmed만)
-  const getTotalPeopleSameProductDateFiltered = useCallback((tour: ExtendedTour) => {
+  const getTotalPeopleSameProductDateNonCancelled = useCallback((tour: ExtendedTour) => {
     const key = `${(tour.product_id ? String(tour.product_id) : '').trim()}__${(tour.tour_date ? String(tour.tour_date) : '').trim()}`
-    return productDateKeyToTotalPeopleFiltered.get(key) || 0
-  }, [productDateKeyToTotalPeopleFiltered])
+    return productDateKeyToNonCancelledPeople.get(key) || 0
+  }, [productDateKeyToNonCancelledPeople])
 
-  // 같은 상품/날짜의 전체 인원 계산 (상태 무관)
-  const getTotalPeopleSameProductDateAll = useCallback((tour: ExtendedTour) => {
+  const getTotalPeopleSameProductDateCancelled = useCallback((tour: ExtendedTour) => {
     const key = `${(tour.product_id ? String(tour.product_id) : '').trim()}__${(tour.tour_date ? String(tour.tour_date) : '').trim()}`
-    return productDateKeyToTotalPeopleAll.get(key) || 0
-  }, [productDateKeyToTotalPeopleAll])
+    return productDateKeyToCancelledPeople.get(key) || 0
+  }, [productDateKeyToCancelledPeople])
 
   // 현재 달력에 표시된 투어들의 상품 메타(이름, 서브카테고리) 로드
   useEffect(() => {
@@ -714,7 +706,7 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
       <div className="flex items-center justify-between mb-3 sm:mb-4">
         <h2 className="text-xl font-semibold text-gray-900 flex items-center">
           <CalendarIcon className="w-5 h-5 mr-2" />
-          {t('reservationCalendar')}
+          {t('title')}
         </h2>
         <div className="flex items-center space-x-4">
           <button
@@ -785,9 +777,8 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                 {dayTours.map((tour, tourIndex) => {
                   // 인원 계산
                   const assignedPeople = getAssignedPeople(tour)
-                  const totalPeopleFiltered = getTotalPeopleSameProductDateFiltered(tour)
-                  const totalPeopleAll = getTotalPeopleSameProductDateAll(tour)
-                  const othersPeople = Math.max(totalPeopleAll - totalPeopleFiltered, 0)
+                  const totalNonCancelled = getTotalPeopleSameProductDateNonCancelled(tour)
+                  const totalCancelled = getTotalPeopleSameProductDateCancelled(tour)
 
                   // 단독투어 여부 확인
                   const isPrivateTour = (typeof tour.is_private_tour === 'string'
@@ -924,14 +915,14 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                             const infants = tour.assigned_infants ?? 0
                             const total = tour.assigned_people ?? assignedPeople
                             if (children === 0 && infants === 0) {
-                              return `${total}/${totalPeopleFiltered}${othersPeople > 0 ? ` (${othersPeople})` : ''}`
+                              return `${total}/${totalNonCancelled}/${totalCancelled}`
                             }
                             const detailParts: string[] = []
                             if (children > 0) detailParts.push(locale === 'en' ? `Child ${children}` : `아동${children}`)
                             if (infants > 0) detailParts.push(locale === 'en' ? `Infant ${infants}` : `유아${infants}`)
                             return locale === 'en'
-                              ? `Total ${total}/${totalPeopleFiltered}${othersPeople > 0 ? ` (${othersPeople})` : ''}, ${detailParts.join(', ')}`
-                              : `총 ${total}/${totalPeopleFiltered}${othersPeople > 0 ? ` (${othersPeople})` : ''}, ${detailParts.join(', ')}`
+                              ? `Total ${total}/${totalNonCancelled}/${totalCancelled}, ${detailParts.join(', ')}`
+                              : `총 ${total}/${totalNonCancelled}/${totalCancelled}, ${detailParts.join(', ')}`
                           })()}
                         </span>
                         {(() => {
@@ -1202,9 +1193,12 @@ const TourCalendar = memo(function TourCalendar({ tours, onTourClick, allReserva
                 )}
               </div>
               
-              {/* 인원 정보 */}
+              {/* 인원 정보: 배정 / 전체(미취소) / 취소 */}
               <div className="mb-2 text-xs text-gray-600">
-                {t('assignedPeople')}: {hoveredTour.assigned_people || 0}{t('peopleUnit')} / {t('totalPeople')}: {hoveredTour.total_people || 0}{t('peopleUnit')}
+                {t('assignedPeople')}: {getAssignedPeople(hoveredTour)}{t('peopleUnit')} / {t('totalPeople')}:{' '}
+                {getTotalPeopleSameProductDateNonCancelled(hoveredTour)}
+                {t('peopleUnit')} / {t('cancelledPeople')}: {getTotalPeopleSameProductDateCancelled(hoveredTour)}
+                {t('peopleUnit')}
                 {hoveredTour.is_private_tour && <span className="ml-1 text-purple-600">({t('privateTour')})</span>}
               </div>
               

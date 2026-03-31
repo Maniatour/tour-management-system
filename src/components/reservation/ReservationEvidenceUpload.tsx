@@ -17,15 +17,21 @@ interface ReservationEvidenceUploadProps {
   compact?: boolean
   /** locale for fallback text */
   locale?: string
+  /** 미국 거주자·미성년 비거주·패스 보유 등 증빙 필요 시 영역 강조 */
+  highlight?: boolean
 }
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
 const MAX_SIZE = 5 * 1024 * 1024 // 5MB
 
+const highlightBoxClass =
+  'rounded-lg border-2 border-amber-500 bg-amber-50 shadow-sm ring-2 ring-amber-200/80'
+
 export default function ReservationEvidenceUpload({
   reservationId,
   compact = true,
-  locale = 'ko'
+  locale = 'ko',
+  highlight = false,
 }: ReservationEvidenceUploadProps) {
   const [list, setList] = useState<EvidenceAttachment[]>([])
   const [loading, setLoading] = useState(false)
@@ -132,19 +138,47 @@ export default function ReservationEvidenceUpload({
 
   if (reservationId == null) {
     return (
-      <p className="text-[10px] sm:text-xs text-gray-500 mt-2">
-        {locale === 'ko' ? '예약을 저장한 후 증거 사진을 추가할 수 있습니다.' : 'You can add evidence photos after saving the reservation.'}
-      </p>
+      <div
+        className={`mt-2 ${highlight ? `${highlightBoxClass} p-3` : ''}`}
+        role={highlight ? 'status' : undefined}
+        aria-live={highlight ? 'polite' : undefined}
+      >
+        <p
+          className={`text-[10px] sm:text-xs ${highlight ? 'text-amber-950 font-semibold' : 'text-gray-500'}`}
+        >
+          {locale === 'ko' ? '예약을 저장한 후 증거 사진을 추가할 수 있습니다.' : 'You can add evidence photos after saving the reservation.'}
+        </p>
+        {highlight && (
+          <p className="text-[10px] sm:text-xs text-amber-900 mt-1.5 font-medium">
+            {locale === 'ko'
+              ? '위 거주·패스 구분에 인원이 있으면 저장 후 반드시 증빙 이미지를 올려 주세요.'
+              : 'After saving, please upload proof images for the selected resident / pass categories.'}
+          </p>
+        )}
+      </div>
     )
   }
 
   return (
-    <div className={`mt-3 pt-3 border-t border-gray-100 ${compact ? 'space-y-2' : 'space-y-3'}`}>
-      <p className="text-[10px] sm:text-xs text-gray-500">
+    <div
+      className={`mt-3 ${highlight ? `${highlightBoxClass} p-3` : 'pt-3 border-t border-gray-100'} ${compact ? 'space-y-2' : 'space-y-3'}`}
+      role={highlight ? 'status' : undefined}
+      aria-live={highlight ? 'polite' : undefined}
+    >
+      <p
+        className={`text-[10px] sm:text-xs ${highlight ? 'text-amber-950 font-semibold' : 'text-gray-500'}`}
+      >
         {locale === 'ko'
           ? '사진/파일 업로드, 화면 캡처 후 복사·붙여넣기 등으로 이미지 추가 (미국 거주자·패스 보유 등 증거 보관)'
           : 'Add images via file upload or paste from clipboard (e.g. US resident / pass proof).'}
       </p>
+      {highlight && (
+        <p className="text-[10px] sm:text-xs text-amber-900 font-medium -mt-1">
+          {locale === 'ko'
+            ? '증빙이 필요한 예약입니다. 거주 증명 또는 패스 관련 이미지를 첨부해 주세요.'
+            : 'Proof required: please attach residency or pass documentation.'}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <input
           ref={fileInputRef}

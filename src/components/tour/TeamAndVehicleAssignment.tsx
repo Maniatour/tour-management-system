@@ -1,7 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { User, Users, Car, Save, ChevronDown } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { ConnectionStatusLabel } from './TourUIComponents'
+import { isVehicleShownInTeamAssignmentDropdown } from '@/utils/tourUtils'
 
 interface TeamMember {
   id: string
@@ -25,6 +26,8 @@ interface Vehicle {
 }
 
 interface TeamAndVehicleAssignmentProps {
+  /** 투어일 (YYYY-MM-DD). 렌터카 드롭다운 필터에 사용 */
+  tourDate?: string | null
   teamMembers: TeamMember[]
   vehicles: Vehicle[]
   vehiclesLoading: boolean
@@ -183,6 +186,7 @@ function MemberSelectWithTabs({
 }
 
 export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> = ({
+  tourDate,
   teamMembers,
   vehicles,
   vehiclesLoading,
@@ -220,10 +224,21 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
   const t = useTranslations('tours.teamAndVehicle')
   const [isSaving, setIsSaving] = useState(false)
 
+  /** 회사·개인(비렌트)은 항상, 렌터카는 투어일이 렌트 구간(시작~종료+3일)에 들어갈 때만. 이미 배정된 차량은 목록에 없어도 옵션에 유지 */
+  const vehiclesForSelect = useMemo(() => {
+    const filtered = vehicles.filter((v) => isVehicleShownInTeamAssignmentDropdown(v, tourDate))
+    if (!selectedVehicleId) return filtered
+    if (filtered.some((v) => v.id === selectedVehicleId)) return filtered
+    const current = vehicles.find((v) => v.id === selectedVehicleId)
+    return current ? [...filtered, current] : filtered
+  }, [vehicles, tourDate, selectedVehicleId])
+
   const isMemberActive = (member: TeamMember): boolean => {
     if (typeof member.is_active === 'boolean') return member.is_active
-    if (member.is_active == null) return false
+    // null/undefined: DB 미입력·구 데이터는 활성으로 간주 (비활성 탭은 is_active === false 만)
+    if (member.is_active == null) return true
     const normalized = String(member.is_active).trim().toLowerCase()
+    if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'f') return false
     return normalized === 'true' || normalized === '1' || normalized === 't' || normalized === 'yes'
   }
 
@@ -491,7 +506,7 @@ export const TeamAndVehicleAssignment: React.FC<TeamAndVehicleAssignmentProps> =
                   disabled={vehiclesLoading}
                 >
                   <option value="">{t('selectVehicle')}</option>
-                  {vehicles.map((vehicle) => (
+                  {vehiclesForSelect.map((vehicle) => (
                     <option key={vehicle.id} value={vehicle.id}>
                       {getVehicleOptionLabel(vehicle)}
                     </option>

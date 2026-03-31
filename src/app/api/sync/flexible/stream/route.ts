@@ -4,6 +4,8 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from '@/lib/supabase'
 
 export const runtime = 'nodejs'
+/** 대용량 시트(고객 등) 동기화 시 서버리스 기본 제한(초)을 넘기지 않도록 */
+export const maxDuration = 300
 
 // 청크 단위 삭제 함수 (대용량 테이블 지원)
 const deleteTableInChunks = async (

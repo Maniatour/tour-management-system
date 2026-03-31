@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { generatePickupScheduleEmailContent } from '@/app/api/send-pickup-schedule-notification/route'
 import { getGoblinTourWeatherData, normalizeDate } from '@/lib/weatherApi'
+import { fetchProductDetailsForReservationEmail } from '@/lib/fetchProductDetailsForEmail'
 
 /**
  * POST /api/preview-pickup-schedule-notification
@@ -597,27 +598,17 @@ export async function POST(request: NextRequest) {
       preparationInfo = typeof preparationInfoFromBody === 'string' ? preparationInfoFromBody : String(preparationInfoFromBody)
     } else if (reservation.product_id) {
       const languageCode = isEnglish ? 'en' : 'ko'
-      const channelId = (reservation as any).channel_id ?? null
-      if (channelId) {
-        const { data: channelDetails } = await supabase
-          .from('product_details_multilingual')
-          .select('preparation_info')
-          .eq('product_id', reservation.product_id)
-          .eq('language_code', languageCode)
-          .eq('channel_id', channelId)
-          .maybeSingle()
-        preparationInfo = (channelDetails as any)?.preparation_info ?? null
+      const rez = reservation as {
+        channel_id?: string | null
+        variant_key?: string | null
       }
-      if (preparationInfo == null) {
-        const { data: commonDetails } = await supabase
-          .from('product_details_multilingual')
-          .select('preparation_info')
-          .eq('product_id', reservation.product_id)
-          .eq('language_code', languageCode)
-          .is('channel_id', null)
-          .maybeSingle()
-        preparationInfo = (commonDetails as any)?.preparation_info ?? null
-      }
+      const row = await fetchProductDetailsForReservationEmail(supabase, {
+        productId: reservation.product_id,
+        languageCode,
+        channelId: rez.channel_id ?? null,
+        variantKey: rez.variant_key ?? 'default',
+      })
+      preparationInfo = (row?.preparation_info as string) ?? null
     }
 
     // 이메일 내용 생성 (미리보기에서는 차량 사진을 같은 오리진 프록시로 로드해 표시)

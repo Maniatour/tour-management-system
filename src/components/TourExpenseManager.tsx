@@ -12,6 +12,7 @@ import {
   isTicketBookingIncludedInSettlement,
   ticketExpenseForSettlement
 } from '@/lib/bookingSettlement'
+import { isTourCancelled } from '@/utils/tourStatusUtils'
 
 interface TourExpense {
   id: string
@@ -84,6 +85,8 @@ interface TourExpenseManagerProps {
   /** 팀 구성 & 차량 배정에서 설정한 수수료 (전달 시 총 지출에 반영, 부모 tour 업데이트 시 즉시 반영) */
   tourGuideFee?: number | null
   tourAssistantFee?: number | null
+  /** 부모의 최신 투어 상태 (취소 여부 정산 반영·DB 재로드용; 없으면 loadTourData 결과만 사용) */
+  tourStatus?: string | null
 }
 
 export default function TourExpenseManager({ 
@@ -95,7 +98,8 @@ export default function TourExpenseManager({
   userRole = 'team_member',
   onExpenseUpdated,
   tourGuideFee,
-  tourAssistantFee
+  tourAssistantFee,
+  tourStatus
 }: TourExpenseManagerProps) {
   const t = useTranslations('tours.tourExpense')
   const [expenses, setExpenses] = useState<TourExpense[]>([])
@@ -974,7 +978,7 @@ export default function TourExpenseManager({
       // 투어 기본 정보 로드
       const { data: tour, error: tourError } = await supabase
         .from('tours')
-        .select('id, product_id, team_type, guide_fee, assistant_fee')
+        .select('id, product_id, team_type, guide_fee, assistant_fee, tour_status')
         .eq('id', tourId)
         .single()
 
@@ -984,6 +988,12 @@ export default function TourExpenseManager({
       }
 
       setTourData(tour)
+
+      if (isTourCancelled(tour.tour_status)) {
+        setGuideFee(0)
+        setAssistantFee(0)
+        return
+      }
       
       // 저장된 수수료가 있으면 사용
       if (tour.guide_fee !== null && tour.guide_fee !== undefined) {
@@ -1029,7 +1039,7 @@ export default function TourExpenseManager({
     } finally {
       setIsLoadingTourData(false)
     }
-  }, [tourId, productId])
+  }, [tourId, productId, tourStatus])
 
   // 어코디언 토글
   const toggleSection = (section: string) => {
@@ -1140,8 +1150,14 @@ export default function TourExpenseManager({
     // 총 지출 계산 (기존 지출 + 가이드/드라이버 수수료 + 부킹 비용)
     // 팀 구성 & 차량 배정에서 전달된 수수료가 있으면 우선 사용 (저장 후 즉시 반영)
     const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0)
-    const effectiveGuideFee = tourGuideFee !== undefined && tourGuideFee !== null ? tourGuideFee : guideFee
-    const effectiveAssistantFee = tourAssistantFee !== undefined && tourAssistantFee !== null ? tourAssistantFee : assistantFee
+    const statusForCancelCheck = tourStatus ?? tourData?.tour_status
+    const tourFeesCancelled = isTourCancelled(statusForCancelCheck)
+    const effectiveGuideFee = tourFeesCancelled
+      ? 0
+      : (tourGuideFee !== undefined && tourGuideFee !== null ? tourGuideFee : guideFee)
+    const effectiveAssistantFee = tourFeesCancelled
+      ? 0
+      : (tourAssistantFee !== undefined && tourAssistantFee !== null ? tourAssistantFee : assistantFee)
     const totalFees = effectiveGuideFee + effectiveAssistantFee
     
     // 부킹 비용 계산
@@ -1217,7 +1233,7 @@ export default function TourExpenseManager({
     loadReservations()
     loadTourData() // 투어 데이터 및 수수료 로드
     loadBookings() // 부킹 데이터 로드
-  }, [tourId, loadExpenses, loadReservations, loadTourData, loadBookings])
+  }, [tourId, tourStatus, loadExpenses, loadReservations, loadTourData, loadBookings])
 
   useEffect(() => {
     if (reservations.length > 0) {

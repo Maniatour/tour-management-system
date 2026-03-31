@@ -33,6 +33,7 @@ interface ReservationCardItemProps {
     totalPeople: number
     otherReservationsTotalPeople: number
     allDateTotalPeople: number
+    allDateOtherStatusPeople: number
     status: string
     guideName: string
     assistantName: string
@@ -155,8 +156,17 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
     if (!s || s === 'null' || s === 'undefined') return ''
     return s
   }
+  // tours.reservation_ids 배정을 DB tour_id보다 우선 (슬롯 기준이 진실 소스)
   const effectiveTourId =
-    normalizeTourId(reservation.tourId) || normalizeTourId(linkedTourId) || normalizeTourId((reservation as { tour_id?: string }).tour_id)
+    normalizeTourId(linkedTourId) ||
+    normalizeTourId(reservation.tourId) ||
+    normalizeTourId((reservation as { tour_id?: string }).tour_id)
+
+  const reservationStatusLower = (reservation.status as string)?.toLowerCase?.() || ''
+  const hideAssignedTourUi =
+    reservationStatusLower === 'cancelled' ||
+    reservationStatusLower === 'canceled' ||
+    reservationStatusLower === 'deleted'
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [followUpModalOpen, setFollowUpModalOpen] = useState(false)
@@ -508,39 +518,40 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
           })()}
         </div>
 
-        {/* 연결된 투어 정보 */}
+        {/* 연결된 투어 정보 — 취소·삭제 예약은 미배정으로 간주하여 표시하지 않음 */}
         {(() => {
-          const statusLower = reservation.status?.toLowerCase() || ''
-          if (statusLower === 'cancelled' || statusLower === 'canceled') {
+          if (!effectiveTourId || hideAssignedTourUi) {
             return null
           }
-          
-          if (!effectiveTourId) {
-            return null
-          }
-          
-          // tourInfoMap이 아직 준비되지 않았거나 해당 tourId가 없는 경우
-          if (tourInfoMap.size === 0 || !tourInfoMap.has(effectiveTourId)) {
-            return null
-          }
-          
-          const tourInfo = tourInfoMap.get(effectiveTourId)!
-          
-          // tourInfo에서 이미 계산된 인원 수 사용
-          const assignedTourTotalPeople = tourInfo.totalPeople
-          const finalAllDateTotalPeople = tourInfo.allDateTotalPeople || assignedTourTotalPeople
-          
+
+          const tourInfo = tourInfoMap.get(effectiveTourId)
+
           const getStatusColor = (status: string) => {
-            const statusLower = status.toLowerCase()
-            if (statusLower === 'confirmed') return 'bg-green-100 text-green-800'
-            if (statusLower === 'completed') return 'bg-blue-100 text-blue-800'
-            if (statusLower === 'cancelled') return 'bg-red-100 text-red-800'
+            const s = status.toLowerCase()
+            if (s === 'confirmed') return 'bg-green-100 text-green-800'
+            if (s === 'completed') return 'bg-blue-100 text-blue-800'
+            if (s === 'cancelled' || s === 'canceled') return 'bg-red-100 text-red-800'
             return 'bg-gray-100 text-gray-800'
           }
-          
+
+          const assignedTourTotalPeople = tourInfo?.totalPeople ?? 0
+          const finalAllDateTotalPeople = tourInfo?.allDateTotalPeople ?? assignedTourTotalPeople
+          const otherStatusPeople = tourInfo?.allDateOtherStatusPeople ?? 0
+          const tourStatusLabel = tourInfo?.status ?? '-'
+
+          const assignedTourTitle = tourInfo
+            ? otherStatusPeople > 0
+              ? t('card.assignedTourWithOther', {
+                  n: assignedTourTotalPeople,
+                  total: finalAllDateTotalPeople,
+                  other: otherStatusPeople
+                })
+              : t('card.assignedTour', { n: assignedTourTotalPeople, total: finalAllDateTotalPeople })
+            : t('card.assignedTourBasic')
+
           return (
             <div className="mt-3 pt-3 border-t border-gray-200">
-              <div 
+              <div
                 onClick={(e) => {
                   e.stopPropagation()
                   router.push(`/${locale}/admin/tours/${effectiveTourId}`)
@@ -548,41 +559,46 @@ export const ReservationCardItem = React.memo(function ReservationCardItem({
                 className="bg-white border border-gray-200 rounded-lg p-3 cursor-pointer hover:bg-gray-50 hover:border-blue-300 transition-colors"
               >
                 <div className="flex items-center justify-between mb-1">
-                  <div className="text-xs font-semibold text-gray-900">
-                    {t('card.assignedTour', { n: assignedTourTotalPeople, total: finalAllDateTotalPeople })}
+                  <div
+                    className="text-xs font-semibold text-gray-900"
+                    title={otherStatusPeople > 0 ? t('card.assignedTourOtherHint') : undefined}
+                  >
+                    {assignedTourTitle}
                   </div>
                   <div className="flex items-center space-x-2">
-                    {tourInfo.isAssigned && (
-                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                        {t('card.assigned')}
-                      </span>
-                    )}
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(tourInfo.status)}`}>
-                      {tourInfo.status}
+                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                      {t('card.assigned')}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(tourStatusLabel)}`}>
+                      {tourStatusLabel}
                     </span>
                   </div>
                 </div>
                 <div className="text-[10px] text-gray-500 mb-2 font-mono">
                   ID: {effectiveTourId}
                 </div>
-                
-                <div className="flex flex-wrap items-center gap-2 mt-2">
-                  {tourInfo.guideName !== '-' && (
-                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                      {tourInfo.guideName}
-                    </span>
-                  )}
-                  {tourInfo.assistantName !== '-' && (
-                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">
-                      {tourInfo.assistantName}
-                    </span>
-                  )}
-                  {tourInfo.vehicleName !== '-' && (
-                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                      {tourInfo.vehicleName}
-                    </span>
-                  )}
-                </div>
+
+                {tourInfo ? (
+                  <div className="flex flex-wrap items-center gap-2 mt-2">
+                    {tourInfo.guideName !== '-' && (
+                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                        {tourInfo.guideName}
+                      </span>
+                    )}
+                    {tourInfo.assistantName !== '-' && (
+                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">
+                        {tourInfo.assistantName}
+                      </span>
+                    )}
+                    {tourInfo.vehicleName !== '-' && (
+                      <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                        {tourInfo.vehicleName}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-gray-500 mt-1">{t('card.assignedTourMetaLoading')}</p>
+                )}
               </div>
             </div>
           )

@@ -30,6 +30,17 @@ import ReservationFollowUpSection from '@/components/reservation/ReservationFoll
 import PricingInfoModal from '@/components/reservation/PricingInfoModal'
 import { findSimilarCustomersInList } from '@/lib/customerSimilarity'
 import { getOptionalOptionsForProduct } from '@/utils/reservationUtils'
+import {
+  emptyResidentStatusAmounts,
+  findUsResidentClassificationChoice,
+  buildResidentChoiceRowsFromLineState,
+  mergeResidentRowsIntoSelectedChoices,
+  parseResidentLineStateFromSelections,
+  residentLineStateEquals,
+  computePassCoveredCount,
+  type ResidentLineState,
+  type ResidentLineKey,
+} from '@/utils/usResidentChoiceSync'
 import { getFallbackOtaSalePrice, getFallbackOtaAndNotIncluded } from '@/utils/choicePricingMatcher'
 import { getCountryFromPhone } from '@/utils/phoneUtils'
 import type { 
@@ -225,6 +236,8 @@ interface ReservationFormProps {
   initialNotIncludedAmountFromImport?: string
   /** 폼 제목 오버라이드 (예: 이메일에서 예약 가져오기) */
   formTitle?: string
+  /** 예약 가져오기: 이미 confirmed 등 처리된 항목은 저장만 막고 UI는 동일하게 유지 */
+  importSubmitDisabled?: boolean
 }
 
 /** 이메일에서 파싱한 금액 문자열 → 숫자 (Price $ 319.41 등) */
@@ -305,6 +318,7 @@ export default function ReservationForm({
   initialVariantKeyFromImport,
   initialNotIncludedAmountFromImport: _initialNotIncludedAmountFromImport,
   formTitle: formTitleOverride,
+  importSubmitDisabled = false,
 }: ReservationFormProps) {
   const [showCustomerForm, setShowCustomerForm] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
@@ -370,12 +384,15 @@ export default function ReservationForm({
     child: number
     infant: number
     totalPeople: number
-    // 거주 상태별 인원 수
+    // 거주 상태별 인원 수 (미국 거주자 구분 초이스와 동기화)
+    undecidedResidentCount?: number
     usResidentCount?: number
     nonResidentCount?: number
     nonResidentWithPassCount?: number
     nonResidentUnder16Count?: number // 비 거주자 (16세 이하)
+    nonResidentPurchasePassCount?: number
     passCoveredCount?: number // 패스로 커버되는 인원 수
+    residentStatusAmounts?: Record<ResidentLineKey, number>
     channelId: string
     selectedChannelType: 'ota' | 'self' | 'partner'
     channelSearch: string
@@ -582,12 +599,15 @@ export default function ReservationForm({
     child: reservation?.child || rez.child || 0,
     infant: reservation?.infant || rez.infant || 0,
     totalPeople: reservation?.totalPeople || rez.total_people || 1,
-    // 거주 상태별 인원 수 (초기값은 0, 예약 수정 시 reservation_customers에서 로드)
+    // 거주 상태별 인원 수 (초기값은 0, 예약 수정 시 reservation_customers·초이스에서 로드)
+    undecidedResidentCount: 0,
     usResidentCount: 0,
     nonResidentCount: 0,
     nonResidentWithPassCount: 0,
     nonResidentUnder16Count: 0,
+    nonResidentPurchasePassCount: 0,
     passCoveredCount: 0,
+    residentStatusAmounts: emptyResidentStatusAmounts(),
     channelId: reservation?.channelId || rez.channel_id || '',
     selectedChannelType: (() => {
       const channelType = reservation?.channelId 
@@ -735,6 +755,109 @@ export default function ReservationForm({
       setFormDataState(arg)
     }
   }, [])
+
+  const syncResidentChoicesInFormState = useCallback((prev: typeof formData): typeof formData => {
+    const ch = findUsResidentClassificationChoice(prev.productChoices)
+    if (!ch) return prev
+    const ra = { ...emptyResidentStatusAmounts(), ...(prev.residentStatusAmounts || {}) }
+    const state: ResidentLineState = {
+      undecidedResidentCount: prev.undecidedResidentCount || 0,
+      usResidentCount: prev.usResidentCount || 0,
+      nonResidentCount: prev.nonResidentCount || 0,
+      nonResidentUnder16Count: prev.nonResidentUnder16Count || 0,
+      nonResidentWithPassCount: prev.nonResidentWithPassCount || 0,
+      nonResidentPurchasePassCount: prev.nonResidentPurchasePassCount || 0,
+      residentStatusAmounts: ra,
+    }
+    const rows = buildResidentChoiceRowsFromLineState(ch, state, false)
+    const { selectedChoices, choicesTotal } = mergeResidentRowsIntoSelectedChoices(
+      prev.productChoices,
+      Array.isArray(prev.selectedChoices) ? prev.selectedChoices : [],
+      rows
+    )
+    return { ...prev, selectedChoices, choicesTotal, residentStatusAmounts: ra }
+  }, [])
+
+  const applyResidentParticipantPatch = useCallback(
+    (patch: Record<string, unknown>) => {
+      setFormData((prev) => {
+        const merged = { ...prev, ...patch } as typeof formData
+        if (patch.residentStatusAmounts && typeof patch.residentStatusAmounts === 'object') {
+          merged.residentStatusAmounts = {
+            ...emptyResidentStatusAmounts(),
+            ...(prev.residentStatusAmounts || {}),
+            ...(patch.residentStatusAmounts as Record<string, number>),
+          }
+        }
+        return syncResidentChoicesInFormState(merged)
+      })
+    },
+    [setFormData, syncResidentChoicesInFormState]
+  )
+
+  /** 상품 초이스(모달)에서 거주 그룹 행이 있을 때만 예약 정보 거주 칸으로 반영 (빈 배열이면 DB 로드 직후 덮어쓰기 방지) */
+  useEffect(() => {
+    const ch = findUsResidentClassificationChoice(formData.productChoices)
+    if (!ch) return
+    const arr = (formData.selectedChoices || []).filter((s) => s.choice_id === ch.id)
+    if (arr.length === 0) return
+    const parsed = parseResidentLineStateFromSelections(
+      formData.productChoices,
+      formData.selectedChoices || []
+    )
+    if (!parsed) return
+    setFormData((prev) => {
+      const cur: ResidentLineState = {
+        undecidedResidentCount: prev.undecidedResidentCount || 0,
+        usResidentCount: prev.usResidentCount || 0,
+        nonResidentCount: prev.nonResidentCount || 0,
+        nonResidentUnder16Count: prev.nonResidentUnder16Count || 0,
+        nonResidentWithPassCount: prev.nonResidentWithPassCount || 0,
+        nonResidentPurchasePassCount: prev.nonResidentPurchasePassCount || 0,
+        residentStatusAmounts: { ...emptyResidentStatusAmounts(), ...(prev.residentStatusAmounts || {}) },
+      }
+      if (residentLineStateEquals(cur, parsed)) return prev
+      const passCovered = computePassCoveredCount(
+        parsed.nonResidentWithPassCount,
+        parsed.usResidentCount,
+        parsed.nonResidentCount,
+        parsed.nonResidentUnder16Count,
+        prev.totalPeople
+      )
+      return {
+        ...prev,
+        undecidedResidentCount: parsed.undecidedResidentCount,
+        usResidentCount: parsed.usResidentCount,
+        nonResidentCount: parsed.nonResidentCount,
+        nonResidentUnder16Count: parsed.nonResidentUnder16Count,
+        nonResidentWithPassCount: parsed.nonResidentWithPassCount,
+        nonResidentPurchasePassCount: parsed.nonResidentPurchasePassCount,
+        residentStatusAmounts: parsed.residentStatusAmounts,
+        passCoveredCount: passCovered,
+      }
+    })
+  }, [formData.selectedChoices, formData.productChoices, setFormData])
+
+  useEffect(() => {
+    setFormData((prev) => {
+      const nextPc = computePassCoveredCount(
+        prev.nonResidentWithPassCount || 0,
+        prev.usResidentCount || 0,
+        prev.nonResidentCount || 0,
+        prev.nonResidentUnder16Count || 0,
+        prev.totalPeople || 0
+      )
+      if (nextPc === (prev.passCoveredCount || 0)) return prev
+      return { ...prev, passCoveredCount: nextPc }
+    })
+  }, [
+    formData.totalPeople,
+    formData.nonResidentWithPassCount,
+    formData.usResidentCount,
+    formData.nonResidentCount,
+    formData.nonResidentUnder16Count,
+    setFormData,
+  ])
 
   // 무한 렌더링 방지를 위한 ref
   const prevPricingParams = useRef<{productId: string, tourDate: string, channelId: string, variantKey: string, selectedChoicesKey: string} | null>(null)
@@ -1131,6 +1254,7 @@ export default function ReservationForm({
           let nonResidentCount = 0
           let nonResidentUnder16Count = 0
           let nonResidentWithPassCount = 0
+          let nonResidentPurchasePassCount = 0
           let passCoveredCount = 0
           
           try {
@@ -1153,6 +1277,8 @@ export default function ReservationForm({
                   if (rc.pass_covered_count) {
                     passCoveredCount += rc.pass_covered_count
                   }
+                } else if (rc.resident_status === 'non_resident_purchase_pass') {
+                  nonResidentPurchasePassCount++
                 }
               })
             }
@@ -1190,6 +1316,7 @@ export default function ReservationForm({
                 nonResidentCount,
                 nonResidentWithPassCount,
                 nonResidentUnder16Count,
+                nonResidentPurchasePassCount,
                 passCoveredCount
               }))
               
@@ -4271,13 +4398,17 @@ export default function ReservationForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+    if (importSubmitDisabled) return
+
     // 새로운 간결한 초이스 시스템에서 필수 초이스 검증
     // 거주 상태별 인원 수가 설정되어 있으면 "미국 거주자 구분" 관련 초이스 검증 건너뛰기
-    const hasResidentStatusData = (formData.usResidentCount || 0) > 0 || 
-                                   (formData.nonResidentCount || 0) > 0 || 
-                                   (formData.nonResidentWithPassCount || 0) > 0 ||
-                                   (formData.nonResidentUnder16Count || 0) > 0
+    const hasResidentStatusData =
+      (formData.undecidedResidentCount || 0) > 0 ||
+      (formData.usResidentCount || 0) > 0 ||
+      (formData.nonResidentCount || 0) > 0 ||
+      (formData.nonResidentWithPassCount || 0) > 0 ||
+      (formData.nonResidentUnder16Count || 0) > 0 ||
+      (formData.nonResidentPurchasePassCount || 0) > 0
     
     // selectedChoices가 배열인지 확인하고, 배열이 아니면 빈 배열로 처리
     const selectedChoicesArray = Array.isArray(formData.selectedChoices) 
@@ -4463,18 +4594,26 @@ export default function ReservationForm({
         selectedChoices: formData.selectedChoices
       })
       
-      // "미정"(__undecided__)은 DB choice_options에 없으므로 reservation_choices에 저장하지 않음
+      // "미정"(__undecided__)은 reservation_choices FK에 없으나 reservations.choices JSON에는 보관
       const UNDECIDED_OPTION_ID = '__undecided__'
       if (Array.isArray(formData.selectedChoices) && formData.selectedChoices.length > 0) {
         formData.selectedChoices.forEach(choice => {
-          if (choice.choice_id && choice.option_id && choice.option_id !== UNDECIDED_OPTION_ID) {
+          if (!choice.choice_id || !choice.option_id) return
+          if (choice.option_id === UNDECIDED_OPTION_ID) {
             choicesData.required.push({
               choice_id: choice.choice_id,
-              option_id: choice.option_id,
+              option_id: UNDECIDED_OPTION_ID,
               quantity: choice.quantity || 1,
               total_price: choice.total_price || 0
             })
+            return
           }
+          choicesData.required.push({
+            choice_id: choice.choice_id,
+            option_id: choice.option_id,
+            quantity: choice.quantity || 1,
+            total_price: choice.total_price || 0
+          })
         })
       } else if (formData.selectedChoices && typeof formData.selectedChoices === 'object') {
         // 기존 객체 형태의 selectedChoices 처리
@@ -4770,8 +4909,14 @@ export default function ReservationForm({
             <button
               type="submit"
               form="reservation-edit-form"
-              disabled={isSubmitting || (!isNewReservation && !!reservation?.id && !pricingLoadComplete)}
-              title={!isNewReservation && reservation?.id && !pricingLoadComplete ? '가격 정보 로딩 중입니다. 잠시 후 저장해 주세요.' : undefined}
+              disabled={importSubmitDisabled || isSubmitting || (!isNewReservation && !!reservation?.id && !pricingLoadComplete)}
+              title={
+                importSubmitDisabled
+                  ? '이미 처리된 예약 가져오기 항목은 저장할 수 없습니다.'
+                  : !isNewReservation && reservation?.id && !pricingLoadComplete
+                    ? '가격 정보 로딩 중입니다. 잠시 후 저장해 주세요.'
+                    : undefined
+              }
               className="px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {!isNewReservation && reservation?.id && !pricingLoadComplete ? '가격 로딩 중...' : isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('save') : tCommon('add'))}
@@ -4783,7 +4928,7 @@ export default function ReservationForm({
             >
               {tCommon('cancel')}
             </button>
-            {reservation && (
+            {reservation && !(isImportMode && importSubmitDisabled) && (
               <button
                 type="button"
                 onClick={() => {
@@ -5017,8 +5162,14 @@ export default function ReservationForm({
               <div className="flex flex-row items-center gap-2">
                 <button
                   type="submit"
-                  disabled={isSubmitting || (!isNewReservation && !!reservation?.id && !pricingLoadComplete)}
-                  title={!isNewReservation && reservation?.id && !pricingLoadComplete ? '가격 정보 로딩 중입니다. 잠시 후 저장해 주세요.' : undefined}
+                  disabled={importSubmitDisabled || isSubmitting || (!isNewReservation && !!reservation?.id && !pricingLoadComplete)}
+                  title={
+                    importSubmitDisabled
+                      ? '이미 처리된 예약 가져오기 항목은 저장할 수 없습니다.'
+                      : !isNewReservation && reservation?.id && !pricingLoadComplete
+                        ? '가격 정보 로딩 중입니다. 잠시 후 저장해 주세요.'
+                        : undefined
+                  }
                   className="flex-1 min-w-0 bg-blue-600 text-white py-2.5 px-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
                 >
                   {!isNewReservation && reservation?.id && !pricingLoadComplete ? '가격 로딩 중...' : isSubmitting ? tCommon('saving') || '저장 중...' : (reservation ? tCommon('save') : tCommon('add'))}
@@ -5030,7 +5181,7 @@ export default function ReservationForm({
                 >
                   {tCommon('cancel')}
                 </button>
-                {reservation && (
+                {reservation && !(isImportMode && importSubmitDisabled) && (
                   <button
                     type="button"
                     onClick={() => {
@@ -5146,6 +5297,7 @@ export default function ReservationForm({
                   <ParticipantsSection
                     formData={formData}
                     setFormData={setFormData}
+                    applyResidentParticipantPatch={applyResidentParticipantPatch}
                     t={t}
                     reservationId={effectiveReservationId ?? null}
                     locale={locale}

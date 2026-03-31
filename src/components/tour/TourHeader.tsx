@@ -15,8 +15,8 @@ interface TourHeaderProps {
   tourStatusOptions: Array<{ value: string; label: string; color: string }>
   assignmentStatusOptions: Array<{ value: string; label: string; color: string }>
   getTotalAssignedPeople: number
-  getTotalPeopleFiltered: number
-  getTotalPeopleAll: number
+  getTotalPeopleNonCancelled: number
+  getTotalCancelledPeople: number
   onToggleTourStatusDropdown: () => void
   onToggleAssignmentStatusDropdown: () => void
   onUpdateTourStatus: (status: string) => Promise<void>
@@ -42,8 +42,8 @@ export default function TourHeader({
   tourStatusOptions,
   assignmentStatusOptions,
   getTotalAssignedPeople,
-  getTotalPeopleFiltered,
-  getTotalPeopleAll,
+  getTotalPeopleNonCancelled,
+  getTotalCancelledPeople,
   onToggleTourStatusDropdown,
   onToggleAssignmentStatusDropdown,
   onUpdateTourStatus,
@@ -139,8 +139,8 @@ export default function TourHeader({
             tourStatusOptions={tourStatusOptions}
             assignmentStatusOptions={assignmentStatusOptions}
             getTotalAssignedPeople={getTotalAssignedPeople}
-            getTotalPeopleFiltered={getTotalPeopleFiltered}
-            getTotalPeopleAll={getTotalPeopleAll}
+            getTotalPeopleNonCancelled={getTotalPeopleNonCancelled}
+            getTotalCancelledPeople={getTotalCancelledPeople}
             onToggleTourStatusDropdown={onToggleTourStatusDropdown}
             onToggleAssignmentStatusDropdown={onToggleAssignmentStatusDropdown}
             onUpdateTourStatus={onUpdateTourStatus}
@@ -181,10 +181,10 @@ export default function TourHeader({
             {/* 총 배정 인원 표시 */}
             <div className="text-center bg-blue-50 rounded-lg px-4 py-3 border border-blue-200">
               <div className="text-xl font-bold text-blue-600 flex items-center justify-center gap-2">
-                {getTotalAssignedPeople} <span className={params.locale === 'ko' ? '' : 'hidden'}>명</span> / {getTotalPeopleFiltered} <span className={params.locale === 'ko' ? '' : 'hidden'}>명</span> ({Math.max(getTotalPeopleAll - getTotalPeopleFiltered, 0)} <span className={params.locale === 'ko' ? '' : 'hidden'}>명</span>)
+                {getTotalAssignedPeople} <span className={params.locale === 'ko' ? '' : 'hidden'}>명</span> / {getTotalPeopleNonCancelled} <span className={params.locale === 'ko' ? '' : 'hidden'}>명</span> / {getTotalCancelledPeople} <span className={params.locale === 'ko' ? '' : 'hidden'}>명</span>
               </div>
               <div className="text-xs text-blue-600 mt-1">
-                {t('assignedFull')} / {t('total')} / {t('cancelledPending')}
+                {t('assignedFull')} / {t('total')} / {t('cancelled')}
               </div>
             </div>
             

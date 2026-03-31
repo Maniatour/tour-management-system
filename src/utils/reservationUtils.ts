@@ -262,3 +262,27 @@ export const getChoicesForOption = (optionId: string, productOptions: ProductOpt
     product_option_id: option.id
   }] : []
 }
+
+/** 투어일·예약일 집계 키용 (ISO 등 → YYYY-MM-DD 통일, 투어 상세와 동일하게 맞춤) */
+export function normalizeTourDateKey(d: string | null | undefined): string {
+  if (d == null) return ''
+  const s = String(d).trim()
+  if (!s) return ''
+  return s.split('T')[0] ?? ''
+}
+
+/**
+ * 예약 인원 합계 (성인+아동+유아).
+ * DB/API는 `child`·`infant`와 `children`·`infants`가 혼용될 수 있음.
+ * 구성값이 모두 0이면 `total_people`이 있으면 그 값을 사용.
+ */
+export function getReservationPartySize(r: Record<string, unknown>): number {
+  const adults = Number(r.adults ?? 0) || 0
+  const child = Number(r.children ?? r.child ?? 0) || 0
+  const infant = Number(r.infants ?? r.infant ?? 0) || 0
+  const sum = adults + child + infant
+  if (sum > 0) return sum
+  const tp = r.total_people
+  if (tp != null && Number(tp) > 0) return Number(tp)
+  return 0
+}

@@ -3,7 +3,24 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
-import { ArrowLeft, Hotel, MapPin, Clock, Users, Camera, MessageSquare, FileText, Calculator, ChevronDown, ChevronUp, Calendar, Phone, Mail, Car } from 'lucide-react'
+import {
+  ArrowLeft,
+  Hotel,
+  MapPin,
+  Clock,
+  Users,
+  Camera,
+  MessageSquare,
+  FileText,
+  Calculator,
+  ChevronDown,
+  ChevronUp,
+  Calendar,
+  Phone,
+  Mail,
+  Car,
+  type LucideIcon,
+} from 'lucide-react'
 import ReactCountryFlag from 'react-country-flag'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
@@ -17,6 +34,7 @@ import TourWeather from '@/components/TourWeather'
 import TourScheduleSection from '@/components/product/TourScheduleSection'
 import { formatCustomerNameEnhanced } from '@/utils/koreanTransliteration'
 import { formatTimeWithAMPM } from '@/lib/utils'
+import { isTourCancelled } from '@/utils/tourStatusUtils'
 
 // 타입 정의 (DB 스키마 기반)
 type TourRow = Database['public']['Tables']['tours']['Row']
@@ -105,17 +123,6 @@ export default function GuideTourDetailPage() {
     sunriseTime: string;
   } | null>(null)
   
-  // 탭별 섹션 매핑
-  const tabSections = {
-    overview: ['tour-info', 'product-info', 'pickup-schedule', 'guide-info', 'tour-memo'],
-    schedule: [],
-    bookings: ['bookings'],
-    photos: ['photos'],
-    chat: ['chat'],
-    expenses: ['expenses'],
-    report: ['report']
-  }
-
   // balance 정보를 가져오는 함수
   const getReservationBalance = (reservationId: string) => {
     const pricing = reservationPricing.find(p => p.reservation_id === reservationId)
@@ -521,7 +528,9 @@ export default function GuideTourDetailPage() {
       }
 
       // 로컬 상태 업데이트
-      setTour(prev => prev ? { ...prev, assignment_status: status } as TourRow : null)
+      setTour((prev: TourRow | null) =>
+        prev ? ({ ...prev, assignment_status: status } as TourRow) : null
+      )
       
       alert(locale === 'ko' 
         ? (status === 'confirmed' ? '배정을 확인했습니다.' : '배정을 거절했습니다.')
@@ -642,7 +651,7 @@ export default function GuideTourDetailPage() {
   }: { 
     id: string
     title: string
-    icon: React.ComponentType<{ className?: string }>
+    icon: LucideIcon
     children: React.ReactNode
     headerButton?: React.ReactNode
     /** 모바일 가이드 전용: 접기 없이 항상 본문 표시 */
@@ -1130,7 +1139,8 @@ export default function GuideTourDetailPage() {
                 return new Date(displayDate + 'T' + time + ':00').getTime()
               }
 
-              const sortedHotelEntries = Object.entries(groupedByHotel).sort(([, reservationsA], [, reservationsB]) => {
+              const hotelEntries = Object.entries(groupedByHotel) as [string, ReservationRow[]][]
+              const sortedHotelEntries = hotelEntries.sort(([, reservationsA], [, reservationsB]) => {
                 const firstPickupA = reservationsA[0]?.pickup_time || '00:00'
                 const firstPickupB = reservationsB[0]?.pickup_time || '00:00'
                 return getActualPickupDateTime(firstPickupA) - getActualPickupDateTime(firstPickupB)
@@ -1196,7 +1206,8 @@ export default function GuideTourDetailPage() {
                   return new Date(displayDate + 'T' + time + ':00').getTime()
                 }
 
-                const sortedHotelEntries = Object.entries(groupedByHotel).sort(([, reservationsA], [, reservationsB]) => {
+                const hotelEntriesInner = Object.entries(groupedByHotel) as [string, ReservationRow[]][]
+                const sortedHotelEntries = hotelEntriesInner.sort(([, reservationsA], [, reservationsB]) => {
                   const firstPickupA = reservationsA[0]?.pickup_time || '00:00'
                   const firstPickupB = reservationsB[0]?.pickup_time || '00:00'
                   return getActualPickupDateTime(firstPickupA) - getActualPickupDateTime(firstPickupB)
@@ -1220,7 +1231,7 @@ export default function GuideTourDetailPage() {
                 return sortedHotelEntries.map(([hotelId, hotelReservations]) => {
                   const hotel = pickupHotels.find(h => h.id === hotelId)
                   const isUnassignedHotel = hotelId === GUIDE_UNASSIGNED_PICKUP_HOTEL_KEY
-                  const sortedReservations = hotelReservations.sort((a, b) => {
+                  const sortedReservations = [...hotelReservations].sort((a: ReservationRow, b: ReservationRow) => {
                     return getActualPickupDateTime(a.pickup_time) - getActualPickupDateTime(b.pickup_time)
                   })
 
@@ -1264,7 +1275,10 @@ export default function GuideTourDetailPage() {
                               isUnassignedHotel ? 'bg-amber-100 text-amber-900' : 'bg-blue-100 text-blue-800'
                             }`}>
                               <Users className="w-3 h-3 mr-1" />
-                              {sortedReservations.reduce((sum, r) => sum + (r.total_people || 0), 0)}
+                              {sortedReservations.reduce(
+                                (sum: number, r: ReservationRow) => sum + (r.total_people || 0),
+                                0
+                              )}
                             </span>
                           </div>
                           {!isUnassignedHotel && (hotel?.link || (hotel as PickupHotel & { pin?: string })?.pin) && (
@@ -1291,7 +1305,7 @@ export default function GuideTourDetailPage() {
 
                       {/* 예약자 카드 목록 */}
                       <div className="space-y-3">
-                        {sortedReservations.map((reservation) => {
+                        {sortedReservations.map((reservation: ReservationRow) => {
                           const customer = getCustomerInfo(reservation.customer_id || '')
                           return (
                             <div key={reservation.id}>
@@ -1434,7 +1448,7 @@ export default function GuideTourDetailPage() {
                 teamType={tour.team_type as 'guide+driver' | '2guide' | null}
                 locale={locale}
                 showAllSchedules={true}
-                currentUserEmail={currentUserEmail}
+                currentUserEmail={currentUserEmail ?? null}
                 tourGuideId={tour.tour_guide_id}
                 assistantId={tour.assistant_id}
               />
@@ -1576,7 +1590,16 @@ export default function GuideTourDetailPage() {
         {/* 정산 관리 - 정산 탭에만 표시 */}
         <div className={`${activeTab === 'expenses' ? 'block' : 'hidden'} lg:block`}>
           <AccordionSection id="expenses" title={t('expenseManagement')} icon={Calculator} alwaysExpanded={isGuideMobileLayout}>
-          <TourExpenseManager tourId={tour.id} tourDate={tour.tour_date} submittedBy={currentUserEmail || ''} reservationIds={tour.reservation_ids || []} />
+          <TourExpenseManager
+            tourId={tour.id}
+            tourDate={tour.tour_date}
+            productId={tour.product_id}
+            submittedBy={currentUserEmail || ''}
+            reservationIds={tour.reservation_ids || []}
+            tourGuideFee={isTourCancelled(tour.tour_status) ? 0 : tour.guide_fee}
+            tourAssistantFee={isTourCancelled(tour.tour_status) ? 0 : tour.assistant_fee}
+            tourStatus={tour.tour_status}
+          />
           </AccordionSection>
         </div>
 

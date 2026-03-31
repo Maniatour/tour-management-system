@@ -9,8 +9,8 @@ interface StatusManagementProps {
   tourStatusOptions: Array<{ value: string; label: string; color: string }>
   assignmentStatusOptions: Array<{ value: string; label: string; color: string }>
   getTotalAssignedPeople: number
-  getTotalPeopleFiltered: number
-  getTotalPeopleAll: number
+  getTotalPeopleNonCancelled: number
+  getTotalCancelledPeople: number
   onToggleTourStatusDropdown: () => void
   onToggleAssignmentStatusDropdown: () => void
   onUpdateTourStatus: (status: string) => Promise<void>
@@ -32,8 +32,8 @@ export const StatusManagement: React.FC<StatusManagementProps> = ({
   tourStatusOptions,
   assignmentStatusOptions,
   getTotalAssignedPeople,
-  getTotalPeopleFiltered,
-  getTotalPeopleAll,
+  getTotalPeopleNonCancelled,
+  getTotalCancelledPeople,
   onToggleTourStatusDropdown,
   onToggleAssignmentStatusDropdown,
   onUpdateTourStatus,
@@ -75,7 +75,7 @@ export const StatusManagement: React.FC<StatusManagementProps> = ({
       {/* 모바일 요약 정보 및 액션 버튼들 */}
       <div className="flex items-center justify-between">
         <div className="bg-blue-50 rounded px-2 py-1 border border-blue-200 text-blue-700 text-xs font-semibold">
-          {getTotalAssignedPeople} / {getTotalPeopleFiltered} ({Math.max(getTotalPeopleAll - getTotalPeopleFiltered, 0)})
+          {getTotalAssignedPeople} / {getTotalPeopleNonCancelled} / {getTotalCancelledPeople}
         </div>
         <div className="flex items-center space-x-1">
           <button onClick={onCopyTour} className="p-1.5 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">

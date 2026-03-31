@@ -227,6 +227,8 @@ export function useReservationData() {
 
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [reservationsLoading, setReservationsLoading] = useState(true)
+  /** 첫 배치만 반영된 채로 집계하지 않도록: fetchReservations 전체(백그라운드 페이지 포함) 완료 후 true */
+  const [reservationsAggregateReady, setReservationsAggregateReady] = useState(false)
   const [loadingProgress, setLoadingProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 })
   const [reservationPricingMap, setReservationPricingMap] = useState<Map<string, {
     total_price: number
@@ -431,6 +433,7 @@ export function useReservationData() {
   }
 
   const fetchReservations = async () => {
+    setReservationsAggregateReady(false)
     setReservationsLoading(true)
     setLoadingProgress({ current: 0, total: 0 })
     try {
@@ -561,6 +564,7 @@ export function useReservationData() {
       setReservations([])
     } finally {
       setReservationsLoading(false)
+      setReservationsAggregateReady(true)
     }
   }
 
@@ -584,6 +588,7 @@ export function useReservationData() {
     toursMap,
     loading,
     loadingProgress,
+    reservationsAggregateReady,
     
     // 리프레시 함수들
     refreshReservations: fetchReservations,

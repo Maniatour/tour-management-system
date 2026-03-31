@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { generateEmailContent } from '@/app/api/send-email/route'
+import {
+  generateEmailContent,
+  type GenerateEmailContentOptions,
+} from '@/app/api/send-email/route'
+import {
+  fetchProductDetailsForReservationEmail,
+  parseSectionTitlesMap,
+  pickProductDetailFieldValues,
+} from '@/lib/fetchProductDetailsForEmail'
+
+export const dynamic = 'force-dynamic'
 
 /**
  * POST /api/preview-email
@@ -126,29 +136,74 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
     pricing = pricingData
 
-    // 상품 상세 정보 조회 (multilingual)
-    let productDetails = null
+    // 상품 상세 정보 (채널·언어·variant 일치 행 — 리뉴얼 필드 포함 전체 컬럼)
+    const productDetails = await fetchProductDetailsForReservationEmail(supabase, {
+      productId: reservation.product_id,
+      languageCode,
+      channelId: reservation.channel_id ?? null,
+      variantKey: (reservation as { variant_key?: string }).variant_key ?? 'default',
+    })
+
+    let channelName: string | null = null
     if (reservation.channel_id) {
-      const { data: channelDetails } = await supabase
-        .from('product_details_multilingual')
-        .select('*')
-        .eq('product_id', reservation.product_id)
-        .eq('language_code', languageCode)
-        .eq('channel_id', reservation.channel_id)
+      const { data: ch } = await supabase
+        .from('channels')
+        .select('name')
+        .eq('id', reservation.channel_id)
         .maybeSingle()
-      productDetails = channelDetails
+      if (ch?.name) channelName = ch.name
     }
-    
-    if (!productDetails) {
-      const { data: commonDetails } = await supabase
-        .from('product_details_multilingual')
-        .select('*')
-        .eq('product_id', reservation.product_id)
-        .eq('language_code', languageCode)
-        .is('channel_id', null)
-        .maybeSingle()
-      productDetails = commonDetails
-    }
+
+    const productDisplayName = isEnglish
+      ? (product as { customer_name_en?: string; name_en?: string; name?: string })
+          .customer_name_en ||
+        (product as { name_en?: string }).name_en ||
+        (product as { name?: string }).name
+      : (product as { customer_name_ko?: string; name_ko?: string; name?: string })
+          .customer_name_ko ||
+        (product as { name_ko?: string }).name_ko ||
+        (product as { name?: string }).name
+
+    const sourceLabel = channelName
+      ? `${channelName} · ${productDisplayName || '상품'}`
+      : productDisplayName || '상품'
+
+    const pdRow = productDetails as Record<string, unknown> | null
+    const rawSectionTitles = pdRow?.section_titles ?? pdRow?.sectionTitles
+    const sectionTitlesParsed = parseSectionTitlesMap(rawSectionTitles)
+
+    const rawCustomerPageVisibility = (
+      productDetails as Record<string, unknown> | null
+    )?.customer_page_visibility
+
+    const productDetailEdit = productDetails
+      ? {
+          context: {
+            productId: String(productDetails.product_id),
+            channelId:
+              productDetails.channel_id != null
+                ? String(productDetails.channel_id)
+                : null,
+            variantKey: String(productDetails.variant_key ?? 'default'),
+            languageCode: String(
+              productDetails.language_code ?? languageCode
+            ),
+            channelName,
+            productDisplayName: productDisplayName || '',
+            sourceLabel,
+          },
+          fieldValues: pickProductDetailFieldValues(
+            productDetails as Record<string, unknown>
+          ),
+          sectionTitles: sectionTitlesParsed,
+          customerPageVisibility:
+            rawCustomerPageVisibility &&
+            typeof rawCustomerPageVisibility === 'object' &&
+            !Array.isArray(rawCustomerPageVisibility)
+              ? (rawCustomerPageVisibility as Record<string, unknown>)
+              : null,
+        }
+      : null
 
     // 투어 스케줄 조회
     let productSchedules = null
@@ -247,6 +302,17 @@ export async function POST(request: NextRequest) {
       tourStatus = reservation.status
     }
 
+    let pickupHotelForEmail: GenerateEmailContentOptions['pickupHotel'] = null
+    const pickupHotelId = reservationForEmail.pickup_hotel as string | null | undefined
+    if (pickupHotelId) {
+      const { data: hotelRow } = await supabase
+        .from('pickup_hotels')
+        .select('hotel, pick_up_location, address')
+        .eq('id', pickupHotelId)
+        .maybeSingle()
+      if (hotelRow) pickupHotelForEmail = hotelRow
+    }
+
     // 이메일 내용 생성
     const isDepartureConfirmation = type === 'voucher'
     let emailContent
@@ -262,7 +328,11 @@ export async function POST(request: NextRequest) {
         tourDetails,
         type,
         isEnglish,
-        isDepartureConfirmation
+        isDepartureConfirmation,
+        {
+          injectProductDetailEditMarkers: !!productDetails,
+          pickupHotel: pickupHotelForEmail,
+        }
       )
       console.log('[preview-email] 이메일 내용 생성 완료')
     } catch (genError) {
@@ -280,7 +350,8 @@ export async function POST(request: NextRequest) {
           email: customer.email,
           language: customer.language
         }
-      }
+      },
+      productDetailEdit,
     })
 
   } catch (error) {

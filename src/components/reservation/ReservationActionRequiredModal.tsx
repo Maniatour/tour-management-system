@@ -25,6 +25,7 @@ interface ReservationActionRequiredModalProps {
     totalPeople: number
     otherReservationsTotalPeople: number
     allDateTotalPeople: number
+    allDateOtherStatusPeople: number
     status: string
     guideName: string
     assistantName: string

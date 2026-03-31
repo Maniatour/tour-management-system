@@ -6,8 +6,11 @@ import 'dayjs/locale/ko'
 import { ChevronLeft, ChevronRight, Users, MapPin, X, ArrowUp, ArrowDown, GripVertical, CalendarOff, ExternalLink } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
-import { useLocale } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { useAuth } from '@/contexts/AuthContext'
+import { isReservationCancelledStatus } from '@/utils/tourUtils'
+import { getCustomerName, getStatusColor, getStatusLabel } from '@/utils/reservationUtils'
+import ReservationForm from '@/components/reservation/ReservationForm'
 import ReactCountryFlag from 'react-country-flag'
 import DateNoteModal from './DateNoteModal'
 import dynamic from 'next/dynamic'
@@ -75,6 +78,17 @@ type Team = Database['public']['Tables']['team']['Row']
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Reservation = any
 type Customer = Database['public']['Tables']['customers']['Row']
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const ReservationFormAny = ReservationForm as any
+
+/** 상품 스케줄 셀: 확정(및 모집) + 대기(pending) + 취소 인원 */
+function formatProductScheduleCellPeople(confirmed: number, waiting: number, canceled: number): string {
+  let out = String(confirmed)
+  if (waiting > 0) out += ` +${waiting}`
+  if (canceled > 0) out += ` (${canceled})`
+  return out
+}
 
 interface DailyData {
   totalPeople: number
@@ -165,6 +179,7 @@ const COLOR_PRESETS: { id: string; groupLabel: string; name: string; bgHex: stri
 
 export default function ScheduleView() {
   const locale = useLocale()
+  const tReservations = useTranslations('reservations')
   const { user, userRole } = useAuth()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [products, setProducts] = useState<Product[]>([])
@@ -270,6 +285,25 @@ export default function ScheduleView() {
 
   // 상품별 스케줄 셀 호버 툴팁 (국기 아이콘 표시용)
   const [scheduleCellTooltip, setScheduleCellTooltip] = useState<{ productId: string; dateString: string } | null>(null)
+
+  /** 상품별 투어 인원 셀 클릭 → 해당일·상품 예약 목록 */
+  const [productCellReservationsModal, setProductCellReservationsModal] = useState<{
+    productId: string
+    dateString: string
+    productName: string
+  } | null>(null)
+  const [reservationIdForScheduleEdit, setReservationIdForScheduleEdit] = useState<string | null>(null)
+  const [scheduleEditingReservation, setScheduleEditingReservation] = useState<Record<string, unknown> | null>(null)
+  const [scheduleReservationFormData, setScheduleReservationFormData] = useState<{
+    customers: unknown[]
+    products: unknown[]
+    channels: unknown[]
+    productOptions: unknown[]
+    options: unknown[]
+    pickupHotels: unknown[]
+    coupons: unknown[]
+  } | null>(null)
+  const [loadingScheduleReservationEdit, setLoadingScheduleReservationEdit] = useState(false)
 
   // 통합 스크롤 컨테이너는 하나의 스크롤로 동기화됨
 
@@ -1066,14 +1100,14 @@ export default function ScheduleView() {
       setReservationChoices(choicesFlat)
 
       // 고객 데이터 가져오기 (해당 예약의 고객만)
-      let customersData: Pick<Customer, 'id' | 'language'>[] | null = []
+      let customersData: Pick<Customer, 'id' | 'language' | 'name'>[] | null = []
       const customerIds: string[] = Array.from(new Set((reservationsData || []).map((r: { customer_id?: string | null }) => r.customer_id).filter((id: string | null | undefined): id is string => Boolean(id))))
       if (customerIds.length > 0) {
         const { data: customersFetched } = await supabase
           .from('customers')
-          .select('id, language')
+          .select('id, language, name')
           .in('id', customerIds)
-        customersData = customersFetched as Pick<Customer, 'id' | 'language'>[] | null
+        customersData = customersFetched as Pick<Customer, 'id' | 'language' | 'name'>[] | null
       }
 
       // 부킹(입장권) 데이터 가져오기: hover summary용 confirmed EA 합계 계산
@@ -1161,6 +1195,139 @@ export default function ScheduleView() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  const convertScheduleReservationToFormType = useCallback((reservation: Record<string, unknown>) => {
+    return {
+      id: reservation.id,
+      customerId: reservation.customer_id || '',
+      productId: reservation.product_id || '',
+      tourDate: reservation.tour_date || '',
+      tourTime: reservation.tour_time || '',
+      eventNote: reservation.event_note || '',
+      pickUpHotel: reservation.pickup_hotel || '',
+      pickUpTime: reservation.pickup_time || '',
+      adults: reservation.adults || 0,
+      child: reservation.child || 0,
+      infant: reservation.infant || 0,
+      totalPeople: reservation.total_people || 0,
+      channelId: reservation.channel_id || '',
+      channelRN: reservation.channel_rn || '',
+      addedBy: reservation.added_by || '',
+      addedTime: reservation.created_at || '',
+      tourId: reservation.tour_id || '',
+      status: (reservation.status as 'pending' | 'confirmed' | 'completed' | 'cancelled') || 'pending',
+      selectedOptions:
+        typeof reservation.selected_options === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(reservation.selected_options as string)
+              } catch {
+                return {}
+              }
+            })()
+          : ((reservation.selected_options as Record<string, string[]>) || {}),
+      selectedOptionPrices:
+        typeof reservation.selected_option_prices === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(reservation.selected_option_prices as string)
+              } catch {
+                return {}
+              }
+            })()
+          : ((reservation.selected_option_prices as Record<string, number>) || {}),
+      isPrivateTour: reservation.is_private_tour || false
+    }
+  }, [])
+
+  const handleCloseScheduleReservationEdit = useCallback(() => {
+    setScheduleEditingReservation(null)
+    setScheduleReservationFormData(null)
+    setReservationIdForScheduleEdit(null)
+  }, [])
+
+  useEffect(() => {
+    if (!reservationIdForScheduleEdit) return
+    let cancelled = false
+    setLoadingScheduleReservationEdit(true)
+    ;(async () => {
+      try {
+        const { data: reservation, error: resError } = await supabase
+          .from('reservations')
+          .select('*')
+          .eq('id', reservationIdForScheduleEdit)
+          .maybeSingle()
+        if (resError || !reservation || cancelled) {
+          setLoadingScheduleReservationEdit(false)
+          setReservationIdForScheduleEdit(null)
+          return
+        }
+        const [customersRes, productsRes, channelsRes, productOptionsRes, optionsRes, pickupHotelsRes, couponsRes] =
+          await Promise.all([
+            supabase.from('customers').select('*').order('created_at', { ascending: false }).limit(2000),
+            supabase.from('products').select('*').order('name', { ascending: true }).limit(2000),
+            supabase
+              .from('channels')
+              .select(
+                'id, name, type, favicon_url, pricing_type, commission_base_price_only, category, has_not_included_price, not_included_type, not_included_price, commission_percent, commission'
+              )
+              .order('name', { ascending: true }),
+            supabase.from('product_options').select('*').order('name', { ascending: true }),
+            supabase.from('options').select('*').order('name', { ascending: true }),
+            supabase.from('pickup_hotels').select('*').eq('is_active', true).order('hotel', { ascending: true }),
+            supabase.from('coupons').select('*').eq('status', 'active').order('coupon_code', { ascending: true })
+          ])
+        if (cancelled) return
+        setScheduleReservationFormData({
+          customers: customersRes.data || [],
+          products: productsRes.data || [],
+          channels: channelsRes.data || [],
+          productOptions: productOptionsRes.data || [],
+          options: optionsRes.data || [],
+          pickupHotels: pickupHotelsRes.data || [],
+          coupons: couponsRes.data || []
+        })
+        setScheduleEditingReservation(convertScheduleReservationToFormType(reservation as Record<string, unknown>))
+      } catch (e) {
+        console.error('스케줄에서 예약 폼 데이터 로드 오류:', e)
+      } finally {
+        if (!cancelled) setLoadingScheduleReservationEdit(false)
+        setReservationIdForScheduleEdit(null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [reservationIdForScheduleEdit, convertScheduleReservationToFormType])
+
+  const openProductCellReservationsModal = useCallback(
+    (productId: string, dateString: string, productName: string) => {
+      setProductCellReservationsModal({ productId, dateString, productName })
+    },
+    []
+  )
+
+  const productCellReservationList = useMemo(() => {
+    if (!productCellReservationsModal) return [] as Reservation[]
+    const { productId, dateString } = productCellReservationsModal
+    return (reservations as Reservation[])
+      .filter((r) => {
+        if (r.product_id !== productId) return false
+        const d = String(r.tour_date || '').slice(0, 10)
+        if (d !== dateString) return false
+        const st = String(r.status || '').toLowerCase()
+        return st !== 'deleted'
+      })
+      .slice()
+      .sort((a, b) => {
+        const na = getCustomerName(String(a.customer_id || ''), customers as Customer[]).toLowerCase()
+        const nb = getCustomerName(String(b.customer_id || ''), customers as Customer[]).toLowerCase()
+        if (na !== nb) return na.localeCompare(nb, locale)
+        const ca = String(a.created_at || '')
+        const cb = String(b.created_at || '')
+        return cb.localeCompare(ca)
+      })
+  }, [productCellReservationsModal, reservations, customers, locale])
 
   const openVehicleEditFromSchedule = useCallback(
     async (vehicleId: string) => {
@@ -1426,6 +1593,8 @@ export default function ScheduleView() {
         dailyData: {
           [date: string]: {
             totalPeople: number
+            waitingPeople: number
+            canceledPeople: number
             tours: number
             koPeople: number
             enPeople: number
@@ -1448,6 +1617,8 @@ export default function ScheduleView() {
       const dailyData: {
         [date: string]: {
           totalPeople: number
+          waitingPeople: number
+          canceledPeople: number
           tours: number
           koPeople: number
           enPeople: number
@@ -1466,6 +1637,16 @@ export default function ScheduleView() {
           res.tour_date === dateString &&
           (res.status?.toLowerCase() === 'confirmed' || res.status?.toLowerCase() === 'recruiting')
         )
+
+        const dayReservationsSameDate = reservations.filter(
+          res => res.product_id === productId && res.tour_date === dateString
+        )
+        const dayWaitingPeople = dayReservationsSameDate
+          .filter(res => (res.status ?? '').toString().toLowerCase() === 'pending')
+          .reduce((sum, res) => sum + (res.total_people || 0), 0)
+        const dayCanceledPeople = dayReservationsSameDate
+          .filter(res => isReservationCancelledStatus(res.status))
+          .reduce((sum, res) => sum + (res.total_people || 0), 0)
 
         const dayTotalPeople = dayReservations.reduce((sum, res) => sum + (res.total_people || 0), 0)
         const dayKoPeople = dayReservations.reduce((sum, res) => {
@@ -1520,10 +1701,21 @@ export default function ScheduleView() {
 
         // 멀티데이 투어 처리: 시작일에만 인원 표시
         if (!dailyData[dateString]) {
-          dailyData[dateString] = { totalPeople: 0, tours: 0, koPeople: 0, enPeople: 0, choiceCounts: {}, toursChoiceCounts: [] }
+          dailyData[dateString] = {
+            totalPeople: 0,
+            waitingPeople: 0,
+            canceledPeople: 0,
+            tours: 0,
+            koPeople: 0,
+            enPeople: 0,
+            choiceCounts: {},
+            toursChoiceCounts: []
+          }
         }
         // 멀티데이든 1일 투어든, 해당 날짜(시작일)에만 합산
         dailyData[dateString].totalPeople += dayTotalPeople
+        dailyData[dateString].waitingPeople += dayWaitingPeople
+        dailyData[dateString].canceledPeople += dayCanceledPeople
         dailyData[dateString].koPeople += dayKoPeople
         dailyData[dateString].enPeople += dayEnPeople
         dailyData[dateString].tours += dayTours.length
@@ -3169,18 +3361,39 @@ export default function ScheduleView() {
                             const showTooltip = scheduleCellTooltip?.productId === productId && scheduleCellTooltip?.dateString === dateString
                             return (
                               <div
-                                className={`${todayWrapClass} px-1 py-0.5 relative overflow-visible`}
+                                role="button"
+                                tabIndex={0}
+                                className={`${todayWrapClass} px-1 py-0.5 relative overflow-visible cursor-pointer`}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  openProductCellReservationsModal(productId, dateString, product.product_name)
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    openProductCellReservationsModal(productId, dateString, product.product_name)
+                                  }
+                                }}
                                 onMouseEnter={() => setScheduleCellTooltip({ productId, dateString })}
                                 onMouseLeave={() => setScheduleCellTooltip(null)}
                               >
                                 {dayData ? (
-                                  <div className={`font-medium ${
-                                    dayData.totalPeople === 0 
-                                      ? 'text-gray-300' 
-                                      : dayData.totalPeople < 4 
-                                        ? 'text-blue-600' 
-                                        : 'text-red-600'
-                                  } ${isToday(dateString) ? 'text-red-700' : ''}`}>{dayData.totalPeople}</div>
+                                  <div
+                                    className={`font-medium leading-tight whitespace-nowrap ${
+                                      dayData.totalPeople === 0
+                                        ? 'text-gray-300'
+                                        : dayData.totalPeople < 4
+                                          ? 'text-blue-600'
+                                          : 'text-red-600'
+                                    } ${isToday(dateString) ? 'text-red-700' : ''}`}
+                                  >
+                                    {formatProductScheduleCellPeople(
+                                      dayData.totalPeople,
+                                      dayData.waitingPeople ?? 0,
+                                      dayData.canceledPeople ?? 0
+                                    )}
+                                  </div>
                                 ) : (
                                   <div className="text-gray-300">-</div>
                                 )}
@@ -4827,6 +5040,169 @@ export default function ScheduleView() {
       )}
 
       {/* 날짜 노트 모달 */}
+      {/* 상품별 투어 인원 셀: 해당일·상품 예약 목록 → 행 클릭 시 예약 수정 */}
+      <Dialog
+        open={!!productCellReservationsModal}
+        onOpenChange={(open) => {
+          if (!open) setProductCellReservationsModal(null)
+        }}
+      >
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-hidden flex flex-col sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-base pr-8">
+              {productCellReservationsModal
+                ? `${productCellReservationsModal.productName} · ${productCellReservationsModal.dateString}`
+                : ''}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-gray-500 -mt-2 mb-2">
+            {locale === 'ko' ? '예약을 선택하면 수정 화면이 열립니다.' : 'Select a reservation to open the edit form.'}
+          </p>
+          <div className="overflow-y-auto flex-1 min-h-0 space-y-1.5 pr-1">
+            {productCellReservationList.length === 0 ? (
+              <p className="text-sm text-gray-500 py-6 text-center">
+                {locale === 'ko' ? '예약이 없습니다.' : 'No reservations.'}
+              </p>
+            ) : (
+              productCellReservationList.map((res) => {
+                const st = String(res.status ?? '')
+                return (
+                  <button
+                    key={res.id}
+                    type="button"
+                    className="w-full text-left rounded-lg border border-gray-200 px-3 py-2 hover:bg-gray-50 transition-colors flex flex-col gap-1.5"
+                    onClick={() => {
+                      setProductCellReservationsModal(null)
+                      setReservationIdForScheduleEdit(String(res.id))
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-2 min-w-0">
+                      <span className="font-medium text-sm text-gray-900 truncate">
+                        {getCustomerName(String(res.customer_id || ''), customers as Customer[])}
+                      </span>
+                      <span className="text-xs text-gray-600 shrink-0 tabular-nums">
+                        {res.total_people ?? 0}
+                        {locale === 'ko' ? '명' : ' pax'}
+                      </span>
+                    </div>
+                    <span
+                      className={`inline-flex text-xs px-2 py-0.5 rounded-md w-fit font-medium ${getStatusColor(st)}`}
+                    >
+                      {st ? getStatusLabel(st, tReservations) : '—'}
+                    </span>
+                  </button>
+                )
+              })
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {loadingScheduleReservationEdit && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-[60]" aria-hidden>
+          <div className="text-white font-medium text-sm">{locale === 'ko' ? '불러오는 중…' : 'Loading…'}</div>
+        </div>
+      )}
+      {scheduleEditingReservation && scheduleReservationFormData && (
+        <div className="fixed inset-0 z-[60]">
+          <ReservationFormAny
+            reservation={scheduleEditingReservation}
+            customers={scheduleReservationFormData.customers}
+            products={scheduleReservationFormData.products}
+            channels={scheduleReservationFormData.channels}
+            productOptions={scheduleReservationFormData.productOptions}
+            options={scheduleReservationFormData.options}
+            pickupHotels={scheduleReservationFormData.pickupHotels}
+            coupons={scheduleReservationFormData.coupons}
+            layout="modal"
+            allowPastDateEdit={isSuperAdmin}
+            onSubmit={async (reservationData: Record<string, unknown>) => {
+              const editingId = String((scheduleEditingReservation as { id?: string }).id || '')
+              try {
+                const dbReservationData = {
+                  customer_id: reservationData.customerId,
+                  product_id: reservationData.productId,
+                  tour_date: reservationData.tourDate,
+                  tour_time: reservationData.tourTime || null,
+                  event_note: reservationData.eventNote,
+                  pickup_hotel: reservationData.pickUpHotel,
+                  pickup_time: reservationData.pickUpTime || null,
+                  adults: reservationData.adults,
+                  child: reservationData.child,
+                  infant: reservationData.infant,
+                  total_people: reservationData.totalPeople,
+                  channel_id: reservationData.channelId,
+                  channel_rn: reservationData.channelRN,
+                  added_by: reservationData.addedBy,
+                  tour_id: reservationData.tourId || (scheduleEditingReservation as { tourId?: string }).tourId || null,
+                  status: reservationData.status,
+                  selected_options: reservationData.selectedOptions,
+                  selected_option_prices: reservationData.selectedOptionPrices,
+                  is_private_tour: reservationData.isPrivateTour || false
+                }
+                const { error } = await supabase.from('reservations').update(dbReservationData).eq('id', editingId)
+                if (error) {
+                  showMessage(locale === 'ko' ? '오류' : 'Error', error.message, 'error')
+                  return
+                }
+                const choicesObj = reservationData.choices as { required?: unknown[] } | undefined
+                if (choicesObj?.required && Array.isArray(choicesObj.required)) {
+                  await supabase.from('reservation_choices').delete().eq('reservation_id', editingId)
+                  const validChoices = (choicesObj.required as Record<string, unknown>[])
+                    .filter((c) => c.option_id)
+                    .map((c) => ({
+                      reservation_id: editingId,
+                      choice_id: c.choice_id,
+                      option_id: c.option_id,
+                      quantity: (c.quantity as number) || 1,
+                      total_price: (c.total_price as number) || 0
+                    }))
+                  if (validChoices.length > 0) {
+                    await (supabase as any).from('reservation_choices').insert(validChoices)
+                  }
+                }
+                handleCloseScheduleReservationEdit()
+                await fetchData()
+                showMessage(
+                  locale === 'ko' ? '저장 완료' : 'Saved',
+                  locale === 'ko' ? '예약이 수정되었습니다.' : 'Reservation updated.',
+                  'success'
+                )
+              } catch (e) {
+                console.error('스케줄 예약 수정 오류:', e)
+                showMessage(locale === 'ko' ? '오류' : 'Error', String(e), 'error')
+              }
+            }}
+            onCancel={handleCloseScheduleReservationEdit}
+            onRefreshCustomers={async () => {}}
+            onDelete={async () => {
+              const editingId = String((scheduleEditingReservation as { id?: string }).id || '')
+              const ok =
+                locale === 'ko'
+                  ? window.confirm('이 예약을 삭제(상태: 삭제됨)하시겠습니까?')
+                  : window.confirm('Mark this reservation as deleted?')
+              if (!ok) return
+              try {
+                const { error } = await supabase.from('reservations').update({ status: 'deleted' }).eq('id', editingId)
+                if (error) {
+                  showMessage(locale === 'ko' ? '오류' : 'Error', error.message, 'error')
+                  return
+                }
+                handleCloseScheduleReservationEdit()
+                await fetchData()
+                showMessage(
+                  locale === 'ko' ? '처리 완료' : 'Done',
+                  locale === 'ko' ? '예약이 삭제됨으로 변경되었습니다.' : 'Reservation marked deleted.',
+                  'success'
+                )
+              } catch (e) {
+                console.error('예약 삭제 처리 오류:', e)
+              }
+            }}
+          />
+        </div>
+      )}
+
       <DateNoteModal
         isOpen={showDateNoteModal}
         dateString={selectedDateForNote}

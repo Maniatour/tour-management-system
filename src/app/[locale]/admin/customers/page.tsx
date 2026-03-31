@@ -729,6 +729,17 @@ export default function AdminCustomers() {
             })
           }
 
+          const nonResidentPurchasePassCount = (reservationData as any).nonResidentPurchasePassCount || 0
+          for (let i = 0; i < nonResidentPurchasePassCount; i++) {
+            reservationCustomers.push({
+              reservation_id: reservationId,
+              customer_id: reservationData.customerId,
+              resident_status: 'non_resident_purchase_pass',
+              pass_covered_count: 0,
+              order_index: orderIndex++
+            })
+          }
+
           // reservation_customers 데이터 삽입
           if (reservationCustomers.length > 0) {
             const { error: rcError } = await supabase

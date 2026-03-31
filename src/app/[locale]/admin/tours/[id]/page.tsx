@@ -47,7 +47,8 @@ import {
   tourStatusOptions,
   assignmentStatusOptions,
   openGoogleMaps,
-  safeJsonParse
+  safeJsonParse,
+  isTourCancelled
 } from '@/utils/tourStatusUtils'
 import { 
   Info, 
@@ -537,6 +538,16 @@ export default function TourDetailPage() {
   const loadTourFees = useCallback(async () => {
     if (!tourData.tour?.id) return
 
+    if (isTourCancelled(tourData.tour.tour_status)) {
+      setGuideFee(0)
+      setAssistantFee(0)
+      setIsGuideFeeFromTour(false)
+      setIsAssistantFeeFromTour(false)
+      setIsGuideFeeFromDefault(false)
+      setIsAssistantFeeFromDefault(false)
+      return
+    }
+
     try {
       const { data: tour, error } = await supabase
         .from('tours')
@@ -568,10 +579,12 @@ export default function TourDetailPage() {
     } catch (error) {
       console.error('투어 수수료 로드 오류:', error)
     }
-  }, [tourData.tour?.id])
+  }, [tourData.tour?.id, tourData.tour?.tour_status])
 
   // 가이드비 관리에서 기본값 로드 (팀 타입별)
   const loadGuideCosts = useCallback(async () => {
+    if (isTourCancelled(tourData.tour?.tour_status)) return
+
     if (!tourData.tour?.product_id || !tourData.teamType) {
       console.log('loadGuideCosts 조건 불만족:', {
         productId: tourData.tour?.product_id,
@@ -662,7 +675,7 @@ export default function TourDetailPage() {
     } catch (error) {
       console.error('가이드비 로드 오류:', error)
     }
-  }, [tourData.tour?.product_id, tourData.teamType, tourData.tour?.team_type, isGuideFeeFromTour, isAssistantFeeFromTour])
+  }, [tourData.tour?.product_id, tourData.tour?.tour_status, tourData.teamType, tourData.tour?.team_type, isGuideFeeFromTour, isAssistantFeeFromTour])
 
   // 팀 수수료 변경 핸들러 (자동 저장 제거)
   const handleGuideFeeChange = (fee: number) => {
@@ -682,10 +695,11 @@ export default function TourDetailPage() {
     if (!tourData.tour?.id) return
 
     try {
+      const feesCancelled = isTourCancelled(tourData.tour.tour_status)
       const updateData: any = {
         team_type: tourData.teamType,
-        guide_fee: guideFee,
-        assistant_fee: assistantFee
+        guide_fee: feesCancelled ? 0 : guideFee,
+        assistant_fee: feesCancelled ? 0 : assistantFee
       }
 
       // 가이드 배정
@@ -1576,8 +1590,8 @@ export default function TourDetailPage() {
               tourStatusOptions={tourStatusOptions}
               assignmentStatusOptions={assignmentStatusOptions}
         getTotalAssignedPeople={tourData.getTotalAssignedPeople}
-        getTotalPeopleFiltered={tourData.getTotalPeopleFiltered}
-        getTotalPeopleAll={tourData.getTotalPeopleAll}
+        getTotalPeopleNonCancelled={tourData.getTotalPeopleNonCancelled}
+        getTotalCancelledPeople={tourData.getTotalCancelledPeople}
         onToggleTourStatusDropdown={() => tourData.setShowTourStatusDropdown(!tourData.showTourStatusDropdown)}
         onToggleAssignmentStatusDropdown={() => tourData.setShowAssignmentStatusDropdown(!tourData.showAssignmentStatusDropdown)}
         onUpdateTourStatus={handleTourStatusUpdate}
@@ -1723,13 +1737,15 @@ export default function TourDetailPage() {
             {/* 팀 구성 & 차량 배정 통합 */}
             <div id="team-vehicle" className="scroll-mt-20">
               <TeamAndVehicleAssignment
+              tourDate={tourData.tour?.tour_date}
               teamMembers={tourData.teamMembers.map((member: any) => ({
                 id: member.email,
                 name_ko: member.name_ko,
                 nick_name: member.nick_name || null,
                 email: member.email,
                 position: member.position ?? 'guide',
-                is_active: member.is_active ?? true
+                // DB is_active 반영 (없음·null은 예전 데이터 호환으로 활성 취급)
+                is_active: member.is_active !== false
               }))}
               vehicles={tourData.vehicles}
               vehiclesLoading={tourData.vehiclesLoading}

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { Star, MapPin, Users, Calendar, Clock, Heart, Share2, ArrowLeft, X, Info, ChevronLeft, ChevronRight, CheckCircle2, XCircle, Car, Luggage, Settings, Lightbulb, Users2, AlertTriangle, Shield, Megaphone } from 'lucide-react'
 import Link from 'next/link'
@@ -14,6 +14,7 @@ import PaymentProcessor from '@/components/payment/PaymentProcessor'
 import { supabase } from '@/lib/supabase'
 import { useLocale } from 'next-intl'
 import { markdownToHtml } from '@/components/LightRichEditor'
+import { isProductDetailVisibleOnCustomerPage } from '@/lib/fetchProductDetailsForEmail'
 
 interface Product {
   id: string
@@ -71,6 +72,7 @@ interface ProductDetails {
   chat_announcement: string | null
   tags: string[] | null
   channel_id: string | null
+  customer_page_visibility?: Record<string, unknown> | null
 }
 
 interface TourCourse {
@@ -559,7 +561,7 @@ export default function ProductDetailPage() {
   const productId = params.id as string
   const locale = useLocale()
   const isEnglish = locale === 'en'
-  
+
   const [product, setProduct] = useState<Product | null>(null)
   const [productDetails, setProductDetails] = useState<ProductDetails | null>(null)
   const [tourCourses, setTourCourses] = useState<ProductTourCourse[]>([])
@@ -608,6 +610,50 @@ export default function ProductDetailPage() {
   const [cartItems, setCartItems] = useState<any[]>([])
   const [showChoiceDescriptionModal, setShowChoiceDescriptionModal] = useState(false)
   const [selectedChoiceGroupForModal, setSelectedChoiceGroupForModal] = useState<ChoiceGroup | null>(null)
+
+  const showDetailOnCustomerPage = useCallback(
+    (field: string) =>
+      isProductDetailVisibleOnCustomerPage(
+        productDetails?.customer_page_visibility,
+        field
+      ),
+    [productDetails?.customer_page_visibility]
+  )
+
+  const hasVisibleIncludedDetailCards = useMemo(() => {
+    if (!productDetails) return false
+    const s = showDetailOnCustomerPage
+    return !!(
+      (productDetails.included && s('included')) ||
+      (productDetails.not_included && s('not_included'))
+    )
+  }, [productDetails, showDetailOnCustomerPage])
+
+  const hasVisibleLogisticsCards = useMemo(() => {
+    if (!productDetails) return false
+    const s = showDetailOnCustomerPage
+    return !!(
+      (productDetails.pickup_drop_info && s('pickup_drop_info')) ||
+      (productDetails.luggage_info && s('luggage_info')) ||
+      (productDetails.tour_operation_info && s('tour_operation_info')) ||
+      (productDetails.preparation_info && s('preparation_info')) ||
+      (productDetails.small_group_info && s('small_group_info')) ||
+      (productDetails.companion_recruitment_info &&
+        s('companion_recruitment_info')) ||
+      (productDetails.notice_info && s('notice_info'))
+    )
+  }, [productDetails, showDetailOnCustomerPage])
+
+  const hasVisiblePolicyCards = useMemo(() => {
+    if (!productDetails) return false
+    const s = showDetailOnCustomerPage
+    return !!(
+      (productDetails.important_notes && s('important_notes')) ||
+      (productDetails.private_tour_info && s('private_tour_info')) ||
+      (productDetails.cancellation_policy && s('cancellation_policy')) ||
+      (productDetails.chat_announcement && s('chat_announcement'))
+    )
+  }, [productDetails, showDetailOnCustomerPage])
 
   // Navigation에서 장바구니 결제 열기 이벤트 리스너
   useEffect(() => {
@@ -1531,7 +1577,9 @@ export default function ProductDetailPage() {
                 {activeTab === 'overview' && (
                   <div className="space-y-8">
                     {/* 슬로건 섹션 */}
-                    {productDetails && (productDetails.slogan1 || productDetails.slogan2 || productDetails.slogan3) && (
+                    {productDetails &&
+                      (productDetails.slogan1 || productDetails.slogan2 || productDetails.slogan3) &&
+                      showDetailOnCustomerPage('slogan1') && (
                       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
                         <div className="space-y-3">
                           {productDetails.slogan1 && (
@@ -1553,7 +1601,7 @@ export default function ProductDetailPage() {
                       </div>
                     )}
 
-                    {productDetails?.greeting && (
+                    {productDetails?.greeting && showDetailOnCustomerPage('greeting') && (
                       <div className="bg-white rounded-xl shadow-sm border border-emerald-200 p-6">
                         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-200">
                           <div className="p-2 bg-emerald-100 rounded-lg">
@@ -1571,20 +1619,22 @@ export default function ProductDetailPage() {
                     )}
 
                     {/* 투어 소개 섹션 */}
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                      <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-200">
-                        <div className="p-2 bg-blue-100 rounded-lg">
-                          <Info className="h-5 w-5 text-blue-600" />
+                    {showDetailOnCustomerPage('description') && (
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-200">
+                          <div className="p-2 bg-blue-100 rounded-lg">
+                            <Info className="h-5 w-5 text-blue-600" />
+                          </div>
+                          <h3 className="text-xl font-semibold text-gray-900">{isEnglish ? 'Tour Overview' : '투어 소개'}</h3>
                         </div>
-                        <h3 className="text-xl font-semibold text-gray-900">{isEnglish ? 'Tour Overview' : '투어 소개'}</h3>
+                        <div 
+                          className="text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                          dangerouslySetInnerHTML={{ 
+                            __html: markdownToHtml(productDetails?.description || product.description || getCustomerDisplayName(product) || '') 
+                          }}
+                        />
                       </div>
-                      <div 
-                        className="text-gray-700 leading-relaxed prose prose-sm max-w-none"
-                        dangerouslySetInnerHTML={{ 
-                          __html: markdownToHtml(productDetails?.description || product.description || getCustomerDisplayName(product) || '') 
-                        }}
-                      />
-                    </div>
+                    )}
 
                     {/* 기본 정보 섹션 */}
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -2033,7 +2083,7 @@ export default function ProductDetailPage() {
                     {activeDetailTab === 'included' && (
                       <div className="space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          {productDetails?.included && (
+                          {productDetails?.included && showDetailOnCustomerPage('included') && (
                             <div className="group relative overflow-hidden bg-white border border-green-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
                               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-400 via-green-500 to-green-600"></div>
                               <div className="p-6">
@@ -2052,7 +2102,7 @@ export default function ProductDetailPage() {
                               </div>
                             </div>
                           )}
-                          {productDetails?.not_included && (
+                          {productDetails?.not_included && showDetailOnCustomerPage('not_included') && (
                             <div className="group relative overflow-hidden bg-white border border-red-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
                               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-400 via-red-500 to-red-600"></div>
                               <div className="p-6">
@@ -2073,7 +2123,7 @@ export default function ProductDetailPage() {
                           )}
                         </div>
                         
-                        {!productDetails?.included && !productDetails?.not_included && (
+                        {!hasVisibleIncludedDetailCards && (
                           <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
                             <div className="text-gray-400 mb-2 text-4xl">📋</div>
                             <p className="text-gray-600">{isEnglish ? 'No inclusion or exclusion details available' : '포함/불포함 정보가 없습니다'}</p>
@@ -2086,7 +2136,7 @@ export default function ProductDetailPage() {
                     {activeDetailTab === 'logistics' && (
                       <div className="space-y-6">
                         <div className="grid grid-cols-1 gap-6">
-                          {productDetails?.pickup_drop_info && (
+                          {productDetails?.pickup_drop_info && showDetailOnCustomerPage('pickup_drop_info') && (
                             <div className="group relative overflow-hidden bg-white border border-blue-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
                               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600"></div>
                               <div className="p-6">
@@ -2106,7 +2156,7 @@ export default function ProductDetailPage() {
                             </div>
                           )}
                           
-                          {productDetails?.luggage_info && (
+                          {productDetails?.luggage_info && showDetailOnCustomerPage('luggage_info') && (
                             <div className="group relative overflow-hidden bg-white border border-yellow-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
                               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-600"></div>
                               <div className="p-6">
@@ -2126,7 +2176,7 @@ export default function ProductDetailPage() {
                             </div>
                           )}
                           
-                          {productDetails?.tour_operation_info && (
+                          {productDetails?.tour_operation_info && showDetailOnCustomerPage('tour_operation_info') && (
                             <div className="group relative overflow-hidden bg-white border border-purple-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
                               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-400 via-purple-500 to-purple-600"></div>
                               <div className="p-6">
@@ -2146,7 +2196,7 @@ export default function ProductDetailPage() {
                             </div>
                           )}
                           
-                          {productDetails?.preparation_info && (
+                          {productDetails?.preparation_info && showDetailOnCustomerPage('preparation_info') && (
                             <div className="group relative overflow-hidden bg-white border border-orange-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
                               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600"></div>
                               <div className="p-6">
@@ -2166,7 +2216,7 @@ export default function ProductDetailPage() {
                             </div>
                           )}
                           
-                          {productDetails?.small_group_info && (
+                          {productDetails?.small_group_info && showDetailOnCustomerPage('small_group_info') && (
                             <div className="group relative overflow-hidden bg-white border border-indigo-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
                               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-400 via-indigo-500 to-indigo-600"></div>
                               <div className="p-6">
@@ -2186,7 +2236,7 @@ export default function ProductDetailPage() {
                             </div>
                           )}
 
-                          {productDetails?.companion_recruitment_info && (
+                          {productDetails?.companion_recruitment_info && showDetailOnCustomerPage('companion_recruitment_info') && (
                             <div className="group relative overflow-hidden bg-white border border-teal-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
                               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-teal-400 via-teal-500 to-teal-600"></div>
                               <div className="p-6">
@@ -2206,7 +2256,7 @@ export default function ProductDetailPage() {
                             </div>
                           )}
                           
-                          {productDetails?.notice_info && (
+                          {productDetails?.notice_info && showDetailOnCustomerPage('notice_info') && (
                             <div className="group relative overflow-hidden bg-white border border-red-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
                               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-400 via-red-500 to-red-600"></div>
                               <div className="p-6">
@@ -2227,9 +2277,7 @@ export default function ProductDetailPage() {
                           )}
                         </div>
                         
-                        {!productDetails?.pickup_drop_info && !productDetails?.luggage_info && 
-                         !productDetails?.tour_operation_info && !productDetails?.preparation_info && 
-                         !productDetails?.small_group_info && !productDetails?.companion_recruitment_info && !productDetails?.notice_info && (
+                        {!hasVisibleLogisticsCards && (
                           <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
                             <div className="text-gray-400 mb-2 text-4xl">🚌</div>
                             <p className="text-gray-600">{isEnglish ? 'No logistics information available' : '운영 정보가 없습니다'}</p>
@@ -2242,7 +2290,7 @@ export default function ProductDetailPage() {
                     {activeDetailTab === 'policy' && (
                       <div className="space-y-6">
                         <div className="grid grid-cols-1 gap-6">
-                          {productDetails?.important_notes && (
+                          {productDetails?.important_notes && showDetailOnCustomerPage('important_notes') && (
                             <div className="group relative overflow-hidden bg-white border border-amber-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
                               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600"></div>
                               <div className="p-6">
@@ -2261,7 +2309,7 @@ export default function ProductDetailPage() {
                               </div>
                             </div>
                           )}
-                          {productDetails?.private_tour_info && (
+                          {productDetails?.private_tour_info && showDetailOnCustomerPage('private_tour_info') && (
                             <div className="group relative overflow-hidden bg-white border border-purple-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
                               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-400 via-purple-500 to-purple-600"></div>
                               <div className="p-6">
@@ -2281,7 +2329,7 @@ export default function ProductDetailPage() {
                             </div>
                           )}
                           
-                          {productDetails?.cancellation_policy && (
+                          {productDetails?.cancellation_policy && showDetailOnCustomerPage('cancellation_policy') && (
                             <div className="group relative overflow-hidden bg-white border border-red-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
                               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-400 via-red-500 to-red-600"></div>
                               <div className="p-6">
@@ -2301,7 +2349,7 @@ export default function ProductDetailPage() {
                             </div>
                           )}
                           
-                          {productDetails?.chat_announcement && (
+                          {productDetails?.chat_announcement && showDetailOnCustomerPage('chat_announcement') && (
                             <div className="group relative overflow-hidden bg-white border border-blue-200 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300">
                               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600"></div>
                               <div className="p-6">
@@ -2322,8 +2370,7 @@ export default function ProductDetailPage() {
                           )}
                         </div>
                         
-                        {!productDetails?.important_notes && !productDetails?.private_tour_info && !productDetails?.cancellation_policy && 
-                         !productDetails?.chat_announcement && (
+                        {!hasVisiblePolicyCards && (
                           <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
                             <div className="text-gray-400 mb-2 text-4xl">📋</div>
                             <p className="text-gray-600">{isEnglish ? 'No policy information available' : '정책 정보가 없습니다'}</p>
@@ -2460,7 +2507,7 @@ export default function ProductDetailPage() {
               </div>
 
               {/* 포함 사항 섹션 */}
-              {productDetails?.included && (
+              {productDetails?.included && showDetailOnCustomerPage('included') && (
                 <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-lg shadow-sm border-2 border-emerald-200 p-6 mt-6">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="p-2.5 bg-emerald-500 rounded-lg shadow-sm">
@@ -2478,7 +2525,7 @@ export default function ProductDetailPage() {
               )}
 
               {/* 불포함 사항 섹션 */}
-              {productDetails?.not_included && (
+              {productDetails?.not_included && showDetailOnCustomerPage('not_included') && (
                 <div className="bg-gradient-to-br from-red-50 to-rose-50 rounded-lg shadow-sm border-2 border-red-200 p-6 mt-6">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="p-2.5 bg-red-500 rounded-lg shadow-sm">

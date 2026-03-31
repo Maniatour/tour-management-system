@@ -1,5 +1,16 @@
 // 상태 관련 유틸리티 함수들
 
+/** 투어가 취소·삭제 등으로 진행되지 않아 가이드/드라이버 수수료를 두지 않는 상태인지 */
+export function isTourCancelled(tourStatus: string | null | undefined): boolean {
+  if (tourStatus == null || typeof tourStatus !== 'string') return false
+  const s = tourStatus.toLowerCase().trim()
+  if (!s) return false
+  if (s === 'deleted' || s.includes('requested for delete')) return true
+  if (s === 'cancelled' || s === 'canceled' || s.includes('cancel')) return true
+  if (s.includes('취소')) return true
+  return false
+}
+
 export const getStatusColor = (status: string | null) => {
   if (!status) return 'bg-gray-100 text-gray-800'
   

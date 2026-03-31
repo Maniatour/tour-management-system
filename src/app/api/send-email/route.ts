@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { Resend } from 'resend'
+import {
+  fetchProductDetailsForReservationEmail,
+  parseSectionTitlesMap,
+} from '@/lib/fetchProductDetailsForEmail'
 
 /**
  * POST /api/send-email
@@ -94,28 +98,12 @@ export async function POST(request: NextRequest) {
     const emailLocale = locale === 'en' || customerLanguage === 'en' || customerLanguage === 'english' || customerLanguage === '영어' ? 'en' : 'ko'
     const languageCode = emailLocale === 'en' ? 'en' : 'ko'
     
-    let productDetails = null
-    if (reservationData.channel_id) {
-      const { data: channelDetails } = await supabase
-        .from('product_details_multilingual')
-        .select('*')
-        .eq('product_id', reservationData.product_id)
-        .eq('language_code', languageCode)
-        .eq('channel_id', reservationData.channel_id)
-        .maybeSingle()
-      productDetails = channelDetails as any
-    }
-    
-    if (!productDetails) {
-      const { data: commonDetails } = await supabase
-        .from('product_details_multilingual')
-        .select('*')
-        .eq('product_id', reservationData.product_id)
-        .eq('language_code', languageCode)
-        .is('channel_id', null)
-        .maybeSingle()
-      productDetails = commonDetails as any
-    }
+    const productDetails = (await fetchProductDetailsForReservationEmail(supabase, {
+      productId: reservationData.product_id,
+      languageCode,
+      channelId: reservationData.channel_id ?? null,
+      variantKey: reservationData.variant_key ?? 'default',
+    })) as Record<string, unknown> | null
 
     // 투어 스케줄 조회
     let productSchedules = null
@@ -219,6 +207,17 @@ export async function POST(request: NextRequest) {
 
     const isEnglish = emailLocale === 'en'
 
+    let pickupHotelForEmail: GenerateEmailContentOptions['pickupHotel'] = null
+    const pickupHotelId = reservationData.pickup_hotel as string | null | undefined
+    if (pickupHotelId) {
+      const { data: hotelRow } = await supabase
+        .from('pickup_hotels')
+        .select('hotel, pick_up_location, address')
+        .eq('id', pickupHotelId)
+        .maybeSingle()
+      if (hotelRow) pickupHotelForEmail = hotelRow
+    }
+
     // 이메일 내용 생성
     const isDepartureConfirmation = type === 'voucher'
     const emailContent = generateEmailContent(
@@ -232,7 +231,11 @@ export async function POST(request: NextRequest) {
       tourDetails,
       type,
       isEnglish,
-      isDepartureConfirmation
+      isDepartureConfirmation,
+      {
+        injectProductDetailEditMarkers: false,
+        pickupHotel: pickupHotelForEmail,
+      }
     )
     
     // Resend를 사용한 이메일 발송
@@ -363,6 +366,17 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export type GenerateEmailContentOptions = {
+  /** true일 때만 관리자 미리보기용 data 속성·수정 버튼 삽입 (실제 발송 HTML에는 넣지 않음) */
+  injectProductDetailEditMarkers?: boolean
+  /** 예약 pickup_hotel UUID에 대응하는 픽업 호텔 행 (없으면 생략) */
+  pickupHotel?: {
+    hotel?: string | null
+    pick_up_location?: string | null
+    address?: string | null
+  } | null
+}
+
 export function generateEmailContent(
   reservation: any,
   customer: any,
@@ -374,8 +388,21 @@ export function generateEmailContent(
   tourDetails: any,
   type: 'receipt' | 'voucher' | 'both',
   isEnglish: boolean,
-  isDepartureConfirmation: boolean = false
+  isDepartureConfirmation: boolean = false,
+  options?: GenerateEmailContentOptions
 ) {
+  const injectProductDetailEditMarkers = options?.injectProductDetailEditMarkers === true
+  const pickupHotelRow = options?.pickupHotel ?? null
+
+  const escapeEmailText = (s: string | null | undefined): string => {
+    if (s == null || s === '') return ''
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+  }
+
   const decodeCommonEntities = (value: string | null | undefined): string => {
     if (!value) return ''
     let decoded = value
@@ -577,21 +604,102 @@ export function generateEmailContent(
   // 상품 상세 정보 HTML 생성
   const generateProductDetailsSection = () => {
     if (!productDetails) return ''
-    
-    const details = []
-    if (productDetails.included) details.push({ title: isEnglish ? 'Included' : '포함 사항', content: decodeCommonEntities(productDetails.included) })
-    if (productDetails.not_included) details.push({ title: isEnglish ? 'Not Included' : '불포함 사항', content: decodeCommonEntities(productDetails.not_included) })
-    if (productDetails.pickup_drop_info) details.push({ title: isEnglish ? 'Meeting Point' : '만남 장소', content: decodeCommonEntities(productDetails.pickup_drop_info) })
-    if (productDetails.cancellation_policy) details.push({ title: isEnglish ? 'Cancellation Policy' : '취소 정책', content: decodeCommonEntities(productDetails.cancellation_policy) })
-    if (productDetails.luggage_info) details.push({ title: isEnglish ? 'Luggage Info' : '수하물 정보', content: decodeCommonEntities(productDetails.luggage_info) })
-    if (productDetails.tour_operation_info) details.push({ title: isEnglish ? 'Tour Operation Info' : '투어 운영 정보', content: decodeCommonEntities(productDetails.tour_operation_info) })
-    if (productDetails.preparation_info) details.push({ title: isEnglish ? 'Preparation Info' : '준비 사항', content: decodeCommonEntities(productDetails.preparation_info) })
-    if (productDetails.small_group_info) details.push({ title: isEnglish ? 'Small Group Info' : '소규모 그룹 정보', content: decodeCommonEntities(productDetails.small_group_info) })
-    if (productDetails.notice_info) details.push({ title: isEnglish ? 'Notice' : '안내 사항', content: decodeCommonEntities(productDetails.notice_info) })
-    if (productDetails.private_tour_info) details.push({ title: isEnglish ? 'Private Tour Info' : '프라이빗 투어 정보', content: decodeCommonEntities(productDetails.private_tour_info) })
-    
+
+    type DetailItem = { field: string; title: string; content: string }
+    const details: DetailItem[] = []
+
+    const pd = productDetails as Record<string, unknown>
+    const sectionTitleMap = parseSectionTitlesMap(
+      pd.section_titles ?? pd.sectionTitles
+    )
+
+    const pickSectionTitle = (field: string, titleKo: string, titleEn: string) => {
+      const custom = sectionTitleMap[field]
+      if (custom && custom.trim() !== '') return custom.trim()
+      return isEnglish ? titleEn : titleKo
+    }
+
+    const push = (
+      field: string,
+      value: string | null | undefined,
+      titleKo: string,
+      titleEn: string
+    ) => {
+      if (!value) return
+      details.push({
+        field,
+        title: pickSectionTitle(field, titleKo, titleEn),
+        content: decodeCommonEntities(value),
+      })
+    }
+
+    // 고객 노출 편집기 카드 순서와 동일하게 배치 후, 나머지 필드 추가
+    push('slogan1', productDetails.slogan1, '슬로건', 'Tagline')
+    push('greeting', productDetails.greeting, '인사말', 'Greeting')
+    push('description', productDetails.description, '상품 설명', 'Description')
+    push('included', productDetails.included, '포함 사항', 'Included')
+    push('not_included', productDetails.not_included, '불포함 사항', 'Not Included')
+    push(
+      'companion_recruitment_info',
+      productDetails.companion_recruitment_info,
+      '동행모집 안내',
+      'Companion recruitment'
+    )
+    push('notice_info', productDetails.notice_info, '안내 사항', 'Notice')
+    push('important_notes', productDetails.important_notes, '중요 안내', 'Important notes')
+    push(
+      'pickup_drop_info',
+      productDetails.pickup_drop_info,
+      '만남 장소',
+      'Meeting Point'
+    )
+    push(
+      'preparation_info',
+      productDetails.preparation_info,
+      '준비 사항',
+      'Preparation Info'
+    )
+    push(
+      'cancellation_policy',
+      productDetails.cancellation_policy,
+      '취소 정책',
+      'Cancellation Policy'
+    )
+    push('luggage_info', productDetails.luggage_info, '수하물 정보', 'Luggage Info')
+    push(
+      'tour_operation_info',
+      productDetails.tour_operation_info,
+      '투어 운영 정보',
+      'Tour Operation Info'
+    )
+    push(
+      'small_group_info',
+      productDetails.small_group_info,
+      '소규모 그룹 정보',
+      'Small Group Info'
+    )
+    push(
+      'private_tour_info',
+      productDetails.private_tour_info,
+      '프라이빗 투어 정보',
+      'Private Tour Info'
+    )
+
     if (details.length === 0) return ''
-    
+
+    const headingBlock = (detail: DetailItem) => {
+      const titleHtml = escapeEmailText(detail.title)
+      if (!injectProductDetailEditMarkers) {
+        return `
+            <h4 style="margin: 0 0 10px 0; font-size: 16px; font-weight: 700; color: #111827;">${titleHtml}</h4>`
+      }
+      return `
+            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+              <h4 style="margin: 0; font-size: 16px; font-weight: 700; color: #111827; cursor: pointer;" data-pd-field="${detail.field}">${titleHtml}</h4>
+              <button type="button" data-pd-field="${detail.field}" style="font-size: 12px; color: #1d4ed8; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 4px; padding: 2px 10px; cursor: pointer;">수정</button>
+            </div>`
+    }
+
     return `
       <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 30px;">
         <div style="background: #f9fafb; padding: 15px; border-bottom: 1px solid #e5e7eb;">
@@ -599,10 +707,10 @@ export function generateEmailContent(
             📋 ${isEnglish ? 'Product Details' : '상품 상세 정보'}
           </h3>
         </div>
-        <div style="padding: 20px; background: #f9fafb;">
+        <div style="padding: 20px; background: #f9fafb;" ${injectProductDetailEditMarkers ? 'class="email-preview-product-details"' : ''}>
           ${details.map(detail => `
             <div style="margin-bottom: 25px;">
-              <h4 style="margin: 0 0 10px 0; font-size: 16px; font-weight: 700; color: #111827;">${detail.title}</h4>
+              ${headingBlock(detail)}
               <p style="margin: 0; font-size: 14px; color: #374151; line-height: 1.8; white-space: pre-wrap;">${detail.content}</p>
             </div>
           `).join('')}
@@ -789,10 +897,28 @@ export function generateEmailContent(
             </div>
           </div>
         </div>
-        ${reservation.pickup_time ? `
+        ${reservation.pickup_time || (pickupHotelRow && pickupHotelRow.hotel) ? `
         <div style="padding: 15px; background: #eff6ff; border-radius: 6px; border-left: 4px solid #3b82f6;">
-          <div style="font-size: 12px; color: #1e40af; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;">${isEnglish ? 'Pickup Time' : '픽업 시간'}</div>
-          <div style="font-size: 18px; font-weight: 700; color: #1e40af;">${formatTime(reservation.pickup_time)}</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start;">
+            ${reservation.pickup_time ? `
+            <div style="flex: 1; min-width: 140px;">
+              <div style="font-size: 12px; color: #1e40af; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;">${isEnglish ? 'Pickup Time' : '픽업 시간'}</div>
+              <div style="font-size: 18px; font-weight: 700; color: #1e40af;">${formatTime(reservation.pickup_time)}</div>
+            </div>
+            ` : ''}
+            ${pickupHotelRow && pickupHotelRow.hotel ? `
+            <div style="flex: 1; min-width: 180px;">
+              <div style="font-size: 12px; color: #1e40af; margin-bottom: 5px; font-weight: 600; text-transform: uppercase;">${isEnglish ? 'Pickup Hotel' : '픽업 호텔'}</div>
+              <div style="font-size: 16px; font-weight: 700; color: #1e293b;">${escapeEmailText(pickupHotelRow.hotel)}</div>
+              ${pickupHotelRow.pick_up_location ? `
+              <div style="font-size: 14px; color: #334155; margin-top: 6px;">${escapeEmailText(pickupHotelRow.pick_up_location)}</div>
+              ` : ''}
+              ${pickupHotelRow.address ? `
+              <div style="font-size: 13px; color: #64748b; margin-top: 4px;">${escapeEmailText(pickupHotelRow.address)}</div>
+              ` : ''}
+            </div>
+            ` : ''}
+          </div>
         </div>
         ` : ''}
       </div>

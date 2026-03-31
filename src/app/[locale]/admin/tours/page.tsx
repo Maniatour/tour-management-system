@@ -12,6 +12,7 @@ import { useOptimizedData } from '@/hooks/useOptimizedData'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
 import type { SetStateAction } from 'react'
+import { isReservationCancelledStatus } from '@/utils/tourUtils'
 
 type Tour = Database['public']['Tables']['tours']['Row']
 // type ProductNameRow = Pick<Database['public']['Tables']['products']['Row'], 'id' | 'name_ko' | 'name_en'> & { name?: string | null }
@@ -381,9 +382,11 @@ export default function AdminTours() {
         const productId = (res?.product_id ? String(res.product_id) : '').trim()
         const date = (res?.tour_date ? String(res.tour_date) : '').trim()
         const key = `${productId}__${date}`
-        productDateKeyToTotalPeople.set(key, (productDateKeyToTotalPeople.get(key) || 0) + (res?.total_people || 0))
-        if (res?.tour_id === null) {
-          productDateKeyToUnassignedPeople.set(key, (productDateKeyToUnassignedPeople.get(key) || 0) + (res?.total_people || 0))
+        if (!isReservationCancelledStatus(res?.status)) {
+          productDateKeyToTotalPeople.set(key, (productDateKeyToTotalPeople.get(key) || 0) + (res?.total_people || 0))
+          if (res?.tour_id === null) {
+            productDateKeyToUnassignedPeople.set(key, (productDateKeyToUnassignedPeople.get(key) || 0) + (res?.total_people || 0))
+          }
         }
       }
 
@@ -416,6 +419,7 @@ export default function AdminTours() {
           counted.add(rid)
           const row = reservationIdToRow.get(rid)
           if (!row) continue
+          if (isReservationCancelledStatus(row.status)) continue
           // 동일한 상품/날짜에 속하는 예약만 합산 (잘못 연결된 ID 방지)
           if ((row.product_id || '') === (tour.product_id || '') && (row.tour_date || '') === (tour.tour_date || '')) {
             assignedPeople += row.total_people || 0

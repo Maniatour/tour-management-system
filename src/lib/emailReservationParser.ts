@@ -33,6 +33,72 @@ export function normalizeEmailSubjectForMatch(subject: string | null | undefined
   return (subject ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
 }
 
+/** 제목에 cancelled / canceled 가 포함된 취소(요청) 알림 메일 */
+export function isCancellationRequestEmailSubject(subject: string | null | undefined): boolean {
+  const s = normalizeEmailSubjectForMatch(subject)
+  if (!s) return false
+  return /\b(cancelled|canceled)\b/.test(s)
+}
+
+/**
+ * 취소 알림 등에서 채널 예약번호(RN)만 뽑아 기존 예약(reservations.channel_rn) 조회에 사용
+ * (본문·제목 공통 패턴; 플랫폼별 파서가 RN을 못 넣었을 때 보조)
+ */
+export function extractChannelRnForCancellationLookup(
+  subject: string | null | undefined,
+  bodyText: string | null | undefined
+): string | null {
+  const sub = (subject ?? '').trim()
+  const text = (bodyText ?? '').replace(/\r\n/g, '\n')
+  const combined = `${sub}\n${text}`
+  const oneLine = combined.replace(/\s+/g, ' ')
+
+  const invalidToken = (s: string) =>
+    /^(id|number|reference|booking|order|the|a)$/i.test(s.trim()) || s.trim().length < 4
+
+  let m: RegExpMatchArray | null
+
+  // Viator 등: "Booking Reference: #BR-1339230347" — # 뒤 전체 참조 (expandChannelRnMatchVariants 로 숫자만도 매칭)
+  m = combined.match(/booking\s+reference\s*:?\s*(?:#\s*)?([A-Za-z0-9][A-Za-z0-9_-]{3,39})/i)
+  if (m?.[1] && !invalidToken(m[1])) return m[1].trim()
+
+  // GetYourGuide: "Booking cancelled - S382661 - GYGZGZ56LA5F"
+  m = sub.match(
+    /Booking\s+(?:cancelled|canceled)\s*[-–]\s*[A-Z0-9]+\s*[-–]\s*([A-Z0-9]{8,24})/i
+  )
+  if (m?.[1]) return m[1].trim()
+
+  // GYG / 일반: "Booking - CODE - RN"
+  m = sub.match(/Booking\s*[-–]\s*[A-Z0-9]+\s*[-–]\s*([A-Z0-9]{8,24})/i)
+  if (m?.[1]) return m[1].trim()
+
+  m = sub.match(
+    /Urgent\s*:\s*New\s*Booking\s*received\s*[-–]\s*[A-Z0-9]+\s*[-–]\s*([A-Z0-9]{8,24})/i
+  )
+  if (m?.[1]) return m[1].trim()
+
+  // 본문 Reference number / confirmation (booking reference 는 위 전용 패턴에서 처리)
+  m = combined.match(
+    /(?:reference\s*number|confirmation\s*(?:number|code))\s*:?\s*#?\s*([A-Za-z0-9][A-Za-z0-9-]{5,39})/i
+  )
+  if (m?.[1] && !invalidToken(m[1])) return m[1].trim()
+
+  // KKday 제목: 예약번호 : XX
+  m = sub.match(/(?:예약\s*번호|booking\s*no\.?)\s*[：:]\s*([A-Za-z0-9][A-Za-z0-9-]{5,35})/i)
+  if (m?.[1] && !invalidToken(m[1])) return m[1].trim()
+
+  // 제목 끝의 긴 코드 토큰
+  m = sub.match(/[-–]\s*([A-Z0-9]{8,32})\s*$/i)
+  if (m?.[1]) return m[1].trim()
+
+  m = oneLine.match(
+    /(?:order|booking)\s*(?:id|#|number)\s*:?\s*#?\s*([A-Za-z0-9][A-Za-z0-9-]{5,39})/i
+  )
+  if (m?.[1] && !invalidToken(m[1])) return m[1].trim()
+
+  return null
+}
+
 /**
  * 자사 Wix 홈페이지 예약 알림: 발신 vegasmaniatour@wixsiteautomations.com + 제목 "You got a new booking"
  * (다른 wixsiteautomations 발신은 maniatour로 분류하지 않음)
@@ -511,7 +577,12 @@ function extractCommonPatterns(text: string): Partial<ExtractedReservationData> 
   }
 
   // 예약 번호/참조
-  const refMatch = text.match(/(?:booking\s*(?:ref(?:erence)?|#|no\.?|number|id)|예약\s*(?:번호|#)|confirmation\s*#?|reference\s*number)\s*:?\s*([A-Za-z0-9_-]+)/i)
+  // 주의: `ref(?:erence)?` 만 허용하면 "Booking Reference" 에서 "Ref" 만 잡혀 캡처가 "erence" 가 됨 → reference 전체·별도 패턴 사용
+  let refMatch =
+    text.match(/booking\s+reference\s*:?\s*(?:#\s*)?([A-Za-z0-9][A-Za-z0-9_-]{3,39})/i) ||
+    text.match(
+      /(?:booking\s*(?:#\s*|no\.?\s*|number\s*|id\s*)|예약\s*(?:번호|#)|confirmation\s*#?|reference\s*number)\s*:?\s*#?\s*([A-Za-z0-9][A-Za-z0-9_-]{3,39})/i
+    )
   if (refMatch) out.channel_rn = refMatch[1].trim()
 
   // 이름 — 반드시 Name(단어) + 콜론 뒤 한 줄 (Clients details 오인 방지)
@@ -1671,6 +1742,15 @@ export function extractReservationFromEmail(options: {
   // 홈페이지(maniatour): detectPlatform에서 vegasmaniatour@ + 제목 You got a new booking 일 때만 maniatour
   if (platform_key === 'maniatour') {
     merged.is_booking_confirmed = true
+  }
+
+  // 취소 알림: 제목에 cancelled/canceled → RN 추출해 channel_rn 보강 (채널 예약 조회·처리용)
+  if (isCancellationRequestEmailSubject(subject)) {
+    const cancelRn = extractChannelRnForCancellationLookup(subject, plainText)
+    const cur = merged.channel_rn?.trim()
+    if (cancelRn && (!cur || cur.length < 4 || cur.toLowerCase() === 'id')) {
+      merged = { ...merged, channel_rn: cancelRn }
+    }
   }
 
   const extracted_data: ExtractedReservationData = merged as ExtractedReservationData

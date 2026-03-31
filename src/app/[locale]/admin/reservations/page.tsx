@@ -37,7 +37,9 @@ import {
   getCustomerName, 
   getProductName, 
   getChannelName, 
-  calculateTotalPrice 
+  calculateTotalPrice,
+  getReservationPartySize,
+  normalizeTourDateKey
 } from '@/utils/reservationUtils'
 import type { 
   Customer, 
@@ -213,6 +215,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     toursMap: hookToursMap,
     loading,
     loadingProgress,
+    reservationsAggregateReady,
     refreshReservations,
     refreshCustomers
   } = useReservationData()
@@ -403,6 +406,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     totalPeople: number
     otherReservationsTotalPeople: number
     allDateTotalPeople: number
+    allDateOtherStatusPeople: number
     status: string
     guideName: string
     assistantName: string
@@ -508,8 +512,13 @@ export default function AdminReservations({ }: AdminReservationsProps) {
     }
   }, [searchTerm])
 
-  // 투어 정보 가져오기 (hookToursMap 사용)
+  // 투어 정보 가져오기 (hookToursMap 사용) — 예약 전량 로드 완료 후 한 번만 집계
   useEffect(() => {
+    if (!reservationsAggregateReady) {
+      setTourInfoMap(new Map())
+      return
+    }
+
     const buildTourInfoMap = async () => {
       if (!reservations.length || hookToursMap.size === 0) {
         setTourInfoMap(new Map())
@@ -521,6 +530,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           totalPeople: number
           otherReservationsTotalPeople: number
           allDateTotalPeople: number
+          allDateOtherStatusPeople: number
           status: string
           guideName: string
           assistantName: string
@@ -622,21 +632,25 @@ export default function AdminReservations({ }: AdminReservationsProps) {
           }
         })
 
-        // 같은 tour_date + product_id 조합의 총 인원 수 계산
-        const dateProductTotalPeopleMap = new Map<string, number>()
+        // 투어 상세 TourHeader와 동일: 총 = 확정·모집(confirmed/recruiting) 인원, 괄호 = 전체 − 총 (대기·취소·완료 등)
+        const isConfirmedOrRecruiting = (status: string | undefined) => {
+          const s = (status || '').toString().toLowerCase().trim()
+          return s === 'confirmed' || s === 'recruiting'
+        }
+        const dateProductAllPeopleMap = new Map<string, number>()
+        const dateProductConfirmedRecruitingMap = new Map<string, number>()
         reservations.forEach(r => {
-          const tourDate = r.tourDate || ''
-          const productId = r.productId || ''
-          const statusLower = r.status?.toLowerCase() || ''
-          
-          // 취소된 예약 제외
-          if (statusLower === 'cancelled' || statusLower === 'canceled') {
-            return
-          }
-          
+          const productId = String(r.productId ?? '').trim()
+          const tourDate = normalizeTourDateKey(r.tourDate)
+          if (!productId || !tourDate) return
           const key = `${productId}__${tourDate}`
-          const currentTotal = dateProductTotalPeopleMap.get(key) || 0
-          dateProductTotalPeopleMap.set(key, currentTotal + (r.totalPeople || 0))
+          const p = getReservationPartySize(r as unknown as Record<string, unknown>)
+          const curAll = dateProductAllPeopleMap.get(key) || 0
+          dateProductAllPeopleMap.set(key, curAll + p)
+          if (isConfirmedOrRecruiting(r.status as string)) {
+            const cur = dateProductConfirmedRecruitingMap.get(key) || 0
+            dateProductConfirmedRecruitingMap.set(key, cur + p)
+          }
         })
 
         // 각 투어에 대해 정보 매핑 (최적화된 O(1) 조회 사용)
@@ -667,29 +681,28 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             totalPeople = uniqueReservationIds.reduce((sum: number, id: string) => {
               const reservation = reservationById.get(id)
               if (!reservation) return sum
-              
-              const statusLower = reservation.status?.toLowerCase() || ''
-              if (statusLower === 'cancelled' || statusLower === 'canceled') {
-                return sum
-              }
-              
-              return sum + (reservation.totalPeople || 0)
+              return sum + getReservationPartySize(reservation as unknown as Record<string, unknown>)
             }, 0)
           }
 
-          // 관련 예약 찾기 (O(1) 조회)
+          // 집계 키: 투어 행의 product_id·tour_date 우선 (투어 상세 useTourDetailData와 동일)
           const reservation = reservationByTourId.get(tourId)
-          const productId = reservation?.productId || tour.product_id || null
-          const tourDate = tour.tour_date || reservation?.tourDate || ''
-          
-          // allDateTotalPeople: 같은 tour_date + product_id를 가진 모든 예약의 total_people 합산
-          const key = `${productId}__${tourDate}`
-          const allDateTotalPeople = dateProductTotalPeopleMap.get(key) || totalPeople
+          const productIdForKey = String(tour.product_id ?? reservation?.productId ?? '').trim()
+          const tourDateForKey =
+            normalizeTourDateKey(tour.tour_date) || normalizeTourDateKey(reservation?.tourDate)
+          const aggregateKey =
+            productIdForKey && tourDateForKey ? `${productIdForKey}__${tourDateForKey}` : ''
+
+          const sumAll = aggregateKey ? (dateProductAllPeopleMap.get(aggregateKey) ?? 0) : 0
+          const sumFiltered = aggregateKey ? (dateProductConfirmedRecruitingMap.get(aggregateKey) ?? 0) : 0
+          const allDateTotalPeople = aggregateKey ? sumFiltered : totalPeople
+          const allDateOtherStatusPeople = aggregateKey ? Math.max(0, sumAll - sumFiltered) : 0
 
           newTourInfoMap.set(tourId, {
             totalPeople,
             otherReservationsTotalPeople: 0, // 성능상 0으로 설정
             allDateTotalPeople,
+            allDateOtherStatusPeople,
             status: tour.tour_status || '-',
             guideName,
             assistantName,
@@ -698,7 +711,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
             tourStartDatetime: tour.tour_start_datetime || null,
             isAssigned: true,
             reservationIds: tour.reservation_ids,
-            productId
+            productId: productIdForKey || null
           })
         })
 
@@ -711,7 +724,7 @@ export default function AdminReservations({ }: AdminReservationsProps) {
 
     buildTourInfoMap()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reservations, hookToursMap])
+  }, [reservations, hookToursMap, reservationsAggregateReady])
 
   // 예약 처리 필요 배지용: 입금이 있는 예약 ID 수집
   useEffect(() => {
@@ -1268,6 +1281,18 @@ export default function AdminReservations({ }: AdminReservationsProps) {
               customer_id: reservation.customerId,
               resident_status: 'non_resident_with_pass',
               pass_covered_count: 4, // 패스 1장당 4인 커버
+              order_index: orderIndex++
+            })
+          }
+
+          // 비거주자 (패스 구매)
+          const nonResidentPurchasePassCount = (reservation as any).nonResidentPurchasePassCount || 0
+          for (let i = 0; i < nonResidentPurchasePassCount; i++) {
+            reservationCustomers.push({
+              reservation_id: reservationId,
+              customer_id: reservation.customerId,
+              resident_status: 'non_resident_purchase_pass',
+              pass_covered_count: 0,
               order_index: orderIndex++
             })
           }

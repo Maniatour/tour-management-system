@@ -26,31 +26,75 @@ export function normalizeReservationIds(reservationIds: unknown): string[] {
   return []
 }
 
-// 투어에 배정된 사람 수 계산
-export const calculateAssignedPeople = (tour: any, reservations: any[]) => {
-  if (!tour || !reservations || reservations.length === 0) return 0
-  
-  const assignedReservationIds = tour.reservation_ids || []
-  const assignedReservations = reservations.filter(r => assignedReservationIds.includes(r.id))
-  
-  return assignedReservations.reduce((total, reservation) => {
-    return total + (reservation.adults || 0) + (reservation.children || 0)
+/** 예약 상태가 취소인지 (cancelled / canceled / cancel 포함) */
+export function isReservationCancelledStatus(status: string | null | undefined): boolean {
+  const s = (status || '').toString().toLowerCase().trim()
+  if (!s) return false
+  return s === 'cancelled' || s === 'canceled' || s.includes('cancel')
+}
+
+type ReservationLike = {
+  id?: string | null
+  product_id?: string | null
+  tour_date?: string | null
+  status?: string | null
+  total_people?: number | null
+  adults?: number | null
+  children?: number | null
+  child?: number | null
+  infants?: number | null
+  infant?: number | null
+}
+
+/** 같은 상품·투어일 기준 취소 제외 또는 취소만 인원 합계 */
+export function sumPeopleSameProductDate(
+  tour: { product_id?: string | null; tour_date?: string | null },
+  reservations: ReservationLike[],
+  mode: 'nonCancelled' | 'cancelled'
+): number {
+  if (!tour || !reservations?.length) return 0
+  const pid = (tour.product_id ?? '').toString().trim()
+  const date = (tour.tour_date ?? '').toString().trim()
+  if (!pid || !date) return 0
+  return reservations.reduce((sum, r) => {
+    if ((r.product_id ?? '').toString().trim() !== pid || (r.tour_date ?? '').toString().trim() !== date) {
+      return sum
+    }
+    const cancelled = isReservationCancelledStatus(r.status)
+    if (mode === 'nonCancelled' && cancelled) return sum
+    if (mode === 'cancelled' && !cancelled) return sum
+    const p = r.total_people
+    if (typeof p === 'number' && !Number.isNaN(p)) return sum + p
+    const adults = Number(r.adults) || 0
+    const children = Number(r.children ?? r.child) || 0
+    const infants = Number(r.infants ?? r.infant) || 0
+    return sum + adults + children + infants
   }, 0)
 }
 
-// 같은 상품/날짜의 모든 투어에 배정된 총 사람 수 계산
-export const calculateTotalPeopleForSameProductDate = (tour: any, reservations: any[]) => {
+// 투어에 배정된 인원 (취소 예약 제외, total_people 우선)
+export const calculateAssignedPeople = (tour: any, reservations: any[]) => {
   if (!tour || !reservations || reservations.length === 0) return 0
-  
-  // 같은 상품/날짜의 모든 예약들
-  const sameProductDateReservations = reservations.filter(r => 
-    r.product_id === tour.product_id && r.tour_date === tour.tour_date
-  )
-  
-  return sameProductDateReservations.reduce((total, reservation) => {
-    return total + (reservation.adults || 0) + (reservation.children || 0)
+
+  const ids = normalizeReservationIds(tour.reservation_ids)
+  if (ids.length === 0) return 0
+  const idSet = new Set(ids.map((id) => String(id).trim()))
+
+  return reservations.reduce((total: number, reservation: ReservationLike) => {
+    if (!idSet.has(String(reservation.id ?? '').trim())) return total
+    if (isReservationCancelledStatus(reservation.status)) return total
+    const p = reservation.total_people
+    if (typeof p === 'number' && !Number.isNaN(p)) return total + p
+    const adults = Number(reservation.adults) || 0
+    const children = Number(reservation.children ?? reservation.child) || 0
+    const infants = Number(reservation.infants ?? reservation.infant) || 0
+    return total + adults + children + infants
   }, 0)
 }
+
+// 같은 상품/날짜의 예약 인원 합계 (취소 제외)
+export const calculateTotalPeopleForSameProductDate = (tour: any, reservations: any[]) =>
+  sumPeopleSameProductDate(tour, reservations, 'nonCancelled')
 
 // 배정되지 않은 사람 수 계산
 export const calculateUnassignedPeople = (tour: any, reservations: any[]) => {
@@ -171,4 +215,88 @@ export const getOptionName = (optionId: string, productId: string, productOption
     console.log('Option found:', { optionId, result, option })
   }
   return result
+}
+
+type TeamTypeKey = '1guide' | '2guide' | 'guide+driver'
+
+/**
+ * tours.team_type 미저장 시 투어 상세「팀 구성 & 차량 배정」기본값.
+ * 밤도깨비 그랜드캐년 일출 투어, 그랜드서클 당일 투어 → 2가이드.
+ */
+export function getDefaultTeamTypeForProduct(
+  nameKo?: string | null,
+  nameEn?: string | null
+): TeamTypeKey {
+  const ko = (nameKo || '').trim()
+  const en = (nameEn || '').trim().toLowerCase()
+
+  if (ko.includes('밤도깨비')) {
+    return '2guide'
+  }
+
+  const koGrandCircleDay =
+    (ko.includes('그랜드서클') || ko.includes('그랜드 서클')) && ko.includes('당일')
+  const enGrandCircleDay =
+    en.includes('grand circle') &&
+    (en.includes('day tour') || /\bday trip\b/i.test(en)) &&
+    !en.includes('night')
+
+  if (koGrandCircleDay || enGrandCircleDay) {
+    return '2guide'
+  }
+
+  return '1guide'
+}
+
+/** 날짜 문자열 → YYYY-MM-DD (비교용) */
+export function toTourDateKey(input: string | null | undefined): string {
+  if (input == null) return ''
+  const s = String(input).trim()
+  return s.length >= 10 ? s.slice(0, 10) : s
+}
+
+/** YYYY-MM-DD 기준으로 일수 더하기 (UTC 자정 기준) */
+export function addDaysToYmd(ymd: string, days: number): string {
+  const key = toTourDateKey(ymd)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return ''
+  const [y, m, d] = key.split('-').map((x) => parseInt(x, 10))
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  dt.setUTCDate(dt.getUTCDate() + days)
+  const yyyy = dt.getUTCFullYear()
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(dt.getUTCDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+type VehicleCategoryFields = {
+  vehicle_category?: string | null
+  rental_start_date?: string | null
+  rental_end_date?: string | null
+}
+
+/**
+ * 팀 구성 차량 드롭다운: 회사·개인 등 비렌트는 항상 표시.
+ * 렌터카는 투어일이 렌트 시작일 이후이고, 렌트 종료일+3일 이내일 때만 표시.
+ * (렌트 기간이 끝난 뒤 3일까지 배정 후보에 남김)
+ */
+export function isVehicleShownInTeamAssignmentDropdown(
+  vehicle: VehicleCategoryFields,
+  tourDate: string | null | undefined
+): boolean {
+  const cat = (vehicle.vehicle_category || '').toString().toLowerCase().trim()
+  if (cat !== 'rental') return true
+
+  const tour = toTourDateKey(tourDate)
+  const start = toTourDateKey(vehicle.rental_start_date)
+  const end = toTourDateKey(vehicle.rental_end_date)
+  // 투어일 미전달 시(다른 화면 호환) 필터 생략
+  if (!tour) return true
+  if (!start || !end) return false
+
+  if (tour < start) return false
+
+  const lastEligible = addDaysToYmd(end, 3)
+  if (!lastEligible || tour > lastEligible) return false
+
+  return true
 }
