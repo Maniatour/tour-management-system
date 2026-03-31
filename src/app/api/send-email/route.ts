@@ -539,6 +539,69 @@ export function generateEmailContent(
   // 가격 정보 HTML 생성
   const generatePriceSection = () => {
     if (!pricing) return ''
+
+    const pax = adults + children + infants
+    const niPer = Number(pricing.not_included_price) || 0
+    const niTotal = pax > 0 ? niPer * pax : 0
+    const rawPt = Number(pricing.product_price_total) || 0
+    const lineSum =
+      (Number(pricing.adult_product_price) || 0) * adults +
+      (Number(pricing.child_product_price) || 0) * children +
+      (Number(pricing.infant_product_price) || 0) * infants
+    const EPS = 0.05
+    let displayProductTotal = rawPt
+    if (niTotal > 0 && rawPt > 0) {
+      const mergedWithNi = Math.abs(rawPt - lineSum - niTotal) < EPS
+      const looksUnmerged = Math.abs(rawPt - lineSum) < EPS
+      if (mergedWithNi) {
+        displayProductTotal = Math.max(0, rawPt - niTotal)
+      } else if (looksUnmerged) {
+        displayProductTotal = rawPt
+      } else if (rawPt + EPS >= niTotal) {
+        displayProductTotal = Math.max(0, rawPt - niTotal)
+      }
+    }
+
+    const subNum = Number(pricing.subtotal) || 0
+    const couponNum = Math.abs(Number(pricing.coupon_discount) || 0)
+    const addDiscNum = Math.abs(Number(pricing.additional_discount) || 0)
+    const totalPriceNum = Number(pricing.total_price)
+
+    const ct = Number(pricing.choices_total) || 0
+    const ot = Number(pricing.option_total) || 0
+    const rot = Number(pricing.required_option_total) || 0
+    const optionsPart = ct > 0 ? ct : Math.max(ot, rot)
+    const feeExtra =
+      (Number(pricing.additional_cost) || 0) +
+      (Number(pricing.card_fee) || 0) +
+      (Number(pricing.tax) || 0) +
+      (Number(pricing.prepayment_cost) || 0) +
+      (Number(pricing.prepayment_tip) || 0) +
+      (Number(pricing.private_tour_additional_cost) || 0)
+
+    /** 고객 결제 기준 총액(이메일). DB total_price/subtotal은 채널 커미션·정산용 순액으로 들어 있는 경우가 있어 분해 합산을 우선한다. */
+    const customerFacingGrand = Math.max(
+      0,
+      displayProductTotal +
+        niTotal +
+        optionsPart -
+        couponNum -
+        addDiscNum +
+        feeExtra
+    )
+
+    const legacyGrand = Math.max(0, subNum - couponNum - addDiscNum)
+    const grandTotal =
+      customerFacingGrand > 0
+        ? customerFacingGrand
+        : !Number.isNaN(totalPriceNum) && totalPriceNum > 0
+          ? totalPriceNum
+          : legacyGrand
+
+    const showGrandBlock =
+      grandTotal > 0 ||
+      subNum > 0 ||
+      (!Number.isNaN(totalPriceNum) && totalPriceNum > 0)
     
     return `
       <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 30px;">
@@ -566,10 +629,16 @@ export function generateEmailContent(
             <span style="font-weight: 600; color: #111827;">${currencySymbol}${((pricing.infant_product_price || 0) * infants).toFixed(2)}</span>
           </div>
           ` : ''}
-          ${pricing.product_price_total ? `
+          ${rawPt > 0 ? `
           <div style="display: flex; justify-content: space-between; padding: 15px 0; margin-top: 10px; border-top: 2px solid #e5e7eb; border-bottom: 1px solid #f3f4f6;">
             <span style="font-weight: 600; color: #374151;">${isEnglish ? 'Product Total' : '상품 총액'}</span>
-            <span style="font-weight: 600; color: #111827;">${currencySymbol}${pricing.product_price_total.toFixed(2)}</span>
+            <span style="font-weight: 600; color: #111827;">${currencySymbol}${displayProductTotal.toFixed(2)}</span>
+          </div>
+          ` : ''}
+          ${niTotal > 0 ? `
+          <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f3f4f6;">
+            <span style="color: #6b7280; font-size: 14px;">${isEnglish ? 'Not included (pay separately)' : '불포함 가격'}</span>
+            <span style="font-weight: 600; color: #111827;">${currencySymbol}${niTotal.toFixed(2)}</span>
           </div>
           ` : ''}
           ${pricing.coupon_discount && pricing.coupon_discount !== 0 ? `
@@ -578,10 +647,10 @@ export function generateEmailContent(
             <span style="font-weight: 600; color: #10b981;">-${currencySymbol}${Math.abs(pricing.coupon_discount).toFixed(2)}</span>
           </div>
           ` : ''}
-          ${pricing.subtotal ? `
+          ${showGrandBlock ? `
           <div style="display: flex; justify-content: space-between; padding: 20px 0; margin-top: 10px; background: #eff6ff; border-radius: 6px; padding: 15px;">
             <span style="font-size: 18px; font-weight: 700; color: #1e40af;">${isEnglish ? 'Grand Total' : '최종 결제 금액'}</span>
-            <span style="font-size: 20px; font-weight: 700; color: #1e40af;">${currencySymbol}${(pricing.subtotal - Math.abs(pricing.coupon_discount || 0)).toFixed(2)}</span>
+            <span style="font-size: 20px; font-weight: 700; color: #1e40af;">${currencySymbol}${grandTotal.toFixed(2)}</span>
           </div>
           ` : ''}
           ${depositAmount > 0 ? `
