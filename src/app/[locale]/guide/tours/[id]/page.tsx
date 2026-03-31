@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useLocale, useTranslations } from 'next-intl'
 import {
@@ -35,6 +35,7 @@ import TourScheduleSection from '@/components/product/TourScheduleSection'
 import { formatCustomerNameEnhanced } from '@/utils/koreanTransliteration'
 import { formatTimeWithAMPM } from '@/lib/utils'
 import { isTourCancelled } from '@/utils/tourStatusUtils'
+import { toast } from 'sonner'
 
 // 타입 정의 (DB 스키마 기반)
 type TourRow = Database['public']['Tables']['tours']['Row']
@@ -54,6 +55,7 @@ type TeamMember = {
 
 /** 픽업 호텔 미지정 예약을 한 그룹으로 묶기 위한 키 (DB id와 충돌하지 않도록 함) */
 const GUIDE_UNASSIGNED_PICKUP_HOTEL_KEY = '__guide_pickup_hotel_unassigned__'
+const REPORT_REMINDER_START_DATE = '2026-04-01'
 
 function groupReservationsByPickupHotel(reservations: ReservationRow[]) {
   return reservations.reduce(
@@ -122,6 +124,7 @@ export default function GuideTourDetailPage() {
     endTime: string;
     sunriseTime: string;
   } | null>(null)
+  const reportReminderShownForTourRef = useRef<string | null>(null)
   
   // balance 정보를 가져오는 함수
   const getReservationBalance = (reservationId: string) => {
@@ -402,6 +405,43 @@ export default function GuideTourDetailPage() {
     mq.addEventListener('change', sync)
     return () => mq.removeEventListener('change', sync)
   }, [])
+
+  useEffect(() => {
+    const remindMissingReport = async () => {
+      if (!tour?.id || !currentUserEmail) return
+
+      // 2026-04-01부터 알림 시작
+      const now = new Date()
+      const start = new Date(`${REPORT_REMINDER_START_DATE}T00:00:00`)
+      if (Number.isNaN(start.getTime()) || now < start) return
+
+      if (reportReminderShownForTourRef.current === tour.id) return
+
+      const { data, error } = await supabase
+        .from('tour_reports')
+        .select('id')
+        .eq('tour_id', tour.id)
+        .eq('user_email', currentUserEmail)
+        .limit(1)
+
+      if (error) {
+        console.error('Report reminder check failed:', error)
+        return
+      }
+
+      if (!data || data.length === 0) {
+        toast.warning(
+          locale === 'en'
+            ? 'Please submit your tour report for this tour.'
+            : '이 투어의 리포트를 작성해 주세요.'
+        )
+      }
+
+      reportReminderShownForTourRef.current = tour.id
+    }
+
+    void remindMissingReport()
+  }, [tour?.id, currentUserEmail, locale])
 
   // 고객 정보 조회 함수
   const getCustomerInfo = (customerId: string) => {

@@ -890,12 +890,12 @@ const KLOOK_ACTIVITY_ID_TO_PRODUCT_ID: Record<string, string> = {
   '78944': 'MDGCSUNRISE',
 }
 
-/** Activity URL이 이 ID면 klook 채널 variant는 항상 All Inclusive (불포함 금액이 잡혀도 With Exclusions로 두지 않음) */
-const KLOOK_ACTIVITY_IDS_FORCE_ALL_INCLUSIVE = new Set<string>([
-  '113386',
-  /** 동일 일출 상품의 다른 액티비티 URL — 113386과 동일하게 All Inclusive 고정 */
-  '78944',
-])
+/** Activity ID별 Klook 채널 variant 강제 매핑 (본문 금액 파싱 결과보다 우선) */
+const KLOOK_ACTIVITY_ID_FORCE_VARIANT: Record<string, { key: string; label: string }> = {
+  '113386': { key: 'all_inclusive', label: 'All Inclusive' },
+  /** 78944는 채널의 실 variant_key(default)로 저장, 표시 라벨은 With Exclusions */
+  '78944': { key: 'default', label: 'With Exclusions' },
+}
 
 /** Klook: 불포함 금액이 있으면 With Exclusions 채널 variant, 없으면 All Inclusive */
 function inferKlookChannelVariant(amountExcluded: string | undefined): { key: string; label: string } {
@@ -1398,9 +1398,10 @@ function extractKlook(
   const klookVariant = inferKlookChannelVariant(out.amount_excluded)
   out.channel_variant_key = klookVariant.key
   out.channel_variant_label = klookVariant.label
-  if (parsedKlookActivityId && KLOOK_ACTIVITY_IDS_FORCE_ALL_INCLUSIVE.has(parsedKlookActivityId)) {
-    out.channel_variant_key = 'all_inclusive'
-    out.channel_variant_label = 'All Inclusive'
+  if (parsedKlookActivityId && KLOOK_ACTIVITY_ID_FORCE_VARIANT[parsedKlookActivityId]) {
+    const forced = KLOOK_ACTIVITY_ID_FORCE_VARIANT[parsedKlookActivityId]
+    out.channel_variant_key = forced.key
+    out.channel_variant_label = forced.label
   }
 
   // 밤도깨비 그랜드캐년 일출 투어는 투어 시간을 00:00(자정)으로 고정
