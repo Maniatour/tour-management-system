@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Calculator, DollarSign, TrendingUp, TrendingDown, AlertCircle, RefreshCw } from 'lucide-react'
 import { useLocale } from 'next-intl'
@@ -10,6 +10,66 @@ import {
   isTicketBookingIncludedInSettlement,
   ticketExpenseForSettlement
 } from '@/lib/bookingSettlement'
+import {
+  findUsResidentClassificationChoice,
+  sumResidentFeeAmountsUsd,
+} from '@/utils/usResidentChoiceSync'
+
+function roundUsd2(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
+/** 동적가격 계산 결과: 비거주 합산 전(base) / 비거주 / 합계 */
+type NotIncludedCalcResult = {
+  baseTotal: number
+  residentFees: number
+  total: number
+}
+
+function packNotIncluded(base: number, resident: number): NotIncludedCalcResult {
+  const b = roundUsd2(base)
+  const r = roundUsd2(resident)
+  return { baseTotal: b, residentFees: r, total: roundUsd2(b + r) }
+}
+
+/**
+ * UI·합계용: 기존 불포함(base)과 비거주 비용을 분리 표시.
+ * choiceNotIncludedBaseTotal은 dynamic 계산에서 비거주를 더하기 전 값(신뢰 소스).
+ */
+function splitNotIncludedForDisplay(
+  choiceNotIncludedTotal: number,
+  choiceNotIncludedBaseTotal: number,
+  notIncludedPerPerson: number,
+  adults: number,
+  child: number,
+  infant: number,
+  residentStatusAmounts?: Record<string, number>
+): { baseUsd: number; residentFeesUsd: number; totalUsd: number } {
+  const pax = (adults || 0) + (child || 0) + (infant || 0)
+  const fieldTotal = (notIncludedPerPerson || 0) * pax
+  const residentFeesUsd = sumResidentFeeAmountsUsd(residentStatusAmounts)
+
+  const fromSubtract =
+    choiceNotIncludedTotal > 0
+      ? Math.max(0, roundUsd2(choiceNotIncludedTotal - residentFeesUsd))
+      : 0
+
+  // 입장권 등 기본 불포함: 계산기 base, (총액−비거주), 인당 불포함 필드×인원 중 큰 값
+  const baseUsd = roundUsd2(
+    Math.max(choiceNotIncludedBaseTotal, fromSubtract, fieldTotal)
+  )
+
+  const totalUsd =
+    choiceNotIncludedTotal > 0
+      ? Math.max(choiceNotIncludedTotal, roundUsd2(baseUsd + residentFeesUsd))
+      : roundUsd2(baseUsd + residentFeesUsd)
+
+  return {
+    baseUsd,
+    residentFeesUsd,
+    totalUsd: roundUsd2(totalUsd),
+  }
+}
 
 interface ProductOption {
   id: string
@@ -84,6 +144,10 @@ interface PricingSectionProps {
     onlinePaymentAmount?: number
     onSiteBalanceAmount?: number
     not_included_price?: number
+    /** 거주 상태별 금액(비거주 등) — 불포함 합산에 사용 */
+    residentStatusAmounts?: Record<string, number>
+    /** 동적 불포함 중 비거주·패스 등을 제외한 금액(표시용) */
+    choiceNotIncludedBaseTotal?: number
     priceType?: 'base' | 'dynamic'
   }
   channels?: Array<{
@@ -185,6 +249,30 @@ export default function PricingSection({
   const channelsRef = useRef(channels)
   channelsRef.current = channels
   const calculateTotalCustomerPaymentRef = useRef<() => number>(() => 0)
+  const [choiceNotIncludedTotal, setChoiceNotIncludedTotal] = useState(0)
+  const [choiceNotIncludedBaseTotal, setChoiceNotIncludedBaseTotal] = useState(0)
+
+  const notIncludedBreakdown = useMemo(
+    () =>
+      splitNotIncludedForDisplay(
+        choiceNotIncludedTotal,
+        choiceNotIncludedBaseTotal,
+        formData.not_included_price || 0,
+        formData.adults,
+        formData.child,
+        formData.infant,
+        formData.residentStatusAmounts
+      ),
+    [
+      choiceNotIncludedTotal,
+      choiceNotIncludedBaseTotal,
+      formData.not_included_price,
+      formData.adults,
+      formData.child,
+      formData.infant,
+      formData.residentStatusAmounts,
+    ]
+  )
 
   // 예약 지출 총합 조회 함수
   const fetchReservationExpenses = useCallback(async () => {
@@ -484,20 +572,18 @@ export default function PricingSection({
   const calculateTotalCustomerPayment = useCallback(() => {
     const discountedProductPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount
     const optionsTotal = reservationOptionsTotalPrice || 0
-    const choicesTotal = formData.choiceTotal || formData.choicesTotal || 0
-    const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+    const notIncludedPrice = notIncludedBreakdown.totalUsd
     const additionalCost = formData.additionalCost || 0
     const tax = formData.tax || 0
     const cardFee = formData.cardFee || 0
     const prepaymentCost = formData.prepaymentCost || 0
     const prepaymentTip = formData.prepaymentTip || 0
-    return discountedProductPrice + optionsTotal + choicesTotal + notIncludedPrice + additionalCost + tax + cardFee + prepaymentCost + prepaymentTip
+    // 초이스 판매 총액(choiceTotal/choicesTotal)은 불포함 금액과 이중 계산되므로 합산하지 않음
+    return discountedProductPrice + optionsTotal + notIncludedPrice + additionalCost + tax + cardFee + prepaymentCost + prepaymentTip
   }, [
     formData.productPriceTotal,
     formData.couponDiscount,
     formData.additionalDiscount,
-    formData.choiceTotal,
-    formData.choicesTotal,
     formData.not_included_price,
     formData.adults,
     formData.child,
@@ -507,9 +593,26 @@ export default function PricingSection({
     formData.cardFee,
     formData.prepaymentCost,
     formData.prepaymentTip,
-    reservationOptionsTotalPrice
+    reservationOptionsTotalPrice,
+    notIncludedBreakdown.totalUsd,
   ])
   calculateTotalCustomerPaymentRef.current = calculateTotalCustomerPayment
+
+  /** 표시·포커스: DB/OTA가 0으로 남아 있어도 계산 잔액이 크면 계산값을 보여 줌 */
+  const displayedOnSiteBalance = useCallback(() => {
+    const totalCustomerPayment = calculateTotalCustomerPayment()
+    const totalPaid = formData.depositAmount + calculatedBalanceReceivedTotal
+    const defaultBalance = Math.max(0, roundUsd2(totalCustomerPayment - totalPaid))
+    const stored = formData.onSiteBalanceAmount
+    if (stored === undefined || stored === null) return defaultBalance
+    if (stored === 0 && defaultBalance > 0.01) return defaultBalance
+    return roundUsd2(Number(stored))
+  }, [
+    calculateTotalCustomerPayment,
+    formData.depositAmount,
+    formData.onSiteBalanceAmount,
+    calculatedBalanceReceivedTotal,
+  ])
 
   // 입금 내역 조회 및 자동 계산 (formData는 formDataRef로만 참조해 의존성 루프 방지)
   const fetchPaymentRecords = useCallback(async () => {
@@ -616,7 +719,15 @@ export default function PricingSection({
       // 입금 내역이 없으면 할인 후 상품가를 기본값으로 설정 (새 예약 추가 시)
       const discountedPrice = fd.productPriceTotal - fd.couponDiscount - fd.additionalDiscount
       // 불포함 가격 제외한 할인 후 상품가
-      const notIncludedPrice = (fd.not_included_price || 0) * (fd.adults + fd.child + fd.infant)
+      const notIncludedPrice = splitNotIncludedForDisplay(
+        (fd as any).choiceNotIncludedTotal ?? 0,
+        (fd as any).choiceNotIncludedBaseTotal ?? 0,
+        fd.not_included_price || 0,
+        fd.adults,
+        fd.child,
+        fd.infant,
+        (fd as any).residentStatusAmounts
+      ).totalUsd
       const discountedPriceWithoutNotIncluded = discountedPrice - notIncludedPrice
       
       // 보증금/잔액 반영값 (저장용)
@@ -683,84 +794,77 @@ export default function PricingSection({
   // depositAmount → onlinePaymentAmount 효과에서 이미 적용한 값 (무한 루프 방지)
   const lastDepositSyncRef = useRef<{ depositAmount: number; online: number; commissionBase: number; commissionAmt: number } | null>(null)
 
-  // 잔액 자동 계산 (고객 총 결제금액 - 보증금 - 잔금 수령)
-  // depositAmount, 고객 총 결제금액, 초이스 총액이 변경될 때 잔액을 자동으로 업데이트
-  const prevBalanceDepsRef = useRef({
-    depositAmount: formData.depositAmount,
-    calculatedBalanceReceivedTotal,
-    choiceTotal: formData.choiceTotal,
-    choicesTotal: formData.choicesTotal,
-    notIncludedPrice: (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant),
-    adults: formData.adults,
-    child: formData.child,
-    infant: formData.infant,
-    onSiteBalanceAmount: formData.onSiteBalanceAmount
-  })
-  
+  // 잔액 자동 계산 (= 총 결제 예정 금액 − 고객 실제 지불액: 보증금 + 잔금 수령)
+  type BalanceDeps = {
+    totalCustomerPayment: number
+    depositAmount: number
+    calculatedBalanceReceivedTotal: number
+    notIncludedPrice: number
+    adults: number
+    child: number
+    infant: number
+  }
+  const prevBalanceDepsRef = useRef<BalanceDeps | null>(null)
+
   useEffect(() => {
     const totalCustomerPayment = calculateTotalCustomerPayment()
     const totalPaid = formData.depositAmount + calculatedBalanceReceivedTotal
     const calculatedBalance = Math.max(0, totalCustomerPayment - totalPaid)
-    
-    // 불포함 가격 계산
-    const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
-    
-    // 의존성 변경 확인 (onSiteBalanceAmount는 제외)
-    const currentDeps = {
+
+    const notIncludedPrice = notIncludedBreakdown.totalUsd
+
+    const currentDeps: BalanceDeps = {
+      totalCustomerPayment: roundUsd2(totalCustomerPayment),
       depositAmount: formData.depositAmount,
       calculatedBalanceReceivedTotal,
-      choiceTotal: formData.choiceTotal,
-      choicesTotal: formData.choicesTotal,
       notIncludedPrice,
       adults: formData.adults,
       child: formData.child,
-      infant: formData.infant
+      infant: formData.infant,
     }
-    
-    const depsChanged = 
-      prevBalanceDepsRef.current.depositAmount !== currentDeps.depositAmount ||
-      prevBalanceDepsRef.current.calculatedBalanceReceivedTotal !== currentDeps.calculatedBalanceReceivedTotal ||
-      prevBalanceDepsRef.current.choiceTotal !== currentDeps.choiceTotal ||
-      prevBalanceDepsRef.current.choicesTotal !== currentDeps.choicesTotal ||
-      Math.abs(prevBalanceDepsRef.current.notIncludedPrice - currentDeps.notIncludedPrice) > 0.01 ||
-      prevBalanceDepsRef.current.adults !== currentDeps.adults ||
-      prevBalanceDepsRef.current.child !== currentDeps.child ||
-      prevBalanceDepsRef.current.infant !== currentDeps.infant
-    
-    // 의존성이 변경되었을 때만 업데이트
-    if (depsChanged) {
-      const currentBalance = prevBalanceDepsRef.current.onSiteBalanceAmount ?? formData.onSiteBalanceAmount ?? 0
-      const balanceDifference = Math.abs(currentBalance - calculatedBalance)
-      
-      // 잔액이 설정되지 않았거나 0일 때, 또는 계산된 잔액과 차이가 0.01 이상일 때만 업데이트
-      if (currentBalance === 0 || currentBalance === undefined || currentBalance === null) {
-        // 잔액이 없으면 불포함 가격을 기본값으로 설정
-        const newBalance = notIncludedPrice > 0 ? notIncludedPrice : calculatedBalance
-        setFormData((prev: typeof formData) => ({
-          ...prev,
-          onSiteBalanceAmount: newBalance,
-          balanceAmount: newBalance
-        }))
-        prevBalanceDepsRef.current = { ...currentDeps, onSiteBalanceAmount: newBalance }
-      } else if (balanceDifference > 0.01) {
-        // 초이스 변경 등으로 재계산이 필요한 경우
-        // 저장된 잔액(또는 사용자 입력)이 있고 계산값이 0이면 덮어쓰지 않음 (페이지 로드 시 $195 → $0 리셋 방지)
-        if (calculatedBalance === 0 && currentBalance > 0) {
-          prevBalanceDepsRef.current = { ...currentDeps, onSiteBalanceAmount: currentBalance }
-        } else {
-          setFormData((prev: typeof formData) => ({
-            ...prev,
-            onSiteBalanceAmount: calculatedBalance,
-            balanceAmount: calculatedBalance
-          }))
-          prevBalanceDepsRef.current = { ...currentDeps, onSiteBalanceAmount: calculatedBalance }
-        }
-      } else {
-        // 의존성은 변경되었지만 잔액 차이가 작으면 의존성만 업데이트
-        prevBalanceDepsRef.current = { ...currentDeps, onSiteBalanceAmount: currentBalance }
-      }
+
+    const prev = prevBalanceDepsRef.current
+    const depsChanged =
+      prev == null ||
+      Math.abs(prev.totalCustomerPayment - currentDeps.totalCustomerPayment) > 0.01 ||
+      prev.depositAmount !== currentDeps.depositAmount ||
+      prev.calculatedBalanceReceivedTotal !== currentDeps.calculatedBalanceReceivedTotal ||
+      Math.abs(prev.notIncludedPrice - currentDeps.notIncludedPrice) > 0.01 ||
+      prev.adults !== currentDeps.adults ||
+      prev.child !== currentDeps.child ||
+      prev.infant !== currentDeps.infant
+
+    if (!depsChanged) return
+
+    const stored = formData.onSiteBalanceAmount
+    const currentBalance = stored ?? 0
+    const balanceDifference = Math.abs(currentBalance - calculatedBalance)
+
+    const shouldWrite =
+      stored === undefined ||
+      stored === null ||
+      (stored === 0 && calculatedBalance > 0.01) ||
+      balanceDifference > 0.01
+
+    if (shouldWrite && !(calculatedBalance === 0 && currentBalance > 0.01)) {
+      setFormData((prevForm: typeof formData) => ({
+        ...prevForm,
+        onSiteBalanceAmount: calculatedBalance,
+        balanceAmount: calculatedBalance,
+      }))
     }
-  }, [calculateTotalCustomerPayment, formData.depositAmount, calculatedBalanceReceivedTotal, formData.choiceTotal, formData.choicesTotal, formData.not_included_price, formData.adults, formData.child, formData.infant, setFormData])
+    prevBalanceDepsRef.current = currentDeps
+  }, [
+    calculateTotalCustomerPayment,
+    formData.depositAmount,
+    calculatedBalanceReceivedTotal,
+    formData.not_included_price,
+    formData.adults,
+    formData.child,
+    formData.infant,
+    notIncludedBreakdown.totalUsd,
+    setFormData,
+  ])
 
   // depositAmount를 할인 후 상품가격으로 자동 업데이트 (상품 가격이나 쿠폰 변경 시)
   // OTA 채널의 경우 OTA 판매가를 depositAmount로 설정하고, 채널 결제 금액과 수수료도 함께 업데이트
@@ -796,8 +900,7 @@ export default function PricingSection({
           const totalCustomerPayment = calculateTotalCustomerPayment()
           const salePriceTimesPax = formData.productPriceTotal
           /** 불포함(현장/추가 결제) 금액이 있으면 고객 총 결제 = 판매·옵션 등 + 불포함. 보증금(실제 지불액)은 불포함을 제외한 금액, 잔액(투어 당일) = 불포함 합. */
-          const notIncludedTotal =
-            (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+          const notIncludedTotal = notIncludedBreakdown.totalUsd
           const depositPortion =
             notIncludedTotal > 0
               ? Math.max(0, totalCustomerPayment - notIncludedTotal)
@@ -830,11 +933,15 @@ export default function PricingSection({
               ? Math.round(channelPaymentBase * (commissionPercent / 100) * 100) / 100
               : (formData.commission_amount ?? 0)
             const commissionToSet = isExistingPricingLoaded ? (formData.commission_amount ?? 0) : calculatedCommission
+            const otaRemainingBalance = Math.max(
+              0,
+              roundUsd2(totalCustomerPayment - depositPortion - calculatedBalanceReceivedTotal)
+            )
             const same =
               Math.abs((formData.depositAmount ?? 0) - depositPortion) < 0.01 &&
               Math.abs((formData.onlinePaymentAmount ?? 0) - salePriceTimesPax) < 0.01 &&
               Math.abs((formData.commission_amount ?? 0) - commissionToSet) < 0.01 &&
-              Math.abs((formData.onSiteBalanceAmount ?? 0) - (notIncludedTotal > 0 ? notIncludedTotal : 0)) < 0.01
+              Math.abs((formData.onSiteBalanceAmount ?? 0) - otaRemainingBalance) < 0.01
             if (!same) {
               setFormData((prev: typeof formData) => ({
                 ...prev,
@@ -843,8 +950,8 @@ export default function PricingSection({
                 commission_base_price: salePriceTimesPax,
                 commission_percent: (prev.commission_percent != null && prev.commission_percent > 0) ? prev.commission_percent : commissionPercent,
                 commission_amount: isExistingPricingLoaded ? (prev.commission_amount ?? 0) : calculatedCommission,
-                onSiteBalanceAmount: notIncludedTotal > 0 ? notIncludedTotal : 0,
-                balanceAmount: notIncludedTotal > 0 ? notIncludedTotal : 0
+                onSiteBalanceAmount: otaRemainingBalance,
+                balanceAmount: otaRemainingBalance
               }))
             }
           }
@@ -877,7 +984,7 @@ export default function PricingSection({
         }
       }
     }
-  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.depositAmount, formData.channelId, formData.not_included_price, formData.adults, formData.child, formData.infant, formData.commission_amount, formData.commission_percent, channels, returnedAmount, calculateTotalCustomerPayment, calculatedBalanceReceivedTotal, isExistingPricingLoaded, setFormData])
+  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.depositAmount, formData.channelId, formData.not_included_price, formData.adults, formData.child, formData.infant, formData.commission_amount, formData.commission_percent, channels, returnedAmount, calculateTotalCustomerPayment, calculatedBalanceReceivedTotal, isExistingPricingLoaded, setFormData, notIncludedBreakdown.totalUsd])
 
   // 선택된 채널 정보 가져오기
   const selectedChannel = channels?.find(ch => ch.id === formData.channelId)
@@ -926,8 +1033,7 @@ export default function PricingSection({
       formData.cardFee +
       formData.prepaymentTip -
       (formData.onSiteBalanceAmount || 0)
-    const choicesTotal = formData.choiceTotal || formData.choicesTotal || 0
-    const defaultChannelPaymentAmount = productSubtotal - choicesTotal
+    const defaultChannelPaymentAmount = productSubtotal
     const channelPaymentAmount =
       formData.onlinePaymentAmount || (defaultChannelPaymentAmount > 0 ? defaultChannelPaymentAmount : 0)
     return Math.max(0, channelPaymentAmount - effectiveCommissionAmount)
@@ -1036,9 +1142,13 @@ export default function PricingSection({
   const isSinglePrice = pricingType === 'single'
   
   // 초이스별 불포함 금액 계산 (항상 dynamic_pricing에서 조회)
-  const calculateChoiceNotIncludedTotal = useCallback(async () => {
+  const calculateChoiceNotIncludedTotal = useCallback(async (): Promise<NotIncludedCalcResult> => {
+    const paxEarly = (formData.adults || 0) + (formData.child || 0) + (formData.infant || 0)
+    const residentOnlyEarly = sumResidentFeeAmountsUsd(formData.residentStatusAmounts)
+    const fieldOnlyEarly = (formData.not_included_price || 0) * paxEarly
+
     if (!formData.productId || !formData.tourDate || !formData.channelId) {
-      return 0
+      return packNotIncluded(fieldOnlyEarly, residentOnlyEarly)
     }
 
     try {
@@ -1082,7 +1192,7 @@ export default function PricingSection({
         }
       }
       if (queryError || !pricingData || pricingData.length === 0) {
-        return 0
+        return packNotIncluded(fieldOnlyEarly, residentOnlyEarly)
       }
 
       type PricingData = {
@@ -1104,39 +1214,48 @@ export default function PricingSection({
             : pricing.choices_pricing
         } catch (e) {
           console.warn('choices_pricing 파싱 오류:', e)
-          return defaultNotIncludedPrice * (formData.adults + formData.child + formData.infant)
+          const pax = formData.adults + formData.child + formData.infant
+          const fieldFromForm = (formData.not_included_price || 0) * pax
+          return packNotIncluded(
+            Math.max(defaultNotIncludedPrice * pax, fieldFromForm),
+            sumResidentFeeAmountsUsd(formData.residentStatusAmounts)
+          )
         }
       }
 
-      // 선택된 초이스별 불포함 금액 계산
+      // 선택된 초이스별 불포함 금액 계산 (미국 거주자 구분 그룹은 UI 금액(residentStatusAmounts)으로만 합산해 초이스와 무관하게 반영)
       let totalNotIncluded = 0
-      
+      const totalPax = formData.adults + formData.child + formData.infant
+      const residentClassChoice = findUsResidentClassificationChoice(
+        (formData.productChoices || []) as Parameters<typeof findUsResidentClassificationChoice>[0]
+      )
+
       // 새로운 간결한 초이스 시스템 (selectedChoices가 배열인 경우)
       if (Array.isArray(formData.selectedChoices)) {
-        formData.selectedChoices.forEach((choice: { choice_id?: string; id?: string; option_id?: string }) => {
-          // choices_pricing의 키는 choice_id 또는 option_id일 수 있음
+        formData.selectedChoices.forEach(
+          (choice: { choice_id?: string; id?: string; option_id?: string; quantity?: number }) => {
           const choiceId = choice.choice_id || choice.id
+          if (residentClassChoice && choiceId === residentClassChoice.id) return
+
           const optionId = choice.option_id
-          
-          // 먼저 option_id로 찾고, 없으면 choice_id로 찾기
+
           let choiceData = null
           if (optionId && choicesPricing[optionId]) {
             choiceData = choicesPricing[optionId]
           } else if (choiceId && choicesPricing[choiceId]) {
             choiceData = choicesPricing[choiceId]
           }
-          
+
           if (choiceData) {
             const choiceNotIncludedPrice = choiceData.not_included_price !== undefined && choiceData.not_included_price !== null
               ? choiceData.not_included_price
               : defaultNotIncludedPrice
-            // 불포함 금액은 인원당 금액이므로 인원수만 곱함 (quantity는 초이스 옵션 수량이므로 불포함 금액 계산에는 사용하지 않음)
-            totalNotIncluded += choiceNotIncludedPrice * (formData.adults + formData.child + formData.infant)
+            totalNotIncluded += choiceNotIncludedPrice * totalPax
           }
         })
       } else if (formData.selectedChoices && typeof formData.selectedChoices === 'object') {
-        // 기존 객체 형태의 selectedChoices 처리
         Object.entries(formData.selectedChoices).forEach(([choiceId]) => {
+          if (residentClassChoice && choiceId === residentClassChoice.id) return
           if (choicesPricing[choiceId]) {
             const choicePricing = choicesPricing[choiceId]
             const choiceNotIncludedPrice = choicePricing.not_included_price !== undefined && choicePricing.not_included_price !== null
@@ -1147,38 +1266,72 @@ export default function PricingSection({
         })
       }
 
-      // 선택된 초이스가 없으면 기본 불포함 금액 사용
       if (totalNotIncluded === 0 && defaultNotIncludedPrice > 0) {
         totalNotIncluded = defaultNotIncludedPrice * (formData.adults + formData.child + formData.infant)
       }
 
-      return totalNotIncluded
+      const fieldFromForm = (formData.not_included_price || 0) * totalPax
+      const baseBeforeResident = Math.max(totalNotIncluded, fieldFromForm)
+
+      const residentPart = sumResidentFeeAmountsUsd(formData.residentStatusAmounts)
+      return packNotIncluded(baseBeforeResident, residentPart)
     } catch (error) {
       console.error('초이스별 불포함 금액 계산 오류:', error)
-      return (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+      const pax = formData.adults + formData.child + formData.infant
+      return packNotIncluded(
+        (formData.not_included_price || 0) * pax,
+        sumResidentFeeAmountsUsd(formData.residentStatusAmounts)
+      )
     }
-  }, [formData.productId, formData.tourDate, formData.channelId, (formData as any).variantKey, formData.selectedChoices, formData.adults, formData.child, formData.infant, formData.not_included_price])
+  }, [
+    formData.productId,
+    formData.tourDate,
+    formData.channelId,
+    (formData as any).variantKey,
+    formData.selectedChoices,
+    formData.productChoices,
+    formData.adults,
+    formData.child,
+    formData.infant,
+    formData.not_included_price,
+    formData.residentStatusAmounts,
+  ])
 
-  const [choiceNotIncludedTotal, setChoiceNotIncludedTotal] = useState(0)
-
-  // 초이스별 불포함 금액 업데이트 (productId, tourDate, channelId 있을 때 항상 조회)
+  // 초이스별 불포함 금액 업데이트 (상품·날짜·채널 없을 때도 거주 금액·not_included_price×인원 반영)
   useEffect(() => {
-    if (formData.productId && formData.tourDate && formData.channelId) {
-      calculateChoiceNotIncludedTotal().then(total => {
-        setChoiceNotIncludedTotal(total)
-        setFormData((prev: typeof formData) => {
-          const prevTotal = (prev as any).choiceNotIncludedTotal
-          return prevTotal === total ? prev : { ...prev, choiceNotIncludedTotal: total }
-        })
-      })
-    } else {
-      setChoiceNotIncludedTotal(0)
+    let cancelled = false
+    calculateChoiceNotIncludedTotal().then((res) => {
+      if (cancelled) return
+      setChoiceNotIncludedTotal(res.total)
+      setChoiceNotIncludedBaseTotal(res.baseTotal)
       setFormData((prev: typeof formData) => {
-        const prevTotal = (prev as any).choiceNotIncludedTotal
-        return prevTotal === 0 ? prev : { ...prev, choiceNotIncludedTotal: 0 }
+        const p = prev as any
+        if (p.choiceNotIncludedTotal === res.total && p.choiceNotIncludedBaseTotal === res.baseTotal) return prev
+        return {
+          ...prev,
+          choiceNotIncludedTotal: res.total,
+          choiceNotIncludedBaseTotal: res.baseTotal,
+        }
       })
+    })
+    return () => {
+      cancelled = true
     }
-  }, [calculateChoiceNotIncludedTotal, formData.productId, formData.tourDate, formData.channelId, setFormData])
+  }, [
+    calculateChoiceNotIncludedTotal,
+    formData.productId,
+    formData.tourDate,
+    formData.channelId,
+    formData.selectedChoices,
+    formData.productChoices,
+    formData.adults,
+    formData.child,
+    formData.infant,
+    (formData as any).variantKey,
+    formData.residentStatusAmounts,
+    formData.not_included_price,
+    setFormData,
+  ])
 
   // Net 가격 계산
   const calculateNetPrice = () => {
@@ -1203,11 +1356,8 @@ export default function PricingSection({
     // commission_base_price_only가 true인 경우, 판매가격에만 커미션 적용
     if (commissionBasePriceOnly) {
       const baseProductPrice = calculateProductPriceTotal()
-      const choicesTotal = formData.choicesTotal || formData.choiceTotal || 0
       // 초이스별 불포함 금액 사용 (없으면 기본 불포함 금액)
-      const notIncludedTotal = choiceNotIncludedTotal > 0 
-        ? choiceNotIncludedTotal 
-        : (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+      const notIncludedTotal = notIncludedBreakdown.totalUsd
       
       // 판매가격만 계산 (초이스와 불포함 금액 제외)
       const basePriceForCommission = baseProductPrice - formData.couponDiscount - formData.additionalDiscount + formData.additionalCost
@@ -1219,8 +1369,8 @@ export default function PricingSection({
         commissionAmount = basePriceForCommission * (formData.commission_percent / 100)
       }
       
-      // Net = 판매가격 - 커미션 + 초이스 + 불포함 금액 (커미션 적용 안 됨)
-      return basePriceForCommission - commissionAmount + choicesTotal + notIncludedTotal
+      // Net = 판매가격 - 커미션 + 불포함 금액 (초이스 판매총액은 불포함과 중복이므로 가산하지 않음)
+      return basePriceForCommission - commissionAmount + notIncludedTotal
     } else {
       // 기존 로직: 전체 가격에 커미션 적용
       if (effectiveCommissionAmount > 0) {
@@ -1231,132 +1381,15 @@ export default function PricingSection({
     }
   }
 
-  // 초이스별 구매가 총합 계산
-  const calculateChoiceCostTotal = useCallback(async () => {
-    if (!formData.productId || !formData.tourDate || !formData.channelId) {
-      return 0
-    }
-
-    try {
-      const variantKey = (formData as any).variantKey || 'default'
-      let pricingData: any[] | null = null
-      let queryError: any = null
-      const { data: data1, error: err1 } = await supabase
-        .from('dynamic_pricing')
-        .select('choices_pricing, updated_at')
-        .eq('product_id', formData.productId)
-        .eq('date', formData.tourDate)
-        .eq('channel_id', formData.channelId)
-        .eq('variant_key', variantKey)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-      pricingData = data1
-      queryError = err1
-      if ((!pricingData || pricingData.length === 0) && !queryError) {
-        if (variantKey !== 'default') {
-          const { data: dataDefault } = await supabase
-            .from('dynamic_pricing')
-            .select('choices_pricing, updated_at')
-            .eq('product_id', formData.productId)
-            .eq('date', formData.tourDate)
-            .eq('channel_id', formData.channelId)
-            .eq('variant_key', 'default')
-            .order('updated_at', { ascending: false })
-            .limit(1)
-          if ((dataDefault?.length ?? 0) > 0) pricingData = dataDefault
-        }
-        if (!pricingData || pricingData.length === 0) {
-          const { data: dataAny } = await supabase
-            .from('dynamic_pricing')
-            .select('choices_pricing, updated_at')
-            .eq('product_id', formData.productId)
-            .eq('date', formData.tourDate)
-            .eq('channel_id', formData.channelId)
-            .order('updated_at', { ascending: false })
-            .limit(1)
-          if ((dataAny?.length ?? 0) > 0) pricingData = dataAny
-        }
-      }
-      if (queryError || !pricingData || pricingData.length === 0) {
-        return 0
-      }
-
-      const pricing = pricingData[0] as { choices_pricing?: any }
-      if (!pricing.choices_pricing || typeof pricing.choices_pricing !== 'object') {
-        return 0
-      }
-
-      let totalCost = 0
-
-      // 새로운 간결한 초이스 시스템 (selectedChoices가 배열인 경우)
-      if (Array.isArray(formData.selectedChoices)) {
-        formData.selectedChoices.forEach((choice: { choice_id?: string; id?: string; option_id?: string; quantity?: number }) => {
-          const choiceId = choice.choice_id || choice.id
-          const optionId = choice.option_id
-          const quantity = choice.quantity || 1
-
-          // choices_pricing에서 구매가 찾기
-          const choicePricing = (choiceId && pricing.choices_pricing[choiceId]) || (optionId && pricing.choices_pricing[optionId])
-          if (choicePricing) {
-            const adultCost = choicePricing.adult_cost_price || 0
-            const childCost = choicePricing.child_cost_price || 0
-            const infantCost = choicePricing.infant_cost_price || 0
-            
-            // 인원별 구매가 계산
-            totalCost += (adultCost * (formData.adults || 0)) + 
-                        (childCost * (formData.child || 0)) + 
-                        (infantCost * (formData.infant || 0))
-            totalCost *= quantity
-          }
-        })
-      } else if (formData.selectedChoices && typeof formData.selectedChoices === 'object') {
-        // 기존 객체 형태의 selectedChoices 처리
-        Object.entries(formData.selectedChoices).forEach(([key, value]: [string, any]) => {
-          const choiceId = value?.choice_id || value?.id || key
-          const choicePricing = pricing.choices_pricing[choiceId]
-          if (choicePricing) {
-            const adultCost = choicePricing.adult_cost_price || 0
-            const childCost = choicePricing.child_cost_price || 0
-            const infantCost = choicePricing.infant_cost_price || 0
-            
-            totalCost += (adultCost * (formData.adults || 0)) + 
-                        (childCost * (formData.child || 0)) + 
-                        (infantCost * (formData.infant || 0))
-          }
-        })
-      }
-
-      return totalCost
-    } catch (error) {
-      console.error('초이스 구매가 계산 오류:', error)
-      return 0
-    }
-  }, [formData.productId, formData.tourDate, formData.channelId, (formData as any).variantKey, formData.selectedChoices, formData.adults, formData.child, formData.infant])
-
-  // 초이스 구매가 총합 상태
-  const [choiceCostTotal, setChoiceCostTotal] = useState(0)
   // 정산 카드 하단 설명 표시 (모바일: 클릭 시 토글)
   const [expandedSettlementCard, setExpandedSettlementCard] = useState<string | null>(null)
 
-  // 초이스 구매가 총합 업데이트 (formData.choicesTotal은 의존성에서 제외 - 우리가 설정하는 값이라 루프 방지)
-  useEffect(() => {
-    const updateChoiceCostTotal = async () => {
-      const cost = await calculateChoiceCostTotal()
-      setChoiceCostTotal(cost)
-      // 값이 실제로 바뀔 때만 setFormData (무한 루프 방지)
-      setFormData((prev: any) =>
-        prev.choicesTotal === cost ? prev : { ...prev, choicesTotal: cost }
-      )
-    }
-    updateChoiceCostTotal()
-  }, [calculateChoiceCostTotal, setFormData])
-
-  // 수익 계산 (Net 가격 - 예약 지출 총합 - 투어 지출 총합 - 초이스 구매가 총합)
-  const calculateProfit = useCallback(() => {
+  // 수익 계산 (Net 가격 - 예약 지출 총합 - 투어 지출 총합)
+  const calculateProfit = () => {
     if (isReservationCancelled) return 0
     const netPrice = calculateNetPrice()
-    return netPrice - reservationExpensesTotal - tourExpensesTotal - choiceCostTotal
-  }, [isReservationCancelled, calculateNetPrice, reservationExpensesTotal, tourExpensesTotal, choiceCostTotal])
+    return netPrice - reservationExpensesTotal - tourExpensesTotal
+  }
 
   // 커미션 기본값 설정 및 자동 업데이트 (할인 후 상품가 우선, 없으면 OTA 판매가, 없으면 소계)
   const otaSalePrice = formData.onlinePaymentAmount ?? 0
@@ -1416,7 +1449,7 @@ export default function PricingSection({
       // percentage 타입 쿠폰인 경우에만 재계산 (fixed 타입은 금액이 고정이므로 재계산 불필요)
       if (selectedCoupon && selectedCoupon.discount_type === 'percentage') {
         // 불포함 가격 계산 (쿠폰 할인 계산에서 제외)
-        const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+        const notIncludedPrice = notIncludedBreakdown.totalUsd
         // OTA 채널일 때는 OTA 판매가에 직접 쿠폰 할인 적용 (불포함 가격 제외)
         const subtotal = isOTAChannel 
           ? formData.productPriceTotal - notIncludedPrice
@@ -1438,15 +1471,14 @@ export default function PricingSection({
     formData.adults,
     formData.child,
     formData.infant,
-    formData.choicesTotal,
-    formData.choiceTotal,
     isOTAChannel,
     calculateProductPriceTotal,
     calculateChoiceTotal,
     calculateCouponDiscount,
     coupons,
     formData.couponDiscount,
-    setFormData
+    setFormData,
+    notIncludedBreakdown.totalUsd,
   ])
 
   // depositAmount 변경 시 채널 결제 금액 자동 업데이트 (입력 중이 아닐 때만)
@@ -2000,7 +2032,7 @@ export default function PricingSection({
                   ${(() => {
                     // 판매가 + 불포함 가격 = 상품 가격 합계
                     const salePriceTotal = formData.productPriceTotal || 0
-                    const notIncludedTotal = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+                    const notIncludedTotal = notIncludedBreakdown.totalUsd
                     return (salePriceTotal + notIncludedTotal).toFixed(2)
                   })()}
                 </span>
@@ -2089,11 +2121,6 @@ export default function PricingSection({
                   상품 선택 시 표시
                 </div>
               )}
-              
-              <div className="border-t pt-1 flex justify-between items-center">
-                <span className="text-sm font-medium text-gray-900">총합</span>
-                <span className="text-sm font-bold text-green-600">+${(formData.choiceTotal || formData.choicesTotal || 0).toFixed(2)}</span>
-              </div>
             </div>
           </div>
           )}
@@ -2139,7 +2166,7 @@ export default function PricingSection({
                     )
                     
                     // 불포함 가격 계산 (쿠폰 할인 계산에서 제외)
-                    const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+                    const notIncludedPrice = notIncludedBreakdown.totalUsd
                     // OTA 채널일 때는 OTA 판매가에 직접 쿠폰 할인 적용 (불포함 가격 제외)
                     const subtotal = isOTAChannel 
                       ? formData.productPriceTotal - notIncludedPrice
@@ -2363,23 +2390,36 @@ export default function PricingSection({
               
               <div className="border-t border-gray-200 my-1.5"></div>
               
-              {/* 초이스 총액 */}
-              <div className="flex justify-between items-center mb-1.5">
-                <span className="text-xs font-medium text-gray-700">{isKorean ? '초이스 총액' : 'Choices Total'}</span>
-                <span className={`text-xs font-semibold ${priceTextClass('choicesTotal')}`}>
-                  +${(formData.choiceTotal || formData.choicesTotal || 0).toFixed(2)}
-                </span>
-              </div>
-              
-              {/* 불포함 가격 */}
+              {/* 불포함 가격 (입장권 + 비거주자 비용 분리 표기) */}
               {(() => {
-                const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
-                return notIncludedPrice > 0 ? (
-                  <div className="flex justify-between items-center mb-1.5">
-                    <span className="text-[10px] text-gray-600">{isKorean ? '+ 불포함 가격' : '+ Not Included Price'}</span>
-                    <span className={`text-[10px] text-gray-700 ${priceTextClass('not_included_price')}`}>+${notIncludedPrice.toFixed(2)}</span>
-                  </div>
-                ) : null
+                const { baseUsd, residentFeesUsd, totalUsd } = notIncludedBreakdown
+                if (totalUsd <= 0) return null
+                return (
+                  <>
+                    {baseUsd > 0 && (
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-[10px] text-gray-600">
+                          {isKorean
+                            ? '+ 불포함 가격 (입장권)'
+                            : '+ Not included (admission tickets)'}
+                        </span>
+                        <span className={`text-[10px] text-gray-700 ${priceTextClass('not_included_price')}`}>
+                          +${baseUsd.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    {residentFeesUsd > 0 && (
+                      <div className="flex justify-between items-center mb-1.5 pl-2">
+                        <span className="text-[10px] text-gray-600">
+                          {isKorean ? '+ 비거주자 비용' : '+ Non-resident fees'}
+                        </span>
+                        <span className={`text-[10px] text-gray-700 ${priceTextClass('not_included_price')}`}>
+                          +${residentFeesUsd.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )
               })()}
               
               {/* 추가 할인 */}
@@ -2443,12 +2483,8 @@ export default function PricingSection({
                     // 옵션 추가
                     const optionsTotal = reservationOptionsTotalPrice || 0
                     
-                    // 초이스 총액
-                    const choicesTotal = formData.choiceTotal || formData.choicesTotal || 0
-                    
-                    // 불포함 가격
-                    const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
-                    const notIncludedTotal = notIncludedPrice
+                    // 불포함 가격 (입장권 + 비거주 합 = notIncludedBreakdown.totalUsd)
+                    const notIncludedTotal = notIncludedBreakdown.totalUsd
                     
                     // 추가 비용
                     const additionalCost = formData.additionalCost || 0
@@ -2465,11 +2501,10 @@ export default function PricingSection({
                     // 선결제 팁
                     const prepaymentTip = formData.prepaymentTip || 0
                     
-                    // 고객 총 결제 금액 = 할인 후 상품가 + 옵션 + 초이스 총액 + 불포함 가격 + 추가 비용 + 세금 + 카드 수수료 + 선결제 지출 + 선결제 팁
+                    // 고객 총 결제 금액 = 할인 후 상품가 + 옵션 + 불포함 가격 + … (초이스 판매총액은 불포함과 중복이므로 제외)
                     const totalCustomerPayment = 
                       discountedProductPrice +
                       optionsTotal +
-                      choicesTotal +
                       notIncludedTotal +
                       additionalCost +
                       tax +
@@ -2494,6 +2529,23 @@ export default function PricingSection({
                   고객 실제 지불 내역
                 </h5>
                 <span className="ml-1.5 text-[10px] text-gray-500">(Payment Status)</span>
+              </div>
+
+              {/* 총 결제 예정 금액 = ① 고객 총 결제 금액과 동일 */}
+              <div className="flex justify-between items-center mb-2 pb-2 border-b border-gray-100">
+                <span
+                  className="text-xs font-semibold text-gray-900"
+                  title={
+                    isKorean
+                      ? '① 고객 총 결제 금액과 동일합니다. 잔액 = 이 금액 − (보증금 + 잔금 수령)'
+                      : 'Same as ① Total Customer Payment. Balance = this amount − (deposit + balance received)'
+                  }
+                >
+                  {isKorean ? '총 결제 예정 금액' : 'Total Payment Due'}
+                </span>
+                <span className={`text-xs font-bold text-blue-700 ${priceTextClass('totalPrice')}`}>
+                  ${calculateTotalCustomerPayment().toFixed(2)}
+                </span>
               </div>
               
               {/* 고객 실제 지불액 (보증금) */}
@@ -2554,23 +2606,23 @@ export default function PricingSection({
                 </div>
               )}
               
-              {/* 잔액 (투어 당일 지불) */}
+              {/* 잔액 = 총 결제 예정 − 고객 실제 지불(보증금+잔금 수령) */}
               <div className="flex justify-between items-center mb-1.5">
-                <span className="text-xs text-gray-700">{isKorean ? '잔액 (투어 당일 지불)' : 'Remaining Balance (On-site)'}</span>
+                <span
+                  className="text-xs text-gray-700 cursor-help"
+                  title={
+                    isKorean
+                      ? '총 결제 예정 금액 − (고객 실제 지불액 보증금 + 잔금 수령). 투어 당일 등 남은 부담금'
+                      : 'Total payment due − (deposit + balance received). Typically due on tour day'
+                  }
+                >
+                  {isKorean ? '잔액 (투어 당일 지불)' : 'Remaining Balance (On-site)'}
+                </span>
                 <div className="relative">
                   <span className="absolute left-1 top-1/2 transform -translate-y-1/2 text-gray-500 text-xs">$</span>
                   <input
                     type="number"
-                    value={isOnSiteBalanceAmountFocused ? onSiteBalanceAmountInput : (() => {
-                      // 고객 총 결제 금액 - 보증금 - 잔금 수령
-                      const totalCustomerPayment = calculateTotalCustomerPayment()
-                      const totalPaid = formData.depositAmount + calculatedBalanceReceivedTotal
-                      const defaultBalance = Math.max(0, totalCustomerPayment - totalPaid)
-                      const balanceValue = formData.onSiteBalanceAmount !== undefined && formData.onSiteBalanceAmount !== null 
-                        ? formData.onSiteBalanceAmount 
-                        : defaultBalance
-                      return parseFloat(balanceValue.toString()).toFixed(2)
-                    })()}
+                    value={isOnSiteBalanceAmountFocused ? onSiteBalanceAmountInput : displayedOnSiteBalance().toFixed(2)}
                     onChange={(e) => {
                       const inputValue = e.target.value
                       setOnSiteBalanceAmountInput(inputValue)
@@ -2579,13 +2631,7 @@ export default function PricingSection({
                     }}
                     onFocus={() => {
                       setIsOnSiteBalanceAmountFocused(true)
-                      const totalCustomerPayment = calculateTotalCustomerPayment()
-                      const totalPaid = formData.depositAmount + calculatedBalanceReceivedTotal
-                      const defaultBalance = Math.max(0, totalCustomerPayment - totalPaid)
-                      const currentValue = formData.onSiteBalanceAmount !== undefined && formData.onSiteBalanceAmount !== null 
-                        ? formData.onSiteBalanceAmount 
-                        : defaultBalance
-                      setOnSiteBalanceAmountInput(currentValue.toString())
+                      setOnSiteBalanceAmountInput(displayedOnSiteBalance().toString())
                     }}
                     onBlur={() => {
                       setIsOnSiteBalanceAmountFocused(false)
@@ -2597,16 +2643,6 @@ export default function PricingSection({
                     placeholder="0"
                   />
                 </div>
-              </div>
-              
-              <div className="border-t border-gray-200 my-1.5"></div>
-              
-              {/* 총 결제 예정 금액 */}
-              <div className="flex justify-between items-center mb-1.5">
-                <span className="text-xs font-semibold text-gray-900">{isKorean ? '총 결제 예정 금액' : 'Total Payment Due'}</span>
-                <span className={`text-xs font-bold text-blue-600 ${priceTextClass('depositAmount')}`}>
-                  ${((formData.depositAmount || 0) + (calculatedBalanceReceivedTotal || 0) + (formData.onSiteBalanceAmount || 0)).toFixed(2)}
-                </span>
               </div>
             </div>
 
@@ -2645,7 +2681,6 @@ export default function PricingSection({
                           const baseAmount = formData.onlinePaymentAmount || formData.depositAmount || (salePriceTimesPax > 0 ? salePriceTimesPax : 0)
                           return Math.max(0, baseAmount - returnedAmount).toFixed(2)
                         } else {
-                          // 자체 채널: 상품 합계 - 초이스 총액
                           const productSubtotal = (
                             (formData.productPriceTotal - formData.couponDiscount) + 
                             reservationOptionsTotalPrice + 
@@ -2655,8 +2690,7 @@ export default function PricingSection({
                             formData.prepaymentTip -
                             (formData.onSiteBalanceAmount || 0)
                           )
-                          const choicesTotal = formData.choiceTotal || formData.choicesTotal || 0
-                          const defaultAmount = productSubtotal - choicesTotal
+                          const defaultAmount = productSubtotal
                           // onlinePaymentAmount가 없거나 0이면 기본값 사용
                           const baseAmount = formData.onlinePaymentAmount || (defaultAmount > 0 ? defaultAmount : 0)
                           // Returned가 있으면 차감
@@ -2727,8 +2761,7 @@ export default function PricingSection({
                               formData.prepaymentTip -
                               (formData.onSiteBalanceAmount || 0)
                             )
-                            const choicesTotal = formData.choiceTotal || formData.choicesTotal || 0
-                            const defaultAmount = productSubtotal - choicesTotal
+                            const defaultAmount = productSubtotal
                             const baseAmount = formData.onlinePaymentAmount || (defaultAmount > 0 ? defaultAmount : 0)
                             return Math.max(0, baseAmount - returnedAmount)
                           }
@@ -2743,7 +2776,7 @@ export default function PricingSection({
                         if (isOTAChannel) {
                           // OTA 채널 로직
                           // 할인 후 상품가 계산 (불포함 가격 제외)
-                          const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+                          const notIncludedPrice = notIncludedBreakdown.totalUsd
                           const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount - notIncludedPrice
                           const defaultBasePrice = discountedPrice > 0 ? discountedPrice : formData.subtotal
                           const commissionBasePrice = formData.commission_base_price !== undefined
@@ -2789,7 +2822,7 @@ export default function PricingSection({
                         if (isOTAChannel) {
                           const originalAmount = formData.onlinePaymentAmount || (() => {
                             // 할인 후 상품가 계산 (불포함 가격 제외)
-                            const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+                            const notIncludedPrice = notIncludedBreakdown.totalUsd
                             const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount - notIncludedPrice
                             return discountedPrice > 0 ? discountedPrice : 0
                           })()
@@ -2804,8 +2837,7 @@ export default function PricingSection({
                             formData.prepaymentTip -
                             (formData.onSiteBalanceAmount || 0)
                           )
-                          const choicesTotal = formData.choiceTotal || formData.choicesTotal || 0
-                          const defaultAmount = productSubtotal - choicesTotal
+                          const defaultAmount = productSubtotal
                           const originalAmount = formData.onlinePaymentAmount || (defaultAmount > 0 ? defaultAmount : 0)
                           return originalAmount.toFixed(2)
                         }
@@ -2813,7 +2845,7 @@ export default function PricingSection({
                         if (isOTAChannel) {
                           const baseAmount = formData.onlinePaymentAmount || (() => {
                             // 할인 후 상품가 계산 (불포함 가격 제외)
-                            const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+                            const notIncludedPrice = notIncludedBreakdown.totalUsd
                             const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount - notIncludedPrice
                             return discountedPrice > 0 ? discountedPrice : 0
                           })()
@@ -2828,8 +2860,7 @@ export default function PricingSection({
                             formData.prepaymentTip -
                             (formData.onSiteBalanceAmount || 0)
                           )
-                          const choicesTotal = formData.choiceTotal || formData.choicesTotal || 0
-                          const defaultAmount = productSubtotal - choicesTotal
+                          const defaultAmount = productSubtotal
                           const baseAmount = formData.onlinePaymentAmount || (defaultAmount > 0 ? defaultAmount : 0)
                           return Math.max(0, baseAmount - returnedAmount).toFixed(2)
                         }
@@ -2841,7 +2872,7 @@ export default function PricingSection({
                       (+ 팁 ${formData.prepaymentTip.toFixed(2)}) = ${(() => {
                         const baseAmount = formData.onlinePaymentAmount || (() => {
                           // 할인 후 상품가 계산 (불포함 가격 제외)
-                          const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+                          const notIncludedPrice = notIncludedBreakdown.totalUsd
                           const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount - notIncludedPrice
                           return discountedPrice > 0 ? discountedPrice : 0
                         })()
@@ -2875,7 +2906,7 @@ export default function PricingSection({
                               ? formData.commission_base_price 
                               : (formData.onlinePaymentAmount || (() => {
                                   // 할인 후 상품가 계산 (불포함 가격 제외)
-                                  const notIncludedPrice = (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+                                  const notIncludedPrice = notIncludedBreakdown.totalUsd
                                   const discountedPrice = formData.productPriceTotal - formData.couponDiscount - formData.additionalDiscount - notIncludedPrice
                                   return discountedPrice > 0 ? discountedPrice : formData.subtotal
                                 })())
@@ -3100,70 +3131,33 @@ export default function PricingSection({
                 </div>
               )}
               
-              {/* 초이스 총액 */}
-              {!isReservationCancelled && (formData.choiceTotal || formData.choicesTotal || 0) > 0 && (
-                <>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <span className="text-xs font-medium text-gray-700">+ {isKorean ? '초이스 총액' : 'Choices Total'}</span>
-                    <span className="text-xs font-medium text-gray-900">
-                      +${(formData.choiceTotal || formData.choicesTotal || 0).toFixed(2)}
-                    </span>
-                  </div>
-                  {/* 초이스 구매가 (운영 이익 계산용) - 수정 가능 */}
-                  <div className="flex justify-between items-center mb-1.5 p-1.5 bg-orange-50 border border-orange-200 rounded">
-                    <div className="flex-1">
-                      <label className="block text-[10px] font-medium text-orange-700 mb-0.5">
-                        {isKorean ? '초이스 구매가 (운영 이익 계산용)' : 'Choices Cost (for Operating Profit)'}
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={(((formData as any).choicesCostTotal as number) || choiceCostTotal || 0) === 0 ? '' : (((formData as any).choicesCostTotal as number) || choiceCostTotal || 0)}
-                        onChange={(e) => {
-                          const value = e.target.value
-                          if (value === '' || value === '-') {
-                            setFormData((prev: any) => ({ ...prev, choicesCostTotal: 0 }))
-                            setChoiceCostTotal(0)
-                            return
-                          }
-                          const numValue = parseFloat(value)
-                          if (!isNaN(numValue) && numValue >= 0) {
-                            setFormData((prev: any) => ({ ...prev, choicesCostTotal: numValue }))
-                            setChoiceCostTotal(numValue)
-                          }
-                        }}
-                        className="w-full px-1.5 py-0.5 text-xs border border-orange-300 rounded focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-white"
-                        placeholder="자동 불러오기 또는 수동 입력"
-                      />
-                      <p className="text-[10px] text-orange-600 mt-0.5">
-                        {isKorean ? '초이스별 구매가가 자동으로 불러와집니다. 필요시 수정 가능합니다.' : 'Choice cost prices are loaded automatically. You can modify if needed.'}
-                      </p>
-                    </div>
-                    <div className="ml-2 text-right">
-                      <div className="text-xs font-medium text-orange-700 mb-0.5">-</div>
-                      <div className="text-base font-bold text-orange-700">
-                        ${(((formData as any).choicesCostTotal as number) || choiceCostTotal || 0).toFixed(2)}
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
-              
-              {/* 불포함 가격 (취소 예약은 현장 결제 없음 → 0으로 간주하여 표시 안 함) */}
+              {/* 불포함 가격 — 입장권 / 비거주자 비용 분리 (취소 예약은 표시 안 함) */}
               {(() => {
                 if (isReservationCancelled) return null
-                const notIncludedTotal = choiceNotIncludedTotal > 0 
-                  ? choiceNotIncludedTotal 
-                  : (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
-                return notIncludedTotal > 0 ? (
-                  <div className="flex justify-between items-center mb-1.5">
-                    <span className="text-xs font-medium text-gray-700">+ {isKorean ? '불포함 가격' : 'Not Included Price'}</span>
-                    <span className="text-xs font-medium text-gray-900">
-                      +${notIncludedTotal.toFixed(2)}
-                    </span>
-                  </div>
-                ) : null
+                const { baseUsd, residentFeesUsd, totalUsd } = notIncludedBreakdown
+                if (totalUsd <= 0) return null
+                return (
+                  <>
+                    {baseUsd > 0 && (
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-xs font-medium text-gray-700">
+                          {isKorean
+                            ? '+ 불포함 가격 (입장권)'
+                            : '+ Not included (admission tickets)'}
+                        </span>
+                        <span className="text-xs font-medium text-gray-900">+${baseUsd.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {residentFeesUsd > 0 && (
+                      <div className="flex justify-between items-center mb-1.5 pl-2">
+                        <span className="text-xs font-medium text-gray-700">
+                          + {isKorean ? '비거주자 비용' : '+ Non-resident fees'}
+                        </span>
+                        <span className="text-xs font-medium text-gray-900">+${residentFeesUsd.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </>
+                )
               })()}
               
               {/* 추가할인 */}
@@ -3274,22 +3268,14 @@ export default function PricingSection({
                         })()
                     
                     // 불포함 가격 계산
-                    const notIncludedTotal = choiceNotIncludedTotal > 0 
-                      ? choiceNotIncludedTotal 
-                      : (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+                    const notIncludedTotal = notIncludedBreakdown.totalUsd
                     
-                    // 총 매출 = 채널 정산금액 + 예약 옵션(OTA만) + 초이스 총액 + 불포함 가격 - 추가할인 + 추가비용 + 세금 + 결제 수수료 + 선결제 지출 - 환불금
+                    // 총 매출 = 채널 정산금액 + 예약 옵션(OTA만) + 불포함 가격 + … (초이스 판매총액은 불포함과 중복이므로 가산하지 않음)
                     let totalRevenue = channelSettlementAmount
                     
                     // 예약 옵션 가격 (OTA는 채널 정산에 미포함이므로 가산; 비OTA는 채널 정산에 이미 포함)
                     if (reservationOptionsTotalPrice > 0 && isOTAChannel) {
                       totalRevenue += reservationOptionsTotalPrice
-                    }
-                    
-                    // 초이스 총액
-                    const choicesTotal = formData.choiceTotal || formData.choicesTotal || 0
-                    if (choicesTotal > 0) {
-                      totalRevenue += choicesTotal
                     }
                     
                     // 불포함 가격
@@ -3373,22 +3359,14 @@ export default function PricingSection({
                         })()
                     
                     // 불포함 가격 계산
-                    const notIncludedTotal = choiceNotIncludedTotal > 0 
-                      ? choiceNotIncludedTotal 
-                      : (formData.not_included_price || 0) * (formData.adults + formData.child + formData.infant)
+                    const notIncludedTotal = notIncludedBreakdown.totalUsd
                     
-                    // 총 매출 = 채널 정산금액 + 예약 옵션(OTA만) + 초이스 총액 + 불포함 가격 - 추가할인 + 추가비용 + 세금 + 결제 수수료 + 선결제 지출 - 환불금
+                    // 총 매출 = 채널 정산금액 + 예약 옵션(OTA만) + 불포함 가격 + … (초이스 판매총액은 불포함과 중복이므로 가산하지 않음)
                     let totalRevenue = channelSettlementAmount
                     
                     // 예약 옵션 가격 (OTA는 채널 정산에 미포함이므로 가산; 비OTA는 채널 정산에 이미 포함)
                     if (reservationOptionsTotalPrice > 0 && isOTAChannel) {
                       totalRevenue += reservationOptionsTotalPrice
-                    }
-                    
-                    // 초이스 총액
-                    const choicesTotal = formData.choiceTotal || formData.choicesTotal || 0
-                    if (choicesTotal > 0) {
-                      totalRevenue += choicesTotal
                     }
                     
                     // 불포함 가격
@@ -3425,11 +3403,7 @@ export default function PricingSection({
                     totalRevenue -= refundedAmount
                     totalRevenue -= returnedAmount
 
-                    // 초이스 구매가 차감 (운영 이익 계산용)
-                    const choicesCost = ((formData as any).choicesCostTotal as number) || choiceCostTotal || 0
-                    totalRevenue -= choicesCost
-
-                    // 운영 이익 = 총 매출 - 선결제 팁 - 초이스 구매가
+                    // 운영 이익 = 총 매출 - 선결제 팁
                     return (totalRevenue - (formData.prepaymentTip || 0)).toFixed(2)
                   })()}
                 </span>
@@ -3560,7 +3534,7 @@ export default function PricingSection({
                       ${calculateProfit().toFixed(2)}
                     </div>
                     <div className={`text-[10px] text-gray-500 ${expandedSettlementCard === 'profit' ? 'block' : 'hidden'} md:block md:opacity-0 md:group-hover:opacity-100 md:transition-opacity`}>
-                      Net 가격 - 지출 총합{isManiaTour ? ' - 투어 지출' : ''}{choiceCostTotal > 0 ? ' - 초이스 구매가' : ''}
+                      Net 가격 - 지출 총합{isManiaTour ? ' - 투어 지출' : ''}
                     </div>
                   </div>
                 </div>

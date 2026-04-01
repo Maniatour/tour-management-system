@@ -94,14 +94,6 @@ export default function ParticipantsSection({
 
   const amounts = { ...emptyResidentStatusAmounts(), ...(formData.residentStatusAmounts || {}) }
 
-  const recalcPass = (
-    us: number,
-    non: number,
-    under: number,
-    passCount: number
-  ) =>
-    computePassCoveredCount(passCount, us, non, under, formData.totalPeople)
-
   const sumResidentPeople =
     (formData.undecidedResidentCount || 0) +
     (formData.usResidentCount || 0) +
@@ -210,19 +202,47 @@ export default function ParticipantsSection({
                 value={Number(formData[row.countField] ?? 0)}
                 onChange={(e) => {
                   const newCount = Math.max(0, Number(e.target.value) || 0)
+                  const lineAmount = residentLineDefaultAmountUsd(row.lineKey, newCount)
+
+                  // 미정은 직접 편집 시 그대로 반영. 그 외 구간을 바꾸면 (미국 거주자·비거주 등) 미정을 총인원에서 나머지로 자동 조정
+                  if (row.lineKey === 'undecided') {
+                    apply({
+                      undecidedResidentCount: newCount,
+                      residentStatusAmounts: { ...amounts, undecided: lineAmount },
+                    })
+                    return
+                  }
+
                   let us = formData.usResidentCount || 0
                   let non = formData.nonResidentCount || 0
                   let under = formData.nonResidentUnder16Count || 0
                   let passCount = formData.nonResidentWithPassCount || 0
+                  let purchasePass = formData.nonResidentPurchasePassCount || 0
                   if (row.countField === 'usResidentCount') us = newCount
                   if (row.countField === 'nonResidentCount') non = newCount
                   if (row.countField === 'nonResidentUnder16Count') under = newCount
                   if (row.countField === 'nonResidentWithPassCount') passCount = newCount
-                  const lineAmount = residentLineDefaultAmountUsd(row.lineKey, newCount)
+                  if (row.countField === 'nonResidentPurchasePassCount') purchasePass = newCount
+
+                  const passCovered = computePassCoveredCount(
+                    passCount,
+                    us,
+                    non,
+                    under,
+                    formData.totalPeople
+                  )
+                  const othersSum = us + non + under + purchasePass + passCovered
+                  const newUndecided = Math.max(0, formData.totalPeople - othersSum)
+
                   apply({
                     [row.countField]: newCount,
-                    passCoveredCount: recalcPass(us, non, under, passCount),
-                    residentStatusAmounts: { ...amounts, [row.lineKey]: lineAmount },
+                    undecidedResidentCount: newUndecided,
+                    passCoveredCount: passCovered,
+                    residentStatusAmounts: {
+                      ...amounts,
+                      [row.lineKey]: lineAmount,
+                      undecided: residentLineDefaultAmountUsd('undecided', newUndecided),
+                    },
                   })
                 }}
                 className="w-16 shrink-0 px-1.5 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-xs text-center"

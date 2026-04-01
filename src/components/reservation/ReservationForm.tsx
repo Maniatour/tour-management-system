@@ -475,6 +475,8 @@ export default function ReservationForm({
     priceType: 'base' | 'dynamic'
     // 초이스별 불포함 금액 총합
     choiceNotIncludedTotal?: number
+    /** 비거주 등 제외한 불포함(기타) — 표시·분리용 */
+    choiceNotIncludedBaseTotal?: number
   }>({
     customerId: reservation?.customerId || (reservation as any)?.customer_id || rez.customer_id || initialCustomerId || '',
     customerSearch: (() => {
@@ -686,7 +688,8 @@ export default function ReservationForm({
     balanceReceivedTotal: 0,
     productRequiredOptions: [],
     priceType: 'dynamic', // 기본값은 dynamic pricing
-    choiceNotIncludedTotal: 0
+    choiceNotIncludedTotal: 0,
+    choiceNotIncludedBaseTotal: 0
   })
 
 
@@ -2359,6 +2362,11 @@ export default function ReservationForm({
         if (isKlook) klookUndecidedGroups.forEach(g => effectiveUndecidedGroups.add(g));
       }
 
+      // 미정 기본 수량 = 총인원(성인+아동+유아, 없으면 totalPeople). 1 고정이면 거주 칸 합계와 총인원 불일치 경고만 반복됨.
+      const fd = formDataRef.current
+      const sumPax = (fd.adults || 0) + (fd.child || 0) + (fd.infant || 0)
+      const totalPaxForUndecided = Math.max(1, sumPax > 0 ? sumPax : Number(fd.totalPeople) || 1)
+
       if (!isEditModeForChoices) {
         data?.forEach((choice: any) => {
           const choiceGroupKo = (choice.choice_group_ko || choice.choice_group || '').trim();
@@ -2370,7 +2378,7 @@ export default function ReservationForm({
             defaultChoices.push({
               choice_id: choice.id,
               option_id: '__undecided__',
-              quantity: 1,
+              quantity: totalPaxForUndecided,
               total_price: 0
             });
             return;
@@ -2422,18 +2430,33 @@ export default function ReservationForm({
           };
         }
         
-        // 새 예약 모드인 경우에만 기본값 설정
+        // 새 예약/가져오기: 동일 상품에 대해 loadProductChoices가 여러 번 호출될 때(가격 조회 후 setTimeout 등)
+        // selectedChoices를 defaultChoices로 매번 덮어쓰면 미정(__undecided__) 수량 1 고정 등 사용자 입력이 사라짐 → 보존
+        const prevChoices = Array.isArray(prev.selectedChoices) ? prev.selectedChoices : []
+        const newChoiceIds = new Set((data || []).map((c: { id: string }) => c.id))
+        const canPreserveSelected =
+          prev.productId === productId &&
+          prevChoices.length > 0 &&
+          prevChoices.every(
+            (s) => typeof s.choice_id === 'string' && s.choice_id.length > 0 && newChoiceIds.has(s.choice_id)
+          )
+        const selectedChoicesToUse = canPreserveSelected ? prevChoices : defaultChoices
+        const choicesTotalToUse = canPreserveSelected
+          ? prevChoices.reduce((sum, c) => sum + (Number(c.total_price) || 0), 0)
+          : choicesTotal
+
         console.log('ReservationForm: 새 예약 모드 - 기본값 설정:', {
           isEditModeForChoices,
           defaultChoicesCount: defaultChoices.length,
-          defaultChoices: defaultChoices.map(c => ({ choice_id: c.choice_id, option_id: c.option_id }))
-        });
+          defaultChoices: defaultChoices.map(c => ({ choice_id: c.choice_id, option_id: c.option_id })),
+          preservedUserChoices: canPreserveSelected,
+        })
         return {
           ...prev,
           productChoices: (data || []) as typeof prev.productChoices,
-          selectedChoices: defaultChoices,
-          choicesTotal: choicesTotal
-        };
+          selectedChoices: selectedChoicesToUse,
+          choicesTotal: choicesTotalToUse,
+        }
       });
       if (isImportMode && formDataRef.current.productId === productId) {
         setImportChoicesHydratedProductId(productId)
@@ -2788,9 +2811,8 @@ export default function ReservationForm({
               }
             })
             
-            // choicesTotal 또는 requiredOptionTotal 사용
-            const choicesTotal = updated.choicesTotal || 0
-            const optionTotal = choicesTotal > 0 ? choicesTotal : requiredOptionTotal
+            // 초이스 판매 총액(choicesTotal)은 동적가격 불포함·초이스별 불포함과 이중 합산되므로 소계에 넣지 않음. 레거시 필수 옵션만 반영.
+            const optionTotal = requiredOptionTotal
             
             // 선택 옵션 총합 계산
             let optionalOptionTotal = 0
@@ -3458,9 +3480,8 @@ export default function ReservationForm({
           (selectedChannelForCheck as any)?.category === 'OTA'
         )
         
-        // choicesTotal 또는 requiredOptionTotal 사용
-        const choicesTotal = updated.choicesTotal || 0
-        const optionTotal = choicesTotal > 0 ? choicesTotal : requiredOptionTotal
+        // 초이스 판매 총액(choicesTotal)은 불포함 금액과 겹치므로 소계에 포함하지 않음. 레거시 필수 옵션만.
+        const optionTotal = requiredOptionTotal
         
         // 선택 옵션 총합 계산
         let optionalOptionTotal = 0
@@ -3568,7 +3589,7 @@ export default function ReservationForm({
     return total
   }, [formData.requiredOptions, formData.selectedOptions, formData.adults, formData.child, formData.infant])
 
-  // PricingSection과 동일: 쿠폰 할인 적용 전 기준 금액 (OTA는 productPriceTotal 기준, 그 외는 상품+초이스)
+  // PricingSection과 동일: 쿠폰 할인 적용 전 기준 금액 (OTA는 productPriceTotal 기준, 그 외는 상품+필수옵션; 초이스 판매총액은 불포함과 중복이므로 제외)
   const getCouponDiscountSubtotal = useCallback(() => {
     const pax = formData.adults + formData.child + formData.infant
     const notIncludedPrice = (formData.not_included_price || 0) * pax
@@ -3580,10 +3601,8 @@ export default function ReservationForm({
     if (isOTAChannel) {
       return Math.max(0, (formData.productPriceTotal || 0) - notIncludedPrice)
     }
-    const choicesTotal = formData.choicesTotal || 0
     const requiredOptionTotal = calculateRequiredOptionTotal()
-    const optionTotal = choicesTotal > 0 ? choicesTotal : requiredOptionTotal
-    return Math.max(0, calculateProductPriceTotal() + optionTotal - notIncludedPrice)
+    return Math.max(0, calculateProductPriceTotal() + requiredOptionTotal - notIncludedPrice)
   }, [
     formData.adults,
     formData.child,
@@ -3591,13 +3610,10 @@ export default function ReservationForm({
     formData.not_included_price,
     formData.channelId,
     formData.productPriceTotal,
-    formData.choicesTotal,
     channels,
     calculateProductPriceTotal,
     calculateRequiredOptionTotal,
   ])
-
-  // 새로운 간결한 초이스 시스템에서는 formData.choicesTotal을 직접 사용
 
   const calculateOptionTotal = useCallback(() => {
     let total = 0
@@ -3608,19 +3624,12 @@ export default function ReservationForm({
   }, [formData.selectedOptionalOptions])
 
   const calculateSubtotal = useCallback(() => {
-    // 새로운 간결한 초이스 시스템 사용
-    const choicesTotal = formData.choicesTotal || 0;
-    const requiredOptionTotal = calculateRequiredOptionTotal();
-    
-    // 우선순위: 새로운 초이스 시스템 > 기존 requiredOptions
-    const optionTotal = choicesTotal > 0 ? choicesTotal : requiredOptionTotal;
-    
-    // 선택 옵션(optional options)도 포함
-    const optionalOptionTotal = calculateOptionTotal();
-    
+    const requiredOptionTotal = calculateRequiredOptionTotal()
+    const optionalOptionTotal = calculateOptionTotal()
     const notIncludedTotal = formData.choiceNotIncludedTotal || 0
-    return calculateProductPriceTotal() + optionTotal + optionalOptionTotal + notIncludedTotal;
-  }, [formData.choicesTotal, formData.choiceNotIncludedTotal, calculateRequiredOptionTotal, calculateProductPriceTotal, calculateOptionTotal]);
+    // choicesTotal(초이스 판매 합)은 불포함·동적가격과 중복되므로 합산하지 않음
+    return calculateProductPriceTotal() + requiredOptionTotal + optionalOptionTotal + notIncludedTotal
+  }, [formData.choiceNotIncludedTotal, calculateRequiredOptionTotal, calculateProductPriceTotal, calculateOptionTotal])
 
   const calculateTotalPrice = useCallback(() => {
     const subtotal = calculateSubtotal()
@@ -4035,7 +4044,6 @@ export default function ReservationForm({
     formData.tourDate,
     formData.channelId,
     formData.productPriceTotal,
-    formData.choicesTotal,
     formData.not_included_price,
     isExistingPricingLoaded,
     isImportMode,
@@ -4108,26 +4116,18 @@ export default function ReservationForm({
     
     // productPriceTotal이 다를 때만 업데이트 (무한 루프 방지)
     if (Math.abs(newProductPriceTotal - formData.productPriceTotal) > 0.01) {
-      // 새로운 간결한 초이스 시스템 사용
-      const choicesTotal = formData.choicesTotal || 0;
-      const requiredOptionTotal = calculateRequiredOptionTotal();
-      
-      // 우선순위: 새로운 초이스 시스템 > 기존 requiredOptions
-      const optionTotal = choicesTotal > 0 ? choicesTotal : requiredOptionTotal;
-      
-      // 선택 옵션(optional options)도 포함
-      const optionalOptionTotal = calculateOptionTotal();
-      
+      const requiredOptionTotal = calculateRequiredOptionTotal()
+      const optionalOptionTotal = calculateOptionTotal()
       const notIncludedTotal = formData.choiceNotIncludedTotal || 0
-      const newSubtotal = newProductPriceTotal + optionTotal + optionalOptionTotal + notIncludedTotal
-      
+      const newSubtotal = newProductPriceTotal + requiredOptionTotal + optionalOptionTotal + notIncludedTotal
+
       setFormData(prev => ({
         ...prev,
         productPriceTotal: newProductPriceTotal,
         subtotal: newSubtotal
       }))
     }
-  }, [formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.adults, formData.child, formData.infant, formData.choicesTotal, formData.choiceNotIncludedTotal, calculateRequiredOptionTotal, calculateOptionTotal])
+  }, [formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.adults, formData.child, formData.infant, formData.choiceNotIncludedTotal, calculateRequiredOptionTotal, calculateOptionTotal])
 
   // 예약 옵션 총 가격이 변경될 때 가격 재계산 (편집 모드에서는 자동 저장 방지)
   useEffect(() => {
@@ -4198,7 +4198,6 @@ export default function ReservationForm({
     formData.commission_base_price,
     formData.onlinePaymentAmount,
     formData.productPriceTotal,
-    formData.choicesTotal,
     formData.not_included_price,
     formData.adults,
     formData.child,

@@ -130,6 +130,26 @@ export function emptyResidentStatusAmounts(): Record<ResidentLineKey, number> {
   }
 }
 
+/** 거주 상태별 금액 칸 중, 현장 불포함(비거주·패스 등)으로 합산할 USD (미정·미국 거주 제외) */
+const RESIDENT_FEE_SUM_KEYS: ResidentLineKey[] = [
+  'non_resident',
+  'non_resident_under_16',
+  'non_resident_with_pass',
+  'non_resident_purchase_pass',
+]
+
+export function sumResidentFeeAmountsUsd(
+  amounts: Partial<Record<ResidentLineKey, number>> | undefined | null
+): number {
+  if (!amounts) return 0
+  let s = 0
+  for (const k of RESIDENT_FEE_SUM_KEYS) {
+    const v = Number(amounts[k])
+    if (Number.isFinite(v) && v > 0) s += v
+  }
+  return Math.round(s * 100) / 100
+}
+
 function optionMeta(
   choice: { options?: Array<Record<string, unknown>> },
   optionId: string
