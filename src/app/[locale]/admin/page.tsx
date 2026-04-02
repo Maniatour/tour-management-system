@@ -7,9 +7,6 @@ import {
   Package, 
   Users, 
   Calendar, 
-  DollarSign,
-  TrendingUp,
-  TrendingDown,
   Map,
   Settings,
   BookOpen,
@@ -32,41 +29,6 @@ export default function AdminDashboard({ params }: AdminDashboardProps) {
   const paramsObj = useParams()
   const locale = paramsObj.locale as string
   const t = useTranslations('admin')
-
-  const stats = [
-    {
-      name: t('stats.totalProducts'),
-      value: '24',
-      change: '+12%',
-      changeType: 'increase',
-      icon: Package,
-      href: `/${locale}/admin/products`
-    },
-    {
-      name: t('stats.totalCustomers'),
-      value: '1,234',
-      change: '+8%',
-      changeType: 'increase',
-      icon: Users,
-      href: `/${locale}/admin/customers`
-    },
-    {
-      name: t('stats.monthlyReservations'),
-      value: '89',
-      change: '+23%',
-      changeType: 'increase',
-      icon: Calendar,
-      href: `/${locale}/admin/reservations`
-    },
-    {
-      name: t('stats.monthlyRevenue'),
-      value: '$12,345',
-      change: '+15%',
-      changeType: 'increase',
-      icon: DollarSign,
-      href: `/${locale}/admin/reservations`
-    }
-  ]
 
   const mobileMenuItems = [
     {
@@ -169,41 +131,8 @@ export default function AdminDashboard({ params }: AdminDashboardProps) {
 
   return (
     <div className="bg-gray-50">
-      {/* 통계 카드 */}
-      <div className="px-2 pt-0 pb-4">
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          {stats.map((stat) => {
-            const IconComponent = stat.icon
-            return (
-              <Link
-                key={stat.name}
-                href={stat.href}
-                className="bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs text-gray-500 mb-1">{stat.name}</p>
-                    <p className="text-lg font-bold text-gray-900">{stat.value}</p>
-                  </div>
-                  <div className={`flex items-center text-xs font-semibold ${
-                    stat.changeType === 'increase' ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    {stat.changeType === 'increase' ? (
-                      <TrendingUp className="w-3 h-3 mr-1" />
-                    ) : (
-                      <TrendingDown className="w-3 h-3 mr-1" />
-                    )}
-                    {stat.change}
-                  </div>
-                </div>
-              </Link>
-            )
-          })}
-        </div>
-      </div>
-
       {/* 모바일 앱 스타일 그리드 */}
-      <div className="px-2 pb-4">
+      <div className="px-2 pt-2 pb-4">
         <div className="grid grid-cols-4 gap-3">
           {mobileMenuItems.map((item) => {
             const Icon = item.icon

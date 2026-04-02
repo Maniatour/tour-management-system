@@ -104,6 +104,7 @@ interface PricingSectionProps {
     childProductPrice: number
     infantProductPrice: number
     adults: number
+    pricingAdults: number
     child: number
     infant: number
     productPriceTotal: number
@@ -258,7 +259,7 @@ export default function PricingSection({
         choiceNotIncludedTotal,
         choiceNotIncludedBaseTotal,
         formData.not_included_price || 0,
-        formData.adults,
+        formData.pricingAdults,
         formData.child,
         formData.infant,
         formData.residentStatusAmounts
@@ -267,7 +268,7 @@ export default function PricingSection({
       choiceNotIncludedTotal,
       choiceNotIncludedBaseTotal,
       formData.not_included_price,
-      formData.adults,
+      formData.pricingAdults,
       formData.child,
       formData.infant,
       formData.residentStatusAmounts,
@@ -585,7 +586,7 @@ export default function PricingSection({
     formData.couponDiscount,
     formData.additionalDiscount,
     formData.not_included_price,
-    formData.adults,
+    formData.pricingAdults,
     formData.child,
     formData.infant,
     formData.additionalCost,
@@ -723,7 +724,7 @@ export default function PricingSection({
         (fd as any).choiceNotIncludedTotal ?? 0,
         (fd as any).choiceNotIncludedBaseTotal ?? 0,
         fd.not_included_price || 0,
-        fd.adults,
+        fd.pricingAdults,
         fd.child,
         fd.infant,
         (fd as any).residentStatusAmounts
@@ -800,7 +801,7 @@ export default function PricingSection({
     depositAmount: number
     calculatedBalanceReceivedTotal: number
     notIncludedPrice: number
-    adults: number
+    pricingAdults: number
     child: number
     infant: number
   }
@@ -818,7 +819,7 @@ export default function PricingSection({
       depositAmount: formData.depositAmount,
       calculatedBalanceReceivedTotal,
       notIncludedPrice,
-      adults: formData.adults,
+      pricingAdults: formData.pricingAdults,
       child: formData.child,
       infant: formData.infant,
     }
@@ -830,7 +831,7 @@ export default function PricingSection({
       prev.depositAmount !== currentDeps.depositAmount ||
       prev.calculatedBalanceReceivedTotal !== currentDeps.calculatedBalanceReceivedTotal ||
       Math.abs(prev.notIncludedPrice - currentDeps.notIncludedPrice) > 0.01 ||
-      prev.adults !== currentDeps.adults ||
+      prev.pricingAdults !== currentDeps.pricingAdults ||
       prev.child !== currentDeps.child ||
       prev.infant !== currentDeps.infant
 
@@ -859,7 +860,7 @@ export default function PricingSection({
     formData.depositAmount,
     calculatedBalanceReceivedTotal,
     formData.not_included_price,
-    formData.adults,
+    formData.pricingAdults,
     formData.child,
     formData.infant,
     notIncludedBreakdown.totalUsd,
@@ -984,7 +985,7 @@ export default function PricingSection({
         }
       }
     }
-  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.depositAmount, formData.channelId, formData.not_included_price, formData.adults, formData.child, formData.infant, formData.commission_amount, formData.commission_percent, channels, returnedAmount, calculateTotalCustomerPayment, calculatedBalanceReceivedTotal, isExistingPricingLoaded, setFormData, notIncludedBreakdown.totalUsd])
+  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.depositAmount, formData.channelId, formData.not_included_price, formData.pricingAdults, formData.child, formData.infant, formData.commission_amount, formData.commission_percent, channels, returnedAmount, calculateTotalCustomerPayment, calculatedBalanceReceivedTotal, isExistingPricingLoaded, setFormData, notIncludedBreakdown.totalUsd])
 
   // 선택된 채널 정보 가져오기
   const selectedChannel = channels?.find(ch => ch.id === formData.channelId)
@@ -1017,13 +1018,21 @@ export default function PricingSection({
   const effectiveCommissionAmount = isReservationCancelled ? 0 : (Number(formData.commission_amount) || 0)
 
   /**
-   * 채널 정산 금액(표시): 파트너 환불(Returned)을 아직 차감하지 않은 금액.
-   * 다음 줄「환불금 (파트너)」와 합쳐져 최종 0이 되도록 하기 위해, 첫 줄은 환불 전 기준으로 둔다.
+   * 위「채널 결제 금액」입력 필드와 동일: gross 기준 후 파트너 Returned 차감(표시 금액).
+   * 채널 정산 금액은 이 값에서 채널 수수료(또는 자체 채널 카드 수수료)를 뺀다.
    */
-  const channelSettlementBeforePartnerReturn = (() => {
+  const channelPaymentAmountAfterReturn = (() => {
+    if (formData.depositAmount > 0) {
+      const base = formData.onlinePaymentAmount || formData.depositAmount
+      return Math.max(0, base - returnedAmount)
+    }
     if (isOTAChannel) {
-      const online = formData.onlinePaymentAmount || 0
-      return Math.max(0, online - effectiveCommissionAmount)
+      const salePriceTimesPax = formData.productPriceTotal
+      const base =
+        formData.onlinePaymentAmount ||
+        formData.depositAmount ||
+        (salePriceTimesPax > 0 ? salePriceTimesPax : 0)
+      return Math.max(0, base - returnedAmount)
     }
     const productSubtotal =
       (formData.productPriceTotal - formData.couponDiscount) +
@@ -1033,11 +1042,15 @@ export default function PricingSection({
       formData.cardFee +
       formData.prepaymentTip -
       (formData.onSiteBalanceAmount || 0)
-    const defaultChannelPaymentAmount = productSubtotal
-    const channelPaymentAmount =
-      formData.onlinePaymentAmount || (defaultChannelPaymentAmount > 0 ? defaultChannelPaymentAmount : 0)
-    return Math.max(0, channelPaymentAmount - effectiveCommissionAmount)
+    const base =
+      formData.onlinePaymentAmount || (productSubtotal > 0 ? productSubtotal : 0)
+    return Math.max(0, base - returnedAmount)
   })()
+
+  const channelSettlementBeforePartnerReturn = Math.max(
+    0,
+    channelPaymentAmountAfterReturn - effectiveCommissionAmount
+  )
   
   // commission_amount가 0일 때 채널 수수료 자동 계산 (값이 실제로 다를 때만 set, 무한 루프 방지)
   useEffect(() => {
@@ -1143,7 +1156,7 @@ export default function PricingSection({
   
   // 초이스별 불포함 금액 계산 (항상 dynamic_pricing에서 조회)
   const calculateChoiceNotIncludedTotal = useCallback(async (): Promise<NotIncludedCalcResult> => {
-    const paxEarly = (formData.adults || 0) + (formData.child || 0) + (formData.infant || 0)
+    const paxEarly = (formData.pricingAdults || 0) + (formData.child || 0) + (formData.infant || 0)
     const residentOnlyEarly = sumResidentFeeAmountsUsd(formData.residentStatusAmounts)
     const fieldOnlyEarly = (formData.not_included_price || 0) * paxEarly
 
@@ -1214,7 +1227,7 @@ export default function PricingSection({
             : pricing.choices_pricing
         } catch (e) {
           console.warn('choices_pricing 파싱 오류:', e)
-          const pax = formData.adults + formData.child + formData.infant
+          const pax = formData.pricingAdults + formData.child + formData.infant
           const fieldFromForm = (formData.not_included_price || 0) * pax
           return packNotIncluded(
             Math.max(defaultNotIncludedPrice * pax, fieldFromForm),
@@ -1225,7 +1238,7 @@ export default function PricingSection({
 
       // 선택된 초이스별 불포함 금액 계산 (미국 거주자 구분 그룹은 UI 금액(residentStatusAmounts)으로만 합산해 초이스와 무관하게 반영)
       let totalNotIncluded = 0
-      const totalPax = formData.adults + formData.child + formData.infant
+      const totalPax = formData.pricingAdults + formData.child + formData.infant
       const residentClassChoice = findUsResidentClassificationChoice(
         (formData.productChoices || []) as Parameters<typeof findUsResidentClassificationChoice>[0]
       )
@@ -1261,13 +1274,13 @@ export default function PricingSection({
             const choiceNotIncludedPrice = choicePricing.not_included_price !== undefined && choicePricing.not_included_price !== null
               ? choicePricing.not_included_price
               : defaultNotIncludedPrice
-            totalNotIncluded += choiceNotIncludedPrice * (formData.adults + formData.child + formData.infant)
+            totalNotIncluded += choiceNotIncludedPrice * (formData.pricingAdults + formData.child + formData.infant)
           }
         })
       }
 
       if (totalNotIncluded === 0 && defaultNotIncludedPrice > 0) {
-        totalNotIncluded = defaultNotIncludedPrice * (formData.adults + formData.child + formData.infant)
+        totalNotIncluded = defaultNotIncludedPrice * (formData.pricingAdults + formData.child + formData.infant)
       }
 
       const fieldFromForm = (formData.not_included_price || 0) * totalPax
@@ -1277,7 +1290,7 @@ export default function PricingSection({
       return packNotIncluded(baseBeforeResident, residentPart)
     } catch (error) {
       console.error('초이스별 불포함 금액 계산 오류:', error)
-      const pax = formData.adults + formData.child + formData.infant
+      const pax = formData.pricingAdults + formData.child + formData.infant
       return packNotIncluded(
         (formData.not_included_price || 0) * pax,
         sumResidentFeeAmountsUsd(formData.residentStatusAmounts)
@@ -1290,7 +1303,7 @@ export default function PricingSection({
     (formData as any).variantKey,
     formData.selectedChoices,
     formData.productChoices,
-    formData.adults,
+    formData.pricingAdults,
     formData.child,
     formData.infant,
     formData.not_included_price,
@@ -1324,7 +1337,7 @@ export default function PricingSection({
     formData.channelId,
     formData.selectedChoices,
     formData.productChoices,
-    formData.adults,
+    formData.pricingAdults,
     formData.child,
     formData.infant,
     (formData as any).variantKey,
@@ -1416,7 +1429,7 @@ export default function PricingSection({
         return prev
       })
     }
-  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.not_included_price, formData.adults, formData.child, formData.infant, isOTAChannel, isChannelPaymentAmountFocused, setFormData])
+  }, [formData.productPriceTotal, formData.couponDiscount, formData.additionalDiscount, formData.not_included_price, formData.pricingAdults, formData.child, formData.infant, isOTAChannel, isChannelPaymentAmountFocused, setFormData])
 
   // 채널 변경 시 선택된 쿠폰이 해당 채널에 속하지 않으면 쿠폰 초기화 (ota가 아닐 때 Homepage 쿠폰은 유지)
   useEffect(() => {
@@ -1468,7 +1481,7 @@ export default function PricingSection({
   }, [
     formData.couponCode,
     formData.productPriceTotal,
-    formData.adults,
+    formData.pricingAdults,
     formData.child,
     formData.infant,
     isOTAChannel,
@@ -1864,6 +1877,23 @@ export default function PricingSection({
             <div className="space-y-1">
               <div className="space-y-2">
                 <div className="text-xs text-gray-600 mb-1">성인</div>
+                <div className="flex items-center justify-between gap-2 mb-1.5 text-xs">
+                  <span className="text-gray-600 shrink-0">예약 성인 인원</span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={formData.pricingAdults}
+                      onChange={(e) => {
+                        const v = Math.max(0, Math.floor(Number(e.target.value) || 0))
+                        setFormData({ ...formData, pricingAdults: v })
+                      }}
+                      className="w-12 px-1 py-0.5 text-xs border border-gray-300 rounded text-right focus:ring-1 focus:ring-blue-500"
+                    />
+                    <span className="text-gray-500">명</span>
+                  </div>
+                </div>
                 {/* 판매가 + 불포함 가격 입력 */}
                 <div className="space-y-2 mb-2">
                   {/* 판매가 */}
@@ -1879,7 +1909,7 @@ export default function PricingSection({
                         const childPrice = isSinglePrice ? salePrice : (formData.childProductPrice || 0)
                         const infantPrice = isSinglePrice ? salePrice : (formData.infantProductPrice || 0)
                         
-                        const newProductPriceTotal = (salePrice * formData.adults) + 
+                        const newProductPriceTotal = (salePrice * formData.pricingAdults) + 
                                                      (childPrice * formData.child) + 
                                                      (infantPrice * formData.infant)
                         setFormData({ 
@@ -1914,7 +1944,7 @@ export default function PricingSection({
                         const childPrice = isSinglePrice ? salePrice : childSalePrice
                         const infantPrice = isSinglePrice ? salePrice : infantSalePrice
                         
-                        const newProductPriceTotal = (salePrice * formData.adults) + 
+                        const newProductPriceTotal = (salePrice * formData.pricingAdults) + 
                                                      (childPrice * formData.child) + 
                                                      (infantPrice * formData.infant)
                         setFormData({ 
@@ -1945,16 +1975,16 @@ export default function PricingSection({
                   <div className="flex items-center space-x-1">
                     {isSinglePrice ? (
                       <>
-                        <span className="text-gray-500">x{formData.adults + formData.child + formData.infant}</span>
+                        <span className="text-gray-500">x{formData.pricingAdults + formData.child + formData.infant}</span>
                         <span className="font-medium">
-                          = ${((formData.adultProductPrice || 0) * (formData.adults + formData.child + formData.infant)).toFixed(2)}
+                          = ${((formData.adultProductPrice || 0) * (formData.pricingAdults + formData.child + formData.infant)).toFixed(2)}
                         </span>
                       </>
                     ) : (
                       <>
-                        <span className="text-gray-500">x{formData.adults}</span>
+                        <span className="text-gray-500">x{formData.pricingAdults}</span>
                         <span className="font-medium">
-                          = ${((formData.adultProductPrice || 0) * formData.adults).toFixed(2)}
+                          = ${((formData.adultProductPrice || 0) * formData.pricingAdults).toFixed(2)}
                         </span>
                       </>
                     )}
@@ -1977,7 +2007,7 @@ export default function PricingSection({
                           const childTotalPrice = newPrice + (formData.not_included_price || 0)
                           const infantTotalPrice = (formData.infantProductPrice || 0) + (formData.not_included_price || 0)
                           // 상품 가격 총합 계산 (불포함 가격 포함)
-                          const newProductPriceTotal = (adultTotalPrice * formData.adults) + 
+                          const newProductPriceTotal = (adultTotalPrice * formData.pricingAdults) + 
                                                        (childTotalPrice * formData.child) + 
                                                        (infantTotalPrice * formData.infant)
                           setFormData({ 
@@ -2007,7 +2037,7 @@ export default function PricingSection({
                           const childTotalPrice = (formData.childProductPrice || 0) + (formData.not_included_price || 0)
                           const infantTotalPrice = newPrice + (formData.not_included_price || 0)
                           // 상품 가격 총합 계산 (불포함 가격 포함)
-                          const newProductPriceTotal = (adultTotalPrice * formData.adults) + 
+                          const newProductPriceTotal = (adultTotalPrice * formData.pricingAdults) + 
                                                        (childTotalPrice * formData.child) + 
                                                        (infantTotalPrice * formData.infant)
                           setFormData({ 
@@ -2078,7 +2108,7 @@ export default function PricingSection({
                           step="0.01"
                         />
                         <div className="text-xs text-gray-500 mt-1">
-                          총: ${((selectedOption.adult_price || 0) * formData.adults).toFixed(2)}
+                          총: ${((selectedOption.adult_price || 0) * formData.pricingAdults).toFixed(2)}
                         </div>
                       </div>
                       {!isSinglePrice && (
@@ -3080,11 +3110,6 @@ export default function PricingSection({
               <div className="flex justify-between items-center mb-1.5">
                 <span className="text-xs font-bold text-gray-700">
                   {isKorean ? '채널 정산 금액' : 'Channel Settlement Amount'}
-                  {returnedAmount > 0 && (
-                    <span className="block font-normal text-[10px] text-gray-500 mt-0.5">
-                      {isKorean ? '(파트너 환불 차감 전)' : '(before partner return)'}
-                    </span>
-                  )}
                 </span>
                 <span className={`text-xs font-bold ${priceTextClass('')}`}>
                   ${channelSettlementBeforePartnerReturn.toFixed(2)}
@@ -3106,15 +3131,10 @@ export default function PricingSection({
                 <span className="ml-1.5 text-[10px] text-gray-500">(Company View)</span>
               </div>
               
-              {/* 채널 정산금액 (계산값 → 빨간색) — 환불 전 금액; 아래「환불금 (파트너)」와 합쳐 최종 0 */}
+              {/* 채널 정산금액 (계산값 → 빨간색) — 채널 결제(표시) − 수수료와 동일 기준 */}
               <div className="flex justify-between items-center mb-1.5">
                 <span className="text-xs font-medium text-gray-700">
                   {isKorean ? '채널 정산금액' : 'Channel Settlement Amount'}
-                  {returnedAmount > 0 && (
-                    <span className="block font-normal text-[10px] text-gray-500 mt-0.5">
-                      {isKorean ? '(파트너 환불 차감 전)' : '(before partner return)'}
-                    </span>
-                  )}
                 </span>
                 <span className={`text-xs font-medium ${priceTextClass('')}`}>
                   ${channelSettlementBeforePartnerReturn.toFixed(2)}
@@ -3210,30 +3230,16 @@ export default function PricingSection({
                 </div>
               )}
               
-              {/* 환불금 */}
+              {/* 환불금 — 파트너 Returned는 위 채널 결제 금액(표시)에 이미 반영되어 이중 차감하지 않음 */}
               {(() => {
-                const hasRefund = refundedAmount > 0 || returnedAmount > 0
-                if (!hasRefund) return null
-                
+                if (refundedAmount <= 0) return null
                 return (
-                  <>
-                    {refundedAmount > 0 && (
-                      <div className="flex justify-between items-center mb-1.5">
-                        <span className="text-xs font-medium text-red-700">- {isKorean ? '환불금 (우리)' : 'Refunded (Our Side)'}</span>
-                        <span className="text-xs font-medium text-red-600">
-                          -${refundedAmount.toFixed(2)}
-                        </span>
-                      </div>
-                    )}
-                    {returnedAmount > 0 && (
-                      <div className="flex justify-between items-center mb-1.5">
-                        <span className="text-xs font-medium text-red-700">- {isKorean ? '환불금 (파트너)' : 'Returned (Partner)'}</span>
-                        <span className="text-xs font-medium text-red-600">
-                          -${returnedAmount.toFixed(2)}
-                        </span>
-                      </div>
-                    )}
-                  </>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <span className="text-xs font-medium text-red-700">- {isKorean ? '환불금 (우리)' : 'Refunded (Our Side)'}</span>
+                    <span className="text-xs font-medium text-red-600">
+                      -${refundedAmount.toFixed(2)}
+                    </span>
+                  </div>
                 )
               })()}
               
@@ -3245,28 +3251,8 @@ export default function PricingSection({
                 <span className="text-base font-bold text-green-600">
                   ${(() => {
                     if (isReservationCancelled) return '0.00'
-                    // 채널 정산금액 계산 (Returned 반영)
-                    const channelSettlementAmount = isOTAChannel 
-                      ? (() => {
-                          const adjustedPaymentAmount = Math.max(0, (formData.onlinePaymentAmount || 0) - returnedAmount)
-                          return adjustedPaymentAmount - effectiveCommissionAmount
-                        })()
-                      : (() => {
-                          // 자체 채널: 채널 결제 금액(잔금 제외) - 카드수수료 (commission_amount에 저장됨)
-                          const channelPaymentAmount = (
-                            (formData.productPriceTotal - formData.couponDiscount) + 
-                            reservationOptionsTotalPrice + 
-                            (formData.additionalCost - formData.additionalDiscount) + 
-                            formData.tax + 
-                            formData.cardFee +
-                            formData.prepaymentTip -
-                            (formData.onSiteBalanceAmount || 0)
-                          )
-                          // Returned 차감
-                          const adjustedPaymentAmount = Math.max(0, channelPaymentAmount - returnedAmount)
-                          return adjustedPaymentAmount - effectiveCommissionAmount
-                        })()
-                    
+                    const channelSettlementAmount = channelSettlementBeforePartnerReturn
+
                     // 불포함 가격 계산
                     const notIncludedTotal = notIncludedBreakdown.totalUsd
                     
@@ -3308,9 +3294,8 @@ export default function PricingSection({
                       totalRevenue += formData.prepaymentCost
                     }
                     
-                    // 환불금 차감
+                    // 환불금 차감 (파트너 Returned는 채널 정산 기준에 이미 반영)
                     totalRevenue -= refundedAmount
-                    totalRevenue -= returnedAmount
                     
                     return totalRevenue.toFixed(2)
                   })()}
@@ -3336,28 +3321,8 @@ export default function PricingSection({
                 <span className="text-base font-bold text-purple-600">
                   ${(() => {
                     if (isReservationCancelled) return '0.00'
-                    // 채널 정산금액 계산 (Returned 반영)
-                    const channelSettlementAmount = isOTAChannel 
-                      ? (() => {
-                          const adjustedPaymentAmount = Math.max(0, (formData.onlinePaymentAmount || 0) - returnedAmount)
-                          return adjustedPaymentAmount - effectiveCommissionAmount
-                        })()
-                      : (() => {
-                          // 자체 채널: 채널 결제 금액(잔금 제외) - 카드수수료 (commission_amount에 저장됨)
-                          const channelPaymentAmount = (
-                            (formData.productPriceTotal - formData.couponDiscount) + 
-                            reservationOptionsTotalPrice + 
-                            (formData.additionalCost - formData.additionalDiscount) + 
-                            formData.tax + 
-                            formData.cardFee +
-                            formData.prepaymentTip -
-                            (formData.onSiteBalanceAmount || 0)
-                          )
-                          // Returned 차감
-                          const adjustedPaymentAmount = Math.max(0, channelPaymentAmount - returnedAmount)
-                          return adjustedPaymentAmount - effectiveCommissionAmount
-                        })()
-                    
+                    const channelSettlementAmount = channelSettlementBeforePartnerReturn
+
                     // 불포함 가격 계산
                     const notIncludedTotal = notIncludedBreakdown.totalUsd
                     
@@ -3399,9 +3364,8 @@ export default function PricingSection({
                       totalRevenue += formData.prepaymentCost
                     }
                     
-                    // 환불금 차감
+                    // 환불금 차감 (파트너 Returned는 채널 정산 기준에 이미 반영)
                     totalRevenue -= refundedAmount
-                    totalRevenue -= returnedAmount
 
                     // 운영 이익 = 총 매출 - 선결제 팁
                     return (totalRevenue - (formData.prepaymentTip || 0)).toFixed(2)

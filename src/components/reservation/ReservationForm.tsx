@@ -382,6 +382,7 @@ export default function ReservationForm({
     showPickupHotelDropdown: boolean
     pickUpTime: string
     adults: number
+    pricingAdults: number
     child: number
     infant: number
     totalPeople: number
@@ -599,6 +600,8 @@ export default function ReservationForm({
     showPickupHotelDropdown: false,
     pickUpTime: timeToHHmm(reservation?.pickUpTime || (rez.pickup_time ? String(rez.pickup_time) : '') || '') || '',
     adults: reservation?.adults || rez.adults || 1,
+    /** 상품가·필수옵션·불포함(성인) 등 청구 계산용 성인 수 (예약 인원 adults와 별도) */
+    pricingAdults: reservation?.adults || rez.adults || 1,
     child: reservation?.child || rez.child || 0,
     infant: reservation?.infant || rez.infant || 0,
     totalPeople: reservation?.totalPeople || rez.total_people || 1,
@@ -1098,7 +1101,10 @@ export default function ReservationForm({
       next.tourDate = nd || String(rez.tour_date)
     }
     if (rez.tour_time != null) next.tourTime = timeToHHmm(String(rez.tour_time)) || ''
-    if (rez.adults != null) next.adults = rez.adults
+    if (rez.adults != null) {
+      next.adults = rez.adults
+      next.pricingAdults = rez.adults
+    }
     if (rez.child != null) next.child = rez.child
     if (rez.infant != null) next.infant = rez.infant
     if ((rez as any).total_people != null) next.totalPeople = (rez as any).total_people
@@ -2623,7 +2629,7 @@ export default function ReservationForm({
         }
         const { data: existingPricing, error: existingError } = await (supabase as any)
           .from('reservation_pricing')
-          .select('id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, commission_percent, commission_amount, choices, choices_total')
+          .select('id, adult_product_price, child_product_price, infant_product_price, product_price_total, not_included_price, required_options, required_option_total, subtotal, coupon_code, coupon_discount, additional_discount, additional_cost, card_fee, tax, prepayment_cost, prepayment_tip, selected_options, option_total, total_price, deposit_amount, balance_amount, private_tour_additional_cost, commission_percent, commission_amount, choices, choices_total, pricing_adults')
           .eq('reservation_id', pricingReservationId)
           .maybeSingle()
 
@@ -2753,8 +2759,14 @@ export default function ReservationForm({
           const onSiteBalanceAmount = shouldLoadBalanceAmount && balanceAmount > 0 ? balanceAmount : 0
           
           setFormData(prev => {
+            const paRaw = (existingPricing as any).pricing_adults
+            const pricingAdultsLoaded =
+              paRaw != null && paRaw !== ''
+                ? Math.max(0, Math.floor(toNum(paRaw)))
+                : prev.pricingAdults ?? prev.adults
             const updated = {
               ...prev,
+              pricingAdults: pricingAdultsLoaded,
               adultProductPrice: adultPrice,
               childProductPrice: childPrice,
               infantProductPrice: infantPrice,
@@ -2793,7 +2805,7 @@ export default function ReservationForm({
             }
             
             // 가격 계산 수행 (단일 가격 모드 적용 후 재계산)
-            const newProductPriceTotal = (updated.adultProductPrice * updated.adults) + 
+            const newProductPriceTotal = (updated.adultProductPrice * updated.pricingAdults) + 
                                          (updated.childProductPrice * updated.child) + 
                                          (updated.infantProductPrice * updated.infant)
             
@@ -2805,7 +2817,7 @@ export default function ReservationForm({
                 updated.selectedOptions[optionId].length > 0
               if (isSelected && option && typeof option === 'object' && 'adult' in option && 'child' in option && 'infant' in option) {
                 const optionData = option as { adult: number; child: number; infant: number }
-                requiredOptionTotal += (optionData.adult * updated.adults) + 
+                requiredOptionTotal += (optionData.adult * updated.pricingAdults) + 
                                       (optionData.child * updated.child) + 
                                       (optionData.infant * updated.infant)
               }
@@ -3451,12 +3463,12 @@ export default function ReservationForm({
           commission_percent: commissionPercent,
           not_included_price: notIncludedToUse,
           onlinePaymentAmount: notIncludedToUse != null
-            ? Math.max(0, (adultPrice - (notIncludedToUse || 0)) * (prev.adults || 0))
+            ? Math.max(0, (adultPrice - (notIncludedToUse || 0)) * (prev.pricingAdults || 0))
             : prev.onlinePaymentAmount || 0
         }
         
         // 가격 계산 수행
-        const newProductPriceTotal = (updated.adultProductPrice * updated.adults) + 
+        const newProductPriceTotal = (updated.adultProductPrice * updated.pricingAdults) + 
                                      (updated.childProductPrice * updated.child) + 
                                      (updated.infantProductPrice * updated.infant)
         
@@ -3467,7 +3479,7 @@ export default function ReservationForm({
             updated.selectedOptions[optionId] && 
             updated.selectedOptions[optionId].length > 0
           if (isSelected) {
-            requiredOptionTotal += (option.adult * updated.adults) + 
+            requiredOptionTotal += (option.adult * updated.pricingAdults) + 
                                   (option.child * updated.child) + 
                                   (option.infant * updated.infant)
           }
@@ -3546,17 +3558,17 @@ export default function ReservationForm({
   // 가격 계산 함수들
   const calculateProductPriceTotal = useCallback(() => {
     // 불포함 가격 제외하여 계산 (불포함 가격은 별도로 표시됨)
-    return (formData.adultProductPrice * formData.adults) + 
+    return (formData.adultProductPrice * formData.pricingAdults) + 
            (formData.childProductPrice * formData.child) + 
            (formData.infantProductPrice * formData.infant)
-  }, [formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.adults, formData.child, formData.infant])
+  }, [formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.pricingAdults, formData.child, formData.infant])
 
   const calculateRequiredOptionTotal = useCallback(() => {
     let total = 0
     console.log('calculateRequiredOptionTotal 호출:', {
       requiredOptions: formData.requiredOptions,
       selectedOptions: formData.selectedOptions,
-      adults: formData.adults,
+      pricingAdults: formData.pricingAdults,
       child: formData.child,
       infant: formData.infant
     })
@@ -3570,14 +3582,14 @@ export default function ReservationForm({
       console.log(`옵션 ${optionId} 계산:`, {
         isSelected,
         option,
-        adults: formData.adults,
+        pricingAdults: formData.pricingAdults,
         child: formData.child,
         infant: formData.infant,
-        optionTotal: (option.adult * formData.adults) + (option.child * formData.child) + (option.infant * formData.infant)
+        optionTotal: (option.adult * formData.pricingAdults) + (option.child * formData.child) + (option.infant * formData.infant)
       })
       
       if (isSelected) {
-        const optionTotal = (option.adult * formData.adults) + 
+        const optionTotal = (option.adult * formData.pricingAdults) + 
                            (option.child * formData.child) + 
                            (option.infant * formData.infant)
         total += optionTotal
@@ -3587,11 +3599,11 @@ export default function ReservationForm({
     
     console.log('최종 requiredOptionTotal:', total)
     return total
-  }, [formData.requiredOptions, formData.selectedOptions, formData.adults, formData.child, formData.infant])
+  }, [formData.requiredOptions, formData.selectedOptions, formData.pricingAdults, formData.child, formData.infant])
 
   // PricingSection과 동일: 쿠폰 할인 적용 전 기준 금액 (OTA는 productPriceTotal 기준, 그 외는 상품+필수옵션; 초이스 판매총액은 불포함과 중복이므로 제외)
   const getCouponDiscountSubtotal = useCallback(() => {
-    const pax = formData.adults + formData.child + formData.infant
+    const pax = formData.pricingAdults + formData.child + formData.infant
     const notIncludedPrice = (formData.not_included_price || 0) * pax
     const selectedChannel = channels.find(c => c.id === formData.channelId)
     const isOTAChannel = selectedChannel && (
@@ -3604,7 +3616,7 @@ export default function ReservationForm({
     const requiredOptionTotal = calculateRequiredOptionTotal()
     return Math.max(0, calculateProductPriceTotal() + requiredOptionTotal - notIncludedPrice)
   }, [
-    formData.adults,
+    formData.pricingAdults,
     formData.child,
     formData.infant,
     formData.not_included_price,
@@ -4110,7 +4122,7 @@ export default function ReservationForm({
   // 상품 가격 또는 인원 수가 변경될 때 productPriceTotal 및 subtotal 자동 업데이트
   useEffect(() => {
     // 불포함 가격 제외하여 계산 (불포함 가격은 별도로 표시됨)
-    const newProductPriceTotal = (formData.adultProductPrice * formData.adults) + 
+    const newProductPriceTotal = (formData.adultProductPrice * formData.pricingAdults) + 
                                  (formData.childProductPrice * formData.child) + 
                                  (formData.infantProductPrice * formData.infant)
     
@@ -4127,7 +4139,7 @@ export default function ReservationForm({
         subtotal: newSubtotal
       }))
     }
-  }, [formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.adults, formData.child, formData.infant, formData.choiceNotIncludedTotal, calculateRequiredOptionTotal, calculateOptionTotal])
+  }, [formData.adultProductPrice, formData.childProductPrice, formData.infantProductPrice, formData.pricingAdults, formData.child, formData.infant, formData.choiceNotIncludedTotal, calculateRequiredOptionTotal, calculateOptionTotal])
 
   // 예약 옵션 총 가격이 변경될 때 가격 재계산 (편집 모드에서는 자동 저장 방지)
   useEffect(() => {
@@ -4199,7 +4211,7 @@ export default function ReservationForm({
     formData.onlinePaymentAmount,
     formData.productPriceTotal,
     formData.not_included_price,
-    formData.adults,
+    formData.pricingAdults,
     formData.child,
     formData.infant,
     initialAmountFromImport,
@@ -4309,9 +4321,9 @@ export default function ReservationForm({
         pricingId = crypto.randomUUID()
       }
 
-      // 불포함 가격 합계(인원별) = product_price_total·subtotal·total_price에 포함하여 저장
-      const totalPeople = fd.adults + fd.child + fd.infant
-      const notIncludedTotal = (Number(fd.not_included_price) || 0) * (totalPeople || 1)
+      // 불포함 가격 합계(인원별) = product_price_total·subtotal·total_price에 포함하여 저장 (청구 인원 = pricingAdults+아동+유아)
+      const billingPax = (fd.pricingAdults ?? fd.adults) + fd.child + fd.infant
+      const notIncludedTotal = (Number(fd.not_included_price) || 0) * (billingPax || 1)
 
       const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
       const newAdult = toNum(fd.adultProductPrice)
@@ -4359,6 +4371,7 @@ export default function ReservationForm({
         private_tour_additional_cost: Number(fd.privateTourAdditionalCost) || 0,
         commission_percent: Number(fd.commission_percent) || 0,
         commission_amount: keep(Number(fd.commission_amount) || 0, (existing as any)?.commission_amount),
+        pricing_adults: Math.max(0, Math.floor(Number(fd.pricingAdults ?? fd.adults) || 0)),
       }
 
       let error: unknown
@@ -4678,7 +4691,8 @@ export default function ReservationForm({
           isPrivateTour: fd.isPrivateTour,
           privateTourAdditionalCost: toNum(fd.privateTourAdditionalCost),
           commission_percent: toNum(fd.commission_percent),
-          commission_amount: toNum(fd.commission_amount)
+          commission_amount: toNum(fd.commission_amount),
+          pricingAdults: Math.max(0, Math.floor(toNum(fd.pricingAdults ?? fd.adults)))
         }
       }
       

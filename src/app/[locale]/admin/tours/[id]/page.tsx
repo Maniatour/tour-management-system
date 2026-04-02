@@ -2164,9 +2164,15 @@ export default function TourDetailPage() {
               if (reservationData.pricingInfo) {
                 try {
                   const pricingInfo = reservationData.pricingInfo
-                  const totalPeople = (reservationData.adults || 0) + (reservationData.child || 0) + (reservationData.infant || 0)
                   const toNum = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
-                  const notIncludedTotal = (toNum(pricingInfo.not_included_price) || 0) * (totalPeople || 1)
+                  const rawPricingAdults = (pricingInfo as { pricingAdults?: unknown }).pricingAdults
+                  const billingAdults =
+                    rawPricingAdults !== undefined && rawPricingAdults !== null && rawPricingAdults !== ''
+                      ? Math.max(0, Math.floor(toNum(rawPricingAdults)))
+                      : Math.max(0, Math.floor(Number(reservationData.adults) || 0))
+                  const billingPax =
+                    billingAdults + (reservationData.child || 0) + (reservationData.infant || 0)
+                  const notIncludedTotal = (toNum(pricingInfo.not_included_price) || 0) * (billingPax || 1)
 
                   const { data: existingRow } = await supabase
                     .from('reservation_pricing')
@@ -2216,7 +2222,8 @@ export default function TourDetailPage() {
                     balance_amount: toNum(pricingInfo.balanceAmount),
                     private_tour_additional_cost: toNum(pricingInfo.privateTourAdditionalCost),
                     commission_percent: toNum(pricingInfo.commission_percent),
-                    commission_amount: toNum(pricingInfo.commission_amount)
+                    commission_amount: toNum(pricingInfo.commission_amount),
+                    pricing_adults: billingAdults,
                   }
 
                   if (existingRow?.id) {

@@ -121,6 +121,7 @@ export default function ParticipantsSection({
                 setFormData((prev: any) => ({
                   ...prev,
                   adults: newAdults,
+                  pricingAdults: newAdults,
                   totalPeople: newAdults + prev.child + prev.infant,
                 }))
               }}

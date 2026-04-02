@@ -39,6 +39,8 @@ interface PricingInfo {
   privateTourAdditionalCost?: number
   commission_percent?: number
   commission_amount?: number
+  /** 상품가 계산용 성인 수 (없으면 예약 adults) */
+  pricingAdults?: number
 }
 
 /** confirm 요청 body: 예약 생성에 필요한 필드 */
@@ -206,8 +208,13 @@ export async function POST(
   // reservation_pricing 저장 (pricingInfo 있으면 새 예약 추가와 동일하게)
   const pricingInfo = body.pricingInfo
   if (pricingInfo) {
-    const totalPeople = (body.adults || 0) + (body.child ?? 0) + (body.infant ?? 0)
-    const notIncludedTotal = (Number(pricingInfo.not_included_price) || 0) * (totalPeople || 1)
+    const rawPa = pricingInfo.pricingAdults
+    const billingAdults =
+      rawPa !== undefined && rawPa !== null && String(rawPa) !== ''
+        ? Math.max(0, Math.floor(Number(rawPa)))
+        : Math.max(0, Math.floor(Number(body.adults) || 0))
+    const billingPax = billingAdults + (body.child ?? 0) + (body.infant ?? 0)
+    const notIncludedTotal = (Number(pricingInfo.not_included_price) || 0) * (billingPax || 1)
     const pricingId = crypto.randomUUID()
     const pricingData = {
       id: pricingId,
@@ -238,6 +245,7 @@ export async function POST(
       private_tour_additional_cost: Number(pricingInfo.privateTourAdditionalCost) || 0,
       commission_percent: Number(pricingInfo.commission_percent) || 0,
       commission_amount: Number(pricingInfo.commission_amount) || 0,
+      pricing_adults: Math.max(0, Math.floor(billingAdults)),
     }
     const { error: pricingError } = await client
       .from('reservation_pricing')
