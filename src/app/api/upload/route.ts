@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { NextResponse } from 'next/server'
+import { createServerSupabase } from '@/lib/supabase-server'
+import { createSupabaseClientWithToken } from '@/lib/supabase'
 
 // 용도별 버킷 매핑
 const BUCKET_MAPPING = {
@@ -12,9 +13,37 @@ const BUCKET_MAPPING = {
 
 type BucketType = keyof typeof BUCKET_MAPPING
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
-    const supabase = createClient()
+    const authHeader = request.headers.get('Authorization')
+    const bearer =
+      authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : ''
+
+    const supabaseCookie = await createServerSupabase()
+    let {
+      data: { user },
+      error: authError,
+    } = await supabaseCookie.auth.getUser()
+
+    /** 스토리지 업로드: 쿠키 세션 또는 Bearer JWT로 인증된 클라이언트 */
+    let supabase = supabaseCookie
+
+    if (!user && bearer) {
+      const jwtResult = await supabaseCookie.auth.getUser(bearer)
+      user = jwtResult.data.user
+      authError = jwtResult.error
+      if (user) {
+        supabase = createSupabaseClientWithToken(bearer)
+      }
+    }
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: '로그인이 필요합니다. 파일 업로드는 로그인된 상태에서만 가능합니다.' },
+        { status: 401 }
+      )
+    }
+
     const formData = await request.formData()
     const files = formData.getAll('files') as File[]
     const bucketType = formData.get('bucketType') as BucketType || 'maintenance'

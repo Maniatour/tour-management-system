@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { fetchUploadApi } from '@/lib/uploadClient';
 import { useTranslations } from 'next-intl';
 
 interface TicketBooking {
@@ -16,6 +17,9 @@ interface TicketBooking {
   income: number;
   payment_method: string;
   rn_number: string;
+  invoice_number?: string;
+  /** Zelle 결제 시 Confirmation 번호 */
+  zelle_confirmation_number?: string | null;
   tour_id: string | null;
   reservation_id?: string; // 예약 ID 추가
   note: string;
@@ -85,6 +89,8 @@ export default function TicketBookingForm({
       income: 0,
       payment_method: '',
       rn_number: '',
+      invoice_number: '',
+      zelle_confirmation_number: '',
       tour_id: tourId || null,
       reservation_id: '',
       note: '',
@@ -133,6 +139,11 @@ export default function TicketBookingForm({
         income: booking.income ?? initialData.income,
         payment_method: booking.payment_method ?? initialData.payment_method,
         rn_number: booking.rn_number ?? initialData.rn_number,
+        invoice_number: (booking as { invoice_number?: string }).invoice_number ?? initialData.invoice_number ?? '',
+        zelle_confirmation_number:
+          (booking as { zelle_confirmation_number?: string | null }).zelle_confirmation_number ??
+          initialData.zelle_confirmation_number ??
+          '',
         tour_id: booking.tour_id ?? tourId ?? initialData.tour_id,
         reservation_id: booking.reservation_id ?? initialData.reservation_id,
         note: booking.note ?? initialData.note,
@@ -666,7 +677,7 @@ export default function TicketBookingForm({
 
     try {
        // 파일 업로드 처리
-       let uploadedFileUrls: string[] = []
+       let newUploadedUrls: string[] = []
        if (formData.uploaded_files && formData.uploaded_files.length > 0) {
          setIsUploading(true)
          try {
@@ -675,25 +686,33 @@ export default function TicketBookingForm({
            formData.uploaded_files.forEach(file => {
              uploadFormData.append('files', file)
            })
-           
-           const uploadResponse = await fetch('/api/upload', {
-             method: 'POST',
-             body: uploadFormData
-           })
-          
-          if (uploadResponse.ok) {
-            const uploadResult = await uploadResponse.json()
-            uploadedFileUrls = uploadResult.urls
-          } else {
-            console.error('파일 업로드 실패')
-          }
-        } finally {
-          setIsUploading(false)
-        }
-      }
+
+           const uploadResponse = await fetchUploadApi(uploadFormData)
+
+           const uploadResult = await uploadResponse.json().catch(() => ({}))
+           if (!uploadResponse.ok) {
+             const msg =
+               typeof uploadResult?.error === 'string'
+                 ? uploadResult.error
+                 : '파일 업로드에 실패했습니다.'
+             console.error('파일 업로드 실패', uploadResponse.status, msg)
+             alert(msg)
+             setLoading(false)
+             return
+           }
+           newUploadedUrls = Array.isArray(uploadResult.urls) ? uploadResult.urls : []
+         } finally {
+           setIsUploading(false)
+         }
+       }
 
       const tourId = formData.tour_id && formData.tour_id.trim() !== '' ? formData.tour_id : null;
       const reservationId = formData.reservation_id && formData.reservation_id.trim() !== '' ? formData.reservation_id : null;
+
+      const existingFileUrls = Array.isArray(formData.uploaded_file_urls)
+        ? formData.uploaded_file_urls.filter((u): u is string => typeof u === 'string' && u.trim() !== '')
+        : []
+      const mergedFileUrls = [...existingFileUrls, ...newUploadedUrls]
 
       // DB에 없는 필드(supplier_product_id, uploaded_files 등)를 제거한 payload만 전송 (400 방지)
       const dbPayload = {
@@ -707,12 +726,16 @@ export default function TicketBookingForm({
         income: formData.income,
         payment_method: formData.payment_method || null,
         rn_number: formData.rn_number || null,
+        invoice_number: formData.invoice_number?.trim() ? formData.invoice_number.trim() : null,
+        zelle_confirmation_number: formData.zelle_confirmation_number?.trim()
+          ? formData.zelle_confirmation_number.trim()
+          : null,
         tour_id: tourId,
         reservation_id: reservationId,
         note: formData.note || null,
         status: formData.status,
         season: formData.season || null,
-        uploaded_file_urls: uploadedFileUrls?.length ? uploadedFileUrls : null
+        uploaded_file_urls: mergedFileUrls.length ? mergedFileUrls : null
       };
 
       console.log('전송할 데이터:', dbPayload);
@@ -732,6 +755,8 @@ export default function TicketBookingForm({
           income: dbPayload.income,
           payment_method: dbPayload.payment_method,
           rn_number: dbPayload.rn_number,
+          invoice_number: dbPayload.invoice_number,
+          zelle_confirmation_number: dbPayload.zelle_confirmation_number,
           tour_id: dbPayload.tour_id,
           reservation_id: dbPayload.reservation_id,
           note: dbPayload.note,
@@ -771,7 +796,8 @@ export default function TicketBookingForm({
         ...(savedId ? { id: savedId } : {}),
         tour_id: tourId,
         ...(reservationId ? { reservation_id: reservationId } : {}),
-        uploaded_file_urls: uploadedFileUrls
+        uploaded_file_urls: mergedFileUrls,
+        uploaded_files: [],
       };
       onSave(resultBooking);
     } catch (error) {
@@ -1295,6 +1321,22 @@ export default function TicketBookingForm({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
+                {t('zelleConfirmationNumber')}
+              </label>
+              <input
+                type="text"
+                name="zelle_confirmation_number"
+                value={formData.zelle_confirmation_number || ''}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder={t('zelleConfirmationPlaceholder')}
+                autoComplete="off"
+              />
+              <p className="text-xs text-gray-500 mt-1">{t('zelleConfirmationHint')}</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 RN#
               </label>
               <input
@@ -1303,6 +1345,20 @@ export default function TicketBookingForm({
                 value={formData.rn_number}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Invoice#
+              </label>
+              <input
+                type="text"
+                name="invoice_number"
+                value={formData.invoice_number || ''}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Invoice#"
               />
             </div>
 

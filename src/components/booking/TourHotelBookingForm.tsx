@@ -2,11 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { fetchUploadApi } from '@/lib/uploadClient';
 import { useTranslations } from 'next-intl';
 
 interface TourHotelBooking {
   id?: string;
   tour_id: string;
+  /** DB NOT NULL — 폼에 필드가 없으면 check_in_date로 채움 */
+  event_date?: string | null;
   check_in_date: string;
   check_out_date: string;
   reservation_name: string;
@@ -26,6 +29,115 @@ interface TourHotelBooking {
   uploaded_file_urls?: string[]; // 업로드된 파일 URL들
 }
 
+function teamMemberMatchesReservation(
+  member: { name_ko: string | null; name_en: string | null },
+  reservationName: string
+): boolean {
+  const r = reservationName.trim();
+  if (!r) return false;
+  const ko = (member.name_ko || '').trim();
+  const en = (member.name_en || '').trim();
+  return r === ko || (en.length > 0 && r === en);
+}
+
+/** DB 컬럼만 전송 (File 등 클라이언트 전용 필드 제외) — 그대로내면 400 발생 */
+function toTourHotelBookingRowPayload(
+  formData: TourHotelBooking,
+  newUploadedUrls: string[]
+): Record<string, unknown> {
+  const existingUrls = Array.isArray(formData.uploaded_file_urls)
+    ? formData.uploaded_file_urls.filter((u): u is string => typeof u === 'string' && u.length > 0)
+    : [];
+  const tourIdRaw = formData.tour_id?.trim();
+  const eventDate =
+    (formData.event_date && String(formData.event_date).trim()) ||
+    (formData.check_in_date && String(formData.check_in_date).trim()) ||
+    null;
+
+  const row: Record<string, unknown> = {
+    tour_id: tourIdRaw ? tourIdRaw : null,
+    event_date: eventDate,
+    check_in_date: formData.check_in_date,
+    check_out_date: formData.check_out_date,
+    reservation_name: formData.reservation_name,
+    submitted_by: formData.submitted_by,
+    cc: formData.cc?.trim() ? formData.cc : null,
+    rooms: formData.rooms,
+    city: formData.city,
+    hotel: formData.hotel,
+    room_type: formData.room_type?.trim() ? formData.room_type : null,
+    unit_price: formData.unit_price,
+    total_price: formData.total_price,
+    payment_method: formData.payment_method?.trim() ? formData.payment_method : null,
+    website: formData.website?.trim() ? formData.website : null,
+    rn_number: formData.rn_number?.trim() ? formData.rn_number : null,
+    status: formData.status,
+  };
+
+  if (newUploadedUrls.length > 0) {
+    row.uploaded_file_urls = [...existingUrls, ...newUploadedUrls];
+  } else if (existingUrls.length > 0) {
+    row.uploaded_file_urls = existingUrls;
+  }
+
+  return row;
+}
+
+function buildInitialFormData(
+  tourId: string | undefined,
+  booking?: TourHotelBooking
+): TourHotelBooking {
+  const empty: TourHotelBooking = {
+    tour_id: tourId || '',
+    event_date: '',
+    check_in_date: '',
+    check_out_date: '',
+    reservation_name: '',
+    submitted_by: 'admin@maniatour.com',
+    cc: 'not_sent',
+    rooms: 1,
+    city: '',
+    hotel: '',
+    room_type: '',
+    unit_price: 0,
+    total_price: 0,
+    payment_method: '',
+    website: '',
+    rn_number: '',
+    status: 'pending',
+    uploaded_files: [],
+    uploaded_file_urls: [],
+  };
+
+  if (!booking) {
+    return empty;
+  }
+
+  return {
+    ...empty,
+    ...booking,
+    tour_id: booking.tour_id ?? tourId ?? empty.tour_id,
+    event_date: booking.event_date ?? empty.event_date,
+    check_in_date: booking.check_in_date ?? empty.check_in_date,
+    check_out_date: booking.check_out_date ?? empty.check_out_date,
+    reservation_name: booking.reservation_name ?? empty.reservation_name,
+    submitted_by: booking.submitted_by ?? empty.submitted_by,
+    cc: booking.cc ?? empty.cc,
+    rooms: booking.rooms ?? empty.rooms,
+    city: booking.city ?? empty.city,
+    hotel: booking.hotel ?? empty.hotel,
+    room_type: booking.room_type ?? empty.room_type,
+    unit_price: booking.unit_price ?? empty.unit_price,
+    total_price: booking.total_price ?? empty.total_price,
+    payment_method: booking.payment_method ?? empty.payment_method,
+    website: booking.website ?? empty.website,
+    rn_number: booking.rn_number ?? empty.rn_number,
+    status: booking.status ?? empty.status,
+    uploaded_file_urls: booking.uploaded_file_urls ?? empty.uploaded_file_urls,
+    uploaded_files: [],
+  };
+}
+
 interface TourHotelBookingFormProps {
   booking?: TourHotelBooking;
   onSave: (booking: TourHotelBooking) => void;
@@ -40,59 +152,14 @@ export default function TourHotelBookingForm({
   tourId 
 }: TourHotelBookingFormProps) {
   const t = useTranslations('booking.tourHotelBooking');
-  const [formData, setFormData] = useState<TourHotelBooking>(() => {
-    console.log('편집 모드 - 전달받은 booking 데이터:', booking);
-    
-    const initialData = {
-      tour_id: tourId || '',
-      check_in_date: '',
-      check_out_date: '',
-      reservation_name: '',
-      submitted_by: 'admin@maniatour.com',
-      cc: 'not_sent',
-      rooms: 1,
-      city: '',
-      hotel: '',
-      room_type: '',
-      unit_price: 0,
-      total_price: 0,
-      payment_method: '',
-      website: '',
-      rn_number: '',
-      status: 'pending',
-      uploaded_files: [], // 파일 업로드 필드 추가
-      uploaded_file_urls: [] // 업로드된 파일 URL들
-    };
+  const [formData, setFormData] = useState<TourHotelBooking>(() =>
+    buildInitialFormData(tourId, booking)
+  );
 
-    if (booking) {
-      const mergedData = {
-        ...initialData,
-        ...booking,
-        // 명시적으로 각 필드를 설정하여 undefined 값 처리
-        tour_id: booking.tour_id ?? tourId ?? initialData.tour_id,
-        check_in_date: booking.check_in_date ?? initialData.check_in_date,
-        check_out_date: booking.check_out_date ?? initialData.check_out_date,
-        reservation_name: booking.reservation_name ?? initialData.reservation_name,
-        submitted_by: booking.submitted_by ?? initialData.submitted_by,
-        cc: booking.cc ?? initialData.cc,
-        rooms: booking.rooms ?? initialData.rooms,
-        city: booking.city ?? initialData.city,
-        hotel: booking.hotel ?? initialData.hotel,
-        room_type: booking.room_type ?? initialData.room_type,
-        unit_price: booking.unit_price ?? initialData.unit_price,
-        total_price: booking.total_price ?? initialData.total_price,
-        payment_method: booking.payment_method ?? initialData.payment_method,
-        website: booking.website ?? initialData.website,
-        rn_number: booking.rn_number ?? initialData.rn_number,
-        status: booking.status ?? initialData.status,
-      };
-      
-      console.log('편집 모드 - 최종 formData:', mergedData);
-      return mergedData;
-    }
-    
-    return initialData;
-  });
+  useEffect(() => {
+    setFormData(buildInitialFormData(tourId, booking));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- booking 전체는 참조가 불안정할 수 있음
+  }, [booking?.id, tourId]);
 
   const [tours, setTours] = useState<any[]>([]);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
@@ -358,10 +425,7 @@ export default function TourHotelBookingForm({
              uploadFormData.append('files', file)
            })
            
-           const uploadResponse = await fetch('/api/upload', {
-             method: 'POST',
-             body: uploadFormData
-           })
+           const uploadResponse = await fetchUploadApi(uploadFormData)
           
           if (uploadResponse.ok) {
             const uploadResult = await uploadResponse.json()
@@ -374,31 +438,31 @@ export default function TourHotelBookingForm({
         }
       }
 
-      const bookingData = {
-        ...formData,
-        tour_id: formData.tour_id && formData.tour_id.trim() !== '' ? formData.tour_id : null,
-        uploaded_file_urls: uploadedFileUrls // 업로드된 파일 URL들 추가
-      };
+      const rowPayload = toTourHotelBookingRowPayload(formData, uploadedFileUrls);
 
       let error;
       if (booking?.id) {
-        // 수정인 경우
         const { error: updateError } = await supabase
           .from('tour_hotel_bookings')
-          .update(bookingData)
+          .update(rowPayload)
           .eq('id', booking.id);
         error = updateError;
       } else {
-        // 새로 생성인 경우
         const { error: insertError } = await supabase
           .from('tour_hotel_bookings')
-          .insert(bookingData);
+          .insert(rowPayload);
         error = insertError;
       }
 
       if (error) throw error;
 
-      onSave(bookingData);
+      const { uploaded_files: _dropFiles, ...formWithoutFiles } = formData;
+      onSave({
+        ...formWithoutFiles,
+        ...rowPayload,
+        tour_id: (rowPayload.tour_id as string | null) ?? '',
+        id: booking?.id,
+      } as TourHotelBooking);
     } catch (error) {
       console.error('투어 호텔 부킹 저장 오류:', error);
       alert('저장 중 오류가 발생했습니다.');
@@ -512,6 +576,10 @@ export default function TourHotelBookingForm({
   useEffect(() => {
     calculateTotalPrice();
   }, [formData.rooms, formData.unit_price]);
+
+  const reservationInTeamList = teamMembers.some((m) =>
+    teamMemberMatchesReservation(m, formData.reservation_name || '')
+  );
 
   return (
     <div className="space-y-3 sm:space-y-4">
@@ -652,11 +720,33 @@ export default function TourHotelBookingForm({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">예약자명을 선택하세요</option>
-                {teamMembers.map((member) => (
-                  <option key={member.email} value={member.name_ko}>
-                    {member.name_ko} {member.name_en ? `(${member.name_en})` : ''} - {member.position || '직책 없음'}
+                {formData.reservation_name?.trim() && !reservationInTeamList ? (
+                  <option value={formData.reservation_name}>
+                    {formData.reservation_name} (팀 목록에 없음 · 그대로 유지)
                   </option>
-                ))}
+                ) : null}
+                {teamMembers.flatMap((member) => {
+                  const ko = (member.name_ko || '').trim();
+                  const en = (member.name_en || '').trim();
+                  const opts: React.ReactElement[] = [];
+                  if (ko) {
+                    opts.push(
+                      <option key={`${member.email}-ko`} value={ko}>
+                        {ko}
+                        {en ? ` (${en})` : ''} — {member.position || '직책 없음'}
+                      </option>
+                    );
+                  }
+                  if (en && en !== ko) {
+                    opts.push(
+                      <option key={`${member.email}-en`} value={en}>
+                        {en}
+                        {ko ? ` (${ko})` : ''} — {member.position || '직책 없음'}
+                      </option>
+                    );
+                  }
+                  return opts;
+                })}
               </select>
             </div>
 

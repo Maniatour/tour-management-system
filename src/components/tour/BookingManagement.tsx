@@ -9,6 +9,7 @@ export interface TicketBookingDetailRow {
   ea: number
   reservation_id: string | null
   rn_number: string | null
+  invoice_number?: string | null
 }
 
 interface LocalTicketBooking {
@@ -20,6 +21,7 @@ interface LocalTicketBooking {
   time?: string | null
   ea?: number | null
   rn_number?: string | null
+  invoice_number?: string | null
   deletion_requested_at?: string | null
   /** 간단히 보기 시 회사별 하위 행 (시간, 인원, 예약번호) */
   bookingDetails?: TicketBookingDetailRow[]
@@ -28,6 +30,7 @@ interface LocalTicketBooking {
 interface LocalTourHotelBooking {
   id: string
   reservation_id?: string | null
+  reservation_name?: string | null
   status?: string | null
   hotel?: string | null
   room_type?: string | null
@@ -36,6 +39,7 @@ interface LocalTourHotelBooking {
   check_out_date?: string | null
   rn_number?: string | null
   booking_reference?: string | null
+  total_price?: number | null
 }
 
 interface BookingManagementProps {
@@ -206,6 +210,9 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
                                 {row.rn_number && (
                                   <span className="font-mono">{t('rnNumber')}: {row.rn_number}</span>
                                 )}
+                                {row.invoice_number?.trim() && (
+                                  <span className="font-mono">Invoice#: {row.invoice_number}</span>
+                                )}
                               </div>
                             ))}
                           </div>
@@ -228,6 +235,9 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
                               )}
                               {!isAggregated && booking.rn_number && (
                                 <span>#{booking.rn_number}</span>
+                              )}
+                              {!isAggregated && booking.invoice_number?.trim() && (
+                                <span className="font-mono">Inv: {booking.invoice_number}</span>
                               )}
                             </div>
                             {!isAggregated && booking.expense && booking.expense > 0 && (
@@ -282,13 +292,21 @@ export const BookingManagement: React.FC<BookingManagementProps> = ({
                         </div>
                       </div>
                       
-                      {/* 상태 */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-gray-500">{t('statusLabel')}:</span>
-                          <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(booking.status)}`}>
-                            {getHotelStatusText(booking.status)}
+                      {/* 예약자 이름 + 상태 */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
+                          <span
+                            className="text-sm font-medium text-gray-900 truncate max-w-[min(100%,14rem)]"
+                            title={booking.reservation_name?.trim() || undefined}
+                          >
+                            {booking.reservation_name?.trim() || '—'}
                           </span>
+                          <div className="flex items-center space-x-2 shrink-0">
+                            <span className="text-gray-500">{t('statusLabel')}:</span>
+                            <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(booking.status)}`}>
+                              {getHotelStatusText(booking.status)}
+                            </span>
+                          </div>
                         </div>
                         {/* 오른쪽 아래: 금액 */}
                         {booking.total_price != null && Number(booking.total_price) > 0 && (

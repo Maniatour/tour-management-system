@@ -10,6 +10,7 @@ import {
   employeeHasHourlyPeriods,
   lasVegasDateFromCheckIn,
 } from '@/lib/employeeHourlyRates'
+import { adjustedWorkHoursForPay, sortAttendanceRecordsForMealPolicy } from '@/lib/attendanceMealPolicy'
 
 interface TotalEmployeesModalProps {
   isOpen: boolean
@@ -209,6 +210,21 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
       if (attendanceError) {
         console.error('출퇴근 기록 조회 오류:', attendanceError)
         return
+      }
+
+      const { data: mealRows, error: mealError } = await supabase
+        .from('office_meal_log')
+        .select('employee_email, meal_date')
+        .gte('meal_date', startDate)
+        .lte('meal_date', endDate)
+      if (mealError) {
+        console.error('office_meal_log 조회 오류:', mealError)
+      }
+      const mealMap = new Map<string, Set<string>>()
+      for (const row of mealRows || []) {
+        const r = row as { employee_email: string; meal_date: string }
+        if (!mealMap.has(r.employee_email)) mealMap.set(r.employee_email, new Set())
+        mealMap.get(r.employee_email)!.add(r.meal_date)
       }
 
       // 투어 fee 조회 (reservation_ids 포함)
@@ -422,14 +438,14 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
           )
 
           const useDbRates = employeeHasHourlyPeriods(ratePeriods, employee.email)
+          const empMeals = mealMap.get(employee.email) || new Set<string>()
+          const sortedAtt = sortAttendanceRecordsForMealPolicy(employeeAttendanceRecords)
 
-          // 실제 근무시간·출퇴근 급여 (DB에 직원별 구간이 있으면 일자별 시급, 없으면 시간당 $15)
+          // 적용 정산: 3월말까지 8h 자동, 4/1~ 사무실 식사 기록 (DB 시급 구간 또는 $15)
           let attendancePay = 0
-          const actualTotalHours = employeeAttendanceRecords.reduce((sum, record) => {
-            let workHours = record.work_hours || 0
-            if (workHours > 8) {
-              workHours = workHours - 0.5
-            }
+          let actualTotalHours = 0
+          for (const record of employeeAttendanceRecords) {
+            const workHours = adjustedWorkHoursForPay(record, sortedAtt, empMeals, 'applied')
             const dayStr =
               lasVegasDateFromCheckIn(record.check_in_time) ||
               (typeof record.date === 'string' ? record.date.slice(0, 10) : null)
@@ -438,8 +454,8 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
                 ? getHourlyRateForEmployeeOnDate(ratePeriods, employee.email, dayStr, 15)
                 : 15
             attendancePay += workHours * rateForDay
-            return sum + workHours
-          }, 0)
+            actualTotalHours += workHours
+          }
 
           // 투어 fee 필터링 및 prepaid 팁 계산
           const filteredTours = tourData?.filter(tour => 

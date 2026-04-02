@@ -939,7 +939,7 @@ export default function AdminReservationStatistics({ }: AdminReservationStatisti
 
       {/* 투어 통계 탭 */}
       {activeTab === 'tours' && (
-        <TourStatisticsTab dateRange={dateRange} />
+        <TourStatisticsTab dateRange={dateRange} isSuper={isSuper} />
       )}
 
       {/* 예약 정산 탭 */}

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
-import { Clock, CheckCircle, XCircle, Calendar, User, BarChart3, RefreshCw, Edit, Users, Plus, Calculator, DollarSign, History } from 'lucide-react'
+import { Clock, CheckCircle, XCircle, Calendar, User, BarChart3, RefreshCw, Edit, Users, Plus, Calculator, DollarSign, History, UtensilsCrossed } from 'lucide-react'
 import {
   BarChart,
   Bar,
@@ -23,6 +23,7 @@ import TotalEmployeesModal from '@/components/TotalEmployeesModal'
 import EmployeeHourlyRatesModal from '@/components/attendance/EmployeeHourlyRatesModal'
 import { canViewEmployeeHourlyRatesHistory } from '@/lib/roles'
 import TipsShareModal from '@/components/TipsShareModal'
+import OfficeMealModal from '@/components/attendance/OfficeMealModal'
 import BonusCalculatorModal from '@/components/BonusCalculatorModal'
 import ReservationForm from '@/components/reservation/ReservationForm'
 import { useParams } from 'next/navigation'
@@ -87,6 +88,8 @@ export default function AttendancePage() {
   const [canViewTipsShare, setCanViewTipsShare] = useState(false)
   /** Office Tips 버튼 표시 (super + manager / office manager + op + om) */
   const [canViewOfficeTips, setCanViewOfficeTips] = useState(false)
+  /** 사무실 식사 버튼·작성 (super 또는 office manager만) */
+  const [canManageOfficeMeal, setCanManageOfficeMeal] = useState(false)
   const [teamMembers, setTeamMembers] = useState<Array<{email: string, name_ko: string, position: string}>>([])
   const [currentSessionForSelectedEmployee, setCurrentSessionForSelectedEmployee] = useState<AttendanceRecord | null>(null)
   const [employeeNotFound, setEmployeeNotFound] = useState(false)
@@ -96,6 +99,7 @@ export default function AttendancePage() {
   const [totalEmployeesOverdueCount, setTotalEmployeesOverdueCount] = useState(0)
   const [isTipsShareModalOpen, setIsTipsShareModalOpen] = useState(false)
   const [isOfficeTipsModalOpen, setIsOfficeTipsModalOpen] = useState(false)
+  const [isOfficeMealModalOpen, setIsOfficeMealModalOpen] = useState(false)
   const [isBonusCalculatorOpen, setIsBonusCalculatorOpen] = useState(false)
   const [isHourlyRatesModalOpen, setIsHourlyRatesModalOpen] = useState(false)
   /** Tips 쉐어 모달에서 예약 클릭 시 예약 수정 모달용 */
@@ -129,24 +133,30 @@ export default function AttendancePage() {
         setCanEditAttendance(false)
         setCanViewTipsShare(false)
         setCanViewOfficeTips(false)
+        setCanManageOfficeMeal(false)
         return
       }
       
-      const position = (teamData as any).position?.toLowerCase()
+      const position = String((teamData as any).position ?? '')
+        .trim()
+        .toLowerCase()
       const isAdminUser = position === 'super'
       const isManager = position === 'manager' || position === 'office manager'
       const isOpOrOm = position === 'op' || position === 'om'
+      const isOfficeManagerOnly = position === 'office manager'
       
       setIsAdmin(isAdminUser)
       setCanEditAttendance(position === 'super')
       setCanViewTipsShare(isAdminUser || isManager)
       setCanViewOfficeTips(isAdminUser || isManager || isOpOrOm)
+      setCanManageOfficeMeal(isAdminUser || isOfficeManagerOnly)
     } catch (error) {
       console.error('권한 체크 오류:', error)
       setIsAdmin(false)
       setCanEditAttendance(false)
       setCanViewTipsShare(false)
       setCanViewOfficeTips(false)
+      setCanManageOfficeMeal(false)
     }
   }
 
@@ -560,6 +570,10 @@ export default function AttendancePage() {
   }, [authUser])
 
   useEffect(() => {
+    if (!canManageOfficeMeal) setIsOfficeMealModalOpen(false)
+  }, [canManageOfficeMeal])
+
+  useEffect(() => {
     if (selectedEmployee) {
       refreshData()
     }
@@ -793,6 +807,16 @@ export default function AttendancePage() {
                   >
                     <Plus className="w-4 h-4 shrink-0" />
                     <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('addRecord')}</span>
+                  </button>
+                )}
+                {canManageOfficeMeal && (
+                  <button
+                    onClick={() => setIsOfficeMealModalOpen(true)}
+                    type="button"
+                    className="flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-white bg-amber-700 border border-amber-700 rounded-lg hover:bg-amber-800 transition-colors min-w-[3rem]"
+                  >
+                    <UtensilsCrossed className="w-4 h-4 shrink-0" />
+                    <span className="text-[8px] leading-tight font-medium whitespace-nowrap">{t('officeMealButton')}</span>
                   </button>
                 )}
                 <button
@@ -1261,6 +1285,12 @@ export default function AttendancePage() {
       />
 
       {/* Office Tips 모달 */}
+      {canManageOfficeMeal && (
+        <OfficeMealModal
+          isOpen={isOfficeMealModalOpen}
+          onClose={() => setIsOfficeMealModalOpen(false)}
+        />
+      )}
       <OfficeTipsModal
         isOpen={isOfficeTipsModalOpen}
         onClose={() => setIsOfficeTipsModalOpen(false)}

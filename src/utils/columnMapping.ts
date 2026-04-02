@@ -259,6 +259,8 @@ export const getFallbackColumns = (tableName: string): ColumnInfo[] => {
       { name: 'income', type: 'numeric', nullable: true, default: null },
       { name: 'payment_method', type: 'text', nullable: true, default: null },
       { name: 'rn_number', type: 'text', nullable: true, default: null },
+      { name: 'invoice_number', type: 'text', nullable: true, default: null },
+      { name: 'zelle_confirmation_number', type: 'text', nullable: true, default: null },
       { name: 'tour_id', type: 'text', nullable: true, default: null },
       { name: 'note', type: 'text', nullable: true, default: null },
       { name: 'status', type: 'text', nullable: true, default: null },

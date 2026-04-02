@@ -266,11 +266,10 @@ const readGoogleSheetInChunks = async (
     const chunkRange = `${sheetName}!${startCol}${startRow}:${optimizedEndCol}${endRow}`
     const res = await fetchRange(chunkRange, `청크 ${chunkIndex} (${startRow}-${endRow})`)
     const values = res.data.values
+    // API는 범위 끝의 빈 행을 생략해 values.length < rowChunk 인 경우가 많음.
+    // 이때 break 하면 그 아래 행을 영원히 읽지 못함(고객 시트 등 상단 공백·데이터 하단 배치 시 치명적).
     if (values?.length) {
       allData.push(...rowsToObjects(headers, values))
-    }
-    if (!values?.length || values.length < rowChunk) {
-      break
     }
     startRow = endRow + 1
     chunkIndex += 1

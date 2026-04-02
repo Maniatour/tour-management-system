@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useCallback } from 'react'
 import { useLocale } from 'next-intl'
 import { 
   BarChart3, 
@@ -38,6 +38,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useRoutePersistedState } from '@/hooks/useRoutePersistedState'
+import TicketBookingReservationDetailModal, {
+  type TicketBookingReservationDetailRow,
+} from '@/components/booking/TicketBookingReservationDetailModal'
+import TicketBookingForm from '@/components/booking/TicketBookingForm'
+import BookingHistory from '@/components/booking/BookingHistory'
+import { useAuth } from '@/contexts/AuthContext'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const TicketBookingFormAny = TicketBookingForm as any
 
 interface TourStatisticsData {
   totalTours: number
@@ -81,6 +90,8 @@ interface TourStatisticsData {
 
 interface TourStatisticsTabProps {
   dateRange: { start: string; end: string }
+  /** 입장권 예약 상세·폼에서 Super 전용 삭제 등에 사용 */
+  isSuper?: boolean
 }
 
 type TourStatsFiltersState = {
@@ -121,6 +132,39 @@ function isProductExemptFromTicketEaMismatchCheck(productName: string): boolean 
   const n = (productName || '').trim()
   if (!n) return false
   return PRODUCT_SUBSTRINGS_EXEMPT_TICKET_EA_MISMATCH.some((k) => n.includes(k))
+}
+
+/** 티켓 수(ea) vs 투어 총인원: 초과 빨강 / 일치 파랑 / 미만 녹색 (면제 상품은 중립) */
+function ticketEaVsPeopleColorClasses(
+  ticketEa: number,
+  totalPeople: number,
+  productName: string,
+  variant: 'button' | 'span'
+): string {
+  if (isProductExemptFromTicketEaMismatchCheck(productName)) {
+    return variant === 'button' ? 'text-gray-700 hover:text-gray-900' : 'text-gray-900'
+  }
+  const t = ticketEa ?? 0
+  const p = totalPeople ?? 0
+  if (t > p) {
+    return variant === 'button' ? 'text-red-600 hover:text-red-800' : 'text-red-600'
+  }
+  if (t === p) {
+    return variant === 'button' ? 'text-blue-600 hover:text-blue-800' : 'text-blue-600'
+  }
+  return variant === 'button' ? 'text-green-600 hover:text-green-800' : 'text-green-600'
+}
+
+/** 총합 행: 면제 제외 투어들의 티켓 합 vs 인원 합 */
+function aggregatedTicketEaVsPeopleColorClass(
+  ticketEaSum: number,
+  peopleSum: number,
+  hasComparedRows: boolean
+): string {
+  if (!hasComparedRows) return 'text-gray-900'
+  if (ticketEaSum > peopleSum) return 'text-red-600'
+  if (ticketEaSum === peopleSum) return 'text-blue-600'
+  return 'text-green-600'
 }
 
 function TourStatisticsTourDetailModal({
@@ -181,6 +225,42 @@ function formatDate(dateString: string): string {
     month: '2-digit',
     day: '2-digit'
   })
+}
+
+/** DB마다 ticket_bookings 컬럼이 다름(예: reservation_name/cc/total_price 없음). 모달용으로 통일 */
+function ticketBookingRowToDetailModal(
+  raw: Record<string, unknown>,
+  tourMeta: TicketBookingReservationDetailRow['tours']
+): TicketBookingReservationDetailRow {
+  const str = (v: unknown) => (v == null ? '' : String(v))
+  const num = (v: unknown): number => {
+    if (typeof v === 'number' && !Number.isNaN(v)) return v
+    const n = Number(v)
+    return Number.isFinite(n) ? n : 0
+  }
+  const reservationName = str(raw.reservation_name).trim()
+  const submittedBy = str(raw.submitted_by).trim()
+  const totalPrice =
+    raw.total_price != null && String(raw.total_price) !== ''
+      ? num(raw.total_price)
+      : num(raw.expense)
+
+  return {
+    id: str(raw.id),
+    submit_on: str(raw.submit_on),
+    category: str(raw.category),
+    company: str(raw.company),
+    reservation_name: reservationName || submittedBy || '—',
+    time: str(raw.time),
+    ea: num(raw.ea),
+    total_price: totalPrice,
+    status: str(raw.status),
+    cc: typeof raw.cc === 'string' && raw.cc !== '' ? raw.cc : 'not_needed',
+    rn_number: str(raw.rn_number),
+    invoice_number: str(raw.invoice_number).trim() || undefined,
+    updated_at: str(raw.updated_at || raw.created_at),
+    tours: tourMeta,
+  }
 }
 
 // 투어별 정산 통계를 가져오는 함수 (TourExpenseManager 로직 재사용)
@@ -617,8 +697,9 @@ async function getTourFinancialStats(tourId: string) {
   }
 }
 
-export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps) {
+export default function TourStatisticsTab({ dateRange, isSuper = false }: TourStatisticsTabProps) {
   const locale = useLocale()
+  const { authUser } = useAuth()
   const {
     reservations,
     products,
@@ -626,6 +707,162 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
   } = useReservationData()
 
   const [tourDetailModal, setTourDetailModal] = useState<{ tourId: string; productName: string } | null>(null)
+  const [ticketBookingDetailTourId, setTicketBookingDetailTourId] = useState<string | null>(null)
+  const [ticketBookingDetailModalOpen, setTicketBookingDetailModalOpen] = useState(false)
+  const [ticketBookingDetailRows, setTicketBookingDetailRows] = useState<TicketBookingReservationDetailRow[]>([])
+  const [ticketBookingDetailLoading, setTicketBookingDetailLoading] = useState(false)
+  const [ticketEditFormOpen, setTicketEditFormOpen] = useState(false)
+  const [ticketEditBooking, setTicketEditBooking] = useState<Record<string, unknown> | null>(null)
+  const [ticketHistoryOpen, setTicketHistoryOpen] = useState(false)
+  const [ticketHistoryBookingId, setTicketHistoryBookingId] = useState('')
+
+  const reloadTicketBookingDetailRows = useCallback(async (tourId: string) => {
+    setTicketBookingDetailLoading(true)
+    try {
+      const [bookingsRes, tourRes] = await Promise.all([
+        supabase.from('ticket_bookings').select('*').eq('tour_id', tourId),
+        supabase
+          .from('tours')
+          .select('tour_date, products(name, name_en)')
+          .eq('id', tourId)
+          .maybeSingle(),
+      ])
+      if (bookingsRes.error) throw bookingsRes.error
+      if (tourRes.error) {
+        console.warn('투어 입장권 모달: 투어/상품 메타 조회 오류:', tourRes.error)
+      }
+
+      let tourMeta: TicketBookingReservationDetailRow['tours'] = undefined
+      if (tourRes.data) {
+        tourMeta = {
+          tour_date: tourRes.data.tour_date,
+          products: tourRes.data.products as
+            | { name?: string; name_en?: string }
+            | null
+            | undefined,
+        }
+      }
+
+      const rows = (bookingsRes.data || []).map((b) =>
+        ticketBookingRowToDetailModal(b as Record<string, unknown>, tourMeta)
+      )
+      setTicketBookingDetailRows(rows)
+    } catch (e) {
+      console.error('투어 입장권 부킹 조회 오류:', e)
+      setTicketBookingDetailRows([])
+    } finally {
+      setTicketBookingDetailLoading(false)
+    }
+  }, [])
+
+  const openTicketBookingReservationDetail = useCallback(
+    async (tourId: string) => {
+      setTicketBookingDetailTourId(tourId)
+      setTicketBookingDetailModalOpen(true)
+      setTicketBookingDetailRows([])
+      await reloadTicketBookingDetailRows(tourId)
+    },
+    [reloadTicketBookingDetailRows]
+  )
+
+  const handleTicketBookingDetailEdit = useCallback(
+    async (row: TicketBookingReservationDetailRow) => {
+      const { data, error } = await supabase.from('ticket_bookings').select('*').eq('id', row.id).maybeSingle()
+      if (error || !data) {
+        alert(locale === 'ko' ? '부킹 정보를 불러오지 못했습니다.' : 'Failed to load booking.')
+        return
+      }
+      setTicketEditBooking(data as Record<string, unknown>)
+      setTicketEditFormOpen(true)
+    },
+    [locale]
+  )
+
+  const handleTicketFormSave = useCallback(async () => {
+    setTicketEditFormOpen(false)
+    setTicketEditBooking(null)
+    alert(locale === 'ko' ? '저장 완료되었습니다.' : 'Saved successfully.')
+    if (ticketBookingDetailTourId) await reloadTicketBookingDetailRows(ticketBookingDetailTourId)
+  }, [locale, ticketBookingDetailTourId, reloadTicketBookingDetailRows])
+
+  const handleTicketFormCancel = useCallback(() => {
+    setTicketEditFormOpen(false)
+    setTicketEditBooking(null)
+  }, [])
+
+  const handleRequestTicketBookingDeleteFromForm = useCallback(
+    async (id: string) => {
+      const email = authUser?.email || ''
+      const { error } = await supabase
+        .from('ticket_bookings')
+        .update({
+          deletion_requested_at: new Date().toISOString(),
+          deletion_requested_by: email || null,
+        })
+        .eq('id', id)
+      if (error) {
+        console.error('삭제 요청 오류:', error)
+        alert(locale === 'ko' ? '삭제 요청 처리 중 오류가 발생했습니다.' : 'Failed to request deletion.')
+        return
+      }
+      alert(
+        locale === 'ko'
+          ? '삭제 요청되었습니다. Super가 확인 후 삭제합니다.'
+          : 'Deletion requested. Super will delete after review.'
+      )
+      if (ticketBookingDetailTourId) await reloadTicketBookingDetailRows(ticketBookingDetailTourId)
+    },
+    [authUser?.email, locale, ticketBookingDetailTourId, reloadTicketBookingDetailRows]
+  )
+
+  const handleActualTicketBookingDeleteFromForm = useCallback(
+    async (id: string) => {
+      const { error } = await supabase.from('ticket_bookings').delete().eq('id', id)
+      if (error) {
+        console.error('삭제 오류:', error)
+        alert(locale === 'ko' ? '삭제 중 오류가 발생했습니다.' : 'Failed to delete.')
+        return
+      }
+      alert(locale === 'ko' ? '삭제되었습니다.' : 'Deleted.')
+      setTicketEditFormOpen(false)
+      setTicketEditBooking(null)
+      if (ticketBookingDetailTourId) await reloadTicketBookingDetailRows(ticketBookingDetailTourId)
+    },
+    [locale, ticketBookingDetailTourId, reloadTicketBookingDetailRows]
+  )
+
+  const handleTicketBookingRowDelete = useCallback(
+    async (id: string) => {
+      if (isSuper) {
+        if (!confirm(locale === 'ko' ? '정말로 이 부킹을 삭제하시겠습니까?' : 'Delete this booking?')) return
+        const { error } = await supabase.from('ticket_bookings').delete().eq('id', id)
+        if (error) {
+          alert(locale === 'ko' ? '삭제 중 오류가 발생했습니다.' : 'Delete failed.')
+          return
+        }
+      } else {
+        const email = authUser?.email || ''
+        const { error } = await supabase
+          .from('ticket_bookings')
+          .update({
+            deletion_requested_at: new Date().toISOString(),
+            deletion_requested_by: email || null,
+          })
+          .eq('id', id)
+        if (error) {
+          alert(locale === 'ko' ? '삭제 요청 처리 중 오류가 발생했습니다.' : 'Request failed.')
+          return
+        }
+        alert(
+          locale === 'ko'
+            ? '삭제 요청되었습니다. Super가 확인 후 삭제합니다.'
+            : 'Deletion requested.'
+        )
+      }
+      if (ticketBookingDetailTourId) await reloadTicketBookingDetailRows(ticketBookingDetailTourId)
+    },
+    [isSuper, authUser?.email, locale, ticketBookingDetailTourId, reloadTicketBookingDetailRows]
+  )
   const [filters, setFilters] = useRoutePersistedState<TourStatsFiltersState>(
     'tour-filters',
     DEFAULT_TOUR_STATS_FILTERS
@@ -1684,15 +1921,33 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                           <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-red-600 font-medium">
                             ${(tour.gasCost || 0).toLocaleString()}
                           </td>
-                          <td
-                            className={`px-2 sm:px-3 py-1.5 whitespace-nowrap font-medium ${
-                              !isProductExemptFromTicketEaMismatchCheck(tour.productName) &&
-                              (tour.ticketBookingsEa ?? 0) !== (tour.totalPeople ?? 0)
-                                ? 'text-red-600'
-                                : 'text-gray-900'
-                            }`}
-                          >
-                            ${(tour.ticketBookingsCost || 0).toLocaleString()} ({(tour.ticketBookingsEa ?? 0)}ea)
+                          <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap font-medium">
+                            {tour.hasValidTourId ? (
+                              <button
+                                type="button"
+                                onClick={() => openTicketBookingReservationDetail(tour.tourId)}
+                                className={`text-left hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 rounded ${ticketEaVsPeopleColorClasses(
+                                  tour.ticketBookingsEa ?? 0,
+                                  tour.totalPeople ?? 0,
+                                  tour.productName,
+                                  'button'
+                                )}`}
+                                title="입장권 예약 상세 정보"
+                              >
+                                ${(tour.ticketBookingsCost || 0).toLocaleString()} ({(tour.ticketBookingsEa ?? 0)}ea)
+                              </button>
+                            ) : (
+                              <span
+                                className={ticketEaVsPeopleColorClasses(
+                                  tour.ticketBookingsEa ?? 0,
+                                  tour.totalPeople ?? 0,
+                                  tour.productName,
+                                  'span'
+                                )}
+                              >
+                                ${(tour.ticketBookingsCost || 0).toLocaleString()} ({(tour.ticketBookingsEa ?? 0)}ea)
+                              </span>
+                            )}
                           </td>
                           <td className="px-2 sm:px-3 py-1.5 whitespace-nowrap text-purple-600 font-medium">
                             ${(tour.notIncludedPrice || 0).toLocaleString()}
@@ -2105,12 +2360,13 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
                       (sum, t) => sum + (t.totalPeople || 0),
                       0
                     )
-                    const eaMismatch = ticketEaForCheck !== peopleForCheck
                     return (
                       <td
-                        className={`px-2 sm:px-3 py-1.5 whitespace-nowrap ${
-                          eaMismatch ? 'text-red-600' : 'text-gray-900'
-                        }`}
+                        className={`px-2 sm:px-3 py-1.5 whitespace-nowrap ${aggregatedTicketEaVsPeopleColorClass(
+                          ticketEaForCheck,
+                          peopleForCheck,
+                          forTicketCheck.length > 0
+                        )}`}
                       >
                         ${totalTicketCost.toLocaleString()} ({totalTicketEa}ea)
                       </td>
@@ -2138,6 +2394,61 @@ export default function TourStatisticsTab({ dateRange }: TourStatisticsTabProps)
         productName={tourDetailModal?.productName ?? ''}
         locale={locale}
       />
+
+      <TicketBookingReservationDetailModal
+        open={ticketBookingDetailModalOpen}
+        onOpenChange={setTicketBookingDetailModalOpen}
+        bookings={ticketBookingDetailRows}
+        loading={ticketBookingDetailLoading}
+        onEdit={handleTicketBookingDetailEdit}
+        onViewHistory={(id) => {
+          setTicketHistoryBookingId(id)
+          setTicketHistoryOpen(true)
+        }}
+        onDelete={handleTicketBookingRowDelete}
+      />
+
+      {ticketHistoryOpen ? (
+        <BookingHistory
+          bookingType="ticket"
+          bookingId={ticketHistoryBookingId}
+          onClose={() => {
+            setTicketHistoryOpen(false)
+            setTicketHistoryBookingId('')
+          }}
+        />
+      ) : null}
+
+      {ticketEditFormOpen ? (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4 overflow-y-auto">
+          <div className="relative max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-lg bg-white shadow-xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-6 py-4">
+              <h3 className="text-xl font-semibold">
+                {locale === 'ko' ? '입장권 부킹 편집' : 'Edit Ticket Booking'}
+              </h3>
+              <button
+                type="button"
+                onClick={handleTicketFormCancel}
+                className="text-2xl font-bold text-gray-500 hover:text-gray-700"
+                aria-label="닫기"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              <TicketBookingFormAny
+                booking={ticketEditBooking || undefined}
+                tourId={ticketBookingDetailTourId || ''}
+                onSave={handleTicketFormSave}
+                onCancel={handleTicketFormCancel}
+                isSuper={isSuper}
+                onRequestDelete={handleRequestTicketBookingDeleteFromForm}
+                onDelete={isSuper ? handleActualTicketBookingDeleteFromForm : undefined}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   )
 }

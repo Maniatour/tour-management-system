@@ -1,9 +1,10 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslations, useLocale } from 'next-intl'
 import { Database } from '@/lib/database.types'
 import { supabase } from '@/lib/supabase'
+import { fetchUploadApi } from '@/lib/uploadClient'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -67,6 +68,12 @@ export default function CompanyExpenseManager() {
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 })
   const [isDragOver, setIsDragOver] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const [expenseSuggestions, setExpenseSuggestions] = useState<{
+    paid_to: string[]
+    paid_for: string[]
+    payment_method: string[]
+  } | null>(null)
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false)
   
   const [formData, setFormData] = useState<CompanyExpenseFormData>({
     id: '',
@@ -189,6 +196,70 @@ export default function CompanyExpenseManager() {
     loadTeamMembers()
   }, [loadExpenses, loadVehicles, loadTeamMembers])
 
+  useEffect(() => {
+    if (!isDialogOpen) return
+    let cancelled = false
+    ;(async () => {
+      setSuggestionsLoading(true)
+      try {
+        const res = await fetch('/api/company-expenses/suggestions')
+        const json = await res.json()
+        if (cancelled) return
+        if (res.ok && json && typeof json === 'object' && !Array.isArray(json)) {
+          const paid_to = Array.isArray(json.paid_to) ? json.paid_to.filter((x: unknown) => typeof x === 'string') : []
+          const paid_for = Array.isArray(json.paid_for) ? json.paid_for.filter((x: unknown) => typeof x === 'string') : []
+          const payment_method = Array.isArray(json.payment_method)
+            ? json.payment_method.filter((x: unknown) => typeof x === 'string')
+            : []
+          setExpenseSuggestions({ paid_to, paid_for, payment_method })
+        } else {
+          setExpenseSuggestions({ paid_to: [], paid_for: [], payment_method: [] })
+          if (!res.ok) toast.error(t('messages.suggestionsLoadError'))
+        }
+      } catch {
+        if (!cancelled) {
+          setExpenseSuggestions({ paid_to: [], paid_for: [], payment_method: [] })
+          toast.error(t('messages.suggestionsLoadError'))
+        }
+      } finally {
+        if (!cancelled) setSuggestionsLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isDialogOpen, t])
+
+  const paidToDatalistOptions = useMemo(() => {
+    const s = new Set<string>()
+    expenseSuggestions?.paid_to?.forEach((x) => {
+      if (x) s.add(x)
+    })
+    const cur = formData.paid_to.trim()
+    if (cur) s.add(cur)
+    return Array.from(s).sort((a, b) => a.localeCompare(b, 'ko'))
+  }, [expenseSuggestions, formData.paid_to])
+
+  const paidForDatalistOptions = useMemo(() => {
+    const s = new Set<string>()
+    expenseSuggestions?.paid_for?.forEach((x) => {
+      if (x) s.add(x)
+    })
+    const cur = formData.paid_for.trim()
+    if (cur) s.add(cur)
+    return Array.from(s).sort((a, b) => a.localeCompare(b, 'ko'))
+  }, [expenseSuggestions, formData.paid_for])
+
+  const paymentMethodDatalistOptions = useMemo(() => {
+    const s = new Set<string>()
+    expenseSuggestions?.payment_method?.forEach((x) => {
+      if (x) s.add(x)
+    })
+    const cur = formData.payment_method.trim()
+    if (cur) s.add(cur)
+    return Array.from(s).sort((a, b) => a.localeCompare(b, 'ko'))
+  }, [expenseSuggestions, formData.payment_method])
+
   // 파일 업로드 핸들러
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || [])
@@ -297,10 +368,7 @@ export default function CompanyExpenseManager() {
              uploadFormData.append('files', file)
            })
            
-           const uploadResponse = await fetch('/api/upload', {
-             method: 'POST',
-             body: uploadFormData
-           })
+           const uploadResponse = await fetchUploadApi(uploadFormData)
           
           if (uploadResponse.ok) {
             const uploadResult = await uploadResponse.json()
@@ -355,22 +423,26 @@ export default function CompanyExpenseManager() {
 
   const handleEdit = (expense: CompanyExpense) => {
     setEditingExpense(expense)
+    const amountStr =
+      expense.amount != null && expense.amount !== ''
+        ? String(expense.amount)
+        : ''
     setFormData({
-      id: expense.id,
-      paid_to: expense.paid_to,
-      paid_for: expense.paid_for,
-      description: expense.description || '',
-      amount: expense.amount.toString(),
-      payment_method: expense.payment_method || '',
-      submit_by: expense.submit_by,
-      photo_url: expense.photo_url || '',
-      category: expense.category || '',
-      subcategory: expense.subcategory || '',
-      vehicle_id: expense.vehicle_id || '',
-      maintenance_type: expense.maintenance_type || '',
-      notes: expense.notes || '',
-      expense_type: expense.expense_type || '',
-      tax_deductible: expense.tax_deductible,
+      id: expense.id ?? '',
+      paid_to: expense.paid_to ?? '',
+      paid_for: expense.paid_for ?? '',
+      description: expense.description ?? '',
+      amount: amountStr,
+      payment_method: expense.payment_method ?? '',
+      submit_by: expense.submit_by ?? '',
+      photo_url: expense.photo_url ?? '',
+      category: expense.category ?? '',
+      subcategory: expense.subcategory ?? '',
+      vehicle_id: expense.vehicle_id ?? '',
+      maintenance_type: expense.maintenance_type ?? '',
+      notes: expense.notes ?? '',
+      expense_type: expense.expense_type ?? '',
+      tax_deductible: expense.tax_deductible ?? true,
       uploaded_files: [] // 기존 데이터에는 없으므로 빈 배열
     })
     setIsDialogOpen(true)
@@ -550,20 +622,40 @@ export default function CompanyExpenseManager() {
                   <Label htmlFor="paid_to">{t('form.paidTo')} *</Label>
                   <Input
                     id="paid_to"
+                    list="company-expense-datalist-paid-to"
+                    autoComplete="off"
                     value={formData.paid_to}
                     onChange={(e) => setFormData({ ...formData, paid_to: e.target.value })}
                     required
                   />
+                  <datalist id="company-expense-datalist-paid-to">
+                    {paidToDatalistOptions.map((v) => (
+                      <option key={v} value={v} />
+                    ))}
+                  </datalist>
+                  <p className="text-muted-foreground text-xs mt-1">
+                    {suggestionsLoading ? t('form.suggestionsLoading') : t('form.suggestOrType')}
+                  </p>
                 </div>
                 
                 <div>
                   <Label htmlFor="paid_for">{t('form.paidFor')} *</Label>
                   <Input
                     id="paid_for"
+                    list="company-expense-datalist-paid-for"
+                    autoComplete="off"
                     value={formData.paid_for}
                     onChange={(e) => setFormData({ ...formData, paid_for: e.target.value })}
                     required
                   />
+                  <datalist id="company-expense-datalist-paid-for">
+                    {paidForDatalistOptions.map((v) => (
+                      <option key={v} value={v} />
+                    ))}
+                  </datalist>
+                  <p className="text-muted-foreground text-xs mt-1">
+                    {suggestionsLoading ? t('form.suggestionsLoading') : t('form.suggestOrType')}
+                  </p>
                 </div>
               </div>
               
@@ -632,9 +724,19 @@ export default function CompanyExpenseManager() {
                   <Label htmlFor="payment_method">{t('form.paymentMethod')}</Label>
                   <Input
                     id="payment_method"
+                    list="company-expense-datalist-payment-method"
+                    autoComplete="off"
                     value={formData.payment_method}
                     onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
                   />
+                  <datalist id="company-expense-datalist-payment-method">
+                    {paymentMethodDatalistOptions.map((v) => (
+                      <option key={v} value={v} />
+                    ))}
+                  </datalist>
+                  <p className="text-muted-foreground text-xs mt-1">
+                    {suggestionsLoading ? t('form.suggestionsLoading') : t('form.suggestOrType')}
+                  </p>
                 </div>
               </div>
               

@@ -6,7 +6,27 @@ import { useLocale, useTranslations } from 'next-intl';
 import { supabase } from '@/lib/supabase';
 import TicketBookingForm from './TicketBookingForm';
 import BookingHistory from './BookingHistory';
-import { Grid, Calendar as CalendarIcon, Plus, Search, Calendar, Table, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import TicketBookingReservationDetailModal, {
+  type TicketBookingReservationDetailRow,
+} from './TicketBookingReservationDetailModal';
+import {
+  Grid,
+  Calendar as CalendarIcon,
+  Plus,
+  Search,
+  Calendar,
+  Table,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Paperclip,
+  ImageOff,
+  Trash2,
+} from 'lucide-react';
+import { normalizeReservationIds, isReservationCancelledStatus } from '@/utils/tourUtils';
+import { fetchUploadApi } from '@/lib/uploadClient';
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState';
 
 /** 입장권 부킹 달력에 표시하는 투어(상품 product_id)만 */
 const TICKET_CALENDAR_TOUR_PRODUCT_IDS: string[] = [
@@ -86,17 +106,62 @@ interface TicketBooking {
   payment_method: string;
   website: string;
   rn_number: string;
+  invoice_number?: string;
+  /** Zelle 결제 시 Confirmation 번호 */
+  zelle_confirmation_number?: string | null;
+  uploaded_file_urls?: string[] | null;
   status: string;
   company: string;
   created_at: string;
   updated_at: string;
   tours?: {
     tour_date: string;
+    total_people?: number;
     products?: {
       name: string;
       name_en?: string;
     } | undefined;
   } | undefined;
+}
+
+/** company + Invoice# 로 인보이스 첨부를 묶는 키 */
+function makeInvoiceKey(company: string, invoiceNumber: string): string {
+  return `${company.trim()}\u0000${invoiceNumber.trim()}`;
+}
+
+/** ticket_invoice_attachments 조회/저장 시 company 문자열을 한 방식으로 맞춤 (trim 불일치 시 .in()으로 행을 못 찾는 문제 방지) */
+function invoiceCompanyNorm(company: string | null | undefined): string {
+  return (company ?? '').trim();
+}
+
+function normalizeDbFileUrls(raw: unknown): string[] {
+  if (raw == null) return [];
+  if (Array.isArray(raw))
+    return raw.filter((u): u is string => typeof u === 'string' && u.trim() !== '');
+  return [];
+}
+
+/** Ctrl+V 붙여넣기: 클립보드에서 파일(스크린샷 이미지 등)만 추출 */
+function isImageAttachmentUrl(url: string): boolean {
+  return /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url);
+}
+
+function clipboardFilesFromPasteEvent(e: ClipboardEvent): File[] {
+  const out: File[] = [];
+  const items = e.clipboardData?.items;
+  if (items) {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === 'file') {
+        const f = item.getAsFile();
+        if (f) out.push(f);
+      }
+    }
+  }
+  if (out.length === 0 && e.clipboardData?.files?.length) {
+    return Array.from(e.clipboardData.files);
+  }
+  return out;
 }
 
 function sortBookingsByCheckInThenTime(a: TicketBooking, b: TicketBooking): number {
@@ -166,9 +231,15 @@ export default function TicketBookingList() {
   const [cancelDeadlineFilter, setCancelDeadlineFilter] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'card' | 'calendar' | 'table'>('calendar');
+  const [viewMode, setViewMode] = useRoutePersistedState<'card' | 'calendar' | 'table'>(
+    'ticket-bookings-view',
+    'calendar'
+  );
   /** 테이블 뷰 전용: 전체 행 / RN# 그룹 */
-  const [ticketTableLayout, setTicketTableLayout] = useState<'flat' | 'byRn'>('flat');
+  const [ticketTableLayout, setTicketTableLayout] = useRoutePersistedState<'flat' | 'byRn'>(
+    'ticket-bookings-table-layout',
+    'flat'
+  );
   const [listPage, setListPage] = useState(1);
   const [listPageSize, setListPageSize] = useState(50);
   const [sortField, setSortField] = useState<'date' | 'submit_on' | null>(null);
@@ -180,6 +251,26 @@ export default function TicketBookingList() {
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
   const statusButtonRefs = useRef<Map<string, HTMLSpanElement>>(new Map());
   const [tourDetailModalTourId, setTourDetailModalTourId] = useState<string | null>(null);
+  const [invoiceQuickBooking, setInvoiceQuickBooking] = useState<TicketBooking | null>(null);
+  const [invoiceQuickDraft, setInvoiceQuickDraft] = useState('');
+  const [invoiceQuickSaving, setInvoiceQuickSaving] = useState(false);
+  /** company\\0invoice_number → 공개 URL 목록 */
+  const [invoiceAttachmentMap, setInvoiceAttachmentMap] = useState<Map<string, string[]>>(
+    () => new Map()
+  );
+  const [invoiceQuickPhotoUrls, setInvoiceQuickPhotoUrls] = useState<string[]>([]);
+  const [invoicePhotoLoading, setInvoicePhotoLoading] = useState(false);
+  const [invoicePhotoUploading, setInvoicePhotoUploading] = useState(false);
+  const [invoicePhotoRemoving, setInvoicePhotoRemoving] = useState(false);
+  const invoicePhotoInputRef = useRef<HTMLInputElement>(null);
+  /** 디바운스 조회와 업로드가 겹칠 때 오래된 응답이 목록을 지우지 않도록 세대 관리 */
+  const invoicePhotoLoadGenRef = useRef(0);
+  const [invoiceLightbox, setInvoiceLightbox] = useState<{
+    company: string;
+    invoiceNumber: string;
+    urls: string[];
+  } | null>(null);
+  const [invoiceLightboxIndex, setInvoiceLightboxIndex] = useState(0);
 
   // 상품 이름을 로케일에 따라 반환하는 함수
   const getProductName = (product: { name?: string; name_en?: string; name_ko?: string } | undefined) => {
@@ -232,6 +323,88 @@ export default function TicketBookingList() {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedBookings, setSelectedBookings] = useState<TicketBooking[]>([]);
   const [tourEvents, setTourEvents] = useState<TourEvent[]>([]);
+
+  const refreshInvoiceAttachmentMapForBookings = useCallback(
+    async (list: TicketBooking[]) => {
+      const companies = new Set<string>();
+      for (const b of list) {
+        const inv = b.invoice_number?.trim();
+        const co = b.company?.trim();
+        if (inv && co) companies.add(co);
+      }
+      if (companies.size === 0) {
+        setInvoiceAttachmentMap(new Map());
+        return;
+      }
+      const companyList = [...companies];
+      /** PostgREST 기본 max-rows(보통 1000) 때문에 한 번에 가져오면 뒤쪽 행이 잘리며 맵이 비는 현상이 난다 → 페이지 순회 */
+      const ATTACH_PAGE = 800;
+      /** .in() URL 길이·서버 한도를 피하기 위해 회사 목록을 나눔 */
+      const COMPANY_BATCH = 40;
+      const m = new Map<string, string[]>();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ticket_invoice_attachments 타입 미정
+      const sb = supabase as any;
+      for (let ci = 0; ci < companyList.length; ci += COMPANY_BATCH) {
+        const batch = companyList.slice(ci, ci + COMPANY_BATCH);
+        let from = 0;
+        for (;;) {
+          const { data, error } = await sb
+            .from('ticket_invoice_attachments')
+            .select('company, invoice_number, file_urls')
+            .in('company', batch)
+            .range(from, from + ATTACH_PAGE - 1);
+          if (error) {
+            console.warn('ticket_invoice_attachments 조회:', error);
+            return;
+          }
+          const rows = (data || []) as {
+            company: string;
+            invoice_number: string;
+            file_urls: unknown;
+          }[];
+          for (const row of rows) {
+            const inv = row.invoice_number?.trim();
+            if (!inv) continue;
+            m.set(makeInvoiceKey(row.company, inv), normalizeDbFileUrls(row.file_urls));
+          }
+          if (rows.length < ATTACH_PAGE) break;
+          from += ATTACH_PAGE;
+        }
+      }
+      setInvoiceAttachmentMap(m);
+    },
+    []
+  );
+
+  const loadInvoicePhotosForDraft = useCallback(async (company: string, invoiceDraft: string) => {
+    const co = invoiceCompanyNorm(company);
+    const inv = invoiceDraft.trim();
+    if (!inv || !co) {
+      invoicePhotoLoadGenRef.current += 1;
+      setInvoiceQuickPhotoUrls([]);
+      return;
+    }
+    const gen = ++invoicePhotoLoadGenRef.current;
+    setInvoicePhotoLoading(true);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
+        .from('ticket_invoice_attachments')
+        .select('file_urls')
+        .eq('company', co)
+        .eq('invoice_number', inv)
+        .maybeSingle();
+      if (error) throw error;
+      if (gen !== invoicePhotoLoadGenRef.current) return;
+      setInvoiceQuickPhotoUrls(normalizeDbFileUrls(data?.file_urls));
+    } catch (e) {
+      console.error(e);
+      if (gen !== invoicePhotoLoadGenRef.current) return;
+      // 조회 실패 시 기존 목록을 비우지 않음(업로드 직후 잠깐 보였다 사라지는 현상 방지)
+    } finally {
+      if (gen === invoicePhotoLoadGenRef.current) setInvoicePhotoLoading(false);
+    }
+  }, []);
 
   const fetchBookings = async () => {
     try {
@@ -308,6 +481,7 @@ export default function TicketBookingList() {
 
       if (!bookingsData || bookingsData.length === 0) {
         setBookings([]);
+        setInvoiceAttachmentMap(new Map());
         return;
       }
 
@@ -318,6 +492,7 @@ export default function TicketBookingList() {
       
       if (bookingsWithTourId.length === 0) {
         setBookings(bookingsData);
+        await refreshInvoiceAttachmentMapForBookings(bookingsData);
         return;
       }
 
@@ -333,6 +508,7 @@ export default function TicketBookingList() {
           .select(`
             id,
             tour_date,
+            reservation_ids,
             products (
               name,
               name_en
@@ -353,6 +529,7 @@ export default function TicketBookingList() {
       if (toursError) {
         console.warn('투어 정보 조회 오류:', toursError);
         setBookings(bookingsData);
+        await refreshInvoiceAttachmentMapForBookings(bookingsData);
         return;
       }
 
@@ -361,6 +538,38 @@ export default function TicketBookingList() {
       (toursData || []).forEach((tour: TourEvent) => {
         toursMap.set(tour.id, tour);
       });
+
+      const allResIds = new Set<string>();
+      for (const tour of toursData || []) {
+        for (const rid of normalizeReservationIds((tour as { reservation_ids?: unknown }).reservation_ids)) {
+          allResIds.add(rid);
+        }
+      }
+      const resIdList = [...allResIds];
+      type ResPeopleRow = { id: string; total_people: number | null; status: string | null };
+      let reservationsRows: ResPeopleRow[] = [];
+      const RES_BATCH = 100;
+      for (let i = 0; i < resIdList.length; i += RES_BATCH) {
+        const chunk = resIdList.slice(i, i + RES_BATCH);
+        const { data: resPage } = await supabase
+          .from('reservations')
+          .select('id, total_people, status')
+          .in('id', chunk);
+        if (resPage?.length) reservationsRows = reservationsRows.concat(resPage as ResPeopleRow[]);
+      }
+      const resById = new Map<string, ResPeopleRow>();
+      for (const r of reservationsRows) resById.set(r.id, r);
+
+      const tourTotalPeopleByTourId = new Map<string, number>();
+      for (const tour of toursData || []) {
+        let sum = 0;
+        for (const rid of normalizeReservationIds((tour as { reservation_ids?: unknown }).reservation_ids)) {
+          const r = resById.get(rid);
+          if (!r || isReservationCancelledStatus(r.status)) continue;
+          sum += Number(r.total_people) || 0;
+        }
+        tourTotalPeopleByTourId.set((tour as { id: string }).id, sum);
+      }
 
       console.log('투어 맵:', toursMap);
 
@@ -378,7 +587,8 @@ export default function TicketBookingList() {
             ...baseBooking,
             tours: {
               tour_date: tour?.tour_date || '',
-              products: tour?.products
+              products: tour?.products,
+              total_people: tourTotalPeopleByTourId.get(booking.tour_id) ?? 0,
             }
           };
         }
@@ -388,6 +598,7 @@ export default function TicketBookingList() {
 
       console.log('최종 입장권 부킹 데이터:', bookingsWithTours);
       setBookings(bookingsWithTours);
+      await refreshInvoiceAttachmentMapForBookings(bookingsWithTours);
 
       // submitted_by 이메일로 team 테이블에서 name_ko 조회
       const submittedByEmails = [...new Set(
@@ -668,6 +879,313 @@ export default function TicketBookingList() {
     setShowHistory(true);
   };
 
+  const openInvoiceQuickModal = (booking: TicketBooking) => {
+    invoicePhotoLoadGenRef.current += 1;
+    setInvoiceQuickBooking(booking);
+    setInvoiceQuickDraft(booking.invoice_number?.trim() || '');
+    setInvoiceQuickPhotoUrls([]);
+  };
+
+  useEffect(() => {
+    if (!invoiceQuickBooking) return;
+    const t = window.setTimeout(() => {
+      void loadInvoicePhotosForDraft(invoiceQuickBooking.company, invoiceQuickDraft);
+    }, 200);
+    return () => clearTimeout(t);
+  }, [invoiceQuickBooking, invoiceQuickDraft, loadInvoicePhotosForDraft]);
+
+  const saveInvoiceQuick = async () => {
+    if (!invoiceQuickBooking) return;
+    const v = invoiceQuickDraft.trim();
+    const co = invoiceCompanyNorm(invoiceQuickBooking.company);
+    const urlsSnapshot = [...invoiceQuickPhotoUrls];
+    const id = invoiceQuickBooking.id;
+    setInvoiceQuickSaving(true);
+    try {
+      const { error } = await supabase
+        .from('ticket_bookings')
+        .update({ invoice_number: v || null })
+        .eq('id', id);
+      if (error) throw error;
+
+      /** 붙여넣기 직후 DB 반영·맵 새로고침 타이밍 문제를 줄이기 위해, 저장 시점에 첨부 URL도 한 번 더 맞춤 */
+      if (co && v && urlsSnapshot.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: attachErr } = await (supabase as any)
+          .from('ticket_invoice_attachments')
+          .upsert(
+            {
+              company: co,
+              invoice_number: v,
+              file_urls: urlsSnapshot,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'company,invoice_number' }
+          );
+        if (attachErr) throw attachErr;
+      }
+
+      setBookings((prev) => {
+        const next = prev.map((b) => (b.id === id ? { ...b, invoice_number: v } : b));
+        void refreshInvoiceAttachmentMapForBookings(next);
+        return next;
+      });
+      invoicePhotoLoadGenRef.current += 1;
+      setInvoiceQuickBooking(null);
+    } catch (err) {
+      console.error(err);
+      alert('저장에 실패했습니다. Invoice 번호 또는 인보이스 첨부 동기화를 확인해 주세요.');
+    } finally {
+      setInvoiceQuickSaving(false);
+    }
+  };
+
+  const uploadInvoicePhotos = useCallback(
+    async (files: File[]) => {
+      if (!invoiceQuickBooking || !files.length) return;
+      if (invoicePhotoUploading || invoicePhotoRemoving) return;
+      const inv = invoiceQuickDraft.trim();
+      if (!inv) {
+        alert('먼저 Invoice 번호를 입력해 주세요.');
+        return;
+      }
+      const company = invoiceCompanyNorm(invoiceQuickBooking.company);
+      if (!company) {
+        alert('회사(company) 정보가 없어 인보이스 첨부를 저장할 수 없습니다.');
+        return;
+      }
+      setInvoicePhotoUploading(true);
+      try {
+        const fd = new FormData();
+        fd.append('bucketType', 'ticket_bookings');
+        files.forEach((f) => fd.append('files', f));
+        const res = await fetchUploadApi(fd);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          alert(typeof data?.error === 'string' ? data.error : '파일 업로드에 실패했습니다.');
+          return;
+        }
+        const newUrls = Array.isArray(data.urls) ? data.urls : [];
+        let merged: string[] = [];
+        setInvoiceQuickPhotoUrls((prev) => {
+          merged = [...prev, ...newUrls];
+          return merged;
+        });
+        const payload = {
+          company,
+          invoice_number: inv,
+          file_urls: merged,
+          updated_at: new Date().toISOString(),
+        };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: upsertRow, error } = await (supabase as any)
+          .from('ticket_invoice_attachments')
+          .upsert(payload, { onConflict: 'company,invoice_number' })
+          .select('file_urls')
+          .maybeSingle();
+        if (error) throw error;
+        const urlsFromDb = normalizeDbFileUrls(upsertRow?.file_urls);
+        const finalUrls = urlsFromDb.length > 0 ? urlsFromDb : merged;
+        invoicePhotoLoadGenRef.current += 1;
+        setInvoiceQuickPhotoUrls(finalUrls);
+        setInvoiceAttachmentMap((prev) => {
+          const next = new Map(prev);
+          next.set(makeInvoiceKey(company, inv), finalUrls);
+          return next;
+        });
+      } catch (e) {
+        console.error(e);
+        alert('인보이스 첨부 저장에 실패했습니다.');
+      } finally {
+        setInvoicePhotoUploading(false);
+        if (invoicePhotoInputRef.current) invoicePhotoInputRef.current.value = '';
+      }
+    },
+    [
+      invoiceQuickBooking,
+      invoiceQuickDraft,
+      invoicePhotoUploading,
+      invoicePhotoRemoving,
+    ]
+  );
+
+  const handleInvoicePhotoPick = (files: FileList | null) => {
+    if (!files?.length) return;
+    void uploadInvoicePhotos(Array.from(files));
+  };
+
+  const removeInvoicePhotoUrl = async (urlToRemove: string) => {
+    if (!invoiceQuickBooking || invoicePhotoRemoving || invoicePhotoUploading) return;
+    const inv = invoiceQuickDraft.trim();
+    if (!inv) return;
+    if (!confirm('이 첨부를 삭제할까요?')) return;
+    const company = invoiceCompanyNorm(invoiceQuickBooking.company);
+    if (!company) return;
+    setInvoicePhotoRemoving(true);
+    try {
+      const newUrls = invoiceQuickPhotoUrls.filter((u) => u !== urlToRemove);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sb = supabase as any;
+      if (newUrls.length === 0) {
+        const { error } = await sb
+          .from('ticket_invoice_attachments')
+          .delete()
+          .eq('company', company)
+          .eq('invoice_number', inv);
+        if (error) throw error;
+      } else {
+        const { error } = await sb
+          .from('ticket_invoice_attachments')
+          .update({
+            file_urls: newUrls,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('company', company)
+          .eq('invoice_number', inv);
+        if (error) throw error;
+      }
+      invoicePhotoLoadGenRef.current += 1;
+      setInvoiceQuickPhotoUrls(newUrls);
+      setInvoiceAttachmentMap((prev) => {
+        const next = new Map(prev);
+        if (newUrls.length === 0) next.delete(makeInvoiceKey(company, inv));
+        else next.set(makeInvoiceKey(company, inv), newUrls);
+        return next;
+      });
+    } catch (e) {
+      console.error(e);
+      alert('첨부 삭제에 실패했습니다.');
+    } finally {
+      setInvoicePhotoRemoving(false);
+    }
+  };
+
+  const openInvoiceAttachmentView = (booking: TicketBooking) => {
+    const inv = booking.invoice_number?.trim();
+    if (!inv) {
+      openInvoiceQuickModal(booking);
+      return;
+    }
+    const urls = invoiceAttachmentMap.get(makeInvoiceKey(booking.company, inv)) || [];
+    if (urls.length === 0) {
+      openInvoiceQuickModal(booking);
+      return;
+    }
+    setInvoiceLightbox({ company: booking.company, invoiceNumber: inv, urls });
+    setInvoiceLightboxIndex(0);
+  };
+
+  const removeInvoicePhotoFromLightbox = async (urlToRemove: string) => {
+    if (!invoiceLightbox || invoicePhotoRemoving) return;
+    if (!confirm('이 첨부를 삭제할까요?')) return;
+    const { company: companyRaw, invoiceNumber: inv, urls } = invoiceLightbox;
+    const company = invoiceCompanyNorm(companyRaw);
+    if (!company) return;
+    setInvoicePhotoRemoving(true);
+    try {
+      const newUrls = urls.filter((u) => u !== urlToRemove);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sb = supabase as any;
+      if (newUrls.length === 0) {
+        const { error } = await sb
+          .from('ticket_invoice_attachments')
+          .delete()
+          .eq('company', company)
+          .eq('invoice_number', inv);
+        if (error) throw error;
+        setInvoiceLightbox(null);
+      } else {
+        const { error } = await sb
+          .from('ticket_invoice_attachments')
+          .update({
+            file_urls: newUrls,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('company', company)
+          .eq('invoice_number', inv);
+        if (error) throw error;
+        setInvoiceLightbox((prev) =>
+          prev ? { ...prev, urls: newUrls } : null
+        );
+        const imgLeft = newUrls.filter(isImageAttachmentUrl);
+        setInvoiceLightboxIndex((i) =>
+          Math.min(i, Math.max(0, imgLeft.length - 1))
+        );
+      }
+      setInvoiceAttachmentMap((prev) => {
+        const next = new Map(prev);
+        if (newUrls.length === 0) next.delete(makeInvoiceKey(company, inv));
+        else next.set(makeInvoiceKey(company, inv), newUrls);
+        return next;
+      });
+    } catch (e) {
+      console.error(e);
+      alert('첨부 삭제에 실패했습니다.');
+    } finally {
+      setInvoicePhotoRemoving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!invoiceQuickBooking) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const files = clipboardFilesFromPasteEvent(e);
+      if (!files.length) return;
+      e.preventDefault();
+      void uploadInvoicePhotos(Array.from(files));
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [invoiceQuickBooking, uploadInvoicePhotos]);
+
+  useEffect(() => {
+    if (!invoiceQuickBooking && !invoiceLightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setInvoiceQuickBooking(null);
+        setInvoiceLightbox(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [invoiceQuickBooking, invoiceLightbox]);
+
+  const invoiceLightboxImageUrls = useMemo(() => {
+    if (!invoiceLightbox) return [];
+    return invoiceLightbox.urls.filter(isImageAttachmentUrl);
+  }, [invoiceLightbox]);
+
+  const invoiceLightboxOtherUrls = useMemo(() => {
+    if (!invoiceLightbox) return [];
+    return invoiceLightbox.urls.filter((u) => !isImageAttachmentUrl(u));
+  }, [invoiceLightbox]);
+
+  useEffect(() => {
+    if (!invoiceLightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (invoiceLightboxImageUrls.length <= 1) return;
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setInvoiceLightboxIndex((i) => Math.max(0, i - 1));
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setInvoiceLightboxIndex((i) =>
+          Math.min(invoiceLightboxImageUrls.length - 1, i + 1)
+        );
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [invoiceLightbox, invoiceLightboxImageUrls.length]);
+
+  const invoiceLightboxSafeIndex =
+    invoiceLightboxImageUrls.length > 0
+      ? Math.min(
+          Math.max(0, invoiceLightboxIndex),
+          invoiceLightboxImageUrls.length - 1
+        )
+      : 0;
+
   const handleSave = (booking: TicketBooking) => {
     if (editingBooking) {
       setBookings(prev => 
@@ -781,6 +1299,8 @@ export default function TicketBookingList() {
       (booking.category || '').toLowerCase().includes(searchLower) ||
       (booking.reservation_name || '').toLowerCase().includes(searchLower) ||
       (booking.rn_number || '').toLowerCase().includes(searchLower) ||
+      (booking.invoice_number || '').toLowerCase().includes(searchLower) ||
+      (booking.zelle_confirmation_number || '').toLowerCase().includes(searchLower) ||
       (booking.company || '').toLowerCase().includes(searchLower)
     );
   };
@@ -1025,6 +1545,10 @@ export default function TicketBookingList() {
           )}
           <span className="text-gray-500">RN#</span>
           <span className="font-medium truncate">{booking.rn_number?.trim() || '—'}</span>
+          <span className="text-gray-500">Invoice#</span>
+          <span className="font-medium truncate">{booking.invoice_number?.trim() || '—'}</span>
+          <span className="text-gray-500">Zelle 확인#</span>
+          <span className="font-medium truncate">{booking.zelle_confirmation_number?.trim() || '—'}</span>
           <span className="text-gray-500">비용</span>
           <span className="font-medium">${booking.expense ?? '-'}</span>
           <span className="text-gray-500">제출일</span>
@@ -1395,11 +1919,23 @@ export default function TicketBookingList() {
                     <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       결제방법
                     </th>
+                    <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Zelle 확인#
+                    </th>
                     <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       CC
                     </th>
                     <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       투어연결
+                    </th>
+                    <th className="hidden lg:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      투어총인원
+                    </th>
+                    <th className="hidden md:table-cell px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Invoice#
+                    </th>
+                    <th className="hidden md:table-cell px-2 py-1.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      첨부
                     </th>
                     <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       액션
@@ -1591,6 +2127,11 @@ export default function TicketBookingList() {
                       <td className="hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
                         <div className="text-gray-900">{getPaymentMethodText(booking.payment_method) || '-'}</div>
                       </td>
+                      <td className="hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs max-w-[10rem]">
+                        <div className="truncate text-gray-900" title={booking.zelle_confirmation_number?.trim() || ''}>
+                          {booking.zelle_confirmation_number?.trim() || '—'}
+                        </div>
+                      </td>
                       <td className="hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
                         <span className={`inline-flex px-1.5 py-0.5 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc)}`}>
                           {getCCStatusText(booking.cc)}
@@ -1611,6 +2152,51 @@ export default function TicketBookingList() {
                         ) : (
                           <span className="text-red-500 text-xs">미연결</span>
                         )}
+                      </td>
+                      <td className="hidden lg:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+                        <div className="text-gray-900 tabular-nums">
+                          {booking.tours && booking.tour_id
+                            ? `${booking.tours.total_people ?? 0}명`
+                            : '-'}
+                        </div>
+                      </td>
+                      <td className="hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openInvoiceQuickModal(booking);
+                          }}
+                          className={`text-left w-full min-w-[3rem] rounded px-1 py-0.5 hover:bg-gray-100 ${
+                            booking.invoice_number?.trim() ? 'text-gray-900' : 'text-gray-400'
+                          }`}
+                          title="Invoice # 입력·수정"
+                        >
+                          {booking.invoice_number?.trim() || '-'}
+                        </button>
+                      </td>
+                      <td className="hidden md:table-cell px-2 py-1.5 whitespace-nowrap text-xs">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openInvoiceAttachmentView(booking);
+                          }}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-600 hover:bg-gray-100 hover:text-blue-700"
+                          title="Invoice 인보이스 사진"
+                        >
+                          {(() => {
+                            const inv = booking.invoice_number?.trim();
+                            const has =
+                              inv &&
+                              (invoiceAttachmentMap.get(makeInvoiceKey(booking.company, inv))?.length ?? 0) > 0;
+                            return has ? (
+                              <Paperclip className="h-5 w-5 shrink-0 text-blue-600" aria-hidden />
+                            ) : (
+                              <ImageOff className="h-5 w-5 shrink-0 text-gray-400" aria-hidden />
+                            );
+                          })()}
+                        </button>
                       </td>
                       <td className="px-2 py-1.5 whitespace-nowrap text-xs">
                         <div className="flex space-x-0.5 relative z-20">
@@ -1668,14 +2254,14 @@ export default function TicketBookingList() {
                         if (gi > 0) {
                           nodes.push(
                             <tr key={`rn-gap-${g.key}`} className="pointer-events-none" aria-hidden>
-                              <td colSpan={15} className="h-3 bg-neutral-300 p-0 border-y-2 border-neutral-400" />
+                              <td colSpan={19} className="h-3 bg-neutral-300 p-0 border-y-2 border-neutral-400" />
                             </tr>
                           );
                         }
                         nodes.push(
                           <Fragment key={g.key}>
                             <tr className={palette.headerRow}>
-                              <td colSpan={15} className="px-3 py-2.5 text-xs border-0">
+                              <td colSpan={19} className="px-3 py-2.5 text-xs border-0">
                                 <span className="text-sm font-bold text-neutral-900 tracking-tight">RN# {g.label}</span>
                                 <span className="text-neutral-800 font-medium ml-3">
                                   {g.rows.length}건 · 수량 합 {totalEa}개 · 총액 ${totalPrice}
@@ -2044,6 +2630,18 @@ export default function TicketBookingList() {
                           <span className="text-gray-500">총액</span>
                           <span className="font-medium text-blue-600">${booking.total_price}</span>
                         </div>
+                        <div className="col-span-2 flex justify-between sm:col-span-1">
+                          <span className="text-gray-500">Invoice#</span>
+                          <span className="font-medium truncate max-w-[55%] text-right">
+                            {booking.invoice_number?.trim() || '—'}
+                          </span>
+                        </div>
+                        <div className="col-span-2 flex justify-between sm:col-span-1">
+                          <span className="text-gray-500">Zelle 확인#</span>
+                          <span className="font-medium truncate max-w-[55%] text-right">
+                            {booking.zelle_confirmation_number?.trim() || '—'}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
@@ -2266,210 +2864,285 @@ export default function TicketBookingList() {
         />
       )}
 
-      {/* 부킹 상세 모달 */}
-      {showBookingModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-semibold">예약 상세 정보</h3>
+      <TicketBookingReservationDetailModal
+        open={showBookingModal}
+        onOpenChange={setShowBookingModal}
+        bookings={selectedBookings as TicketBookingReservationDetailRow[]}
+        onEdit={(b) => {
+          setEditingBooking(b as TicketBooking);
+          setShowForm(true);
+        }}
+        onViewHistory={(id) => {
+          setSelectedBookingId(id);
+          setShowHistory(true);
+        }}
+        onDelete={handleDelete}
+      />
+
+      {invoiceQuickBooking && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ticket-invoice-quick-title"
+          onClick={() =>
+            !invoiceQuickSaving &&
+            !invoicePhotoUploading &&
+            !invoicePhotoRemoving &&
+            setInvoiceQuickBooking(null)
+          }
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="ticket-invoice-quick-title" className="text-base font-semibold text-gray-900">
+              Invoice # · 인보이스 사진
+            </h3>
+            <p className="mt-1 text-xs text-gray-500">
+              RN# {invoiceQuickBooking.rn_number?.trim() || '—'} · {invoiceQuickBooking.company}
+            </p>
+            <p className="mt-2 text-xs text-gray-600">
+              같은 Invoice #를 쓰는 모든 행에 동일한 인보이스 사진이 표시됩니다. 사진은 Invoice 번호 입력 후 추가·삭제할 수
+              있습니다. <span className="text-gray-700">저장</span>을 누르면 Invoice 번호가 부킹에 반영되고, 아래에 보이는
+              첨부 URL도 서버에 함께 맞춰 둡니다.
+            </p>
+            <input
+              type="text"
+              value={invoiceQuickDraft}
+              onChange={(e) => setInvoiceQuickDraft(e.target.value)}
+              className="mt-3 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="Invoice 번호"
+              autoFocus
+              disabled={invoiceQuickSaving}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void saveInvoiceQuick();
+              }}
+            />
+            {invoicePhotoLoading ? (
+              <p className="mt-2 text-xs text-gray-400">첨부 불러오는 중…</p>
+            ) : null}
+
+            <input
+              ref={invoicePhotoInputRef}
+              type="file"
+              multiple
+              accept="image/jpeg,image/png,image/gif,application/pdf,.doc,.docx"
+              className="hidden"
+              onChange={(e) => void handleInvoicePhotoPick(e.target.files)}
+            />
+            <button
+              type="button"
+              disabled={invoiceQuickSaving || invoicePhotoUploading || invoicePhotoRemoving}
+              onClick={() => invoicePhotoInputRef.current?.click()}
+              className="mt-4 flex w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-600 transition-colors hover:border-blue-400 hover:bg-blue-50/50 disabled:opacity-50"
+            >
+              {invoicePhotoUploading ? (
+                <span>업로드 중…</span>
+              ) : (
+                <>
+                  <span className="font-medium text-gray-800">인보이스 사진·파일 추가</span>
+                  <span className="mt-1 text-xs text-gray-500">
+                    Invoice 번호 입력 후 클릭 또는 <span className="text-gray-700">Ctrl+V</span>
+                  </span>
+                </>
+              )}
+            </button>
+
+            {invoiceQuickPhotoUrls.length > 0 ? (
+              <ul className="mt-4 space-y-3">
+                {invoiceQuickPhotoUrls.map((url) => {
+                  const isImg = /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url);
+                  return (
+                    <li key={url} className="flex gap-2 rounded-lg border border-gray-200 p-2">
+                      <div className="min-w-0 flex-1">
+                        {isImg ? (
+                          <a href={url} target="_blank" rel="noopener noreferrer" className="block">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={url} alt="" className="max-h-36 w-auto max-w-full rounded object-contain" />
+                          </a>
+                        ) : (
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="break-all text-sm text-blue-600 hover:underline"
+                          >
+                            {url.split('/').pop() || url}
+                          </a>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void removeInvoicePhotoUrl(url)}
+                        disabled={invoicePhotoUploading || invoicePhotoRemoving}
+                        className="shrink-0 self-start rounded-md p-2 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                        title="삭제"
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="mt-3 text-sm text-gray-400">등록된 인보이스 파일이 없습니다.</p>
+            )}
+
+            <div className="mt-5 flex justify-end gap-2 border-t border-gray-100 pt-4">
+              <button
+                type="button"
+                disabled={invoiceQuickSaving || invoicePhotoUploading || invoicePhotoRemoving}
+                onClick={() => setInvoiceQuickBooking(null)}
+                className="rounded-md px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+              >
+                닫기
+              </button>
+              <button
+                type="button"
+                disabled={invoiceQuickSaving || invoicePhotoUploading || invoicePhotoRemoving}
+                onClick={() => void saveInvoiceQuick()}
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {invoiceQuickSaving ? '저장 중…' : '저장 (Invoice # · 첨부)'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {invoiceLightbox && (
+        <div
+          className="fixed inset-0 z-[125] flex items-center justify-center bg-black/90 p-3"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Invoice 인보이스 미리보기"
+          onClick={() => !invoicePhotoRemoving && setInvoiceLightbox(null)}
+        >
+          <div
+            className="relative flex max-h-[96vh] w-full max-w-5xl flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="absolute left-0 top-0 z-20 max-w-[70%] truncate text-left text-xs text-white/80">
+              Invoice {invoiceLightbox.invoiceNumber} · {invoiceLightbox.company}
+            </p>
+            <button
+              type="button"
+              disabled={invoicePhotoRemoving}
+              onClick={() => setInvoiceLightbox(null)}
+              className="absolute right-0 top-0 z-20 rounded-full bg-white/15 p-2.5 text-2xl leading-none text-white hover:bg-white/25 disabled:opacity-50"
+              aria-label="닫기"
+            >
+              ×
+            </button>
+
+            {invoiceLightboxImageUrls.length > 0 ? (
+              <div className="mt-10 flex w-full max-w-5xl items-center justify-center gap-1 sm:mt-8 sm:gap-3">
+                {invoiceLightboxImageUrls.length > 1 ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setInvoiceLightboxIndex((i) => Math.max(0, i - 1))
+                    }
+                    className="shrink-0 rounded-full bg-white/15 p-2 text-white hover:bg-white/25"
+                    aria-label="이전 이미지"
+                  >
+                    <ChevronLeft className="h-7 w-7 sm:h-9 sm:w-9" />
+                  </button>
+                ) : (
+                  <span className="w-9 shrink-0 sm:w-11" aria-hidden />
+                )}
+                <div className="flex min-h-0 min-w-0 flex-1 justify-center px-1">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={invoiceLightboxImageUrls[invoiceLightboxSafeIndex]}
+                    alt=""
+                    className="max-h-[min(85vh,900px)] max-w-full rounded object-contain shadow-2xl"
+                  />
+                </div>
+                {invoiceLightboxImageUrls.length > 1 ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setInvoiceLightboxIndex((i) =>
+                        Math.min(invoiceLightboxImageUrls.length - 1, i + 1)
+                      )
+                    }
+                    className="shrink-0 rounded-full bg-white/15 p-2 text-white hover:bg-white/25"
+                    aria-label="다음 이미지"
+                  >
+                    <ChevronRight className="h-7 w-7 sm:h-9 sm:w-9" />
+                  </button>
+                ) : (
+                  <span className="w-9 shrink-0 sm:w-11" aria-hidden />
+                )}
+              </div>
+            ) : null}
+
+            {invoiceLightboxImageUrls.length > 0 ? (
+              <div className="mt-3 flex flex-col items-center gap-2">
+                {invoiceLightboxImageUrls.length > 1 ? (
+                  <p className="text-sm tabular-nums text-white/90">
+                    {invoiceLightboxSafeIndex + 1} / {invoiceLightboxImageUrls.length}
+                  </p>
+                ) : null}
                 <button
-                  onClick={() => setShowBookingModal(false)}
-                  className="text-gray-500 hover:text-gray-700"
+                  type="button"
+                  disabled={invoicePhotoRemoving}
+                  onClick={() =>
+                    void removeInvoicePhotoFromLightbox(
+                      invoiceLightboxImageUrls[invoiceLightboxSafeIndex]
+                    )
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-md bg-red-600/90 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-50"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                  현재 이미지 삭제
                 </button>
               </div>
-              
-              {/* RN#별 그룹 → 그룹 내 시간순 */}
-              <div className="space-y-4">
-                {(() => {
-                  const rnGroupKey = (b: TicketBooking) => {
-                    const v = b.rn_number?.trim();
-                    return v ? v : '__empty_rn__';
-                  };
-                  const rnGroupLabel = (key: string) =>
-                    key === '__empty_rn__' ? 'RN# 없음' : key;
+            ) : null}
 
-                  const map = new Map<string, TicketBooking[]>();
-                  for (const b of selectedBookings) {
-                    const k = rnGroupKey(b);
-                    const list = map.get(k);
-                    if (list) list.push(b);
-                    else map.set(k, [b]);
-                  }
-
-                  const sortedKeys = [...map.keys()].sort((a, b) => {
-                    if (a === '__empty_rn__') return 1;
-                    if (b === '__empty_rn__') return -1;
-                    return a.localeCompare(b, undefined, { numeric: true });
-                  });
-
-                  return sortedKeys.map((key) => {
-                    const groupBookings = (map.get(key) || []).slice().sort((a, b) => a.time.localeCompare(b.time));
-                    const finalized = groupBookings.filter((b) => {
-                      const s = b.status?.toLowerCase();
-                      return s === 'confirmed' || s === 'completed';
-                    });
-                    const finalBooking =
-                      finalized.length === 0
-                        ? null
-                        : finalized.reduce((best, b) => {
-                            const tB = new Date(b.updated_at).getTime();
-                            const tBest = new Date(best.updated_at).getTime();
-                            return tB >= tBest ? b : best;
-                          });
-                    const finalTimeDisplay = finalBooking?.time
-                      ? finalBooking.time.replace(/:\d{2}$/, '')
-                      : null;
-                    return (
-                      <div key={`modal-rn-${key}`} className="space-y-2">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-md bg-gray-100 border border-gray-200 px-3 py-2">
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
-                            <span className="text-sm font-semibold text-gray-800 shrink-0">
-                              RN#: {rnGroupLabel(key)}
-                            </span>
-                            {finalBooking ? (
-                              <span className="text-xs text-gray-600">
-                                <span className="text-gray-500">시간</span>{' '}
-                                <span className="font-medium text-gray-800">
-                                  {finalTimeDisplay || '—'}
-                                </span>
-                                <span className="mx-1.5 text-gray-300">·</span>
-                                <span className="text-gray-500">수량</span>{' '}
-                                <span className="font-medium text-gray-800">{finalBooking.ea}개</span>
-                                <span className="mx-1.5 text-gray-300">·</span>
-                                <span className="text-gray-500">가격</span>{' '}
-                                <span className="font-medium text-gray-800">${finalBooking.total_price}</span>
-                              </span>
-                            ) : (
-                              <span className="text-xs text-gray-400">확정/완료 없음</span>
-                            )}
-                          </div>
-                          <span className="text-xs text-gray-500 shrink-0">{groupBookings.length}건</span>
-                        </div>
-                        <div className="space-y-1 pl-0 sm:pl-1">
-                          {groupBookings.map((booking) => (
-                    <div key={booking.id} className={`rounded border p-2 hover:opacity-90 transition-opacity ${
-                      booking.status === 'pending' ? 'bg-yellow-50 border-yellow-200' :
-                      booking.status === 'confirmed' ? 'bg-green-50 border-green-200' :
-                      booking.status === 'cancelled' ? 'bg-red-50 border-red-200' :
-                      booking.status === 'completed' ? 'bg-blue-50 border-blue-200' :
-                      booking.status === 'credit' ? 'bg-cyan-50 border-cyan-200' :
-                      'bg-gray-50 border-gray-200'
-                    }`}>
-                      <div className="flex items-center justify-between">
-                        {/* 왼쪽: 기본 정보 (그룹 헤더에 RN# 표시됨) */}
-                        <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 text-sm">
-                          <div>
-                            <div className="text-gray-500 text-xs">제출일</div>
-                            <div className="font-medium text-xs">
-                              {(() => {
-                                const date = new Date(booking.submit_on);
-                                const month = String(date.getMonth() + 1).padStart(2, '0');
-                                const day = String(date.getDate()).padStart(2, '0');
-                                const year = date.getFullYear();
-                                const hours = String(date.getHours()).padStart(2, '0');
-                                const minutes = String(date.getMinutes()).padStart(2, '0');
-                                return `${month}/${day}/${year} ${hours}:${minutes}`;
-                              })()}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-gray-500 text-xs">카테고리</div>
-                            <div className="font-medium truncate text-sm">{booking.category}</div>
-                          </div>
-                          <div>
-                            <div className="text-gray-500 text-xs">공급업체</div>
-                            <div className="font-medium truncate text-sm">{booking.company}</div>
-                          </div>
-                          <div>
-                            <div className="text-gray-500 text-xs">예약자</div>
-                            <div className="font-medium truncate text-sm">{booking.reservation_name}</div>
-                          </div>
-                          <div>
-                            <div className="text-gray-500 text-xs">시간</div>
-                            <div className="font-medium text-sm">{booking.time.replace(/:\d{2}$/, '')}</div>
-                          </div>
-                          <div>
-                            <div className="text-gray-500 text-xs">수량/가격</div>
-                            <div className="font-medium text-sm">{booking.ea}개 / ${booking.total_price}</div>
-                          </div>
-                        </div>
-
-                        {/* 오른쪽: 상태 및 액션 */}
-                        <div className="flex items-center space-x-2 ml-2">
-                          <div className="flex flex-col items-end space-y-1">
-                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(booking.status)}`}>
-                              {getStatusText(booking.status)}
-                            </span>
-                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getCCStatusColor(booking.cc)}`}>
-                              {getCCStatusText(booking.cc)}
-                            </span>
-                          </div>
-                          
-                          {/* 투어 연결 정보 */}
-                          <div className="text-right min-w-[80px]">
-                            {booking.tours ? (
-                              <div>
-                                <div className="text-xs text-green-600 font-medium">투어 연결</div>
-                                <div className="text-xs text-gray-500 truncate">
-                                  {getProductName(booking.tours.products)}
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="text-xs text-red-500">미연결</div>
-                            )}
-                          </div>
-
-                          {/* 액션 버튼들 */}
-                          <div className="flex space-x-1">
-                            <button
-                              onClick={() => {
-                                setEditingBooking(booking);
-                                setShowForm(true);
-                                setShowBookingModal(false);
-                              }}
-                              className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors"
-                              title="편집"
-                            >
-                              편집
-                            </button>
-                            <button
-                              onClick={() => {
-                                setSelectedBookingId(booking.id);
-                                setShowHistory(true);
-                                setShowBookingModal(false);
-                              }}
-                              className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
-                              title="히스토리"
-                            >
-                              히스토리
-                            </button>
-                            <button
-                              onClick={() => {
-                                handleDelete(booking.id);
-                                setShowBookingModal(false);
-                              }}
-                              className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors"
-                              title="삭제"
-                            >
-                              삭제
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  });
-                })()}
+            {invoiceLightboxOtherUrls.length > 0 ? (
+              <div
+                className={`w-full max-w-lg rounded-lg border border-white/20 bg-white/95 p-4 text-left shadow-lg ${
+                  invoiceLightboxImageUrls.length > 0 ? 'mt-6' : 'mt-14'
+                }`}
+              >
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-600">
+                  {invoiceLightboxImageUrls.length > 0 ? '기타 파일' : '첨부 파일'}
+                </p>
+                <ul className="space-y-2">
+                  {invoiceLightboxOtherUrls.map((url) => (
+                    <li
+                      key={url}
+                      className="flex items-start justify-between gap-2 rounded-md border border-gray-100 bg-white p-2"
+                    >
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="min-w-0 flex-1 break-all text-sm text-blue-700 hover:underline"
+                      >
+                        {url.split('/').pop() || url}
+                      </a>
+                      <button
+                        type="button"
+                        disabled={invoicePhotoRemoving}
+                        onClick={() => void removeInvoicePhotoFromLightbox(url)}
+                        className="shrink-0 rounded p-1.5 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                        title="삭제"
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               </div>
-            </div>
+            ) : null}
+
+            {invoiceLightboxImageUrls.length === 0 && invoiceLightboxOtherUrls.length === 0 ? (
+              <p className="mt-16 text-center text-white/80">표시할 첨부가 없습니다.</p>
+            ) : null}
           </div>
         </div>
       )}

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import { Database } from '@/lib/database.types'
 import { supabase } from '@/lib/supabase'
+import { fetchUploadApi } from '@/lib/uploadClient'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -180,10 +181,7 @@ export default function VehicleMaintenanceManager() {
                  uploadFormData.append('files', file)
                })
                
-               const uploadResponse = await fetch('/api/upload', {
-                 method: 'POST',
-                 body: uploadFormData
-               })
+               const uploadResponse = await fetchUploadApi(uploadFormData)
           
           if (uploadResponse.ok) {
             const uploadResult = await uploadResponse.json()

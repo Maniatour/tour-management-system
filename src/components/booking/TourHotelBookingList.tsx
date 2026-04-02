@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import TourHotelBookingForm from './TourHotelBookingForm';
 import BookingHistory from './BookingHistory';
 import { Grid, Calendar as CalendarIcon, Plus, Search, Calendar } from 'lucide-react';
+import { useRoutePersistedState } from '@/hooks/useRoutePersistedState';
 
 interface TourHotelBooking {
   id: string;
@@ -49,7 +50,10 @@ export default function TourHotelBookingList() {
   const [dateFilter, setDateFilter] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'card' | 'calendar'>('calendar');
+  const [viewMode, setViewMode] = useRoutePersistedState<'card' | 'calendar'>(
+    'tour-hotel-bookings-view',
+    'calendar'
+  );
 
   // 상품 이름을 로케일에 따라 반환하는 함수
   const getProductName = (product: { name?: string; name_en?: string; name_ko?: string } | undefined) => {

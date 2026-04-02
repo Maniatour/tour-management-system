@@ -882,19 +882,23 @@ const KLOOK_ACTIVITY_ID_TO_TOUR_NAME: Record<string, string> = {
   '78944': '밤도깨비 그랜드캐년 일출 투어',
   /** 동일 일출 상품의 다른 Klook 액티비티 URL — 채널 variant만 다를 수 있음 */
   '113386': '밤도깨비 그랜드캐년 일출 투어',
+  /** https://www.klook.com/.../activity/78870 — With Exclusions·로어 앤텔롭 고정 매칭 */
+  '78870': '밤도깨비 그랜드캐년 일출 투어',
 }
 
 /** Activity ID → 내부 product_id (상품명 유사 매칭 오류 방지, 예: 일출 vs 비일출) */
 const KLOOK_ACTIVITY_ID_TO_PRODUCT_ID: Record<string, string> = {
   '113386': 'MDGCSUNRISE',
   '78944': 'MDGCSUNRISE',
+  '78870': 'MDGCSUNRISE',
 }
 
 /** Activity ID별 Klook 채널 variant 강제 매핑 (본문 금액 파싱 결과보다 우선) */
 const KLOOK_ACTIVITY_ID_FORCE_VARIANT: Record<string, { key: string; label: string }> = {
   '113386': { key: 'all_inclusive', label: 'All Inclusive' },
-  /** 78944는 채널의 실 variant_key(default)로 저장, 표시 라벨은 With Exclusions */
+  /** 78944·78870은 채널의 실 variant_key(default)로 저장, 표시 라벨은 With Exclusions */
   '78944': { key: 'default', label: 'With Exclusions' },
+  '78870': { key: 'default', label: 'With Exclusions' },
 }
 
 /** Klook: 불포함 금액이 있으면 With Exclusions 채널 variant, 없으면 All Inclusive */
@@ -1374,6 +1378,10 @@ function extractKlook(
   const packageChoices = klookPackageToImportChoiceOptionNames(packageRaw)
   if (packageChoices?.length) {
     out.import_choice_option_names = packageChoices
+  }
+  // Activity 78870: KKday 174755와 동일 — 미국 거주자·기타 입장료는 미정(공통), 캐년은 로어 앤텔롭
+  if (parsedKlookActivityId === '78870') {
+    out.import_choice_option_names = ['Lower Antelope Canyon']
   }
 
   // WhatsApp → emergency_contact (비상연락처). 값만 정규화 (예: "+818050339362")

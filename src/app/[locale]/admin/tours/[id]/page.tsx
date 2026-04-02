@@ -82,6 +82,7 @@ type LocalTicketBooking = {
   time?: string | null
   ea?: number | null
   rn_number?: string | null
+  invoice_number?: string | null
   deletion_requested_at?: string | null
   deletion_requested_by?: string | null
   /** 간단히 보기 시 회사별 하위 행 (시간, 인원, 예약번호) */
@@ -91,6 +92,7 @@ type LocalTicketBooking = {
 type LocalTourHotelBooking = {
   id: string
   reservation_id?: string | null
+  reservation_name?: string | null
   status?: string | null
   hotel?: string | null
   room_type?: string | null
@@ -1492,7 +1494,8 @@ export default function TourDetailPage() {
           time: b.time ? (typeof b.time === 'string' ? b.time.substring(0, 5) : b.time) : null,
           ea: b.ea || 0,
           reservation_id: b.reservation_id ?? null,
-          rn_number: b.rn_number ?? null
+          rn_number: b.rn_number ?? null,
+          invoice_number: b.invoice_number ?? null
         }))
       } as LocalTicketBooking))
     }

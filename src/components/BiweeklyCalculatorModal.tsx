@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { X, Calculator, Clock, DollarSign, Calendar, User, Printer, CreditCard, Phone } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
@@ -14,6 +14,13 @@ import {
   lasVegasDateFromCheckIn,
   type EmployeeRatePeriod,
 } from '@/lib/employeeHourlyRates'
+import {
+  computeBiweeklyAttendancePayDual,
+  adjustedWorkHoursForPay,
+  sortAttendanceRecordsForMealPolicy,
+  fetchOfficeMealCountsInRange,
+  OFFICE_MEAL_POLICY_START,
+} from '@/lib/attendanceMealPolicy'
 
 interface BiweeklyCalculatorModalProps {
   isOpen: boolean
@@ -87,35 +94,6 @@ function saveHourlyRateToStorage(email: string, rate: string) {
   localStorage.setItem(HOURLY_RATES_STORAGE_KEY, JSON.stringify(rates))
 }
 
-/** DB에 직원별 시급 구간이 있으면 일자별 적용, 없으면 입력 시급 × 총 근무시간 */
-function computeBiweeklyAttendancePay(
-  sortedRecords: AttendanceRecord[],
-  selectedEmployee: string,
-  hourlyRate: string,
-  periods: EmployeeRatePeriod[]
-): number {
-  if (employeeHasHourlyPeriods(periods, selectedEmployee)) {
-    let sum = 0
-    for (const record of sortedRecords) {
-      let wh = record.work_hours || 0
-      if (wh > 8) wh -= 0.5
-      const d =
-        lasVegasDateFromCheckIn(record.check_in_time) ||
-        (record.date ? record.date.slice(0, 10) : null)
-      if (!d) continue
-      sum += wh * getHourlyRateForEmployeeOnDate(periods, selectedEmployee, d, 15)
-    }
-    return sum
-  }
-  const actualTotalHours = sortedRecords.reduce((sum, record) => {
-    let workHours = record.work_hours || 0
-    if (workHours > 8) workHours -= 0.5
-    return sum + workHours
-  }, 0)
-  if (hourlyRate && !isNaN(Number(hourlyRate))) return actualTotalHours * Number(hourlyRate)
-  return 0
-}
-
 export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko' }: BiweeklyCalculatorModalProps) {
   const [hourlyRate, setHourlyRate] = useState<string>('')
   const [startDate, setStartDate] = useState<string>('')
@@ -123,6 +101,10 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
   const [totalHours, setTotalHours] = useState<number>(0)
   const [totalPay, setTotalPay] = useState<number>(0)
   const [attendancePay, setAttendancePay] = useState<number>(0)
+  /** 비교용: 전 기간「8시간 초과 시 30분 자동」규칙만 적용한 출퇴근 소계 */
+  const [attendancePayLegacyAuto, setAttendancePayLegacyAuto] = useState<number>(0)
+  const [employeeMealDates, setEmployeeMealDates] = useState<Set<string>>(new Set())
+  const [periodMealCounts, setPeriodMealCounts] = useState<Record<string, number>>({})
   const [tourPay, setTourPay] = useState<number>(0)
   const [tipPay, setTipPay] = useState<number>(0)
   const [personalCarPay, setPersonalCarPay] = useState<number>(0)
@@ -260,6 +242,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     if (!selectedEmployee || !startDate || !endDate) {
       setAttendanceRecords([])
       setTotalHours(0)
+      setEmployeeMealDates(new Set())
       return
     }
 
@@ -278,6 +261,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         console.error('날짜가 비어있음:', { startDate, endDate })
         setAttendanceRecords([])
         setTotalHours(0)
+        setEmployeeMealDates(new Set())
         return
       }
 
@@ -289,6 +273,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         console.error('잘못된 날짜 형식:', { startDate, endDate })
         setAttendanceRecords([])
         setTotalHours(0)
+        setEmployeeMealDates(new Set())
         return
       }
 
@@ -325,6 +310,7 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
         console.error('출퇴근 기록 조회 오류:', attendanceError)
         setAttendanceRecords([])
         setTotalHours(0)
+        setEmployeeMealDates(new Set())
         return
       }
 
@@ -394,27 +380,51 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       })
 
       setAttendanceRecords(sortedRecords)
-      
-      // 실제 근무시간 계산
-      const actualTotalHours = sortedRecords.reduce((sum, record) => {
-        let workHours = record.work_hours || 0
-        // 8시간을 넘으면 30분 식사시간 차감
-        if (workHours > 8) {
-          workHours = workHours - 0.5
-        }
-        return sum + workHours
-      }, 0)
-      
-      setTotalHours(actualTotalHours)
-      // 출퇴근 급여는 attendanceRecords·시급 구간 반영 useEffect에서 계산
+
+      const { data: mealRows, error: mealErr } = await supabase
+        .from('office_meal_log')
+        .select('meal_date')
+        .eq('employee_email', selectedEmployee)
+        .gte('meal_date', startDate)
+        .lte('meal_date', endDate)
+      if (mealErr) {
+        console.error('office_meal_log 조회 오류:', mealErr)
+        setEmployeeMealDates(new Set())
+      } else {
+        setEmployeeMealDates(new Set((mealRows || []).map((r: { meal_date: string }) => r.meal_date)))
+      }
+      // 총 근무시간·출퇴근 급여는 attendanceRecords·식사·시급 반영 useEffect에서 계산
     } catch (error) {
       console.error('출퇴근 기록 조회 오류:', error)
       setAttendanceRecords([])
       setTotalHours(0)
+      setEmployeeMealDates(new Set())
     } finally {
       setLoading(false)
     }
   }
+
+  const sortedForMeal = useMemo(
+    () => sortAttendanceRecordsForMealPolicy(attendanceRecords),
+    [attendanceRecords]
+  )
+
+  useEffect(() => {
+    if (!isOpen || !startDate || !endDate) {
+      setPeriodMealCounts({})
+      return
+    }
+    fetchOfficeMealCountsInRange(supabase, startDate, endDate).then(setPeriodMealCounts)
+  }, [isOpen, startDate, endDate])
+
+  useEffect(() => {
+    const sorted = sortedForMeal
+    const total = sorted.reduce(
+      (sum, record) => sum + adjustedWorkHoursForPay(record, sorted, employeeMealDates, 'applied'),
+      0
+    )
+    setTotalHours(total)
+  }, [sortedForMeal, employeeMealDates])
 
   // 컴포넌트 마운트 시 팀 멤버 조회
   useEffect(() => {
@@ -590,20 +600,23 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     }
   }, [selectedEmployee, startDate, endDate])
 
-  // 출퇴근 급여: OP/OM은 일자별 DB 시급, 그 외는 입력 시급
+  // 출퇴근 급여: 적용 규칙(3월말까지 8h 자동, 4/1~ 식사 기록) + 비교용 전 구간 8h 자동
   useEffect(() => {
     if (!selectedEmployee) {
       setAttendancePay(0)
+      setAttendancePayLegacyAuto(0)
       return
     }
-    const pay = computeBiweeklyAttendancePay(
+    const { applied, legacyAuto } = computeBiweeklyAttendancePayDual(
       attendanceRecords,
       selectedEmployee,
       hourlyRate,
-      employeeRatePeriods
+      employeeRatePeriods,
+      employeeMealDates
     )
-    setAttendancePay(pay)
-  }, [attendanceRecords, selectedEmployee, hourlyRate, employeeRatePeriods])
+    setAttendancePay(applied)
+    setAttendancePayLegacyAuto(legacyAuto)
+  }, [attendanceRecords, selectedEmployee, hourlyRate, employeeRatePeriods, employeeMealDates])
 
   // localStorage에 저장된 시급이 없을 때, 기간 종료일 기준 DB 직원 시급과 입력칸 맞춤
   useEffect(() => {
@@ -1020,10 +1033,13 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
     setTotalHours(0)
     setTotalPay(0)
     setAttendancePay(0)
+    setAttendancePayLegacyAuto(0)
     setTourPay(0)
     setTipPay(0)
     setPersonalCarPay(0)
     setAttendanceRecords([])
+    setEmployeeMealDates(new Set())
+    setPeriodMealCounts({})
     setSelectedEmployee('')
     setTourFees([])
     onClose()
@@ -1070,7 +1086,10 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       checkIn: 'Check-in',
       checkOut: 'Check-out',
       hours: 'Hours',
-      afterMealDeduction: 'After meal deduction',
+      hoursAfterApplied: 'Paid hrs (applied rule)',
+      hoursLegacy8h: 'Compare (8h auto)',
+      attendancePayLegacyLine: 'Attendance (compare · 8h auto all dates):',
+      periodOfficeMeals: 'Office meals in period (count by person)',
       status: 'Status',
       cumulative: 'Cumulative',
       tourFee: 'Tour Fee',
@@ -1103,7 +1122,10 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
       checkIn: '출근 시간',
       checkOut: '퇴근 시간',
       hours: '근무시간',
-      afterMealDeduction: '식사시간 차감 후',
+      hoursAfterApplied: '적용 정산 시간',
+      hoursLegacy8h: '비교(8시간 자동)',
+      attendancePayLegacyLine: '출퇴근 소계 (비교·8시간 자동 전 구간):',
+      periodOfficeMeals: '기간 내 사무실 식사 (인원별 횟수)',
       status: '상태',
       cumulative: '누적 시간',
       tourFee: '투어 Fee',
@@ -1301,6 +1323,10 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   <span>$${formatCurrency(attendancePay)}</span>
                 </div>
                 <div class="calculation-item">
+                  <span>${pr.attendancePayLegacyLine}</span>
+                  <span>$${formatCurrency(attendancePayLegacyAuto)}</span>
+                </div>
+                <div class="calculation-item">
                   <span>${pr.guideFeeSubtotal}</span>
                   <span>$${formatCurrency(tourPay)}</span>
                 </div>
@@ -1329,26 +1355,60 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   <th>${pr.checkIn}</th>
                   <th>${pr.checkOut}</th>
                   <th>${pr.hours}</th>
-                  <th>${pr.afterMealDeduction}</th>
+                  <th>${pr.hoursAfterApplied}</th>
+                  <th>${pr.hoursLegacy8h}</th>
                   <th>${pr.status}</th>
                   <th>${pr.cumulative}</th>
                 </tr>
               </thead>
               <tbody>
                 ${attendanceRecords.map((record, idx) => {
-                  const cumulative = attendanceRecords.slice(0, idx + 1).reduce((sum, r) => sum + (r.work_hours ? (r.work_hours > 8 ? r.work_hours - 0.5 : r.work_hours) : 0), 0)
+                  const cumulative = attendanceRecords.slice(0, idx + 1).reduce(
+                    (sum, r) =>
+                      sum +
+                      (r.work_hours
+                        ? adjustedWorkHoursForPay(r, sortedForMeal, employeeMealDates, 'applied')
+                        : 0),
+                    0
+                  )
+                  const whA = record.work_hours
+                    ? adjustedWorkHoursForPay(record, sortedForMeal, employeeMealDates, 'applied')
+                    : 0
+                  const whL = record.work_hours
+                    ? adjustedWorkHoursForPay(record, sortedForMeal, employeeMealDates, 'all_legacy')
+                    : 0
                   return `
                   <tr>
                     <td>${pr.formatAttendanceDate(record.check_in_time)}</td>
                     <td>${formatTime(record.check_in_time)}</td>
                     <td>${formatTime(record.check_out_time)}</td>
                     <td>${pr.formatWorkHours(record.work_hours || 0)}</td>
-                    <td>${pr.formatWorkHours(record.work_hours && record.work_hours > 8 ? record.work_hours - 0.5 : record.work_hours || 0)}</td>
+                    <td>${pr.formatWorkHours(whA)}</td>
+                    <td>${pr.formatWorkHours(whL)}</td>
                     <td>${record.status || '-'}</td>
                     <td>${pr.formatWorkHours(cumulative)}</td>
                   </tr>
                 `
                 }).join('')}
+              </tbody>
+            </table>
+          ` : ''}
+          
+          ${Object.keys(periodMealCounts).length > 0 ? `
+            <div class="section-title">${pr.periodOfficeMeals}</div>
+            <table class="table">
+              <thead><tr><th>Name</th><th>Meals</th></tr></thead>
+              <tbody>
+                ${Object.entries(periodMealCounts)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([email, n]) => {
+                    const nm =
+                      teamMembers.find((m) => m.email === email)?.display_name ||
+                      teamMembers.find((m) => m.email === email)?.name_ko ||
+                      email
+                    return `<tr><td>${nm}</td><td>${n}</td></tr>`
+                  })
+                  .join('')}
               </tbody>
             </table>
           ` : ''}
@@ -1692,6 +1752,10 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   <span>$${formatCurrency(attendancePay)}</span>
                 </div>
                 <div class="calculation-item">
+                  <span>${pr.attendancePayLegacyLine}</span>
+                  <span>$${formatCurrency(attendancePayLegacyAuto)}</span>
+                </div>
+                <div class="calculation-item">
                   <span>${pr.guideFeeSubtotal}</span>
                   <span>$${formatCurrency(tourPay)}</span>
                 </div>
@@ -1720,26 +1784,60 @@ export default function BiweeklyCalculatorModal({ isOpen, onClose, locale = 'ko'
                   <th>${pr.checkIn}</th>
                   <th>${pr.checkOut}</th>
                   <th>${pr.hours}</th>
-                  <th>${pr.afterMealDeduction}</th>
+                  <th>${pr.hoursAfterApplied}</th>
+                  <th>${pr.hoursLegacy8h}</th>
                   <th>${pr.status}</th>
                   <th>${pr.cumulative}</th>
                 </tr>
               </thead>
               <tbody>
                 ${attendanceRecords.map((record, idx) => {
-                  const cumulative = attendanceRecords.slice(0, idx + 1).reduce((sum, r) => sum + (r.work_hours ? (r.work_hours > 8 ? r.work_hours - 0.5 : r.work_hours) : 0), 0)
+                  const cumulative = attendanceRecords.slice(0, idx + 1).reduce(
+                    (sum, r) =>
+                      sum +
+                      (r.work_hours
+                        ? adjustedWorkHoursForPay(r, sortedForMeal, employeeMealDates, 'applied')
+                        : 0),
+                    0
+                  )
+                  const whA = record.work_hours
+                    ? adjustedWorkHoursForPay(record, sortedForMeal, employeeMealDates, 'applied')
+                    : 0
+                  const whL = record.work_hours
+                    ? adjustedWorkHoursForPay(record, sortedForMeal, employeeMealDates, 'all_legacy')
+                    : 0
                   return `
                   <tr>
                     <td>${pr.formatAttendanceDate(record.check_in_time)}</td>
                     <td>${formatTime(record.check_in_time)}</td>
                     <td>${formatTime(record.check_out_time)}</td>
                     <td>${pr.formatWorkHours(record.work_hours || 0)}</td>
-                    <td>${pr.formatWorkHours(record.work_hours && record.work_hours > 8 ? record.work_hours - 0.5 : record.work_hours || 0)}</td>
+                    <td>${pr.formatWorkHours(whA)}</td>
+                    <td>${pr.formatWorkHours(whL)}</td>
                     <td>${record.status || '-'}</td>
                     <td>${pr.formatWorkHours(cumulative)}</td>
                   </tr>
                 `
                 }).join('')}
+              </tbody>
+            </table>
+          ` : ''}
+          
+          ${Object.keys(periodMealCounts).length > 0 ? `
+            <div class="section-title">${pr.periodOfficeMeals}</div>
+            <table class="table">
+              <thead><tr><th>Name</th><th>Meals</th></tr></thead>
+              <tbody>
+                ${Object.entries(periodMealCounts)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([email, n]) => {
+                    const nm =
+                      teamMembers.find((m) => m.email === email)?.display_name ||
+                      teamMembers.find((m) => m.email === email)?.name_ko ||
+                      email
+                    return `<tr><td>${nm}</td><td>${n}</td></tr>`
+                  })
+                  .join('')}
               </tbody>
             </table>
           ` : ''}
@@ -2162,6 +2260,28 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                   />
                 </div>
               </div>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                {OFFICE_MEAL_POLICY_START} 이전 출근일은 기존처럼「8시간 초과 시 30분」자동 차감입니다. 해당일 이후는 자동 차감 없이, 출퇴근 관리 화면의「사무실 식사」에서 체크한 날만 당일 첫 세션에서 30분 차감합니다.
+              </p>
+              {Object.keys(periodMealCounts).length > 0 && (
+                <div className="rounded-md border border-amber-200 bg-amber-50/50 px-3 py-2 text-xs">
+                  <div className="font-semibold text-gray-800 mb-1">선택 기간 사무실 식사 (직원별 횟수)</div>
+                  <ul className="space-y-0.5 max-h-32 overflow-y-auto">
+                    {Object.entries(periodMealCounts)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([email, n]) => (
+                        <li key={email} className="flex justify-between gap-2 text-gray-700">
+                          <span className="truncate">
+                            {teamMembers.find((m) => m.email === email)?.display_name ||
+                              teamMembers.find((m) => m.email === email)?.name_ko ||
+                              email}
+                          </span>
+                          <span className="shrink-0 tabular-nums">{n}회</span>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
             </div>
 
             {/* 오른쪽: 계산 결과 */}
@@ -2170,7 +2290,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-gray-600">
                     <Clock className="w-3 h-3 inline mr-1" />
-                    총 근무 시간:
+                    총 근무 시간 (적용 정산):
                   </span>
                   <span className="text-sm font-bold text-blue-600">
                     {loading ? '계산 중...' : formatWorkHours(totalHours)}
@@ -2182,10 +2302,19 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-medium text-gray-600">
                         <DollarSign className="w-3 h-3 inline mr-1" />
-                        출퇴근 기록 소계:
+                        출퇴근 소계 (적용 정산):
                       </span>
                       <span className="text-sm font-bold text-blue-600">
                         ${formatCurrency(attendancePay)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-gray-600">
+                        <DollarSign className="w-3 h-3 inline mr-1" />
+                        출퇴근 소계 (비교·8시간 자동 전 구간):
+                      </span>
+                      <span className="text-sm font-bold text-slate-600">
+                        ${formatCurrency(attendancePayLegacyAuto)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
@@ -2246,7 +2375,20 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                 {attendanceRecords.map((record, index) => {
                   const cumulative = attendanceRecords
                     .slice(0, index + 1)
-                    .reduce((sum, r) => sum + (r.work_hours ? (r.work_hours > 8 ? r.work_hours - 0.5 : r.work_hours) : 0), 0)
+                    .reduce(
+                      (sum, r) =>
+                        sum +
+                        (r.work_hours
+                          ? adjustedWorkHoursForPay(r, sortedForMeal, employeeMealDates, 'applied')
+                          : 0),
+                      0
+                    )
+                  const whA = record.work_hours
+                    ? adjustedWorkHoursForPay(record, sortedForMeal, employeeMealDates, 'applied')
+                    : 0
+                  const whL = record.work_hours
+                    ? adjustedWorkHoursForPay(record, sortedForMeal, employeeMealDates, 'all_legacy')
+                    : 0
                   return (
                     <div key={record.id} className="bg-white border border-gray-200 rounded-lg p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -2267,9 +2409,11 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                         <span>{formatTime(record.check_out_time)}</span>
                         <span>근무</span>
                         <span>{record.work_hours ? formatWorkHours(record.work_hours) : '-'}</span>
-                        <span>차감 후</span>
-                        <span>{record.work_hours ? formatWorkHours(record.work_hours > 8 ? record.work_hours - 0.5 : record.work_hours) : '-'}</span>
-                        <span>누적 시간</span>
+                        <span>적용 정산</span>
+                        <span>{record.work_hours ? formatWorkHours(whA) : '-'}</span>
+                        <span>비교(8h)</span>
+                        <span>{record.work_hours ? formatWorkHours(whL) : '-'}</span>
+                        <span>누적(적용)</span>
                         <span className="font-medium">{formatWorkHours(cumulative)}</span>
                       </div>
                     </div>
@@ -2294,13 +2438,16 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                         근무시간
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        식사시간 차감 후
+                        적용 정산
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        비교(8h 자동)
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         상태
                       </th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        누적 시간
+                        누적(적용)
                       </th>
                     </tr>
                   </thead>
@@ -2308,7 +2455,20 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                     {attendanceRecords.map((record, index) => {
                       const cumulative = attendanceRecords
                         .slice(0, index + 1)
-                        .reduce((sum, r) => sum + (r.work_hours ? (r.work_hours > 8 ? r.work_hours - 0.5 : r.work_hours) : 0), 0)
+                        .reduce(
+                          (sum, r) =>
+                            sum +
+                            (r.work_hours
+                              ? adjustedWorkHoursForPay(r, sortedForMeal, employeeMealDates, 'applied')
+                              : 0),
+                          0
+                        )
+                      const whA = record.work_hours
+                        ? adjustedWorkHoursForPay(record, sortedForMeal, employeeMealDates, 'applied')
+                        : 0
+                      const whL = record.work_hours
+                        ? adjustedWorkHoursForPay(record, sortedForMeal, employeeMealDates, 'all_legacy')
+                        : 0
                       return (
                         <tr key={record.id} className="hover:bg-gray-50">
                           <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
@@ -2324,7 +2484,10 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
                             {record.work_hours ? formatWorkHours(record.work_hours) : '-'}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900">
-                            {record.work_hours ? formatWorkHours(record.work_hours > 8 ? record.work_hours - 0.5 : record.work_hours) : '-'}
+                            {record.work_hours ? formatWorkHours(whA) : '-'}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600">
+                            {record.work_hours ? formatWorkHours(whL) : '-'}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
                             <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
