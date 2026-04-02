@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react'
 import { Calendar, CalendarOff, MessageSquare, Camera, FileText, MessageCircle, BookOpen, Receipt, Home } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import Link from 'next/link'
+import Navigation from '@/components/Navigation'
 import TourPhotoUploadModal from '@/components/TourPhotoUploadModal'
 import TourReportModal from '@/components/TourReportModal'
 import TourReceiptModal from '@/components/TourReceiptModal'
@@ -403,10 +404,13 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
 
   if (isLoading || isInitializing) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <Navigation />
+        <div className="flex flex-1 items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading...</p>
+          </div>
         </div>
       </div>
     )
@@ -418,7 +422,9 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
 
   if (!currentUser || !['admin', 'manager', 'team_member'].includes(currentUserRole || '')) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <Navigation />
+        <div className="flex flex-1 items-center justify-center px-4">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-900 mb-4">접근 권한이 없습니다</h1>
           <p className="text-gray-600 mb-4">
@@ -443,17 +449,18 @@ export default function GuideLayout({ children, params }: GuideLayoutProps) {
             로그인 페이지로 이동
           </button>
         </div>
+        </div>
       </div>
     )
   }
 
    return (
      <AudioPlayerProvider>
-       <div className="min-h-screen bg-gray-50">
-         {/* 상단 헤더는 [locale] 레이아웃의 기존 Navigation 사용 (가이드/관리자 메뉴 포함) */}
+       <div className="min-h-screen bg-gray-50 flex flex-col">
+         <Navigation />
 
          {/* 메인: main-safe-area로 고정 푸터(lg 미만) 높이 + safe-area 만큼 하단 여백 확보 */}
-         <main className="main-safe-area max-w-7xl mx-auto px-2 pt-2 sm:px-2 sm:pt-4 lg:px-4">
+         <main className="main-safe-area flex-1 max-w-7xl mx-auto w-full px-2 pt-2 sm:px-2 sm:pt-4 lg:px-4">
            {children}
          </main>
 

@@ -98,7 +98,9 @@ export async function POST(request: NextRequest) {
     } = body
     
     // 필수 필드 검증 (ID는 자동 생성되므로 제외)
-    if (!paid_to || !paid_for || !amount || !submit_by) {
+    const paymentMethodTrimmed =
+      typeof payment_method === 'string' ? payment_method.trim() : ''
+    if (!paid_to || !paid_for || !amount || !submit_by || !paymentMethodTrimmed) {
       return NextResponse.json({ error: '필수 필드가 누락되었습니다.' }, { status: 400 })
     }
     
@@ -109,7 +111,7 @@ export async function POST(request: NextRequest) {
       paid_for,
       description: description || null,
       amount: parseFloat(amount),
-      payment_method: payment_method || null,
+      payment_method: paymentMethodTrimmed,
       submit_by,
       photo_url: photo_url || null,
       category: category || null,

@@ -2,17 +2,26 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { Database } from '@/lib/database.types'
 
-type CompanyExpense = Database['public']['Tables']['company_expenses']['Row']
 type CompanyExpenseUpdate = Database['public']['Tables']['company_expenses']['Update']
+
+type RouteParams = Promise<{ id: string }> | { id: string }
+
+async function resolveId(params: RouteParams): Promise<string | undefined> {
+  const resolved = await Promise.resolve(params)
+  return resolved?.id
+}
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: RouteParams }
 ) {
   try {
     const supabase = createClient()
-    const { id } = params
-    
+    const id = await resolveId(params)
+    if (!id) {
+      return NextResponse.json({ error: 'ID가 필요합니다.' }, { status: 400 })
+    }
+
     const { data, error } = await supabase
       .from('company_expenses')
       .select(`
@@ -26,12 +35,12 @@ export async function GET(
       `)
       .eq('id', id)
       .single()
-    
+
     if (error) {
       console.error('회사 지출 조회 오류:', error)
       return NextResponse.json({ error: '회사 지출을 찾을 수 없습니다.' }, { status: 404 })
     }
-    
+
     return NextResponse.json({ data })
   } catch (error) {
     console.error('회사 지출 조회 오류:', error)
@@ -41,30 +50,85 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: RouteParams }
 ) {
   try {
     const supabase = createClient()
-    const { id } = params
-    const body = await request.json()
-    
-    // 금액이 있으면 숫자로 변환
-    if (body.amount) {
-      body.amount = parseFloat(body.amount)
+    const id = await resolveId(params)
+    if (!id) {
+      return NextResponse.json({ error: 'ID가 필요합니다.' }, { status: 400 })
     }
-    
+
+    const body = await request.json()
+
+    const {
+      paid_to,
+      paid_for,
+      description,
+      amount,
+      payment_method,
+      submit_by,
+      photo_url,
+      category,
+      subcategory,
+      vehicle_id,
+      maintenance_type,
+      notes,
+      attachments,
+      expense_type,
+      tax_deductible,
+    } = body
+
+    const paymentMethodTrimmed =
+      typeof payment_method === 'string' ? payment_method.trim() : ''
+    if (
+      !paid_to ||
+      !paid_for ||
+      amount === undefined ||
+      amount === null ||
+      amount === '' ||
+      !submit_by ||
+      !paymentMethodTrimmed
+    ) {
+      return NextResponse.json({ error: '필수 필드가 누락되었습니다.' }, { status: 400 })
+    }
+
+    const parsedAmount =
+      typeof amount === 'number' && !Number.isNaN(amount) ? amount : parseFloat(String(amount))
+    if (Number.isNaN(parsedAmount)) {
+      return NextResponse.json({ error: '금액이 올바르지 않습니다.' }, { status: 400 })
+    }
+
+    const updatePayload: CompanyExpenseUpdate = {
+      paid_to,
+      paid_for,
+      description: description || null,
+      amount: parsedAmount,
+      payment_method: paymentMethodTrimmed,
+      submit_by,
+      photo_url: photo_url || null,
+      category: category || null,
+      subcategory: subcategory || null,
+      vehicle_id: vehicle_id || null,
+      maintenance_type: maintenance_type || null,
+      notes: notes || null,
+      attachments: attachments ?? null,
+      expense_type: expense_type || null,
+      tax_deductible: tax_deductible !== undefined ? tax_deductible : true,
+    }
+
     const { data, error } = await supabase
       .from('company_expenses')
-      .update(body)
+      .update(updatePayload)
       .eq('id', id)
       .select()
       .single()
-    
+
     if (error) {
       console.error('회사 지출 수정 오류:', error)
       return NextResponse.json({ error: '회사 지출을 수정할 수 없습니다.' }, { status: 500 })
     }
-    
+
     return NextResponse.json({ data })
   } catch (error) {
     console.error('회사 지출 수정 오류:', error)
@@ -74,22 +138,22 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: RouteParams }
 ) {
   try {
     const supabase = createClient()
-    const { id } = params
-    
-    const { error } = await supabase
-      .from('company_expenses')
-      .delete()
-      .eq('id', id)
-    
+    const id = await resolveId(params)
+    if (!id) {
+      return NextResponse.json({ error: 'ID가 필요합니다.' }, { status: 400 })
+    }
+
+    const { error } = await supabase.from('company_expenses').delete().eq('id', id)
+
     if (error) {
       console.error('회사 지출 삭제 오류:', error)
       return NextResponse.json({ error: '회사 지출을 삭제할 수 없습니다.' }, { status: 500 })
     }
-    
+
     return NextResponse.json({ message: '회사 지출이 삭제되었습니다.' })
   } catch (error) {
     console.error('회사 지출 삭제 오류:', error)

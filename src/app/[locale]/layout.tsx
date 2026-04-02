@@ -109,14 +109,13 @@ export default async function LocaleLayout({
     );
   }
 
-  // 가이드: 기존 Navigation만 사용 (사이드바·푸터 없음, 삼선 메뉴 등 기존 메뉴 노출)
+  // 가이드: 헤더(Navigation)는 guide/layout.tsx에서 렌더 (서버 x-pathname 누락 시에도 상단 바 유지)
   if (isGuidePage) {
     return (
       <NextIntlClientProvider messages={messages} locale={locale}>
         <FloatingChatProvider>
           <StripeErrorHandler />
           <div className="min-h-screen bg-gray-50">
-            <Navigation />
             {children}
             <FloatingChatContainer />
           </div>

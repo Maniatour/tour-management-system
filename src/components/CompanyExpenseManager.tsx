@@ -349,7 +349,7 @@ export default function CompanyExpenseManager() {
     e.preventDefault()
     
     // ID는 자동 생성되므로 검증에서 제외
-    if (!formData.paid_to || !formData.paid_for || !formData.amount) {
+    if (!formData.paid_to || !formData.paid_for || !formData.amount || !formData.payment_method?.trim()) {
       toast.error('필수 필드를 모두 입력해주세요.')
       return
     }
@@ -383,11 +383,25 @@ export default function CompanyExpenseManager() {
         }
       }
       
-      // 지출 데이터 준비
+      // 지출 데이터 준비 (수정 시 새 파일이 없으면 기존 첨부 유지 — 빈 배열로 덮어쓰지 않음)
+      const attachmentsPayload =
+        uploadedFileUrls.length > 0
+          ? [
+              ...(Array.isArray(editingExpense?.attachments)
+                ? editingExpense.attachments.filter(Boolean)
+                : []),
+              ...uploadedFileUrls,
+            ]
+          : editingExpense
+            ? Array.isArray(editingExpense.attachments)
+              ? editingExpense.attachments
+              : null
+            : null
+
       const submitData = {
         ...formData,
         photo_url: formData.photo_url || uploadedFileUrls[0] || '', // 첫 번째 파일을 메인 이미지로
-        attachments: uploadedFileUrls, // 모든 파일을 첨부파일로
+        attachments: attachmentsPayload,
         uploaded_files: undefined // 서버로 전송하지 않음
       }
       
@@ -721,13 +735,14 @@ export default function CompanyExpenseManager() {
                 </div>
                 
                 <div>
-                  <Label htmlFor="payment_method">{t('form.paymentMethod')}</Label>
+                  <Label htmlFor="payment_method">{t('form.paymentMethod')} *</Label>
                   <Input
                     id="payment_method"
                     list="company-expense-datalist-payment-method"
                     autoComplete="off"
                     value={formData.payment_method}
                     onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
+                    required
                   />
                   <datalist id="company-expense-datalist-payment-method">
                     {paymentMethodDatalistOptions.map((v) => (
