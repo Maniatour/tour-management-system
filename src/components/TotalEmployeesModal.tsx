@@ -324,10 +324,12 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
         const customerNamesByResId: Record<string, { ko: string; en: string }> = {}
         for (let i = 0; i < resIdsForCustomers.length; i += PRICING_BATCH) {
           const batch = resIdsForCustomers.slice(i, i + PRICING_BATCH)
-          // customers(*) — 스키마마다 name_ko/name_en만 있거나 name만 있는 경우가 있어 컬럼 지정 시 400 발생할 수 있음
+          // reservations → customers 직접 FK가 없을 수 있음(PostgREST PGRST200). reservation_customers 경유.
           const { data: resvRows, error: resvBatchError } = await supabase
             .from('reservations')
-            .select('id, customer_id, total_people, customers(*)')
+            .select(
+              'id, customer_id, total_people, reservation_customers(order_index, customer_id, name, name_ko, name_en, customers(*))'
+            )
             .in('id', batch)
           if (resvBatchError) {
             console.error('Office prepaid: reservations+customers 조회 오류:', resvBatchError)
@@ -338,19 +340,34 @@ export default function TotalEmployeesModal({ isOpen, onClose, locale = 'ko', on
               id: string
               customer_id: string | null
               total_people?: number | null
-              customers?: { name_ko?: string | null; name_en?: string | null; name?: string | null } | null
+              reservation_customers?: Array<{
+                order_index?: number | null
+                customer_id?: string | null
+                name?: string | null
+                name_ko?: string | null
+                name_en?: string | null
+                customers?: { name_ko?: string | null; name_en?: string | null; name?: string | null } | null
+              }> | null
             }
+            const links = [...(row.reservation_customers || [])].sort(
+              (a, b) => (a.order_index ?? 0) - (b.order_index ?? 0)
+            )
+            const first = links[0]
             if (row.customer_id) customerByResId[row.id] = String(row.customer_id)
+            else if (first?.customer_id) customerByResId[row.id] = String(first.customer_id)
             const n = row.total_people
             peopleByResId[row.id] = n != null && String(n) !== '' && !Number.isNaN(Number(n)) ? Number(n) : null
-            const c = row.customers as {
+            const c = (first?.customers ?? null) as {
               name?: string | null
               name_ko?: string | null
               name_en?: string | null
             } | null
-            const combined = (c?.name ?? '').trim()
-            const ko = ((c?.name_ko ?? '').trim() || combined).trim()
-            const en = ((c?.name_en ?? '').trim() || combined).trim()
+            const inlineName = (first?.name ?? '').trim()
+            const inlineKo = (first?.name_ko ?? '').trim()
+            const inlineEn = (first?.name_en ?? '').trim()
+            const combined = (c?.name ?? inlineName).trim()
+            const ko = ((c?.name_ko ?? '').trim() || inlineKo || combined).trim()
+            const en = ((c?.name_en ?? '').trim() || inlineEn || combined).trim()
             customerNamesByResId[row.id] = { ko, en }
           }
         }

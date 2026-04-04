@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { useLocale, useTranslations } from 'next-intl';
 import { supabase } from '@/lib/supabase';
 import TicketBookingForm from './TicketBookingForm';
+import TicketInvoiceUploadModal from './TicketInvoiceUploadModal';
 import BookingHistory from './BookingHistory';
 import TicketBookingReservationDetailModal, {
   type TicketBookingReservationDetailRow,
@@ -23,6 +24,7 @@ import {
   Paperclip,
   ImageOff,
   Trash2,
+  FileUp,
 } from 'lucide-react';
 import { normalizeReservationIds, isReservationCancelledStatus } from '@/utils/tourUtils';
 import { fetchUploadApi } from '@/lib/uploadClient';
@@ -106,6 +108,7 @@ interface TicketBooking {
   payment_method: string;
   website: string;
   rn_number: string;
+  note?: string | null;
   invoice_number?: string;
   /** Zelle 결제 시 Confirmation 번호 */
   zelle_confirmation_number?: string | null;
@@ -162,6 +165,53 @@ function clipboardFilesFromPasteEvent(e: ClipboardEvent): File[] {
     return Array.from(e.clipboardData.files);
   }
   return out;
+}
+
+/** Invoice# 입력 후 첨부 조회까지 대기 (타이핑마다 Supabase·부모 리렌더 방지) */
+const INVOICE_DRAFT_LOAD_DEBOUNCE_MS = 650;
+
+type TicketInvoiceDraftInputProps = {
+  initialInvoice: string;
+  draftRef: React.MutableRefObject<string>;
+  company: string;
+  disabled?: boolean;
+  onDebouncedLoad: (company: string, draft: string) => void | Promise<void>;
+  onEnterSave: () => void;
+};
+
+function TicketInvoiceDraftInput({
+  initialInvoice,
+  draftRef,
+  company,
+  disabled,
+  onDebouncedLoad,
+  onEnterSave,
+}: TicketInvoiceDraftInputProps) {
+  const inv0 = initialInvoice?.trim() || '';
+  const [value, setValue] = useState(inv0);
+  useEffect(() => {
+    draftRef.current = value;
+  }, [value, draftRef]);
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      void onDebouncedLoad(company, value);
+    }, INVOICE_DRAFT_LOAD_DEBOUNCE_MS);
+    return () => window.clearTimeout(t);
+  }, [company, value, onDebouncedLoad]);
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      className="mt-3 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+      placeholder="Invoice 번호"
+      autoFocus
+      disabled={disabled}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') onEnterSave();
+      }}
+    />
+  );
 }
 
 function sortBookingsByCheckInThenTime(a: TicketBooking, b: TicketBooking): number {
@@ -252,7 +302,8 @@ export default function TicketBookingList() {
   const statusButtonRefs = useRef<Map<string, HTMLSpanElement>>(new Map());
   const [tourDetailModalTourId, setTourDetailModalTourId] = useState<string | null>(null);
   const [invoiceQuickBooking, setInvoiceQuickBooking] = useState<TicketBooking | null>(null);
-  const [invoiceQuickDraft, setInvoiceQuickDraft] = useState('');
+  /** 모달 Invoice# — ref로 두어 타이핑 시 부모(TicketBookingList) 전체 리렌더를 막음 */
+  const invoiceQuickDraftRef = useRef('');
   const [invoiceQuickSaving, setInvoiceQuickSaving] = useState(false);
   /** company\\0invoice_number → 공개 URL 목록 */
   const [invoiceAttachmentMap, setInvoiceAttachmentMap] = useState<Map<string, string[]>>(
@@ -349,6 +400,7 @@ export default function TicketBookingList() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedBookings, setSelectedBookings] = useState<TicketBooking[]>([]);
+  const [showInvoiceUploadModal, setShowInvoiceUploadModal] = useState(false);
   const [tourEvents, setTourEvents] = useState<TourEvent[]>([]);
 
   const refreshInvoiceAttachmentMapForBookings = useCallback(
@@ -918,23 +970,22 @@ export default function TicketBookingList() {
   const openInvoiceQuickModal = (booking: TicketBooking) => {
     invoicePhotoLoadGenRef.current += 1;
     setInvoiceQuickBooking(booking);
-    setInvoiceQuickDraft(booking.invoice_number?.trim() || '');
+    invoiceQuickDraftRef.current = booking.invoice_number?.trim() || '';
     setInvoiceQuickPhotoUrls([]);
     setZelleQuickPhotoUrls([]);
     setInvoiceModalPasteTarget(null);
   };
 
-  useEffect(() => {
-    if (!invoiceQuickBooking) return;
-    const t = window.setTimeout(() => {
-      void loadInvoicePhotosForDraft(invoiceQuickBooking.company, invoiceQuickDraft);
-    }, 200);
-    return () => clearTimeout(t);
-  }, [invoiceQuickBooking, invoiceQuickDraft, loadInvoicePhotosForDraft]);
+  const handleDebouncedInvoiceAttachmentLoad = useCallback(
+    (company: string, draft: string) => {
+      void loadInvoicePhotosForDraft(company, draft);
+    },
+    [loadInvoicePhotosForDraft]
+  );
 
   const saveInvoiceQuick = async () => {
     if (!invoiceQuickBooking) return;
-    const v = invoiceQuickDraft.trim();
+    const v = invoiceQuickDraftRef.current.trim();
     const co = invoiceCompanyNorm(invoiceQuickBooking.company);
     const urlsSnapshot = [...invoiceQuickPhotoUrls];
     const zelleSnapshot = [...zelleQuickPhotoUrls];
@@ -984,7 +1035,7 @@ export default function TicketBookingList() {
     async (files: File[]) => {
       if (!invoiceQuickBooking || !files.length) return;
       if (invoicePhotoUploading || zellePhotoUploading || invoicePhotoRemoving) return;
-      const inv = invoiceQuickDraft.trim();
+      const inv = invoiceQuickDraftRef.current.trim();
       if (!inv) {
         alert('먼저 Invoice 번호를 입력해 주세요.');
         return;
@@ -1052,20 +1103,14 @@ export default function TicketBookingList() {
         if (invoicePhotoInputRef.current) invoicePhotoInputRef.current.value = '';
       }
     },
-    [
-      invoiceQuickBooking,
-      invoiceQuickDraft,
-      invoicePhotoUploading,
-      zellePhotoUploading,
-      invoicePhotoRemoving,
-    ]
+    [invoiceQuickBooking, invoicePhotoUploading, zellePhotoUploading, invoicePhotoRemoving]
   );
 
   const uploadZellePhotos = useCallback(
     async (files: File[]) => {
       if (!invoiceQuickBooking || !files.length) return;
       if (invoicePhotoUploading || zellePhotoUploading || invoicePhotoRemoving) return;
-      const inv = invoiceQuickDraft.trim();
+      const inv = invoiceQuickDraftRef.current.trim();
       if (!inv) {
         alert('먼저 Invoice 번호를 입력해 주세요.');
         return;
@@ -1134,13 +1179,7 @@ export default function TicketBookingList() {
         if (zellePhotoInputRef.current) zellePhotoInputRef.current.value = '';
       }
     },
-    [
-      invoiceQuickBooking,
-      invoiceQuickDraft,
-      invoicePhotoUploading,
-      zellePhotoUploading,
-      invoicePhotoRemoving,
-    ]
+    [invoiceQuickBooking, invoicePhotoUploading, zellePhotoUploading, invoicePhotoRemoving]
   );
 
   const handleInvoicePhotoPick = (files: FileList | null) => {
@@ -1155,7 +1194,7 @@ export default function TicketBookingList() {
 
   const removeInvoicePhotoUrl = async (urlToRemove: string) => {
     if (!invoiceQuickBooking || invoicePhotoRemoving || invoicePhotoUploading || zellePhotoUploading) return;
-    const inv = invoiceQuickDraft.trim();
+    const inv = invoiceQuickDraftRef.current.trim();
     if (!inv) return;
     if (!confirm('이 첨부를 삭제할까요?')) return;
     const company = invoiceCompanyNorm(invoiceQuickBooking.company);
@@ -1212,7 +1251,7 @@ export default function TicketBookingList() {
 
   const removeZellePhotoUrl = async (urlToRemove: string) => {
     if (!invoiceQuickBooking || invoicePhotoRemoving || invoicePhotoUploading || zellePhotoUploading) return;
-    const inv = invoiceQuickDraft.trim();
+    const inv = invoiceQuickDraftRef.current.trim();
     if (!inv) return;
     if (!confirm('이 첨부를 삭제할까요?')) return;
     const company = invoiceCompanyNorm(invoiceQuickBooking.company);
@@ -1466,6 +1505,29 @@ export default function TicketBookingList() {
     setShowForm(false);
     setEditingBooking(null);
   };
+
+  const handleInvoiceUploadApplied = useCallback(
+    (updates: { id: string; invoice_number: string }[]) => {
+      if (updates.length === 0) return;
+      setBookings((prev) => {
+        const next = prev.map((b) => {
+          const u = updates.find((x) => x.id === b.id);
+          return u ? { ...b, invoice_number: u.invoice_number } : b;
+        });
+        void refreshInvoiceAttachmentMapForBookings(next);
+        return next;
+      });
+    },
+    [refreshInvoiceAttachmentMapForBookings]
+  );
+
+  const handleInvoiceModalRnUpdated = useCallback((u: { id: string; rn_number: string }) => {
+    setBookings((prev) => prev.map((b) => (b.id === u.id ? { ...b, rn_number: u.rn_number } : b)));
+  }, []);
+
+  const handleInvoiceModalNoteUpdated = useCallback((u: { id: string; note: string | null }) => {
+    setBookings((prev) => prev.map((b) => (b.id === u.id ? { ...b, note: u.note ?? null } : b)));
+  }, []);
 
   // 시즌 여부 확인 함수 (check_in_date 기준)
   const checkIfSeason = (checkInDate: string, supplierProduct?: { season_dates: SeasonDate[] | null }): boolean => {
@@ -1915,6 +1977,16 @@ export default function TicketBookingList() {
               <Table size={16} className="sm:w-3.5 sm:h-3.5" />
             </button>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowInvoiceUploadModal(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2 bg-white border border-gray-300 text-gray-800 rounded-lg hover:bg-gray-50 text-sm font-medium transition-colors flex-shrink-0"
+            title="인보이스 이미지에서 RN# 등을 읽어 Invoice #을 채웁니다"
+          >
+            <FileUp size={16} />
+            <span className="hidden sm:inline">인보이스 업로드</span>
+            <span className="sm:hidden">인보이스</span>
+          </button>
           <button
             onClick={() => setShowForm(true)}
             className="inline-flex items-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors flex-shrink-0"
@@ -3197,6 +3269,15 @@ export default function TicketBookingList() {
         />
       )}
 
+      <TicketInvoiceUploadModal
+        open={showInvoiceUploadModal}
+        onClose={() => setShowInvoiceUploadModal(false)}
+        bookings={bookings}
+        onApplied={handleInvoiceUploadApplied}
+        onRnUpdated={handleInvoiceModalRnUpdated}
+        onNoteUpdated={handleInvoiceModalNoteUpdated}
+      />
+
       <TicketBookingReservationDetailModal
         open={showBookingModal}
         onOpenChange={setShowBookingModal}
@@ -3237,19 +3318,17 @@ export default function TicketBookingList() {
               <span className="text-gray-800 font-medium">Ctrl+V</span>로 넣거나, 각 영역 아래 링크로 PC에서 파일을 고를 수
               있습니다.{' '}
               <span className="text-gray-700">저장</span>을 누르면 Invoice 번호가 부킹에 반영되고, 보이는 첨부 URL도 서버에
-              함께 맞춥니다.
+              함께 맞춥니다. 기존 인보이스·Zelle 첨부는{' '}
+              <span className="text-gray-800 font-medium">입력을 잠시 멈춘 뒤</span> 자동으로 불러옵니다.
             </p>
-            <input
-              type="text"
-              value={invoiceQuickDraft}
-              onChange={(e) => setInvoiceQuickDraft(e.target.value)}
-              className="mt-3 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              placeholder="Invoice 번호"
-              autoFocus
+            <TicketInvoiceDraftInput
+              key={invoiceQuickBooking.id}
+              initialInvoice={invoiceQuickBooking.invoice_number?.trim() || ''}
+              draftRef={invoiceQuickDraftRef}
+              company={invoiceQuickBooking.company}
               disabled={invoiceQuickSaving}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void saveInvoiceQuick();
-              }}
+              onDebouncedLoad={handleDebouncedInvoiceAttachmentLoad}
+              onEnterSave={() => void saveInvoiceQuick()}
             />
             {invoicePhotoLoading ? (
               <p className="mt-2 text-xs text-gray-400">첨부 불러오는 중…</p>

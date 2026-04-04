@@ -2102,9 +2102,12 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
 
   // 회사 지출 저장
   const handleSaveCompanyExpense = async () => {
-    if (!paymentData) return
+    if (!paymentData || !selectedEmployee) return
 
     try {
+      const { data: authData } = await supabase.auth.getUser()
+      const submitBy = authData?.user?.email ?? selectedEmployee
+
       const { error } = await supabase
         .from('company_expenses')
         .insert({
@@ -2114,7 +2117,9 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
           amount: paymentData.amount,
           payment_method: paymentData.payment_method,
           photo_url: paymentData.photo_url,
-          submit_by: selectedEmployee,
+          paid_to_employee_email: selectedEmployee,
+          submit_by: submitBy,
+          paid_on: new Date().toISOString(),
           category: 'payroll',
           status: 'pending'
         })
@@ -2128,6 +2133,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
       alert('회사 지출이 성공적으로 추가되었습니다.')
       setShowPaymentModal(false)
       setPaymentData(null)
+      await fetchCompanyExpensesForEmployee()
     } catch (error) {
       console.error('회사 지출 저장 오류:', error)
       alert('회사 지출 저장 중 오류가 발생했습니다.')
@@ -2138,7 +2144,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 overflow-y-auto">
+      <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-[100] p-0 sm:p-4 overflow-y-auto">
         <div className="bg-white rounded-t-xl sm:rounded-lg shadow-xl max-w-7xl w-full sm:mx-4 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto flex flex-col">
         {/* 헤더 */}
         <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10 shrink-0">
@@ -2855,7 +2861,7 @@ const selectedMember = teamMembers.find(m => m.email === selectedEmployee)
 
     {/* 회사 지출 추가 모달 */}
     {showPaymentModal && paymentData && (
-      <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-[60] p-0 sm:p-4 overflow-y-auto">
+      <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-[110] p-0 sm:p-4 overflow-y-auto">
         <div className="bg-white rounded-t-xl sm:rounded-lg shadow-xl max-w-2xl w-full sm:mx-4 max-h-[90vh] overflow-y-auto flex flex-col">
           <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
             <h2 className="text-lg sm:text-xl font-bold text-gray-900">회사 지출 추가</h2>
